@@ -172,7 +172,7 @@ impl PlatformMessageSignable for &[u8] {
                 })?;
                 Ok(
                     redpallas_hecate::RedPallasHecateSecretKey::from_secret(&secret)?
-                        .sign(self)
+                        .sign(self)?
                         .to_vec(),
                 )
             }

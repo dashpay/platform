@@ -278,7 +278,7 @@ impl KeyType {
                 #[cfg(feature = "redpallas")]
                 {
                     Ok(RedPallasHecateSecretKey::from_secret(private_key_bytes)?
-                        .public_key_data()
+                        .public_key_data()?
                         .to_vec())
                 }
                 #[cfg(not(feature = "redpallas"))]
@@ -394,8 +394,10 @@ fn random_redpallas_hecate_key(rng: &mut StdRng) -> (Vec<u8>, [u8; 32]) {
     loop {
         let mut secret = [0u8; 32];
         rng.fill(&mut secret);
-        if let Ok(key) = RedPallasHecateSecretKey::from_secret(&secret) {
-            return (key.public_key_data().to_vec(), secret);
+        if let Ok(data) =
+            RedPallasHecateSecretKey::from_secret(&secret).and_then(|key| key.public_key_data())
+        {
+            return (data.to_vec(), secret);
         }
     }
 }

@@ -165,7 +165,7 @@ impl Signer<IdentityPublicKey> for SimpleSigner {
             )),
             // A Hecate signer key's private key is its 32-byte secret.
             KeyType::REDPALLAS_HECATE => Ok(RedPallasHecateSecretKey::from_secret(private_key)?
-                .sign(data)
+                .sign(data)?
                 .to_vec()
                 .into()),
         }

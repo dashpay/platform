@@ -149,8 +149,10 @@ pub(in crate::identity::identity_public_key) fn validate_private_key_bytes_for_k
         KeyType::REDPALLAS_HECATE => {
             #[cfg(feature = "redpallas")]
             {
-                match RedPallasHecateSecretKey::from_secret(private_key_bytes) {
-                    Ok(key) => Ok(key.public_key_data().as_slice() == data.as_slice()),
+                match RedPallasHecateSecretKey::from_secret(private_key_bytes)
+                    .and_then(|key| key.public_key_data())
+                {
+                    Ok(derived) => Ok(derived.as_slice() == data.as_slice()),
                     Err(_) => Ok(false),
                 }
             }

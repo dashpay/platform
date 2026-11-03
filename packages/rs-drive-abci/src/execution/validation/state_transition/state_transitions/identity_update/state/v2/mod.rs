@@ -285,7 +285,11 @@ mod tests {
             security_level: SecurityLevel::MEDIUM,
             key_type: KeyType::REDPALLAS_HECATE,
             read_only: false,
-            data: secret_key.public_key_data().to_vec().into(),
+            data: secret_key
+                .public_key_data()
+                .expect("derivable data")
+                .to_vec()
+                .into(),
             signature: Default::default(),
             contract_bounds: None,
         };
@@ -311,7 +315,8 @@ mod tests {
             RedPallasHecateSecretKey::from_secret(&[0xEE; 32])
                 .expect("a valid secret")
                 .sign(&signable_bytes)
-        };
+        }
+        .expect("a signature");
         new_key.signature = possession.to_vec().into();
 
         let mut update = transition(new_key);
@@ -393,6 +398,7 @@ mod tests {
             RedPallasHecateSecretKey::from_secret(&[7; 32])
                 .unwrap()
                 .public_key_data()
+                .unwrap()
                 .as_slice()
         );
 

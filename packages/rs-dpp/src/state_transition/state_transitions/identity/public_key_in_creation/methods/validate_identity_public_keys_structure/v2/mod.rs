@@ -304,6 +304,7 @@ mod tests {
         RedPallasHecateSecretKey::from_secret(&[seed; 32])
             .unwrap()
             .public_key_data()
+            .unwrap()
             .to_vec()
     }
 

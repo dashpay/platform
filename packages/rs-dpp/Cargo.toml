@@ -146,6 +146,7 @@ redpallas = [
   "dep:blake2b_simd",
   "dep:ff",
   "dep:group",
+  "dep:zeroize",
 ]
 all_features = [
   "json-conversion",
