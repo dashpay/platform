@@ -430,15 +430,6 @@ fn expect_refused_with_defs(schema: Value, defs: &BTreeMap<String, Value>, needl
     expect_structure_error(parse_with_defs(schema, defs, false), needle);
 }
 
-/// Both parses of `schema` with `defs` admit it.
-fn expect_admitted_with_defs(schema: Value, defs: &BTreeMap<String, Value>) {
-    for full_validation in [true, false] {
-        parse_with_defs(schema.clone(), defs, full_validation).unwrap_or_else(|error| {
-            panic!("the schema parses (full validation {full_validation}): {error:?}")
-        });
-    }
-}
-
 /// A document type whose `quote` is declared with a `$ref` to the `quote` definition, a token
 /// and its generated decimals, with `beside` written beside the `$ref`.
 fn referenced_quote(beside: Vec<(&str, Value)>) -> (Value, BTreeMap<String, Value>) {
@@ -468,27 +459,50 @@ fn referenced_quote(beside: Vec<(&str, Value)>) -> (Value, BTreeMap<String, Valu
     (schema, defs)
 }
 
-/// JSON Schema applies the keywords beside a `$ref` with the definition's, where the parse
-/// reads the definition: a `const` or `enum` beside the `$ref` of an object holding token
-/// decimals is refused as one in the object's own schema is.
+/// A client's schema check reads a stand-in for decimals it leaves out, which only the
+/// property's own schema, read at registration, is known to admit. A `$ref` brings in schemas
+/// registration does not judge (the definition, the keywords beside the `$ref`, and the
+/// definition's own references), so an object holding token decimals declared with one is
+/// refused, however plain: a `const` beside it, a `const` behind a further reference, or a
+/// `properties` beside it fixing the decimals would each refuse the stand-in.
 #[test]
-fn should_refuse_sys_tokens_decimals_inside_a_referenced_object_with_const_or_enum_beside_its_ref()
-{
+fn should_refuse_sys_tokens_decimals_inside_an_object_declared_with_a_ref() {
+    let refused = "must be declared in place, and \"quote\" is declared with a $ref";
     let fixed = platform_value!({ "tokenId": token(5), "decimals": 6 });
+
     let (schema, defs) = referenced_quote(vec![]);
-    expect_admitted_with_defs(schema, &defs);
+    expect_refused_with_defs(schema, &defs, refused);
     let (schema, defs) = referenced_quote(vec![("const", fixed.clone())]);
-    expect_refused_with_defs(
-        schema,
-        &defs,
-        "may not sit inside an object declaring const, as \"quote\" does",
+    expect_refused_with_defs(schema, &defs, refused);
+    let (schema, defs) = referenced_quote(vec![("enum", Value::Array(vec![fixed.clone()]))]);
+    expect_refused_with_defs(schema, &defs, refused);
+    // A `properties` beside the `$ref`, fixing the decimals
+    let (schema, defs) = referenced_quote(vec![(
+        "properties",
+        platform_value!({ "decimals": { "type": "integer", "const": 6 } }),
+    )]);
+    expect_refused_with_defs(schema, &defs, refused);
+    // A definition referring further, to one fixing the whole quote
+    let (schema, mut defs) = referenced_quote(vec![]);
+    defs.get_mut("quote")
+        .expect("the quote definition")
+        .insert(
+            "$ref".to_string(),
+            Value::Text("#/$defs/fixedQuote".to_string()),
+        )
+        .expect("the definition is a map");
+    defs.insert(
+        "fixedQuote".to_string(),
+        platform_value!({
+            "type": "object",
+            "properties": {
+                "tokenId": identifier_property(0),
+                "decimals": { "type": "integer", "minimum": 0, "maximum": 255, "position": 1 }
+            },
+            "const": fixed
+        }),
     );
-    let (schema, defs) = referenced_quote(vec![("enum", Value::Array(vec![fixed]))]);
-    expect_refused_with_defs(
-        schema,
-        &defs,
-        "may not sit inside an object declaring enum, as \"quote\" does",
-    );
+    expect_refused_with_defs(schema, &defs, refused);
 }
 
 /// An `order` whose `decimals` are declared with a `$ref` to a generated decimals definition,
@@ -512,27 +526,21 @@ fn referenced_decimals(beside: Vec<(&str, Value)>) -> (Value, BTreeMap<String, V
     (order_schema_with_decimals(decimals), defs)
 }
 
-/// The keywords beside the `$ref` of a generated decimals property must admit every decimals
-/// as the definition's must.
+/// A token decimals property declared with a `$ref` is refused, plain or narrowed beside it:
+/// the keywords beside the `$ref` apply to a document too.
 #[test]
-fn should_refuse_referenced_sys_tokens_decimals_narrowed_beside_the_ref() {
+fn should_refuse_sys_tokens_decimals_declared_with_a_ref() {
+    let refused = "must be declared in place, and \"decimals\" is declared with a $ref";
     let (schema, defs) = referenced_decimals(vec![]);
-    expect_admitted_with_defs(schema, &defs);
+    expect_refused_with_defs(schema, &defs, refused);
     for beside in [
         ("multipleOf", platform_value!(2)),
         ("minimum", platform_value!(1)),
-        ("maximum", platform_value!(100)),
-        ("exclusiveMinimum", platform_value!(0)),
-        ("exclusiveMaximum", platform_value!(200)),
         ("const", platform_value!(6)),
         ("enum", platform_value!([6, 18])),
     ] {
-        let (schema, defs) = referenced_decimals(vec![beside.clone()]);
-        expect_refused_with_defs(
-            schema,
-            &defs,
-            "only allowed on an integer property that admits every value from 0 to 255",
-        );
+        let (schema, defs) = referenced_decimals(vec![beside]);
+        expect_refused_with_defs(schema, &defs, refused);
     }
 }
 

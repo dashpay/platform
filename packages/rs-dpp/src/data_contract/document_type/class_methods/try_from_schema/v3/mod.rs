@@ -717,7 +717,7 @@ fn parse_generation_3(
     validate_encrypted_for_declarations(&v2, schema_defs, name)
         .map_err(consensus_or_protocol_data_contract_error)?;
     // The same for the string property each `generatedFrom` declaration names.
-    validate_generated_from_declarations(&v2, schema_defs, name)
+    validate_generated_from_declarations(&v2, name)
         .map_err(consensus_or_protocol_data_contract_error)?;
     // The same for the properties a `refersTo` lookup reads to assemble its key,
     // the lookup of the `ownerRefersTo` declaration included.
