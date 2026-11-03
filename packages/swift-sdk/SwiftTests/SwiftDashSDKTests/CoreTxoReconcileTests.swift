@@ -269,6 +269,69 @@ final class CoreTxoReconcileTests: XCTestCase {
         return Int(entriesPtr[0].utxos_count)
     }
 
+    // MARK: Restore carries the creating transaction's stored context
+
+    /// A coin row can lag its own transaction's row: the transaction was
+    /// confirmed through a record that named none of its coins, so only the
+    /// transaction row was rewritten. The load hands the coin to the loader
+    /// with the transaction row's context and height, copied as-is, so the
+    /// loader can raise the coin.
+    func testRestoreCarriesTheCreatingTransactionsStoredContext() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        try seedUnspentTxo(in: container, txid: txid(0x81))
+        let context = ModelContext(container)
+        let outpoint = PersistentTxo.makeOutpoint(txid: txid(0x81), vout: 0)
+        let coin = try XCTUnwrap(context.fetch(
+            FetchDescriptor<PersistentTxo>(predicate: #Predicate { $0.outpoint == outpoint })
+        ).first)
+        coin.isConfirmed = false
+        coin.height = 0
+        let parent = try XCTUnwrap(coin.transaction)
+        parent.context = 2
+        parent.blockHeight = 500
+        try context.save()
+
+        let (entries, count, errored) = handler.loadWalletList()
+        XCTAssertFalse(errored)
+        XCTAssertEqual(count, 1)
+        let entriesPtr = try XCTUnwrap(entries)
+        defer { handler.loadWalletListFree(entries: UnsafeRawPointer(entriesPtr)) }
+        XCTAssertEqual(entriesPtr[0].utxos_count, 1)
+        let restored = try XCTUnwrap(entriesPtr[0].utxos).pointee
+        XCTAssertFalse(restored.is_confirmed, "the coin row is handed over as stored")
+        XCTAssertEqual(restored.parent_context, 2)
+        XCTAssertEqual(restored.parent_block_height, 500)
+    }
+
+    /// The same hand-over for a transaction row that is InstantSend-locked.
+    func testRestoreCarriesAnInstantLockedTransactionsContext() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        try seedUnspentTxo(in: container, txid: txid(0x82))
+        let context = ModelContext(container)
+        let outpoint = PersistentTxo.makeOutpoint(txid: txid(0x82), vout: 0)
+        let coin = try XCTUnwrap(context.fetch(
+            FetchDescriptor<PersistentTxo>(predicate: #Predicate { $0.outpoint == outpoint })
+        ).first)
+        coin.isConfirmed = false
+        coin.height = 0
+        let parent = try XCTUnwrap(coin.transaction)
+        parent.context = 1
+        parent.blockHeight = 0
+        try context.save()
+
+        let (entries, count, errored) = handler.loadWalletList()
+        XCTAssertFalse(errored)
+        XCTAssertEqual(count, 1)
+        let entriesPtr = try XCTUnwrap(entries)
+        defer { handler.loadWalletListFree(entries: UnsafeRawPointer(entriesPtr)) }
+        let restored = try XCTUnwrap(entriesPtr[0].utxos).pointee
+        XCTAssertFalse(restored.is_instantlocked, "the coin row is handed over as stored")
+        XCTAssertEqual(restored.parent_context, 1)
+        XCTAssertEqual(restored.parent_block_height, 0)
+    }
+
     // MARK: 1. Positive engine evidence marks a local unspent row spent
 
     func testPositiveEngineVerdictMarksALocalUnspentRowSpent() throws {

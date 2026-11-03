@@ -37,6 +37,7 @@ use platform_wallet::changeset::{
     ProviderKeyExtendedPubKey, PERSISTENCE_CAPABILITIES_VERSION,
 };
 use platform_wallet::wallet::asset_lock::restored_record::held_output_details;
+use platform_wallet::wallet::core::stored_coin::{reconcile_with_parent, StoredParentState};
 use platform_wallet::wallet::platform_wallet::WalletId;
 #[cfg(feature = "shielded")]
 use platform_wallet::wallet::shielded::ShieldedActivityStatus;
@@ -96,6 +97,8 @@ use std::ffi::CStr;
 /// `Mempool` vs no-evidence); see each match's comment.
 pub(crate) const TX_CONTEXT_RAW_IN_BLOCK: u32 = 2;
 pub(crate) const TX_CONTEXT_RAW_IN_CHAIN_LOCKED_BLOCK: u32 = 3;
+/// The InstantSend discriminant of the same encoding.
+pub(crate) const TX_CONTEXT_RAW_INSTANT_SEND: u32 = 1;
 
 /// Byte budget for decoding a host-supplied account extended public key.
 ///
@@ -3983,7 +3986,7 @@ impl PlatformWalletPersistence for FFIPersister {
 
         let context = match context_kind {
             0 => TransactionContext::Mempool,
-            1 => {
+            k if u32::from(k) == TX_CONTEXT_RAW_INSTANT_SEND => {
                 // InstantSend requires the IS-lock blob, which the
                 // persister doesn't currently store. Treat as miss
                 // so the proof flow's SPV wait path completes the
@@ -5742,7 +5745,7 @@ fn build_wallet_start_state(
             value: u.value_duffs,
             script_pubkey,
         };
-        let utxo = key_wallet::Utxo {
+        let mut utxo = key_wallet::Utxo {
             outpoint,
             txout,
             address,
@@ -5756,6 +5759,15 @@ fn build_wallet_start_state(
             // us). Recompute on the next SPV pass; default to false.
             is_trusted: false,
         };
+        // The coin row can lag its own transaction's row: the transaction
+        // was confirmed or locked through a record that named none of its
+        // coins, so only the transaction row was rewritten. Raise the coin
+        // to what its transaction's row says.
+        reconcile_with_parent(
+            &mut utxo,
+            stored_parent_state(u),
+            wallet_info.metadata.last_processed_height,
+        );
         // Route into the target funds-bearing account. Match on the
         // resolved `AccountType` and look up the right map field. Keys
         // and Platform variants are intentionally no-ops.
@@ -6966,6 +6978,21 @@ struct UnresolvedRestoreStats {
 impl UnresolvedRestoreStats {
     fn dropped(&self) -> usize {
         self.dropped_decode + self.dropped_no_account
+    }
+}
+
+/// What the host's row for a restored coin's creating transaction says,
+/// decoded from the raw context the host copied.
+fn stored_parent_state(u: &UtxoRestoreEntryFFI) -> StoredParentState {
+    match u.parent_context {
+        TX_CONTEXT_RAW_IN_BLOCK | TX_CONTEXT_RAW_IN_CHAIN_LOCKED_BLOCK => {
+            StoredParentState::InBlock {
+                height: u.parent_block_height,
+            }
+        }
+        TX_CONTEXT_RAW_INSTANT_SEND => StoredParentState::InstantLocked,
+        // Mempool, no row, or a value this build does not know: no evidence.
+        _ => StoredParentState::Unconfirmed,
     }
 }
 
@@ -11299,6 +11326,112 @@ mod tests {
             Some(&wallet.wallet_id[..])
         );
         assert!(restored_eddsa.is_watch_only);
+    }
+
+    /// A coin stored unconfirmed under a transaction the store has in a block
+    /// this wallet has processed is restored confirmed at that block's
+    /// height; one under an InstantSend-locked transaction is restored
+    /// locked; one under a mempool transaction, an unknown context, or a
+    /// block beyond this wallet's processed height is restored as stored.
+    #[test]
+    fn should_restore_a_coin_as_final_as_its_stored_transaction() {
+        let wallet = Wallet::from_seed_bytes(
+            [0x42; 64],
+            Network::Testnet,
+            key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
+        )
+        .expect("seeded wallet");
+        let bip44 = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let xpub = wallet
+            .accounts
+            .standard_bip44_accounts
+            .get(&0)
+            .expect("bip44 account")
+            .account_xpub;
+        let xpub_bytes = bincode::encode_to_vec(xpub, config::standard()).expect("encode xpub");
+        let specs = [build_account_spec_ffi(&bip44, &xpub_bytes)];
+        let script = TestWalletContext::new_random()
+            .receive_address
+            .script_pubkey();
+        let coin =
+            |txid_byte: u8, parent_context: u32, parent_block_height: u32| UtxoRestoreEntryFFI {
+                type_tag: specs[0].type_tag,
+                standard_tag: specs[0].standard_tag,
+                account_index: specs[0].index,
+                registration_index: specs[0].registration_index,
+                key_class: specs[0].key_class,
+                user_identity_id: specs[0].user_identity_id,
+                friend_identity_id: specs[0].friend_identity_id,
+                prev_txid: [txid_byte; 32],
+                vout: 1,
+                value_duffs: 1_000_000,
+                script_pubkey: script.as_bytes().as_ptr(),
+                script_pubkey_len: script.len(),
+                height: 0,
+                is_coinbase: false,
+                is_confirmed: false,
+                is_instantlocked: false,
+                is_locked: false,
+                parent_context,
+                parent_block_height,
+            };
+        let utxos = [
+            coin(1, TX_CONTEXT_RAW_IN_BLOCK, 500),
+            coin(2, TX_CONTEXT_RAW_INSTANT_SEND, 0),
+            coin(3, 0, 0),
+            coin(4, TX_CONTEXT_RAW_IN_CHAIN_LOCKED_BLOCK, 600),
+            coin(5, 7, 700),
+            coin(6, TX_CONTEXT_RAW_IN_BLOCK, 2_000),
+        ];
+        let entry = WalletRestoreEntryFFI {
+            wallet_id: wallet.wallet_id,
+            network: Network::Testnet.into(),
+            accounts: specs.as_ptr(),
+            accounts_count: specs.len(),
+            utxos: utxos.as_ptr(),
+            utxos_count: utxos.len(),
+            synced_height: 1_000,
+            last_processed_height: 1_000,
+            ..Default::default()
+        };
+
+        let (state, _) = build_wallet_start_state(&entry).expect("the wallet restores");
+
+        let account = state
+            .wallet_info
+            .accounts
+            .standard_bip44_accounts
+            .get(&0)
+            .expect("bip44 managed account");
+        let restored = |txid_byte: u8| {
+            account
+                .utxos
+                .get(&OutPoint {
+                    txid: Txid::from_byte_array([txid_byte; 32]),
+                    vout: 1,
+                })
+                .expect("the coin is restored")
+        };
+        let in_block = restored(1);
+        assert!(in_block.is_confirmed);
+        assert_eq!(in_block.height, 500);
+        let locked = restored(2);
+        assert!(locked.is_instantlocked);
+        assert!(!locked.is_confirmed);
+        let mempool = restored(3);
+        assert!(!mempool.is_confirmed);
+        assert!(!mempool.is_instantlocked);
+        let chain_locked = restored(4);
+        assert!(chain_locked.is_confirmed);
+        assert_eq!(chain_locked.height, 600);
+        let unknown_context = restored(5);
+        assert!(!unknown_context.is_confirmed);
+        assert!(!unknown_context.is_instantlocked);
+        let above_this_wallet = restored(6);
+        assert!(!above_this_wallet.is_confirmed);
     }
 
     /// The BLS xpub decoder is the only account-xpub graph with a
