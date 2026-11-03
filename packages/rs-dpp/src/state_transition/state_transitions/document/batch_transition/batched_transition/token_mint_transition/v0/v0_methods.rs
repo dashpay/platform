@@ -33,6 +33,18 @@ pub trait TokenMintTransitionV0Methods:
 
     fn set_amount(&mut self, amount: u64);
 
+    /// The least the mint issues when its amount is random (format version 1, protocol version
+    /// 15): the recipient receives an amount drawn uniformly from it to `amount`, both included.
+    /// `None` for a mint of exactly `amount`, which every version 0 mint is.
+    fn random_minimum_amount(&self) -> Option<u64>;
+
+    /// Sets the least the mint issues when its amount is random. On a
+    /// [`TokenMintTransition`] the transition takes the format that holds the value: `Some`
+    /// turns a version 0 mint into a version 1 one, and `None` turns a version 1 mint back into
+    /// version 0, the format every protocol version accepts. A bare `TokenMintTransitionV0`
+    /// holds no random amount, so it ignores the call.
+    fn set_random_minimum_amount(&mut self, random_minimum_amount: Option<u64>);
+
     /// Returns the `public_note` field of the `TokenMintTransitionV0`.
     fn public_note(&self) -> Option<&String>;
 
@@ -60,6 +72,14 @@ impl TokenMintTransitionV0Methods for TokenMintTransitionV0 {
 
     fn set_amount(&mut self, amount: u64) {
         self.amount = amount;
+    }
+
+    fn random_minimum_amount(&self) -> Option<u64> {
+        None
+    }
+
+    fn set_random_minimum_amount(&mut self, _random_minimum_amount: Option<u64>) {
+        // The version 0 format holds no random amount; the enum converts to version 1
     }
 
     fn public_note(&self) -> Option<&String> {

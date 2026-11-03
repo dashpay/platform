@@ -1,5 +1,6 @@
 use crate::drive::document::draw_random_document_properties::RandomDocumentRequest;
 use crate::drive::document::paths::contract_documents_primary_key_path;
+use crate::drive::random_beacon::{draw_from_beacon_v0, push_with_length, DOCUMENT_PROPERTY_DRAW};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -16,16 +17,9 @@ use dpp::data_contract::document_type::{
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapInsertionPathHelper;
-use dpp::util::hash::hash_single;
 use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
 use std::borrow::Cow;
-
-/// The domain of a draw's seed, so a beacon never seeds anything else the same way.
-const DRAW_DOMAIN: &[u8] = b"dash-platform-random-v1";
-
-/// What a seed draws for: a document property (the only kind in this version).
-const DOCUMENT_PROPERTY_DRAW: u8 = 0;
 
 impl Drive {
     #[inline(always)]
@@ -181,49 +175,25 @@ impl Drive {
     }
 }
 
-/// The value the property at `path` of the document `request` names draws from `beacon`:
-/// SHA-256 of the domain, the beacon and what the draw is for (a document property, its
-/// contract, type, document and path, each variable part prefixed by its length), whose first
-/// 16 bytes, big-endian, reduced modulo the range's size, offset the range's minimum. A range
-/// holds at most 2^64 values, so the reduction favours no value by more than 2^-64. `None`
-/// only for a part longer than a length prefix holds, which registration rules out.
+/// The value the property at `path` of the document `request` names draws from `beacon`
+/// (`draw_from_beacon_v0`), under the request key of a document property: what the draw is
+/// for, the contract, the type, the document and the path, each variable part prefixed by its
+/// length. `None` only for a part longer than a length prefix holds, which registration rules
+/// out.
 fn draw_v0(
     beacon: &[u8],
     request: &RandomDocumentRequest,
     path: &str,
     range: RandomRange,
 ) -> Option<i128> {
-    let mut preimage = Vec::with_capacity(
-        DRAW_DOMAIN.len()
-            + 2
-            + beacon.len()
-            + 1
-            + 32
-            + 2
-            + request.document_type_name.len()
-            + 32
-            + 2
-            + path.len(),
-    );
-    preimage.extend_from_slice(DRAW_DOMAIN);
-    push_with_length(&mut preimage, beacon)?;
-    preimage.push(DOCUMENT_PROPERTY_DRAW);
-    preimage.extend_from_slice(request.contract_id.as_slice());
-    push_with_length(&mut preimage, request.document_type_name.as_bytes())?;
-    preimage.extend_from_slice(request.document_id.as_slice());
-    push_with_length(&mut preimage, path.as_bytes())?;
-    let seed = hash_single(&preimage);
-    let mut bits = [0u8; 16];
-    bits.copy_from_slice(&seed[..16]);
-    range.value_at(u128::from_be_bytes(bits) % range.size())
-}
-
-/// Appends `part` after its length as a big-endian `u16`.
-fn push_with_length(preimage: &mut Vec<u8>, part: &[u8]) -> Option<()> {
-    let length = u16::try_from(part.len()).ok()?;
-    preimage.extend_from_slice(&length.to_be_bytes());
-    preimage.extend_from_slice(part);
-    Some(())
+    let mut request_key =
+        Vec::with_capacity(1 + 32 + 2 + request.document_type_name.len() + 32 + 2 + path.len());
+    request_key.push(DOCUMENT_PROPERTY_DRAW);
+    request_key.extend_from_slice(request.contract_id.as_slice());
+    push_with_length(&mut request_key, request.document_type_name.as_bytes())?;
+    request_key.extend_from_slice(request.document_id.as_slice());
+    push_with_length(&mut request_key, path.as_bytes())?;
+    draw_from_beacon_v0(beacon, &request_key, range)
 }
 
 #[cfg(test)]

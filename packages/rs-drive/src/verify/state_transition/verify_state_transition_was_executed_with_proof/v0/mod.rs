@@ -679,9 +679,33 @@ impl Drive {
                                         platform_version,
                                     )?;
 
+                                // A random transfer or mint (protocol version 15) moves an amount
+                                // its sender cannot know: the history holds the amount drawn from
+                                // the block's random beacon (the range's minimum until the draw),
+                                // so the amount is taken from the proved document once it lies
+                                // in the range the transition asked for. A transition without a
+                                // random amount compares it as before.
+                                let random_amount_range = match token_transition {
+                                    TokenTransition::Transfer(transfer) => transfer
+                                        .random_minimum_amount()
+                                        .map(|minimum| minimum..=transfer.amount()),
+                                    TokenTransition::Mint(mint) => mint
+                                        .random_minimum_amount()
+                                        .map(|minimum| minimum..=mint.amount()),
+                                    _ => None,
+                                };
+                                if let Some(range) = &random_amount_range {
+                                    let amount: TokenAmount =
+                                        document.properties().get_integer("amount")?;
+                                    if !range.contains(&amount) {
+                                        return Err(Error::Proof(ProofError::UnexpectedResultProof(format!("proof of state transition execution showed an amount of {}, outside the random range {} to {} the state transition asked for, state transition is [{}]", amount, range.start(), range.end(), token_transition))));
+                                    }
+                                }
+
                                 // Some fields are populated by the drive,
                                 // so we need to ignore them
                                 let ignore_fields = match token_transition {
+                                    _ if random_amount_range.is_some() => Some(vec!["amount"]),
                                     TokenTransition::DestroyFrozenFunds(_) => {
                                         Some(vec!["destroyedAmount", "note"])
                                     }

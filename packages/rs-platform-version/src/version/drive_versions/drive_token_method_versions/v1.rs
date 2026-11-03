@@ -84,4 +84,7 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         estimated_costs_for_tokens: None,
         estimated_costs_for_credits: None,
     },
+    // Random token amounts are settled from protocol version 15
+    // (`DRIVE_TOKEN_METHOD_VERSIONS_V3`).
+    settle_random_token_amounts: None,
 };

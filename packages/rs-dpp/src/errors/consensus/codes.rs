@@ -192,6 +192,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidTokenNoteTooBigError(_) => 10459,
             Self::TokenNoteOnlyAllowedWhenProposerError(_) => 10460,
             Self::TokenPricingScheduleEmptyError(_) => 10461,
+            Self::RandomTokenMintNotAllowedError(_) => 10462,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,

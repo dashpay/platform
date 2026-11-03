@@ -5,12 +5,15 @@ use dpp::consensus::basic::BasicError;
 use dpp::consensus::basic::token::{ChoosingTokenMintRecipientNotAllowedError, DestinationIdentityForTokenMintingNotSetError};
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_mint_transition::v0::TokenMintTransitionV0;
+use dpp::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV1;
+use dpp::balances::credits::TokenAmount;
 use dpp::ProtocolError;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_mint_transition_action::v0::TokenMintTransitionActionV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_mint_transition_action::TokenMintTransitionAction;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::fee::fee_result::FeeResult;
@@ -190,6 +193,7 @@ impl TokenMintTransitionActionV0 {
                     mint_amount: amount,
                     identity_balance_holder_id,
                     public_note: change_note.unwrap_or(public_note),
+                    random_minimum_amount: None,
                 }
                 .into(),
             ))
@@ -368,11 +372,121 @@ impl TokenMintTransitionActionV0 {
                     mint_amount: *amount,
                     identity_balance_holder_id,
                     public_note: change_note.unwrap_or(public_note.clone()),
+                    random_minimum_amount: None,
                 }
                 .into(),
             ))
             .into(),
             fee_result,
         ))
+    }
+
+    /// Converts a `TokenMintTransitionV1` into a `TokenMintTransitionActionV0`: the version 0
+    /// conversion of its version 0 fields, the mint action it yields carrying the random
+    /// minimum amount.
+    ///
+    /// # Arguments
+    ///
+    /// The arguments of [`Self::try_from_token_mint_transition_with_contract_lookup`], with
+    /// `value` a `TokenMintTransitionV1`.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<(ConsensusValidationResult<BatchedTransitionAction>, FeeResult), Error>` - The
+    ///   mint action, or the nonce bump of a refused mint, and the fees of the lookups it made.
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_from_token_mint_transition_v1_with_contract_lookup(
+        drive: &Drive,
+        owner_id: Identifier,
+        value: TokenMintTransitionV1,
+        approximate_without_state_for_costs: bool,
+        transaction: TransactionArg,
+        block_info: &BlockInfo,
+        user_fee_increase: UserFeeIncrease,
+        get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
+        platform_version: &PlatformVersion,
+    ) -> Result<
+        (
+            ConsensusValidationResult<BatchedTransitionAction>,
+            FeeResult,
+        ),
+        Error,
+    > {
+        let (v0, random_minimum_amount) = value.into_v0_and_random_minimum_amount();
+        let (mut result, fee_result) = Self::try_from_token_mint_transition_with_contract_lookup(
+            drive,
+            owner_id,
+            v0,
+            approximate_without_state_for_costs,
+            transaction,
+            block_info,
+            user_fee_increase,
+            get_data_contract,
+            platform_version,
+        )?;
+        set_random_minimum_amount(&mut result, random_minimum_amount);
+        Ok((result, fee_result))
+    }
+
+    /// Converts a borrowed `TokenMintTransitionV1` into a `TokenMintTransitionActionV0`: the
+    /// version 0 conversion of its version 0 fields, the mint action it yields carrying the
+    /// random minimum amount.
+    ///
+    /// # Arguments
+    ///
+    /// The arguments of [`Self::try_from_borrowed_token_mint_transition_with_contract_lookup`],
+    /// with `value` a borrowed `TokenMintTransitionV1`.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<(ConsensusValidationResult<BatchedTransitionAction>, FeeResult), Error>` - The
+    ///   mint action, or the nonce bump of a refused mint, and the fees of the lookups it made.
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_from_borrowed_token_mint_transition_v1_with_contract_lookup(
+        drive: &Drive,
+        owner_id: Identifier,
+        value: &TokenMintTransitionV1,
+        approximate_without_state_for_costs: bool,
+        transaction: TransactionArg,
+        block_info: &BlockInfo,
+        user_fee_increase: UserFeeIncrease,
+        get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
+        platform_version: &PlatformVersion,
+    ) -> Result<
+        (
+            ConsensusValidationResult<BatchedTransitionAction>,
+            FeeResult,
+        ),
+        Error,
+    > {
+        let (v0, random_minimum_amount) = value.clone().into_v0_and_random_minimum_amount();
+        let (mut result, fee_result) =
+            Self::try_from_borrowed_token_mint_transition_with_contract_lookup(
+                drive,
+                owner_id,
+                &v0,
+                approximate_without_state_for_costs,
+                transaction,
+                block_info,
+                user_fee_increase,
+                get_data_contract,
+                platform_version,
+            )?;
+        set_random_minimum_amount(&mut result, random_minimum_amount);
+        Ok((result, fee_result))
+    }
+}
+
+/// Sets `random_minimum_amount` on the mint action `result` holds; a refused mint holds a nonce
+/// bump instead, which has none.
+fn set_random_minimum_amount(
+    result: &mut ConsensusValidationResult<BatchedTransitionAction>,
+    random_minimum_amount: Option<TokenAmount>,
+) {
+    if let Some(BatchedTransitionAction::TokenAction(TokenTransitionAction::MintAction(
+        TokenMintTransitionAction::V0(mint),
+    ))) = result.data.as_mut()
+    {
+        mint.random_minimum_amount = random_minimum_amount;
     }
 }

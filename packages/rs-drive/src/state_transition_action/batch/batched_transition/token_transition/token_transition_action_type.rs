@@ -122,6 +122,7 @@ mod tests {
                 mint_amount: 100,
                 identity_balance_holder_id: Identifier::new([3u8; 32]),
                 public_note: None,
+                random_minimum_amount: None,
             },
         ));
         assert_eq!(action.action_type(), TokenTransitionActionType::Mint);
@@ -137,6 +138,7 @@ mod tests {
                 public_note: None,
                 shared_encrypted_note: None,
                 private_encrypted_note: None,
+                random_minimum_amount: None,
             },
         ));
         assert_eq!(action.action_type(), TokenTransitionActionType::Transfer);
@@ -281,6 +283,7 @@ mod tests {
                     mint_amount: 1,
                     identity_balance_holder_id: Identifier::new([3u8; 32]),
                     public_note: None,
+                    random_minimum_amount: None,
                 },
             )),
             TokenTransitionAction::TransferAction(TokenTransferTransitionAction::V0(
@@ -291,6 +294,7 @@ mod tests {
                     public_note: None,
                     shared_encrypted_note: None,
                     private_encrypted_note: None,
+                    random_minimum_amount: None,
                 },
             )),
             TokenTransitionAction::FreezeAction(TokenFreezeTransitionAction::V0(

@@ -46,6 +46,11 @@ pub mod initialization;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod protocol_upgrade;
 
+/// The values a block's random beacon draws: `sys.random` document properties and random
+/// token amounts
+#[cfg(feature = "server")]
+pub(crate) mod random_beacon;
+
 /// System module
 #[cfg(feature = "server")]
 pub mod system;

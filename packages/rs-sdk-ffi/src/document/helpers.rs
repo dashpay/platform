@@ -170,6 +170,8 @@ pub unsafe fn convert_state_transition_creation_options(
         } else {
             Some(options.contest_fund)
         },
+        // Only a token transfer or mint reads it
+        random_minimum_amount: None,
     })
 }
 

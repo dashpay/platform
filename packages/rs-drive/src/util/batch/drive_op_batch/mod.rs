@@ -634,6 +634,27 @@ fn token_balance_writes(operation: &DriveOperation) -> Vec<TokenBalanceKey> {
             TokenBalanceKey::Holder(*token_id, *recipient_id),
             TokenBalanceKey::PoolTotal(*token_id),
         ],
+        // Reserving a random transfer moves the most it moves from the sender into the token's
+        // escrow, and reserving a random mint raises the total supply by it and holds it in
+        // the escrow; both write the recipient's balance unchanged. The settlement writes the
+        // rest once the block's beacon is known.
+        TokenOperationType::TokenReserveRandomTransfer {
+            token_id,
+            sender_id,
+            recipient_id,
+            ..
+        } => vec![
+            TokenBalanceKey::Holder(*token_id, *sender_id),
+            TokenBalanceKey::Holder(*token_id, *recipient_id),
+        ],
+        TokenOperationType::TokenReserveRandomMint {
+            token_id,
+            recipient_id,
+            ..
+        } => vec![
+            TokenBalanceKey::Holder(*token_id, *recipient_id),
+            TokenBalanceKey::Supply(*token_id),
+        ],
         // Minting into the pool raises the total supply and the pool total by the same amount
         // and burning from it lowers both; neither touches an identity's balance.
         TokenOperationType::TokenMintToPool { token_id, .. }

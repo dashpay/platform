@@ -28,6 +28,9 @@ pub struct TokenTransferTransitionBuilder {
     pub settings: Option<PutSettings>,
     pub user_fee_increase: Option<UserFeeIncrease>,
     pub state_transition_creation_options: Option<StateTransitionCreationOptions>,
+    /// The least the transfer moves when its amount is random (protocol version 15); see
+    /// [`Self::with_random_minimum_amount`]
+    pub random_minimum_amount: Option<TokenAmount>,
 }
 
 impl TokenTransferTransitionBuilder {
@@ -63,6 +66,7 @@ impl TokenTransferTransitionBuilder {
             private_encrypted_note: None,
             shared_encrypted_note: None,
             state_transition_creation_options: None,
+            random_minimum_amount: None,
         }
     }
 
@@ -160,6 +164,30 @@ impl TokenTransferTransitionBuilder {
         self
     }
 
+    /// Makes the transfer move a random amount (protocol version 15): the recipient receives
+    /// an amount drawn uniformly from `random_minimum_amount` to the builder's amount, both
+    /// included, from the random beacon of the block that carries the transfer. The sender
+    /// must hold the builder's amount, which the block takes before the draw; what the draw
+    /// leaves goes back to the sender. Nobody knows the amount before the block is accepted:
+    /// read it from the proof of the transition, the transfer history document when the token
+    /// keeps one.
+    ///
+    /// The transition is built in format version 1, which no protocol version before 15
+    /// accepts. Structure validation requires the minimum to be at least 1 and below the
+    /// amount.
+    ///
+    /// # Arguments
+    ///
+    /// * `random_minimum_amount` - The least the transfer moves
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_random_minimum_amount(mut self, random_minimum_amount: TokenAmount) -> Self {
+        self.random_minimum_amount = Some(random_minimum_amount);
+        self
+    }
+
     /// Signs the token transfer transition
     ///
     /// # Arguments
@@ -183,6 +211,15 @@ impl TokenTransferTransitionBuilder {
             self.data_contract.id().as_bytes(),
             self.token_position,
         ));
+
+        // The random minimum amount rides in the creation options, which the batch builder reads
+        let state_transition_creation_options = match self.random_minimum_amount {
+            Some(random_minimum_amount) => Some(StateTransitionCreationOptions {
+                random_minimum_amount: Some(random_minimum_amount),
+                ..self.state_transition_creation_options.unwrap_or_default()
+            }),
+            None => self.state_transition_creation_options,
+        };
 
         let identity_contract_nonce = sdk
             .get_identity_contract_nonce(
@@ -208,7 +245,7 @@ impl TokenTransferTransitionBuilder {
             self.user_fee_increase.unwrap_or_default(),
             signer,
             platform_version,
-            self.state_transition_creation_options,
+            state_transition_creation_options,
         )
         .await?;
 

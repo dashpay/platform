@@ -97,7 +97,9 @@ impl DriveHighLevelBatchOperationConverter for TokenTransitionAction {
 }
 
 impl TokenTransitionAction {
-    /// Gets the associated token event for the transition action
+    /// Gets the associated token event for the transition action. For a random transfer or mint
+    /// (protocol version 15) the amount is the range's minimum, the placeholder its execution
+    /// writes into the history until the block's random token amounts are settled.
     pub fn associated_token_event(&self) -> TokenEvent {
         match self {
             TokenTransitionAction::BurnAction(burn_action) => TokenEvent::Burn(
@@ -106,7 +108,9 @@ impl TokenTransitionAction {
                 burn_action.public_note().cloned(),
             ),
             TokenTransitionAction::MintAction(mint_action) => TokenEvent::Mint(
-                mint_action.mint_amount(),
+                mint_action
+                    .random_minimum_amount()
+                    .unwrap_or(mint_action.mint_amount()),
                 mint_action.identity_balance_holder_id(),
                 mint_action.public_note().cloned(),
             ),
@@ -118,7 +122,9 @@ impl TokenTransitionAction {
                     public_note,
                     shared_encrypted_note,
                     private_encrypted_note,
-                    transfer_action.amount(),
+                    transfer_action
+                        .random_minimum_amount()
+                        .unwrap_or(transfer_action.amount()),
                 )
             }
             TokenTransitionAction::FreezeAction(freeze_action) => TokenEvent::Freeze(

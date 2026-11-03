@@ -14,6 +14,11 @@ pub struct DriveTokenMethodVersions {
     /// The escrow of the token marketplace (protocol version 15): the tokens open listings hold
     /// and the credits open offers hold.
     pub order_escrow: DriveTokenOrderEscrowMethodVersions,
+    /// `settle_random_token_amounts`: pays out the random token transfers and mints of a block
+    /// from the block's random beacon, once every transition of the block is accepted.
+    /// `Some(0)` from `DRIVE_TOKEN_METHOD_VERSIONS_V3` (protocol version 15), `None` in every
+    /// earlier table, whose protocol versions decode no random token amount.
+    pub settle_random_token_amounts: OptionalFeatureVersion,
 }
 
 /// The escrow methods of the token marketplace: `None` in every table before protocol version

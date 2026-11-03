@@ -7,7 +7,7 @@ use crate::ProtocolError;
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
-use crate::state_transition::batch_transition::token_mint_transition::TokenMintTransition;
+use crate::state_transition::batch_transition::token_mint_transition::{TokenMintTransition, TokenMintTransitionV1};
 use crate::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
 use crate::util::hash::hash_double;
 
@@ -15,18 +15,21 @@ impl TokenBaseTransitionAccessors for TokenMintTransition {
     fn base(&self) -> &TokenBaseTransition {
         match self {
             TokenMintTransition::V0(v0) => &v0.base,
+            TokenMintTransition::V1(v1) => &v1.base,
         }
     }
 
     fn base_mut(&mut self) -> &mut TokenBaseTransition {
         match self {
             TokenMintTransition::V0(v0) => &mut v0.base,
+            TokenMintTransition::V1(v1) => &mut v1.base,
         }
     }
 
     fn set_base(&mut self, base: TokenBaseTransition) {
         match self {
             TokenMintTransition::V0(v0) => v0.base = base,
+            TokenMintTransition::V1(v1) => v1.base = base,
         }
     }
 }
@@ -35,36 +38,66 @@ impl TokenMintTransitionV0Methods for TokenMintTransition {
     fn amount(&self) -> u64 {
         match self {
             TokenMintTransition::V0(v0) => v0.amount(),
+            TokenMintTransition::V1(v1) => v1.amount(),
         }
     }
 
     fn set_amount(&mut self, amount: u64) {
         match self {
             TokenMintTransition::V0(v0) => v0.set_amount(amount),
+            TokenMintTransition::V1(v1) => v1.set_amount(amount),
         }
+    }
+
+    fn random_minimum_amount(&self) -> Option<u64> {
+        match self {
+            TokenMintTransition::V0(_) => None,
+            TokenMintTransition::V1(v1) => v1.random_minimum_amount,
+        }
+    }
+
+    fn set_random_minimum_amount(&mut self, random_minimum_amount: Option<u64>) {
+        let current = std::mem::take(self);
+        *self = match (current, random_minimum_amount) {
+            (TokenMintTransition::V0(v0), None) => TokenMintTransition::V0(v0),
+            (TokenMintTransition::V0(v0), Some(minimum)) => {
+                TokenMintTransition::V1(TokenMintTransitionV1::from_v0(v0, Some(minimum)))
+            }
+            (TokenMintTransition::V1(mut v1), Some(minimum)) => {
+                v1.random_minimum_amount = Some(minimum);
+                TokenMintTransition::V1(v1)
+            }
+            (TokenMintTransition::V1(v1), None) => {
+                TokenMintTransition::V0(v1.into_v0_and_random_minimum_amount().0)
+            }
+        };
     }
 
     fn public_note(&self) -> Option<&String> {
         match self {
             TokenMintTransition::V0(v0) => v0.public_note(),
+            TokenMintTransition::V1(v1) => v1.public_note(),
         }
     }
 
     fn public_note_owned(self) -> Option<String> {
         match self {
             TokenMintTransition::V0(v0) => v0.public_note_owned(),
+            TokenMintTransition::V1(v1) => v1.public_note_owned(),
         }
     }
 
     fn set_public_note(&mut self, public_note: Option<String>) {
         match self {
             TokenMintTransition::V0(v0) => v0.set_public_note(public_note),
+            TokenMintTransition::V1(v1) => v1.set_public_note(public_note),
         }
     }
 
     fn issued_to_identity_id(&self) -> Option<Identifier> {
         match self {
             TokenMintTransition::V0(v0) => v0.issued_to_identity_id(),
+            TokenMintTransition::V1(v1) => v1.issued_to_identity_id(),
         }
     }
 
@@ -74,12 +107,14 @@ impl TokenMintTransitionV0Methods for TokenMintTransition {
     ) -> Result<Identifier, ProtocolError> {
         match self {
             TokenMintTransition::V0(v0) => v0.recipient_id(token_configuration),
+            TokenMintTransition::V1(v1) => v1.recipient_id(token_configuration),
         }
     }
 
     fn set_issued_to_identity_id(&mut self, issued_to_identity_id: Option<Identifier>) {
         match self {
             TokenMintTransition::V0(v0) => v0.set_issued_to_identity_id(issued_to_identity_id),
+            TokenMintTransition::V1(v1) => v1.set_issued_to_identity_id(issued_to_identity_id),
         }
     }
 }
@@ -92,6 +127,7 @@ impl AllowedAsMultiPartyAction for TokenMintTransition {
     ) -> Result<Identifier, ProtocolError> {
         match self {
             TokenMintTransition::V0(v0) => v0.calculate_action_id(owner_id, platform_version),
+            TokenMintTransition::V1(v1) => v1.calculate_action_id(owner_id, platform_version),
         }
     }
 }
@@ -110,5 +146,62 @@ impl TokenMintTransition {
         bytes.extend_from_slice(&mint_amount.to_be_bytes());
 
         hash_double(bytes).into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+    use crate::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
+
+    fn mint_v0() -> TokenMintTransition {
+        TokenMintTransition::V0(TokenMintTransitionV0 {
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce: 4,
+                token_contract_position: 1,
+                data_contract_id: Identifier::new([1; 32]),
+                token_id: Identifier::new([2; 32]),
+                using_group_info: None,
+            }),
+            issued_to_identity_id: Some(Identifier::new([3; 32])),
+            amount: 500,
+            public_note: Some("note".to_string()),
+        })
+    }
+
+    #[test]
+    fn should_take_the_format_that_holds_the_random_minimum_amount() {
+        let original = mint_v0();
+        let mut mint = original.clone();
+        assert_eq!(mint.random_minimum_amount(), None);
+
+        mint.set_random_minimum_amount(None);
+        assert_eq!(mint, original, "a version 0 mint stays as it is");
+
+        mint.set_random_minimum_amount(Some(10));
+        assert!(matches!(mint, TokenMintTransition::V1(_)));
+        assert_eq!(mint.random_minimum_amount(), Some(10));
+        assert_eq!(mint.amount(), 500);
+        assert_eq!(
+            mint.issued_to_identity_id(),
+            original.issued_to_identity_id()
+        );
+        assert_eq!(mint.public_note(), original.public_note());
+        assert_eq!(mint.base(), original.base());
+        assert_eq!(
+            mint.calculate_action_id(Identifier::new([9; 32]), PlatformVersion::latest())
+                .expect("an action id"),
+            original
+                .calculate_action_id(Identifier::new([9; 32]), PlatformVersion::latest())
+                .expect("an action id"),
+            "the random minimum amount takes no part in the action id"
+        );
+
+        mint.set_random_minimum_amount(None);
+        assert_eq!(
+            mint, original,
+            "without a random amount the mint is version 0 again"
+        );
     }
 }

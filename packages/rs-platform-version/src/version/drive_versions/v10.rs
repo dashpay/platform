@@ -32,6 +32,9 @@ use crate::version::drive_versions::{
 /// * **Token conservation**: `DRIVE_TOKEN_METHOD_VERSIONS_V3` bumps
 ///   `calculate_total_tokens_balance` to 2, which counts the escrowed listings on the balance
 ///   side; its escrow methods, `None` before, are active.
+/// * **Random token amounts**: `DRIVE_TOKEN_METHOD_VERSIONS_V3` makes
+///   `settle_random_token_amounts` `Some(0)` (`None` before): the random token transfers and
+///   mints of a block are paid out from the block's random beacon.
 /// * **Escrow fee estimates**: the offers' escrow key sits a level below the other keys of the
 ///   prefunded specialized balances layer, so `estimated_cost_for_prefunded_specialized_balance_update`
 ///   2 and `add_estimation_costs_for_contract_fee_pot_update` 1 keep a deeper description of that
@@ -79,7 +82,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
         initialization: DriveInitializationMethodVersions {
             create_initial_state_structure: 5, // changed in v10: adds the token marketplace escrow trees
         },
-        token: DRIVE_TOKEN_METHOD_VERSIONS_V3, // changed in v10: calculate_total_tokens_balance 2 counts the token marketplace escrow; order_escrow active
+        token: DRIVE_TOKEN_METHOD_VERSIONS_V3, // changed in v10: calculate_total_tokens_balance 2 counts the token marketplace escrow; order_escrow active; settle_random_token_amounts Some(0)
         contract: DriveContractMethodVersions {
             fee_pots: DriveContractFeePotMethodVersions {
                 add_estimation_costs_for_contract_fee_pot_update: 1, // changed in v10: keeps a deeper prefunded balances layer description

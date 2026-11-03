@@ -1,5 +1,6 @@
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_transfer_transition::v0::TokenTransferTransitionV0;
+use dpp::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV1;
 use dpp::ProtocolError;
 use grovedb::TransactionArg;
 use std::sync::Arc;
@@ -91,6 +92,7 @@ impl TokenTransferTransitionActionV0 {
                 public_note,
                 shared_encrypted_note,
                 private_encrypted_note,
+                random_minimum_amount: None,
             },
             fee_result,
         ))
@@ -175,9 +177,89 @@ impl TokenTransferTransitionActionV0 {
                 public_note: public_note.clone(),
                 shared_encrypted_note: shared_encrypted_note.clone(),
                 private_encrypted_note: private_encrypted_note.clone(),
+                random_minimum_amount: None,
             },
             fee_result,
         ))
+    }
+
+    /// Converts a `TokenTransferTransitionV1` into a `TokenTransferTransitionActionV0`: the
+    /// version 0 conversion of its version 0 fields, carrying its random minimum amount.
+    ///
+    /// # Arguments
+    ///
+    /// The arguments of [`Self::try_from_token_transfer_transition_with_contract_lookup`], with
+    /// `value` a `TokenTransferTransitionV1`.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<(TokenTransferTransitionActionV0, FeeResult), Error>` - The action and the fees
+    ///   of the lookups it made.
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_from_token_transfer_transition_v1_with_contract_lookup(
+        drive: &Drive,
+        owner_id: Identifier,
+        value: TokenTransferTransitionV1,
+        approximate_without_state_for_costs: bool,
+        transaction: TransactionArg,
+        block_info: &BlockInfo,
+        get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, FeeResult), Error> {
+        let (v0, random_minimum_amount) = value.into_v0_and_random_minimum_amount();
+        let (mut action, fee_result) =
+            Self::try_from_token_transfer_transition_with_contract_lookup(
+                drive,
+                owner_id,
+                v0,
+                approximate_without_state_for_costs,
+                transaction,
+                block_info,
+                get_data_contract,
+                platform_version,
+            )?;
+        action.random_minimum_amount = random_minimum_amount;
+        Ok((action, fee_result))
+    }
+
+    /// Converts a borrowed `TokenTransferTransitionV1` into a `TokenTransferTransitionActionV0`:
+    /// the version 0 conversion of its version 0 fields, carrying its random minimum amount.
+    ///
+    /// # Arguments
+    ///
+    /// The arguments of
+    /// [`Self::try_from_borrowed_token_transfer_transition_with_contract_lookup`], with `value`
+    /// a borrowed `TokenTransferTransitionV1`.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<(TokenTransferTransitionActionV0, FeeResult), Error>` - The action and the fees
+    ///   of the lookups it made.
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_from_borrowed_token_transfer_transition_v1_with_contract_lookup(
+        drive: &Drive,
+        owner_id: Identifier,
+        value: &TokenTransferTransitionV1,
+        approximate_without_state_for_costs: bool,
+        transaction: TransactionArg,
+        block_info: &BlockInfo,
+        get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, FeeResult), Error> {
+        let (v0, random_minimum_amount) = value.clone().into_v0_and_random_minimum_amount();
+        let (mut action, fee_result) =
+            Self::try_from_borrowed_token_transfer_transition_with_contract_lookup(
+                drive,
+                owner_id,
+                &v0,
+                approximate_without_state_for_costs,
+                transaction,
+                block_info,
+                get_data_contract,
+                platform_version,
+            )?;
+        action.random_minimum_amount = random_minimum_amount;
+        Ok((action, fee_result))
     }
 }
 
@@ -236,6 +318,7 @@ mod tests {
             public_note: public_note.map(|s| s.to_string()),
             shared_encrypted_note: shared,
             private_encrypted_note: private_,
+            random_minimum_amount: None,
         }
     }
 

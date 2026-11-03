@@ -1,6 +1,7 @@
 use derive_more::From;
 
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;
+use dpp::balances::credits::TokenAmount;
 use dpp::identifier::Identifier;
 use dpp::prelude::{DerivationEncryptionKeyIndex, RootEncryptionKeyIndex};
 use dpp::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
@@ -41,6 +42,12 @@ impl TokenTransferTransitionActionAccessorsV0 for TokenTransferTransitionAction 
     fn recipient_id(&self) -> Identifier {
         match self {
             TokenTransferTransitionAction::V0(v0) => v0.recipient_id(),
+        }
+    }
+
+    fn random_minimum_amount(&self) -> Option<TokenAmount> {
+        match self {
+            TokenTransferTransitionAction::V0(v0) => v0.random_minimum_amount(),
         }
     }
 
