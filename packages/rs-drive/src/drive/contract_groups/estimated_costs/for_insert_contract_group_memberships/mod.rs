@@ -3,11 +3,9 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::contract_group::ContractGroupMembership;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerInformation;
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds the estimated layer information for the forward and backwards entries of a new
@@ -28,7 +26,7 @@ impl Drive {
     pub(crate) fn add_estimation_costs_for_insert_contract_group_memberships(
         contract_id: [u8; 32],
         memberships: &[ContractGroupMembership],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         match drive_version

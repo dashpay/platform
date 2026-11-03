@@ -146,6 +146,7 @@ Every key a contract can write, grouped by where it goes. **Since** is the proto
 | `rangeCountable`, `rangeSummable`, `rangeAverageable` | boolean | Provable counts, sums or averages over ranges of document ids. | 12 | [Document type range keys](contract-keywords/aggregates.md#document-type-rangecountable-rangesummable-rangeaverageable) |
 | `indexOnly` | boolean | Documents are never stored whole: the index entries are the rows. | 14 | [indexOnly](contract-keywords/index-only.md#indexonly) · [internals](drive/index-only-document-types.md) |
 | `entryPayload` | array of 1 to 16 names | On an index-only type, properties carried in each entry's value instead of a key. | 14 | [entryPayload](contract-keywords/index-only.md#entrypayload) |
+| `private` | object: `entrySize`, 1 to 4096 | A private type: its documents are encrypted entries of `entrySize` bytes, which the chain never reads. Its `properties` describe the plaintext. It declares only `type`, `properties`, `required`, `additionalProperties`, `minProperties`, `maxProperties`, `dependentRequired`, `$comment`, `description`, the two bounded key keys, and `documentsMutable`, `canBeDeleted` and `documentsKeepHistory` as `false`, each at most once; neither its properties nor `required` nor `dependentRequired` name a system field, no property at any depth declares `refersTo`, `distinctFrom`, `generatedFrom`, `encryptedFor` or `requiredSince`, and the contract's elected moderators may not moderate it. No reference, `countOf` or `sumOf` may name it, an update cannot change it, and a Batch refuses every document transition on it (`DocumentTypePrivateError`, 10425). | 15 | |
 
 ### Property
 
@@ -173,8 +174,8 @@ Every key a contract can write, grouped by where it goes. **Since** is the proto
 | `encryptedFor.recipient` | identifier property path or `"$ownerId"` | The identity the value is encrypted to. | 14 | [encryptedFor](contract-keywords/encrypted-for.md#example) |
 | `encryptedFor.recipientKey`, `.senderKey` | integer property paths | The properties holding the recipient's and the sender's key ids. | 14 | [encryptedFor](contract-keywords/encrypted-for.md#example) |
 | `encryptedFor.scheme` | `"ecdh-secp256k1-aes256-cbc"` | How the ciphertext is made. | 14 | [The scheme](contract-keywords/encrypted-for.md#the-scheme) |
-| `generatedFrom` | `{ "function", "params" }` | The platform generates the string from other properties of the document; on arrival when a document leaves it out. | 14 | [generatedFrom](contract-keywords/generated-from.md) · [internals](data-model/documents.md#generated-properties-generatedfrom) |
-| `generatedFrom.function` | `"sys.stringTransformations.homographSafeASCII"` | The system function that generates the value: `sys.stringTransformations.` `lowercase`, `uppercase`, `capitalize`, `camelCase`, `snakeCase` or `homographSafeASCII`. | 14 | [Functions](contract-keywords/generated-from.md#functions) |
+| `generatedFrom` | `{ "function", "params" }` | The platform generates the string from other properties of the document, on arrival when a document leaves it out; from 15 also an integer, a token's decimals read from state when the document is created and kept after. | 14 | [generatedFrom](contract-keywords/generated-from.md) · [internals](data-model/documents.md#generated-properties-generatedfrom) |
+| `generatedFrom.function` | `"sys.stringTransformations.homographSafeASCII"` | The system function that generates the value: `sys.stringTransformations.` `lowercase`, `uppercase`, `capitalize`, `camelCase`, `snakeCase` or `homographSafeASCII`; from 15 `sys.tokens.decimals`, of the token an identifier property names. | 14 | [Functions](contract-keywords/generated-from.md#functions) |
 | `generatedFrom.params` | property paths | The properties the function reads, in order. | 14 | [Params](contract-keywords/generated-from.md#params) |
 | `refersTo` | a declaration | What an identifier points at, checked when a document is written. See the [keys](#refersto). | 14 | [References](contract-keywords/refers-to.md) · [internals](data-model/documents.md#document-references-refersto) |
 
@@ -331,3 +332,4 @@ The first three limits come from the meta-schema, the rest from protocol version
 | `max_time_range_ttl_seconds` | 604800 | a `timeRange` index's `ttl` |
 | `max_contested_summed_value_magnitude` | 134217728 (2^27) | the `minimum` and `maximum` of a summed property on a type with a contested index |
 | `max_expiring_signed_summed_value_magnitude` | 134217728 (2^27) | the `minimum` and `maximum` of a summed property that admits negative values, on a type with a `ttl` |
+| `max_private_document_entry_size` | 4096 bytes (protocol version 15) | a private type's `private.entrySize` |

@@ -292,6 +292,7 @@ impl_wire_query!(
     proto::GetVotePollsByEndDateRequest,
     proto::GetYesNoVotePollStateRequest,
     proto::GetMasternodeYesNoVoteRequest,
+    proto::GetPrivateDocumentEntriesRequest,
     proto::WaitForStateTransitionResultRequest,
 );
 

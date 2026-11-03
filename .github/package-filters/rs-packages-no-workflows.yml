@@ -28,6 +28,11 @@ moderation-charters-contract: &moderation-charters-contract
   - packages/moderation-charters-contract/schema/**
   - packages/moderation-charters-contract/Cargo.toml
 
+decision-proposals-contract: &decision-proposals-contract
+  - packages/decision-proposals-contract/src/**
+  - packages/decision-proposals-contract/schema/**
+  - packages/decision-proposals-contract/Cargo.toml
+
 dashpay-contract: &dashpay-contract
   - packages/dashpay-contract/src/**
   - packages/dashpay-contract/schema/**
@@ -63,6 +68,7 @@ data-contracts: &data-contracts
   - *document-history-contract
   - *app-connect-contract
   - *moderation-charters-contract
+  - *decision-proposals-contract
 
 dpp: &dpp
   - packages/rs-dpp/**
@@ -119,6 +125,7 @@ rs-sdk-trusted-context-provider: &sdk_trusted_context_provider
   - packages/rs-sdk-trusted-context-provider/**
   - *dash_async
   - *context_provider
+  - *core_proof
   - *dpp
 
 dapi-grpc: &dapi_grpc
@@ -155,6 +162,10 @@ dash-sdk: &sdk
   - *platform_encryption
   - *dapi_client
   - *drive
+
+dash-sdk-cxx:
+  - packages/rs-sdk-cxx/**
+  - *sdk
 
 rs-sdk-ffi: &sdk_ffi
   - packages/rs-sdk-ffi/**

@@ -832,6 +832,8 @@ mod generated_from_tests {
         let action_data = |platform_version: &PlatformVersion| {
             let (result, _) =
                 DocumentReplaceTransitionAction::try_from_borrowed_document_replace_transition(
+                    &fixture.platform.drive,
+                    None,
                     replace_transition,
                     fixture.identity.id(),
                     &stored,
