@@ -1613,6 +1613,8 @@ impl PlatformWallet {
         P: dpp::shielded::builder::OrchardProver,
         IS: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> + Send + Sync,
     {
+        let (sdk, public_keys) = public_keys.validate_for_operation(&self.sdk)?;
+        let sdk = Arc::new(sdk);
         let public_keys: Vec<(IdentityPublicKey, IdentityPublicKeyInCreation)> = public_keys
             .into_keys()
             .into_values()
@@ -1627,7 +1629,7 @@ impl PlatformWallet {
             // registration step.
             let keyset = self.derive_spend_keyset(seed, account).await?;
             super::shielded::operations::identity_create_from_shielded_pool(
-                &self.sdk,
+                &sdk,
                 coordinator.store(),
                 Some(&self.persister),
                 self.wallet_id,

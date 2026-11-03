@@ -142,10 +142,11 @@ impl IdentityWallet {
         S: Signer<IdentityPublicKey> + Send + Sync,
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
-        // Step 1: pre-flight. `keys` already passed the creation check; the
-        // lock must pay for them, checked before it is built, resumed or
-        // signed for, since Platform would reject an underfunded one.
-        let funding = self.enforce_identity_create_floor(funding, &keys).await?;
+        // Step 1: validate at one operation version before funding can spend.
+        let (sdk, keys) = keys.validate_for_operation(&self.sdk)?;
+        let funding = self
+            .enforce_identity_create_floor(funding, &keys, sdk.version())
+            .await?;
 
         // Step 2: resolve funding to a proof + derivation path. The
         // resolver catches IS-lock timeouts and surfaces them as a
@@ -216,7 +217,7 @@ impl IdentityWallet {
                 "identity registration",
                 |proof, s| {
                     placeholder.put_to_platform_and_wait_for_response_with_signer(
-                        &self.sdk,
+                        &sdk,
                         proof,
                         &path,
                         asset_lock_signer,

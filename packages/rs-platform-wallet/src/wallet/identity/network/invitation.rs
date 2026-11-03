@@ -326,8 +326,8 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        let identity = self
-            .sdk
+        let (sdk, keys) = keys.validate_for_operation(&self.sdk)?;
+        let identity = sdk
             .claim_invitation(invitation, keys.into_keys(), identity_signer, settings)
             .await?;
 
