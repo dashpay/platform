@@ -197,28 +197,35 @@ public class KeyDerivation {
     public static func getIdentityAuthenticationPath(network: Network = .mainnet,
                                                     identityIndex: UInt32,
                                                     keyIndex: UInt32) throws -> String {
-        var error = FFIError()
-        let maxPathLen = 256
-        let pathBuffer = UnsafeMutablePointer<CChar>.allocate(capacity: maxPathLen)
-        defer {
-            pathBuffer.deallocate()
+        try ownedString("platform_wallet_identity_authentication_path") { out in
+            try platform_wallet_identity_authentication_path(
+                network.ffiValue, identityIndex, keyIndex, &out
+            ).check()
         }
+    }
 
-        let success = derivation_identity_authentication_path(
-            network.ffiValue, identityIndex, keyIndex,
-            pathBuffer, maxPathLen, &error)
-
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
-            }
+    /// Throws when `value` contains a NUL. The C string would end there, so
+    /// the FFI would answer for the prefix.
+    static func requireNoNUL(_ value: String, _ name: String) throws {
+        guard !value.utf8.contains(0) else {
+            throw PlatformWalletError.invalidParameter("\(name) must not contain NUL")
         }
+    }
 
-        guard success else {
-            throw KeyWalletError(ffiError: error)
+    /// Runs `call` and returns the string it wrote to its out pointer, freed
+    /// with `free`.
+    static func ownedString(
+        _ function: String,
+        free: (UnsafeMutablePointer<CChar>?) -> Void = platform_wallet_free_string,
+        _ call: (inout UnsafeMutablePointer<CChar>?) throws -> Void
+    ) throws -> String {
+        var outPtr: UnsafeMutablePointer<CChar>? = nil
+        try call(&outPtr)
+        guard let ptr = outPtr else {
+            throw PlatformWalletError.nullPointer("\(function) returned a NULL string pointer")
         }
-
-        return String(cString: pathBuffer)
+        defer { free(ptr) }
+        return String(cString: ptr)
     }
 
     /// Parse a derivation path string to indices

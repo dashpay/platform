@@ -6664,7 +6664,6 @@ dependencies = [
  "dashpay-contract",
  "dpp",
  "jni 0.21.1",
- "key-wallet-ffi",
  "log",
  "platform-wallet-ffi",
  "rs-sdk-ffi",

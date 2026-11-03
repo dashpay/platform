@@ -18,19 +18,11 @@ public class Address {
     ///   - network: The network type
     /// - Returns: True if the address is valid
     public static func validate(_ address: String, network: Network = .mainnet) -> Bool {
-        var error = FFIError()
-
-        let isValid = address.withCString { addressCStr in
-            address_validate(addressCStr, network.ffiValue, &error)
+        guard !address.utf8.contains(0) else { return false }
+        let result = address.withCString { addressCStr in
+            platform_wallet_address_validate(addressCStr, network.ffiValue)
         }
-
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
-            }
-        }
-
-        return isValid
+        return PlatformWalletResult(result).isSuccess
     }
 
     /// Get the type of an address

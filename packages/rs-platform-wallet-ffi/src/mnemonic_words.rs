@@ -94,17 +94,22 @@ impl From<FFIMnemonicLanguage> for key_wallet::Language {
 /// caller owns `*out_string` and must free it via
 /// [`crate::xpub_render::platform_wallet_free_string`].
 ///
+/// `language` is an [`FFIMnemonicLanguage`] value, taken as a plain integer so
+/// an unknown value fails with `ErrorInvalidParameter` instead of being
+/// undefined behaviour.
+///
 /// # Safety
 /// `out_string` must point to writable memory for one `*mut c_char`.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_mnemonic_word_list(
-    language: FFIMnemonicLanguage,
+    language: u32,
     out_string: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_string);
     *out_string = std::ptr::null_mut();
 
-    let language: key_wallet::Language = language.into();
+    let language: key_wallet::Language =
+        unwrap_result_or_return!(FFIMnemonicLanguage::try_from(language)).into();
     let joined = language.word_list().join("\n");
     let c = unwrap_result_or_return!(CString::new(joined));
     *out_string = c.into_raw();
@@ -245,7 +250,8 @@ mod tests {
         // word_list: English -> 2048 \n-joined words including "abandon"/"zoo".
         let mut wl: *mut c_char = std::ptr::null_mut();
         unsafe {
-            let r = platform_wallet_mnemonic_word_list(FFIMnemonicLanguage::English, &mut wl);
+            let r =
+                platform_wallet_mnemonic_word_list(FFIMnemonicLanguage::English as u32, &mut wl);
             assert_eq!(r.code, PlatformWalletFFIResultCode::Success);
             assert!(!wl.is_null());
             let s = CStr::from_ptr(wl).to_str().unwrap().to_owned();
@@ -260,7 +266,10 @@ mod tests {
         // confirms the enum conversion actually selects the wordlist.
         let mut wl_ja: *mut c_char = std::ptr::null_mut();
         unsafe {
-            let r = platform_wallet_mnemonic_word_list(FFIMnemonicLanguage::Japanese, &mut wl_ja);
+            let r = platform_wallet_mnemonic_word_list(
+                FFIMnemonicLanguage::Japanese as u32,
+                &mut wl_ja,
+            );
             assert_eq!(r.code, PlatformWalletFFIResultCode::Success);
             let s = CStr::from_ptr(wl_ja).to_str().unwrap().to_owned();
             assert_eq!(s.split('\n').count(), 2048);
@@ -271,7 +280,7 @@ mod tests {
         // word_list NULL out-pointer -> error
         unsafe {
             let r = platform_wallet_mnemonic_word_list(
-                FFIMnemonicLanguage::English,
+                FFIMnemonicLanguage::English as u32,
                 std::ptr::null_mut(),
             );
             assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
@@ -353,6 +362,10 @@ mod tests {
             let r = platform_wallet_mnemonic_generate(12, 10, &mut bad);
             assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
             assert!(bad.is_null());
+            let mut list: *mut c_char = NonNull::dangling().as_ptr();
+            let r = platform_wallet_mnemonic_word_list(10, &mut list);
+            assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+            assert!(list.is_null());
         }
 
         // validate: any supported language, but not a bad checksum or gibberish

@@ -169,8 +169,8 @@ fn to_c_string(env: &mut JNIEnv, value: &JString) -> Option<CString> {
 // Keep the raw C ABI of the dependent FFI crates reachable so their symbols
 // stay exported from this cdylib even before the shim references every
 // module. `dash_sdk_version`'s address is enough to anchor rs-sdk-ffi;
-// platform-wallet-ffi and key-wallet-ffi are anchored once their bridges
-// land (persistence.rs, signer.rs, wallet_manager.rs).
+// platform-wallet-ffi is anchored once its bridges land (persistence.rs,
+// signer.rs, wallet_manager.rs).
 #[allow(dead_code)]
 fn _anchor() -> *const c_char {
     dash_sdk_version()

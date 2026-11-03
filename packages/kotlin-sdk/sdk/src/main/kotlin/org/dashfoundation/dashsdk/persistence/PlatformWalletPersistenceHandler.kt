@@ -134,8 +134,8 @@ class PlatformWalletPersistenceHandler(
     /**
      * Where the sweep pass gets a stored loser's input outpoints (the
      * outpoint-keyed hold, see `applySweptTransactions`). The production
-     * default decodes the stored consensus bytes through key-wallet-ffi's
-     * `transaction_decode`; tests inject a fake keyed by txid, since the
+     * default decodes the stored consensus bytes through platform-wallet-ffi's
+     * `platform_wallet_transaction_decode`; tests inject a fake keyed by txid, since the
      * native library is not loadable under Robolectric.
      */
     private val storedTransactionInputs: StoredTransactionInputs =
@@ -4265,8 +4265,8 @@ fun interface StoredTransactionInputs {
 }
 
 /**
- * Production [StoredTransactionInputs]: key-wallet-ffi's
- * `transaction_decode` through [org.dashfoundation.dashsdk.keywallet.TransactionDecoder].
+ * Production [StoredTransactionInputs]: platform-wallet-ffi's
+ * `platform_wallet_transaction_decode` through [org.dashfoundation.dashsdk.keywallet.TransactionDecoder].
  * The decoder is a stateless marshaler — it takes no wallet-manager lock —
  * so calling it from inside a persistence callback (which runs while Rust
  * holds that lock) cannot deadlock; the "no native calls under
