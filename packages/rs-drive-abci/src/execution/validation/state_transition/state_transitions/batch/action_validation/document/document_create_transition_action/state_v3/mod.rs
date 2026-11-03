@@ -72,8 +72,8 @@ impl DocumentCreateTransitionActionStateValidationV3 for DocumentCreateTransitio
         // refuses from protocol version 15 but a contract registered earlier may keep, lets a
         // document with the same values bypass it. Such a document would take the unique index
         // entry the contest awards at its end, leaving the award nothing to take.
-        // The poll is looked up by the values as given, so the one remaining split, `""` and
-        // `"\0"` sharing an index key, is not caught here.
+        // The poll is read at its path, which encodes the values as index keys, so a create of
+        // `"\0"` finds the live contest of `""` (both are the key `[0]`) and is refused too.
         if self.prefunded_voting_balance().is_some() {
             return Ok(SimpleConsensusValidationResult::new());
         }

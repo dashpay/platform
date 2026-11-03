@@ -379,8 +379,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     (`Index::contest_is_decided_by_index_values`, `InvalidContractStructure`),
 ///     and document create state validation 3 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`)
 ///     refuses a create outside the contest of a type registered earlier with one while a
-///     contest for the same values is live (`DuplicateUniqueIndexError`), looking the poll
-///     up by the values as given. Only such a type pays that lookup, and not for a document
+///     contest for the same index keys is live (`DuplicateUniqueIndexError`), reading the
+///     poll at its path, which encodes the values as index keys, so a create of `"\0"` finds
+///     the contest of `""`. Only such a type pays that lookup, and not for a document
 ///     with a null index value, whose unique index entry is kept per document. A contract
 ///     registered earlier with such a contest keeps it, but an update, which carries the
 ///     whole contract, is refused like a registration. Protocol v14 and earlier keep

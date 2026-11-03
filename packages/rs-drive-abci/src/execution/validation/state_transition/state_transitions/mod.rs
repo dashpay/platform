@@ -4234,6 +4234,15 @@ pub(in crate::execution) mod tests {
 
         const CONTRACT: &str = "tests/supporting_files/contract/dpns/dpns-contract-contested-field-match-outside-index.json";
 
+        /// [`CONTRACT`] with the parent domain optional, so a domain may leave a contested index
+        /// property out.
+        const OPTIONAL_PARENT_CONTRACT: &str = "tests/supporting_files/contract/dpns/dpns-contract-contested-field-match-outside-index-optional-parent.json";
+
+        /// A contest on `normalizedLabel`, a property of the index, whose match takes `""` but
+        /// not `"\0"`, two values sharing one index key.
+        const EMPTY_STRING_SPLIT_CONTRACT: &str =
+            "tests/supporting_files/contract/dpns/dpns-contract-contested-empty-string-split.json";
+
         #[allow(clippy::too_many_arguments)]
         async fn create_domain(
             platform: &TempPlatform<MockCoreRPCLike>,
@@ -4242,6 +4251,7 @@ pub(in crate::execution) mod tests {
             rng: &mut StdRng,
             label: &str,
             normalized_label: &str,
+            parent: Option<&str>,
             contested: bool,
             time_ms: u64,
             platform_version: &PlatformVersion,
@@ -4264,8 +4274,16 @@ pub(in crate::execution) mod tests {
                 )
                 .expect("expected a random domain document");
 
-            document.set("parentDomainName", "dash".into());
-            document.set("normalizedParentDomainName", "dash".into());
+            match parent {
+                Some(parent) => {
+                    document.set("parentDomainName", parent.into());
+                    document.set("normalizedParentDomainName", parent.into());
+                }
+                None => {
+                    document.remove("parentDomainName");
+                    document.remove("normalizedParentDomainName");
+                }
+            }
             document.set("label", label.into());
             document.set("normalizedLabel", normalized_label.into());
             document.set("records.identity", document.owner_id().into());
@@ -4344,14 +4362,38 @@ pub(in crate::execution) mod tests {
             processing_result.into_execution_results().remove(0)
         }
 
-        /// Stores the contract without validating it, as a contract registered at protocol
-        /// version 14 is, opens a contest on `dash`/`quantum` with the lowercase label, creates
-        /// a second domain with `second_label` / `second_normalized_label` without prefunding,
-        /// then advances past the poll's end date and runs the resolver.
+        /// [`run_on`] with [`CONTRACT`]: a contest on `dash`/`quantum` with the lowercase label,
+        /// then a second domain under `dash`.
         async fn run(
             protocol_version: u32,
             second_label: &str,
             second_normalized_label: &str,
+        ) -> (
+            StateTransitionExecutionResult,
+            StateTransitionExecutionResult,
+            Result<(), crate::error::Error>,
+        ) {
+            run_on(
+                CONTRACT,
+                protocol_version,
+                ("quantum", "quantum"),
+                (second_label, second_normalized_label),
+                Some("dash"),
+            )
+            .await
+        }
+
+        /// Stores the contract at `contract_path` without validating it, as a contract
+        /// registered at protocol version 14 is, opens a contest with the `contender`'s label and
+        /// normalized label, creates a second domain with `second`'s without prefunding, both
+        /// under `parent` (none when `None`), then advances past the poll's end date and runs
+        /// the resolver.
+        async fn run_on(
+            contract_path: &str,
+            protocol_version: u32,
+            contender_labels: (&str, &str),
+            second: (&str, &str),
+            parent: Option<&str>,
         ) -> (
             StateTransitionExecutionResult,
             StateTransitionExecutionResult,
@@ -4378,7 +4420,7 @@ pub(in crate::execution) mod tests {
 
             let contract = setup_contract(
                 &platform.drive,
-                CONTRACT,
+                contract_path,
                 None,
                 Some(contract_owner.0.id().to_buffer()),
                 None::<fn(&mut DataContract)>,
@@ -4391,8 +4433,9 @@ pub(in crate::execution) mod tests {
                 &contract,
                 &contender,
                 &mut rng,
-                "quantum",
-                "quantum",
+                contender_labels.0,
+                contender_labels.1,
+                parent,
                 true,
                 3000,
                 platform_version,
@@ -4404,8 +4447,9 @@ pub(in crate::execution) mod tests {
                 &contract,
                 &other,
                 &mut rng,
-                second_label,
-                second_normalized_label,
+                second.0,
+                second.1,
+                parent,
                 false,
                 4000,
                 platform_version,
@@ -4541,6 +4585,73 @@ pub(in crate::execution) mod tests {
             assert!(
                 resolver_result.is_ok(),
                 "control: got {:?}",
+                resolver_result
+            );
+        }
+
+        /// A domain leaving a contested index property out holds a null index value, and a
+        /// unique index entry holding a null is kept per document, apart from the entry the
+        /// award takes: protocol version 15 neither looks its contest up nor refuses it, even
+        /// while a contest for the same values is live, and the award goes through.
+        #[tokio::test]
+        async fn should_admit_a_create_with_a_null_index_value_beside_a_live_contest_at_the_latest_protocol_version(
+        ) {
+            let (contested_result, second_result, resolver_result) = run_on(
+                OPTIONAL_PARENT_CONTRACT,
+                PlatformVersion::latest().protocol_version,
+                ("quantum", "quantum"),
+                ("Quantum", "quantum"),
+                None,
+            )
+            .await;
+            assert_matches!(
+                contested_result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "the contender must join the contest"
+            );
+            assert_matches!(
+                second_result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "a document holding a null index value takes no entry from the contest"
+            );
+            assert!(
+                resolver_result.is_ok(),
+                "the award must go through; got {:?}",
+                resolver_result
+            );
+        }
+
+        /// `""` and `"\0"` share one index key, so a contest whose match tells them apart splits
+        /// documents with the same key. The poll is looked up by its path, which encodes the
+        /// values as index keys, so protocol version 15 finds the contest of `""` from a create
+        /// of `"\0"` and refuses it.
+        #[tokio::test]
+        async fn should_refuse_a_create_sharing_a_live_contests_index_key_at_the_latest_protocol_version(
+        ) {
+            let (contested_result, second_result, resolver_result) = run_on(
+                EMPTY_STRING_SPLIT_CONTRACT,
+                PlatformVersion::latest().protocol_version,
+                ("abc", ""),
+                ("abd", "\0"),
+                Some("dash"),
+            )
+            .await;
+            assert_matches!(
+                contested_result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "the empty normalized label matches, so its domain joins the contest"
+            );
+            assert_matches!(
+                second_result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::DuplicateUniqueIndexError(_)),
+                    ..
+                },
+                "\"\\0\" does not match, and its domain would take the contest's index key"
+            );
+            assert!(
+                resolver_result.is_ok(),
+                "the award must find its unique index entry free; got {:?}",
                 resolver_result
             );
         }
