@@ -92,6 +92,7 @@ impl IdentityWallet {
         input_address_signer: &AS,
         settings: Option<PutSettings>,
     ) -> Result<(Identity, dash_sdk::query_types::AddressInfos, u64), PlatformWalletError> {
+        let (sdk, keys) = keys.validate_for_operation(&self.sdk)?;
         if inputs.is_empty() {
             return Err(PlatformWalletError::InvalidIdentityData(
                 "At least one input address is required".to_string(),
@@ -109,7 +110,7 @@ impl IdentityWallet {
         // always the source of truth at submit time.
         let (mut registered_identity, address_infos, proof_height) = identity
             .put_with_address_funding_fetching_nonces(
-                &self.sdk,
+                &sdk,
                 inputs,
                 output,
                 identity_signer,

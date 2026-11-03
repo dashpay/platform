@@ -22,6 +22,7 @@
 //! keeping a copy of the fee schedule.
 
 use std::collections::BTreeMap;
+use std::ops::RangeInclusive;
 
 use dpp::address_funds::PlatformAddress;
 use dpp::consensus::ConsensusError;
@@ -37,8 +38,10 @@ use dpp::state_transition::identity_create_from_addresses_transition::IdentityCr
 use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use dpp::state_transition::StateTransitionEstimatedFeeValidation;
-use dpp::version::PlatformVersion;
+use dpp::state_transition::{
+    active_version_range_for_keys_in_creation, StateTransitionEstimatedFeeValidation,
+};
+use dpp::version::{PlatformVersion, ProtocolVersion, ALL_VERSIONS};
 use dpp::ProtocolError;
 
 use super::IdentityWallet;
@@ -206,6 +209,14 @@ pub enum IdentityCreationKeysError {
         /// The security level without an authentication key.
         security_level: SecurityLevel,
     },
+    /// A key's format is not active at the operation's protocol version.
+    #[error("identity key formats are not active at protocol version {protocol_version}; active range is {active_range:?}")]
+    InactiveKeyFormat {
+        /// The operation's protocol version.
+        protocol_version: ProtocolVersion,
+        /// Protocol versions that admit these key formats.
+        active_range: RangeInclusive<ProtocolVersion>,
+    },
     /// Platform's identity-create structure validation refuses the key set.
     #[error(
         "Platform would refuse these identity keys: {}",
@@ -231,7 +242,8 @@ fn join_consensus_errors(errors: &[ConsensusError]) -> String {
 /// A key set that passed the pre-flight for creating an identity.
 ///
 /// Build it with [`IdentityWallet::identity_creation_keys`], which validates at
-/// the wallet's own protocol version. A caller-built set (for example one
+/// the wallet's own protocol version. Creation writes revalidate against a pinned
+/// operation version before funding or signing. A caller-built set (for example one
 /// with `ECDSA_HASH160` keys) passes as long as it has the required
 /// authentication levels and Platform's structure validation accepts it.
 #[derive(Debug, Clone, PartialEq)]
@@ -281,6 +293,13 @@ impl IdentityCreationKeys {
             .values()
             .map(IdentityPublicKeyInCreation::from)
             .collect();
+        let active_range = active_version_range_for_keys_in_creation(&public_keys, ALL_VERSIONS);
+        if !active_range.contains(&platform_version.protocol_version) {
+            return Err(IdentityCreationKeysError::InactiveKeyFormat {
+                protocol_version: platform_version.protocol_version,
+                active_range,
+            });
+        }
         let validation = IdentityPublicKeyInCreation::validate_identity_public_keys_structure(
             &public_keys,
             true,
@@ -293,6 +312,16 @@ impl IdentityCreationKeys {
             });
         }
         Ok(Self { keys })
+    }
+
+    /// Revalidate at a stable version shared by preflight and submission.
+    pub(crate) fn validate_for_operation(
+        self,
+        sdk: &dash_sdk::Sdk,
+    ) -> Result<(dash_sdk::Sdk, Self), IdentityCreationKeysError> {
+        let operation = sdk.clone_with_pinned_version();
+        let keys = Self::new_identity(self.keys, operation.version())?;
+        Ok((operation, keys))
     }
 
     /// The validated keys.
@@ -459,13 +488,14 @@ impl IdentityWallet {
         &self,
         funding: AssetLockFunding,
         keys: &IdentityCreationKeys,
+        platform_version: &PlatformVersion,
     ) -> Result<AssetLockFunding, PlatformWalletError> {
         let required_duffs = asset_lock_create_min_duffs(
             keys.keys()
                 .values()
                 .map(IdentityPublicKeyInCreation::from)
                 .collect(),
-            self.sdk.version(),
+            platform_version,
         )
         .map_err(protocol_error)?;
         let existing_lock_amount_duffs = match &funding {
@@ -483,16 +513,25 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
+    #[cfg(feature = "shielded")]
+    use crate::wallet::shielded::{
+        CachedOrchardProver, FileBackedShieldedStore, NetworkShieldedCoordinator,
+    };
+    use dash_sdk::platform::types::epoch::EpochQuery;
+    use dash_sdk::platform::LimitQuery;
     use dashcore::hashes::Hash;
     use dashcore::{OutPoint, Txid};
     use dpp::address_funds::{AddressFundsFeeStrategyStep, AddressWitness};
     use dpp::balances::credits::CREDITS_PER_DUFF;
+    use dpp::block::extended_epoch_info::{v0::ExtendedEpochInfoV0, ExtendedEpochInfo};
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::state::state_error::StateError;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+    use dpp::identity::identity_public_key::v1::IdentityPublicKeyV1;
     use dpp::identity::signer::Signer as IdentitySigner;
     use dpp::state_transition::StateTransitionStructureValidation;
     use dpp::validation::SimpleConsensusValidationResult;
+    use drive_proof_verifier::types::ExtendedEpochInfos;
     use key_wallet::bip32::{DerivationPath, ExtendedPubKey};
     use key_wallet::signer::{ExtendedPubKeySigner, Signer as CoreSigner, SignerMethod};
     use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount;
@@ -501,6 +540,7 @@ mod tests {
         test_platform_wallet_manager, test_platform_wallet_manager_with_sdk,
         track_registration_asset_lock, NoopTestPersister,
     };
+    use crate::wallet::identity::crypto::ParsedInvitation;
     use crate::{PlatformWallet, PlatformWalletManager};
 
     const LAYOUTS: [IdentityCreationKeyLayout; 2] = [
@@ -967,6 +1007,269 @@ mod tests {
         ));
     }
 
+    fn keys_with_future_formats() -> Vec<BTreeMap<KeyID, IdentityPublicKey>> {
+        let mut version_one = keys_from_layout(IdentityCreationKeyLayout::NewIdentity);
+        let IdentityPublicKey::V0(key) = version_one.remove(&1).expect("critical key") else {
+            panic!("layout uses V0 keys")
+        };
+        version_one.insert(
+            1,
+            IdentityPublicKey::V1(IdentityPublicKeyV1::from_v0_with_limits(key, None, None)),
+        );
+        let mut group_bound =
+            keys_from_layout(IdentityCreationKeyLayout::NewIdentityWithDashPayKeys);
+        let IdentityPublicKey::V0(group_key) = group_bound.get_mut(&4).expect("encryption key")
+        else {
+            panic!("layout uses V0 keys")
+        };
+        group_key.contract_bounds = Some(ContractBounds::ContractGroup {
+            id: SystemDataContract::Dashpay.id(),
+        });
+        vec![version_one, group_bound]
+    }
+
+    async fn assert_format_activation(keys: BTreeMap<KeyID, IdentityPublicKey>) {
+        let sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::get(13).expect("version 13"))
+            .build()
+            .expect("sdk");
+        let (manager, wallet_id) =
+            test_platform_wallet_manager_with_sdk(Arc::new(sdk), Arc::new(NoopTestPersister)).await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let err = wallet
+            .identity()
+            .identity_creation_keys(keys.clone())
+            .expect_err("inactive format at 13");
+        assert!(
+            matches!(
+                err,
+                PlatformWalletError::IdentityCreationKeys(
+                    IdentityCreationKeysError::InactiveKeyFormat {
+                        protocol_version: 13,
+                        ..
+                    }
+                )
+            ),
+            "{err:?}"
+        );
+        assert_stale_keys_refused_at_write(
+            &wallet,
+            new_identity(keys.clone()).expect("active at latest"),
+        )
+        .await;
+        IdentityCreationKeys::new_identity(
+            keys.clone(),
+            PlatformVersion::get(14).expect("version 14"),
+        )
+        .expect("format active at 14");
+        new_identity(keys).expect("format active at latest version");
+    }
+
+    #[tokio::test]
+    async fn should_refuse_v1_creation_keys_before_activation() {
+        assert_format_activation(keys_with_future_formats().remove(0)).await;
+    }
+
+    #[tokio::test]
+    async fn should_refuse_group_bound_creation_keys_before_activation() {
+        assert_format_activation(keys_with_future_formats().remove(1)).await;
+    }
+
+    fn older_only_keys() -> BTreeMap<KeyID, IdentityPublicKey> {
+        let mut keys = det_style_keys();
+        keys.get_mut(&1)
+            .expect("critical key")
+            .set_data(BinaryData::new(vec![0xAB; 19]));
+        keys
+    }
+
+    async fn assert_stale_keys_refused_at_write(
+        wallet: &PlatformWallet,
+        keys: IdentityCreationKeys,
+    ) {
+        let err = wallet
+            .identity()
+            .register_identity_with_funding(
+                AssetLockFunding::FromWalletBalance {
+                    amount_duffs: 0,
+                    account_index: 0,
+                },
+                0,
+                keys.clone(),
+                &UnreachableSigner,
+                &UnreachableSigner,
+                None,
+            )
+            .await
+            .expect_err("stale keys must be refused before funding");
+        assert!(
+            matches!(err, PlatformWalletError::IdentityCreationKeys(_)),
+            "{err:?}"
+        );
+        let err = wallet
+            .identity()
+            .register_from_addresses(
+                keys.clone(),
+                BTreeMap::new(),
+                None,
+                0,
+                &UnreachableSigner,
+                &UnreachableSigner,
+                None,
+            )
+            .await
+            .expect_err("stale keys must be refused before fetching nonces");
+        assert!(
+            matches!(err, PlatformWalletError::IdentityCreationKeys(_)),
+            "{err:?}"
+        );
+        let invitation = ParsedInvitation {
+            voucher_key: dpp::secp256k1::SecretKey::from_secret_bytes([1; 32]).expect("test key"),
+            voucher_key_network: dashcore::Network::Mainnet,
+            funding_txid: "00".repeat(32),
+            islock_hex: None,
+            inviter: None,
+        };
+        let err = wallet
+            .identity()
+            .claim_invitation(invitation, 0, keys, &UnreachableSigner, None)
+            .await
+            .expect_err("stale keys must be refused before voucher processing");
+        assert!(
+            matches!(err, PlatformWalletError::IdentityCreationKeys(_)),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_revalidate_creation_keys_transferred_from_an_older_wallet() {
+        let sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::get(13).expect("version 13"))
+            .build()
+            .expect("sdk");
+        assert_eq!(sdk.version().protocol_version, 13);
+        let (older_manager, older_id) =
+            test_platform_wallet_manager_with_sdk(Arc::new(sdk), Arc::new(NoopTestPersister)).await;
+        let older_wallet = older_manager.get_wallet(&older_id).await.expect("wallet");
+        let keys = older_wallet
+            .identity()
+            .identity_creation_keys(older_only_keys())
+            .expect("accepted at 13");
+        let sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .expect("latest sdk");
+        assert_eq!(
+            sdk.version().protocol_version,
+            PlatformVersion::latest().protocol_version
+        );
+        let (manager, wallet_id) =
+            test_platform_wallet_manager_with_sdk(Arc::new(sdk), Arc::new(NoopTestPersister)).await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        assert_stale_keys_refused_at_write(&wallet, keys).await;
+    }
+
+    #[tokio::test]
+    async fn should_revalidate_creation_keys_after_the_same_wallet_sdk_ratchets() {
+        let older = PlatformVersion::get(13).expect("version 13");
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_initial_version(older)
+            .build()
+            .expect("sdk");
+        let epoch = ExtendedEpochInfo::from(ExtendedEpochInfoV0 {
+            index: 0,
+            first_block_time: 0,
+            first_block_height: 0,
+            first_core_block_height: 0,
+            fee_multiplier_permille: 0,
+            protocol_version: PlatformVersion::latest().protocol_version,
+        });
+        sdk.mock()
+            .expect_fetch::<ExtendedEpochInfo, _>(
+                LimitQuery {
+                    query: EpochQuery::genesis(),
+                    limit: Some(1),
+                    start_info: None,
+                },
+                Some(epoch.clone()),
+            )
+            .await
+            .expect("probe");
+        sdk.mock()
+            .expect_fetch_many::<_, ExtendedEpochInfo, _, ExtendedEpochInfos>(
+                LimitQuery {
+                    query: EpochQuery::ascending_from(0),
+                    limit: Some(2),
+                    start_info: None,
+                },
+                Some(ExtendedEpochInfos::from_iter([(0, Some(epoch))])),
+            )
+            .await
+            .expect("confirmation");
+        let sdk = Arc::new(sdk);
+        let (manager, wallet_id) =
+            test_platform_wallet_manager_with_sdk(sdk.clone(), Arc::new(NoopTestPersister)).await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let keys = wallet
+            .identity()
+            .identity_creation_keys(older_only_keys())
+            .expect("accepted at 13");
+        sdk.refresh_protocol_version()
+            .await
+            .expect("verified refresh");
+        assert_eq!(
+            wallet.sdk().version().protocol_version,
+            PlatformVersion::latest().protocol_version
+        );
+        assert_stale_keys_refused_at_write(&wallet, keys).await;
+    }
+
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_revalidate_creation_keys_before_shielded_key_derivation() {
+        let older = PlatformVersion::get(13).expect("version 13");
+        let keys =
+            IdentityCreationKeys::new_identity(older_only_keys(), older).expect("accepted at 13");
+        let sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .expect("latest sdk");
+        assert_eq!(
+            sdk.version().protocol_version,
+            PlatformVersion::latest().protocol_version
+        );
+        let (manager, wallet_id) =
+            test_platform_wallet_manager_with_sdk(Arc::new(sdk), Arc::new(NoopTestPersister)).await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let dir = tempfile::tempdir().expect("isolated shielded store");
+        let path = dir.path().join("tree.sqlite");
+        let store = FileBackedShieldedStore::open_path(&path, 100).expect("store");
+        let coordinator = Arc::new(NetworkShieldedCoordinator::new(
+            wallet.sdk_arc(),
+            wallet.network(),
+            path,
+            store,
+        ));
+        let err = wallet
+            .shielded_identity_create_from_pool(
+                &coordinator,
+                &[1; 64],
+                0,
+                0,
+                keys,
+                0,
+                PlatformAddress::P2pkh([1; 20]),
+                &UnreachableSigner,
+                &CachedOrchardProver::new(),
+            )
+            .await
+            .expect_err("stale keys must be refused before shielded derivation");
+        assert!(
+            matches!(err, PlatformWalletError::IdentityCreationKeys(_)),
+            "{err:?}"
+        );
+    }
+
     #[test]
     fn should_name_the_consensus_reason_in_a_refusal() {
         let err = new_identity(with_key(
@@ -1298,6 +1601,27 @@ mod tests {
         }
 
         fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+            false
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl IdentitySigner<PlatformAddress> for UnreachableSigner {
+        async fn sign(
+            &self,
+            _key: &PlatformAddress,
+            _data: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
+            unreachable!("key validation must precede address signing")
+        }
+        async fn sign_create_witness(
+            &self,
+            _key: &PlatformAddress,
+            _data: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            unreachable!("key validation must precede address signing")
+        }
+        fn can_sign_with(&self, _key: &PlatformAddress) -> bool {
             false
         }
     }
