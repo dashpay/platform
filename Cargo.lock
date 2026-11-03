@@ -819,27 +819,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bls-dash-sys"
-version = "1.2.5"
-source = "git+https://github.com/dashpay/bls-signatures?rev=0842b17583888e8f46c252a4ee84cdfd58e0546f#0842b17583888e8f46c252a4ee84cdfd58e0546f"
-dependencies = [
- "bindgen 0.65.1",
- "cc",
- "glob",
-]
-
-[[package]]
-name = "bls-signatures"
-version = "1.2.5"
-source = "git+https://github.com/dashpay/bls-signatures?rev=0842b17583888e8f46c252a4ee84cdfd58e0546f#0842b17583888e8f46c252a4ee84cdfd58e0546f"
-dependencies = [
- "bls-dash-sys",
- "hex",
- "rand 0.8.6",
- "serde",
-]
-
-[[package]]
 name = "bls12_381"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2464,7 +2443,6 @@ dependencies = [
  "assert_matches",
  "async-trait",
  "blake3",
- "bls-signatures",
  "bytes",
  "chrono",
  "ciborium",
@@ -2473,6 +2451,7 @@ dependencies = [
  "dapi-grpc",
  "dash-platform-macros",
  "dash-platform-queries",
+ "dashcore-crypto",
  "delegate",
  "derive_more 1.0.0",
  "dotenvy",

@@ -27,7 +27,7 @@ downloaded toolchains to exact URLs and SHA-256 hashes. It includes:
 
 | Toolchain | Contract |
 | --- | --- |
-| Native build | build-essential, clang/LLVM, Snappy, CMake, GMP, OpenSSL, pkg-config |
+| Native build | build-essential, clang/LLVM, Snappy, CMake, OpenSSL, pkg-config |
 | Rust | rustup plus the repository baseline; exact repo-selected toolchains may be installed user-locally |
 | Cargo helpers | llvm-cov **0.9.1**, nextest **0.9.144**, machete **0.9.2**, ndk **4.1.2** |
 | Protobuf / Java | protoc **32.0**, JDK **17** |
