@@ -250,6 +250,7 @@ impl TokenTransferTransitionActionV0 {
                     owner_id,
                     action.base.identity_contract_nonce(),
                     history_event,
+                    (minimum, action.amount),
                     block_info,
                     transaction,
                     platform_version,

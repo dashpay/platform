@@ -34,6 +34,30 @@ impl TokenBaseTransitionAccessors for TokenMintTransition {
     }
 }
 
+impl TokenMintTransition {
+    /// Sets the least the mint issues when its amount is random, taking the format that holds
+    /// it: `Some` turns a version 0 mint into a version 1 one, and `None` turns a version 1 mint
+    /// back into version 0, the format every protocol version accepts. Only the versioned mint
+    /// has the setter: a bare `TokenMintTransitionV0` holds no random amount, so a setter on it
+    /// could only drop the value.
+    pub fn set_random_minimum_amount(&mut self, random_minimum_amount: Option<u64>) {
+        let current = std::mem::take(self);
+        *self = match (current, random_minimum_amount) {
+            (TokenMintTransition::V0(v0), None) => TokenMintTransition::V0(v0),
+            (TokenMintTransition::V0(v0), Some(minimum)) => {
+                TokenMintTransition::V1(TokenMintTransitionV1::from_v0(v0, Some(minimum)))
+            }
+            (TokenMintTransition::V1(mut v1), Some(minimum)) => {
+                v1.random_minimum_amount = Some(minimum);
+                TokenMintTransition::V1(v1)
+            }
+            (TokenMintTransition::V1(v1), None) => {
+                TokenMintTransition::V0(v1.into_v0_and_random_minimum_amount().0)
+            }
+        };
+    }
+}
+
 impl TokenMintTransitionV0Methods for TokenMintTransition {
     fn amount(&self) -> u64 {
         match self {
@@ -54,23 +78,6 @@ impl TokenMintTransitionV0Methods for TokenMintTransition {
             TokenMintTransition::V0(_) => None,
             TokenMintTransition::V1(v1) => v1.random_minimum_amount,
         }
-    }
-
-    fn set_random_minimum_amount(&mut self, random_minimum_amount: Option<u64>) {
-        let current = std::mem::take(self);
-        *self = match (current, random_minimum_amount) {
-            (TokenMintTransition::V0(v0), None) => TokenMintTransition::V0(v0),
-            (TokenMintTransition::V0(v0), Some(minimum)) => {
-                TokenMintTransition::V1(TokenMintTransitionV1::from_v0(v0, Some(minimum)))
-            }
-            (TokenMintTransition::V1(mut v1), Some(minimum)) => {
-                v1.random_minimum_amount = Some(minimum);
-                TokenMintTransition::V1(v1)
-            }
-            (TokenMintTransition::V1(v1), None) => {
-                TokenMintTransition::V0(v1.into_v0_and_random_minimum_amount().0)
-            }
-        };
     }
 
     fn public_note(&self) -> Option<&String> {

@@ -40,10 +40,6 @@ impl TokenMintTransitionV0Methods for TokenMintTransitionV1 {
         self.random_minimum_amount
     }
 
-    fn set_random_minimum_amount(&mut self, random_minimum_amount: Option<u64>) {
-        self.random_minimum_amount = random_minimum_amount;
-    }
-
     fn public_note(&self) -> Option<&String> {
         self.public_note.as_ref()
     }

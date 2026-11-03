@@ -229,6 +229,23 @@ pub enum TokenOperationType {
         /// Should we allow this to be the first ever mint
         allow_first_mint: bool,
     },
+    /// Adds the historical document of a random token transfer or mint (protocol version 15),
+    /// whose id also hashes the range the amount is drawn from
+    /// (`token_history_document_id`), so that a proof of the document binds the range.
+    TokenRandomAmountHistory {
+        /// The token id
+        token_id: Identifier,
+        /// The identity making the event
+        owner_id: Identifier,
+        /// The nonce
+        nonce: IdentityNonce,
+        /// The token event, a transfer or a mint of `minimum` until the settlement
+        event: TokenEvent,
+        /// The least the transition moves
+        minimum: TokenAmount,
+        /// The most the transition moves
+        maximum: TokenAmount,
+    },
 }
 
 impl DriveLowLevelOperationConverter for TokenOperationType {
@@ -328,6 +345,28 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                     owner_id,
                     nonce,
                     event,
+                    None,
+                    block_info,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                Ok(batch_operations)
+            }
+            TokenOperationType::TokenRandomAmountHistory {
+                token_id,
+                owner_id,
+                nonce,
+                event,
+                minimum,
+                maximum,
+            } => {
+                let batch_operations = drive.add_token_transaction_history_operations(
+                    token_id,
+                    owner_id,
+                    nonce,
+                    event,
+                    Some((minimum, maximum)),
                     block_info,
                     estimated_costs_only_with_layer_info,
                     transaction,

@@ -683,17 +683,14 @@ impl Drive {
                                 // its sender cannot know: the history holds the amount drawn from
                                 // the block's random beacon (the range's minimum until the draw),
                                 // so the amount is taken from the proved document once it lies
-                                // in the range the transition asked for. A transition without a
-                                // random amount compares it as before.
-                                let random_amount_range = match token_transition {
-                                    TokenTransition::Transfer(transfer) => transfer
-                                        .random_minimum_amount()
-                                        .map(|minimum| minimum..=transfer.amount()),
-                                    TokenTransition::Mint(mint) => mint
-                                        .random_minimum_amount()
-                                        .map(|minimum| minimum..=mint.amount()),
-                                    _ => None,
-                                };
+                                // in the range the transition asked for. The document's id
+                                // hashes that range (`token_history_document_id`), so the proof
+                                // is of a document written for this range, not of a fixed
+                                // amount or another range. A transition without a random amount
+                                // compares it as before.
+                                let random_amount_range = token_transition
+                                    .random_amount_range()
+                                    .map(|(minimum, maximum)| minimum..=maximum);
                                 if let Some(range) = &random_amount_range {
                                     let amount: TokenAmount =
                                         document.properties().get_integer("amount")?;

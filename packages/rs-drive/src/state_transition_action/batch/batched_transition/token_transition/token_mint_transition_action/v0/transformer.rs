@@ -462,6 +462,7 @@ impl TokenMintTransitionActionV0 {
                         owner_id,
                         mint.base.identity_contract_nonce(),
                         history_event,
+                        (minimum, mint.mint_amount),
                         block_info,
                         transaction,
                         platform_version,

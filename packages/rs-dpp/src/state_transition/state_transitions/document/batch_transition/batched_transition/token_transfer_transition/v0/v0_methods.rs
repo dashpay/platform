@@ -29,15 +29,10 @@ pub trait TokenTransferTransitionV0Methods: TokenBaseTransitionAccessors {
     /// The least the transfer moves when its amount is random (format version 1, protocol
     /// version 15): the recipient receives an amount drawn uniformly from it to `amount`, both
     /// included. `None` for a transfer of exactly `amount`, which every version 0 transfer is.
+    /// Set on the versioned
+    /// [`TokenTransferTransition`](crate::state_transition::batch_transition::TokenTransferTransition),
+    /// which takes the format holding it.
     fn random_minimum_amount(&self) -> Option<u64>;
-
-    /// Sets the least the transfer moves when its amount is random. On a
-    /// [`TokenTransferTransition`](crate::state_transition::batch_transition::TokenTransferTransition)
-    /// the transition takes the format that holds the value: `Some` turns a version 0 transfer
-    /// into a version 1 one, and `None` turns a version 1 transfer back into version 0, the
-    /// format every protocol version accepts. A bare `TokenTransferTransitionV0` holds no random
-    /// amount, so it ignores the call.
-    fn set_random_minimum_amount(&mut self, random_minimum_amount: Option<u64>);
 
     /// Returns the `recipient_owner_id` field of the `TokenTransferTransitionV0`.
     fn recipient_id(&self) -> Identifier;
@@ -123,10 +118,6 @@ impl TokenTransferTransitionV0Methods for TokenTransferTransitionV0 {
 
     fn random_minimum_amount(&self) -> Option<u64> {
         None
-    }
-
-    fn set_random_minimum_amount(&mut self, _random_minimum_amount: Option<u64>) {
-        // The version 0 format holds no random amount; the enum converts to version 1
     }
 
     fn recipient_id(&self) -> Identifier {

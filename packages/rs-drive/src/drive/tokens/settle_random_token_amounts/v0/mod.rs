@@ -21,6 +21,7 @@ use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{DataContract, Identifier, IdentityNonce};
 use dpp::tokens::token_event::TokenEvent;
+use dpp::tokens::token_history_document_id;
 use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
 use std::borrow::Cow;
@@ -179,6 +180,7 @@ impl Drive {
         owner_id: Identifier,
         identity_contract_nonce: IdentityNonce,
         event: TokenEvent,
+        random_range: (TokenAmount, TokenAmount),
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -193,6 +195,7 @@ impl Drive {
             token_id,
             owner_id,
             identity_contract_nonce,
+            Some(random_range),
             block_info,
             platform_version,
         )?;
@@ -216,8 +219,8 @@ impl Drive {
 
     /// The operations rewriting the history document of `request`'s transition to hold
     /// `amount`, none when the token keeps no history of the kind: the transition then wrote no
-    /// history document. The document is found the way it was written
-    /// (`TokenEvent::build_historical_document_owned`), and rewritten in place with its own
+    /// history document. The document is found by the id it was written under, which hashes the
+    /// request's range (`token_history_document_id`), and rewritten in place with its own
     /// storage flags, its `byAmount` index entry moved to the drawn amount.
     fn random_token_history_amount_operations_v0(
         &self,
@@ -240,11 +243,12 @@ impl Drive {
                     "the token history contract defines the transfer and mint types",
                 ))
             })?;
-        let document_id = Document::generate_document_id_v0(
+        let document_id = token_history_document_id(
             &request.token_id,
             &request.owner_id,
-            format!("history_{}", document_type_name).as_str(),
-            request.identity_contract_nonce.to_be_bytes().as_slice(),
+            document_type_name,
+            request.identity_contract_nonce,
+            Some((request.minimum, request.maximum)),
         );
 
         let primary_key_path =
@@ -445,11 +449,13 @@ mod tests {
         let mut operations = vec![DriveOperation::TokenOperation(reservation)];
         if with_history {
             operations.push(DriveOperation::TokenOperation(
-                TokenOperationType::TokenHistory {
+                TokenOperationType::TokenRandomAmountHistory {
                     token_id,
                     owner_id: request.owner_id,
                     nonce: request.identity_contract_nonce,
                     event,
+                    minimum: request.minimum,
+                    maximum: request.maximum,
                 },
             ));
         }
@@ -528,11 +534,12 @@ mod tests {
         let document_type = contract
             .document_type_for_name(document_type_name)
             .expect("expected the history type");
-        let document_id = Document::generate_document_id_v0(
+        let document_id = token_history_document_id(
             &request.token_id,
             &request.owner_id,
-            format!("history_{}", document_type_name).as_str(),
-            request.identity_contract_nonce.to_be_bytes().as_slice(),
+            document_type_name,
+            request.identity_contract_nonce,
+            Some((request.minimum, request.maximum)),
         );
         let path =
             contract_documents_primary_key_path(contract.id_ref().as_bytes(), document_type_name);

@@ -1,8 +1,10 @@
 //! The proof of a random token transfer or mint (protocol version 15): its sender cannot know
 //! the amount the block's random beacon drew, so verification takes it from the proved history
 //! document once it lies in the range the transition asked for, and compares every other field
-//! as for any transition. Each test verifies one genuine proof, built from a drive that executed
-//! and settled the transition, against expectations that differ from the transition sent.
+//! as for any transition. The document's id hashes the range (`token_history_document_id`), so
+//! the proof binds the range it was drawn from. Each test verifies one genuine proof, built from
+//! a drive that executed the transition (and settled it, for a random one), against
+//! expectations that differ from the transition sent.
 
 use super::*;
 use crate::drive::tokens::settle_random_token_amounts::{
@@ -22,8 +24,12 @@ use dpp::identity::Identity;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
 use dpp::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
 use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
-use dpp::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV1;
-use dpp::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV1;
+use dpp::state_transition::batch_transition::token_mint_transition::{
+    TokenMintTransitionV0, TokenMintTransitionV1,
+};
+use dpp::state_transition::batch_transition::token_transfer_transition::{
+    TokenTransferTransitionV0, TokenTransferTransitionV1,
+};
 use dpp::state_transition::batch_transition::{
     BatchTransition, BatchTransitionV1, TokenMintTransition, TokenTransferTransition,
 };
@@ -62,6 +68,13 @@ impl Fixture {
     /// from `MINIMUM` to `MAXIMUM`, sent by `OWNER` to `RECIPIENT` with `NOTE`, and settled it
     /// from `BEACON`: the history document holds the drawn amount.
     fn new(kind: Kind) -> Self {
+        Self::executing(kind, true)
+    }
+
+    /// [`Self::new`], or, when not `random`, a drive after a block executed a `kind` of exactly
+    /// `MINIMUM`, sent by `OWNER` to `RECIPIENT` with `NOTE` and the same nonce
+    /// ([`Self::fixed_transition`]).
+    fn executing(kind: Kind, random: bool) -> Self {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let mut token = TokenConfigurationV0::default_most_restrictive().with_base_supply(0);
@@ -139,6 +152,60 @@ impl Fixture {
             )
             .expect("expected to mint the base supply to the sender");
 
+        if !random {
+            let (operation, event) = match kind {
+                Kind::Transfer => (
+                    TokenOperationType::TokenTransfer {
+                        token_id,
+                        sender_id: OWNER.into(),
+                        recipient_id: RECIPIENT.into(),
+                        amount: MINIMUM,
+                    },
+                    TokenEvent::Transfer(
+                        RECIPIENT.into(),
+                        Some(NOTE.to_string()),
+                        None,
+                        None,
+                        MINIMUM,
+                    ),
+                ),
+                Kind::Mint => (
+                    TokenOperationType::TokenMint {
+                        token_id,
+                        identity_balance_holder_id: RECIPIENT.into(),
+                        mint_amount: MINIMUM,
+                        allow_first_mint: false,
+                        allow_saturation: false,
+                    },
+                    TokenEvent::Mint(MINIMUM, RECIPIENT.into(), Some(NOTE.to_string())),
+                ),
+            };
+            drive
+                .apply_drive_operations(
+                    vec![
+                        DriveOperation::TokenOperation(operation),
+                        DriveOperation::TokenOperation(TokenOperationType::TokenHistory {
+                            token_id,
+                            owner_id: OWNER.into(),
+                            nonce: NONCE,
+                            event,
+                        }),
+                    ],
+                    true,
+                    &BlockInfo::default(),
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("expected the block to execute the fixed transition");
+            return Fixture {
+                drive,
+                contract,
+                token_id,
+                kind,
+            };
+        }
+
         // What the block's execution of the transition writes: the reservation, and the
         // history document holding the range's minimum
         let (reservation, event, request_kind) = match kind {
@@ -181,11 +248,13 @@ impl Fixture {
             .apply_drive_operations(
                 vec![
                     DriveOperation::TokenOperation(reservation),
-                    DriveOperation::TokenOperation(TokenOperationType::TokenHistory {
+                    DriveOperation::TokenOperation(TokenOperationType::TokenRandomAmountHistory {
                         token_id,
                         owner_id: OWNER.into(),
                         nonce: NONCE,
                         event,
+                        minimum: MINIMUM,
+                        maximum: MAXIMUM,
                     }),
                 ],
                 true,
@@ -272,10 +341,52 @@ impl Fixture {
         self.transition(MINIMUM, MAXIMUM, RECIPIENT, NOTE)
     }
 
+    /// The transition of the fixture's kind of exactly `MINIMUM` (format version 0), to
+    /// `RECIPIENT` with `NOTE`, which [`Self::executing`] executes when not random.
+    fn fixed_transition(&self) -> StateTransition {
+        let base = TokenBaseTransition::V0(TokenBaseTransitionV0 {
+            identity_contract_nonce: NONCE,
+            token_contract_position: 0,
+            data_contract_id: CONTRACT.into(),
+            token_id: self.token_id,
+            using_group_info: None,
+        });
+        let token_transition = match self.kind {
+            Kind::Transfer => {
+                TokenTransition::Transfer(TokenTransferTransition::V0(TokenTransferTransitionV0 {
+                    base,
+                    amount: MINIMUM,
+                    recipient_id: RECIPIENT.into(),
+                    public_note: Some(NOTE.to_string()),
+                    shared_encrypted_note: None,
+                    private_encrypted_note: None,
+                }))
+            }
+            Kind::Mint => TokenTransition::Mint(TokenMintTransition::V0(TokenMintTransitionV0 {
+                base,
+                issued_to_identity_id: Some(RECIPIENT.into()),
+                amount: MINIMUM,
+                public_note: Some(NOTE.to_string()),
+            })),
+        };
+        StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+            owner_id: OWNER.into(),
+            transitions: vec![BatchedTransition::Token(token_transition)],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }))
+    }
+
     /// The proof of the genuine transition's execution, from the drive's state.
     fn proof(&self) -> Vec<u8> {
+        self.proof_of(&self.genuine_transition())
+    }
+
+    /// The proof of `transition`'s execution, from the drive's state.
+    fn proof_of(&self, transition: &StateTransition) -> Vec<u8> {
         self.drive
-            .prove_state_transition(&self.genuine_transition(), None, PlatformVersion::latest())
+            .prove_state_transition(transition, None, PlatformVersion::latest())
             .expect("expected to prove the transition")
             .into_data()
             .expect("expected proof bytes")
@@ -334,9 +445,10 @@ fn assert_unexpected_result(
     }
 }
 
-/// The proved amount verifies against a range holding it, its bounds included, and fails
-/// against a range above or below it.
-fn assert_amount_checked_against_the_range(kind: Kind) {
+/// The proof verifies against the range the transition was sent with, and against no other:
+/// the history document's id hashes the range, so another range, even one holding the proved
+/// amount, names another document, which the proof does not hold.
+fn assert_bound_to_its_range(kind: Kind) {
     let fixture = Fixture::new(kind);
     let proof = fixture.proof();
     let drawn = fixture.proved_amount(&proof);
@@ -345,33 +457,39 @@ fn assert_amount_checked_against_the_range(kind: Kind) {
         "expected the settled amount {drawn} to lie in the range sent"
     );
 
-    for (minimum, maximum) in [(drawn, drawn + 10), (drawn - 10, drawn), (drawn, drawn)] {
-        fixture
-            .verify(
-                &proof,
-                &fixture.transition(minimum, maximum, RECIPIENT, NOTE),
-            )
-            .unwrap_or_else(|error| {
-                panic!(
-                    "expected the range {minimum} to {maximum} holding the proved amount \
-                     {drawn} to verify, got {error:?}"
+    for (minimum, maximum) in [
+        (drawn, drawn),
+        (MINIMUM, MAXIMUM + 1),
+        (MINIMUM - 1, MAXIMUM),
+        (drawn + 1, MAXIMUM + 10),
+    ] {
+        assert!(
+            fixture
+                .verify(
+                    &proof,
+                    &fixture.transition(minimum, maximum, RECIPIENT, NOTE),
                 )
-            });
+                .is_err(),
+            "expected the range {minimum} to {maximum} not to verify against the proof of \
+             {MINIMUM} to {MAXIMUM}"
+        );
     }
+}
 
-    assert_unexpected_result(
-        fixture.verify(
-            &proof,
-            &fixture.transition(drawn + 1, drawn + 10, RECIPIENT, NOTE),
-        ),
-        "the proved amount below the minimum",
-    );
-    assert_unexpected_result(
-        fixture.verify(
-            &proof,
-            &fixture.transition(drawn - 10, drawn - 1, RECIPIENT, NOTE),
-        ),
-        "the proved amount above the maximum",
+/// The proof of a transition of a fixed amount inside the range, sent with the same nonce,
+/// recipient and note, verifies as that transition and not as the random one: its history
+/// document's id hashes no range, so the random transition names another document.
+fn assert_fixed_amount_not_taken_for_a_random_one(kind: Kind) {
+    let fixture = Fixture::executing(kind, false);
+    let proof = fixture.proof_of(&fixture.fixed_transition());
+    fixture
+        .verify(&proof, &fixture.fixed_transition())
+        .expect("expected the fixed transition to verify");
+    assert!(
+        fixture
+            .verify(&proof, &fixture.genuine_transition())
+            .is_err(),
+        "expected the proof of a fixed amount not to verify as the random transition"
     );
 }
 
@@ -401,13 +519,23 @@ fn assert_other_fields_compared(kind: Kind) {
 }
 
 #[test]
-fn should_verify_a_random_transfer_only_against_a_range_holding_the_proved_amount() {
-    assert_amount_checked_against_the_range(Kind::Transfer);
+fn should_verify_a_random_transfer_only_against_the_range_it_was_sent_with() {
+    assert_bound_to_its_range(Kind::Transfer);
 }
 
 #[test]
-fn should_verify_a_random_mint_only_against_a_range_holding_the_proved_amount() {
-    assert_amount_checked_against_the_range(Kind::Mint);
+fn should_verify_a_random_mint_only_against_the_range_it_was_sent_with() {
+    assert_bound_to_its_range(Kind::Mint);
+}
+
+#[test]
+fn should_not_verify_the_proof_of_a_fixed_transfer_as_a_random_one() {
+    assert_fixed_amount_not_taken_for_a_random_one(Kind::Transfer);
+}
+
+#[test]
+fn should_not_verify_the_proof_of_a_fixed_mint_as_a_random_one() {
+    assert_fixed_amount_not_taken_for_a_random_one(Kind::Mint);
 }
 
 #[test]
