@@ -525,8 +525,8 @@ impl VerifiedHttpContextProvider {
     /// [`core_height_verified`](ContextProvider::core_height_verified)), or
     /// this provider's checkpoint when none was verified or no state is kept
     /// below that height. `states` are the verified states kept above the
-    /// anchor, lowest first; proofs start from the newest one below their
-    /// height, so they stay short.
+    /// anchor, lowest first; proofs mostly start from the newest one below
+    /// their height, so they stay short.
     ///
     /// Why the next session can prove the heights it needs: a proof starts
     /// from a state strictly below its target, and the next session needs
@@ -540,10 +540,14 @@ impl VerifiedHttpContextProvider {
     /// may have verified with a key whose only evidence is a target as low
     /// as `H - 24`; the quorum may be in no quorum root above that target.
     /// The next session proves such a key again by asking for a target at
-    /// or above `H - 24`, which takes a state below it: the anchor is below
-    /// it, and every state kept above the anchor is kept too. Only verified
-    /// responses count. The heights a key is looked up or fetched for come from
-    /// responses not verified yet, so a forged response, or one that fails
+    /// or above `H - 24`, from a state below it: the anchor is below it, and
+    /// every state kept above the anchor is kept too. When the anchor is this
+    /// provider's checkpoint and not below `H - 24`, as a recent custom
+    /// checkpoint can be, it asks from the checkpoint for the target just
+    /// above it, which every target verified from it was at or above too.
+    /// Only verified responses count. The heights a key is looked up or
+    /// fetched for come from responses not verified yet, so a forged
+    /// response, or one that fails
     /// verification for any reason, never moves the anchor. Verified states
     /// above the heights counted, such as the relay's tip or a target above
     /// the height asked for, never become the anchor. A node answering from
@@ -755,7 +759,7 @@ mod tests {
     use super::*;
     use crate::proof_fetches::{DKG_INTERVAL_BLOCKS, MAX_RECENT_STATES};
     use dash_core_proof::bootstrap;
-    use dash_core_proof::{parse_commitment, rpc_hex, MAX_PROOF_BYTES};
+    use dash_core_proof::{parse_commitment, rpc_hex, MAX_PROOF_BYTES, PROOF_MAGIC};
     use futures::future::join_all;
     use serde_json::{json, Value};
     use std::collections::VecDeque;
@@ -1695,6 +1699,94 @@ mod tests {
             rpc_hex(&f.checkpoint.block_hash).as_str()
         );
         assert_eq!(requests[1]["height"], height - DKG_INTERVAL_BLOCKS);
+    }
+
+    /// `f` with its checkpoint relabelled to `height`, in the checkpoint and
+    /// in the proof's anchor. Of a proof without links the anchor's height
+    /// only bounds the target from below, and a checkpoint's height is
+    /// trusted, not proven, so the proof still verifies from it.
+    fn checkpoint_relabelled(mut f: Fixture, height: u32) -> Fixture {
+        let at = f
+            .bootstrap
+            .windows(PROOF_MAGIC.len())
+            .position(|window| window == PROOF_MAGIC)
+            .expect("a proof chain")
+            + PROOF_MAGIC.len()
+            + 1;
+        let old = f.checkpoint.height.to_le_bytes();
+        assert_eq!(f.bootstrap[at..at + 4], old, "the anchor's height");
+        f.bootstrap[at..at + 4].copy_from_slice(&height.to_le_bytes());
+        f.checkpoint.height = height;
+        bootstrap::verify(&f.bootstrap, &f.checkpoint, 0).expect("verifies from it");
+        f
+    }
+
+    /// A custom checkpoint C = H - 23, inside the grace of a response at H.
+    /// Q is proven at L = H - 20 from C through the lower ask, clipped to
+    /// C + 1, a real proof without links; T = H - 10 is verified for another
+    /// quorum after Q retired, and the response at H verifies. After a
+    /// restore no state is below H - 24, so the lower ask goes from C, the
+    /// oldest state below H, and reaches Q again. Going from the newest
+    /// state below H, it would have asked from T for T + 1, after Q
+    /// retired, and never reached Q.
+    #[tokio::test]
+    async fn should_prove_a_key_again_from_a_recent_checkpoint_after_resuming() {
+        let real = earlier_fixture();
+        let low = real.target.clone();
+        let f = checkpoint_relabelled(real, low.height - 3);
+        let checkpoint = f.checkpoint.height;
+        let height = checkpoint + 23;
+        assert_eq!(low.height, height - 20);
+        let later = state_at(&f, height - 10);
+        let retired = || reply(502, b"Requested quorum is not in the target root".to_vec());
+        let first = MockRelay::spawn(vec![retired(), reply(200, f.bootstrap.clone())]);
+        let provider = provider_for(&f, vec![first.url.clone()], quick());
+        let key = fetch(&provider, f.quorum_type, f.quorum_hash, height).await;
+        assert_eq!(key.expect("proven at L"), Some(f.key));
+        assert_eq!(first.heights(), [json!(height), json!(checkpoint + 1)]);
+        // Stands in for a proof of another quorum, to T, after Q retired.
+        provider
+            .inner
+            .fetches
+            .publish((f.quorum_type, [0xee; 32]), [0xee; 48], &later)
+            .expect("another quorum's evidence");
+        let served = provider.get_quorum_public_key(f.quorum_type, f.quorum_hash, height);
+        assert_eq!(served.expect("served from L within the grace"), f.key);
+        provider.core_height_verified(f.quorum_type, f.quorum_hash, height);
+
+        let continuation = provider.continuation();
+        assert_eq!(
+            continuation,
+            Continuation {
+                anchor: f.checkpoint.clone(),
+                states: vec![low, later.clone()],
+            }
+        );
+
+        let saved = serde_json::to_string(&continuation).expect("serializes");
+        let restored: Continuation = serde_json::from_str(&saved).expect("parses");
+        let second = MockRelay::spawn(vec![retired(), reply(200, f.bootstrap.clone())]);
+        let resumed = starting_from(
+            &f,
+            StartingPoint::Continuation(restored),
+            vec![second.url.clone()],
+            quick(),
+        );
+        let key = fetch(&resumed, f.quorum_type, f.quorum_hash, height).await;
+
+        let requests = second.requests();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(
+            requests[0]["checkpoint"],
+            rpc_hex(&later.block_hash).as_str()
+        );
+        assert_eq!(requests[0]["height"], height);
+        assert_eq!(
+            requests[1]["checkpoint"],
+            rpc_hex(&f.checkpoint.block_hash).as_str()
+        );
+        assert_eq!(requests[1]["height"], checkpoint + 1);
+        assert_eq!(key.expect("proven again from C"), Some(f.key));
     }
 
     #[test]
