@@ -1,11 +1,18 @@
 //! `generatedFrom` with a random function (protocol version 15): `sys.random.uniform`
 //! draws an integer property from its `minimum` to its `maximum` once the block's transitions
 //! are accepted. The parse is `apply_generated_from` 1 and the checks against the rest of the
-//! type are `validate_generated_from_declarations`. A create writes the placeholder and a
-//! replace keeps the stored value (`generate_random_properties`), a client leaves the value
-//! out (`regenerate_generated_properties`), and a proof verifier takes it from the proved
-//! document (`adopt_state_generated_properties`).
+//! type are `validate_generated_from_declarations`; the rules reading such a property are
+//! refused where their reads are checked, and a value of another type read from it is not
+//! fixed once written. A create writes the placeholder and a replace keeps the stored value
+//! (`generate_random_properties`), a client leaves the value out
+//! (`regenerate_generated_properties`), and a proof verifier takes it from the proved document
+//! (`adopt_state_generated_properties`).
+//!
+//! No protocol version admits the function yet (`random_generated_from` is `None` in every
+//! table, until block execution draws the values), so these tests parse with the latest
+//! platform version with it admitted (`drawing_platform_version`).
 
+use super::refusal_test_support::{assert_refused, CONTRACT_ID};
 use super::typed_array_test_helpers::{
     expect_json_schema_error, expect_structure_error, parse_dispatched,
 };
@@ -62,21 +69,90 @@ fn card_schema_with(key: &str, value: Value) -> Value {
     schema
 }
 
+/// The latest platform version with `sys.random.uniform` admitted.
+fn drawing_platform_version() -> PlatformVersion {
+    let mut platform_version = PlatformVersion::latest().clone();
+    platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .random_generated_from = Some(0);
+    platform_version
+}
+
 fn parse(schema: Value) -> DocumentType {
-    parse_dispatched(schema, PlatformVersion::latest(), true).expect("the schema parses")
+    parse_dispatched(schema, &drawing_platform_version(), true).expect("the schema parses")
 }
 
 /// Both parses refuse the declaration: the validating one natively or with the parser's
 /// structure error, the one that skips the schema check with the parser's.
 fn expect_refused(schema: Value, needle: &str) {
+    let platform_version = drawing_platform_version();
     assert!(
-        parse_dispatched(schema.clone(), PlatformVersion::latest(), true).is_err(),
+        parse_dispatched(schema.clone(), &platform_version, true).is_err(),
         "a validating parse refuses it ({needle})"
     );
+    expect_structure_error(parse_dispatched(schema, &platform_version, false), needle);
+}
+
+/// Registration refuses the declaration with the parser's structure error.
+fn expect_refused_at_registration(schema: Value, needle: &str) {
     expect_structure_error(
-        parse_dispatched(schema, PlatformVersion::latest(), false),
+        parse_dispatched(schema, &drawing_platform_version(), true),
         needle,
     );
+}
+
+/// The document types of a contract holding `types`, registered.
+fn parse_contract(
+    types: Vec<(&str, Value)>,
+) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
+    let platform_version = drawing_platform_version();
+    let config = DataContractConfig::default_for_version(&platform_version)
+        .expect("default config available");
+    DocumentType::create_document_types_from_document_schemas(
+        Identifier::new(CONTRACT_ID),
+        1,
+        config.version(),
+        types
+            .into_iter()
+            .map(|(name, schema)| (name.to_string(), schema))
+            .collect(),
+        None,
+        &BTreeMap::new(),
+        &config,
+        true,
+        false,
+        &mut vec![],
+        &platform_version,
+    )
+}
+
+/// An identifier property at `position`, referring as `refers_to` says.
+fn identifier(position: u64, refers_to: Value) -> Value {
+    platform_value!({
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "position": position,
+        "refersTo": refers_to
+    })
+}
+
+/// A card nobody changes or deletes, so a `permanentDocument` reference may point at it, its
+/// `rarity` drawn, with `extra` set at the type level.
+fn permanent_card(extra: Vec<(&str, Value)>) -> Value {
+    let mut card = card_schema_with("documentsMutable", Value::Bool(false));
+    card.insert("canBeDeleted".to_string(), Value::Bool(false))
+        .expect("the schema is a map");
+    for (key, value) in extra {
+        card.insert(key.to_string(), value)
+            .expect("the schema is a map");
+    }
+    card
 }
 
 fn data(entries: Vec<(&str, Value)>) -> BTreeMap<String, Value> {
@@ -91,10 +167,7 @@ fn should_parse_sys_random_uniform_onto_a_bounded_integer_property_from_protocol
     let expected = Some(GeneratedFrom {
         function: SystemFunction::Random(RandomFunction::Uniform),
         params: vec![],
-        range: Some(RandomRange {
-            minimum: 1,
-            maximum: 100,
-        }),
+        range: RandomRange::new(1, 100),
     });
     let rarity = |document_type: DocumentType| {
         document_type
@@ -134,10 +207,22 @@ fn should_parse_sys_random_uniform_onto_a_bounded_integer_property_from_protocol
             .generated_from
             .as_ref()
             .and_then(|generated_from| generated_from.range),
-        Some(RandomRange {
-            minimum: -5,
-            maximum: 5
-        })
+        RandomRange::new(-5, 5)
+    );
+}
+
+#[test]
+fn should_refuse_sys_random_uniform_while_no_protocol_version_draws_the_values() {
+    // `random_generated_from` is `None` at the latest protocol version: nothing draws the
+    // values yet, so a document would keep its placeholder
+    let platform_version = PlatformVersion::latest();
+    expect_structure_error(
+        parse_dispatched(card_schema(), platform_version, true),
+        "is not active at this protocol version",
+    );
+    expect_structure_error(
+        parse_dispatched(card_schema(), platform_version, false),
+        "is not active at this protocol version",
     );
 }
 
@@ -301,7 +386,7 @@ fn should_keep_the_stored_value_on_a_replace() {
 #[test]
 fn should_leave_the_value_to_the_platform_on_a_client() {
     let document_type = parse(card_schema());
-    let platform_version = PlatformVersion::latest();
+    let platform_version = &drawing_platform_version();
 
     // The transition builders remove it, whatever the document holds
     let mut properties = data(vec![
@@ -344,4 +429,232 @@ fn should_take_the_proved_value_into_a_rebuilt_document() {
         .as_ref()
         .adopt_state_generated_properties(&mut rebuilt, &proved);
     assert_eq!(rebuilt, proved);
+}
+
+#[test]
+fn should_refuse_sys_random_uniform_on_a_type_with_a_contested_index() {
+    // The contested index is on another property: the document a contest awards would still
+    // keep the placeholder
+    let contested = platform_value!([{
+        "name": "byName",
+        "properties": [{ "name": "asc" }],
+        "unique": true,
+        "contested": {
+            "fieldMatches": [{ "field": "name", "regexPattern": "^[a-z]{3,5}$" }],
+            "resolution": 0
+        }
+    }]);
+    expect_refused(
+        permanent_card(vec![("indices", contested)]),
+        "has contested index \"byName\"",
+    );
+}
+
+#[test]
+fn should_refuse_summing_or_averaging_a_property_drawn_at_random() {
+    expect_refused(
+        card_schema_with("documentsSummable", Value::Text("rarity".to_string())),
+        "as documentsSummable does",
+    );
+    for keyword in ["summable", "averageable"] {
+        let mut index = platform_value!({ "name": "byName", "properties": [{ "name": "asc" }] });
+        index
+            .insert(keyword.to_string(), Value::Text("rarity".to_string()))
+            .expect("the index is a map");
+        expect_refused(
+            card_schema_with("indices", Value::Array(vec![index])),
+            "as index \"byName\" does",
+        );
+    }
+}
+
+#[test]
+fn should_refuse_a_reference_of_the_type_reading_a_property_drawn_at_random() {
+    let with_deck = |where_clause: Value| {
+        let mut schema = card_schema();
+        schema
+            .get_mut("properties")
+            .expect("properties")
+            .expect("properties are present")
+            .insert(
+                "deckId".to_string(),
+                identifier(
+                    2,
+                    platform_value!({
+                        "type": "permanentDocument",
+                        "documentType": "deck",
+                        "where": where_clause
+                    }),
+                ),
+            )
+            .expect("properties are a map");
+        schema
+    };
+    // The deck's level must equal the card's rarity, or be above it
+    for where_clause in [
+        platform_value!({ "level": "rarity" }),
+        platform_value!({ "level": { "greaterThan": "rarity" } }),
+    ] {
+        expect_refused(
+            with_deck(where_clause),
+            "a reference declared on the type reads the property",
+        );
+    }
+}
+
+#[test]
+fn should_refuse_an_encrypted_for_key_drawn_at_random() {
+    let mut schema = card_schema();
+    let properties = schema
+        .get_mut("properties")
+        .expect("properties")
+        .expect("properties are present");
+    properties
+        .insert(
+            "senderKeyId".to_string(),
+            platform_value!({ "type": "integer", "minimum": 0, "maximum": 4294967295_u64, "position": 2 }),
+        )
+        .expect("properties are a map");
+    properties
+        .insert(
+            "secret".to_string(),
+            platform_value!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 1040,
+                "position": 3,
+                "encryptedFor": {
+                    "recipient": "$ownerId",
+                    "recipientKey": "rarity",
+                    "senderKey": "senderKeyId",
+                    "scheme": "ecdh-secp256k1-aes256-cbc"
+                }
+            }),
+        )
+        .expect("properties are a map");
+    expect_refused(schema, "names the property as a key");
+}
+
+#[test]
+fn should_refuse_a_rule_reading_a_property_drawn_at_random() {
+    let drawn = "which the platform draws at random once the block's transitions are accepted";
+    // A rule judging a create or a replace, reading the document written or the stored one
+    for rule in [
+        platform_value!({ "greaterThan": ["rarity", 50] }),
+        platform_value!({ "greaterThan": ["$old.rarity", 50] }),
+        platform_value!({ "anyOf": [{ "absent": "name" }, { "equal": ["rarity", 1] }] }),
+    ] {
+        expect_refused(
+            card_schema_with("propertyConstraints", platform_value!({ "rare": rule })),
+            drawn,
+        );
+    }
+    // A rule judging the owner's delete, which a delete in the block that created the
+    // document would judge against the placeholder
+    expect_refused(
+        card_schema_with(
+            "deleteConstraints",
+            platform_value!({ "common": { "lessThan": ["rarity", 50] } }),
+        ),
+        drawn,
+    );
+    // The condition an immutable entry is frozen under
+    expect_refused_at_registration(
+        card_schema_with(
+            "immutable",
+            platform_value!([{ "property": "name", "when": { "greaterThan": ["rarity", 50] } }]),
+        ),
+        drawn,
+    );
+}
+
+#[test]
+fn should_refuse_a_rule_of_another_type_reading_a_property_drawn_at_random() {
+    let binder = |rules: Value| {
+        platform_value!({
+            "type": "object",
+            "properties": {
+                "cardId": identifier(0, platform_value!({
+                    "type": "permanentDocument",
+                    "documentType": "card"
+                })),
+                "label": { "type": "string", "maxLength": 32, "position": 1 }
+            },
+            "required": ["cardId"],
+            "propertyConstraints": rules,
+            "additionalProperties": false
+        })
+    };
+    // Through the reference to the card
+    assert_refused(
+        parse_contract(vec![
+            ("card", permanent_card(vec![])),
+            (
+                "binder",
+                binder(platform_value!({
+                    "rareOnly": { "greaterThan": [{ "referenced": ["cardId", "rarity"] }, 50] }
+                })),
+            ),
+        ]),
+        "draws at random",
+    );
+    // A count of the cards keyed by their drawn rarity, which a countable index keeps
+    let counted_card = permanent_card(vec![(
+        "indices",
+        platform_value!([{
+            "name": "byRarity",
+            "properties": [{ "rarity": "asc" }],
+            "countable": "countable"
+        }]),
+    )]);
+    assert_refused(
+        parse_contract(vec![
+            ("card", counted_card),
+            (
+                "binder",
+                binder(platform_value!({
+                    "fewLegends": { "lessThan": [{ "countOf": ["card", { "rarity": 100 }] }, 10] }
+                })),
+            ),
+        ]),
+        "\"card\" draws at random",
+    );
+}
+
+#[test]
+fn should_refuse_a_derived_index_property_reading_a_property_drawn_at_random() {
+    // The card is immutable and never deleted, so its rarity would be fixed once written but
+    // for the draw, which moves no entry another type keyed by the placeholder
+    let binder = |index_property: &str| {
+        platform_value!({
+            "type": "object",
+            "documentsMutable": false,
+            "properties": {
+                "cardId": identifier(0, platform_value!({
+                    "type": "permanentDocument",
+                    "documentType": "card"
+                })),
+                "label": { "type": "string", "maxLength": 32, "position": 1 }
+            },
+            "indices": [{
+                "name": "byDerived",
+                "properties": [{ index_property: "asc" }, { "$createdAt": "asc" }]
+            }],
+            "required": ["cardId", "$createdAt"],
+            "additionalProperties": false
+        })
+    };
+    parse_contract(vec![
+        ("card", permanent_card(vec![])),
+        ("binder", binder("cardId.name")),
+    ])
+    .expect("a derived index property reading the card's name registers");
+    assert_refused(
+        parse_contract(vec![
+            ("card", permanent_card(vec![])),
+            ("binder", binder("cardId.rarity")),
+        ]),
+        "is drawn at random once the block's transitions are accepted",
+    );
 }

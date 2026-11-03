@@ -2,14 +2,14 @@
 
 `generatedFrom` says that the platform generates a string property's value with a system function of other properties of the same document, its params. The functions change the case of a string (`lowercase`, `uppercase`, `capitalize`, `camelCase`, `snakeCase`), or fold a name so that names differing only by case or by look-alike characters read the same (`homographSafeASCII`): reach for that one when a unique index must treat `Bob`, `BOB` and `B0B` as one name. A client may leave the property out, and the platform generates it when the document arrives; a client that sends it has it checked. The check reads only the document being written, so it costs no state reads.
 
-From protocol version 15 an integer property can be generated too, with `sys.tokens.decimals`: the decimals of the token an identifier property names, read from the token's contract. A value read from state is generated when the document is created and kept after (see [Functions that read state](#functions-that-read-state)).
+From protocol version 15 an integer property can be generated too, with `sys.tokens.decimals`: the decimals of the token an identifier property names, read from the token's contract. A value read from state is generated when the document is created and kept after (see [Functions that read state](#functions-that-read-state)). Protocol version 15 also parses `sys.random.uniform`, an integer the platform draws from the block's random beacon, but no protocol version activates it yet: registration refuses it until block execution draws the values (see [Functions drawn at random](#functions-drawn-at-random)).
 
 | | |
 |---|---|
-| **Where** | A string property, at the top level or inside an object; from protocol version 15 also an integer property, for `sys.tokens.decimals`. Not on a typed array or its `items`, and not beside `$ref` |
-| **Value** | `{ "function": <name>, "params": [<path>, ...] }`: a system function, and as many params as it takes, each the dotted path of a property of the same document type (`"profile.display"` for a nested one), 1 to 256 characters (ASCII, as property names are, so as many bytes) |
+| **Where** | A string property, at the top level or inside an object; from protocol version 15 also an integer property, for `sys.tokens.decimals` and `sys.random.uniform`. Not on a typed array or its `items`, and not beside `$ref` |
+| **Value** | `{ "function": <name>, "params": [<path>, ...] }`: a system function, and as many params as it takes, each the dotted path of a property of the same document type (`"profile.display"` for a nested one), 1 to 256 characters (ASCII, as property names are, so as many bytes). `sys.random.uniform` takes none: `params` may be left out, or be `[]` |
 | **Default** | Absent: no rule |
-| **Since** | protocol version 14; `sys.tokens.decimals` protocol version 15 |
+| **Since** | protocol version 14; `sys.tokens.decimals` protocol version 15; `sys.random.uniform` parsed from protocol version 15, refused at registration until a later protocol version activates it |
 | **On update** | Fixed: adding, removing or changing it is refused (`IncompatibleDocumentTypeSchemaError`, 10246); a property an update adds may declare it only when one of its params is new too (`DocumentTypeUpdateError`, 40212) |
 | **Errors** | `DocumentPropertyNotGeneratedError` (10424) on a document, and from protocol version 15 `ReferencedEntityNotFoundError` (40120) for a token that does not exist; at registration `JsonSchemaError` (10101) or `InvalidContractStructure` (10231); on update `IncompatibleDocumentTypeSchemaError` (10246) or `DocumentTypeUpdateError` (40212) |
 
@@ -105,6 +105,49 @@ A token's decimals live in its contract and can change (a `Conventions` update b
 
 Here `price` is per whole token at the order's `decimals`, so a later change of the token's decimals does not reprice the order.
 
+### Functions drawn at random
+
+The `sys.random` functions take no params. The platform draws their value from the block's random beacon, the threshold signature the validators' prevotes for the block combine into, which no one can compute before the block is accepted:
+
+| Function | Returns | Property |
+|---|---|---|
+| `sys.random.uniform` | An integer drawn uniformly from the property's `minimum` to its `maximum`, both included | An integer property of at most 64 bits declaring both a `minimum` and a `maximum` inside its type, the `minimum` not above the `maximum`, with no `enum`, `const`, `exclusiveMinimum`, `exclusiveMaximum` or `multipleOf`, so every value drawn passes its schema |
+
+Protocol version 15 parses the function, but it is not active at any protocol version yet: registration refuses it with `InvalidContractStructure` (10231), "not active at this protocol version", until block execution draws the values from the beacon Tenderdash delivers. What follows is how it works once a protocol version activates it.
+
+```json
+"card": {
+  "type": "object",
+  "documentsMutable": false,
+  "properties": {
+    "name": { "type": "string", "maxLength": 32, "position": 0 },
+    "rarity": {
+      "type": "integer", "minimum": 1, "maximum": 100,
+      "generatedFrom": { "function": "sys.random.uniform" },
+      "position": 1
+    }
+  },
+  "indices": [{ "name": "byRarity", "properties": [{ "rarity": "asc" }] }],
+  "required": ["name", "rarity"],
+  "additionalProperties": false
+}
+```
+
+- **Create.** The document is written with a placeholder, the `minimum` (here `1`), and a sent value is refused with `DocumentPropertyNotGeneratedError` (10424): a client cannot pick it. Once every transition of the block is accepted, the platform draws each such value and rewrites the document in place, its index entries included, before the block commits. A document a later transition of the same block deleted is skipped.
+- **Replace.** The document keeps the value drawn for it: a left-out value is the stored one, and a sent one must equal it. A replace never draws again.
+- **Cost.** The draw itself is not billed. It moves the document's entry in each index holding the property to the drawn value, and may create the trees that value is keyed under, so a create of a type indexing such a property pays for those entries once more, at the average case: what Drive's fee estimation gives for inserting the document's entries into those indexes without reading state.
+- **Clients.** As for a value read from state: the SDK's transition builders remove the property, the document checks do not refuse it left out (a client's schema check reads the `minimum` in its place), and a proof verifier takes the drawn value from the proved document, which the block committed after the draw.
+
+A value nothing can refuse once it is drawn may not be read by anything that judges a write, which would judge the placeholder, nor feed anything that has to stay within bounds. So registration also refuses the function:
+
+- on an [indexOnly](index-only.md) type, which keeps no document, on a type that keeps history (`documentsKeepHistory`), which would keep the placeholder, and on a type with a contested index anywhere, since a contested document waits in its contest and the one a contest awards would keep the placeholder;
+- on a property in a unique index, where two drawn values could collide, and on a property summed or averaged, by `documentsSummable` or an index's `summable` or `averageable`, whose total could not be held to its bounds; an ordinary index may hold it;
+- on a property a reference declared on the type reads (a `where` value, a `findBy` source, a function's params, a key id), or an `encryptedFor` names as a key;
+- on a property a rule reads: a [`propertyConstraints`](property-constraints.md) or `deleteConstraints` rule (`$old.` included), an `immutable` entry's condition or `retractedWhen`, and a `countOf` keyed by it;
+- on a property another type reads through a reference: a `where` entry comparing it, a rule's `referenced` operand, a derived index property (`cardId.rarity`), a lookup's key or a `chooseFirst` order, since the draw moves nothing they wrote or judged with the placeholder.
+
+The property and every object holding it are declared in place, as for a `sys.tokens` function.
+
 ## Params
 
 For now a param is always a property of the same document, written as its dotted path: a string property for the string transformations, an identifier property (one carrying `refersTo` included) for the token functions. The form leaves room to add, in a later protocol version, literals (`{ "const": ... }`), system values such as `"$ownerId"` and nested calls, without changing what parses today.
@@ -116,14 +159,15 @@ For now a param is always a property of the same document, written as its dotted
 - **Absent params.** A property one of whose params is absent must be absent too. To make the params required in effect, list the generated property in `required`: a document without them then fails the schema.
 - **Replace.** A replace is judged on the whole new document. Leave the property out to have it generated from the new params; a stale value sent with changed params is refused.
 - **Read from state.** A `sys.tokens` value is written or checked while the platform builds the write, before the rest, and kept from the document's creation: see [Functions that read state](#functions-that-read-state).
+- **Drawn at random.** A `sys.random` value is written as its placeholder while the platform builds a create, and drawn once the block's transitions are accepted: see [Functions drawn at random](#functions-drawn-at-random).
 - **Transfers, purchases and deletes by id** do not change the data and are not judged. An index-only delete is: its values are generated and checked like a create's, so a stale value, or one without its params, refuses it.
 
 For a string transformation, the SDK's transition builders generate the property from the document's params, replacing any value the document holds and leaving it out when a param is absent, so a transition built from a document carries the value the platform would generate, and contest detection sees it. A document fetched, edited and sent back through them therefore carries the value of its new params, not the stale one. The property-constraint pre-checks of the JavaScript and FFI SDKs judge the document the same way. A client that validates a document it built, before building a transition, should generate it first (in Rust, `DocumentTypeBasicMethods::regenerate_generated_properties`) or set the value; otherwise the local check reports the property missing. The proof a client verifies after a create or replace is checked against the document with the generated value, as the platform stored it. A `sys.tokens` property is the exception: the builders and `regenerate_generated_properties` remove it rather than guess a value from state, as described under [Functions that read state](#functions-that-read-state).
 
 ## Rules at registration
 
-- The keyword is allowed only on a string property (from protocol version 15 also an integer property, for `sys.tokens.decimals`, whose `minimum` and `maximum` admit 0 to 255 and which declares no `enum`, `const`, `exclusiveMinimum`, `exclusiveMaximum` or `multipleOf`), and not beside `$ref`, whose definition replaces every keyword written next to it (declare it in the definition instead). On any other property, a typed array and its `items` included, the meta-schema refuses it (`JsonSchemaError`, 10101).
-- `function` must name a system function, and `params` must list 1 to 16 params, as many as the function takes. The meta-schema refuses an unknown function or an empty or overlong list (`JsonSchemaError`, 10101).
+- The keyword is allowed only on a string property (from protocol version 15 also an integer property, for `sys.tokens.decimals`, whose `minimum` and `maximum` admit 0 to 255 and which declares no `enum`, `const`, `exclusiveMinimum`, `exclusiveMaximum` or `multipleOf`, and for `sys.random.uniform` once a protocol version activates it, as described under [Functions drawn at random](#functions-drawn-at-random)), and not beside `$ref`, whose definition replaces every keyword written next to it (declare it in the definition instead). On any other property, a typed array and its `items` included, the meta-schema refuses it (`JsonSchemaError`, 10101).
+- `function` must name a system function, and `params` must list 1 to 16 params, as many as the function takes (none for `sys.random.uniform`, which may leave `params` out). The meta-schema refuses an unknown function or an empty or overlong list (`JsonSchemaError`, 10101).
 - Every param must name another string property of the same document type (an identifier property for a `sys.tokens` function; not an object, not a system property, not the declaring property), and that property may not be generated itself.
 - A `sys.tokens` function is refused on an [indexOnly](index-only.md) type, whose deletes send their values again where a kept value could not be checked, on a property in a contested index, since a client, which leaves the property out, could not tell whether its document joins a contest, and on a property inside an object declaring `const` or `enum`, which compare the whole object, the value included (to allow some tokens only, declare `enum` on the token property). The property and every object holding it are declared in place, without a `$ref`: a client checks its document with a value the property admits in place of the one it leaves out, and a `$ref` would bring in schemas, the definition's own references and the keywords beside it included, that registration does not judge.
 - Neither the declaring property nor a param may be [transient](transient.md) or sit inside a transient object: a transient value is never stored.

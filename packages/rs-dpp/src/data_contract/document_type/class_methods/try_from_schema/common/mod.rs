@@ -3346,17 +3346,28 @@ fn apply_delete_keeps_fields(
 }
 
 /// The top-level properties of `document_type` that a reference declared on it
-/// reads when a document is written: each property holding a reference, and
-/// the referring side of every `where`, `findBy` source (a function's params
-/// included), `chooseFirst` function param and key id property, for every leaf of every reference expression, the
-/// `ownerRefersTo` and `creatorRefersTo` declarations included. System
-/// properties (`$ownerId`) are left out: they are no property a moderator can
-/// name.
+/// reads when a document is written: the top-level property of each path
+/// [`paths_read_by_references`] gives. System properties (`$ownerId`) are left
+/// out: they are no property a moderator can name.
 fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet<&str> {
+    paths_read_by_references(document_type)
+        .into_iter()
+        .map(top_level_property)
+        .collect()
+}
+
+/// The property paths of `document_type` that a reference declared on it reads
+/// when a document is written: each property holding a reference, and the
+/// referring side of every `where`, `findBy` source (a function's params
+/// included), `chooseFirst` function param and key id property, for every leaf
+/// of every reference expression, the `ownerRefersTo` and `creatorRefersTo`
+/// declarations included. The referring side of a `where` may name the writer,
+/// `$ownerId`, which is left out.
+pub(super) fn paths_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet<&str> {
     let mut read = BTreeSet::new();
     for (holder, reference) in document_type.reference_declarations() {
         if let ReferenceHolder::Property(path) = holder {
-            read.insert(top_level_property(path));
+            read.insert(path);
         }
         // A key id property reads the identity property whose key it names
         if let PropertyReference::KeyId(KeyIdReference {
@@ -3364,7 +3375,7 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
             ..
         }) = reference
         {
-            read.insert(top_level_property(path));
+            read.insert(path.as_str());
         }
         let Some(target) = reference.target() else {
             continue;
@@ -3374,26 +3385,21 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
                 key_id_property, ..
             } = leaf
             {
-                read.insert(top_level_property(key_id_property));
+                read.insert(key_id_property.as_str());
             }
             let Some(declaration) = leaf.as_any_document_reference() else {
                 continue;
             };
             if let Some(lookup) = declaration.lookup {
-                read.extend(lookup.referring_properties().map(top_level_property));
+                read.extend(lookup.referring_properties());
                 // A computed key's params: the key is judged on the create only, so a
                 // change would leave the document no longer hashing to what it revealed
                 if let Some((_, key)) = lookup.hash_key() {
-                    read.extend(key.properties_read().map(top_level_property));
+                    read.extend(key.properties_read());
                 }
                 // The `chooseFirst` `validWhen` function's params, for the same reason
                 if let Some(choose_first) = &lookup.choose_first {
-                    read.extend(
-                        choose_first
-                            .valid_when
-                            .properties_read()
-                            .map(top_level_property),
-                    );
+                    read.extend(choose_first.valid_when.properties_read());
                 }
             }
             // The `where` of a list element names the property holding its
@@ -3401,8 +3407,7 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
             read.extend(
                 declaration
                     .where_referring_properties()
-                    .filter(|property| !property.starts_with('$'))
-                    .map(top_level_property),
+                    .filter(|property| !property.starts_with('$')),
             );
         }
     }

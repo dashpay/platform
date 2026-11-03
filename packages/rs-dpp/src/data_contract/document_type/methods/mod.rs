@@ -437,8 +437,9 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
     /// (`regenerate_generated_properties` removes it).
     ///
     /// Inert on a type without such a declaration, which covers every type parsed before
-    /// protocol version 15 (generation 1 of `apply_generated_from` is the first to admit a
-    /// `sys.random` function).
+    /// protocol version 15 (generation 1 of `apply_generated_from` is the first to parse a
+    /// `sys.random` function), and every type parsed from it until a table's
+    /// `random_generated_from` admits one.
     fn generate_random_properties(
         &self,
         data: &mut BTreeMap<String, Value>,
@@ -464,7 +465,7 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
                     }
                     let Some(placeholder) =
                         self.flattened_properties().get(path).and_then(|property| {
-                            integer_value_for_type(&property.property_type, range.minimum)
+                            integer_value_for_type(&property.property_type, range.minimum())
                         })
                     else {
                         // Registration admits the function only on an integer property whose
@@ -833,7 +834,7 @@ pub(crate) fn with_state_generated_stand_ins(
         let stand_in = match generated_from.function {
             SystemFunction::Token(TokenFunction::Decimals) => Value::U8(0),
             SystemFunction::Random(_) => {
-                let Some(minimum) = generated_from.range.map(|range| range.minimum) else {
+                let Some(minimum) = generated_from.range.map(|range| range.minimum()) else {
                     continue;
                 };
                 // At most 64 bits wide, so one of the two holds it

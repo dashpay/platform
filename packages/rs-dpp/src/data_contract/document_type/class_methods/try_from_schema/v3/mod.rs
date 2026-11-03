@@ -36,12 +36,12 @@ use crate::data_contract::document_type::index::{
     PreallocationBinding,
 };
 use crate::data_contract::document_type::property::DocumentPropertyType;
-use crate::data_contract::document_type::property::{is_path_listed, DocumentReferenceKind};
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::property::{
-    is_transient, DocumentPropertyReferenceTarget, PropertyReference, ReferenceHolder,
-    ReferenceOperands,
+    is_drawn_at_random, is_transient, DocumentPropertyReferenceTarget, PropertyReference,
+    ReferenceHolder, ReferenceOperands,
 };
+use crate::data_contract::document_type::property::{is_path_listed, DocumentReferenceKind};
 use crate::data_contract::document_type::property_names;
 use crate::data_contract::document_type::reference_lookup::{
     owner_can_change, schema_property_is_fixed_once_written, why_value_can_change,
@@ -1374,6 +1374,14 @@ fn derived_index_field_error(
         ));
     }
     if !schema_property_is_fixed_once_written(referenced, path) {
+        if is_drawn_at_random(referenced, path) {
+            return Some(format!(
+                "\"{path}\" of \"{referenced_name}\" is drawn at random once the block's \
+                 transitions are accepted, which moves no entry another type keyed by the \
+                 placeholder, so the entry would no longer be found under the value it was \
+                 written under"
+            ));
+        }
         return Some(format!(
             "\"{path}\" of \"{referenced_name}\" can change once written, and the entry would \
              no longer be found under the value it was written under: make \

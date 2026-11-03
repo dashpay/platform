@@ -39,8 +39,10 @@ pub struct DriveDocumentMethodVersions {
     pub prove_private_document_entries: OptionalFeatureVersion,
     /// `draw_random_document_properties`: fills each `sys.random` property of the documents a
     /// block created with a value drawn from the block's random beacon, once every transition
-    /// of the block is accepted. `Some(0)` from `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (protocol
-    /// version 15), `None` in every earlier table, which admit no `sys.random` property.
+    /// of the block is accepted, and `prepay_random_document_index_entries`, the same
+    /// generation's price of the index entries the draw may create, which a create pays. `Some(0)`
+    /// from `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (protocol version 15), `None` in every earlier
+    /// table, which admit no `sys.random` property.
     pub draw_random_document_properties: OptionalFeatureVersion,
 }
 

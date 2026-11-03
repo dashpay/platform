@@ -18,7 +18,7 @@ use crate::data_contract::config::v1::DataContractConfigGettersV1;
 use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::{property_names, DocumentTypeRef};
+use crate::data_contract::document_type::{property_names, DocumentTypeRef, Index};
 use crate::data_contract::DataContract;
 use crate::document::property_names::{CREATOR_ID, ID, OWNER_ID};
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -1593,6 +1593,31 @@ pub fn is_path_listed(paths: &BTreeSet<String>, path: &str) -> bool {
 /// object is found only through the object's path, a prefix of its own.
 pub fn is_transient(document_type: DocumentTypeRef, path: &str) -> bool {
     is_path_listed(document_type.transient_fields(), path)
+}
+
+/// Whether the property at the dotted `path` of `document_type` is drawn at random
+/// (`generatedFrom` with a `sys.random` function, protocol version 15): written with a
+/// placeholder when its document is created, and drawn from the block's random beacon once the
+/// block's transitions are accepted, when nothing can be refused any more. A rule judging a
+/// write that reads it would judge the placeholder, and a value read from it would move with the
+/// draw, so registration refuses both. `false` on every type parsed before protocol version 15,
+/// whose parsers admit no such function.
+pub fn is_drawn_at_random(document_type: DocumentTypeRef, path: &str) -> bool {
+    document_type
+        .flattened_properties()
+        .get(path)
+        .and_then(|property| property.generated_from.as_ref())
+        .is_some_and(|generated_from| matches!(generated_from.function, SystemFunction::Random(_)))
+}
+
+/// Whether `index`, of `document_type`, holds a property drawn at random
+/// ([`is_drawn_at_random`]): the draw moves the document's entry in it, and may create the
+/// trees the drawn value is keyed under, which the document's creation prepays.
+pub fn indexes_a_random_property(document_type: DocumentTypeRef, index: &Index) -> bool {
+    index
+        .properties
+        .iter()
+        .any(|property| is_drawn_at_random(document_type, &property.name))
 }
 
 impl std::fmt::Display for DocumentPropertyReferenceTarget {
