@@ -1481,6 +1481,12 @@ impl NetworkShieldedCoordinator {
                     .collect()
             };
             for (id, persister) in &subwallet_persisters {
+                // Network broadcasts: a stop that lands after the scan's
+                // snapshot above stops the loop here, and the helper
+                // checks the token before each request it starts.
+                if cancel.is_cancelled() {
+                    break;
+                }
                 super::operations::redrive_pending_spends(
                     &self.sdk,
                     &self.store,
@@ -1488,10 +1494,13 @@ impl NetworkShieldedCoordinator {
                     id.wallet_id,
                     *id,
                     &recorded,
+                    cancel,
                 )
                 .await;
             }
-            self.release_stranded_spends(snapshot, &recorded).await;
+            if !cancel.is_cancelled() {
+                self.release_stranded_spends(snapshot, &recorded).await;
+            }
         }
 
         let balances_per_sub = match super::sync::balances_across(&self.store, &subwallets).await {
@@ -1501,14 +1510,27 @@ impl NetworkShieldedCoordinator {
 
         // Restore-path activity derivation: reconstruct per-operation
         // activity entries best-effort from the notes / outgoing notes
-        // this pass (and earlier passes) persisted. Runs every pass so it
-        // doubles as the one-time backfill over an already-populated
-        // store — `derive_activity_from_scan_data` skips clusters whose
-        // id a live entry already owns, and `save_activity` upserts by
-        // id, so re-running is idempotent. Failures are logged and
-        // swallowed: a derivation miss must never fail a sync pass.
+        // this pass (and earlier passes) persisted. Runs every completed
+        // pass so it doubles as the one-time backfill over an
+        // already-populated store — `derive_activity_from_scan_data`
+        // skips clusters whose id a live entry already owns, and
+        // `save_activity` upserts by id, so re-running is idempotent.
+        // Failures are logged and swallowed: a derivation miss must never
+        // fail a sync pass.
+        //
+        // Deferred on a cancelled pass. Derived entries are immutable
+        // clusters keyed by the discovering chunk's proof height: an
+        // entry derived from a consumed prefix would freeze the cluster,
+        // and a note the resumed pass finds at the same height could only
+        // confirm that entry, never extend it — the amount and cmx set
+        // would permanently omit the later note. The raw notes, spent
+        // marks and cursor are flushed regardless; the next pass that
+        // reaches the tip derives over all of them at once, exactly as an
+        // uninterrupted scan would have.
         let mut notes = notes;
-        if let Err(e) = self
+        if cancelled {
+            tracing::debug!("Shielded activity derivation deferred: pass cancelled");
+        } else if let Err(e) = self
             .derive_activity_into_changeset(&subwallets, &mut notes.changeset)
             .await
         {
@@ -1523,12 +1545,19 @@ impl NetworkShieldedCoordinator {
         // enumeration includes guards rehydrated from the durable store.
         let wallet_ids: HashSet<WalletId> = subwallets.iter().map(|(id, _)| id.wallet_id).collect();
         for wallet_id in wallet_ids {
-            // Network broadcasts: stop between wallets once cancelled.
+            // Network requests: stop between wallets once cancelled; the
+            // helper also checks the token between records and before
+            // each request it starts.
             if cancel.is_cancelled() {
                 break;
             }
-            super::operations::redrive_pending_identity_shields(&self.sdk, &self.store, wallet_id)
-                .await;
+            super::operations::redrive_pending_identity_shields(
+                &self.sdk,
+                &self.store,
+                wallet_id,
+                cancel,
+            )
+            .await;
         }
 
         // The note-side changeset already carries saves, synced

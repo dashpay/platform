@@ -793,9 +793,14 @@ mod tests {
         // token: holds the slot until the manager cancels it.
         let holder = Arc::clone(&mgr);
         let pass = tokio::spawn(async move {
+            // Token before the slot, as the production entry points do:
+            // taken after, a quiesce that saw the occupied slot first
+            // would have rotated the parent and this task would wait on
+            // a fresh, uncancelled lineage.
+            let pass_cancel = holder.pass_token();
             wedge_sync_slot(&holder);
             let _slot = SyncSlotGuard(&holder.is_syncing);
-            holder.pass_token().cancelled().await;
+            pass_cancel.cancelled().await;
         });
         while !mgr.is_syncing() {
             tokio::time::sleep(Duration::from_millis(5)).await;

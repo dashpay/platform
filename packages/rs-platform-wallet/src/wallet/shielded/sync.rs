@@ -776,20 +776,29 @@ where
     // subwallet that was already further along; a completed pass
     // always reaches the tip, which is at or past every watermark.
     // A cancelled pass leaves such a subwallet's row alone entirely:
-    // its consumed prefix never covered that subwallet, so neither
-    // the watermark nor the `ScannedThisSession` stamp the setter
-    // applies belongs to it. A completed pass keeps the unconditional
-    // write, so a caught-up subwallet still gets its stamp.
+    // its consumed prefix never covered that subwallet. Where it did
+    // advance a subwallet, only the RESUME cursor moves: the prefix is
+    // not a complete scan, so the scan coverage and balance source the
+    // completed-pass setter stamps (`ScannedThisSession`, which lets
+    // `local_balance_snapshot` report an unhydrated account as ready)
+    // stay untouched until a pass runs to the tip. The host still gets
+    // the cursor in the changeset so a restart resumes from it.
     let new_index = aligned_start + total_notes_scanned;
     for (id, _) in subwallets {
         let prior = watermarks.get(id).copied().unwrap_or(0);
         let advanced = prior.max(new_index);
-        if cancelled && advanced == prior {
-            continue;
+        if cancelled {
+            if advanced == prior {
+                continue;
+            }
+            store
+                .set_resume_note_index(*id, advanced)
+                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+        } else {
+            store
+                .set_last_synced_note_index(*id, advanced)
+                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
         }
-        store
-            .set_last_synced_note_index(*id, advanced)
-            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
         changeset.record_synced_index(*id, advanced);
     }
     // Drop the write lock before returning so the caller's

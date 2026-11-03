@@ -15,6 +15,7 @@ use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
 use super::{sync_notes_from_stream, MultiSyncNotesResult};
+use crate::wallet::shielded::balance::ShieldedBalanceSource;
 use crate::wallet::shielded::file_store::FileBackedShieldedStore;
 use crate::wallet::shielded::keys::{AccountViewingKeys, OrchardKeySet};
 use crate::wallet::shielded::store::{ShieldedStore, SubwalletId};
@@ -128,6 +129,11 @@ async fn should_finalize_consumed_prefix_when_cancelled_mid_stream() {
         store.witness(7).unwrap().is_some(),
         "a checkpoint covers the appended leaves"
     );
+    // A resume cursor, not a completed scan: the ledger's coverage and
+    // provenance are untouched, so an unhydrated account stays unavailable.
+    let balance = store.local_account_balance(sub).unwrap();
+    assert_eq!(balance.last_scanned_index, None);
+    assert_eq!(balance.source, ShieldedBalanceSource::NoHistory);
 
     let _ = std::fs::remove_file(&path);
 }
@@ -216,6 +222,13 @@ async fn should_resume_from_partial_watermark_on_next_pass() {
         "the second pass checkpoints past the partial one"
     );
     assert!(store.witness(7).unwrap().is_some());
+    let balance = store.local_account_balance(sub).unwrap();
+    assert_eq!(balance.last_scanned_index, Some(12));
+    assert_eq!(
+        balance.source,
+        ShieldedBalanceSource::ScannedThisSession,
+        "the completed pass certifies the scan"
+    );
 
     let _ = std::fs::remove_file(&path);
 }

@@ -73,6 +73,7 @@ use dpp::withdrawal::Pooling;
 use dpp::ProtocolError;
 use grovedb_commitment_tree::{Anchor, PaymentAddress};
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, trace, warn};
 
 /// Number of Orchard actions in a `Shield` (Type 15) bundle.
@@ -3118,6 +3119,7 @@ pub(super) async fn redrive_pending_identity_shields<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     wallet_id: WalletId,
+    cancel: &CancellationToken,
 ) {
     use dpp::serialization::PlatformDeserializableTrusted;
     use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
@@ -3130,6 +3132,13 @@ pub(super) async fn redrive_pending_identity_shields<S: ShieldedStore>(
         }
     };
     for (id, redrive) in redrives {
+        // A stop ends the pass between records: no new request starts
+        // once cancelled. A request already on the wire is left to
+        // finish on its own (its outcome is handled conservatively).
+        if cancel.is_cancelled() {
+            debug!("identity redrive: pass cancelled; remaining guards wait for the next pass");
+            return;
+        }
         if !redrive.nullifiers.is_empty()
             || redrive.identity_nonce_finalized
             || redrive.identity_user_abandoned
@@ -3147,9 +3156,17 @@ pub(super) async fn redrive_pending_identity_shields<S: ShieldedStore>(
         let StateTransition::ShieldFromIdentity(identity_transition) = &state_transition else {
             continue;
         };
-        if let Ok(fetched) =
-            IdentityNonceFetcher::fetch(sdk, identity_transition.identity_id()).await
-        {
+        // The nonce read is the one wait here a stop can cut short: it
+        // is read-only, so dropping it mid-flight loses nothing.
+        let fetched = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => {
+                debug!("identity redrive: pass cancelled during the nonce read");
+                return;
+            }
+            fetched = IdentityNonceFetcher::fetch(sdk, identity_transition.identity_id()) => fetched,
+        };
+        if let Ok(fetched) = fetched {
             let result = {
                 let mut store = store.write().await;
                 reconcile_identity_shield_nonce(
@@ -3188,6 +3205,12 @@ pub(super) async fn redrive_pending_identity_shields<S: ShieldedStore>(
         if !still_active {
             continue;
         }
+        // Last check before a broadcast starts; a broadcast already
+        // submitted cannot be cancelled by this check.
+        if cancel.is_cancelled() {
+            debug!("identity redrive: pass cancelled before the re-broadcast");
+            return;
+        }
         // Unused or unverified state permits only the original signed bytes.
         // Even an apparently definitive rejection cannot release the guard:
         // this request, or an earlier relay, may deliver the debit afterward.
@@ -3223,6 +3246,7 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
     wallet_id: WalletId,
     id: SubwalletId,
     recorded: &std::collections::HashSet<[u8; 32]>,
+    cancel: &CancellationToken,
 ) {
     use dpp::serialization::PlatformDeserializableTrusted;
 
@@ -3237,6 +3261,13 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
         }
     };
     for redrive in redrives {
+        // A stop ends the pass between records: no new re-broadcast starts
+        // once cancelled. One already submitted is left to finish and is
+        // classified as usual — its outcome handling stays conservative.
+        if cancel.is_cancelled() {
+            debug!("redrive: pass cancelled; remaining records wait for the next pass");
+            return;
+        }
         // Empty-nullifier identity debits are wallet-wide and are driven by
         // `redrive_pending_identity_shields`, independently of spending anchors.
         if redrive.nullifiers.is_empty() {
@@ -3646,8 +3677,13 @@ mod redrive_tests {
         assert!(!has_unresolved_identity_shield(&store, wallet_id, identity_id).unwrap());
         let store = Arc::new(RwLock::new(store));
         // No mock nonce responses: accidentally retrying would reach an unconfigured SDK.
-        redrive_pending_identity_shields(&Arc::new(dash_sdk::Sdk::new_mock()), &store, wallet_id)
-            .await;
+        redrive_pending_identity_shields(
+            &Arc::new(dash_sdk::Sdk::new_mock()),
+            &store,
+            wallet_id,
+            &CancellationToken::new(),
+        )
+        .await;
         assert_eq!(
             store.read().await.pending_redrives(id).unwrap(),
             vec![archived.clone()]
@@ -3711,7 +3747,7 @@ mod redrive_tests {
         assert!(store.pending_redrives(id).unwrap()[0].identity_nonce_finalized);
         let store = Arc::new(RwLock::new(store));
         let sdk = Arc::new(dash_sdk::Sdk::new_mock());
-        redrive_pending_identity_shields(&sdk, &store, wallet_id).await;
+        redrive_pending_identity_shields(&sdk, &store, wallet_id, &CancellationToken::new()).await;
         assert_eq!(
             store.read().await.pending_redrives(id).unwrap()[0].attempts,
             0,
@@ -3900,7 +3936,7 @@ mod redrive_tests {
             )
             .expect("arm identity guard");
 
-        redrive_pending_identity_shields(&sdk, &store, wallet_id).await;
+        redrive_pending_identity_shields(&sdk, &store, wallet_id, &CancellationToken::new()).await;
 
         let retained = store
             .read()
@@ -3947,7 +3983,16 @@ mod redrive_tests {
             .expect("arm identity guard");
         let recorded = [anchor].into_iter().collect();
 
-        redrive_pending_spends(&sdk, &store, None, wallet_id, id, &recorded).await;
+        redrive_pending_spends(
+            &sdk,
+            &store,
+            None,
+            wallet_id,
+            id,
+            &recorded,
+            &CancellationToken::new(),
+        )
+        .await;
 
         let retained = store.read().await.pending_redrives(id).expect("guard");
         assert_eq!(retained.len(), 1);
@@ -3993,7 +4038,16 @@ mod redrive_tests {
         let recorded: std::collections::HashSet<[u8; 32]> =
             [[11u8; 32], [12u8; 32]].into_iter().collect();
 
-        redrive_pending_spends(&sdk, &store, None, wallet_id, id, &recorded).await;
+        redrive_pending_spends(
+            &sdk,
+            &store,
+            None,
+            wallet_id,
+            id,
+            &recorded,
+            &CancellationToken::new(),
+        )
+        .await;
 
         let left = store.read().await.pending_redrives(id).unwrap();
         let ids: Vec<[u8; 32]> = left.iter().map(|r| r.activity_id).collect();
