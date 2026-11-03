@@ -1,4 +1,4 @@
-use crate::version::consensus_versions::ConsensusVersions;
+use crate::version::consensus_versions::{ConsensusEvidenceParams, ConsensusVersions};
 use crate::version::dpp_versions::dpp_asset_lock_versions::v1::DPP_ASSET_LOCK_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_contract_versions::v7::CONTRACT_VERSIONS_V7;
 use crate::version::dpp_versions::dpp_costs_versions::v1::DPP_COSTS_VERSIONS_V1;
@@ -161,7 +161,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    (`InvalidContractStructure`; a stored contract with one, which no JSON
 ///    could have written, must drop it to be updated),
 ///    refuses a contested index whose contest its index values do not decide
-///    (`InvalidContractStructure`, note 16),
+///    (`InvalidContractStructure`, note 17),
 ///    and refuses a document type the typed validation schema does not represent
 ///    (`InvalidContractStructure`), so every type registered from this version
 ///    has its documents checked natively (note 6). The parser is generation 3
@@ -369,7 +369,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     this version, where no type declares such a function. Protocol v14 and
 ///     earlier keep `apply_generated_from` 0.
 ///
-/// 16. **A contest is decided by its index values**: a document joins its type's contest
+/// 16. **Zero consensus evidence budget**: consensus parameter update 2 installs
+///     the complete evidence policy at activation, including a zero byte budget.
+///     Protocol v14 and earlier retain their existing evidence limits.
+///
+/// 17. **A contest is decided by its index values**: a document joins its type's contest
 ///     when every `fieldMatches` entry matches it, and two documents with the same index
 ///     values share one unique index entry. A `fieldMatches` field outside the index, or a
 ///     match telling `""` from `"\0"` (which share an index key) on a string that may be
@@ -392,8 +396,8 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); document create state_validation 3 keeps a create outside a contest off the values of a live one its index values do not decide (note 16)
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; consensus_params_update 2 installs the full evidence policy (note 16)
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); document create state_validation 3 keeps a create outside a contest off the values of a live one its index values do not decide (note 17)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -419,5 +423,10 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes, and the private document store limits size its store (note 13)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
+        evidence: Some(ConsensusEvidenceParams {
+            max_bytes: 0,
+            max_age_num_blocks: 100_000,
+            max_age_duration_seconds: 172_800,
+        }),
     },
 };
