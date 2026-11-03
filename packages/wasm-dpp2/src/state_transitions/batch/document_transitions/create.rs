@@ -23,6 +23,7 @@ use dpp::prelude::{Identifier, IdentityNonce};
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dpp::state_transition::batch_transition::DocumentCreateTransition;
 use dpp::version::PlatformVersion;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -61,7 +62,8 @@ export interface DocumentCreateTransitionOptions {
      * The most, in credits, a contested create pays into its contest (protocol
      * version 14), stated in place of the amount of its prefunded voting
      * balance. Needs `dataContract` or `prefundedVotingBalance` to name the
-     * contested index. A document that joins no contest ignores it.
+     * contested index. A document that joins no contest ignores it, and a
+     * decision proposal keeps its fund.
      */
     contestFund?: bigint;
     tokenPaymentInfo?: TokenPaymentInfo;
@@ -155,12 +157,6 @@ impl DocumentCreateTransitionWasm {
             }
             (None, None) => None,
         };
-        // Like `StateTransitionCreationOptions::apply_contest_fund` in dpp
-        let prefunded_voting_balance = match (prefunded_voting_balance, contest_fund) {
-            (Some((index_name, _)), Some(contest_fund)) => Some((index_name, contest_fund)),
-            (prefunded_voting_balance, _) => prefunded_voting_balance,
-        };
-
         document.set_id_for_creation(identity_contract_nonce, &platform_version)?;
 
         let rs_create_transition = generate_create_transition(
@@ -172,7 +168,21 @@ impl DocumentCreateTransitionWasm {
             action_fee_agreement,
         );
 
-        Ok(DocumentCreateTransitionWasm(rs_create_transition))
+        // The contest fund stated in place of the one the create was built with, as the Rust
+        // builders state it: a decision proposal keeps its fund.
+        let creation_options = StateTransitionCreationOptions {
+            contest_fund,
+            ..Default::default()
+        };
+        match creation_options.apply_contest_fund(DocumentTransition::Create(rs_create_transition))
+        {
+            DocumentTransition::Create(rs_create_transition) => {
+                Ok(DocumentCreateTransitionWasm(rs_create_transition))
+            }
+            _ => Err(WasmDppError::generic(
+                "applying the contest fund to a create returned another transition",
+            )),
+        }
     }
 
     #[wasm_bindgen(getter = "data")]

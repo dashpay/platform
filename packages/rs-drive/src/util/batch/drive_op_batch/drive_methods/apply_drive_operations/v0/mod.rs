@@ -1,4 +1,5 @@
 use crate::util::batch::DriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::drive::Drive;
 use crate::error::Error;
@@ -6,16 +7,14 @@ use crate::error::Error;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
 
 use crate::util::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-use std::collections::HashMap;
 
 impl Drive {
     /// Applies a list of high level DriveOperations to the drive, and calculates the fee for them.
@@ -65,11 +64,7 @@ impl Drive {
             )?;
         }
         let mut low_level_operations = vec![];
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
         let mut finalize_tasks: Vec<DriveOperationFinalizeTask> = Vec::new();
 

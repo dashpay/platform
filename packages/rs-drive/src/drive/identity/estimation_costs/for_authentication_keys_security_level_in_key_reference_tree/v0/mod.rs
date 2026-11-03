@@ -1,4 +1,5 @@
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::ApproximateElements;
@@ -10,8 +11,6 @@ use crate::drive::identity::identity_query_keys_security_level_tree_path_vec;
 use crate::drive::identity::estimation_costs::KEY_REFERENCE_SIZE;
 use dpp::identity::SecurityLevel;
 
-use std::collections::HashMap;
-
 impl Drive {
     /// Adds estimation costs for authentication keys based on the security level in
     /// the key reference tree (version 0).
@@ -22,7 +21,7 @@ impl Drive {
     /// # Parameters
     ///
     /// * `identity_id`: A 32-byte array representing the identity ID.
-    /// * `estimated_costs_only_with_layer_info`: A mutable reference to a `HashMap` that stores
+    /// * `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` that stores
     ///   estimated layer information based on the key information path.
     /// * `security_level`: The security level associated with the authentication keys.
     ///
@@ -34,7 +33,7 @@ impl Drive {
     /// ```
     pub(super) fn add_estimation_costs_for_authentication_keys_security_level_in_key_reference_tree_v0(
         identity_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         security_level: SecurityLevel,
     ) {
         // we then need to insert the identity keys layer

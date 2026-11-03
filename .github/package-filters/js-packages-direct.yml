@@ -16,6 +16,9 @@
 '@dashevo/moderation-charters-contract':
   - packages/moderation-charters-contract/**
 
+'@dashevo/decision-proposals-contract':
+  - packages/decision-proposals-contract/**
+
 '@dashevo/dashpay-contract':
   - packages/dashpay-contract/**
 

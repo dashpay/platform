@@ -6,6 +6,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::common::encode::encode_u64;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::pending_grove_operations::pending_grove_operations;
 use crate::util::grove_operations::BatchInsertApplyType;
 use crate::util::object_size_info::PathKeyElementInfo::PathKeyRefElement;
@@ -16,9 +17,8 @@ use dpp::serialization::PlatformSerializable;
 use dpp::voting::vote_polls::VotePoll;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::{GroveOp, KeyInfoPath};
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, TransactionArg};
 use platform_version::version::PlatformVersion;
-use std::collections::HashMap;
 
 impl Drive {
     /// Version 1 (protocol version 15): when the previous operations already queue an insert of
@@ -34,9 +34,7 @@ impl Drive {
         vote_poll: VotePoll,
         end_date: TimestampMillis,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,

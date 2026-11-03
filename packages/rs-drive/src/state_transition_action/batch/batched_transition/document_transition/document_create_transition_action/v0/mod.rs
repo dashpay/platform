@@ -68,6 +68,19 @@ pub struct DocumentCreateTransitionActionV0 {
     /// reading them again. `None` when the action is built and on a type declaring none, and
     /// boxed, since only such a create holds any and the action is one variant of a large enum.
     pub derived_index_values: Option<Box<BTreeMap<String, Value>>>,
+    /// Set for the create of a decision proposal (protocol version 15), a `proposal` of the
+    /// decision proposals contract, and `None` for any other create: the fund it states. Boxed,
+    /// since only such a create holds one.
+    pub decision_proposal: Option<Box<DecisionProposalCreate>>,
+}
+
+/// What a decision proposal's create carries beside its document (protocol version 15).
+#[derive(Debug, Clone, PartialEq)]
+pub struct DecisionProposalCreate {
+    /// The fund the create states, as the name and the amount of its prefunded voting
+    /// balance; `None` when it states none. Structure validation requires exactly the decision
+    /// proposal fund under the proposal's name.
+    pub stated_fund: Option<(String, Credits)>,
 }
 
 /// A document of the create's own contract that the create deletes because it revealed it:
@@ -172,6 +185,10 @@ pub trait DocumentCreateTransitionActionAccessorsV0 {
     /// Records the values of the document type's derived index properties, once the
     /// reference validation has fetched the documents they are read from
     fn set_derived_index_values(&mut self, values: BTreeMap<String, Value>);
+
+    /// What a decision proposal's create carries beside its document; `None` for any other
+    /// create
+    fn decision_proposal(&self) -> Option<&DecisionProposalCreate>;
 }
 
 /// documents from create transition v0
