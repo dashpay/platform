@@ -84,7 +84,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          # The merge-base diffs below need full history but not every past
+          # version of every file. A blobless clone downloads only the checked
+          # out tree up front and fetches the blobs a diff reads on demand,
+          # which keeps this frequent job light on the shared runner hosts.
           fetch-depth: 0
+          filter: blob:none
 
       - name: Verify self-hosted Swift runner policy
         run: python3 .github/scripts/check-swift-self-hosted-runner.py
