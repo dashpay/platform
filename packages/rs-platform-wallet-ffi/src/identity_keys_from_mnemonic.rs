@@ -7,7 +7,7 @@ use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPu
 use key_wallet::dip9::{
     IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
 };
-use key_wallet::mnemonic::Mnemonic;
+use platform_wallet::parse_mnemonic_any_language;
 use zeroize::Zeroizing;
 
 use crate::error::*;
@@ -50,15 +50,6 @@ pub(crate) unsafe fn zeroize_and_free_row(row: &mut IdentityKeyPreviewFFI) {
         row.private_key_wif = std::ptr::null_mut();
     }
     zeroize::Zeroize::zeroize(&mut row.private_key_bytes);
-}
-
-/// Parse a BIP-39 mnemonic against every supported wordlist.
-pub(crate) fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
-    // Upstream's `from_phrase` IS the auto-detecting parse since
-    // rust-dashcore#981 — one path, English diagnostics preserved when
-    // nothing matches. This wrapper survives only to narrow the error to
-    // the `&'static str` its callers report.
-    Mnemonic::from_phrase(phrase).map_err(|_| "phrase does not match any supported BIP-39 wordlist")
 }
 
 /// Resolve a wallet's BIP-39 mnemonic via a Swift-owned

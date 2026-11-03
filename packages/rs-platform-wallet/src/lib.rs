@@ -90,6 +90,7 @@ pub use wallet::identity::{
 pub use wallet::masternode_withdrawal::{
     MasternodeWithdrawalKey, MasternodeWithdrawalKeys, MasternodeWithdrawalRequest,
 };
+pub use wallet::mnemonic::parse_mnemonic_any_language;
 pub use wallet::platform_wallet::PlatformWalletInfo;
 #[cfg(feature = "shielded")]
 pub use wallet::platform_wallet::ShieldedShieldPreflight;

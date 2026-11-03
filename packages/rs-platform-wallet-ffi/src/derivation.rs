@@ -5,20 +5,12 @@ use std::os::raw::c_char;
 use std::str::FromStr;
 
 use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
-use key_wallet::mnemonic::Mnemonic;
+use platform_wallet::parse_mnemonic_any_language;
 use zeroize::Zeroizing;
 
 use crate::error::*;
 use crate::types::{FFINetwork, Network};
 use crate::{check_ptr, unwrap_result_or_return};
-
-fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
-    // Upstream's `from_phrase` IS the auto-detecting parse since
-    // rust-dashcore#981 — one path, English diagnostics preserved when
-    // nothing matches. This wrapper survives only to narrow the error to
-    // the `&'static str` its callers report.
-    Mnemonic::from_phrase(phrase).map_err(|_| "phrase does not match any supported BIP-39 wordlist")
-}
 
 /// Derive a 32-byte ECDSA private key at a BIP-32 derivation path from
 /// a mnemonic phrase.
