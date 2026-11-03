@@ -1,23 +1,50 @@
 use crate::version::drive_versions::drive_contract_method_versions::v5::DRIVE_CONTRACT_METHOD_VERSIONS_V5;
+use crate::version::drive_versions::drive_contract_method_versions::{
+    DriveContractFeePotMethodVersions, DriveContractMethodVersions,
+};
 use crate::version::drive_versions::drive_document_method_versions::v5::DRIVE_DOCUMENT_METHOD_VERSIONS_V5;
 use crate::version::drive_versions::drive_group_method_versions::v2::DRIVE_GROUP_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_identity_method_versions::v3::DRIVE_IDENTITY_METHOD_VERSIONS_V3;
+use crate::version::drive_versions::drive_identity_method_versions::{
+    DriveIdentityCostEstimationMethodVersions, DriveIdentityMethodVersions,
+};
 use crate::version::drive_versions::drive_state_transition_method_versions::v5::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5;
+use crate::version::drive_versions::drive_token_method_versions::v3::DRIVE_TOKEN_METHOD_VERSIONS_V3;
 use crate::version::drive_versions::drive_verify_method_versions::v4::DRIVE_VERIFY_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::drive_vote_method_versions::v4::DRIVE_VOTE_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
 use crate::version::drive_versions::{
-    DriveBatchOperationsMethodVersion, DriveFeesMethodVersions, DriveMethodVersions,
-    DrivePlatformSystemMethodVersions, DriveSystemEstimationCostsMethodVersions, DriveVersion,
+    DriveBatchOperationsMethodVersion, DriveFeesMethodVersions, DriveInitializationMethodVersions,
+    DriveMethodVersions, DrivePlatformSystemMethodVersions,
+    DrivePrefundedSpecializedMethodVersions, DriveSystemEstimationCostsMethodVersions,
+    DriveVersion,
 };
 
-/// Drive version 10.
-/// Introduced in protocol v15:
+/// Drive version 10, introduced in protocol v15:
 ///
-/// * **Compiled contract storage**: `DRIVE_CONTRACT_METHOD_VERSIONS_V5`: applying a contract
-///   writes nothing when its format version 1 bytes match the stored contract's, whatever
-///   format the stored one is in, as contracts are stored compiled from this version
+/// * **Compiled contracts**: with `DRIVE_CONTRACT_METHOD_VERSIONS_V5`, applying a contract writes
+///   nothing when its format version 1 bytes match the stored contract's, whatever format the
+///   stored one is in, as contracts are stored compiled from this version
 ///   (`contract_storage_serialization_version` 2).
+/// * **Escrow trees**: `create_initial_state_structure` 5 adds the two escrow trees of the
+///   token marketplace: `[Tokens, TOKEN_ORDER_ESCROW_KEY]`, the BigSumTree of the tokens open
+///   listings hold, and `[PreFundedSpecializedBalances, PREFUNDED_BALANCES_FOR_TOKEN_ORDERS]`,
+///   the SumTree of the credits open offers hold. The upgrade path
+///   (`Platform::transition_to_version_15`) inserts them through the same helper.
+/// * **Token conservation**: `DRIVE_TOKEN_METHOD_VERSIONS_V3` bumps
+///   `calculate_total_tokens_balance` to 2, which counts the escrowed listings on the balance
+///   side; its escrow methods, `None` before, are active.
+/// * **Escrow fee estimates**: the offers' escrow key sits a level below the other keys of the
+///   prefunded specialized balances layer, so `estimated_cost_for_prefunded_specialized_balance_update`
+///   2 and `add_estimation_costs_for_contract_fee_pot_update` 1 keep a deeper description of that
+///   layer another write of the batch registered, rather than lowering it to their keys' level;
+///   likewise the listings' escrow key sits deeper in the Tokens layer than the balances key, and
+///   `for_token_balances` 1 keeps a deeper description of the Tokens layer. The escrows also sit
+///   deeper in the root tree than the identity balances and the token balances, so
+///   `for_balances` 1, `for_token_balances` 1 and the voting balance estimation 2 keep a deeper
+///   description of the root as well. Beyond the estimators, `apply_drive_operations` 2 merges
+///   the descriptions of every write of a batch (below), so no other write of the batch (a
+///   document, a nonce) lowers what the escrows describe, whichever is built first.
 /// * **Yes/no vote polls**: `DRIVE_VOTE_METHOD_VERSIONS_V4` bumps
 ///   `insert.register_identity_vote` to 1, which registers a vote of either poll kind, and
 ///   `cleanup.remove_all_votes_given_by_identities` to 1, which also removes the yes/no votes of
@@ -47,7 +74,7 @@ use crate::version::drive_versions::{
 ///   `stateless_delete_of_non_tree_for_costs` to 1, and
 ///   `platform_system.estimation_costs.for_total_system_credits_update` is 1, so a delete and a
 ///   system credits update describe their layers as they are. Applying a batch is unchanged.
-/// * **Fee history required for refunds** — `fees.calculate_fee` 0 -> 1.
+/// * **Fee history required for refunds**: `fees.calculate_fee` 0 -> 1.
 ///   The v1 generation consults the block's fee history on every fee
 ///   version number and returns an internal error for an owner-attributed
 ///   (sectioned) storage removal without that history, where v0 priced
@@ -55,11 +82,11 @@ use crate::version::drive_versions::{
 ///   shares number 1 and the same storage rates, so the credits are
 ///   unchanged; only a missing history is now an error instead of a
 ///   silent fallback to the first-generation rates.
-/// * **Recorded-owner refund credits** — `DRIVE_IDENTITY_METHOD_VERSIONS_V3`
+/// * **Recorded-owner refund credits**: `DRIVE_IDENTITY_METHOD_VERSIONS_V3`
 ///   turns on `update.credit_storage_refunds_to_owners`, the primitive
 ///   block lifecycle paths use to credit each recorded owner of a refund
 ///   and report the amount whose owner has no balance element.
-/// * **Price before commit** — `batch_operations.apply_drive_operations`
+/// * **Price before commit**: `batch_operations.apply_drive_operations`
 ///   3 (generation 2 made price-first), `DRIVE_GROUP_METHOD_VERSIONS_V2` (`insert.add_group_action`
 ///   0 -> 1), `DRIVE_CONTRACT_METHOD_VERSIONS_V5` (`update_contract` 2 -> 3,
 ///   `apply_contract_with_serialization` 0 -> 2 over generation 1's
@@ -75,22 +102,43 @@ use crate::version::drive_versions::{
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     methods: DriveMethodVersions {
-        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V5, // changed in v10: apply_contract_with_serialization 2 writes nothing for a contract whose format version 1 bytes match the stored one's, as contracts are stored compiled, and prices before committing an owned transaction; update_contract v3 and the moderation writers price before committing too
+        initialization: DriveInitializationMethodVersions {
+            create_initial_state_structure: 5, // changed in v10: adds the token marketplace escrow trees
+        },
+        token: DRIVE_TOKEN_METHOD_VERSIONS_V3, // changed in v10: calculate_total_tokens_balance 2 counts the token marketplace escrow; order_escrow active
+        contract: DriveContractMethodVersions {
+            fee_pots: DriveContractFeePotMethodVersions {
+                add_estimation_costs_for_contract_fee_pot_update: 1, // changed in v10: keeps a deeper prefunded balances layer description
+                ..DRIVE_CONTRACT_METHOD_VERSIONS_V5.fee_pots
+            },
+            ..DRIVE_CONTRACT_METHOD_VERSIONS_V5 // changed in v10: apply_contract_with_serialization 2 writes nothing for a contract whose format version 1 bytes match the stored one's, as contracts are stored compiled, and prices before committing an owned transaction; update_contract v3 and the moderation writers price before committing too
+        },
+        identity: DriveIdentityMethodVersions {
+            cost_estimation: DriveIdentityCostEstimationMethodVersions {
+                for_balances: 1,       // changed in v10: keeps a deeper root description
+                for_token_balances: 1, // changed in v10: keeps a deeper root and Tokens layer description
+                ..DRIVE_IDENTITY_METHOD_VERSIONS_V3.cost_estimation
+            },
+            ..DRIVE_IDENTITY_METHOD_VERSIONS_V3 // changed in v10: credit_storage_refunds_to_owners primitive for lifecycle refund settlement
+        },
         document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores, delete estimates; the ten fee-returning document wrappers price before committing an owned transaction
-        vote: DRIVE_VOTE_METHOD_VERSIONS_V4,         // changed in v10: the yes/no poll kind
-        verify: DRIVE_VERIFY_METHOD_VERSIONS_V4, // changed in v10: the yes/no and private document entries proof verifiers
-        state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5, // changed in v10: a consume deletes what its lookup read
         batch_operations: DriveBatchOperationsMethodVersion {
             apply_drive_operations: 3, // changed in v10: generation 2 resolves a batch's estimate (note 14); generation 3, selected here, also prices the batch before an owned transaction commits
             ..DRIVE_VERSION_V9.methods.batch_operations
         },
+        prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
+            estimated_cost_for_prefunded_specialized_balance_update: 2, // changed in v10: keeps a deeper prefunded balances layer description
+            ..DRIVE_VERSION_V9.methods.prefunded_specialized_balances
+        },
+        vote: DRIVE_VOTE_METHOD_VERSIONS_V4, // changed in v10: the yes/no poll kind
+        verify: DRIVE_VERIFY_METHOD_VERSIONS_V4, // changed in v10: the yes/no and private document entries proof verifiers
+        state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5, // changed in v10: a consume deletes what its lookup read
         platform_system: DrivePlatformSystemMethodVersions {
             estimation_costs: DriveSystemEstimationCostsMethodVersions {
                 for_total_system_credits_update: 1, // changed in v10: `Misc` described with its subtrees
             },
         },
         fees: DriveFeesMethodVersions { calculate_fee: 1 }, // changed in v10: fee history required and consulted for every storage refund
-        identity: DRIVE_IDENTITY_METHOD_VERSIONS_V3, // changed in v10: credit_storage_refunds_to_owners primitive for lifecycle refund settlement
         group: DRIVE_GROUP_METHOD_VERSIONS_V2, // changed in v10: add_group_action prices before committing an owned transaction
         ..DRIVE_VERSION_V9.methods
     },
