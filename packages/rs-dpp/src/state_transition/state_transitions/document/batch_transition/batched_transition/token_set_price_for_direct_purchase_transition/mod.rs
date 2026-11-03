@@ -2,7 +2,11 @@ pub mod v0;
 mod v0_methods;
 pub mod validate_structure;
 
-use bincode::{Decode, Encode};
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::{Display, From};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -21,7 +25,7 @@ pub use v0::TokenSetPriceForDirectPurchaseTransitionV0;
 ///
 /// Versioning enables forward compatibility by allowing future enhancements or changes
 /// without breaking existing clients.
-#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
@@ -43,10 +47,10 @@ pub enum TokenSetPriceForDirectPurchaseTransition {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenSetPriceForDirectPurchaseTransition {}
+impl JsonConvertible for TokenSetPriceForDirectPurchaseTransition {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenSetPriceForDirectPurchaseTransition {}
+impl ValueConvertible for TokenSetPriceForDirectPurchaseTransition {}
 
 impl Default for TokenSetPriceForDirectPurchaseTransition {
     fn default() -> Self {

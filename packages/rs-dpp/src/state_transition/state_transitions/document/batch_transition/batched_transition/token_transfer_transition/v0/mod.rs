@@ -1,6 +1,6 @@
 pub mod v0_methods;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::Display;
 
 pub use super::super::token_base_transition::IDENTIFIER_FIELDS;
@@ -15,7 +15,7 @@ mod property_names {
     pub const RECIPIENT_OWNER_ID: &str = "recipientOwnerId";
 }
 
-#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display, DecodeUntrusted)]
 // `json_safe_fields` auto-injects:
 // - `json_safe_u64` on `amount: u64` (JS-safe stringification when large)
 // - `json_safe_option_encrypted_note` on `shared_encrypted_note` and

@@ -111,20 +111,23 @@ let transition = if self.revision().is_some()
     )
 } else {
     // This is a new document -- generate entropy and create
-    let (document, entropy) = document_state_transition_entropy
-        .map(|e| (self.clone(), e))
-        .unwrap_or_else(|| {
+    let (document, entropy) = match document_state_transition_entropy {
+        Some(entropy) => (self.clone(), entropy),
+        None => {
             let mut rng = StdRng::from_entropy();
             let mut document = self.clone();
             let entropy = rng.gen::<[u8; 32]>();
-            document.set_id(Document::generate_document_id_v0(
+            document.set_id(Document::generate_document_id(
                 &document_type.data_contract_id(),
                 &document.owner_id(),
                 document_type.name(),
                 entropy.as_slice(),
-            ));
+                new_identity_contract_nonce,
+                sdk.version(),
+            )?);
             (document, entropy)
-        });
+        }
+    };
 
     BatchTransition::new_document_creation_transition_from_document(
         document,
@@ -142,8 +145,21 @@ let transition = if self.revision().is_some()
 ```
 
 For new documents, the SDK generates 32 bytes of entropy (unless you provide your own)
-and uses it to deterministically generate the document ID. This ensures the same
-inputs always produce the same document ID.
+and derives the document ID from it and, from protocol version 14, from the identity
+contract nonce it just fetched. `sdk.version()` tracks the network's protocol version,
+so the SDK switches derivation when the network does. Because the ID depends on the
+nonce, the ID on the document you pass in is a placeholder: use the ID of the confirmed
+document that `put_to_platform_and_wait_for_response` returns.
+
+The JavaScript SDK follows the same pipeline. `sdk.documents.create` goes through
+`put_to_platform_and_wait_for_response` and hands the confirmed document back. An app
+that builds the transition itself (to sign it separately or cache the signed bytes)
+gets the derivation from `wasm-dpp2`: `new DocumentCreateTransition({ document,
+identityContractNonce })` derives the ID from the document's entropy and the nonce for
+the network's protocol version (`platformVersion` option, latest by default), writes it
+onto the transition and back onto `document`, and the transition is then batched, signed
+and broadcast as before. The IDs such a transition carries are final; nothing has to be
+hashed on the app side.
 
 ### Step 3: Validate Structure
 
@@ -238,6 +254,22 @@ async fn wait_for_response<T>(&self, sdk: &Sdk, settings: Option<PutSettings>)
 The wait includes full proof verification: the SDK verifies a GroveDB proof that
 the state transition was actually applied. This is not just checking a status flag --
 it is cryptographic proof of inclusion.
+
+From protocol version 14 the proof of an owned, fee-paying transition (document
+and token batches, contract creates and updates, identity updates and key limit
+updates, contract moderation) also carries the credit balance of the owner
+after it, read from the same state as the result, so a wallet learns what the
+write left it with without a second query. The verified
+`StateTransitionProofOutcome` hands it out through `owner_balance()` (`None`
+for a proof made at an earlier version or a transition without an owner);
+`wait_for_document_and_owner_balance` and
+`put_to_platform_and_wait_for_response_with_owner_balance` return it next to
+the document. The balance is a snapshot at the proof's block: it may already
+include later transitions of the same identity. A wait that asks for no proof
+but sets `request_user_balance` gets the owner's balance back unverified, as
+the response's `success_with_owner_balance` result, read from a Drive state at
+or past the block that executed the write; that works for any transition with
+an owner.
 
 ### Timeout Handling
 

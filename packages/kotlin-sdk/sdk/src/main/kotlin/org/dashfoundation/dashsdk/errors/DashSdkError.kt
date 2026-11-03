@@ -38,6 +38,14 @@ sealed class DashSdkError(
      */
     open val userMessage: String get() = message.orEmpty()
 
+    /**
+     * The consensus error Platform rejected the operation with, when the
+     * native layer reported one; `null` for every other failure. Branch on
+     * its code instead of matching [message].
+     */
+    val consensusError: PlatformConsensusError?
+        get() = (cause as? DashSDKException)?.consensusError
+
     class InvalidParameter(message: String, cause: Throwable? = null) :
         DashSdkError(message, cause)
 
@@ -166,10 +174,14 @@ sealed class DashSdkError(
          * UTXO one of its own earlier asset locks had already consumed. Peers
          * drop such a double spend without replying, so the lock cannot
          * confirm while that spender stands and an unbounded proof wait would
-         * hang. The resume still runs: the sighting bounds that wait instead
-         * of replacing it, so the lock was (re-)broadcast and waited on (a
-         * `Broadcast`-status lock was also sent on an earlier call), and this
-         * is what the bounded wait expired with.
+         * hang. The resume still attempts recovery. With a ready transport,
+         * the sighting bounds the proof wait and this is what that wait
+         * expired with. In the `Broadcast` arm, after a readiness miss and
+         * pre-dispatch rejection, a still-standing conflict returns
+         * immediately after refreshing local finality, and the
+         * readiness-deferred retry owns the next proof wait. A
+         * `Broadcast`-status lock may also represent an earlier attempt that
+         * sent the transaction.
          *
          * The ONLY double-spend verdict the native side emits, and it is
          * PROVISIONAL. NO discard licence: keep the tracked lock and retry
@@ -207,8 +219,8 @@ sealed class DashSdkError(
          * Distinct from [CoreInsufficientFunds] (22), which is the atomic
          * Core-send selector rather than the asset-lock builder. The shortfall
          * figures travel in [message] as `available {n} duffs, required {n}
-         * duffs` — the native result is ABI-frozen to code + message, so there
-         * are no structured fields to read.
+         * duffs`: the native result has no fields for them, so there is
+         * nothing structured to read.
          *
          * Raised by
          * [shieldedFundFromCoinJoinDrain][org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedFundFromCoinJoinDrain]
@@ -585,6 +597,25 @@ sealed class DashSdkError(
         }
 
         /**
+         * `ErrorShieldedIdentityDebitPending` (native code 55). An earlier
+         * identity-funded shield is unresolved. This request was not built
+         * or broadcast. Wait for shielded sync to reconcile the earlier
+         * debit before starting another shield from this identity.
+         * Mirrors Swift's `PlatformWalletError.shieldedIdentityDebitPending`
+         * in `PlatformWalletResult.swift`.
+         */
+        class ShieldedIdentityDebitPending(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /** Native code 56: a durable recovery record is malformed or invalid. Retain it for diagnosis. */
+        class ShieldedRecoveryCorrupted(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /** Native code 57: recovery needs its account and compatible keys; damaged ciphertext can look the same. */
+        class ShieldedRecoveryKeysRequired(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -774,6 +805,9 @@ sealed class DashSdkError(
             52 -> PlatformWallet.PersisterStoreFatal(message, cause)
             53 -> PlatformWallet.PersisterStoreConstraint(message, cause)
             54 -> PlatformWallet.PersisterRestore(message, cause)
+            55 -> PlatformWallet.ShieldedIdentityDebitPending(message, cause)
+            56 -> PlatformWallet.ShieldedRecoveryCorrupted(message, cause)
+            57 -> PlatformWallet.ShieldedRecoveryKeysRequired(message, cause)
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

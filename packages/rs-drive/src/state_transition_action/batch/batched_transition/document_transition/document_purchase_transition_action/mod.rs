@@ -1,8 +1,10 @@
 mod v0;
 
 use derive_more::From;
+use dpp::data_contract::document_type::property_constraints::AggregateRead;
 use dpp::document::Document;
 use dpp::fee::Credits;
+use std::collections::BTreeMap;
 
 use dpp::platform_value::Identifier;
 use dpp::ProtocolError;
@@ -20,6 +22,9 @@ pub enum DocumentPurchaseTransitionAction {
     /// v0
     V0(DocumentPurchaseTransitionActionV0),
 }
+
+/// What `property_constraint_aggregates` returns for an action holding none.
+static NO_PROPERTY_CONSTRAINT_AGGREGATES: BTreeMap<AggregateRead, i128> = BTreeMap::new();
 
 impl DocumentPurchaseTransitionActionAccessorsV0 for DocumentPurchaseTransitionAction {
     fn base(&self) -> &DocumentBaseTransitionAction {
@@ -55,6 +60,24 @@ impl DocumentPurchaseTransitionActionAccessorsV0 for DocumentPurchaseTransitionA
     fn price(&self) -> Credits {
         match self {
             DocumentPurchaseTransitionAction::V0(v0) => v0.price,
+        }
+    }
+
+    fn property_constraint_aggregates(&self) -> &BTreeMap<AggregateRead, i128> {
+        match self {
+            DocumentPurchaseTransitionAction::V0(v0) => v0
+                .property_constraint_aggregates
+                .as_deref()
+                .unwrap_or(&NO_PROPERTY_CONSTRAINT_AGGREGATES),
+        }
+    }
+
+    fn set_property_constraint_aggregates(&mut self, aggregates: BTreeMap<AggregateRead, i128>) {
+        match self {
+            DocumentPurchaseTransitionAction::V0(v0) => {
+                v0.property_constraint_aggregates =
+                    (!aggregates.is_empty()).then(|| Box::new(aggregates))
+            }
         }
     }
 }

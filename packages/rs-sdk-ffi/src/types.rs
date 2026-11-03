@@ -670,6 +670,9 @@ pub struct DashSDKStateTransitionCreationOptions {
     pub method_feature_version: u16,
     /// Base feature version (0 means use default)
     pub base_feature_version: u16,
+    /// Most a contested document create pays into the contest it joins, in credits (0 means
+    /// the fund to join read just before the create is signed). Only document creates read it.
+    pub contest_fund: u64,
 }
 
 /// Free a string allocated by the FFI

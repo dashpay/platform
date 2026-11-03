@@ -44,14 +44,20 @@
 //!
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::TokenContractPosition;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use crate::tokens::token_payment_info::methods::v0::TokenPaymentInfoMethodsV0;
 use crate::tokens::token_payment_info::v0::v0_accessors::TokenPaymentInfoAccessorsV0;
 use crate::tokens::token_payment_info::v0::TokenPaymentInfoV0;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::{Display, From};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 #[cfg(feature = "value-conversion")]
 use platform_value::Error;
@@ -69,11 +75,13 @@ pub mod v0;
     Copy,
     Encode,
     Decode,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSerialize,
     PartialEq,
     Display,
     From,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",
@@ -96,10 +104,10 @@ pub enum TokenPaymentInfo {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenPaymentInfo {}
+impl JsonConvertible for TokenPaymentInfo {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenPaymentInfo {}
+impl ValueConvertible for TokenPaymentInfo {}
 
 impl TokenPaymentInfoMethodsV0 for TokenPaymentInfo {}
 

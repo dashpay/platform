@@ -5,7 +5,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::tokens::info::IdentityTokenInfo;
 use dpp::version::PlatformVersion;
 use grovedb::Element::Item;
@@ -57,7 +57,7 @@ impl Drive {
             drive_operations,
             &platform_version.drive,
         ) {
-            Ok(Some(Item(info, _))) => Ok(Some(IdentityTokenInfo::deserialize_from_bytes(
+            Ok(Some(Item(info, _))) => Ok(Some(IdentityTokenInfo::deserialize_from_bytes_trusted(
                 info.as_slice(),
             )?)),
 

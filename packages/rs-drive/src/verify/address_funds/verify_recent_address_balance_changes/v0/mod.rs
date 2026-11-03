@@ -33,7 +33,7 @@ fn decode_address_balance_row(
         .with_big_endian()
         .with_limit::<MAX_ADDRESS_BALANCE_ROW_DECODE_BYTES>();
     let (address_balances, consumed): (BTreeMap<PlatformAddress, CreditOperation>, usize) =
-        bincode::decode_from_slice(serialized_data, config).map_err(|e| {
+        bincode::decode_from_slice_untrusted(serialized_data, config).map_err(|e| {
             Error::Proof(ProofError::CorruptedProof(format!(
                 "cannot decode address balances: {}",
                 e

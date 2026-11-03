@@ -41,7 +41,7 @@ impl UnsignedWithdrawalTxs {
 
     /// Drains all withdrawal transactions from the collection
     pub fn drain(&mut self) -> UnsignedWithdrawalTxs {
-        Self(self.0.drain(..).collect())
+        Self(std::mem::take(&mut self.0))
     }
 
     /// Appends another collection of unsigned withdrawal transactions

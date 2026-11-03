@@ -2,6 +2,7 @@ use crate::data_contract::document::DocumentWasm;
 use crate::error::WasmDppResult;
 use crate::impl_wasm_type_info;
 use crate::serialization;
+use crate::state_transitions::batch::action_fee_agreement::DocumentActionFeeAgreementWasm;
 use crate::state_transitions::batch::document_base_transition::DocumentBaseTransitionWasm;
 use crate::state_transitions::batch::document_transition::DocumentTransitionWasm;
 use crate::state_transitions::batch::generators::generate_replace_transition;
@@ -21,6 +22,7 @@ export interface DocumentReplaceTransitionOptions {
     document: Document;
     identityContractNonce: bigint;
     tokenPaymentInfo?: TokenPaymentInfo;
+    actionFeeAgreement?: DocumentActionFeeAgreement;
 }
 "#;
 
@@ -64,11 +66,15 @@ impl DocumentReplaceTransitionWasm {
         let token_payment_info: Option<TokenPaymentInfoWasm> =
             try_from_options_optional(&options, "tokenPaymentInfo")?;
 
+        let action_fee_agreement: Option<DocumentActionFeeAgreementWasm> =
+            try_from_options_optional(&options, "actionFeeAgreement")?;
+
         let rs_update_transition = generate_replace_transition(
             &document,
             identity_contract_nonce,
             document.document_type_name().to_string(),
             token_payment_info,
+            action_fee_agreement,
         );
 
         Ok(DocumentReplaceTransitionWasm(rs_update_transition))

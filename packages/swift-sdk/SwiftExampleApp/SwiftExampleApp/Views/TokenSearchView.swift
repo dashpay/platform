@@ -7,6 +7,12 @@ struct TokenSearchView: View {
     @State private var selectedFilter: TokenFilter = .all
     @State private var searchText = ""
 
+    /// The rows are filtered in memory by `filteredTokens` below, not by a
+    /// store `#Predicate`. There used to be a `predicate` property here that
+    /// mapped each case onto one; nothing read it, and its
+    /// `.hasDistribution` case could not have matched the once-per-identity
+    /// kind anyway, which is derived from the contract JSON rather than
+    /// stored on the token row.
     enum TokenFilter: String, CaseIterable {
         case all = "All Tokens"
         case mintable = "Can Mint"
@@ -14,23 +20,6 @@ struct TokenSearchView: View {
         case freezable = "Can Freeze"
         case hasDistribution = "Has Distribution"
         case paused = "Paused"
-
-        var predicate: Predicate<PersistentToken>? {
-            switch self {
-            case .all:
-                return nil
-            case .mintable:
-                return PersistentToken.mintableTokensPredicate()
-            case .burnable:
-                return PersistentToken.burnableTokensPredicate()
-            case .freezable:
-                return PersistentToken.freezableTokensPredicate()
-            case .hasDistribution:
-                return PersistentToken.distributionTokensPredicate()
-            case .paused:
-                return PersistentToken.pausedTokensPredicate()
-            }
-        }
     }
 
     var filteredTokens: [PersistentToken] {

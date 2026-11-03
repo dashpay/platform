@@ -1,6 +1,6 @@
 use crate::verify::RootHash;
 use dpp::prelude::TimestampMillis;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use grovedb::GroveDb;
 use std::collections::BTreeMap;
 
@@ -65,7 +65,7 @@ impl VotePollsByEndDateDriveQuery {
                 };
                 let timestamp = decode_u64(last_path_component)?;
                 let vote_poll_bytes = element.into_item_bytes().map_err(Error::from)?;
-                let vote_poll = VotePoll::deserialize_from_bytes(&vote_poll_bytes)?;
+                let vote_poll = VotePoll::deserialize_from_bytes_untrusted(&vote_poll_bytes)?;
                 Ok((timestamp, vote_poll))
             })
             .collect::<Result<Vec<_>, Error>>()?

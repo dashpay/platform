@@ -12,7 +12,7 @@ use dpp::version::drive_versions::DriveVersion;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::asset_lock::StoredAssetLockInfo;
 use dpp::platform_value::Bytes36;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableTrusted;
 use grovedb::{TransactionArg, TreeType};
 
 impl Drive {
@@ -88,7 +88,7 @@ impl Drive {
                     Ok::<StoredAssetLockInfo, Error>(StoredAssetLockInfo::FullyConsumed)
                 } else {
                     Ok(StoredAssetLockInfo::PartiallyConsumed(
-                        AssetLockValue::deserialize_from_bytes(item_bytes)?,
+                        AssetLockValue::deserialize_from_bytes_trusted(item_bytes)?,
                     ))
                 }
             })

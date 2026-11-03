@@ -189,6 +189,10 @@ async fn test_fetch_one_group_action_since_existing_one_with_limit() {
 
 /// Fetches group action signers
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[cfg_attr(
+    feature = "offline-testing",
+    ignore = "recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform"
+)]
 async fn test_fetch_group_action_signers() {
     setup_logs();
 

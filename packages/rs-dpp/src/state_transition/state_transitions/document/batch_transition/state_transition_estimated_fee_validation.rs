@@ -4,12 +4,17 @@ use crate::consensus::state::identity::IdentityInsufficientBalanceError;
 use crate::consensus::ConsensusError;
 use crate::fee::Credits;
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use crate::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
+use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+use crate::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
 use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use crate::state_transition::batch_transition::BatchTransition;
 use crate::state_transition::{
     StateTransitionEstimatedFeeValidation, StateTransitionIdentityEstimatedFeeValidation,
     StateTransitionOwned,
 };
+use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
+use crate::tokens::token_payment_info::v0::v0_accessors::TokenPaymentInfoAccessorsV0;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
@@ -32,6 +37,54 @@ impl StateTransitionIdentityEstimatedFeeValidation for BatchTransition {
         &self,
         identity_known_balance: Credits,
         platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        let base_fees = self.calculate_min_required_fee(platform_version)?;
+        self.validate_estimated_principal_and_fees(identity_known_balance, base_fees)
+    }
+}
+
+impl BatchTransition {
+    /// Whether every transition of the batch asks the contract owner to pay its gas: each one is
+    /// a document transition whose token payment info requests `ContractOwner` or
+    /// `PreferContractOwner`. Only the data contracts can say whether that request is honoured,
+    /// so this is what the minimum balance pre-check can know before they are loaded.
+    pub fn requests_gas_sponsorship(&self) -> bool {
+        let mut any = false;
+        for transition in self.transitions_iter() {
+            let BatchedTransitionRef::Document(document_transition) = transition else {
+                return false;
+            };
+            let requested = document_transition
+                .base()
+                .token_payment_info_ref()
+                .as_ref()
+                .map(|info| info.gas_fees_paid_by())
+                .unwrap_or_default();
+            if requested == GasFeesPaidBy::DocumentOwner {
+                return false;
+            }
+            any = true;
+        }
+        any
+    }
+
+    /// The minimum balance pre-check of a batch that asks the contract owner to pay its gas:
+    /// the document owner still funds the principal (document purchases and the collateral of
+    /// contested creates) from their own balance, but not the per-transition fee minimum, which
+    /// fee validation then judges against whoever ends up paying.
+    pub fn validate_estimated_principal(
+        &self,
+        identity_known_balance: Credits,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        self.validate_estimated_principal_and_fees(identity_known_balance, 0)
+    }
+
+    /// The balance has to cover the principal of the batch (document purchases and the
+    /// collateral of contested creates) plus `base_fees`.
+    fn validate_estimated_principal_and_fees(
+        &self,
+        identity_known_balance: Credits,
+        base_fees: Credits,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         let purchases_amount = match self.all_document_purchases_amount() {
             Ok(purchase_amount) => purchase_amount.unwrap_or_default(),
@@ -60,8 +113,6 @@ impl StateTransitionIdentityEstimatedFeeValidation for BatchTransition {
                 // Other errors shouldn't happen
                 Err(e) => return Err(e),
             };
-
-        let base_fees = self.calculate_min_required_fee(platform_version)?;
 
         // This is just the needed balance to pass this validation step, most likely the actual fees are smaller
         let needed_balance = purchases_amount

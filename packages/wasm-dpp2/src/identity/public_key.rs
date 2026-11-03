@@ -15,17 +15,19 @@ use crate::utils::{
 use crate::version::PlatformVersionLikeJs;
 use dpp::dashcore::Network;
 use dpp::dashcore::secp256k1::hashes::hex::{Case, DisplayHex};
+use dpp::fee::Credits;
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
 };
+use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis};
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use hex;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -42,6 +44,10 @@ struct IdentityPublicKeyOptions {
     is_read_only: bool,
     #[serde(default)]
     disabled_at: Option<TimestampMillis>,
+    #[serde(default)]
+    total_budget: Option<Credits>,
+    #[serde(default)]
+    expires_at: Option<TimestampMillis>,
 }
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -59,10 +65,15 @@ export interface IdentityPublicKeyOptions {
     data: Uint8Array;
     disabledAt?: number;
     contractBounds?: ContractBounds;
+    /** Credits the key may spend over its lifetime (protocol version 14); makes it a version 1 key */
+    totalBudget?: bigint;
+    /** Block time in milliseconds from which the key can no longer sign; makes it a version 1 key */
+    expiresAt?: bigint;
 }
 
 /**
- * IdentityPublicKey serialized as a plain object.
+ * IdentityPublicKey serialized as a plain object. `$formatVersion` is "0" for a key without
+ * limits and "1" for a key that may carry them.
  */
 export interface IdentityPublicKeyObject {
     $formatVersion: string;
@@ -74,6 +85,8 @@ export interface IdentityPublicKeyObject {
     readOnly: boolean;
     data: Uint8Array;
     disabledAt?: bigint;
+    totalBudget?: bigint;
+    expiresAt?: bigint;
 }
 
 /**
@@ -89,6 +102,8 @@ export interface IdentityPublicKeyJSON {
     readOnly: boolean;
     data: string;
     disabledAt?: number;
+    totalBudget?: number | string;
+    expiresAt?: number | string;
 }
 
 /**
@@ -173,18 +188,25 @@ impl IdentityPublicKeyWasm {
         let opts: IdentityPublicKeyOptions = serde_wasm_bindgen::from_value(options.into())
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
-        Ok(IdentityPublicKeyWasm(IdentityPublicKey::from(
-            IdentityPublicKeyV0 {
-                id: opts.key_id,
-                purpose: Purpose::from(purpose),
-                security_level: SecurityLevel::from(security_level),
-                contract_bounds,
-                key_type: KeyType::from(key_type),
-                read_only: opts.is_read_only,
-                data: BinaryData::new(opts.data),
-                disabled_at: opts.disabled_at,
-            },
-        )))
+        let key = IdentityPublicKey::from(IdentityPublicKeyV0 {
+            id: opts.key_id,
+            purpose: Purpose::from(purpose),
+            security_level: SecurityLevel::from(security_level),
+            contract_bounds,
+            key_type: KeyType::from(key_type),
+            read_only: opts.is_read_only,
+            data: BinaryData::new(opts.data),
+            disabled_at: opts.disabled_at,
+        });
+
+        // A key without limits stays a version 0 key, the same bytes as ever
+        let key = if opts.total_budget.is_some() || opts.expires_at.is_some() {
+            key.with_limits(opts.total_budget, opts.expires_at)
+        } else {
+            key
+        };
+
+        Ok(IdentityPublicKeyWasm(key))
     }
 }
 
@@ -265,6 +287,19 @@ impl IdentityPublicKeyWasm {
         self.0.disabled_at()
     }
 
+    /// The total credits the key may spend over its lifetime, `undefined` when it has no budget
+    #[wasm_bindgen(getter = totalBudget)]
+    pub fn total_budget(&self) -> Option<u64> {
+        self.0.total_budget()
+    }
+
+    /// The block time in milliseconds from which the key can no longer sign, `undefined` when
+    /// it does not expire
+    #[wasm_bindgen(getter = expiresAt)]
+    pub fn expires_at(&self) -> Option<u64> {
+        self.0.expires_at()
+    }
+
     #[wasm_bindgen(setter = keyId)]
     pub fn set_key_id(
         &mut self,
@@ -328,6 +363,38 @@ impl IdentityPublicKeyWasm {
         Ok(())
     }
 
+    /// Setting a budget on a version 0 key makes it a version 1 key
+    #[wasm_bindgen(setter = totalBudget)]
+    pub fn set_total_budget(
+        &mut self,
+        #[wasm_bindgen(js_name = "totalBudget")] total_budget: Option<js_sys::BigInt>,
+    ) -> WasmDppResult<()> {
+        let total_budget = total_budget
+            .map(|value| try_to_u64(&value, "totalBudget"))
+            .transpose()?;
+        self.0 = self
+            .0
+            .clone()
+            .with_limits(total_budget, self.0.expires_at());
+        Ok(())
+    }
+
+    /// Setting an expiry on a version 0 key makes it a version 1 key
+    #[wasm_bindgen(setter = expiresAt)]
+    pub fn set_expires_at(
+        &mut self,
+        #[wasm_bindgen(js_name = "expiresAt")] expires_at: Option<js_sys::BigInt>,
+    ) -> WasmDppResult<()> {
+        let expires_at = expires_at
+            .map(|value| try_to_u64(&value, "expiresAt"))
+            .transpose()?;
+        self.0 = self
+            .0
+            .clone()
+            .with_limits(self.0.total_budget(), expires_at);
+        Ok(())
+    }
+
     #[wasm_bindgen(js_name = "getPublicKeyHash")]
     pub fn public_key_hash(&self) -> WasmDppResult<String> {
         let hash = self
@@ -361,7 +428,7 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<IdentityPublicKeyWasm> {
-        let public_key = IdentityPublicKey::deserialize_from_bytes(bytes.as_slice())?;
+        let public_key = IdentityPublicKey::deserialize_from_bytes_untrusted(bytes.as_slice())?;
 
         Ok(IdentityPublicKeyWasm(public_key))
     }
@@ -371,7 +438,7 @@ impl IdentityPublicKeyWasm {
         let bytes =
             decode(&hex, Hex).map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
-        let public_key = IdentityPublicKey::deserialize_from_bytes(bytes.as_slice())?;
+        let public_key = IdentityPublicKey::deserialize_from_bytes_untrusted(bytes.as_slice())?;
 
         Ok(IdentityPublicKeyWasm(public_key))
     }
@@ -381,7 +448,7 @@ impl IdentityPublicKeyWasm {
         let bytes =
             decode(&hex, Base64).map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
-        let public_key = IdentityPublicKey::deserialize_from_bytes(bytes.as_slice())?;
+        let public_key = IdentityPublicKey::deserialize_from_bytes_untrusted(bytes.as_slice())?;
 
         Ok(IdentityPublicKeyWasm(public_key))
     }

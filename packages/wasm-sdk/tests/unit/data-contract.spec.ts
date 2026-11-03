@@ -558,4 +558,28 @@ describe('DataContract', () => {
       expect(sdk.DocumentReferenceErrorCode.ReferencedKeyIdPropertyInvalid).to.equal(40125);
     });
   });
+
+  /**
+   * Same arrangement for the `immutable` / `immutableAllowSetting` surface
+   * (protocol version 14): behaviour lives in wasm-dpp2's suite, this pins
+   * the re-export.
+   */
+  describe('immutable properties metadata re-export', () => {
+    it('should expose the immutability accessors on DataContract', () => {
+      const contract = sdk.DataContract.fromJSON(
+        contractFixtureV1,
+        true,
+        PLATFORM_VERSION_CONTRACT_V1,
+      );
+
+      expect(contract.documentTypeImmutableProperties).to.be.a('function');
+      expect(contract.documentImmutableProperties).to.be.instanceOf(Map);
+
+      contract.free();
+    });
+
+    it('should expose the immutable-property consensus error code', () => {
+      expect(sdk.DocumentImmutabilityErrorCode.DocumentImmutablePropertyChanged).to.equal(40128);
+    });
+  });
 });

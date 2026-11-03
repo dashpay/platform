@@ -5,8 +5,7 @@ use crate::error::Error;
 
 use dpp::balances::credits::Creditable;
 use dpp::fee::epoch::CreditsPerEpoch;
-use grovedb::query_result_type::QueryResultType;
-use grovedb::{Element, PathQuery, Query, TransactionArg};
+use grovedb::TransactionArg;
 use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
@@ -16,43 +15,26 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<CreditsPerEpoch, Error> {
-        let mut query = Query::new();
-
-        query.insert_all();
-
-        let (query_result, _) = self
-            .grove
-            .query_raw(
-                &PathQuery::new_unsized(pending_epoch_refunds_path_vec(), query),
-                transaction.is_some(),
-                true,
-                true,
-                QueryResultType::QueryKeyElementPairResultType,
-                transaction,
-                &drive_version.grove_version,
-            )
-            .unwrap()
-            .map_err(Error::from)?;
-
-        query_result
-            .to_key_elements()
-            .into_iter()
-            .map(|(epoch_index_key, element)| {
-                let epoch_index =
-                    u16::from_be_bytes(epoch_index_key.as_slice().try_into().map_err(|_| {
-                        Error::Drive(DriveError::CorruptedSerialization(String::from(
-                            "epoch index for pending pool updates must be i64",
-                        )))
-                    })?);
-
-                if let Element::SumItem(credits, _) = element {
-                    Ok((epoch_index, credits.to_unsigned()))
-                } else {
-                    Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                        "pending refund credits must be sum items",
+        // Edited in place in this shipped generation: the query and the reading of its sum
+        // items moved, unchanged, into `fetch_sum_items`, which the lifetime storage fee pools
+        // share. Only which of two corruption errors a corrupted tree reports first can differ.
+        self.fetch_sum_items(
+            pending_epoch_refunds_path_vec(),
+            "pending refund credits must be sum items",
+            transaction,
+            drive_version,
+        )?
+        .into_iter()
+        .map(|(epoch_index_key, credits)| {
+            let epoch_index =
+                u16::from_be_bytes(epoch_index_key.as_slice().try_into().map_err(|_| {
+                    Error::Drive(DriveError::CorruptedSerialization(String::from(
+                        "epoch index for pending pool updates must be i64",
                     )))
-                }
-            })
-            .collect::<Result<CreditsPerEpoch, Error>>()
+                })?);
+
+            Ok((epoch_index, credits.to_unsigned()))
+        })
+        .collect::<Result<CreditsPerEpoch, Error>>()
     }
 }

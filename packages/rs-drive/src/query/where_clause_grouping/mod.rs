@@ -27,6 +27,19 @@ pub(crate) type GroupedWhereClauses = (
 );
 
 /// Group raw where clauses under the platform version's grammar.
+///
+/// # Parameters
+///
+/// * `where_clauses`: The query's raw where clauses.
+/// * `platform_version`: The platform version.
+///
+/// # Returns
+///
+/// * `Ok(GroupedWhereClauses)`: the equality clauses by field, the range clause if any, and the
+///   `In` clauses (at most one under v0, one per distinct field under v1).
+/// * `Err(Error)` when the method version is unknown or the clauses cannot be grouped: more
+///   than one `In` clause under v0, clauses on one field that cannot be combined, range
+///   clauses on more than one field or that do not form one range, or a malformed clause.
 pub(crate) fn group_where_clauses(
     where_clauses: &[WhereClause],
     platform_version: &PlatformVersion,

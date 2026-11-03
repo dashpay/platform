@@ -117,6 +117,36 @@ public struct DistributionEvent: Codable, Equatable, Sendable {
     }
 }
 
+// MARK: - Once-Per-Identity Distribution
+
+/// A fixed amount every identity may claim exactly once (protocol
+/// version 14).
+///
+/// rs-dpp serialises it inside a token's `distributionRules` as
+/// `"oncePerIdentityDistribution": {"$formatVersion": "0", "amount": 5000}`.
+///
+/// `amount` is a protocol `u64`, so it is carried as an exact decimal string
+/// here, the same convention the other token amounts use. Values above
+/// 2^53 - 1 arrive as JSON strings because a JSON number that large is not
+/// exactly representable, and a fixed-width or floating-point carrier could
+/// not hand them back digit for digit. rs-dpp narrows what a contract may
+/// declare (1 to `i64::MAX`) and enforces that at registration; this type
+/// carries whatever the wire holds rather than restating the rule.
+///
+/// Unlike `TokenPerpetualDistribution` and `TokenPreProgrammedDistribution`
+/// this value has no column on `PersistentToken`: it is derived from the
+/// owning contract's stored JSON through
+/// `PersistentToken.oncePerIdentityDistribution`.
+public struct TokenOncePerIdentityDistribution: Codable, Equatable, Sendable {
+    /// The amount minted to an identity on its single claim, as an exact
+    /// decimal string.
+    public var amount: String
+
+    public init(amount: String) {
+        self.amount = amount
+    }
+}
+
 // MARK: - Distribution Change Rules
 
 /// Rules governing changes to distribution configuration
@@ -147,12 +177,65 @@ public enum AuthorizedActionTakers: String, CaseIterable, Codable, Sendable {
     case contractOwner = "ContractOwner"
     case mainGroup = "MainGroup"
 
+    /// The `$type` discriminators rs-dpp emits for an
+    /// `AuthorizedActionTakers` value on the wire. Since 4.0.0-beta.4
+    /// the value arrives as a flat tagged map, for example
+    /// `{"$type": "contractOwner"}`,
+    /// `{"$type": "identity", "identity": "<base58>"}` or
+    /// `{"$type": "group", "position": 3}`. These constants are the
+    /// values of that tag, which are distinct from the canonical
+    /// persisted strings above.
+    public enum WireType {
+        public static let noOne = "noOne"
+        public static let contractOwner = "contractOwner"
+        public static let identity = "identity"
+        public static let mainGroup = "mainGroup"
+        public static let group = "group"
+    }
+
     public static func identity(_ id: Data) -> String {
         return "Identity:\(id.toBase58String())"
     }
 
+    /// Overload for an identity id that is already base58-encoded, the
+    /// form it takes in contract JSON. The string is used verbatim.
+    public static func identity(_ base58Id: String) -> String {
+        return "Identity:\(base58Id)"
+    }
+
     public static func group(_ position: Int) -> String {
         return "Group:\(position)"
+    }
+}
+
+// MARK: - Token Distribution Recipient
+
+/// Canonical strings stored in `TokenPerpetualDistribution.distributionRecipient`.
+///
+/// rs-dpp serialises its `TokenDistributionRecipient` as a flat map tagged by
+/// `$type` (since 4.0.0-beta.4), for example `{"$type": "contractOwner"}` or
+/// `{"$type": "identity", "identity": "<base58>"}`. `DataContractParser` folds
+/// that map into one of the strings below. This type is a plain helper, it is
+/// not part of the SwiftData model graph and carries no stored properties.
+///
+/// The string shapes mirror `AuthorizedActionTakers`, so both columns read the
+/// same way in the UI: `"ContractOwner"`, `"Identity:<base58>"`.
+public enum TokenDistributionRecipient: String, CaseIterable, Codable, Sendable {
+    case contractOwner = "ContractOwner"
+    case evonodesByParticipation = "EvonodesByParticipation"
+
+    /// The `$type` discriminators emitted by rs-dpp on the wire. Kept here so
+    /// the parser does not scatter string literals.
+    public enum WireType {
+        public static let contractOwner = "contractOwner"
+        public static let identity = "identity"
+        public static let evonodesByParticipation = "evonodesByParticipation"
+    }
+
+    /// The `identity` variant. The base58 identifier arrives already encoded in
+    /// the contract JSON, so it is used verbatim rather than re-encoded.
+    public static func identity(_ base58Id: String) -> String {
+        return "Identity:\(base58Id)"
     }
 }
 

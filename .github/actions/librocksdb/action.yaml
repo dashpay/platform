@@ -6,9 +6,9 @@ name: "librocksdb"
 description: "Build and install librocksdb"
 inputs:
   version:
-    description: RocksDB version, eg. "9.9.3"
+    description: RocksDB version, eg. "11.8.1"
     required: false
-    default: "9.9.3"
+    default: "11.8.1"
   force:
     description: Force rebuild
     required: false
@@ -21,7 +21,7 @@ runs:
       uses: actions/cache@v5
       id: librocksdb-cache
       with:
-        key: librocksdb/${{ inputs.version }}/${{ runner.os }}/${{ runner.arch }}
+        key: librocksdb/pic-v1/${{ inputs.version }}/${{ runner.os }}/${{ runner.arch }}
         path: /opt/rocksdb
 
     - if: ${{ steps.librocksdb-cache.outputs.cache-hit != 'true' || inputs.force == 'true' }}
@@ -29,6 +29,10 @@ runs:
       name: Build librocksdb
       env:
           PORTABLE: 1
+          # This static archive is also linked into Rust cdylibs. In particular,
+          # RocksDB's thread-local objects must not use non-PIC relocations.
+          EXTRA_CFLAGS: -fPIC
+          EXTRA_CXXFLAGS: -fPIC
       run: |
         set -ex
         WORKDIR=/tmp/rocksdb-build

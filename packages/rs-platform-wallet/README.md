@@ -107,6 +107,45 @@ The package is structured as follows:
 - Works with `SPVWalletManager<PlatformWalletInfo>` for SPV/light client functionality
 - Fully compatible with existing `key-wallet-manager` infrastructure
 
+## Identity-funded shield recovery
+
+`shielded_shield_from_identity` constructs a wallet-visible activity entry and persists the exact signed transition before broadcasting. If the activity cannot be constructed or the durable retry guard cannot be written, the call fails before broadcast. Once submitted, relay errors and nonce snapshots never make a replacement payment safe: an unused nonce may execute later, and a consumed nonce may belong to the original payment.
+
+Sync retries the original signed bytes until the nonce can no longer execute, then stops broadcasting while keeping the payment pending until its outputs are observed. Another shield from the same identity returns `ShieldedIdentityDebitPending` before building or broadcasting. Account registration also refuses to remove or replace the owner of an unresolved debit; rebind the original account to continue scanning. These guards survive ordinary restarts. Explicitly clearing shielded state or removing the wallet deletes its recovery records and should not be used to retry an unresolved payment.
+
+On restart, registration checks that the viewing keys recover the pending payment's original outputs. Sync resolves the guard from those outputs even if the host lost the live activity record or a scan batch groups several payments together.
+
+If a payment remains unresolved, hosts can inspect `NetworkShieldedCoordinator::identity_debit_recovery_records` and offer explicit recovery through `PlatformWallet::abandon_shielded_identity_debit`. The caller must acknowledge that the original payment may already have executed or could still execute. This stops automatic retries and releases only the selected wallet/account/activity guard; it does **not** cancel the signed transaction or automatically create another payment. A separately authorized new payment may debit the identity again.
+
+Recovery preserves the original signed record with an `Unknown` outcome across restarts and account rebinds. A stale host `Pending` activity is overlaid with `Unknown`; later observation of the original outputs can still confirm it. Neither nonce expiry nor a number of empty scans proves failure. Clearing shielded state is not a recovery action because it deletes these records.
+
+Startup errors distinguish damaged recovery metadata or undecodable signed bytes (`ShieldedRecoveryCorrupted`) from missing/replaced viewing keys (`ShieldedRecoveryKeysRequired`). Failure to recover an output set can also mean damaged ciphertext or output metadata; restore the original keys or a known-good backup before choosing explicit recovery. Invalid SQLite identifiers, nullifiers, and state flags fail startup without deleting their rows. When signed bytes are damaged but the recovery key remains readable, listing retains its account/activity identifiers and leaves the undecodable identity, nonce, and amount absent.
+
+## Shielded balance API migration
+
+The local shielded balance API introduces three Rust source compatibility changes:
+
+- Custom `ShieldedStore` implementations must implement
+  `spendable_balance(&self, id: SubwalletId) -> Result<u64, Self::Error>`.
+  The unchecked default was removed. Sum only the reservation-aware notes
+  returned by `get_unspent_notes(id)`, use `checked_add` in a `try_fold`, and
+  map overflow into the implementation's storage error. Do not wrap, saturate,
+  or replace overflow with zero. The checked implementations in
+  [InMemoryShieldedStore](src/wallet/shielded/store.rs) and
+  [FileBackedShieldedStore](src/wallet/shielded/file_store.rs) are the reference
+  method bodies; no additional error-conversion trait bound is required.
+- `ShieldedSyncSummary::balance_total()` now returns
+  `Result<u64, PlatformWalletError>`. Callers must propagate or handle
+  `ShieldedStoreError` when individually valid account balances have an
+  unrepresentable wallet-wide sum. A caller that already returns
+  `Result<_, PlatformWalletError>` can use `let total = summary.balance_total()?;`.
+  A failed total is unavailable, not a successful zero balance. The C callback
+  layout is unchanged; the bridge reports an unsuccessful wallet result.
+- `ShieldedSubwalletStartState` struct literals require `has_sync_state`.
+  Set it from the presence of a persisted scan-state row, including a row whose
+  index is zero. An absent row is different from a recorded empty scan; do not
+  infer presence merely from `last_synced_index > 0`.
+
 ## Dependencies
 
 - `key-wallet`: Core wallet functionality

@@ -209,6 +209,7 @@ mod tests {
                 | DocumentOperationType::AddContestedDocument { .. }
                 | DocumentOperationType::UpdateDocument { .. }
                 | DocumentOperationType::DeleteDocument { .. }
+                | DocumentOperationType::ForceDeleteDocument { .. }
                 | DocumentOperationType::DeleteIndexOnlyDocument { .. }
                 | DocumentOperationType::AddWithdrawalDocument { .. }
                 | DocumentOperationType::MultipleDocumentOperationsForSameContractDocumentType {
@@ -230,6 +231,9 @@ mod tests {
                 | DriveOperation::PrefundedSpecializedBalanceOperation(_)
                 | DriveOperation::SystemOperation(_)
                 | DriveOperation::GroupOperation(_)
+                | DriveOperation::ContractGroupOperation(_)
+                | DriveOperation::ContractModerationOperation(_)
+                | DriveOperation::ContractFeePotOperation(_)
                 | DriveOperation::AddressFundsOperation(_)
                 | DriveOperation::ShieldedPoolOperation(_)
                 | DriveOperation::GroveDBOperation(_)

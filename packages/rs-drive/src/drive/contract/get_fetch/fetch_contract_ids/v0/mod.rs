@@ -1,9 +1,9 @@
-use crate::drive::{Drive, RootTree};
+use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::QueryResultType;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::{PathQuery, Query, QueryItem, SizedQuery, TransactionArg};
-use std::ops::RangeFull;
+use grovedb::TransactionArg;
 
 impl Drive {
     pub(crate) fn fetch_contract_ids_v0(
@@ -13,24 +13,9 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<[u8; 32]>, Error> {
-        let contracts_root_path =
-            vec![Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec()];
-
-        let mut query = Query::new();
-        if let Some((start_at_id, start_at_included)) = start_at {
-            if start_at_included {
-                query.insert_item(QueryItem::RangeFrom(start_at_id.to_vec()..));
-            } else {
-                query.insert_item(QueryItem::RangeAfter(start_at_id.to_vec()..));
-            }
-        } else {
-            query.insert_item(QueryItem::RangeFull(RangeFull));
-        }
-
-        let path_query = PathQuery::new(
-            contracts_root_path,
-            SizedQuery::new(query, Some(limit), None),
-        );
+        // The same path query the prover and verifier use for the ids-only page of
+        // `getDataContractsByRange`, so trusted reads and proofs agree on the page.
+        let path_query = Self::fetch_contract_ids_by_range_query(start_at, limit);
 
         let (result_items, _) = self.grove_get_raw_path_query(
             &path_query,
@@ -45,12 +30,10 @@ impl Drive {
             .into_iter()
             .map(|key| {
                 let arr: [u8; 32] = key.try_into().map_err(|v: Vec<u8>| {
-                    Error::Drive(crate::error::drive::DriveError::CorruptedDriveState(
-                        format!(
-                            "Contract ID key has unexpected length {}, expected 32",
-                            v.len()
-                        ),
-                    ))
+                    Error::Drive(DriveError::CorruptedDriveState(format!(
+                        "Contract ID key has unexpected length {}, expected 32",
+                        v.len()
+                    )))
                 })?;
                 Ok(arr)
             })

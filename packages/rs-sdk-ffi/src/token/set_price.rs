@@ -146,9 +146,9 @@ pub unsafe extern "C" fn dash_sdk_token_set_price(
                 )
             };
 
-            use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+            use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 
-            DataContract::versioned_deserialize(
+            DataContract::versioned_deserialize_untrusted(
                 contract_slice,
                 false, // skip validation since it's already validated
                 wrapper.sdk.version(),
@@ -219,7 +219,7 @@ pub unsafe extern "C" fn dash_sdk_token_set_price(
             .token_set_price_for_direct_purchase(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
-                FFIError::InternalError(format!("Failed to set token price and wait: {}", e))
+                FFIError::sdk_call_failed("Failed to set token price and wait", e)
             })?;
 
         Ok(result)

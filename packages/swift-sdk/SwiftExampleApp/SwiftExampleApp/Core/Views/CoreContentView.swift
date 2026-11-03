@@ -582,8 +582,7 @@ var body: some View {
                     // completion, shows the most recent non-cooldown
                     // pass duration. Mono digits keep the number
                     // readable as it ticks during long initial
-                    // syncs (e.g. 10 min at N=1M). See
-                    // `docs/shielded-sync-timing-spec.md`.
+                    // syncs (about 20 min for 1M notes on paloma).
                     if shieldedService.isSyncing,
                        let elapsed = shieldedService.currentSyncElapsed {
                         VStack(alignment: .leading, spacing: 4) {

@@ -11,7 +11,7 @@ use dpp::identity::identity_public_key::accessors::v0::{
 use dpp::identity::identity_public_key::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::platform_value::{BinaryData, ReplacementType};
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
+use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable, ValueConvertible};
 use dpp::ProtocolError;
 
 use dpp::version::PlatformVersion;
@@ -196,7 +196,8 @@ impl IdentityPublicKeyWasm {
     #[wasm_bindgen(js_name=fromBuffer)]
     pub fn from_buffer(buffer: Vec<u8>) -> Result<IdentityPublicKeyWasm, JsValue> {
         let key: IdentityPublicKey =
-            PlatformDeserializable::deserialize_from_bytes(buffer.as_slice()).with_js_error()?;
+            PlatformDeserializableUntrusted::deserialize_from_bytes_untrusted(buffer.as_slice())
+                .with_js_error()?;
         Ok(key.into())
     }
 }

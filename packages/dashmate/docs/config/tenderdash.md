@@ -18,7 +18,7 @@ Tenderdash can operate in different modes depending on the node's role in the ne
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
-| `platform.drive.tenderdash.docker.image` | Docker image for Tenderdash | `dashpay/tenderdash:1` | `dashpay/tenderdash:latest` |
+| `platform.drive.tenderdash.docker.image` | Docker image for Tenderdash | `dashpay/tenderdash:1.8` | `dashpay/tenderdash:latest` |
 
 ## P2P
 

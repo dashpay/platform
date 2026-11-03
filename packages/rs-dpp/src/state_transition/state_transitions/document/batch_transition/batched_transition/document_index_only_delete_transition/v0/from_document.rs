@@ -1,4 +1,5 @@
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::property_names::CREATED_AT;
 use crate::document::{Document, DocumentV0Getters};
@@ -39,6 +40,12 @@ impl DocumentIndexOnlyDeleteTransitionV0 {
             // validation accepts.
             data: {
                 let mut data = document.properties().clone();
+                // The values name the entry the way its create stored it, every
+                // `generatedFrom` property generated from its params as the platform
+                // generates it. Inert before protocol version 14: the
+                // `fill_generated_properties` slot is `None` there and leaves the values
+                // as they are.
+                document_type.regenerate_generated_properties(&mut data, platform_version)?;
                 if document_type.required_fields().contains(CREATED_AT) {
                     let created_at = document.created_at().ok_or_else(|| {
                         ProtocolError::Generic(format!(

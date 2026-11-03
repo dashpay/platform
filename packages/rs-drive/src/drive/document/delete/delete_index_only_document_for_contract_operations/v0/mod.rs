@@ -13,6 +13,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 
+use crate::drive::document::index_only_row_commitment;
 use crate::drive::Drive;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 
@@ -55,12 +56,21 @@ impl Drive {
             Some(HashMap::new())
         };
 
+        // With no caller transaction, TTL preparation (direct drainage
+        // writes) inside the operations builder and the apply below would
+        // each commit on their own: a tuple failing the row-commitment gate
+        // after preparation would leave drained buckets committed. Span
+        // both with one owned transaction.
+        let owned_transaction =
+            (apply && transaction.is_none()).then(|| self.grove.start_transaction());
+        let transaction = owned_transaction.as_ref().or(transaction);
         let batch_operations = self.delete_index_only_document_for_contract_operations(
             document,
             contract,
             document_type,
             None,
             &mut estimated_costs_only_with_layer_info,
+            block_info.time_ms,
             transaction,
             platform_version,
         )?;
@@ -72,6 +82,9 @@ impl Drive {
             &mut drive_operations,
             &platform_version.drive,
         )?;
+        if let Some(owned_transaction) = owned_transaction {
+            self.commit_transaction(owned_transaction, &platform_version.drive)?;
+        }
 
         Drive::calculate_fee(
             None,
@@ -103,6 +116,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -136,14 +150,21 @@ impl Drive {
         // exist AND carry this tuple's row commitment. State validation
         // performs the same comparison first; this is the storage-layer
         // backstop that keeps a spliced tuple from ever mixing projections
-        // of different documents into one delete batch.
-        if estimated_costs_only_with_layer_info.is_none() {
-            let mut check_operations: Vec<LowLevelDriveOperation> = vec![];
-            let expected_commitment = crate::drive::document::index_only_row_commitment(
-                &document,
+        // of different documents into one delete batch. The dry run reads
+        // nothing but prices the same probe reads, so the estimate keeps
+        // upper-bounding the applied fee.
+        let mut check_operations: Vec<LowLevelDriveOperation> = vec![];
+        if estimated_costs_only_with_layer_info.is_some() {
+            self.add_estimation_costs_for_index_only_commitment_probes(
+                contract.id(),
                 document_type,
+                &document,
+                &mut check_operations,
                 platform_version,
             )?;
+        } else {
+            let expected_commitment =
+                index_only_row_commitment(&document, document_type, platform_version)?;
             for index in document_type.indexes().values() {
                 let matches = self.index_only_entry_commitment_matches(
                     contract.id(),
@@ -151,6 +172,7 @@ impl Drive {
                     index,
                     &document,
                     &expected_commitment,
+                    block_time_ms,
                     transaction,
                     &mut check_operations,
                     platform_version,
@@ -162,8 +184,8 @@ impl Drive {
                     )));
                 }
             }
-            batch_operations.extend(check_operations);
         }
+        batch_operations.extend(check_operations);
 
         let document_info = if estimated_costs_only_with_layer_info.is_some() {
             DocumentEstimatedAverageSize(document_type.estimated_size(platform_version)? as u32)
@@ -184,6 +206,7 @@ impl Drive {
             &document_and_contract_info,
             &previous_batch_operations,
             estimated_costs_only_with_layer_info,
+            block_time_ms,
             transaction,
             &mut batch_operations,
             platform_version,

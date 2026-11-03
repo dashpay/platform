@@ -587,6 +587,35 @@ impl SpvRuntime {
         Some(tip.header().time)
     }
 
+    /// Hash of the stored header at `height`.
+    ///
+    /// Returns `None` if the SPV client isn't running or the header store
+    /// does not hold that height (below the sync start, above the tip, or
+    /// unreadable).
+    pub(crate) async fn header_hash_at(
+        &self,
+        height: u32,
+    ) -> crate::wallet::asset_lock::sync::locate::HeaderLookup {
+        use crate::wallet::asset_lock::sync::locate::HeaderLookup;
+        use dash_spv::storage::{BlockHeaderStorage, StorageManager};
+
+        let client_guard = self.client.read().await;
+        let Some(client) = client_guard.as_ref() else {
+            return HeaderLookup::Unreadable("SPV client not running".to_string());
+        };
+        let storage_arc = client.storage();
+        let storage = storage_arc.lock().await;
+        let block_headers = StorageManager::block_headers(&*storage);
+        drop(storage);
+        let bh = block_headers.read().await;
+        match BlockHeaderStorage::get_header(&*bh, height).await {
+            Ok(Some(header)) => HeaderLookup::Found(*header.hash()),
+            // The store is readable and the chain has nothing there.
+            Ok(None) => HeaderLookup::Absent,
+            Err(e) => HeaderLookup::Unreadable(e.to_string()),
+        }
+    }
+
     /// Clear all persisted SPV storage (headers, filters, state).
     ///
     /// If the SPVClient is running it will be stopped and the

@@ -8,7 +8,7 @@ mod test {
     use crate::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
     use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use crate::data_contract::DataContract;
-    use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+    use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
     use crate::serialization::PlatformSerializableWithPlatformVersion;
     use crate::tests::json_document::json_document_to_contract;
     use assert_matches::assert_matches;
@@ -330,9 +330,12 @@ mod test {
         let contract = contract
             .serialize_to_bytes_with_platform_version(platform_version)
             .expect("serialization shouldn't fail");
-        let deserialized_contract =
-            DataContract::versioned_deserialize(contract.as_slice(), false, platform_version)
-                .expect("deserialization shouldn't fail");
+        let deserialized_contract = DataContract::versioned_deserialize_untrusted(
+            contract.as_slice(),
+            false,
+            platform_version,
+        )
+        .expect("deserialization shouldn't fail");
 
         assert_eq!(
             deserialized_contract.as_latest().unwrap().config,

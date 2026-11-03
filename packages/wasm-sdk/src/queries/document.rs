@@ -99,11 +99,14 @@ export interface DocumentsQuery {
   startAt?: IdentifierLike
 
   /**
-   * Count-query knob: SQL-shaped `GROUP BY` field list. Mirrors
-   * the v1 wire's `group_by: repeated string` directly. Ignored
-   * by the regular document-fetch path.
+   * Aggregate-query option: SQL-shaped `GROUP BY` field list. Mirrors
+   * the v1 wire's `group_by: repeated string` directly. Ignored by
+   * the regular document-fetch path.
    *
-   * - `[]` or omitted → aggregate count (a single row).
+   * - `[]` or omitted → one ungrouped result entry, keyed by the
+   *   empty string. Its value is the total count for
+   *   `getDocumentsCount`, total sum for `getDocumentsSum`, or
+   *   `{count, sum}` for `getDocumentsAverage`.
    * - `["<in_field>"]` where `<in_field>` matches an `In`
    *   constraint → per-`In`-value entries (PerInValue).
    * - `["<range_field>"]` where `<range_field>` matches a range
@@ -217,17 +220,17 @@ pub(super) struct DocumentsQueryInput {
     pub(super) start_after: Option<IdentifierWasm>,
     #[serde(rename = "startAt", default)]
     pub(super) start_at: Option<IdentifierWasm>,
-    /// Count-query knob: SQL-shaped `GROUP BY` field list,
+    /// Aggregate-query option: SQL-shaped `GROUP BY` field list,
     /// mirroring the v1 wire `group_by: repeated string` field
     /// one-to-one. Ignored by the regular document-fetch path.
     /// See the TypeScript declaration for the supported shapes.
-    /// Default empty (aggregate count).
+    /// Default empty (one ungrouped aggregate result entry).
     #[serde(rename = "groupBy", default)]
     pub(super) group_by: Option<Vec<String>>,
-    // Order direction for count results flows through the existing
-    // `orderBy` field — the first clause's direction controls
-    // split-mode entry ordering and `(In + prove)` walk order. No
-    // separate `orderByAscending` knob.
+    // Order direction for aggregate results (count, sum, average)
+    // flows through the existing `orderBy` field — the first clause's
+    // direction controls split-mode entry ordering and `(In + prove)`
+    // walk order. No separate `orderByAscending` knob.
     /// Time-range bucket selections (`IN_TIME_RANGE`), each `{ field,
     /// selector }`. v1-only; resolved server-side from block time.
     #[serde(rename = "timeRange", default)]
@@ -268,8 +271,8 @@ pub(super) async fn build_documents_query(
     sdk: &WasmSdk,
     input: DocumentsQueryInput,
 ) -> Result<DocumentQuery, WasmSdkError> {
-    // `group_by` on the shared input struct is a count-query-only
-    // knob; the regular document-fetch path destructured here just
+    // `group_by` on the shared input struct is an aggregate-query-only
+    // option; the regular document-fetch path destructured here just
     // drops it.
     let DocumentsQueryInput {
         data_contract_id,
@@ -773,11 +776,18 @@ impl WasmSdk {
         use dash_sdk::platform::FetchMany;
         use drive_proof_verifier::types::Documents;
 
-        let query = parse_documents_query(self, query).await?;
+        let mut query = parse_documents_query(self, query).await?;
         let contract_id = query.data_contract.id();
         let document_type_name = query.document_type_name.clone();
 
-        let documents_result: Documents = Document::fetch_many(self.as_ref(), query).await?;
+        let mut documents_result: Documents =
+            Document::fetch_many(self.as_ref(), query.clone()).await?;
+        // A cached contract the network has since updated: refetch it and run
+        // the query once more against the current layout.
+        if self.drop_stale_contract(&query.data_contract, documents_result.values().flatten()) {
+            query.data_contract = std::sync::Arc::new(self.refresh_contract(contract_id).await?);
+            documents_result = Document::fetch_many(self.as_ref(), query).await?;
+        }
 
         let documents_map = Map::new();
         let doc_type_name = document_type_name;
@@ -807,12 +817,18 @@ impl WasmSdk {
         &self,
         query: DocumentsQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let query = parse_documents_query(self, query).await?;
+        let mut query = parse_documents_query(self, query).await?;
         let contract_id = query.data_contract.id();
         let document_type_name = query.document_type_name.clone();
 
-        let (documents_result, metadata, proof) =
-            Document::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
+        let (mut documents_result, mut metadata, mut proof) =
+            Document::fetch_many_with_metadata_and_proof(self.as_ref(), query.clone(), None)
+                .await?;
+        if self.drop_stale_contract(&query.data_contract, documents_result.values().flatten()) {
+            query.data_contract = std::sync::Arc::new(self.refresh_contract(contract_id).await?);
+            (documents_result, metadata, proof) =
+                Document::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
+        }
 
         let documents_map = Map::new();
         let doc_type_name = document_type_name;

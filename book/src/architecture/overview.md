@@ -1,6 +1,6 @@
 # Monorepo Overview
 
-Dash Platform ships as a single Git repository containing 44 Rust crates, a
+Dash Platform ships as a single Git repository containing 47 Rust crates, a
 handful of JavaScript/TypeScript packages, and supporting tooling. This chapter
 maps the territory: what each crate owns, how they depend on one another, and
 where the boundaries are drawn.
@@ -17,8 +17,8 @@ a few critical external dependencies at the workspace level -- most notably
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "53d699c..." }
 ```
 
-The workspace version (`3.0.1` at time of writing, Rust edition 2021, MSRV
-1.92) is shared by all member crates through `version.workspace = true`.
+The workspace version (`4.2.0-dev` at time of writing, Rust edition 2021, MSRV
+1.98) is shared by all member crates through `version.workspace = true`.
 
 ## The Core Dependency Chain
 
@@ -199,12 +199,12 @@ Several smaller crates provide cross-cutting infrastructure:
 
 The versioning backbone. Defines `PlatformVersion`, `ProtocolVersion`, and the
 version tables for every consensus-critical method across DPP, Drive, and
-Drive-ABCI. Currently tracks 12 protocol versions (v1 through v12).
+Drive-ABCI. Currently tracks 14 protocol versions (v1 through v14).
 
 ```rust
 // From packages/rs-platform-version/src/version/mod.rs
 pub type ProtocolVersion = u32;
-pub const LATEST_VERSION: ProtocolVersion = PROTOCOL_VERSION_12;
+pub const LATEST_VERSION: ProtocolVersion = PROTOCOL_VERSION_14;
 pub const INITIAL_PROTOCOL_VERSION: ProtocolVersion = 1;
 ```
 
@@ -281,7 +281,7 @@ Here is a simplified view of every Rust workspace member, grouped by role:
 | **gRPC definitions** | `dapi-grpc` |
 | **WASM bindings** | `wasm-dpp`, `wasm-dpp2`, `wasm-sdk`, `wasm-drive-verify` |
 | **iOS/FFI** | `rs-sdk-ffi` |
-| **System contracts** | `dpns-contract`, `dashpay-contract`, `withdrawals-contract`, `masternode-reward-shares-contract`, `wallet-utils-contract`, `token-history-contract`, `keyword-search-contract`, `data-contracts` |
+| **System contracts** | `dpns-contract`, `dashpay-contract`, `withdrawals-contract`, `masternode-reward-shares-contract`, `wallet-utils-contract`, `token-history-contract`, `keyword-search-contract`, `document-history-contract`, `app-connect-contract`, `moderation-charters-contract`, `data-contracts` |
 | **Tooling** | `dashmate` (JS), `strategy-tests`, `simple-signer`, `check-features`, `json-schema-compatibility-validator` |
 | **Other** | `dash-platform-macros`, `rs-dash-event-bus`, `rs-platform-wallet`, `dash-platform-balance-checker`, `rs-dapi` |
 

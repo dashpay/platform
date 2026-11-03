@@ -374,7 +374,7 @@ async fn run_flow(
     let label = format!("mktp{unix}test");
     println!("== registering test name {label:?} on seller ==");
     let full_name = idw
-        .register_name_with_external_signer(&seller_id, &label, &signer)
+        .register_name_with_external_signer(&seller_id, &label, None, &signer)
         .await?;
     check("register", full_name.ends_with(".dash"), &full_name);
 

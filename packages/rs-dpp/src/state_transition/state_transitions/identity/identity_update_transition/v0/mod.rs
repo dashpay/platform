@@ -6,7 +6,7 @@ mod version;
 
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::PlatformSignable;
 use platform_value::{BinaryData, Value};
 #[cfg(feature = "serde-conversion")]
@@ -25,7 +25,7 @@ use crate::{
 };
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Encode, Decode, PlatformSignable, Debug, Clone, PartialEq)]
+#[derive(Encode, Decode, PlatformSignable, Debug, Clone, PartialEq, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

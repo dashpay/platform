@@ -1,0 +1,288 @@
+{
+  "$formatVersion": "1",
+  "id": "9AJn2N8f1Sz9wNA9ShzGWBTwALcULn7QhGMBoesgg4zG",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "electedCharter": {
+      "type": "object",
+      "canBeDeleted": false,
+      "documentsMutable": false,
+      "properties": {
+        "submittedCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        },
+        "members": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 15,
+          "uniqueItems": true,
+          "items": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier"
+          },
+          "position": 1
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 63,
+          "position": 2
+        },
+        "seats": {
+          "type": "object",
+          "properties": {
+            "members": {
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 15,
+              "uniqueItems": true,
+              "items": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier"
+              },
+              "position": 0
+            }
+          },
+          "additionalProperties": false,
+          "position": 3
+        }
+      },
+      "required": [
+        "submittedCharterId",
+        "members"
+      ],
+      "additionalProperties": false
+    },
+    "resignation": {
+      "type": "object",
+      "documentsMutable": true,
+      "properties": {
+        "electedCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "electedCharter"
+          }
+        },
+        "memberId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 1,
+          "refersTo": {
+            "type": "listElement",
+            "documentType": "electedCharter",
+            "propertyAgreement": {
+              "electedCharterId": "$id"
+            },
+            "inList": "members"
+          }
+        },
+        "witnesses": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "refersTo": {
+              "type": "listElement",
+              "documentType": "electedCharter",
+              "propertyAgreement": {
+                "electedCharterId": "$id"
+              },
+              "inList": "members"
+            }
+          },
+          "position": 2
+        },
+        "plainCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 3
+        },
+        "plainMemberId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 4,
+          "refersTo": {
+            "type": "listElement",
+            "documentType": "electedCharter",
+            "propertyAgreement": {
+              "plainCharterId": "$id"
+            },
+            "inList": "members"
+          }
+        },
+        "charterTitle": {
+          "type": "string",
+          "maxLength": 63,
+          "position": 5
+        },
+        "titledMemberId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 6,
+          "refersTo": {
+            "type": "listElement",
+            "documentType": "electedCharter",
+            "propertyAgreement": {
+              "electedCharterId": "$id",
+              "charterTitle": "title"
+            },
+            "inList": "members"
+          }
+        },
+        "meta": {
+          "type": "object",
+          "properties": {
+            "charterId": {
+              "type": "array",
+              "byteArray": true,
+              "minItems": 32,
+              "maxItems": 32,
+              "contentMediaType": "application/x.dash.dpp.identifier",
+              "position": 0,
+              "refersTo": {
+                "type": "permanentDocument",
+                "documentType": "electedCharter"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "position": 7
+        },
+        "metaMemberId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 8,
+          "refersTo": {
+            "type": "listElement",
+            "documentType": "electedCharter",
+            "propertyAgreement": {
+              "meta.charterId": "$id"
+            },
+            "inList": "seats.members"
+          }
+        },
+        "memberOrCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 9,
+          "refersTo": {
+            "anyOf": [
+              {
+                "type": "listElement",
+                "documentType": "electedCharter",
+                "propertyAgreement": {
+                  "electedCharterId": "$id"
+                },
+                "inList": "members"
+              },
+              {
+                "type": "permanentDocument",
+                "documentType": "electedCharter"
+              }
+            ]
+          }
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 63,
+          "position": 10
+        },
+        "echoCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 11
+        },
+        "echoedCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 12,
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "electedCharter",
+            "propertyAgreement": {
+              "echoCharterId": "$id"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "seatedNote": {
+      "type": "object",
+      "ownerRefersTo": {
+        "type": "listElement",
+        "documentType": "electedCharter",
+        "propertyAgreement": {
+          "electedCharterId": "$id"
+        },
+        "inList": "members"
+      },
+      "properties": {
+        "electedCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 63,
+          "position": 1
+        }
+      },
+      "required": [
+        "electedCharterId"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

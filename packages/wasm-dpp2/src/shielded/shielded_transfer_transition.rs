@@ -3,7 +3,7 @@ use crate::identifier::IdentifierWasm;
 use crate::shielded::orchard_action::{SerializedOrchardActionWasm, actions_from_js_options};
 use crate::utils::try_vec_to_fixed_bytes;
 use crate::{impl_wasm_conversions_inner, impl_wasm_type_info};
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
 use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
@@ -177,7 +177,7 @@ impl ShieldedTransferTransitionWasm {
 
     #[wasm_bindgen(js_name = fromBytes)]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<ShieldedTransferTransitionWasm> {
-        let st = StateTransition::deserialize_from_bytes(&bytes)?;
+        let st = StateTransition::deserialize_from_bytes_untrusted(&bytes)?;
         match st {
             StateTransition::ShieldedTransfer(inner) => Ok(inner.into()),
             _ => Err(WasmDppError::invalid_argument(

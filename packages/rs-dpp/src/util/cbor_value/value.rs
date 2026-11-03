@@ -111,12 +111,9 @@ impl ReplacePaths for ciborium::value::Value {
             match current_level {
                 Value::Map(ref mut cbor_map) => current_level = get_from_cbor_map(cbor_map, step)?,
                 Value::Array(ref mut cbor_array) => {
-                    if let Some(idx) = step.as_integer() {
-                        let id: usize = idx.try_into().ok()?;
-                        current_level = cbor_array.get_mut(id)?
-                    } else {
-                        return None;
-                    }
+                    let idx = step.as_integer()?;
+                    let id: usize = idx.try_into().ok()?;
+                    current_level = cbor_array.get_mut(id)?
                 }
                 _ => {
                     // do nothing if it's not a container type

@@ -1,8 +1,8 @@
 #!/bin/bash
 # shellcheck disable=SC2250
-set -e
+set -euo pipefail
 
-files=$(find "$PWD/clients/core/v0/web" "$PWD/clients/core/v0/nodejs" "$PWD/clients/platform/v0/web" "$PWD/clients/platform/v0/nodejs" "$PWD/clients/drive/v0/web" "$PWD/clients/drive/v0/nodejs" -name "*_pb.js" -o -name "*_protoc.js") OS=$(uname)
+OS=$(uname)
 
 function replace_in_file() {
   if [[ "$OS" = 'Darwin' ]]; then
@@ -15,18 +15,23 @@ function replace_in_file() {
 }
 
 # Loop over the files
-for file in $files; do
+while IFS= read -r -d '' file; do
 
   replace_in_file 's/var global = Function('\''return this'\'')();/const proto = {};/g' "$file"
   if grep -qrE "[^a-zA-Z]Function\(" "$file"; then
-    echo "Error: Function( still present"
+    echo "Error: Function( still present in $file" >&2
+    exit 1
   fi
 
   replace_in_file 's/, global);/, { proto });/g' "$file"
   if grep -qrE '(^|[^a-zA-Z."])global([^a-zA-Z]|$)' "$file"; then
-    echo "Error: global still present"
+    echo "Error: global still present in $file" >&2
+    exit 1
   fi
 
   replace_in_file 's/require('\''.\/platform\/v0\/platform_pb.js'\'')/require('\''..\/..\/..\/platform\/v0\/web\/platform_pb.js'\'')/g' "$file"
 
-done
+done < <(find "$PWD/clients/core/v0/web" "$PWD/clients/core/v0/nodejs" \
+  "$PWD/clients/platform/v0/web" "$PWD/clients/platform/v0/nodejs" \
+  "$PWD/clients/drive/v0/web" "$PWD/clients/drive/v0/nodejs" \
+  \( -name "*_pb.js" -o -name "*_protoc.js" \) -print0)

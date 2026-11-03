@@ -1,0 +1,62 @@
+{
+  "$formatVersion": "1",
+  "id": "8Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVg",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "note": {
+      "type": "object",
+      "canBeDeleted": false,
+      "properties": {
+        "content": {
+          "type": "string",
+          "position": 0,
+          "maxLength": 100
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 20
+          },
+          "maxItems": 8,
+          "position": 1
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "message": {
+      "type": "object",
+      "documentsMutable": true,
+      "properties": {
+        "noteId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "note",
+            "propertyAgreement": {
+              "tags": "tags"
+            }
+          }
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 20
+          },
+          "maxItems": 8,
+          "position": 1
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  }
+}

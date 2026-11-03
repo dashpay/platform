@@ -9,6 +9,7 @@ use drive::grovedb::TransactionArg;
 
 mod v0;
 mod v1;
+mod v2;
 
 impl<C> Platform<C>
 where
@@ -17,8 +18,10 @@ where
     /// Checks for ended vote polls and finalizes each one: awards the winner, records the
     /// finished poll and cleans it up, all on the block transaction.
     ///
-    /// Generation 0 selects the winner in this crate and inserts it through the generic
-    /// document insert. Generation 1 (protocol version 17) delegates selection and insert to
+    /// Generations 0 and 1 select the winner in this crate and insert it through the generic
+    /// document insert; generation 1 (protocol version 14) gives a tie to the earliest
+    /// contender and ignores the lock tally of a contest resolved without locking. Generation
+    /// 2 (protocol version 17) delegates selection and insert to
     /// `Drive::award_contested_document_vote_poll`, the native award operation that
     /// re-derives the winner from state and takes no contender.
     pub(in crate::execution) fn check_for_ended_vote_polls(
@@ -43,6 +46,13 @@ where
                 platform_version,
             ),
             1 => self.check_for_ended_vote_polls_v1(
+                last_committed_platform_state,
+                block_platform_state,
+                block_info,
+                transaction,
+                platform_version,
+            ),
+            2 => self.check_for_ended_vote_polls_v2(
                 block_platform_state,
                 block_info,
                 transaction,
@@ -50,7 +60,7 @@ where
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "check_for_ended_vote_polls".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
@@ -59,8 +69,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    //! The finalization event through the dispatcher, on both sides of the gate: generation 0
-    //! (pinned at protocol version 14, the last version that selects it) and generation 1
+    //! The finalization event through the dispatcher, on both sides of the gate: generation 1
+    //! (pinned at protocol version 14, the first version that selects it) and generation 2
     //! (the latest version) award the same winner and leave the same record, and neither
     //! awards before the end date.
 
@@ -241,11 +251,10 @@ mod tests {
         );
     }
 
-    /// Generation 0, pinned at protocol version 14 (the last version selecting it), selects
-    /// the same winner and leaves the same record: the selection that moved into Drive is
-    /// the one it always applied.
+    /// Generation 1, pinned at protocol version 14, selects the same winner and leaves the
+    /// same record: the selection that moved into Drive is the one it applies.
     #[tokio::test]
-    async fn should_award_the_same_winner_through_generation_0_at_protocol_version_14() {
+    async fn should_award_the_same_winner_through_generation_1_at_protocol_version_14() {
         let (finished_vote_info, [_, contender_2], queued_polls) =
             contest_then_sweep(14, AFTER_THE_END_MS).await;
 

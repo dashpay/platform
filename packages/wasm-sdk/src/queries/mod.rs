@@ -1,6 +1,9 @@
 pub mod address;
 pub mod chained_document;
 pub mod composite_document;
+pub mod contract_fee_pots;
+pub mod contract_group;
+pub mod contract_moderation;
 pub mod data_contract;
 pub mod document;
 pub mod document_ranked;
@@ -16,6 +19,7 @@ pub mod voting;
 
 // Re-export all query functions for easy access
 pub use address::PlatformAddressInfoWasm;
+pub use contract_group::ContractGroupInfoWasm;
 pub use group::*;
 
 use crate::impl_wasm_serde_conversions;

@@ -4,6 +4,9 @@ use serde_json::Value;
 
 use crate::error::Error;
 
+#[cfg(feature = "app-connect")]
+pub use app_connect_contract;
+
 #[cfg(feature = "dashpay")]
 pub use dashpay_contract;
 
@@ -15,6 +18,9 @@ pub use keyword_search_contract;
 
 #[cfg(feature = "masternode-rewards")]
 pub use masternode_reward_shares_contract;
+
+#[cfg(feature = "moderation-charters")]
+pub use moderation_charters_contract;
 
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
@@ -46,6 +52,11 @@ pub enum SystemDataContract {
     TokenHistory = 6,
     KeywordSearch = 7,
     DocumentHistory = 8,
+    AppConnect = 9,
+    /// The charters of elected moderation teams (protocol version 14). Registered from
+    /// protocol version 14 on: registered at genesis by chains born at 14 and inserted by the
+    /// upgrade to 14.
+    ModerationCharters = 10,
 }
 
 pub struct DataContractSource {
@@ -62,7 +73,7 @@ impl SystemDataContract {
     /// Deliberately kept beside the enum so that adding a variant and adding it here are the
     /// same edit. `assert_every_variant_is_listed` below makes that mechanical rather than
     /// remembered: a new variant makes its match non-exhaustive and the crate stops compiling.
-    pub const ALL: [SystemDataContract; 9] = [
+    pub const ALL: [SystemDataContract; 11] = [
         SystemDataContract::Withdrawals,
         SystemDataContract::MasternodeRewards,
         SystemDataContract::FeatureFlags,
@@ -72,6 +83,8 @@ impl SystemDataContract {
         SystemDataContract::TokenHistory,
         SystemDataContract::KeywordSearch,
         SystemDataContract::DocumentHistory,
+        SystemDataContract::AppConnect,
+        SystemDataContract::ModerationCharters,
     ];
 
     /// A new variant must also be added to [`SystemDataContract::ALL`]; this match is where the
@@ -138,8 +151,8 @@ impl SystemDataContract {
             SystemDataContract::KeywordSearch => keyword_search_contract::ID_BYTES,
             #[cfg(not(feature = "keyword-search"))]
             SystemDataContract::KeywordSearch => [
-                92, 20, 14, 101, 92, 2, 101, 187, 194, 168, 8, 113, 109, 225, 132, 121, 133, 19,
-                89, 24, 173, 81, 205, 253, 11, 118, 102, 75, 169, 91, 163, 124,
+                161, 147, 167, 153, 40, 225, 219, 101, 50, 156, 28, 146, 150, 52, 114, 213, 56,
+                154, 106, 15, 79, 66, 18, 156, 94, 146, 216, 104, 140, 93, 170, 215,
             ],
 
             #[cfg(feature = "document-history")]
@@ -148,6 +161,22 @@ impl SystemDataContract {
             SystemDataContract::DocumentHistory => [
                 88, 18, 140, 208, 179, 231, 242, 57, 225, 203, 4, 210, 245, 95, 136, 92, 160, 167,
                 112, 118, 173, 238, 83, 62, 234, 230, 222, 16, 231, 30, 99, 98,
+            ],
+
+            #[cfg(feature = "app-connect")]
+            SystemDataContract::AppConnect => app_connect_contract::ID_BYTES,
+            #[cfg(not(feature = "app-connect"))]
+            SystemDataContract::AppConnect => [
+                239, 150, 14, 165, 105, 114, 235, 173, 190, 248, 162, 126, 247, 218, 92, 129, 255,
+                75, 179, 138, 2, 150, 151, 69, 126, 36, 218, 66, 183, 155, 84, 183,
+            ],
+
+            #[cfg(feature = "moderation-charters")]
+            SystemDataContract::ModerationCharters => moderation_charters_contract::ID_BYTES,
+            #[cfg(not(feature = "moderation-charters"))]
+            SystemDataContract::ModerationCharters => [
+                197, 6, 230, 72, 106, 198, 82, 129, 253, 135, 43, 86, 185, 182, 17, 112, 164, 127,
+                96, 5, 107, 185, 156, 46, 14, 10, 109, 237, 77, 228, 248, 129,
             ],
         };
         Identifier::new(bytes)
@@ -258,6 +287,91 @@ impl SystemDataContract {
             SystemDataContract::DocumentHistory => {
                 Err(Error::ContractNotIncluded("document-history"))
             }
+
+            #[cfg(feature = "app-connect")]
+            SystemDataContract::AppConnect => Ok(DataContractSource {
+                id_bytes: app_connect_contract::ID_BYTES,
+                owner_id_bytes: app_connect_contract::OWNER_ID_BYTES,
+                version: platform_version.system_data_contracts.app_connect as u32,
+                definitions: app_connect_contract::load_definitions(platform_version)?,
+                document_schemas: app_connect_contract::load_documents_schemas(platform_version)?,
+            }),
+            #[cfg(not(feature = "app-connect"))]
+            SystemDataContract::AppConnect => Err(Error::ContractNotIncluded("app-connect")),
+
+            #[cfg(feature = "moderation-charters")]
+            SystemDataContract::ModerationCharters => Ok(DataContractSource {
+                id_bytes: moderation_charters_contract::ID_BYTES,
+                owner_id_bytes: moderation_charters_contract::OWNER_ID_BYTES,
+                version: platform_version.system_data_contracts.moderation_charters as u32,
+                definitions: moderation_charters_contract::load_definitions(platform_version)?,
+                document_schemas: moderation_charters_contract::load_documents_schemas(
+                    platform_version,
+                )?,
+            }),
+            #[cfg(not(feature = "moderation-charters"))]
+            SystemDataContract::ModerationCharters => {
+                Err(Error::ContractNotIncluded("moderation-charters"))
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SystemDataContract;
+    use base58::FromBase58;
+
+    /// `id()` spells the published identifier of every system contract under both feature
+    /// settings: with a contract's feature on it reads that crate's constant, without it the
+    /// bytes copied above. A copy that drifts from the published id would give feature-less
+    /// builds a different contract id, which is exactly what happened to `KeywordSearch`
+    /// before this test existed. `FeatureFlags` has no crate and no published id; its bytes
+    /// are only a reserved slot.
+    #[test]
+    fn every_system_contract_id_matches_the_published_id() {
+        let published = |base58: &str| base58.from_base58().expect("the published id is base58");
+
+        for contract in SystemDataContract::ALL {
+            let expected = match contract {
+                SystemDataContract::Withdrawals => {
+                    published("4fJLR2GYTPFdomuTVvNy3VRrvWgvkKPzqehEBpNf2nk6")
+                }
+                SystemDataContract::MasternodeRewards => {
+                    published("rUnsWrFu3PKyRMGk2mxmZVBPbQuZx2qtHeFjURoQevX")
+                }
+                SystemDataContract::FeatureFlags => continue,
+                SystemDataContract::DPNS => {
+                    published("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec")
+                }
+                SystemDataContract::Dashpay => {
+                    published("Bwr4WHCPz5rFVAD87RqTs3izo4zpzwsEdKPWUT1NS1C7")
+                }
+                SystemDataContract::WalletUtils => {
+                    published("7CSFGeF4WNzgDmx94zwvHkYaG3Dx4XEe5LFsFgJswLbm")
+                }
+                SystemDataContract::TokenHistory => {
+                    published("43gujrzZgXqcKBiScLa4T8XTDnRhenR9BLx8GWVHjPxF")
+                }
+                SystemDataContract::KeywordSearch => {
+                    published("BsjE6tQxG47wffZCRQCovFx5rYrAYYC3rTVRWKro27LA")
+                }
+                SystemDataContract::DocumentHistory => {
+                    published("6voHRaoiPcfmMhbqCA9dixH98xcgPQ9UEcuaXjpVu3LD")
+                }
+                SystemDataContract::AppConnect => {
+                    published("H8F9mP1BM55TE1ShsxPZHzhyinaMdY9bMmP85mkDhcJJ")
+                }
+                SystemDataContract::ModerationCharters => {
+                    published("EG7RGfV8fDTayC2FyVr8HwdpJh3fXDbVztcfE94UmN88")
+                }
+            };
+
+            assert_eq!(
+                contract.id().to_buffer().to_vec(),
+                expected,
+                "{contract:?} id does not match its published id"
+            );
         }
     }
 }

@@ -264,6 +264,7 @@ where
                     processing_fee: *fees_to_add_to_pool - storage_fee,
                     fee_refunds: Default::default(),
                     removed_bytes_from_system: 0,
+                    lifetime_storage_fees: Default::default(),
                 };
                 if *fees_to_add_to_pool >= required_fee {
                     Ok(ConsensusValidationResult::new_with_data(
@@ -389,6 +390,9 @@ mod tests {
             execution_operations: vec![],
             additional_fixed_fee_cost: None,
             user_fee_increase: 0,
+            signing_key_limits: None,
+            gas_sponsor: None,
+            action_fees: vec![],
         };
 
         let previous_fee_versions = Default::default();
@@ -654,6 +658,9 @@ mod tests {
             execution_operations: vec![],
             additional_fixed_fee_cost: Some(1_000),
             user_fee_increase: 0,
+            signing_key_limits: None,
+            gas_sponsor: None,
+            action_fees: vec![],
         };
 
         let result = platform

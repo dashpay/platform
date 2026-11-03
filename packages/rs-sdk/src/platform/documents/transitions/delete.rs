@@ -3,6 +3,8 @@ use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use dpp::data_contract::document_type::action_fees::agreement::DocumentActionFeeAgreement;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, INITIAL_REVISION};
 use dpp::identity::signer::Signer;
@@ -153,6 +155,31 @@ impl DocumentDeleteTransitionBuilder {
         self
     }
 
+    /// Adds what the document delete transition agrees to pay in action fees. Required when
+    /// the document type charges a fee for the action: build it from the contract the user was
+    /// shown with `DocumentActionFeeAgreement::for_document_type_action`, so that a fee changed
+    /// since is refused instead of paid.
+    ///
+    /// Call it after `with_state_transition_creation_options`, which replaces the options this
+    /// is kept in.
+    ///
+    /// # Arguments
+    ///
+    /// * `action_fee_agreement` - The action fee agreement to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_action_fee_agreement(
+        mut self,
+        action_fee_agreement: DocumentActionFeeAgreement,
+    ) -> Self {
+        self.state_transition_creation_options
+            .get_or_insert_with(Default::default)
+            .action_fee_agreement = Some(action_fee_agreement);
+        self
+    }
+
     /// Resolve the document type and the document this delete will be
     /// built from, validating the builder's target. Runs BEFORE any nonce
     /// is reserved (an invalid builder must not advance the SDK's cached
@@ -169,7 +196,6 @@ impl DocumentDeleteTransitionBuilder {
         ),
         Error,
     > {
-        use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
         use dpp::document::DocumentV0Getters;
 
         let document_type = self
@@ -251,6 +277,12 @@ impl DocumentDeleteTransitionBuilder {
         // per failed call.
         let (document_type, document) = self.resolve_document_for_deletion()?;
 
+        // A local failure after the nonce is reserved would leave the cached nonce ahead of
+        // Platform's, so what can be refused without it is refused first.
+        if let Some(creation_options) = &self.state_transition_creation_options {
+            creation_options.validate_base_carries_action_fee_agreement(platform_version)?;
+        }
+
         let identity_contract_nonce = sdk
             .get_identity_contract_nonce(
                 self.owner_id,
@@ -288,7 +320,10 @@ impl Sdk {
     /// Deletes an existing document from the platform.
     ///
     /// This method broadcasts a document deletion transition to permanently remove
-    /// a document from the platform. The result confirms the deletion.
+    /// a document from the platform. The result confirms the deletion. For an
+    /// indexOnly document type the proof shows the document's entry gone at the
+    /// proof's block, not that this delete removed it: no stronger proof exists
+    /// for such a document.
     ///
     /// # Arguments
     ///
@@ -317,14 +352,32 @@ impl Sdk {
         let platform_version = self.version();
 
         let put_settings = delete_document_transition_builder.settings;
+        let index_only = delete_document_transition_builder
+            .data_contract
+            .document_type_for_name(&delete_document_transition_builder.document_type_name)
+            .map_err(|e| Error::Protocol(e.into()))?
+            .index_only();
 
         let state_transition = delete_document_transition_builder
             .sign(self, signing_key, signer, platform_version)
             .await?;
 
-        let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
-            .await?;
+        // An indexOnly document keeps no row: its proof shows the entry is gone, which it would
+        // also be had it never existed, so it cannot prove that this delete executed. That is the
+        // strongest proof such a document has, so it is accepted rather than failing a delete
+        // that landed.
+        let proof_result = if index_only {
+            state_transition
+                .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(
+                    self,
+                    put_settings,
+                )
+                .await?
+        } else {
+            state_transition
+                .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
+                .await?
+        };
 
         match proof_result {
             StateTransitionProofResult::VerifiedDocuments(documents) => {

@@ -1,9 +1,11 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::supported_grovedb_proof;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::serialization::{
-    PlatformDeserializable, PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+    PlatformDeserializableUntrusted,
+    PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
 };
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
@@ -54,14 +56,15 @@ pub fn verify_vote_poll_vote_state_proof(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let contract = DataContract::versioned_deserialize(&contract_bytes, true, platform_version)
-        .map_err(|e| JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e)))?;
+    let contract =
+        DataContract::versioned_deserialize_untrusted(&contract_bytes, true, platform_version)
+            .map_err(|e| JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e)))?;
     let contract_arc = Arc::new(contract);
 
     // A poll identifier alone cannot reconstruct its authenticated storage
     // path. Require the full poll and bind it to the independently supplied
     // contract and query context before proof verification.
-    let vote_poll = ContestedDocumentResourceVotePoll::deserialize_from_bytes(
+    let vote_poll = ContestedDocumentResourceVotePoll::deserialize_from_bytes_untrusted(
         &contested_document_resource_vote_poll_bytes.to_vec(),
     )
     .map_err(|e| JsValue::from_str(&format!("Invalid vote poll: {:?}", e)))?;
@@ -95,7 +98,10 @@ pub fn verify_vote_poll_vote_state_proof(
         .map_err(|e| JsValue::from_str(&format!("Failed to resolve query: {:?}", e)))?;
 
     let (root_hash, execution_result) = resolved_query
-        .verify_vote_poll_vote_state_proof(&proof_vec, platform_version)
+        .verify_vote_poll_vote_state_proof(
+            supported_grovedb_proof(&proof_vec, platform_version)?,
+            platform_version,
+        )
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert execution result to JS object

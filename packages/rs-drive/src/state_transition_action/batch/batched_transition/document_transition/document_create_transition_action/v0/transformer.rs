@@ -1,5 +1,6 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV1Getters};
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::Identifier;
 use grovedb::TransactionArg;
@@ -51,6 +52,7 @@ impl DocumentCreateTransitionActionV0 {
                 base,
                 get_data_contract,
                 |document_type| document_type.document_creation_token_cost(),
+                |action_fees| action_fees.document_creation_action_fee(),
                 "create",
             )?;
 
@@ -78,6 +80,13 @@ impl DocumentCreateTransitionActionV0 {
 
         let document_type = base.document_type()?;
 
+        // Added in place at protocol version 14, inert before it: `fill_generated_properties`
+        // is `None` there and leaves the data as sent. From 14 on, every `generatedFrom`
+        // property the transition leaves out is generated from its params here, before the
+        // contest resolution below and every later check read the data.
+        let mut data = data.clone();
+        document_type.fill_generated_properties(&mut data, platform_version)?;
+
         let document_type_indexes = document_type.indexes();
 
         let prefunded_voting_balances_by_vote_poll = prefunded_voting_balance
@@ -90,7 +99,14 @@ impl DocumentCreateTransitionActionV0 {
                         document_type.name()
                     )),
                 )?;
-                let index_values = index.extract_values(data);
+                // Identifier values are written one way from protocol version 14, so every
+                // contender of a contest names it with the same poll and prefunds the same
+                // balance; before 14 they are taken as given, as they always were
+                let index_values = index.extract_contested_values(
+                    &data,
+                    document_type.flattened_properties(),
+                    platform_version,
+                )?;
 
                 let vote_poll = ContestedDocumentResourceVotePoll {
                     contract_id: base.data_contract_id(),
@@ -144,10 +160,11 @@ impl DocumentCreateTransitionActionV0 {
                 DocumentCreateTransitionActionV0 {
                     base,
                     block_info: *block_info,
-                    data: data.clone(),
+                    data,
                     prefunded_voting_balance: prefunded_voting_balances_by_vote_poll,
                     current_store_contest_info,
                     should_store_contest_info,
+                    property_constraint_aggregates: Default::default(),
                 }
                 .into(),
             ))

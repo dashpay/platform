@@ -1,6 +1,8 @@
 package org.dashfoundation.example.di
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +48,10 @@ class AppContainer(private val context: Context) {
         org.dashfoundation.example.ui.dashpay.DashPayActiveIdentityRestorationCoordinator(
             dashPayActiveIdentityStore,
         )
+
+    /** Once-per-identity distributions this device knows were already claimed. */
+    val oncePerIdentityClaimStore =
+        org.dashfoundation.example.services.tokens.OncePerIdentityClaimStore(dataStore)
 
     val appUiState = AppUiState()
 
@@ -321,10 +327,31 @@ class AppContainer(private val context: Context) {
             appState.restorePreferences()
             appState.initializeSdk()
             loadKnownContractsIntoSdk()
+            backfillOncePerIdentityDistributions()
             activateManager()
             _bootstrapState.value = BootstrapState.Ready
         } catch (e: Exception) {
             _bootstrapState.value = BootstrapState.Failed(e)
+        }
+    }
+
+    /**
+     * One-time pass after the schema version 14 migration: token rows written
+     * by an earlier build have no once-per-identity block even when their
+     * stored contract carries one (see
+     * `TokenMaterializer.backfillOncePerIdentityDistributions`). Best-effort
+     * and non-fatal, and it only marks itself done when it ran to the end.
+     */
+    private suspend fun backfillOncePerIdentityDistributions() {
+        try {
+            if (dataStore.data.first()[ONCE_PER_IDENTITY_BACKFILL_DONE] == true) return
+            val contracts = database.dataContractDao().observeWithTokens().first()
+            val filled = org.dashfoundation.example.services.tokens.TokenMaterializer
+                .backfillOncePerIdentityDistributions(contracts, database.tokenDao())
+            dataStore.edit { it[ONCE_PER_IDENTITY_BACKFILL_DONE] = true }
+            android.util.Log.i(TAG, "Backfilled $filled once-per-identity token blocks")
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "Failed to backfill once-per-identity token blocks", e)
         }
     }
 
@@ -373,5 +400,7 @@ class AppContainer(private val context: Context) {
 
     private companion object {
         const val TAG = "AppContainer"
+        val ONCE_PER_IDENTITY_BACKFILL_DONE =
+            booleanPreferencesKey("once_per_identity_backfill_done")
     }
 }

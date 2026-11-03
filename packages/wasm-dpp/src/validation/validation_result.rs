@@ -4,7 +4,6 @@ use crate::{
 };
 
 use dpp::{consensus::ConsensusError, validation::ConsensusValidationResult};
-use js_sys::JsString;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=ValidationResult)]
@@ -33,13 +32,6 @@ impl ValidationResultWasm {
         }
 
         Ok(Self(ConsensusValidationResult::new_with_errors(vec![])))
-    }
-
-    /// This is just a test method - doesn't need to be in the resulted binding. Please
-    /// remove before shipping
-    #[wasm_bindgen(js_name=errorsText)]
-    pub fn errors_text(&self) -> Vec<JsString> {
-        self.0.errors.iter().map(|e| e.to_string().into()).collect()
     }
 
     #[wasm_bindgen(js_name=isValid)]

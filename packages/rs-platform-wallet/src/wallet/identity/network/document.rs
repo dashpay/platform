@@ -45,6 +45,7 @@ use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::{BinaryData, Value};
 use dpp::prelude::{DataContract, Identifier};
+use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dpp::ProtocolError;
 
 use dash_sdk::platform::documents::transitions::{
@@ -54,6 +55,7 @@ use dash_sdk::platform::documents::transitions::{
     DocumentTransferTransitionBuilder,
 };
 use dash_sdk::platform::transition::put_document::PutDocument;
+use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::{ContextProvider, DocumentQuery, Fetch};
 
 use crate::error::PlatformWalletError;
@@ -178,12 +180,19 @@ impl IdentityWallet {
     /// sanitize step converts them to the protocol's native `Bytes` /
     /// `Identifier` values. An empty object (`"{}"`) is valid for a
     /// document type with no required properties.
+    ///
+    /// `contest_fund` is the most a contested document pays into the
+    /// contest it joins (the fund to join doubles once a contest holds 250
+    /// contenders and again for every 50 more); `None` states the fund to
+    /// join read just before the document is submitted. A document that
+    /// joins no contest ignores it.
     pub async fn create_document_with_signer<S>(
         &self,
         owner_identity_id: &Identifier,
         contract_id: &Identifier,
         document_type_name: &str,
         properties_json: &str,
+        contest_fund: Option<Credits>,
         signer: &S,
     ) -> Result<Document, PlatformWalletError>
     where
@@ -296,6 +305,13 @@ impl IdentityWallet {
         //    worker stack. `None` entropy -> the SDK generates entropy
         //    and the canonical document id for this revision-1 create;
         //    `None` token-payment-info -> no token gating.
+        let settings = contest_fund.map(|contest_fund| PutSettings {
+            state_transition_creation_options: Some(StateTransitionCreationOptions {
+                contest_fund: Some(contest_fund),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
         let confirmed = document
             .put_to_platform_and_wait_for_response(
                 &self.sdk,
@@ -304,7 +320,7 @@ impl IdentityWallet {
                 signing_key,
                 None,
                 &SignerRef(signer),
-                None,
+                settings,
             )
             .await
             .map_err(|e| {

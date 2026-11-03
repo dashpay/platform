@@ -340,6 +340,235 @@ mod tests {
     }
 
     #[test]
+    fn should_accept_contract_requirements_on_a_contract_refers_to_in_v3_document_schema() {
+        for requirements in [
+            json!({ "moderation": "elected" }),
+            json!({ "moderation": "electionOpen" }),
+            json!({ "minimumAgeSeconds": 1 }),
+            json!({ "minimumAgeSeconds": 4294967295u64 }),
+            json!({ "minimumSecondsSinceUpdate": 86400 }),
+            json!({ "moderation": "elected", "minimumAgeSeconds": 604800, "minimumSecondsSinceUpdate": 86400 }),
+            json!({ "owner": "self" }),
+            json!({ "owner": "other" }),
+            json!({ "moderation": "elected", "owner": "other" }),
+            json!({ "readonly": true }),
+            json!({ "keepsHistory": true }),
+            json!({ "ownerProtected": true }),
+            json!({ "ownerProtected": false }),
+            json!({ "moderation": "elected", "owner": "other", "readonly": true, "keepsHistory": true, "ownerProtected": false }),
+        ] {
+            let schema = document_schema_with_refers_to(json!({
+                "type": "contract",
+                "contractRequirements": requirements
+            }));
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+                "expected contractRequirements {requirements} to be valid"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_malformed_contract_requirements_in_v3_document_schema() {
+        for refers_to in [
+            json!({ "type": "contract", "contractRequirements": {} }),
+            json!({ "type": "contract", "contractRequirements": { "moderation": "appointed" } }),
+            json!({ "type": "contract", "contractRequirements": { "minimumAgeSeconds": 0 } }),
+            json!({ "type": "contract", "contractRequirements": { "minimumAgeSeconds": 4294967296u64 } }),
+            json!({ "type": "contract", "contractRequirements": { "minimumAgeSeconds": "3600" } }),
+            json!({ "type": "contract", "contractRequirements": { "minimumAgeSeconds": 1.5 } }),
+            json!({ "type": "contract", "contractRequirements": { "minimumSecondsSinceUpdate": 0 } }),
+            json!({ "type": "contract", "contractRequirements": { "minimumSecondsSinceUpdate": "60" } }),
+            json!({ "type": "contract", "contractRequirements": { "tokens": "any" } }),
+            json!({ "type": "contract", "contractRequirements": { "owner": "anyone" } }),
+            json!({ "type": "contract", "contractRequirements": { "owner": true } }),
+            json!({ "type": "identity", "contractRequirements": { "minimumAgeSeconds": 3600 } }),
+            json!({ "type": "identity", "contractRequirements": { "owner": "self" } }),
+            json!({ "type": "contract", "contractRequirements": { "readonly": false } }),
+            json!({ "type": "contract", "contractRequirements": { "readonly": "true" } }),
+            json!({ "type": "contract", "contractRequirements": { "readonly": 1 } }),
+            json!({ "type": "contract", "contractRequirements": { "keepsHistory": false } }),
+            json!({ "type": "contract", "contractRequirements": { "keepsHistory": "true" } }),
+            json!({ "type": "contract", "contractRequirements": { "ownerProtected": "true" } }),
+            json!({ "type": "contract", "contractRequirements": { "ownerProtected": 1 } }),
+            json!({ "type": "contract", "contractRequirements": { "ownerProtected": null } }),
+            json!({ "type": "identity", "contractRequirements": { "readonly": true } }),
+        ] {
+            let schema = document_schema_with_refers_to(refers_to.clone());
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+                "expected refersTo {refers_to} to be invalid"
+            );
+        }
+    }
+
+    #[test]
+    fn should_accept_key_requirements_on_an_identity_public_key_refers_to_in_v3_document_schema() {
+        for requirements in [
+            json!({ "purpose": "decryption" }),
+            json!({ "purpose": "authentication" }),
+            json!({ "purpose": "owner" }),
+            json!({ "boundTo": "submittedCharter" }),
+            json!({ "purpose": "decryption", "boundTo": "submittedCharter" }),
+        ] {
+            let schema = document_schema_with_refers_to(json!({
+                "type": "identityPublicKey",
+                "keyIdProperty": "recipientKeyId",
+                "keyRequirements": requirements
+            }));
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+                "expected keyRequirements {requirements} to be valid"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_malformed_key_requirements_in_v3_document_schema() {
+        for refers_to in [
+            json!({ "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": {} }),
+            json!({ "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": { "purpose": "system" } }),
+            json!({ "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": { "purpose": "DECRYPTION" } }),
+            json!({ "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": { "purpose": 2 } }),
+            json!({ "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": { "boundTo": "" } }),
+            json!({ "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": { "boundTo": "a.b" } }),
+            json!({ "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": { "boundTo": "a-b" } }),
+            json!({ "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": { "securityLevel": "high" } }),
+            json!({ "type": "identity", "keyRequirements": { "purpose": "decryption" } }),
+            json!({ "type": "contract", "keyRequirements": { "purpose": "decryption" } }),
+        ] {
+            let schema = document_schema_with_refers_to(refers_to.clone());
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+                "expected refersTo {refers_to} to be invalid"
+            );
+        }
+    }
+
+    #[test]
+    fn should_accept_a_lookup_on_a_document_refers_to_in_v3_document_schema() {
+        for reference_type in ["permanentDocument", "deletableDocument"] {
+            for keys in [
+                json!({ "submittedCharterId": "submittedCharterId", "$ownerId": "." }),
+                json!({ "submittedCharterId": ".", "$ownerId": "$ownerId" }),
+                json!({ "meta.charterId": "meta.charterId", "$ownerId": "." }),
+            ] {
+                let schema = document_schema_with_refers_to(json!({
+                    "type": reference_type,
+                    "documentType": "joinRequest",
+                    "lookup": { "index": "bySubmittedCharter", "keys": keys }
+                }));
+
+                assert!(
+                    DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+                    "expected a {reference_type} lookup with keys {keys} to be valid"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_reject_malformed_or_misplaced_lookups_in_v3_document_schema() {
+        let keys = json!({ "$ownerId": "." });
+        for refers_to in [
+            json!({ "type": "identity", "lookup": { "index": "byOwner", "keys": keys } }),
+            json!({ "type": "contract", "lookup": { "index": "byOwner", "keys": keys } }),
+            json!({ "type": "token", "lookup": { "index": "byOwner", "keys": keys } }),
+            json!({ "type": "identityPublicKey", "keyIdProperty": "keyId", "lookup": { "index": "byOwner", "keys": keys } }),
+            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "keys": keys } }),
+            json!({ "type": "deletableDocument", "documentType": "note", "lookup": { "index": "byOwner" } }),
+            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "byOwner" } }),
+            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "", "keys": keys } }),
+            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "x".repeat(33), "keys": keys } }),
+            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "byOwner", "keys": {} } }),
+            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "byOwner", "keys": { "$ownerId": 1 } } }),
+            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "byOwner", "keys": { "$ownerId": "$createdAt" } } }),
+            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "byOwner", "keys": { "$ownerId": "bad-name" } } }),
+            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "byOwner", "keys": keys, "extra": 1 } }),
+        ] {
+            let schema = document_schema_with_refers_to(refers_to.clone());
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+                "expected refersTo {refers_to} to be invalid"
+            );
+        }
+    }
+
+    #[test]
+    fn should_accept_a_list_element_refers_to_in_v3_document_schema() {
+        for (property_agreement, in_list) in [
+            (json!({ "electedCharterId": "$id" }), "members"),
+            (
+                json!({ "meta.charterId": "$id", "charterTitle": "title" }),
+                "seats.members",
+            ),
+        ] {
+            let schema = document_schema_with_refers_to(json!({
+                "type": "listElement",
+                "documentType": "electedCharter",
+                "propertyAgreement": property_agreement,
+                "inList": in_list
+            }));
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+                "expected a listElement agreeing on {property_agreement} into {in_list} to be valid"
+            );
+        }
+
+        // With a contract id, and as a leaf of a reference expression
+        for refers_to in [
+            json!({
+                "type": "listElement",
+                "contractId": "4uAB6wAdt6FJ7djwjYrLnooVhYeQpzgkssBmgmvZ9WnM",
+                "documentType": "electedCharter",
+                "propertyAgreement": { "electedCharterId": "$id" },
+                "inList": "members"
+            }),
+            json!({ "anyOf": [
+                { "type": "listElement", "documentType": "electedCharter", "propertyAgreement": { "electedCharterId": "$id" }, "inList": "members" },
+                { "type": "permanentDocument", "documentType": "electedCharter" }
+            ] }),
+        ] {
+            let schema = document_schema_with_refers_to(refers_to.clone());
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+                "expected refersTo {refers_to} to be valid"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_malformed_or_misplaced_list_element_keywords_in_v3_document_schema() {
+        for refers_to in [
+            // Every listElement keyword is required
+            json!({ "type": "listElement", "propertyAgreement": { "electedCharterId": "$id" }, "inList": "members" }),
+            json!({ "type": "listElement", "documentType": "electedCharter", "inList": "members" }),
+            json!({ "type": "listElement", "documentType": "electedCharter", "propertyAgreement": { "electedCharterId": "$id" } }),
+            json!({ "type": "listElement", "documentType": "electedCharter", "propertyAgreement": { "electedCharterId": "$id" }, "inList": "members", "lookup": { "index": "byOwner", "keys": { "$ownerId": "." } } }),
+            json!({ "type": "listElement", "documentType": "electedCharter", "propertyAgreement": { "electedCharterId": "$id" }, "inList": "bad-name" }),
+            json!({ "type": "listElement", "documentType": "electedCharter", "propertyAgreement": { "electedCharterId": "$id" }, "inList": "" }),
+            json!({ "type": "listElement", "documentType": "electedCharter", "propertyAgreement": { "electedCharterId": "$documentId" }, "inList": "members" }),
+            // inList belongs to listElement alone
+            json!({ "type": "identity", "inList": "members" }),
+            json!({ "type": "permanentDocument", "documentType": "electedCharter", "inList": "members" }),
+            json!({ "type": "deletableDocument", "documentType": "electedCharter", "inList": "members" }),
+        ] {
+            let schema = document_schema_with_refers_to(refers_to.clone());
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+                "expected refersTo {refers_to} to be invalid"
+            );
+        }
+    }
+
+    #[test]
     fn should_accept_permanent_document_refers_to_in_v3_document_schema() {
         let schema = document_schema_with_refers_to(json!({
             "type": "permanentDocument",
@@ -421,6 +650,86 @@ mod tests {
             assert!(
                 DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
                 "expected invalid contractId {bad} to be rejected"
+            );
+        }
+    }
+
+    fn document_schema_with_agreement(agreement: serde_json::Value) -> serde_json::Value {
+        json!({
+            "$schema": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
+            "type": "object",
+            "properties": {
+                "authorId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0
+                },
+                "postId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 1,
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "documentType": "post",
+                        "propertyAgreement": agreement
+                    }
+                }
+            },
+            "additionalProperties": false
+        })
+    }
+
+    #[test]
+    fn should_accept_referenced_system_identifiers_in_property_agreement() {
+        for referenced in ["$ownerId", "$creatorId", "$id"] {
+            let schema = document_schema_with_agreement(json!({ "authorId": referenced }));
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+                "expected {referenced} on the referenced side of an agreement to be valid"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_other_system_properties_on_the_referenced_side_of_an_agreement() {
+        // `$id`, `$ownerId` and `$creatorId` are the referenced side's system names
+        for referenced in ["$createdAt", "$revision", "$owner", "$documentId"] {
+            let schema = document_schema_with_agreement(json!({ "authorId": referenced }));
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+                "expected {referenced} on the referenced side of an agreement to be invalid"
+            );
+        }
+    }
+
+    #[test]
+    fn should_accept_the_writer_owner_id_on_the_referring_side_of_an_agreement() {
+        for referenced in ["$ownerId", "$creatorId", "authorId"] {
+            let schema = document_schema_with_agreement(json!({ "$ownerId": referenced }));
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+                "expected the writer's $ownerId against {referenced} to be valid"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_other_system_properties_on_the_referring_side_of_an_agreement() {
+        for referring in ["$creatorId", "$id", "$createdAt"] {
+            let schema = document_schema_with_agreement(json!({ referring: "$ownerId" }));
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+                "expected {referring} on the referring side of an agreement to be invalid"
             );
         }
     }
@@ -544,6 +853,232 @@ mod tests {
         assert!(
             DOCUMENT_META_SCHEMA_V2.validate(&schema).is_err(),
             "expected refersTo to be rejected by the v2 meta schema"
+        );
+    }
+
+    // ---- Sugar-aware aggregate prerequisites (v3) ----
+    //
+    // The structural parser expands `averageable` into `countable` +
+    // `summable` and `rangeAverageable` into `rangeCountable` +
+    // `rangeSummable` before it checks the ranked and range prerequisites.
+    // The meta-schema sees the index as authored, so its rules name the
+    // sugar as an accepted alternative; these tests pin that on the schema
+    // itself, independent of the parser.
+
+    fn document_schema_with_index(index: serde_json::Value) -> serde_json::Value {
+        json!({
+            "$schema": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
+            "type": "object",
+            "properties": {
+                "restaurantId": { "type": "string", "maxLength": 32, "position": 0 },
+                "grade": { "type": "integer", "minimum": 0, "maximum": 100, "position": 1 }
+            },
+            "required": ["restaurantId", "grade"],
+            "additionalProperties": false,
+            "indices": [index]
+        })
+    }
+
+    fn v3_errors(schema: &serde_json::Value) -> String {
+        match DOCUMENT_META_SCHEMA_V3.validate(schema) {
+            Ok(()) => panic!("expected the v3 meta-schema to reject {schema}"),
+            Err(errors) => errors
+                .map(|error| error.to_string())
+                .collect::<Vec<_>>()
+                .join("; "),
+        }
+    }
+
+    #[test]
+    fn should_accept_averageable_sugar_as_the_ranked_range_axis_in_v3() {
+        for ranked in ["rankedCountable", "rankedSummable", "rankedAverageable"] {
+            let schema = document_schema_with_index(json!({
+                "name": "storeRating",
+                "properties": [{ "restaurantId": "asc" }],
+                "averageable": "grade",
+                "rangeAverageable": true,
+                ranked: true
+            }));
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+                "rangeAverageable must satisfy {ranked}'s range prerequisite"
+            );
+        }
+
+        // Two axes at once, the shape that was refused before the rule was
+        // made sugar-aware.
+        let schema = document_schema_with_index(json!({
+            "name": "storeRating",
+            "properties": [{ "restaurantId": "asc" }],
+            "averageable": "grade",
+            "rangeAverageable": true,
+            "rankedAverageable": true,
+            "rankedCountable": true
+        }));
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+            "the sugar form of a two-axis index must validate as written"
+        );
+
+        // The level-addressed object form of `rankedCountable` too.
+        let schema = document_schema_with_index(json!({
+            "name": "storeRating",
+            "properties": [{ "restaurantId": "asc" }],
+            "averageable": "grade",
+            "rangeAverageable": true,
+            "rankedCountable": { "at": "restaurantId" }
+        }));
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+            "the object form must accept rangeAverageable as its range axis"
+        );
+    }
+
+    #[test]
+    fn should_accept_the_explicit_range_pair_as_ranked_averageable_axis_in_v3() {
+        let schema = document_schema_with_index(json!({
+            "name": "storeRating",
+            "properties": [{ "restaurantId": "asc" }],
+            "countable": "countable",
+            "summable": "grade",
+            "rangeCountable": true,
+            "rangeSummable": true,
+            "rankedAverageable": true
+        }));
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+            "rangeCountable + rangeSummable must satisfy rankedAverageable"
+        );
+    }
+
+    #[test]
+    fn should_reject_ranked_flags_with_no_range_axis_in_v3() {
+        for (ranked, missing) in [
+            ("rankedCountable", "rangeCountable"),
+            ("rankedSummable", "rangeSummable"),
+            ("rankedAverageable", "rangeAverageable"),
+        ] {
+            let schema = document_schema_with_index(json!({
+                "name": "storeRating",
+                "properties": [{ "restaurantId": "asc" }],
+                "averageable": "grade",
+                ranked: true
+            }));
+            let errors = v3_errors(&schema);
+            assert!(
+                errors.contains(missing),
+                "{ranked} with no range axis must name {missing}; got {errors}"
+            );
+        }
+
+        // Half of the explicit pair is not enough for the Avg axis.
+        let schema = document_schema_with_index(json!({
+            "name": "storeRating",
+            "properties": [{ "restaurantId": "asc" }],
+            "countable": "countable",
+            "summable": "grade",
+            "rangeCountable": true,
+            "rankedAverageable": true
+        }));
+        let errors = v3_errors(&schema);
+        assert!(
+            errors.contains("rangeAverageable"),
+            "rankedAverageable with only rangeCountable must name rangeAverageable; got {errors}"
+        );
+    }
+
+    #[test]
+    fn should_keep_the_ranked_rules_value_sensitive_in_v3() {
+        let schema = document_schema_with_index(json!({
+            "name": "storeRating",
+            "properties": [{ "restaurantId": "asc" }],
+            "rankedCountable": false,
+            "rankedSummable": false,
+            "rankedAverageable": false
+        }));
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+            "a written-out opt-out demands no range axis"
+        );
+    }
+
+    #[test]
+    fn should_accept_averageable_in_place_of_summable_in_v3() {
+        let schema = document_schema_with_index(json!({
+            "name": "storeRating",
+            "properties": [{ "restaurantId": "asc" }],
+            "averageable": "grade",
+            "rangeSummable": true
+        }));
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+            "averageable must satisfy rangeSummable's presence row"
+        );
+    }
+
+    /// `rangeCountable` implies `countable` (as it does at the doctype
+    /// level), so v3 has no row for it: the flag stands alone, whatever its
+    /// value. The parser promotes an omitted `countable` and rejects an
+    /// explicit `"notCountable"` beside a true `rangeCountable`.
+    #[test]
+    fn should_accept_range_countable_without_countable_in_v3() {
+        for value in [true, false] {
+            let schema = document_schema_with_index(json!({
+                "name": "storeRating",
+                "properties": [{ "restaurantId": "asc" }],
+                "rangeCountable": value
+            }));
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+                "rangeCountable: {value} needs no countable beside it"
+            );
+        }
+    }
+
+    #[test]
+    fn should_keep_the_range_rows_presence_based_in_v3() {
+        for (range, missing) in [
+            ("rangeSummable", "summable"),
+            ("rangeAverageable", "averageable"),
+        ] {
+            for value in [true, false] {
+                let schema = document_schema_with_index(json!({
+                    "name": "storeRating",
+                    "properties": [{ "restaurantId": "asc" }],
+                    range: value
+                }));
+                let errors = v3_errors(&schema);
+                assert!(
+                    errors.contains(missing),
+                    "{range}: {value} with nothing to aggregate must name {missing}; got {errors}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_accept_documents_averageable_under_doctype_range_summable_in_v3() {
+        let mut schema = document_schema_with_index(json!({
+            "name": "storeRating",
+            "properties": [{ "restaurantId": "asc" }]
+        }));
+        schema["documentsAverageable"] = json!("grade");
+        schema["rangeSummable"] = json!(true);
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+            "documentsAverageable must satisfy the doctype-level rangeSummable row"
+        );
+
+        let mut schema = document_schema_with_index(json!({
+            "name": "storeRating",
+            "properties": [{ "restaurantId": "asc" }]
+        }));
+        schema["rangeSummable"] = json!(true);
+        let errors = v3_errors(&schema);
+        assert!(
+            errors.contains("documentsSummable"),
+            "a doctype-level rangeSummable with nothing to sum must name documentsSummable; \
+             got {errors}"
         );
     }
 }

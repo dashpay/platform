@@ -3,7 +3,9 @@ pub mod transformer;
 /// v0
 pub mod v0;
 
+use crate::error::Error;
 use crate::state_transition_action::address_funds::address_funding_from_asset_lock::v0::AddressFundingFromAssetLockTransitionActionV0;
+use crate::state_transition_action::address_funds::restore_input_spends_for_failed_transition;
 use derive_more::From;
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
@@ -153,16 +155,13 @@ impl AddressFundingFromAssetLockTransitionAction {
     pub fn restore_input_spends_for_failed_transition(
         &mut self,
         requested_inputs: &BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-    ) {
+    ) -> Result<(), Error> {
         match self {
             AddressFundingFromAssetLockTransitionAction::V0(transition) => {
-                for (address, (_nonce, balance)) in
-                    transition.inputs_with_remaining_balance.iter_mut()
-                {
-                    if let Some((_, requested_spend)) = requested_inputs.get(address) {
-                        *balance = balance.saturating_add(*requested_spend);
-                    }
-                }
+                restore_input_spends_for_failed_transition(
+                    &mut transition.inputs_with_remaining_balance,
+                    requested_inputs,
+                )
             }
         }
     }

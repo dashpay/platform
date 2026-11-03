@@ -6,7 +6,7 @@ use dpp::data_contract::group::Group;
 use dpp::data_contract::GroupContractPosition;
 use dpp::identifier::Identifier;
 use dpp::prelude::StartAtIncluded;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::Element::Item;
@@ -78,7 +78,7 @@ impl Drive {
             match element {
                 Item(value, ..) => Ok((
                     group_contract_position,
-                    Group::deserialize_from_bytes(&value)?,
+                    Group::deserialize_from_bytes_trusted(&value)?,
                 )),
                 _ => Err(Error::Drive(DriveError::CorruptedDriveState(
                     "token tree for infos should contain only items".to_string(),

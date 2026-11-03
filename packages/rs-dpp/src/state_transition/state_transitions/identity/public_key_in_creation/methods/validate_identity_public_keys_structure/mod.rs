@@ -4,6 +4,7 @@ use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
 pub mod v0;
+pub mod v1;
 
 impl IdentityPublicKeyInCreation {
     pub fn validate_identity_public_keys_structure(
@@ -22,10 +23,15 @@ impl IdentityPublicKeyInCreation {
                 in_create_identity,
                 platform_version,
             ),
+            1 => Self::validate_identity_public_keys_structure_v1(
+                identity_public_keys_with_witness,
+                in_create_identity,
+                platform_version,
+            ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "IdentityPublicKeyInCreation::validate_identity_public_keys_structure"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }

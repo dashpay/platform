@@ -64,6 +64,112 @@ describe('Data Contract Queries', function describeDataContractQueries() {
     });
   });
 
+  describe('getDataContractsByRange()', () => {
+    it('should page through contracts in ascending id order', async () => {
+      const firstPage = await client.getDataContractsByRange({ limit: 1 });
+      expect(firstPage).to.be.instanceOf(Map);
+      expect(firstPage.size).to.equal(1);
+      const [firstId] = firstPage.keys();
+
+      const nextPage = await client.getDataContractsByRange({ limit: 1, startAfter: firstId });
+      expect(nextPage.size).to.equal(1);
+      const [nextId] = nextPage.keys();
+      // Base58 strings do not sort like the raw id bytes the query orders by, so check the
+      // cursor against a two-item page instead of comparing the strings.
+      const firstTwo = await client.getDataContractsByRange({ limit: 2 });
+      expect([...firstTwo.keys()]).to.deep.equal([firstId, nextId]);
+
+      const fromFirst = await client.getDataContractsByRange({ limit: 1, startAt: firstId });
+      expect([...fromFirst.keys()]).to.deep.equal([firstId]);
+    });
+
+    it('should include the DPNS contract in the full first page', async () => {
+      const page = await client.getDataContractsByRange({});
+      expect(page.has(dpnsContractId)).to.be.true();
+      expect(page.get(dpnsContractId)).to.be.instanceOf(sdk.DataContract);
+    });
+
+    it('should return ids only when requested', async () => {
+      const page = await client.getDataContractsByRange({ idsOnly: true });
+      expect(page.size).to.be.at.least(1);
+      expect([...page.values()].every((value) => value === undefined)).to.be.true();
+    });
+  });
+
+  describe('getDataContractsByRangeWithProofInfo()', () => {
+    it('should return proof info for a page of contracts', async () => {
+      const res = await client.getDataContractsByRangeWithProofInfo({ limit: 2 });
+      expect(res).to.be.ok();
+      expect(res.data).to.be.instanceOf(Map);
+      expect(res.metadata).to.be.ok();
+      expect(res.proof).to.be.ok();
+    });
+  });
+
+  describe('getDataContractsLatestVersions()', () => {
+    it('should return one entry per id, versions only, undefined for an unknown id', async () => {
+      const unknownId = new Uint8Array(32).fill(7);
+      const res = await client.getDataContractsLatestVersions({ contractIds: [dpnsContractId, unknownId] });
+      expect(res).to.be.instanceOf(Map);
+      expect(res.size).to.equal(2);
+      const dpns = res.get(dpnsContractId);
+      expect(dpns).to.be.ok();
+      expect(dpns.version).to.be.at.least(1);
+      expect(dpns.dataContract).to.be.undefined();
+      const [, unknownEntry] = [...res.values()].filter((value) => value !== dpns);
+      expect(unknownEntry).to.be.undefined();
+    });
+
+    it('should include the contracts when asked', async () => {
+      const res = await client.getDataContractsLatestVersions({
+        contractIds: [dpnsContractId],
+        includeContracts: true,
+      });
+      const dpns = res.get(dpnsContractId);
+      expect(dpns.dataContract).to.be.instanceOf(sdk.DataContract);
+      expect(dpns.dataContract.id.toString()).to.equal(dpnsContractId);
+      expect(dpns.dataContract.version).to.equal(dpns.version);
+    });
+  });
+
+  describe('addKnownContract()', () => {
+    it('should accept a contract the caller holds', async () => {
+      const contract = await client.getDataContract(dpnsContractId);
+      expect(client.addKnownContract(contract)).to.be.true();
+    });
+  });
+
+  describe('getDataContractsLatestVersions() on a fresh client', () => {
+    // The staleness check is the first thing an app asks after start-up, and a client
+    // seeded below protocol version 14 has not ratcheted yet: the verifier must take the
+    // proof shape from the responding node's protocol version, not from the client's.
+    it('should verify the version proof when pinned to protocol version 13', async () => {
+      const context = await prefetchLocalReady();
+      const freshClient = await sdk.WasmSdkBuilder.local()
+        .withTrustedContext(context)
+        .withVersion(13)
+        .build();
+      try {
+        const res = await freshClient.getDataContractsLatestVersions({ contractIds: [dpnsContractId] });
+        expect(res.get(dpnsContractId).version).to.be.at.least(1);
+        expect(res.get(dpnsContractId).dataContract).to.be.undefined();
+      } finally {
+        freshClient.free();
+      }
+    });
+  });
+
+  describe('getDataContractsLatestVersionsWithProofInfo()', () => {
+    it('should return proof info for the versions', async () => {
+      const res = await client.getDataContractsLatestVersionsWithProofInfo({ contractIds: [dpnsContractId] });
+      expect(res).to.be.ok();
+      expect(res.data).to.be.instanceOf(Map);
+      expect(res.data.get(dpnsContractId).version).to.be.at.least(1);
+      expect(res.metadata).to.be.ok();
+      expect(res.proof).to.be.ok();
+    });
+  });
+
   describe('getDataContractHistory()', () => {
     // TODO: Fix proof verification error: dash drive: proof: corrupted error:
     // we did not get back an element for the correct path for the historical contract

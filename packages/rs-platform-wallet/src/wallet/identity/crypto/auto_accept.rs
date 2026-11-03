@@ -41,8 +41,11 @@ use crate::error::PlatformWalletError;
 /// DIP-15 mandates only that the proof's 4-byte timestamp *is* an expiry (and the
 /// hardened derivation index); it does not prescribe a value. We pick a short
 /// default because the QR carries a usable (bearer) private key and auto-accept
-/// is always-on (no off-switch) — see the security notes in
-/// `docs/dashpay/QR_AUTO_ACCEPT_SPEC.md` §6.
+/// is always-on (no off-switch). The key in the QR is intrinsic to DIP-15 (the
+/// scanner must sign, and the owner cannot pre-sign without the scanner's id); it
+/// only authorizes auto-accept, so a leaked QR can at worst produce unwanted
+/// contact requests (removable with ignore) until it expires, and the short expiry
+/// is the mitigation.
 pub const AUTO_ACCEPT_TTL_SECS: u32 = 3600;
 
 /// `key type` byte for an ECDSA_SECP256K1 auto-accept key/proof (DIP-15).

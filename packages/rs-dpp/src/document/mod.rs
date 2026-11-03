@@ -22,6 +22,10 @@ mod v0;
 pub use accessors::*;
 pub use v0::*;
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 #[cfg(feature = "extended-document")]
 pub use extended_document::property_names as extended_document_property_names;
 #[cfg(feature = "extended-document")]
@@ -58,10 +62,10 @@ pub enum Document {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for Document {}
+impl JsonConvertible for Document {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for Document {}
+impl ValueConvertible for Document {}
 
 impl fmt::Display for Document {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {

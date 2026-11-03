@@ -1,7 +1,7 @@
 //! Apply a [`PlatformWalletChangeSet`] onto a [`PlatformWalletInfo`]
 //! during restore.
 //!
-//! Inverse of the mutation methods that emit changesets in Phase 9a-2:
+//! Inverse of the mutation methods that emit changesets:
 //! given a persisted [`PlatformWalletChangeSet`], it replays each
 //! sub-changeset onto the in-memory state so the wallet converges to
 //! the same state the original mutations produced.
@@ -18,14 +18,13 @@
 //!   isn't present in the wallet are logged with `tracing::warn!` and
 //!   skipped — orphans usually mean a stale persisted entry from
 //!   before the owner identity was removed.
-//! - **Loud on core failures.** If `key_wallet`'s core apply fails (HD
-//!   account derivation cascade), the platform apply fails too. Core
-//!   state must land before any platform-specific bucket runs.
+//! - **Core is not replayed.** `cs.core` is dropped. `key_wallet` keeps
+//!   core state current at runtime, and boot restores it from the
+//!   persister's `ClientStartState`, not from changeset replay.
 //!
 //! # Ordering
 //!
-//! 1. `cs.core` — runs first via `ManagedWalletInfo::apply_changeset`.
-//!    Wallet account state must exist before balance recompute.
+//! 1. `cs.core` — dropped (see the invariant above).
 //! 2. `cs.identities` — insert/update entries, then `removed`, then
 //!    primary identity fixup.
 //! 3. `cs.contacts` — sent/incoming inserts, tombstone removes,
@@ -42,7 +41,7 @@
 //!    callback. There is nothing on `PlatformWalletInfo` to apply
 //!    them onto.
 //! 7. `update_balance()` — recompute the cached `WalletBalance` from
-//!    the now-restored UTXO set; the returned changeset is discarded.
+//!    the current UTXO set; the returned changeset is discarded.
 
 use key_wallet::wallet::Wallet;
 
@@ -64,6 +63,9 @@ pub enum ApplyError {
     ///
     /// Stored as `String` to keep the platform-wallet public API
     /// decoupled from `key_wallet`'s error enum.
+    ///
+    /// Not constructed today: `apply_changeset` drops `cs.core` instead of
+    /// replaying it (see the module docs).
     #[error("core wallet apply failed: {0}")]
     CoreApply(String),
 
@@ -799,7 +801,7 @@ mod tests {
     }
 
     // ----------------------------------------------------------------------
-    // Round-trip tests (Phase 9a-4)
+    // Round-trip tests
     //
     // The shape of every test is identical:
     //   1. Build two empty `PlatformWalletInfo`s — A is the wallet that gets
@@ -813,14 +815,14 @@ mod tests {
     //
     // These verify the round-trip contract: changesets emitted by mutations
     // are faithful enough that apply rebuilds the same in-memory state. This
-    // is what makes the persister adapter (Phase 9a-5) safe — it can
+    // is what makes the persister adapter safe — it can
     // serialize the captured changeset and deserialize it back into a
     // sibling wallet on restart with no information loss.
     //
-    // Out of scope: AssetLockManager / TokenWallet / PlatformAddressWallet
+    // Out of scope: AssetLockManager / token sync / PlatformAddressWallet
     // mutations are async and require an `Sdk` + broadcaster + Notify, so
     // they can't run as plain unit tests. Their round-trip coverage will
-    // come from integration tests (Phase 9a-4 follow-up). The
+    // come from integration tests (not written yet). The
     // synthesized-data tests above already cover the apply side; the gap
     // is verifying the *mutation side* emits a faithful changeset.
     // ----------------------------------------------------------------------
@@ -1289,7 +1291,7 @@ mod tests {
     }
 
     // ----------------------------------------------------------------------
-    // Reviewer test gaps (Phase 9a-3 followup)
+    // Reviewer test gaps
     // ----------------------------------------------------------------------
 
     /// Reviewer #6a: removing the sole identity drops it cleanly.

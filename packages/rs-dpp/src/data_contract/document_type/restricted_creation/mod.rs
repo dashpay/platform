@@ -2,11 +2,11 @@ use crate::consensus::basic::data_contract::UnknownDocumentCreationRestrictionMo
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 
-#[derive(Debug, PartialEq, Clone, Copy, Eq, Encode, Decode)]
+#[derive(Debug, PartialEq, Clone, Copy, Eq, Encode, Decode, DecodeUntrusted)]
 pub enum CreationRestrictionMode {
     NoRestrictions,
     OwnerOnly,

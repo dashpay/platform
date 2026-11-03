@@ -15,5 +15,6 @@ mod token_tests;
 mod top_up_tests;
 mod update_identities_tests;
 mod upgrade_fork_tests;
+mod vote_extension_round_tests;
 mod voting_tests;
 mod withdrawal_tests;

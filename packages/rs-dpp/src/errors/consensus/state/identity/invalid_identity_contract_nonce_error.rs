@@ -1,17 +1,29 @@
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
-use crate::ProtocolError; // needed for PlatformDeserialize and PlatformSerialize
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use crate::ProtocolError; // needed for PlatformDeserializeTrusted, PlatformDeserializeUntrusted and PlatformSerialize
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use std::fmt::{Display, Formatter};
 use thiserror::Error;
 
 use crate::prelude::{Identifier, IdentityNonce};
 
 use crate::identity::identity_nonce::MergeIdentityNonceResult;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+    DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 pub struct InvalidIdentityNonceError {

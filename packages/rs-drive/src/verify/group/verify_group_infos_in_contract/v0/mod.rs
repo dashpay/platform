@@ -10,7 +10,7 @@ use dpp::data_contract::group::Group;
 use dpp::data_contract::GroupContractPosition;
 use dpp::identifier::Identifier;
 use dpp::prelude::StartAtIncluded;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use grovedb::GroveDb;
 use platform_version::version::PlatformVersion;
 
@@ -58,7 +58,7 @@ impl Drive {
                     GroupContractPosition::from_be_bytes(key_bytes);
                 match element {
                     Some(Item(value, ..)) => {
-                        let group = match Group::deserialize_from_bytes(&value) {
+                        let group = match Group::deserialize_from_bytes_untrusted(&value) {
                             Ok(group) => group,
                             Err(e) => return Some(Err(e.into())),
                         };

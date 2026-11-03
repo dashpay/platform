@@ -1,6 +1,6 @@
 use crate::drive::identity::key::fetch::KeyRequestType::{
-    AllKeys, ContractBoundKey, ContractDocumentTypeBoundKey, LatestAuthenticationMasterKey,
-    RecentWithdrawalKeys, SearchKey, SpecificKeys,
+    AllKeys, ContractBoundKey, ContractDocumentTypeBoundKey, ContractGroupBoundKey,
+    LatestAuthenticationMasterKey, RecentWithdrawalKeys, SearchKey, SpecificKeys,
 };
 use crate::drive::identity::key::fetch::{
     IdentityKeysRequest, IdentityPublicKeyResult, KeyKindRequestType,
@@ -96,7 +96,8 @@ impl Drive {
             }
             SearchKey(_)
             | ContractBoundKey(_, _, KeyKindRequestType::CurrentKeyOfKindRequest)
-            | ContractDocumentTypeBoundKey(_, _, _, KeyKindRequestType::CurrentKeyOfKindRequest) => {
+            | ContractDocumentTypeBoundKey(_, _, _, KeyKindRequestType::CurrentKeyOfKindRequest)
+            | ContractGroupBoundKey(_, _, KeyKindRequestType::CurrentKeyOfKindRequest) => {
                 let path_query = key_request.into_path_query();
 
                 let result = self.grove_get_path_query_with_optional(
@@ -110,6 +111,7 @@ impl Drive {
             }
             ContractBoundKey(_, _, KeyKindRequestType::AllKeysOfKindRequest)
             | ContractDocumentTypeBoundKey(_, _, _, KeyKindRequestType::AllKeysOfKindRequest)
+            | ContractGroupBoundKey(_, _, KeyKindRequestType::AllKeysOfKindRequest)
             | RecentWithdrawalKeys
             | LatestAuthenticationMasterKey => {
                 let path_query = key_request.into_path_query();

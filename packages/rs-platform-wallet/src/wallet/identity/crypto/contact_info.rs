@@ -137,8 +137,9 @@ pub struct ContactInfoPrivateData {
     pub alias_name: Option<String>,
     /// Free-form note.
     pub note: Option<String>,
-    /// Whether the contact is hidden / ignored (DIP-15 `displayHidden` — the
-    /// hide flag, also the cross-device ignore signal).
+    /// Whether the contact is hidden (DIP-15 `displayHidden`). This hides an
+    /// established contact; it is not the ignore feature, which is local to
+    /// each device and covers senders who are not contacts.
     pub display_hidden: bool,
     /// Accepted rotated account-references of an established contact (DIP-15
     /// `acceptedAccounts`). Empty until multi-account is populated.

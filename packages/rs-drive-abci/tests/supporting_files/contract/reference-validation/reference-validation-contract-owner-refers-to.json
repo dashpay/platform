@@ -1,0 +1,359 @@
+{
+  "$formatVersion": "1",
+  "id": "95zHGjLfHmQ2TMYgcKtVUWjMa4NPcnNZ16pk68C1xk5g",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "addedModerator": {
+      "type": "object",
+      "canBeDeleted": false,
+      "documentsMutable": false,
+      "properties": {
+        "electedCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        },
+        "memberId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 1
+        },
+        "role": {
+          "type": "string",
+          "position": 2,
+          "maxLength": 63
+        }
+      },
+      "indices": [
+        {
+          "name": "byElectedCharterMember",
+          "properties": [
+            {
+              "electedCharterId": "asc"
+            },
+            {
+              "memberId": "asc"
+            }
+          ],
+          "unique": true
+        }
+      ],
+      "required": [
+        "electedCharterId",
+        "memberId",
+        "role"
+      ],
+      "additionalProperties": false
+    },
+    "resignationRequest": {
+      "type": "object",
+      "ownerRefersTo": {
+        "type": "permanentDocument",
+        "documentType": "addedModerator",
+        "lookup": {
+          "index": "byElectedCharterMember",
+          "keys": {
+            "electedCharterId": "electedCharterId",
+            "memberId": "."
+          }
+        }
+      },
+      "properties": {
+        "electedCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        },
+        "reason": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 63
+        }
+      },
+      "required": [
+        "electedCharterId",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "roleResignation": {
+      "type": "object",
+      "ownerRefersTo": {
+        "type": "permanentDocument",
+        "documentType": "addedModerator",
+        "propertyAgreement": {
+          "role": "role",
+          "$ownerId": "memberId"
+        },
+        "lookup": {
+          "index": "byElectedCharterMember",
+          "keys": {
+            "electedCharterId": "electedCharterId",
+            "memberId": "."
+          }
+        }
+      },
+      "properties": {
+        "electedCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        },
+        "role": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 63
+        }
+      },
+      "required": [
+        "electedCharterId",
+        "role"
+      ],
+      "additionalProperties": false
+    },
+    "note": {
+      "type": "object",
+      "ownerRefersTo": {
+        "type": "identity"
+      },
+      "properties": {
+        "text": {
+          "type": "string",
+          "position": 0,
+          "maxLength": 63
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "moderatorBadge": {
+      "type": "object",
+      "transferable": 1,
+      "creatorRefersTo": {
+        "type": "permanentDocument",
+        "documentType": "addedModerator",
+        "lookup": {
+          "index": "byElectedCharterMember",
+          "keys": {
+            "electedCharterId": "electedCharterId",
+            "memberId": "."
+          }
+        }
+      },
+      "properties": {
+        "electedCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        },
+        "label": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 63
+        }
+      },
+      "required": [
+        "electedCharterId",
+        "label"
+      ],
+      "additionalProperties": false
+    },
+    "creatorNote": {
+      "type": "object",
+      "transferable": 1,
+      "creatorRefersTo": {
+        "type": "identity"
+      },
+      "properties": {
+        "text": {
+          "type": "string",
+          "position": 0,
+          "maxLength": 63
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "founderSeat": {
+      "type": "object",
+      "canBeDeleted": false,
+      "documentsMutable": false,
+      "properties": {
+        "electedCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        },
+        "founderId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 1
+        }
+      },
+      "indices": [
+        {
+          "name": "byElectedCharterFounder",
+          "properties": [
+            {
+              "electedCharterId": "asc"
+            },
+            {
+              "founderId": "asc"
+            }
+          ],
+          "unique": true
+        }
+      ],
+      "required": [
+        "electedCharterId",
+        "founderId"
+      ],
+      "additionalProperties": false
+    },
+    "stepDownNotice": {
+      "type": "object",
+      "ownerRefersTo": {
+        "anyOf": [
+          {
+            "type": "permanentDocument",
+            "documentType": "addedModerator",
+            "lookup": {
+              "index": "byElectedCharterMember",
+              "keys": {
+                "electedCharterId": "electedCharterId",
+                "memberId": "."
+              }
+            }
+          },
+          {
+            "type": "permanentDocument",
+            "documentType": "founderSeat",
+            "lookup": {
+              "index": "byElectedCharterFounder",
+              "keys": {
+                "electedCharterId": "electedCharterId",
+                "founderId": "."
+              }
+            }
+          }
+        ]
+      },
+      "properties": {
+        "electedCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        }
+      },
+      "required": [
+        "electedCharterId"
+      ],
+      "additionalProperties": false
+    },
+    "deletableSeat": {
+      "type": "object",
+      "canBeDeleted": true,
+      "documentsMutable": false,
+      "properties": {
+        "electedCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        },
+        "memberId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 1
+        }
+      },
+      "indices": [
+        {
+          "name": "byElectedCharterMember",
+          "properties": [
+            {
+              "electedCharterId": "asc"
+            },
+            {
+              "memberId": "asc"
+            }
+          ],
+          "unique": true
+        }
+      ],
+      "required": [
+        "electedCharterId",
+        "memberId"
+      ],
+      "additionalProperties": false
+    },
+    "seatNotice": {
+      "type": "object",
+      "ownerRefersTo": {
+        "type": "deletableDocument",
+        "documentType": "deletableSeat",
+        "lookup": {
+          "index": "byElectedCharterMember",
+          "keys": {
+            "electedCharterId": "electedCharterId",
+            "memberId": "."
+          }
+        }
+      },
+      "properties": {
+        "electedCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        },
+        "text": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 63
+        }
+      },
+      "required": [
+        "electedCharterId",
+        "text"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

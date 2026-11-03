@@ -1,11 +1,14 @@
 use derive_more::From;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::platform_value::Identifier;
 
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::prelude::IdentityNonce;
+use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenEffect;
 use dpp::ProtocolError;
 use std::sync::Arc;
@@ -82,5 +85,38 @@ impl DocumentBaseTransitionActionAccessorsV0 for DocumentBaseTransitionAction {
         match self {
             DocumentBaseTransitionAction::V0(v0) => v0.token_cost,
         }
+    }
+
+    fn gas_fees_paid_by(&self) -> GasFeesPaidBy {
+        match self {
+            DocumentBaseTransitionAction::V0(v0) => v0.gas_fees_paid_by,
+        }
+    }
+
+    fn contract_gas_fees_paid_by(&self) -> GasFeesPaidBy {
+        match self {
+            DocumentBaseTransitionAction::V0(v0) => v0.contract_gas_fees_paid_by,
+        }
+    }
+
+    fn declared_action_fee_with_agreement(&self) -> Option<DeclaredDocumentActionFee> {
+        match self {
+            DocumentBaseTransitionAction::V0(v0) => v0.declared_action_fee.as_deref().copied(),
+        }
+    }
+
+    fn agrees_to_a_moderators_discount(&self) -> bool {
+        let Some(declared) = self.declared_action_fee_with_agreement() else {
+            return false;
+        };
+        declared.agreement.is_some_and(|agreement| {
+            agreement.discounts_moderators_of(declared.pricing, declared.fee)
+        }) && self
+            .data_contract_fetch_info_ref()
+            .contract
+            .config()
+            .moderation()
+            .and_then(|moderation| moderation.moderators.elected())
+            .is_some_and(|elected| elected.moderates_document_type(self.document_type_name()))
     }
 }

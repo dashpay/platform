@@ -328,7 +328,7 @@ mod tests {
         let insert_op = &ops[1];
         match insert_op {
             LowLevelDriveOperation::GroveOperation(grove_op) => match &grove_op.op {
-                GroveOp::InsertOrReplace { element } => {
+                GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element } => {
                     assert_eq!(
                         *element,
                         Element::new_sum_item(15),

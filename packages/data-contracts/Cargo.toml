@@ -18,6 +18,8 @@ all-contracts = [
     "token-history",
     "keyword-search",
     "document-history",
+    "app-connect",
+    "moderation-charters",
 ]
 
 # Individual contract features
@@ -29,6 +31,8 @@ wallet-utils = ["dep:wallet-utils-contract"]
 token-history = ["dep:token-history-contract"]
 keyword-search = ["dep:keyword-search-contract"]
 document-history = ["dep:document-history-contract"]
+app-connect = ["dep:app-connect-contract"]
+moderation-charters = ["dep:moderation-charters-contract"]
 
 [dependencies]
 thiserror = "2.0.12"
@@ -43,3 +47,8 @@ wallet-utils-contract = { path = "../wallet-utils-contract", optional = true }
 token-history-contract = { path = "../token-history-contract", optional = true }
 keyword-search-contract = { path = "../keyword-search-contract", optional = true }
 document-history-contract = { path = "../document-history-contract", optional = true }
+app-connect-contract = { path = "../app-connect-contract", optional = true }
+moderation-charters-contract = { path = "../moderation-charters-contract", optional = true }
+
+[dev-dependencies]
+base58 = "0.2.0"

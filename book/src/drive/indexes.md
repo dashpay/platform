@@ -52,7 +52,7 @@ pub struct IndexProperty {
 
 ### `name`
 
-A short, human-readable identifier for the index (e.g. `"byOwnerAndType"`). It shows up in error messages and is the key used in `document_type.indexes()` (`BTreeMap<String, Index>`). If omitted in the schema, a random alphanumeric name is generated. Two indexes within the same document type cannot share a name.
+A short, human-readable identifier for the index (e.g. `"byOwnerAndType"`). It shows up in error messages and is the key used in `document_type.indexes()` (`BTreeMap<String, Index>`). Every document meta-schema requires it. A parse that skips schema validation (check tx, test fixtures) and meets an unnamed index derives the name from the properties and their directions, joined with `|`, so every parse of the same contract agrees on it. Two indexes within the same document type cannot share a name.
 
 ### `properties: Vec<IndexProperty>`
 
@@ -67,7 +67,7 @@ The schema form is:
 ]
 ```
 
-`asc` / `desc` controls sort order on result enumeration. Drive currently only uses ascending storage, but the field is preserved through the contract.
+Every document meta-schema accepts only `"asc"`. Drive stores index entries in ascending order; a query chooses its own result order.
 
 ### `unique: bool`
 
@@ -172,7 +172,7 @@ Let's break that down:
 
 - **`DataContractDocuments`** — root tree byte (`u8` constant) for "this is a document index, not a contract definition or identity record".
 - **`contract_id`** — 32-byte contract identifier.
-- **`1`** — separator distinguishing the document storage area from the contract definition area within `contract_id`.
+- **`1`** — separator distinguishing the document storage area from the contract definition area within `contract_id`. Its siblings under `contract_id` are `0`, the serialized contract (or, for a contract that keeps history, the history subtree whose key `0` references the latest revision), and, from protocol version 14, `2`, the contract's version number as a four-byte item that `getDataContractsLatestVersions` reads and proves without the contract.
 - **`doc_type_name`** — UTF-8 bytes of the document type (`"person"`, `"contactRequest"`, etc.).
 - **`propA_name, vA, propB_name, vB`** — alternating property key and serialized value, one pair per index property, in declaration order.
 - **`0`** — the conventional "terminal slot" byte under each value level; it's where the actual reference (or sub-tree-of-references) lives.

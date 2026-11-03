@@ -1992,24 +1992,46 @@ mod pinned_prefix {
     }
 
     /// A pin on an identity that never inserted a document addresses a
-    /// prefix value tree that does not exist. The read and the prover
-    /// both surface an error rather than fabricating an empty page —
-    /// same contract as the empty-secondary limitation on the
-    /// single-property surface (the abci layer maps these to a
-    /// client-visible rejection).
+    /// prefix value tree that does not exist — the state every
+    /// `timeRange` window is in before its first document lands. That
+    /// is an EMPTY match set, not corrupted state: grovedb answers a
+    /// single-path axis read over an absent path with the empty result
+    /// on the read and the proof alike, the absence authenticated by the
+    /// layers the walk emits rather than fabricated — the verifier
+    /// reconstructs the live root hash from it. Sibling of the ranked
+    /// suite's `an_absent_equality_pin_reads_empty_and_proves_empty`.
     #[test]
-    fn unknown_prefix_value_errors_rather_than_fabricating_an_empty_page() {
+    fn unknown_prefix_value_reads_empty_and_proves_empty() {
         let (drive, contract) = setup_grades_compound_ranked();
         insert_two_identities(&drive, &contract);
 
         let unknown = pin([9u8; 32]);
-        assert!(
-            run(&drive, &contract, &unknown, &[], false).is_err(),
-            "reading a never-written prefix value tree must error"
+        let entries = entries_of(
+            run(&drive, &contract, &unknown, &[], false)
+                .expect("a never-written prefix reads as an empty match set"),
         );
         assert!(
-            run(&drive, &contract, &unknown, &[], true).is_err(),
-            "proving a never-written prefix value tree must error"
+            entries.is_empty(),
+            "nothing matches under an unwritten prefix"
+        );
+
+        let proof = match run(&drive, &contract, &unknown, &[], true)
+            .expect("a never-written prefix proves as an empty match set")
+        {
+            DocumentHavingResponse::Proof(proof) => proof,
+            DocumentHavingResponse::Entries(_) => panic!("expected a proof, got entries"),
+        };
+        let (root_hash, verified) = client_side_query(&contract, &unknown, &[])
+            .verify_having_range_proof(&proof, platform_version())
+            .expect("the envelope authenticates the absent prefix");
+        assert!(verified.is_empty());
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &platform_version().drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
         );
     }
 

@@ -237,6 +237,14 @@ private final class SDKLoggerState: @unchecked Sendable {
         }
     }
 
+    func removeSink() {
+        let removed: SDKLogFileSink? = lock.withLock {
+            defer { sink = nil }
+            return sink
+        }
+        removed?.flush()
+    }
+
     func destination(for severity: SDKLogSeverity) -> SDKLogFileSink? {
         lock.withLock {
             guard severity != .debug || includeDebug else { return nil }
@@ -501,6 +509,13 @@ public enum SDKLogger {
 
     static func updateDebugSetting(_ includeDebug: Bool) {
         state.updateDebugSetting(includeDebug)
+    }
+
+    /// Detach the process-wide file sink after flushing it. Tests that install
+    /// a sink in a disposable directory call this before removing the
+    /// directory, so later events are not written through a stale handle.
+    static func removeFileSink() {
+        state.removeSink()
     }
 
     public static func log(_ message: String, minimumLevel level: LoggingPreset = .medium) {

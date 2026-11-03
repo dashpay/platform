@@ -32,6 +32,11 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
             max_version: 0,
             default_current_version: 0,
         },
+        identity_key_limits_update_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
         identity_top_up_state_transition: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
@@ -64,10 +69,20 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
         },
         contract_create_state_transition: FeatureVersionBounds {
             min_version: 0,
+            max_version: 1, // changed: version 1 registers contract groups and declares contract group memberships
+            default_current_version: 1,
+        },
+        contract_update_state_transition: FeatureVersionBounds {
+            min_version: 0,
             max_version: 0,
             default_current_version: 0,
         },
-        contract_update_state_transition: FeatureVersionBounds {
+        contract_user_moderation_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        contract_fee_claim_state_transition: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
             default_current_version: 0,
@@ -77,10 +92,14 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
             max_version: 1,
             default_current_version: 1,
         },
+        // Version 2 of the base carries the action fee agreement and is what the builders
+        // produce from this version. The earlier tables say `max_version: 0` beside a default
+        // of 1 because nothing reads these bounds to admit a base: a batch carrying a version 2
+        // base is inactive before protocol version 14 (`StateTransition::active_version_range`).
         document_base_state_transition: FeatureVersionBounds {
             min_version: 0,
-            max_version: 0,
-            default_current_version: 1,
+            max_version: 2,
+            default_current_version: 2,
         },
         document_create_state_transition: DocumentFeatureVersionBounds {
             bounds: FeatureVersionBounds {
@@ -172,6 +191,16 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
             default_current_version: 0,
         },
         identity_create_from_shielded_pool_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        shield_from_identity_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        identity_top_up_from_shielded_pool_state_transition: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
             default_current_version: 0,

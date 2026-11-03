@@ -9,7 +9,11 @@
 //! - Create: evaluates `new_document_clauses` on the transition's data payload.
 //! - Replace: evaluates `original_document_clauses` on the original document and
 //!   `new_document_clauses` on the replacement data.
-//! - Delete: evaluates `original_document_clauses` on the original document.
+//! - Delete: evaluates `original_document_clauses` on the original document, or on an
+//!   indexOnly delete's values.
+//! - A create's and a replace's data, and an indexOnly delete's values, are read as the
+//!   platform stores them: with every `generatedFrom` property the transition leaves out
+//!   generated from its params (protocol version 14).
 //! - Transfer: evaluates `original_document_clauses` and a new `owner_clause` against
 //!   the `recipient_owner_id`.
 //! - UpdatePrice: evaluates `original_document_clauses` and a `price_clause` against
@@ -30,8 +34,10 @@
 //!   clause where required), and validates operator/value compatibility for scalar clauses
 //!   like `owner_clause` and `price_clause`.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::DataContract;
 use dpp::platform_value::Value;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
@@ -46,6 +52,7 @@ use dpp::state_transition::batch_transition::batched_transition::document_update
 use crate::query::{InternalClauses, QuerySyntaxSimpleValidationResult, ValueClause, WhereOperator};
 use crate::error::query::QuerySyntaxError;
 use dpp::platform_value::ValueMapHelper;
+use dpp::version::PlatformVersion;
 
 /// Filter used to match document transitions for subscriptions.
 ///
@@ -142,11 +149,16 @@ impl DriveDocumentQueryFilter<'_> {
     /// - `Fail` if any transition-level check fails (no need to fetch original).
     /// - `NeedsOriginal` if transition-level checks pass but original clauses are non-empty
     ///   and must be evaluated with the original document.
+    ///
+    /// A create's and a replace's data, and an indexOnly delete's values, are judged as
+    /// the platform stores them at `platform_version`: a `generatedFrom` property the
+    /// transition leaves out is generated from its params first.
     #[cfg(any(feature = "server", feature = "verify"))]
     pub fn matches_document_transition(
         &self,
         document_transition: &DocumentTransition,
         batch_owner_value: Option<&Value>, // Only used for Purchase
+        platform_version: &PlatformVersion,
     ) -> TransitionCheckResult {
         // Fast reject on contract/type mismatch common to all transitions
         if document_transition.base().data_contract_id() != self.contract.id()
@@ -164,7 +176,10 @@ impl DriveDocumentQueryFilter<'_> {
                     new_document_clauses,
                 } = &self.action_clauses
                 {
-                    if self.evaluate_clauses(new_document_clauses, &id_value, create.data()) {
+                    let Some(data) = self.data_as_stored(create.data(), platform_version) else {
+                        return TransitionCheckResult::Fail;
+                    };
+                    if self.evaluate_clauses(new_document_clauses, &id_value, &data) {
                         TransitionCheckResult::Pass
                     } else {
                         TransitionCheckResult::Fail
@@ -182,7 +197,11 @@ impl DriveDocumentQueryFilter<'_> {
                     let final_ok = if new_document_clauses.is_empty() {
                         true
                     } else {
-                        self.evaluate_clauses(new_document_clauses, &id_value, replace.data())
+                        let Some(data) = self.data_as_stored(replace.data(), platform_version)
+                        else {
+                            return TransitionCheckResult::Fail;
+                        };
+                        self.evaluate_clauses(new_document_clauses, &id_value, &data)
                     };
                     if !final_ok {
                         return TransitionCheckResult::Fail;
@@ -334,11 +353,12 @@ impl DriveDocumentQueryFilter<'_> {
                     // so the "original document" clauses evaluate
                     // directly against them and no original is ever
                     // needed.
-                    if self.evaluate_clauses(
-                        original_document_clauses,
-                        &id_value,
-                        index_only_delete.data(),
-                    ) {
+                    let Some(values) =
+                        self.data_as_stored(index_only_delete.data(), platform_version)
+                    else {
+                        return TransitionCheckResult::Fail;
+                    };
+                    if self.evaluate_clauses(original_document_clauses, &id_value, &values) {
                         TransitionCheckResult::Pass
                     } else {
                         TransitionCheckResult::Fail
@@ -389,6 +409,23 @@ impl DriveDocumentQueryFilter<'_> {
             }
             _ => false,
         }
+    }
+
+    /// A transition's `data` as the platform stores it, every `generatedFrom` property it
+    /// leaves out generated ([`DocumentTypeBasicMethods::data_as_stored`]). `None`, which
+    /// fails the match, for a document type the contract lacks (`validate` refuses the
+    /// filter then) or a version table this build does not know.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    fn data_as_stored<'d>(
+        &self,
+        data: &'d BTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
+    ) -> Option<Cow<'d, BTreeMap<String, Value>>> {
+        let document_type = self
+            .contract
+            .document_type_for_name(&self.document_type_name)
+            .ok()?;
+        document_type.data_as_stored(data, platform_version).ok()
     }
 
     /// Single clause evaluator used by both transition and original-document paths.
@@ -1078,7 +1115,7 @@ mod tests {
 
         // First check should pass without needing original
         assert_eq!(
-            filter.matches_document_transition(&transfer, None),
+            filter.matches_document_transition(&transfer, None, PlatformVersion::latest()),
             TransitionCheckResult::Pass
         );
 
@@ -1092,7 +1129,7 @@ mod tests {
         let transfer_mismatch =
             DocumentTransition::Transfer(DocumentTransferTransition::V0(transfer_v0_mismatch));
         assert_eq!(
-            filter.matches_document_transition(&transfer_mismatch, None),
+            filter.matches_document_transition(&transfer_mismatch, None, PlatformVersion::latest()),
             TransitionCheckResult::Fail
         );
     }
@@ -1139,13 +1176,17 @@ mod tests {
 
         // Without batch owner context, should fail (owner clause requires it)
         assert_eq!(
-            filter.matches_document_transition(&purchase, None),
+            filter.matches_document_transition(&purchase, None, PlatformVersion::latest()),
             TransitionCheckResult::Fail
         );
         // With batch owner context, should pass
         let owner_value = Value::Identifier(purchaser.to_buffer());
         assert_eq!(
-            filter.matches_document_transition(&purchase, Some(&owner_value)),
+            filter.matches_document_transition(
+                &purchase,
+                Some(&owner_value),
+                PlatformVersion::latest()
+            ),
             TransitionCheckResult::Pass
         );
     }
@@ -1282,7 +1323,7 @@ mod tests {
         };
         // Price-only clause is decided in first check
         assert_eq!(
-            filter_price_only.matches_document_transition(&update, None),
+            filter_price_only.matches_document_transition(&update, None, PlatformVersion::latest()),
             TransitionCheckResult::Pass
         );
 
@@ -1298,7 +1339,11 @@ mod tests {
             },
         };
         assert_eq!(
-            filter_price_only_fail.matches_document_transition(&update, None),
+            filter_price_only_fail.matches_document_transition(
+                &update,
+                None,
+                PlatformVersion::latest()
+            ),
             TransitionCheckResult::Fail
         );
 
@@ -1329,7 +1374,7 @@ mod tests {
         let mut original_doc = BTreeMap::new();
         original_doc.insert("kind".to_string(), Value::Text("sale".to_string()));
         assert_eq!(
-            filter_with_orig.matches_document_transition(&update, None),
+            filter_with_orig.matches_document_transition(&update, None, PlatformVersion::latest()),
             TransitionCheckResult::NeedsOriginal
         );
         let original_document = Document::V0(DocumentV0 {
@@ -1412,7 +1457,7 @@ mod tests {
         let mut original_doc = BTreeMap::new();
         original_doc.insert("status".to_string(), Value::Text("active".to_string()));
         assert_eq!(
-            filter.matches_document_transition(&replace, None),
+            filter.matches_document_transition(&replace, None, PlatformVersion::latest()),
             TransitionCheckResult::NeedsOriginal
         );
         let original_document = Document::V0(DocumentV0 {
@@ -1443,8 +1488,176 @@ mod tests {
             v0.data.insert("score".to_string(), Value::U64(9));
             let bad_final = DocumentTransition::Replace(rep);
             assert_eq!(
-                filter.matches_document_transition(&bad_final, None),
+                filter.matches_document_transition(&bad_final, None, PlatformVersion::latest()),
                 TransitionCheckResult::Fail
+            );
+        }
+    }
+
+    /// A `handle` type whose `normalizedLabel` is generated from `label`, and an
+    /// indexOnly `entry` type whose `normalizedName` is generated from `name`
+    /// (protocol version 14).
+    fn generated_from_contract() -> DataContract {
+        use dpp::data_contract::DataContractFactory;
+        use dpp::platform_value::platform_value;
+
+        let generated = |source: &str| {
+            platform_value!({
+                "function": "sys.stringTransformations.homographSafeASCII",
+                "params": [source]
+            })
+        };
+        let documents = platform_value!({
+            "handle": {
+                "type": "object",
+                "documentsMutable": true,
+                "properties": {
+                    "label": { "type": "string", "maxLength": 32, "position": 0 },
+                    "normalizedLabel": {
+                        "type": "string",
+                        "maxLength": 32,
+                        "position": 1,
+                        "generatedFrom": generated("label")
+                    }
+                },
+                "additionalProperties": false
+            },
+            "entry": {
+                "type": "object",
+                "indexOnly": true,
+                "documentsMutable": false,
+                "indices": [
+                    {
+                        "name": "byNormalizedName",
+                        "properties": [{ "normalizedName": "asc" }, { "name": "asc" }],
+                        "terminal": "$ownerId"
+                    }
+                ],
+                "properties": {
+                    "name": { "type": "string", "maxLength": 32, "position": 0 },
+                    "normalizedName": {
+                        "type": "string",
+                        "maxLength": 32,
+                        "position": 1,
+                        "generatedFrom": generated("name")
+                    }
+                },
+                "required": ["name", "normalizedName"],
+                "additionalProperties": false
+            }
+        });
+        DataContractFactory::new(PlatformVersion::latest().protocol_version)
+            .expect("factory")
+            .create_with_value_config(Identifier::from([1u8; 32]), 1, documents, None, None)
+            .expect("the contract parses")
+            .data_contract_owned()
+    }
+
+    /// A clause on a `generatedFrom` property judges a create, a replace and an
+    /// indexOnly delete that leave the property out as the platform stores them,
+    /// with the value generated from its param.
+    #[test]
+    fn test_matches_a_generated_property_the_transition_leaves_out() {
+        use dpp::state_transition::batch_transition::batched_transition::document_create_transition::v0::DocumentCreateTransitionV0;
+        use dpp::state_transition::batch_transition::batched_transition::document_create_transition::DocumentCreateTransition;
+        use dpp::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::v0::DocumentIndexOnlyDeleteTransitionV0;
+        use dpp::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::DocumentIndexOnlyDeleteTransition;
+        use dpp::state_transition::batch_transition::batched_transition::document_replace_transition::v0::DocumentReplaceTransitionV0;
+        use dpp::state_transition::batch_transition::batched_transition::document_replace_transition::DocumentReplaceTransition;
+
+        let contract = generated_from_contract();
+        let platform_version = PlatformVersion::latest();
+        let equal = |field: &str, value: &str| InternalClauses {
+            equal_clauses: BTreeMap::from([(
+                field.to_string(),
+                WhereClause {
+                    field: field.to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Text(value.to_string()),
+                },
+            )]),
+            ..Default::default()
+        };
+        let base = |document_type_name: &str| {
+            DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
+                id: Identifier::from([3u8; 32]),
+                document_type_name: document_type_name.to_string(),
+                data_contract_id: contract.id(),
+                identity_contract_nonce: 0,
+                token_payment_info: None,
+            })
+        };
+        let data = |key: &str, value: &str| {
+            BTreeMap::from([(key.to_string(), Value::Text(value.to_string()))])
+        };
+
+        let create =
+            DocumentTransition::Create(DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+                base: base("handle"),
+                entropy: [0u8; 32],
+                data: data("label", "Bob"),
+                prefunded_voting_balance: None,
+            }));
+        let replace = DocumentTransition::Replace(DocumentReplaceTransition::V0(
+            DocumentReplaceTransitionV0 {
+                base: base("handle"),
+                revision: 2,
+                data: data("label", "Bob"),
+            },
+        ));
+        let index_only_delete = DocumentTransition::IndexOnlyDelete(
+            DocumentIndexOnlyDeleteTransition::V0(DocumentIndexOnlyDeleteTransitionV0 {
+                base: base("entry"),
+                data: data("name", "Bob"),
+            }),
+        );
+
+        for (normalized, expected) in [
+            ("b0b", TransitionCheckResult::Pass),
+            ("bob", TransitionCheckResult::Fail),
+        ] {
+            let create_filter = DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "handle".to_string(),
+                action_clauses: DocumentActionMatchClauses::Create {
+                    new_document_clauses: equal("normalizedLabel", normalized),
+                },
+            };
+            assert_eq!(
+                create_filter.matches_document_transition(&create, None, platform_version),
+                expected,
+                "create, normalizedLabel == {normalized:?}"
+            );
+
+            let replace_filter = DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "handle".to_string(),
+                action_clauses: DocumentActionMatchClauses::Replace {
+                    original_document_clauses: InternalClauses::default(),
+                    new_document_clauses: equal("normalizedLabel", normalized),
+                },
+            };
+            assert_eq!(
+                replace_filter.matches_document_transition(&replace, None, platform_version),
+                expected,
+                "replace, normalizedLabel == {normalized:?}"
+            );
+
+            let delete_filter = DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "entry".to_string(),
+                action_clauses: DocumentActionMatchClauses::Delete {
+                    original_document_clauses: equal("normalizedName", normalized),
+                },
+            };
+            assert_eq!(
+                delete_filter.matches_document_transition(
+                    &index_only_delete,
+                    None,
+                    platform_version
+                ),
+                expected,
+                "indexOnly delete, normalizedName == {normalized:?}"
             );
         }
     }

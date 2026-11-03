@@ -24,7 +24,7 @@ pub const PROTOCOL_VERSION_17: ProtocolVersion = 17;
 ///   document in one Drive call, takes no contender, and rejects any call that names a wrong
 ///   end date, a poll that has not ended or a poll already finalized. The slot is `None` on
 ///   every earlier table.
-/// * `DRIVE_ABCI_METHOD_VERSIONS_V11` selects `check_for_ended_vote_polls` v1, which finalizes
+/// * `DRIVE_ABCI_METHOD_VERSIONS_V11` selects `check_for_ended_vote_polls` v2, which finalizes
 ///   every ended poll through that operation, then records and cleans up on the same block
 ///   transaction as before.
 ///

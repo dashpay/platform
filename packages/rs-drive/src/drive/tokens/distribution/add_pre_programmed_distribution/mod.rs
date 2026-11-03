@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -168,9 +169,19 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.add_pre_programmed_distributions_v1(
+                token_id,
+                owner_id,
+                distribution,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                batch_operations,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_pre_programmed_distributions".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

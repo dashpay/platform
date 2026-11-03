@@ -1,4 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::supported_grovedb_proof;
 use crate::utils::serialization::identifier_to_base58;
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
@@ -63,7 +64,7 @@ pub fn verify_identity_balances_for_identity_ids_vec(
 
     let (root_hash, balances_vec): (RootHash, Vec<([u8; 32], Option<Credits>)>) =
         Drive::verify_identity_balances_for_identity_ids(
-            &proof_vec,
+            supported_grovedb_proof(&proof_vec, platform_version)?,
             is_proof_subset,
             &identity_ids_vec,
             platform_version,
@@ -134,7 +135,7 @@ pub fn verify_identity_balances_for_identity_ids_map(
 
     let (root_hash, balances_map): (RootHash, BTreeMap<[u8; 32], Option<Credits>>) =
         Drive::verify_identity_balances_for_identity_ids(
-            &proof_vec,
+            supported_grovedb_proof(&proof_vec, platform_version)?,
             is_proof_subset,
             &identity_ids_vec,
             platform_version,

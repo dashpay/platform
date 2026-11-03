@@ -165,3 +165,41 @@ impl From<keyword_search_contract::Error> for Error {
         }
     }
 }
+
+#[cfg(feature = "app-connect")]
+impl From<app_connect_contract::Error> for Error {
+    fn from(e: app_connect_contract::Error) -> Self {
+        match e {
+            app_connect_contract::Error::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            } => Error::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            },
+            app_connect_contract::Error::InvalidSchemaJson(e) => Error::InvalidSchemaJson(e),
+        }
+    }
+}
+
+#[cfg(feature = "moderation-charters")]
+impl From<moderation_charters_contract::Error> for Error {
+    fn from(e: moderation_charters_contract::Error) -> Self {
+        match e {
+            moderation_charters_contract::Error::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            } => Error::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            },
+            moderation_charters_contract::Error::InvalidSchemaJson(e) => {
+                Error::InvalidSchemaJson(e)
+            }
+        }
+    }
+}
