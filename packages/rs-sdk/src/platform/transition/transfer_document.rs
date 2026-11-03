@@ -1,4 +1,4 @@
-use super::broadcast::{broadcast_with_observation, wait_after_broadcast, BroadcastPolicy};
+use super::broadcast::{wait_after_broadcast, BroadcastStateTransition};
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 use crate::platform::transition::put_settings::PutSettings;
@@ -68,9 +68,7 @@ impl<S: Signer<IdentityPublicKey>> TransferDocument<S> for Document {
             settings,
         )
         .await?;
-        broadcast_with_observation(&transition, sdk, settings, BroadcastPolicy::TransportOnly)
-            .await
-            .into_result()?;
+        transition.broadcast(sdk, settings).await?;
 
         Ok(transition)
     }
@@ -97,13 +95,7 @@ impl<S: Signer<IdentityPublicKey>> TransferDocument<S> for Document {
         )
         .await?;
 
-        let broadcast = broadcast_with_observation(
-            &state_transition,
-            sdk,
-            settings,
-            BroadcastPolicy::TransportOnly,
-        )
-        .await;
+        let broadcast = state_transition.broadcast(sdk, settings).await;
         wait_after_broadcast(broadcast, async move {
             Self::wait_for_response(sdk, state_transition, settings).await
         })
@@ -216,19 +208,16 @@ mod submission_tests {
                     fixture.document_type.data_contract_id(),
                 ))
                 .await;
-            assert_eq!(
-                fixture
-                    .sdk
-                    .get_identity_contract_nonce(
-                        fixture.document.owner_id(),
-                        fixture.document_type.data_contract_id(),
-                        false,
-                        PutFixture::settings()
-                    )
-                    .await
-                    .unwrap(),
-                1
-            );
+            assert!(fixture
+                .sdk
+                .get_identity_contract_nonce(
+                    fixture.document.owner_id(),
+                    fixture.document_type.data_contract_id(),
+                    false,
+                    PutFixture::settings()
+                )
+                .await
+                .is_err());
         }
     }
 

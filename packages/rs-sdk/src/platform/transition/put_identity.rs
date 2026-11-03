@@ -1,11 +1,7 @@
+use crate::platform::transition::address_inputs::collect_address_infos_from_proof;
 use crate::platform::transition::address_inputs::{fetch_inputs_with_nonce, nonce_inc};
-use crate::platform::transition::broadcast::{
-    broadcast_with_observation, wait_after_broadcast, BroadcastOutcome, BroadcastPolicy,
-};
+use crate::platform::transition::broadcast::{wait_after_broadcast, BroadcastStateTransition};
 use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
-use crate::platform::transition::{
-    address_inputs::collect_address_infos_from_proof, broadcast::BroadcastStateTransition,
-};
 use crate::{Error, Sdk};
 
 use super::put_settings::PutSettings;
@@ -189,9 +185,7 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
             settings,
         )
         .await?;
-        let broadcast =
-            broadcast_with_observation(&state_transition, sdk, settings, BroadcastPolicy::Standard)
-                .await;
+        let broadcast = state_transition.broadcast(sdk, settings).await;
         broadcast_then_wait(broadcast, state_transition, |st| {
             Self::wait_for_response(sdk, st, settings)
         })
@@ -248,9 +242,7 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
             settings,
         )
         .await?;
-        let broadcast =
-            broadcast_with_observation(&state_transition, sdk, settings, BroadcastPolicy::Standard)
-                .await;
+        let broadcast = state_transition.broadcast(sdk, settings).await;
         broadcast_then_wait(broadcast, state_transition, |st| {
             Self::wait_for_response(sdk, st, settings)
         })
@@ -310,7 +302,7 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
 /// transition is waited for after a successful or ambiguous acknowledgement.
 /// Definite broadcast refusals are returned without invoking the wait.
 async fn broadcast_then_wait<W, WFut>(
-    broadcast: impl Into<BroadcastOutcome>,
+    broadcast: Result<(), Error>,
     state_transition: StateTransition,
     wait: W,
 ) -> Result<Identity, Error>
@@ -537,7 +529,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn should_return_the_wait_rejection_after_an_already_known_broadcast() {
+    async fn should_preserve_untyped_wait_failure_as_unconfirmed() {
         let result = broadcast_then_wait(
             Err(Error::AlreadyExists(
                 "state transition already in mempool".to_string(),
@@ -547,7 +539,7 @@ mod tests {
         )
         .await;
         assert!(
-            matches!(result, Err(Error::Generic(message)) if message == "rejected by Platform")
+            matches!(result, Err(Error::StateTransitionResultUnconfirmed(cause)) if matches!(*cause, Error::Generic(ref message) if message == "rejected by Platform"))
         );
     }
 
@@ -590,13 +582,17 @@ mod tests {
         ] {
             let submitted = signed_create();
             let expected = submitted.clone();
-            let identity = broadcast_then_wait(Err(error), submitted, |transition| async move {
-                assert_eq!(transition, expected, "wait for the original signed bytes");
-                // The production closure is Identity::wait_for_response, whose
-                // proof gate owns this identity result; this seam tests that the
-                // result is awaited and propagated without another broadcast.
-                Ok(created())
-            })
+            let identity = broadcast_then_wait(
+                Err(error.into_unconfirmed()),
+                submitted,
+                |transition| async move {
+                    assert_eq!(transition, expected, "wait for the original signed bytes");
+                    // The production closure is Identity::wait_for_response, whose
+                    // proof gate owns this identity result; this seam tests that the
+                    // result is awaited and propagated without another broadcast.
+                    Ok(created())
+                },
+            )
             .await
             .expect("verified identity result");
             assert_eq!(identity, created());
@@ -619,7 +615,7 @@ mod tests {
         )
         .await;
         assert!(
-            matches!(result, Err(Error::InvalidProvedResponse(message)) if message == "invalid identity proof")
+            matches!(result, Err(Error::StateTransitionResultUnconfirmed(cause)) if matches!(*cause, Error::InvalidProvedResponse(ref message) if message == "invalid identity proof"))
         );
     }
 

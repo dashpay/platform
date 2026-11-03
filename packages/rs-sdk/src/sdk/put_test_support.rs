@@ -130,6 +130,7 @@ impl PutFixture {
         dapi.expect(
             &broadcast,
             &Err(ExecutionError {
+                possibly_accepted: false,
                 inner: DapiClientError::Transport(TransportError::Grpc(status)),
                 address: None,
                 retries: 0,

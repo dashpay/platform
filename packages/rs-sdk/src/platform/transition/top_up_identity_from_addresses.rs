@@ -6,9 +6,7 @@ use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 use crate::platform::transition::address_inputs::{collect_address_infos_from_proof, nonce_inc};
-use crate::platform::transition::broadcast::{
-    broadcast_with_observation, wait_after_broadcast, BroadcastPolicy, BroadcastStateTransition,
-};
+use crate::platform::transition::broadcast::{wait_after_broadcast, BroadcastStateTransition};
 use crate::{Error, Sdk};
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
@@ -141,24 +139,14 @@ impl<S: Signer<PlatformAddress>> TopUpIdentityFromAddressesWithMetadata<S> for I
 
         // Only the wait future runs after accepted/possibly accepted submission.
         // Keep preparation and definite broadcast refusals outside the wrapper.
-        wait_after_broadcast(
-            broadcast_with_observation(&state_transition, sdk, settings, BroadcastPolicy::Standard)
-                .await,
-            async {
-                let result = async {
-                    // `metadata.height` pins these proved balance absolutes.
-                    let (st_result, metadata) = state_transition
-                        .wait_for_affected_state_with_metadata::<StateTransitionProofResult>(
-                            sdk, settings,
-                        )
-                        .await?;
-                    top_up_result(self.id(), st_result, &expected_addresses)
-                        .map(|(infos, balance)| (infos, balance, metadata))
-                }
-                .await;
-                result.map_err(|error| Error::StateTransitionResultUnconfirmed(Box::new(error)))
-            },
-        )
+        wait_after_broadcast(state_transition.broadcast(sdk, settings).await, async {
+            // `metadata.height` pins these proved balance absolutes.
+            let (st_result, metadata) = state_transition
+                .wait_for_affected_state_with_metadata::<StateTransitionProofResult>(sdk, settings)
+                .await?;
+            top_up_result(self.id(), st_result, &expected_addresses)
+                .map(|(infos, balance)| (infos, balance, metadata))
+        })
         .await
     }
 }

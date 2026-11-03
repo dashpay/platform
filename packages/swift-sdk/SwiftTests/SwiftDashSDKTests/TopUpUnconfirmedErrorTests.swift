@@ -7,7 +7,7 @@ final class TopUpUnconfirmedErrorTests: XCTestCase {
     func testTopUpUnconfirmedResultPreservesExistingTypedError() throws {
         XCTAssertEqual(PlatformWalletResultCode.errorTransactionBroadcastUnconfirmed.rawValue, 20)
         for detail in [
-            "Identity top-up may have executed; reconcile before submitting again",
+            "State transition may have executed; reconcile before submitting again",
             "wait timeout",
             "networkError: connection lost"
         ] {

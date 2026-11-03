@@ -7,7 +7,7 @@ final class SDKUnconfirmedErrorTests: XCTestCase {
     func testDirectSDKDecoderPreservesUnconfirmedResultAfterMessageIsFreed() {
         XCTAssertEqual(StateTransitionResultUnconfirmed.rawValue, 11)
         for detail in ["wait timed out", "invalid proof", "address nonce mismatch"] {
-            let rendered = "Identity top-up may have executed: \(detail)"
+            let rendered = "State transition may have executed: \(detail)"
             let message = strdup(rendered)
             let decoded = SDKError.fromDashSDKError(DashSDKError(
                 code: StateTransitionResultUnconfirmed,

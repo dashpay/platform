@@ -53,6 +53,15 @@ pub(crate) fn grpc_web_base_url(uri: &str) -> &str {
     uri.trim_end_matches('/')
 }
 
+/// Request-specific disposition of a failed dispatched attempt.
+#[derive(Debug, Clone, Copy)]
+pub struct RequestErrorClassification {
+    /// Delivery may have happened; this is not an execution verdict.
+    pub possibly_accepted: bool,
+    /// Whether another transport attempt is eligible within the existing budget.
+    pub retry: bool,
+}
+
 /// Generic transport layer request.
 /// Requires [Clone] as could be retried and a client in general consumes a request.
 pub trait TransportRequest: Clone + Send + Sync + Debug + Mockable {
@@ -97,6 +106,14 @@ pub trait TransportRequest: Clone + Send + Sync + Debug + Mockable {
     /// version; a caller that executes the request directly owns the check.
     fn needs_protocol_version(&self) -> Option<u32> {
         None
+    }
+
+    /// Classify a dispatched failure. Reads retain their existing retry behavior.
+    fn classify_error(&self, error: &TransportError) -> RequestErrorClassification {
+        RequestErrorClassification {
+            possibly_accepted: false,
+            retry: error.can_retry(),
+        }
     }
 
     /// Perform transport request asynchronously.

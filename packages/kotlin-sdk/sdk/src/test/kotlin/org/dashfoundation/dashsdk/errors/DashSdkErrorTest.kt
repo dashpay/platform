@@ -45,7 +45,7 @@ class DashSdkErrorTest {
 
     @Test
     fun shouldPreserveUnconfirmedSubmissionWithoutRetrying() {
-        val detail = "Identity top-up may have executed: wait timeout after nonce rejection"
+        val detail = "State transition may have executed: wait timeout after nonce rejection"
         val native = DashSDKException(11, detail)
         val mapped = DashSdkError.fromNative(native)
         assertTrue(mapped is DashSdkError.StateTransitionResultUnconfirmed)

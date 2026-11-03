@@ -59,11 +59,9 @@ pub enum Error {
     /// accept snapshot outcomes explicitly.
     #[error("proof authenticates the transition's affected state only, not its execution: {0}")]
     ExecutionNotProved(String),
-    /// An address-funded identity top-up was accepted or may have been accepted,
-    /// but its result could not be verified. The source is diagnostic only: even
-    /// a later nonce rejection cannot make resubmission safe after possible acceptance.
-    /// Reconcile the original operation before creating another top-up.
-    #[error("identity top-up may have executed but its result is unconfirmed; do not re-submit before reconciling the original operation: {0}")]
+    /// A state transition may have been submitted but its outcome is unresolved.
+    /// The cause is diagnostic, not permission to create a replacement operation.
+    #[error("state transition outcome is unconfirmed; reconcile the original operation before submitting a replacement: {0}")]
     StateTransitionResultUnconfirmed(#[source] Box<Error>),
     /// DAPI client error, for example, connection error
     #[error("Dapi client error: {0}")]
@@ -202,6 +200,36 @@ fn describe_proven_protocol_version(
 }
 
 impl Error {
+    /// Whether an unresolved submission must be reconciled before replacement.
+    pub fn is_state_transition_result_unconfirmed(&self) -> bool {
+        match self {
+            Self::StateTransitionResultUnconfirmed(_) => true,
+            Self::NoAvailableAddressesToRetry(inner) => {
+                inner.is_state_transition_result_unconfirmed()
+            }
+            _ => false,
+        }
+    }
+
+    /// Preserve the diagnostic cause without nesting uncertainty wrappers.
+    pub(crate) fn into_unconfirmed(self) -> Self {
+        if self.is_state_transition_result_unconfirmed() {
+            self
+        } else {
+            Self::StateTransitionResultUnconfirmed(Box::new(self))
+        }
+    }
+
+    /// Inspect the typed duplicate cause, including unresolved/retry envelopes.
+    pub(crate) fn is_already_exists(&self) -> bool {
+        match self {
+            Self::AlreadyExists(_) => true,
+            Self::StateTransitionResultUnconfirmed(inner)
+            | Self::NoAvailableAddressesToRetry(inner) => inner.is_already_exists(),
+            _ => false,
+        }
+    }
+
     /// Whether this is an [`Error::ProtocolVersionNotActive`] refusal that may lift soon: the
     /// SDK could not learn the network's version for a reason that can pass, such as nodes
     /// or a quorum source not answering, so the network may serve the request already.

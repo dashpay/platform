@@ -141,7 +141,7 @@ impl DapiRequestExecutor for MockDapiClient {
         R: Mockable,
         R::Response: Mockable,
     {
-        let (key, response) = self.expectations.get(&request);
+        let (key, response) = self.expectations.get::<R, MockResult<R>>(&request);
         *self
             .request_counts
             .lock()
@@ -157,7 +157,12 @@ impl DapiRequestExecutor for MockDapiClient {
             "mock execute"
         );
 
-        if let Some(response) = response {
+        if let Some(mut response) = response {
+            if let Err(error) = &mut response {
+                if let DapiClientError::Transport(transport) = &error.inner {
+                    error.possibly_accepted |= request.classify_error(transport).possibly_accepted;
+                }
+            }
             response
         } else {
             let error = MockError::MockExpectationNotFound(format!(
@@ -166,6 +171,7 @@ impl DapiRequestExecutor for MockDapiClient {
             ));
 
             Err(ExecutionError {
+                possibly_accepted: false,
                 inner: DapiClientError::Mock(error),
                 retries: 0,
                 address: None,
@@ -319,12 +325,23 @@ impl<R: Mockable> Mockable for ExecutionResponse<R> {
 
 impl<E: Mockable> Mockable for ExecutionError<E> {
     fn mock_serialize(&self) -> Option<Vec<u8>> {
-        E::mock_serialize(&self.inner)
+        let mut data = b"execution-error-v1\0".to_vec();
+        data.push(u8::from(self.possibly_accepted));
+        data.extend(E::mock_serialize(&self.inner)?);
+        Some(data)
     }
 
     fn mock_deserialize(data: &[u8]) -> Option<Self> {
-        // TODO: We need serialize retries and address too
+        // Old recordings contain only the inner error. Request classification handles those.
+        let (possibly_accepted, data) =
+            if let Some(data) = data.strip_prefix(b"execution-error-v1\0") {
+                let (flag, data) = data.split_first()?;
+                (*flag != 0, data)
+            } else {
+                (false, data)
+            };
         E::mock_deserialize(data).map(|inner| ExecutionError {
+            possibly_accepted,
             inner,
             retries: 0,
             address: None,
@@ -354,5 +371,40 @@ where
             inner,
             ..Default::default()
         }
+    }
+}
+
+#[cfg(test)]
+mod submission_history_tests {
+    use super::*;
+
+    #[test]
+    fn should_preserve_uncertainty_in_recordings_and_read_legacy_errors() {
+        for possibly_accepted in [false, true] {
+            let error = ExecutionError {
+                possibly_accepted,
+                inner: DapiClientError::NoAvailableAddresses,
+                retries: 0,
+                address: None,
+            };
+            let bytes = error.mock_serialize().expect("serialize recording");
+            let restored = ExecutionError::<DapiClientError>::mock_deserialize(&bytes)
+                .expect("read recording");
+            assert_eq!(restored.is_possibly_accepted(), possibly_accepted);
+            assert!(matches!(
+                restored.inner,
+                DapiClientError::NoAvailableAddresses
+            ));
+        }
+        let legacy = DapiClientError::NoAvailableAddresses
+            .mock_serialize()
+            .expect("serialize legacy recording");
+        let restored = ExecutionError::<DapiClientError>::mock_deserialize(&legacy)
+            .expect("read legacy recording");
+        assert!(!restored.is_possibly_accepted());
+        assert!(matches!(
+            restored.inner,
+            DapiClientError::NoAvailableAddresses
+        ));
     }
 }

@@ -220,24 +220,12 @@ impl FFIError {
     }
 }
 
-/// Preserve the SDK's submission phase through retry envelopes; the inner
-/// diagnostic is not a definitive refusal of the original operation.
-fn is_state_transition_result_unconfirmed(error: &dash_sdk::Error) -> bool {
-    match error {
-        dash_sdk::Error::StateTransitionResultUnconfirmed(_) => true,
-        dash_sdk::Error::NoAvailableAddressesToRetry(source) => {
-            is_state_transition_result_unconfirmed(source)
-        }
-        _ => false,
-    }
-}
-
 impl From<FFIError> for DashSDKError {
     fn from(err: FFIError) -> Self {
         let (code, message) = match &err {
             FFIError::InvalidParameter(_) => (DashSDKErrorCode::InvalidParameter, err.to_string()),
             FFIError::SDKCallFailed { source, .. } => {
-                let code = if is_state_transition_result_unconfirmed(source) {
+                let code = if source.is_state_transition_result_unconfirmed() {
                     DashSDKErrorCode::StateTransitionResultUnconfirmed
                 } else if source.is_quorum_source_unavailable() {
                     DashSDKErrorCode::NetworkError
@@ -254,7 +242,7 @@ impl From<FFIError> for DashSDKError {
                 // substrings inside Drive messages (e.g., "data contract not found"
                 // emitted as a DriveInternalError would otherwise be misclassified
                 // as NotFound).
-                let (code, detailed_msg) = if is_state_transition_result_unconfirmed(sdk_err) {
+                let (code, detailed_msg) = if sdk_err.is_state_transition_result_unconfirmed() {
                     (
                         DashSDKErrorCode::StateTransitionResultUnconfirmed,
                         error_str,
@@ -771,6 +759,7 @@ mod tests {
             async move {
                 Err::<ExecutionResponse<()>, _>(if first {
                     ExecutionError {
+                        possibly_accepted: false,
                         inner: dash_sdk::Error::StaleNode(StaleNodeError::ProtocolVersion {
                             expected_protocol_version: 14,
                             received_protocol_version: 13,
@@ -780,6 +769,7 @@ mod tests {
                     }
                 } else {
                     ExecutionError {
+                        possibly_accepted: false,
                         inner: dash_sdk::Error::DapiClientError(
                             DapiClientError::NoAvailableAddresses,
                         ),

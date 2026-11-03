@@ -1,4 +1,4 @@
-use super::broadcast::{broadcast_with_observation, wait_after_broadcast, BroadcastPolicy};
+use super::broadcast::{wait_after_broadcast, BroadcastStateTransition};
 use crate::platform::query::VoteQuery;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::transition::validation::ensure_valid_state_transition_structure;
@@ -88,14 +88,9 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
         )
         .await?;
         ensure_valid_state_transition_structure(&masternode_vote_transition, sdk.version())?;
-        broadcast_with_observation(
-            &masternode_vote_transition,
-            sdk,
-            Some(settings),
-            BroadcastPolicy::TransportOnly,
-        )
-        .await
-        .into_result()?;
+        masternode_vote_transition
+            .broadcast(sdk, Some(settings))
+            .await?;
 
         Ok(())
     }
@@ -129,33 +124,22 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
         )
         .await?;
         ensure_valid_state_transition_structure(&masternode_vote_transition, sdk.version())?;
-        let broadcast = broadcast_with_observation(
-            &masternode_vote_transition,
-            sdk,
-            Some(settings),
-            BroadcastPolicy::TransportOnly,
-        )
-        .await;
-        // Preserve the resource-vote lookup; other ambiguous acknowledgements
-        // still reach the signed transition's verified wait.
-        if broadcast
-            .error()
-            .is_some_and(|error| error.to_string().contains("already exists"))
-        {
-            match self {
-                Vote::ResourceVote(_) => {
-                    let vote =
-                        Vote::fetch(sdk, VoteQuery::new(voter_pro_tx_hash, vote_poll_id)).await?;
-                    return vote.ok_or(Error::Generic(
-                        "vote was proved to not exist but was said to exist".to_string(),
-                    ));
-                }
-                // VoteQuery only reads resource votes. Yes/no duplicates must
-                // reach the existing proof wait for the same signed transition.
-                Vote::YesNoVote(_) => {}
-            }
-        }
+        let broadcast = masternode_vote_transition
+            .broadcast(sdk, Some(settings))
+            .await;
+        let duplicate = broadcast
+            .as_ref()
+            .err()
+            .is_some_and(Error::is_already_exists);
         wait_after_broadcast(broadcast, async move {
+            if duplicate && matches!(self, Vote::ResourceVote(_)) {
+                let vote =
+                    Vote::fetch(sdk, VoteQuery::new(voter_pro_tx_hash, vote_poll_id)).await?;
+                return vote.ok_or(Error::Generic(
+                    "vote was proved to not exist but was said to exist".to_string(),
+                ));
+            }
+            // VoteQuery only reads resource votes; yes/no votes retain their own proof wait.
             Self::wait_for_response(sdk, masternode_vote_transition, Some(settings)).await
         })
         .await
@@ -242,7 +226,7 @@ mod submission_tests {
     }
 
     #[tokio::test]
-    async fn should_observe_votes_without_extra_dispatches_or_nonce_invalidation() {
+    async fn should_share_broadcast_dispatch_and_nonce_refresh_for_votes() {
         for combined in [false, true] {
             for (status, expected_waits, existing) in [
                 (Status::unavailable("acknowledgement lost"), 1, false),
@@ -319,28 +303,25 @@ mod submission_tests {
                 };
                 if existing && combined {
                     assert!(
-                        matches!(&result, Err(Error::Generic(message)) if message.contains("vote was proved to not exist")),
+                        matches!(&result, Err(Error::StateTransitionResultUnconfirmed(cause)) if matches!(cause.as_ref(), Error::Generic(message) if message.contains("vote was proved to not exist"))),
                         "preserve the legacy fetch fallback: {result:?}"
                     );
                 }
                 fixture
                     .assert_calls(&requests, if combined { expected_waits } else { 0 }, result)
                     .await;
-                // No new invalidation: removing transport's nonce expectation still
-                // allows the next nonce read to use the original cached reservation.
+                // Shared broadcast invalidates the reservation after final send failure.
+                // Without the fetch expectation the next nonce read must fail, not use stale cache.
                 fixture
                     .sdk
                     .mock()
                     .remove_fetch_expectation::<IdentityNonceFetcher, _>(voting_identity_id)
                     .await;
-                assert_eq!(
-                    fixture
-                        .sdk
-                        .get_identity_nonce(voting_identity_id, false, PutFixture::settings())
-                        .await
-                        .unwrap(),
-                    1
-                );
+                assert!(fixture
+                    .sdk
+                    .get_identity_nonce(voting_identity_id, false, PutFixture::settings())
+                    .await
+                    .is_err());
             }
         }
     }

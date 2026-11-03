@@ -12,9 +12,7 @@ use dpp::state_transition::data_contract_create_transition::methods::DataContrac
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::StateTransition;
 
-use super::broadcast::{
-    broadcast_with_observation, wait_after_broadcast, BroadcastPolicy, BroadcastStateTransition,
-};
+use super::broadcast::{wait_after_broadcast, BroadcastStateTransition};
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 
@@ -70,9 +68,7 @@ impl<S: Signer<IdentityPublicKey>> PutContract<S> for DataContract {
             prepare_contract_state_transition(self, sdk, identity_public_key, signer, settings)
                 .await?;
 
-        let broadcast =
-            broadcast_with_observation(&state_transition, sdk, settings, BroadcastPolicy::Standard)
-                .await;
+        let broadcast = state_transition.broadcast(sdk, settings).await;
         wait_after_broadcast(broadcast, async move {
             Self::wait_for_response(sdk, state_transition, settings).await
         })

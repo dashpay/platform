@@ -140,6 +140,7 @@ fn dump<R: TransportRequest>(directory: &Path, request: &R, result: MockResult<R
 
 fn transport_failure() -> ExecutionError<DapiClientError> {
     ExecutionError {
+        possibly_accepted: false,
         inner: DapiClientError::Transport(TransportError::Grpc(Status::new(
             Code::InvalidArgument,
             "request refused",

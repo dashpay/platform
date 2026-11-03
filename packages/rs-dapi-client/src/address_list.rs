@@ -1147,6 +1147,7 @@ mod tests {
         let failed = list.get_live_address().unwrap();
 
         let result: ExecutionResult<i32, TransportError> = Err(ExecutionError {
+            possibly_accepted: false,
             inner: TransportError::Grpc(Status::unavailable("node down")),
             retries: 0,
             address: Some(failed.clone()),

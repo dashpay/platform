@@ -179,7 +179,7 @@ pub enum PlatformWalletFFIResultCode {
     /// attempt may have delivered). The wallet intentionally KEEPS the spent
     /// inputs' UTXO reservation, so an immediate retry fails at input
     /// selection instead of double-spending; observing the spend reconciles
-    /// the outcome. Also covers address-funded identity top-ups whose result
+    /// the outcome. Also covers Platform state transitions whose result
     /// could not be verified after possible acceptance, without Core UTXO
     /// reservations. The host must reconcile the original operation and NOT
     /// auto-retry. Shielded sibling: [`Self::ErrorShieldedSpendUnconfirmed`].
@@ -873,6 +873,19 @@ fn trade_error_json_detail(
 
 impl From<PlatformWalletError> for PlatformWalletFFIResult {
     fn from(error: PlatformWalletError) -> Self {
+        // Preserve the SDK's submission phase before any diagnostic can be
+        // interpreted as a definitive nonce, balance or marketplace refusal.
+        if matches!(
+            &error,
+            PlatformWalletError::Sdk(source)
+                | PlatformWalletError::TokenOperationFailed { source, .. }
+                if source.is_state_transition_result_unconfirmed()
+        ) {
+            return Self::err(
+                PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+                error.to_string(),
+            );
+        }
         // The three value-carrying marketplace rejections replace the
         // Display rendering with a stable JSON detail object; everything
         // else keeps Display as the message.
@@ -1382,11 +1395,16 @@ impl From<anyhow::Error> for PlatformWalletFFIResult {
 mod tests {
     use super::*;
     use dash_sdk::error::StateTransitionBroadcastError;
+    use dash_sdk::Error as SdkError;
+    use dpp::address_funds::PlatformAddress;
     use dpp::consensus::basic::{BasicError, UnsupportedVersionError};
+    use dpp::consensus::state::address_funds::AddressInvalidNonceError;
     use dpp::consensus::state::token::TokenOncePerIdentityDistributionAlreadyClaimedError;
     use dpp::prelude::Identifier;
+    use dpp::ProtocolError;
     use key_wallet::account::StandardAccountType;
     use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
+    use std::time::Duration;
 
     #[test]
     fn ok_has_null_message() {
@@ -1692,6 +1710,51 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         assert_eq!(msg, rendered, "Display payload must survive verbatim");
+    }
+
+    #[test]
+    fn should_preserve_unconfirmed_sdk_submission_through_wallet_ffi() {
+        for token_wrapper in [false, true] {
+            for depth in 0..=2 {
+                for diagnostic in [
+                    SdkError::TimeoutReached(Duration::from_secs(1), "wait".into()),
+                    SdkError::InvalidProvedResponse("invalid result proof".into()),
+                    SdkError::Protocol(ProtocolError::ConsensusError(Box::new(
+                        AddressInvalidNonceError::new(PlatformAddress::P2pkh([7; 20]), 1, 2).into(),
+                    ))),
+                ] {
+                    let mut source =
+                        SdkError::StateTransitionResultUnconfirmed(Box::new(diagnostic));
+                    for _ in 0..depth {
+                        source = SdkError::NoAvailableAddressesToRetry(Box::new(source));
+                    }
+                    let error = if token_wrapper {
+                        PlatformWalletError::TokenOperationFailed {
+                            operation: "transfer",
+                            source,
+                        }
+                    } else {
+                        PlatformWalletError::Sdk(source)
+                    };
+                    let expected = error.to_string();
+                    let mut result = PlatformWalletFFIResult::from(error);
+                    assert_eq!(
+                        result.code,
+                        PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+                    );
+                    assert_eq!(result.code as i32, 20);
+                    assert_eq!(result.consensus_code, 0);
+                    assert_eq!(
+                        result.consensus_kind,
+                        PlatformWalletFFIConsensusErrorKind::None
+                    );
+                    let copied = message_of(&result);
+                    unsafe { platform_wallet_ffi_result_free(&mut result) };
+                    assert!(result.message.is_null());
+                    assert_eq!(copied, expected);
+                }
+            }
+        }
     }
 
     #[test]

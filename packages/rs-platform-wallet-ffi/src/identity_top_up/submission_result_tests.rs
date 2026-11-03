@@ -109,6 +109,7 @@ fn response<R>(inner: R) -> ExecutionResponse<R> {
 
 fn transport_error(status: Status) -> ExecutionError<DapiClientError> {
     ExecutionError {
+        possibly_accepted: false,
         inner: DapiClientError::Transport(TransportError::Grpc(status)),
         address: None,
         retries: 0,
@@ -327,7 +328,9 @@ async fn should_keep_top_up_unconfirmed_after_wait_transport_failure() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn should_not_promote_later_nonce_rejection_after_possible_acceptance() {
+async fn should_preserve_exact_transition_wait_nonce_verdict_after_lost_ack() {
+    // The result stream answers the original transition hash, unlike a later
+    // broadcast node's refusal. Its decoded business verdict is authoritative.
     Fixture::new(
         Err(Status::unavailable("lost acknowledgement")),
         Ok(wait_response(WaitResult::Error(
@@ -340,11 +343,7 @@ async fn should_not_promote_later_nonce_rejection_after_possible_acceptance() {
         true,
     )
     .await
-    .check(
-        PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
-        1,
-        1,
-    )
+    .check(PlatformWalletFFIResultCode::ErrorAddressNonceMismatch, 1, 1)
     .await;
 }
 

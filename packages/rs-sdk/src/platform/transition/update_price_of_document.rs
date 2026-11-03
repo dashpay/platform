@@ -1,8 +1,6 @@
 use crate::{Error, Sdk};
 
-use super::broadcast::{
-    broadcast_with_observation, wait_after_broadcast, BroadcastPolicy, BroadcastStateTransition,
-};
+use super::broadcast::{wait_after_broadcast, BroadcastStateTransition};
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 use crate::platform::transition::put_settings::PutSettings;
@@ -98,9 +96,7 @@ impl<S: Signer<IdentityPublicKey>> UpdatePriceOfDocument<S> for Document {
         )
         .await?;
 
-        let broadcast =
-            broadcast_with_observation(&state_transition, sdk, settings, BroadcastPolicy::Standard)
-                .await;
+        let broadcast = state_transition.broadcast(sdk, settings).await;
         wait_after_broadcast(broadcast, async move {
             Self::wait_for_response(sdk, state_transition, settings).await
         })
