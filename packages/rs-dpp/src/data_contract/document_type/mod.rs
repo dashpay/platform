@@ -44,6 +44,8 @@ use crate::fee::Credits;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use derive_more::From;
+use indexmap::IndexMap;
+use std::collections::BTreeMap;
 
 pub const DEFAULT_HASH_SIZE: usize = 32;
 pub const DEFAULT_FLOAT_SIZE: usize = 8;
@@ -450,6 +452,76 @@ impl DocumentTypeRef<'_> {
             DocumentTypeRef::V2(v2) => DocumentType::V2((*v2).to_owned()),
         }
     }
+
+    /// This document type with only the indexes `keep` admits, everything else as it is, and
+    /// its index structure built from those indexes alone, as the parse builds the structure of
+    /// a type declaring only them. Drive prices with it the entries a document takes in some of
+    /// its type's indexes: a create of a type with a property drawn at random prepays the
+    /// entries of the indexes holding one (`Drive::prepay_random_document_index_entries`).
+    pub fn with_only_indexes(
+        &self,
+        keep: impl Fn(&Index) -> bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<DocumentType, ProtocolError> {
+        let mut document_type = self.to_owned_document_type();
+        match &mut document_type {
+            DocumentType::V0(v0) => keep_only_indexes(
+                &mut v0.indices,
+                &mut v0.index_structure,
+                &v0.flattened_properties,
+                &v0.name,
+                keep,
+                platform_version,
+            )?,
+            DocumentType::V1(v1) => keep_only_indexes(
+                &mut v1.indices,
+                &mut v1.index_structure,
+                &v1.flattened_properties,
+                &v1.name,
+                keep,
+                platform_version,
+            )?,
+            DocumentType::V2(v2) => keep_only_indexes(
+                &mut v2.indices,
+                &mut v2.index_structure,
+                &v2.flattened_properties,
+                &v2.name,
+                keep,
+                platform_version,
+            )?,
+        }
+        Ok(document_type)
+    }
+}
+
+/// Drops from `indices` every index `keep` refuses, and builds `index_structure` from the rest
+/// as the parse builds a type's: [`IndexLevel::try_from_indices`], then the levels of the typed
+/// arrays an index keys documents by stamped with their `maxItems`.
+fn keep_only_indexes(
+    indices: &mut BTreeMap<String, Index>,
+    index_structure: &mut IndexLevel,
+    flattened_properties: &IndexMap<String, DocumentProperty>,
+    name: &str,
+    keep: impl Fn(&Index) -> bool,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    indices.retain(|_, index| keep(index));
+    let mut kept_structure =
+        IndexLevel::try_from_indices(indices.values(), name, platform_version)?;
+    let indexed_arrays: BTreeMap<String, u16> = indices
+        .values()
+        .filter_map(|index| {
+            let array = index.indexed_array.as_ref()?;
+            index
+                .indexed_array_fan_out(flattened_properties)
+                .map(|(_, max_items)| (array.clone(), max_items))
+        })
+        .collect();
+    if !indexed_arrays.is_empty() {
+        kept_structure.stamp_indexed_arrays(&indexed_arrays);
+    }
+    *index_structure = kept_structure;
+    Ok(())
 }
 
 impl DocumentTypeBasicMethods for DocumentType {

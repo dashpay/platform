@@ -1,6 +1,8 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV1Getters};
+use dpp::data_contract::document_type::indexes_a_random_property;
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use dpp::document::Document;
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::Identifier;
 use grovedb::TransactionArg;
@@ -19,7 +21,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
-use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{DecisionProposalCreate, DocumentCreateTransitionActionV0};
+use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{DecisionProposalCreate, DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0, DocumentCreateTransitionActionV0, DocumentFromCreateTransitionAction};
 use crate::state_transition_action::batch::batched_transition::document_transition::state_generated_properties::generate_state_read_properties;
 use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
@@ -128,6 +130,14 @@ impl DocumentCreateTransitionActionV0 {
 
         let document_type_indexes = document_type.indexes();
 
+        // Added in place at protocol version 15, inert before it, where no type declares a
+        // `sys.random` function: whether the draw moves the document's entry in one of its
+        // ordinary indexes once the block is accepted (registration refuses such a property in a
+        // unique index, and on a type with a contested index), which the create prepays below
+        let prepays_draw = document_type_indexes
+            .values()
+            .any(|index| indexes_a_random_property(document_type, index));
+
         // A decision proposal (protocol version 15; its contract does not exist before it)
         // states the decision proposal fund, which names its own type rather than a contested
         // index: it is kept as stated for validation to judge, and opens no contest.
@@ -203,25 +213,189 @@ impl DocumentCreateTransitionActionV0 {
                 (None, None)
             };
 
+        let action: DocumentCreateTransitionAction = DocumentCreateTransitionActionV0 {
+            base,
+            block_info: *block_info,
+            data,
+            prefunded_voting_balance: prefunded_voting_balances_by_vote_poll,
+            current_store_contest_info,
+            should_store_contest_info: should_store_contest_info.map(Box::new),
+            property_constraint_reads: Default::default(),
+            moderated: false,
+            consumed_documents: Vec::new(),
+            derived_index_values: None,
+            decision_proposal,
+        }
+        .into();
+
+        // The draw writes the document's entries in those indexes again, under the drawn
+        // values, and may create the branches they hang from, whose elements carry the owner's
+        // refundable storage flags; the draw itself bills nobody. So the create prepays those
+        // entries at the average case: what Drive's fee estimation gives for inserting the
+        // document's entries into those indexes without reading state.
+        if prepays_draw {
+            let document =
+                Document::try_from_create_transition_action(&action, owner_id, platform_version)?;
+            let base = action.base();
+            fee_result.checked_add_assign(drive.prepay_random_document_index_entries(
+                &document,
+                owner_id,
+                &base.data_contract_fetch_info_ref().contract,
+                base.document_type()?,
+                block_info,
+                transaction,
+                platform_version,
+            )?)?;
+        }
+
         Ok((
-            BatchedTransitionAction::DocumentAction(DocumentTransitionAction::CreateAction(
-                DocumentCreateTransitionActionV0 {
-                    base,
-                    block_info: *block_info,
-                    data,
-                    prefunded_voting_balance: prefunded_voting_balances_by_vote_poll,
-                    current_store_contest_info,
-                    should_store_contest_info: should_store_contest_info.map(Box::new),
-                    property_constraint_reads: Default::default(),
-                    moderated: false,
-                    consumed_documents: Vec::new(),
-                    derived_index_values: None,
-                    decision_proposal,
-                }
+            BatchedTransitionAction::DocumentAction(DocumentTransitionAction::CreateAction(action))
                 .into(),
-            ))
-            .into(),
             fee_result,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+    use dpp::data_contract::DataContract;
+    use dpp::platform_value::{platform_value, Value};
+    use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+    use grovedb_costs::OperationCost;
+    use std::collections::BTreeMap;
+
+    const OWNER: [u8; 32] = [42; 32];
+    const CONTRACT_ID: [u8; 32] = [9; 32];
+
+    /// The latest platform version with `sys.random.uniform` admitted, which no protocol
+    /// version does until block execution draws the values.
+    fn drawing_platform_version() -> PlatformVersion {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .schema
+            .random_generated_from = Some(0);
+        platform_version
+    }
+
+    /// A card whose `rarity` is drawn from 1 to 100, indexed by it when `indexed`.
+    fn card_schema(indexed: bool) -> Value {
+        let mut schema = platform_value!({
+            "type": "object",
+            "documentsMutable": false,
+            "properties": {
+                "name": { "type": "string", "maxLength": 32, "position": 0 },
+                "rarity": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "generatedFrom": { "function": "sys.random.uniform" },
+                    "position": 1
+                }
+            },
+            "required": ["name", "rarity"],
+            "additionalProperties": false
+        });
+        if indexed {
+            schema
+                .insert(
+                    "indices".to_string(),
+                    platform_value!([{ "name": "byRarity", "properties": [{ "rarity": "asc" }] }]),
+                )
+                .expect("the schema is a map");
+        }
+        schema
+    }
+
+    /// A contract with a `card` indexed by its drawn rarity and a `looseCard` that is not,
+    /// registered at `platform_version`.
+    fn contract(platform_version: &PlatformVersion) -> Arc<DataContractFetchInfo> {
+        let contract = DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Identifier::from(CONTRACT_ID),
+                "ownerId": Identifier::from(OWNER),
+                "version": 1u32,
+                "documentSchemas": {
+                    "card": card_schema(true),
+                    "looseCard": card_schema(false)
+                }
+            }),
+            true,
+            platform_version,
+        )
+        .expect("the contract parses");
+        Arc::new(DataContractFetchInfo {
+            contract,
+            storage_flags: None,
+            cost: OperationCost::default(),
+            fee: None,
+        })
+    }
+
+    /// What building the action of a valid create of a `document_type_name` document bills.
+    fn create_fee(document_type_name: &str) -> FeeResult {
+        let platform_version = drawing_platform_version();
+        let drive = setup_drive_with_initial_state_structure(Some(&platform_version));
+        let contract = contract(&platform_version);
+        let transition = DocumentCreateTransitionV0 {
+            base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                id: Identifier::from([1; 32]),
+                identity_contract_nonce: 1,
+                document_type_name: document_type_name.to_string(),
+                data_contract_id: Identifier::from(CONTRACT_ID),
+            }),
+            entropy: [2; 32],
+            data: BTreeMap::from([("name".to_string(), Value::Text("Ace".to_string()))]),
+            prefunded_voting_balance: None,
+        };
+        let (result, fee_result) =
+            DocumentCreateTransitionActionV0::try_from_borrowed_document_create_transition_with_contract_lookup(
+                &drive,
+                Identifier::from(OWNER),
+                None,
+                &transition,
+                &BlockInfo::default(),
+                0,
+                |_| Ok(contract.clone()),
+                &platform_version,
+            )
+            .expect("the action builds");
+        assert!(
+            result.is_valid(),
+            "the create is valid: {:?}",
+            result.errors
+        );
+        fee_result
+    }
+
+    #[test]
+    fn should_prepay_the_draw_of_an_indexed_random_property_on_create() {
+        let indexed = create_fee("card");
+        let unindexed = create_fee("looseCard");
+        assert!(indexed.storage_fee > unindexed.storage_fee);
+        assert!(indexed.processing_fee > unindexed.processing_fee);
+        // Pinned: the estimated cost of the `byRarity` entry a draw may create. A change to
+        // the estimate, the index layout or the fee schedule moves it.
+        assert_eq!(
+            indexed,
+            FeeResult {
+                storage_fee: 13_392_000,
+                processing_fee: 6_650_100,
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn should_prepay_nothing_for_a_random_property_in_no_index() {
+        // Nothing else the action reads is billed for this type either
+        assert_eq!(create_fee("looseCard"), FeeResult::default());
     }
 }

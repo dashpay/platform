@@ -15,7 +15,6 @@ mod duplicate_keys;
 mod encrypted_for;
 mod gas_sponsorship;
 mod generated_from;
-mod generated_from_random;
 mod generated_from_token;
 mod id_reuse;
 mod immutable;

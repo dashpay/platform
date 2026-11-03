@@ -3658,6 +3658,9 @@ fn verify_contract_document_change_execution(
 mod group_burn_tests;
 
 #[cfg(test)]
+mod random_amount_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::drive::Drive;

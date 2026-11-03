@@ -4,19 +4,25 @@ use crate::drive::random_beacon::{draw_from_beacon_v0, push_with_length, DOCUMEN
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::DirectQueryType;
-use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
+use crate::util::object_size_info::DocumentInfo::{DocumentOwnedInfo, DocumentRefInfo};
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
-    integer_value_for_type, DocumentPropertyType, RandomRange, SystemFunction,
+    indexes_a_random_property, integer_value_for_type, DocumentPropertyType, DocumentTypeRef,
+    Index, RandomRange, SystemFunction,
 };
+use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapInsertionPathHelper;
+use dpp::prelude::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
 use std::borrow::Cow;
@@ -44,6 +50,115 @@ impl Drive {
             }
         }
         Ok(drawn)
+    }
+
+    /// Generation 0 of [`Self::prepay_random_document_index_entries`]: the entries of the
+    /// document in the indexes of `document_type` holding a `sys.random` property
+    /// ([`Self::prepay_drawn_index_entries_v0`]), carrying the storage flags the create writes
+    /// them with.
+    #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
+    pub(super) fn prepay_random_document_index_entries_v0(
+        &self,
+        document: &Document,
+        owner_id: Identifier,
+        contract: &DataContract,
+        document_type: DocumentTypeRef,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<FeeResult, Error> {
+        // The flags the create writes the document's elements with
+        let storage_flags =
+            StorageFlags::new_single_epoch(block_info.epoch.index, Some(owner_id.to_buffer()));
+        self.prepay_drawn_index_entries_v0(
+            document,
+            owner_id,
+            Some(storage_flags),
+            contract,
+            document_type,
+            |index| indexes_a_random_property(document_type, index),
+            block_info,
+            transaction,
+            platform_version,
+        )
+    }
+
+    /// What Drive's fee estimation gives, without reading state, for inserting the entries
+    /// `document`, of `document_type` in `contract`, written by `owner_id` with
+    /// `storage_flags`, takes in the indexes of its type that `drawn_into` selects: the indexes
+    /// holding a value a block's random beacon draws once the block is accepted, whose rewrite
+    /// moves the document's entries and may create the branches they move into, unbilled. The
+    /// selected indexes stand alone in a copy of the type (`with_only_indexes`), the entries
+    /// are gathered as the insert gathers a document's index entries in a dry run, with the
+    /// layers above the type estimated as for any document insert (the average layer
+    /// information, as if the branches had to be created), and priced as the dry run's
+    /// operations are. Zero when `drawn_into` selects no index of the type.
+    ///
+    /// Shared by the prepayments of generation 0 of both draws: a `sys.random` document
+    /// property's ([`Self::prepay_random_document_index_entries`]) and the amount a random
+    /// token transfer or mint writes into its history document
+    /// (`Drive::prepay_random_token_history_entries`).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn prepay_drawn_index_entries_v0(
+        &self,
+        document: &Document,
+        owner_id: Identifier,
+        storage_flags: Option<StorageFlags>,
+        contract: &DataContract,
+        document_type: DocumentTypeRef,
+        drawn_into: impl Fn(&Index) -> bool,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<FeeResult, Error> {
+        if !document_type.indexes().values().any(&drawn_into) {
+            return Ok(FeeResult::default());
+        }
+        let indexes_drawn_into = document_type.with_only_indexes(&drawn_into, platform_version)?;
+        let document_and_contract_info = DocumentAndContractInfo {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefInfo((document, storage_flags.map(Cow::Owned))),
+                owner_id: Some(owner_id.to_buffer()),
+            },
+            contract,
+            document_type: indexes_drawn_into.as_ref(),
+        }
+        .without_storage_flags_if_expiring();
+
+        let mut estimated_layers = EstimatedLayers::new();
+        Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
+            contract,
+            &mut estimated_layers,
+            &platform_version.drive,
+        )?;
+        let mut estimated_costs_only_with_layer_info = Some(estimated_layers);
+        let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
+        self.add_indices_for_top_index_level_for_contract_operations(
+            &document_and_contract_info,
+            &mut None,
+            &mut estimated_costs_only_with_layer_info,
+            block_info.time_ms,
+            transaction,
+            &mut batch_operations,
+            platform_version,
+        )?;
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+        self.apply_batch_low_level_drive_operations(
+            estimated_costs_only_with_layer_info,
+            transaction,
+            batch_operations,
+            &mut drive_operations,
+            &platform_version.drive,
+        )?;
+        Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            self.config.epochs_per_era,
+            platform_version,
+            None,
+        )
     }
 
     /// Draws the `sys.random` properties of the document `request` names and rewrites it;
@@ -201,26 +316,38 @@ mod tests {
     use super::*;
     use crate::config::DriveConfig;
     use crate::query::DriveDocumentQuery;
-    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::data_contract::DataContractFactory;
+    use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use dpp::document::DocumentV0;
-    use dpp::platform_value::{platform_value, Identifier, Value};
-    use dpp::prelude::DataContract;
+    use dpp::platform_value::{platform_value, Value};
     use std::collections::BTreeMap;
 
     const OWNER: [u8; 32] = [42; 32];
     const BEACON: [u8; 96] = [7; 96];
 
+    /// The latest platform version with `sys.random.uniform` admitted, which no protocol
+    /// version does until block execution draws the values.
+    fn drawing_platform_version() -> PlatformVersion {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .schema
+            .random_generated_from = Some(0);
+        platform_version
+    }
+
     /// A contract with an immutable `card` type, its `rarity` drawn from 1 to 100 and indexed,
-    /// and a `plain` type drawing nothing.
-    fn contract() -> DataContract {
-        DataContractFactory::new(PlatformVersion::latest().protocol_version)
-            .expect("factory")
-            .create_with_value_config(
-                Identifier::from(OWNER),
-                0,
-                platform_value!({
+    /// and a `plain` type drawing nothing, registered at `platform_version`.
+    fn contract(platform_version: &PlatformVersion) -> DataContract {
+        DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Identifier::from([9; 32]),
+                "ownerId": Identifier::from(OWNER),
+                "version": 1u32,
+                "documentSchemas": {
                     "card": {
                         "type": "object",
                         "documentsMutable": false,
@@ -243,21 +370,21 @@ mod tests {
                         "properties": {
                             "name": { "type": "string", "maxLength": 32, "position": 0 }
                         },
+                        "indices": [{ "name": "byName", "properties": [{ "name": "asc" }] }],
                         "required": ["name"],
                         "additionalProperties": false
                     }
-                }),
-                None,
-                None,
-            )
-            .expect("contract")
-            .data_contract_owned()
+                }
+            }),
+            true,
+            platform_version,
+        )
+        .expect("contract")
     }
 
-    fn setup() -> (Drive, DataContract) {
-        let platform_version = PlatformVersion::latest();
+    fn setup(platform_version: &PlatformVersion) -> (Drive, DataContract) {
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        let contract = contract();
+        let contract = contract(platform_version);
         drive
             .apply_contract(
                 &contract,
@@ -271,18 +398,27 @@ mod tests {
         (drive, contract)
     }
 
-    /// Inserts a `card` holding the placeholder, the way a create transition writes it.
-    fn insert_card(drive: &Drive, contract: &DataContract, marker: u8) -> Identifier {
-        let id = Identifier::from([marker; 32]);
-        let document = Document::V0(DocumentV0 {
-            id,
+    /// A `card` holding the placeholder, the way a create transition writes it.
+    fn card(marker: u8) -> Document {
+        Document::V0(DocumentV0 {
+            id: Identifier::from([marker; 32]),
             owner_id: Identifier::from(OWNER),
             properties: BTreeMap::from([
                 ("name".to_string(), Value::Text("Ace".to_string())),
                 ("rarity".to_string(), Value::U8(1)),
             ]),
             ..Default::default()
-        });
+        })
+    }
+
+    /// Inserts a `card` holding the placeholder, the way a create transition writes it.
+    fn insert_card(
+        drive: &Drive,
+        contract: &DataContract,
+        marker: u8,
+        platform_version: &PlatformVersion,
+    ) -> Identifier {
+        let document = card(marker);
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
@@ -300,11 +436,11 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 None,
-                PlatformVersion::latest(),
+                platform_version,
                 None,
             )
             .expect("the card inserts");
-        id
+        document.id()
     }
 
     fn request(
@@ -320,8 +456,12 @@ mod tests {
     }
 
     /// The cards whose rarity is `rarity`, through the `byRarity` index.
-    fn cards_with_rarity(drive: &Drive, contract: &DataContract, rarity: i128) -> Vec<Document> {
-        let platform_version = PlatformVersion::latest();
+    fn cards_with_rarity(
+        drive: &Drive,
+        contract: &DataContract,
+        rarity: i128,
+        platform_version: &PlatformVersion,
+    ) -> Vec<Document> {
         let query = DriveDocumentQuery::from_sql_expr(
             &format!("select * from card where rarity = {rarity}"),
             contract,
@@ -339,17 +479,17 @@ mod tests {
             .collect()
     }
 
-    const RARITY: RandomRange = RandomRange {
-        minimum: 1,
-        maximum: 100,
-    };
+    fn rarity_range() -> RandomRange {
+        RandomRange::new(1, 100).expect("a range")
+    }
 
     #[test]
     fn should_draw_into_an_immutable_document_and_move_its_index_entry() {
-        let (drive, contract) = setup();
-        let id = insert_card(&drive, &contract, 1);
+        let platform_version = drawing_platform_version();
+        let (drive, contract) = setup(&platform_version);
+        let id = insert_card(&drive, &contract, 1, &platform_version);
         let request = request(contract.id(), "card", id);
-        let expected = draw_v0(&BEACON, &request, "rarity", RARITY).expect("draws");
+        let expected = draw_v0(&BEACON, &request, "rarity", rarity_range()).expect("draws");
         assert!((1..=100).contains(&expected));
 
         let drawn = drive
@@ -358,12 +498,12 @@ mod tests {
                 &[request],
                 &BlockInfo::default(),
                 None,
-                PlatformVersion::latest(),
+                &platform_version,
             )
             .expect("the draw runs");
         assert_eq!(drawn, 1);
 
-        let found = cards_with_rarity(&drive, &contract, expected);
+        let found = cards_with_rarity(&drive, &contract, expected, &platform_version);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].id(), id);
         assert_eq!(
@@ -373,16 +513,13 @@ mod tests {
             Some(expected)
         );
         if expected != 1 {
-            assert!(cards_with_rarity(&drive, &contract, 1).is_empty());
+            assert!(cards_with_rarity(&drive, &contract, 1, &platform_version).is_empty());
         }
     }
 
     #[test]
     fn should_draw_each_document_and_beacon_independently_and_reproducibly() {
-        let widest = RandomRange {
-            minimum: 0,
-            maximum: u64::MAX.into(),
-        };
+        let widest = RandomRange::new(0, u64::MAX.into()).expect("2^64 values");
         let contract_id = Identifier::from([9; 32]);
         let first = request(contract_id, "card", Identifier::from([1; 32]));
         let second = request(contract_id, "card", Identifier::from([2; 32]));
@@ -408,7 +545,7 @@ mod tests {
         // The draw is consensus: every node must compute these values forever
         assert_eq!(draw(&BEACON, &first, "rarity"), DRAW_VECTOR);
         assert_eq!(
-            draw_v0(&BEACON, &first, "rarity", RARITY),
+            draw_v0(&BEACON, &first, "rarity", rarity_range()),
             Some(RARITY_VECTOR)
         );
     }
@@ -418,7 +555,8 @@ mod tests {
 
     #[test]
     fn should_skip_a_deleted_document_and_a_type_drawing_nothing() {
-        let (drive, contract) = setup();
+        let platform_version = drawing_platform_version();
+        let (drive, contract) = setup(&platform_version);
         let drawn = drive
             .draw_random_document_properties(
                 &BEACON,
@@ -428,7 +566,7 @@ mod tests {
                 ],
                 &BlockInfo::default(),
                 None,
-                PlatformVersion::latest(),
+                &platform_version,
             )
             .expect("the draw runs");
         assert_eq!(drawn, 0);
@@ -436,7 +574,7 @@ mod tests {
 
     #[test]
     fn should_not_draw_before_protocol_version_15() {
-        let (drive, _contract) = setup();
+        let (drive, _contract) = setup(&drawing_platform_version());
         let result = drive.draw_random_document_properties(
             &BEACON,
             &[],
@@ -448,5 +586,38 @@ mod tests {
             result,
             Err(Error::Drive(DriveError::VersionNotActive { .. }))
         ));
+    }
+
+    #[test]
+    fn should_prepay_the_entries_of_the_indexes_holding_a_random_property_only() {
+        let platform_version = drawing_platform_version();
+        let (drive, contract) = setup(&platform_version);
+        let prepay = |document: &Document, document_type_name: &str| {
+            drive
+                .prepay_random_document_index_entries(
+                    document,
+                    Identifier::from(OWNER),
+                    &contract,
+                    contract
+                        .document_type_for_name(document_type_name)
+                        .expect("the type"),
+                    &BlockInfo::default(),
+                    None,
+                    &platform_version,
+                )
+                .expect("the prepayment is priced")
+        };
+        let card_prepayment = prepay(&card(5), "card");
+        assert!(card_prepayment.storage_fee > 0);
+        assert!(card_prepayment.processing_fee > 0);
+
+        // Indexed, but by nothing drawn
+        let plain = Document::V0(DocumentV0 {
+            id: Identifier::from([6; 32]),
+            owner_id: Identifier::from(OWNER),
+            properties: BTreeMap::from([("name".to_string(), Value::Text("Ace".to_string()))]),
+            ..Default::default()
+        });
+        assert_eq!(prepay(&plain, "plain"), FeeResult::default());
     }
 }

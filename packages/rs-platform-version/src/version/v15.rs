@@ -392,9 +392,35 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     stored without storage flags by `transition_to_version_15`. Users cannot write them:
 ///     `creationRestrictionMode` 2 refuses a create, and the data trigger `bindings` 3
 ///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuse a replace or a delete.
+///
+/// 18. **Properties drawn at random, inactive**: `apply_generated_from` 1 parses the
+///     `generatedFrom` function `sys.random.uniform`, which takes no `params` (they may be left
+///     out, or be an empty list), on an integer property of at most 64 bits declaring both a
+///     `minimum` and a `maximum` inside its type and no `enum`, `const`, `exclusiveMinimum`,
+///     `exclusiveMaximum` or `multipleOf`: the platform draws its value from that range, both
+///     included, out of the block's random beacon once the block's transitions are accepted
+///     (`draw_random_document_properties` 0, `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`). A create
+///     writes the placeholder, the range's minimum, and refuses a sent value; a replace keeps
+///     the stored value, written back when left out and refused when sent with another
+///     (`DocumentPropertyNotGeneratedError`); clients leave the property out and take it from
+///     the proof. Registration refuses it on an indexOnly type, on a type that keeps history or
+///     has a contested index, in a unique index, summed or averaged, read by a reference or a
+///     rule, by an `encryptedFor` key, or by another type through a reference (a derived index
+///     property, a lookup, a `where` entry). A create of a type indexing such a property
+///     prepays, at Drive's estimate without reading state, the entries those indexes take,
+///     which the draw writes again unbilled (`prepay_random_document_index_entries` 0). The
+///     compiled form of a contract (format version 2, note 8) stores the range with the
+///     declaration, and reading one back refuses a range upside down or of more than 2^64
+///     values. The function stays inactive: `CONTRACT_VERSIONS_V7`'s `random_generated_from`
+///     is `None`, as in every earlier table, so registration refuses it with
+///     `InvalidContractStructure` until block execution draws the values from the beacon
+///     Tenderdash delivers, which a later change wires and activates. The call sites this
+///     extended in place (the document create and replace transformers, the parser's read
+///     checks, the reference validation's referenced side) are inert at every version, where
+///     no type declares such a function.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17)
+    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13), and draw_random_document_properties Some(0) draws the sys.random properties of a block's documents and prices what their create prepays, which nothing calls while the function is inactive (note 18); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; consensus_params_update 2 installs the full evidence policy (note 16)
@@ -410,7 +436,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); parse_private_document 0 parses private document types (note 13); apply_generated_from 1 admits sys.tokens.decimals (note 15)
+        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); parse_private_document 0 parses private document types (note 13); apply_generated_from 1 admits sys.tokens.decimals (note 15) and parses sys.random.uniform, which random_generated_from None still refuses (note 18)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V3, // changed: the yes/no poll's stored info, id, parameter rules and decision rules are active (note 10), and the decision proposal's poll (note 12)
