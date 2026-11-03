@@ -679,6 +679,15 @@ type PlatformgetShieldedNullifiers = {
   readonly responseType: typeof platform_pb.GetShieldedNullifiersResponse;
 };
 
+type PlatformgetPrivateDocumentEntries = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetPrivateDocumentEntriesRequest;
+  readonly responseType: typeof platform_pb.GetPrivateDocumentEntriesResponse;
+};
+
 export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
@@ -756,6 +765,7 @@ export class Platform {
   static readonly getShieldedPoolState: PlatformgetShieldedPoolState;
   static readonly getShieldedNotesCount: PlatformgetShieldedNotesCount;
   static readonly getShieldedNullifiers: PlatformgetShieldedNullifiers;
+  static readonly getPrivateDocumentEntries: PlatformgetPrivateDocumentEntries;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -1464,6 +1474,15 @@ export class PlatformClient {
   getShieldedNullifiers(
     requestMessage: platform_pb.GetShieldedNullifiersRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetShieldedNullifiersResponse|null) => void
+  ): UnaryResponse;
+  getPrivateDocumentEntries(
+    requestMessage: platform_pb.GetPrivateDocumentEntriesRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetPrivateDocumentEntriesResponse|null) => void
+  ): UnaryResponse;
+  getPrivateDocumentEntries(
+    requestMessage: platform_pb.GetPrivateDocumentEntriesRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetPrivateDocumentEntriesResponse|null) => void
   ): UnaryResponse;
 }
 

@@ -614,9 +614,12 @@ pub enum PlatformWalletFFIResultCode {
     /// [`Self::ErrorShutdownIncomplete`]: restart the host process.
     ErrorSpvProcessRestartRequired = 59,
 
-    /// An all-input asset lock exceeds the asset-lock input cap (100: Dash
-    /// Core relay policy and Platform consensus). Nothing was broadcast; the
-    /// host must not silently substitute a partial drain.
+    /// An asset lock exceeds the asset-lock input cap (100: Dash Core relay
+    /// policy and Platform consensus): a drain of every eligible input, or a
+    /// fixed amount (registration, top-up, invitation, platform-address
+    /// funding) held only in many small coins. Nothing was broadcast. A drain
+    /// host must not silently substitute a partial drain; consolidating the
+    /// coins lets either lock fit.
     ErrorAssetLockTooManyInputs = 60,
 
     /// The named thing does not exist.

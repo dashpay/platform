@@ -2671,20 +2671,10 @@ const RAW_RUNTIME_STATE =
         "linkType": "SOFT"\
       }]\
     ]],\
-    ["@dashevo/dark-gravity-wave", [\
-      ["npm:1.1.1", {\
-        "packageLocation": "./.yarn/cache/@dashevo-dark-gravity-wave-npm-1.1.1-aa785de435-920ee38590.zip/node_modules/@dashevo/dark-gravity-wave/",\
-        "packageDependencies": [\
-          ["@dashevo/dark-gravity-wave", "npm:1.1.1"]\
-        ],\
-        "linkType": "HARD"\
-      }]\
-    ]],\
     ["@dashevo/dash-spv", [\
       ["workspace:packages/dash-spv", {\
         "packageLocation": "./packages/dash-spv/",\
         "packageDependencies": [\
-          ["@dashevo/dark-gravity-wave", "npm:1.1.1"],\
           ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
           ["@dashevo/dash-util", "npm:2.0.3"],\
           ["@dashevo/dashcore-lib", "npm:0.26.1"],\

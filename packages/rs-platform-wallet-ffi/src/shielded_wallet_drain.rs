@@ -241,6 +241,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_wallet_drain
                         0,
                         None,
                         None,
+                        // No built-lock observer: the caller persisted the
+                        // operation UUID before this call, the lock's row
+                        // carries it, and `out_outcome` reports the outpoint.
+                        None,
                     )
                     .await
             }) {

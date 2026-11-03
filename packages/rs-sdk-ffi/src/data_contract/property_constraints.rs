@@ -160,7 +160,9 @@ pub unsafe extern "C" fn dash_sdk_data_contract_get_property_constraints(
 /// neither is a rule reading a `countOf` or `sumOf` total (`"readsTotals"`),
 /// which the platform reads from state when the document is sent, nor one
 /// reading a value of a document a reference points at (`"readsReferenced"`),
-/// which the platform reads when it checks the reference.
+/// which the platform reads when it checks the reference, nor one reading a
+/// property generated from state (`sys.tokens`), which the transition builders
+/// leave out and the platform writes when the document is sent.
 /// Nothing but the rules is checked: not the JSON schema, not the state.
 ///
 /// The result is the first rule broken, as
@@ -1324,6 +1326,93 @@ mod tests {
         }
         assert_eq!(other.expect("checked"), serde_json::Value::Null);
     }
+
+    /// An `order` type whose `decimals` are generated from the token `tokenId`
+    /// names (`sys.tokens.decimals`, protocol version 15), with a rule needing
+    /// them and one bounding the `label`.
+    fn order_contract_bytes() -> Vec<u8> {
+        let platform_version = PlatformVersion::latest();
+        let documents = platform_value!({
+            "order": {
+                "type": "object",
+                "properties": {
+                    "tokenId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0
+                    },
+                    "decimals": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 255,
+                        "position": 1,
+                        "generatedFrom": {
+                            "function": "sys.tokens.decimals",
+                            "params": ["tokenId"]
+                        }
+                    },
+                    "label": { "type": "string", "maxLength": 32, "position": 2 }
+                },
+                "required": ["tokenId"],
+                "additionalProperties": false,
+                "propertyConstraints": {
+                    "decimalsPresent": { "present": "decimals" },
+                    "shortLabel": { "lessThanOrEqual": [{ "length": "label" }, 8] }
+                }
+            }
+        });
+        DataContractFactory::new(platform_version.protocol_version)
+            .expect("factory for the protocol version")
+            .create_with_value_config(Identifier::new(OWNER), 1, documents, None, None)
+            .expect("order contract")
+            .data_contract()
+            .serialize_to_bytes_with_platform_version(platform_version)
+            .expect("serialized contract")
+    }
+
+    /// The transition builders leave out a property generated from state, which
+    /// the platform writes when the document arrives: the pre-check does not
+    /// judge a rule reading it, whatever the document holds, and judges the
+    /// others.
+    #[test]
+    fn should_leave_a_rule_reading_a_state_generated_property_unjudged() {
+        let sdk = sdk_handle(PlatformVersion::latest());
+        let contract = order_contract_bytes();
+        let token = base58([5; 32]);
+
+        let left_out = check(
+            sdk,
+            &contract,
+            "order",
+            json!({ "tokenId": token, "label": "short" }),
+            OWNER,
+        );
+        let sent = check(
+            sdk,
+            &contract,
+            "order",
+            json!({ "tokenId": token, "decimals": 6, "label": "short" }),
+            OWNER,
+        );
+        let long_label = check(
+            sdk,
+            &contract,
+            "order",
+            json!({ "tokenId": token, "label": "a long label" }),
+            OWNER,
+        );
+        destroy_mock_sdk_handle(sdk);
+
+        assert_eq!(left_out.expect("checked"), serde_json::Value::Null);
+        assert_eq!(sent.expect("checked"), serde_json::Value::Null);
+        let long_label = long_label.expect("checked");
+        assert_eq!(long_label["rule"], "shortLabel");
+        assert_eq!(long_label["violation"], "NotMet");
+    }
+
     /// A `profile` type with an optional DIP-33 `corePaymentAddress` of 21 bytes
     /// and an optional `payload` of at most 8, and two rules on their bytes:
     /// `addressType` (the address's type byte is 0 or 1) and `taggedPayload` (a
