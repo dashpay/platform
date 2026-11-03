@@ -4204,4 +4204,342 @@ pub(in crate::execution) mod tests {
             );
         }
     }
+
+    /// A contested index whose `fieldMatches` names a property outside the index (`label`,
+    /// while the index is `[normalizedParentDomainName, normalizedLabel]`). Two documents with
+    /// the same index values then take different paths: the one whose label matches joins a
+    /// contest, the other goes straight into the unique index. Through protocol version 14 no
+    /// check compares the two, and awarding the contest inserts into a unique index entry
+    /// already taken. From protocol version 15 registration
+    /// refuses such a contest, and for a contract registered earlier the document create's
+    /// state validation 3 refuses the second document while the contest is live.
+    mod contest_decided_by_index_values {
+        use super::*;
+        use crate::config::PlatformConfig;
+        use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
+        use dpp::consensus::basic::BasicError;
+        use dpp::consensus::state::state_error::StateError;
+        use dpp::dashcore::Network;
+        use dpp::data_contract::errors::DataContractError;
+        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+        use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
+        use dpp::state_transition::batch_transition::{
+            BatchTransitionV0, DocumentCreateTransition,
+        };
+        use dpp::ProtocolError;
+        use drive::error::drive::DriveError as DriveInnerError;
+
+        const CONTRACT: &str = "tests/supporting_files/contract/dpns/dpns-contract-contested-field-match-outside-index.json";
+
+        #[allow(clippy::too_many_arguments)]
+        async fn create_domain(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            contract: &DataContract,
+            identity: &(Identity, SimpleSigner, IdentityPublicKey),
+            rng: &mut StdRng,
+            label: &str,
+            normalized_label: &str,
+            contested: bool,
+            time_ms: u64,
+            platform_version: &PlatformVersion,
+        ) -> StateTransitionExecutionResult {
+            let (identity, signer, key) = identity;
+            let domain = contract
+                .document_type_for_name("domain")
+                .expect("expected a domain document type");
+
+            let entropy = Bytes32::random_with_rng(rng);
+
+            let mut document = domain
+                .random_document_with_identifier_and_entropy(
+                    rng,
+                    identity.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random domain document");
+
+            document.set("parentDomainName", "dash".into());
+            document.set("normalizedParentDomainName", "dash".into());
+            document.set("label", label.into());
+            document.set("normalizedLabel", normalized_label.into());
+            document.set("records.identity", document.owner_id().into());
+            document.set("subdomainRules.allowSubdomains", false.into());
+            document.set("preorderSalt", rng.gen::<[u8; 32]>().into());
+
+            document
+                .set_id_for_creation(domain, &entropy.0, 2, platform_version)
+                .expect("expected to set the document id");
+            let owner_id = document.owner_id();
+            let create_transition: DocumentCreateTransition = DocumentCreateTransitionV0 {
+                base: DocumentBaseTransition::from_document(
+                    &document,
+                    domain,
+                    None,
+                    2,
+                    platform_version,
+                    None,
+                )
+                .expect("expected a base transition"),
+                entropy: entropy.0,
+                data: document.clone().properties_consumed(),
+                prefunded_voting_balance: contested.then(|| {
+                    (
+                        "parentNameAndLabel".to_string(),
+                        platform_version
+                            .fee_version
+                            .vote_resolution_fund_fees
+                            .contested_document_vote_resolution_fund_required_amount,
+                    )
+                }),
+            }
+            .into();
+
+            let inner_transition: BatchTransition = BatchTransitionV0 {
+                owner_id,
+                transitions: vec![create_transition.into()],
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+            let mut transition: StateTransition = inner_transition.into();
+            transition
+                .sign_external(key, signer, Some(|_, _| Ok(SecurityLevel::HIGH)))
+                .await
+                .expect("expected to sign");
+
+            let serialized_transition = transition
+                .serialize_to_bytes()
+                .expect("expected to serialize the transition");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default_with_time(time_ms),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process the state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            processing_result.into_execution_results().remove(0)
+        }
+
+        /// Stores the contract without validating it, as a contract registered at protocol
+        /// version 14 is, opens a contest on `dash`/`quantum` with the lowercase label, creates
+        /// a second domain with `second_label` / `second_normalized_label` without prefunding,
+        /// then advances past the poll's end date and runs the resolver.
+        async fn run(
+            protocol_version: u32,
+            second_label: &str,
+            second_normalized_label: &str,
+        ) -> (
+            StateTransitionExecutionResult,
+            StateTransitionExecutionResult,
+            Result<(), crate::error::Error>,
+        ) {
+            let platform_config = PlatformConfig {
+                network: Network::Mainnet,
+                ..Default::default()
+            };
+            let mut platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(protocol_version)
+                .with_config(platform_config)
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected a platform version");
+
+            let mut rng = StdRng::seed_from_u64(0x0F1E_1D00);
+
+            let contender = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let other = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let contract_owner = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let contract = setup_contract(
+                &platform.drive,
+                CONTRACT,
+                None,
+                Some(contract_owner.0.id().to_buffer()),
+                None::<fn(&mut DataContract)>,
+                None,
+                Some(platform_version),
+            );
+
+            let contested_result = create_domain(
+                &platform,
+                &contract,
+                &contender,
+                &mut rng,
+                "quantum",
+                "quantum",
+                true,
+                3000,
+                platform_version,
+            )
+            .await;
+
+            let second_result = create_domain(
+                &platform,
+                &contract,
+                &other,
+                &mut rng,
+                second_label,
+                second_normalized_label,
+                false,
+                4000,
+                platform_version,
+            )
+            .await;
+
+            let after_vote_poll_end = platform_version
+                .dpp
+                .voting_versions
+                .default_vote_poll_time_duration_mainnet_ms
+                + 10_000;
+
+            fast_forward_to_block(&platform, after_vote_poll_end, 900, 42, 0, false);
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let resolver_result = platform.check_for_ended_vote_polls(
+                &platform_state,
+                &platform_state,
+                &BlockInfo {
+                    time_ms: after_vote_poll_end,
+                    height: 900,
+                    core_height: 42,
+                    epoch: Default::default(),
+                },
+                Some(&transaction),
+                platform_version,
+            );
+
+            (contested_result, second_result, resolver_result)
+        }
+
+        /// Through protocol version 14 the second document is created outside the contest
+        /// with the contender's index values, and the award finds its unique index entry taken.
+        #[tokio::test]
+        async fn should_find_the_awarded_entry_taken_at_protocol_version_14() {
+            let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+            json_document_to_contract_with_ids(CONTRACT, None, None, true, platform_version)
+                .expect("protocol version 14 registers the contract");
+
+            let (contested_result, second_result, resolver_result) =
+                run(14, "Quantum", "quantum").await;
+            assert_matches!(
+                contested_result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "the contender must join the contest"
+            );
+            assert_matches!(
+                second_result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "the uppercase label does not match, so the document is created outside the \
+                 contest with the same index values"
+            );
+            assert_matches!(
+                resolver_result,
+                Err(crate::error::Error::Drive(DriveError::Drive(
+                    DriveInnerError::CorruptedContractIndexes(_)
+                ))),
+                "awarding the contest must collide in the unique index"
+            );
+        }
+
+        /// From protocol version 15 registration refuses the contest.
+        #[test]
+        fn should_refuse_registering_the_contest_at_the_latest_protocol_version() {
+            let error = json_document_to_contract_with_ids(
+                CONTRACT,
+                None,
+                None,
+                true,
+                PlatformVersion::latest(),
+            )
+            .expect_err("registration must refuse a contest its index values do not decide");
+            assert_matches!(
+                error,
+                ProtocolError::ConsensusError(consensus_error)
+                    if matches!(
+                        consensus_error.as_ref(),
+                        ConsensusError::BasicError(BasicError::ContractError(
+                            DataContractError::InvalidContractStructure(_)
+                        ))
+                    )
+            );
+        }
+
+        /// From protocol version 15, for a contract registered earlier, the second document is
+        /// refused while the contest is live, and the award goes through.
+        #[tokio::test]
+        async fn should_refuse_the_create_taking_a_live_contests_values_at_the_latest_protocol_version(
+        ) {
+            let (contested_result, second_result, resolver_result) = run(
+                PlatformVersion::latest().protocol_version,
+                "Quantum",
+                "quantum",
+            )
+            .await;
+            assert_matches!(
+                contested_result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "the contender must join the contest"
+            );
+            assert_matches!(
+                second_result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::DuplicateUniqueIndexError(_)),
+                    ..
+                },
+                "a document outside the contest must not take the values of a live one"
+            );
+            assert!(
+                resolver_result.is_ok(),
+                "the award must find its unique index entry free; got {:?}",
+                resolver_result
+            );
+        }
+
+        /// CONTROL: the second domain has other index values, so it is created and the award
+        /// has a free slot.
+        #[tokio::test]
+        async fn should_award_when_the_second_document_has_other_index_values() {
+            let latest = PlatformVersion::latest().protocol_version;
+            let (contested_result, second_result, resolver_result) =
+                run(latest, "Quantun", "quantun").await;
+            assert_matches!(
+                contested_result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+            assert_matches!(
+                second_result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+            assert!(
+                resolver_result.is_ok(),
+                "control: got {:?}",
+                resolver_result
+            );
+        }
+    }
 }
