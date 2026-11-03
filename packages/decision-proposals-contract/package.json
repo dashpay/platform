@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/decision-proposals-contract",
-  "version": "5.0.2",
+  "version": "5.0.3",
   "description": "A system contract for decision proposals: yes/no questions put to the masternodes",
   "scripts": {
     "lint": "eslint .",
