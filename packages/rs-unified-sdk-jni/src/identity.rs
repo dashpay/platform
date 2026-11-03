@@ -34,12 +34,16 @@
 use crate::pubkey_rows::decode_registration_pubkeys_blob;
 use crate::support::{guard, net_from_ord, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JString, JValue};
-use jni::sys::{jboolean, jbyteArray, jint, jlong, jobject};
+use jni::sys::{jboolean, jbyteArray, jint, jlong, jlongArray, jobject};
 use jni::JNIEnv;
 use platform_wallet_ffi::core_wallet_types::OutPointFFI;
 use platform_wallet_ffi::derive_connect_key::ConnectDerivedKeyFFI;
 use platform_wallet_ffi::error::{platform_wallet_ffi_result_free, PlatformWalletFFIResult};
 use platform_wallet_ffi::handle::Handle;
+use platform_wallet_ffi::identity_creation_key_layout::{
+    IdentityCreationFeesFFI, IdentityCreationKeyLayoutFFI, IdentityCreationKeySlotFFI,
+    IdentityCreationKeySlotsFFI,
+};
 use platform_wallet_ffi::identity_discovery::DiscoveredIdentityIdsFFI;
 use platform_wallet_ffi::identity_key_preview::{IdentityKeyPreviewFFI, IdentityKeyPreviewsFFI};
 use platform_wallet_ffi::identity_registration::IdentityFundingInputFFI;
@@ -198,20 +202,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_previe
     })
 }
 
-/// Derive the full identity-registration key **set** for a single
-/// identity: keyId 0..`count` at the fixed `identityIndex`. Unlike
-/// [`Java_..._previewRegistrationKeys`] (which fixes the MASTER key slot
-/// and walks the *identity* index for the discovery preview), this fixes
-/// the identity index and walks the *key* index — so it returns every
-/// keypair a freshly-created identity is built from (keyId 0..N).
+/// Derive the full identity-registration key **set** of one creation key
+/// layout for a single identity: one keypair per slot, in key-id order, at
+/// the fixed `identityIndex`. Unlike [`Java_..._previewRegistrationKeys`]
+/// (which fixes the MASTER key slot and walks the *identity* index for the
+/// discovery preview), this fixes the identity index and walks the *key*
+/// index.
 ///
-/// `count < 0` derives the canonical default set
-/// (`IDENTITY_REGISTRATION_KEY_SET_COUNT` = 4: MASTER auth, CRITICAL
-/// auth, HIGH auth, TRANSFER/CRITICAL). The create-identity flow may request
-/// more (e.g. 6, appending the DashPay ENCRYPTION/DECRYPTION pair). Every row
-/// is an ECDSA_SECP256K1 keypair; the DPP role for each keyId is stamped by
-/// the Kotlin side (`RegistrationKeys`) and shipped on the registration wire,
-/// not carried on this derived row.
+/// `layout` is the `IdentityCreationKeyLayout` ordinal (see
+/// [`layout_from_ord`]). Every row is an ECDSA_SECP256K1 keypair; the DPP
+/// role of each key comes from the same Rust layout through
+/// [`Java_..._identityCreationKeyLayout`], not from Kotlin.
 ///
 /// Returns the same flat `byte[]` BLOB layout as
 /// [`Java_..._previewRegistrationKeys`], decoded by
@@ -224,13 +225,21 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_previe
     wallet_handle: jlong,
     resolver_handle: jlong,
     identity_index: jint,
-    count: jint,
+    layout: jint,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
         if identity_index < 0 {
             throw_sdk_exception(env, 1, "identityIndex must be non-negative");
             return ptr::null_mut();
         }
+        let Some(layout) = layout_from_ord(layout) else {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("unknown identity creation key layout {layout}"),
+            );
+            return ptr::null_mut();
+        };
         let mut previews = IdentityKeyPreviewsFFI {
             items: ptr::null_mut(),
             count: 0,
@@ -240,7 +249,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_previe
                 wallet_handle as Handle,
                 resolver_handle as *mut MnemonicResolverHandle,
                 identity_index as u32,
-                count,
+                layout,
                 &mut previews as *mut IdentityKeyPreviewsFFI,
             )
         };
@@ -264,6 +273,109 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_previe
             .map(|a| a.into_raw())
             .unwrap_or(ptr::null_mut())
     })
+}
+
+/// Map the Kotlin `IdentityCreationKeyLayout` ordinal to the FFI enum:
+/// `0` new identity, `1` new identity with DashPay keys. `None` for any
+/// other value.
+fn layout_from_ord(ord: jint) -> Option<IdentityCreationKeyLayoutFFI> {
+    match ord {
+        0 => Some(IdentityCreationKeyLayoutFFI::NewIdentity),
+        1 => Some(IdentityCreationKeyLayoutFFI::NewIdentityWithDashPayKeys),
+        _ => None,
+    }
+}
+
+/// The key layout an identity-creation flow registers, from
+/// `platform_wallet_identity_creation_key_layout`. `layout` is the ordinal
+/// of [`layout_from_ord`].
+///
+/// Returns a flat `byte[]` BLOB (all integers big-endian), decoded by
+/// `RegistrationKeys.decodeLayout`:
+///
+/// ```text
+/// u32  row_count
+/// repeat row_count times:
+///   u32  key_id
+///   u32  derivation_key_index
+///   u8   key_type, u8 purpose, u8 security_level   (DPP discriminants)
+///   u8   contract_bounds_kind  (0 none, 1 SingleContract, 2 SingleContractDocumentType)
+///   if contract_bounds_kind != 0: u8[32] contract_bounds_id
+///   if contract_bounds_kind == 2: u16 doc_type_len, u8[doc_type_len] doc_type (UTF-8)
+/// ```
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_identityCreationKeyLayout(
+    mut env: JNIEnv,
+    _class: JClass,
+    layout: jint,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(layout) = layout_from_ord(layout) else {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("unknown identity creation key layout {layout}"),
+            );
+            return ptr::null_mut();
+        };
+        let mut slots = IdentityCreationKeySlotsFFI {
+            items: ptr::null_mut(),
+            count: 0,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_identity_creation_key_layout(layout, &mut slots)
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let blob = unsafe { encode_layout_rows(&slots) };
+        unsafe {
+            platform_wallet_ffi::platform_wallet_identity_creation_key_layout_free(&mut slots)
+        };
+        env.byte_array_from_slice(&blob)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Serialize layout rows into the BLOB documented on
+/// [`Java_..._identityCreationKeyLayout`].
+///
+/// # Safety
+/// `slots` must be a populated `IdentityCreationKeySlotsFFI` with `count`
+/// valid rows (or an empty struct).
+unsafe fn encode_layout_rows(slots: &IdentityCreationKeySlotsFFI) -> Vec<u8> {
+    let rows: &[IdentityCreationKeySlotFFI] = if slots.items.is_null() {
+        &[]
+    } else {
+        std::slice::from_raw_parts(slots.items, slots.count)
+    };
+    let mut out = Vec::new();
+    out.extend_from_slice(&(rows.len() as u32).to_be_bytes());
+    for row in rows {
+        out.extend_from_slice(&row.key_id.to_be_bytes());
+        out.extend_from_slice(&row.derivation_key_index.to_be_bytes());
+        out.extend_from_slice(&[
+            row.key_type,
+            row.purpose,
+            row.security_level,
+            row.contract_bounds_kind,
+        ]);
+        if row.contract_bounds_kind != 0 {
+            out.extend_from_slice(&row.contract_bounds_id);
+        }
+        if row.contract_bounds_kind == 2 {
+            let name = if row.contract_bounds_document_type.is_null() {
+                &[][..]
+            } else {
+                CStr::from_ptr(row.contract_bounds_document_type).to_bytes()
+            };
+            // Document type names are capped at 64 bytes by DPP.
+            out.extend_from_slice(&(name.len() as u16).to_be_bytes());
+            out.extend_from_slice(name);
+        }
+    }
+    out
 }
 
 /// Serialize the preview rows into the BLOB layout documented on
@@ -648,6 +760,118 @@ fn connect_key_to_java(
 }
 
 // ── Registration (wallet-balance funded) ──────────────────────────────
+
+/// The minimum asset-lock value (duffs) that registers the layout with
+/// ordinal `layout` at the wallet's platform version, from
+/// `platform_wallet_identity_creation_min_funding_duffs`. Kotlin shows and
+/// enforces it instead of keeping a copy of the fee schedule. Returns `-1`
+/// with a pending `DashSDKException` on error.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_identityCreationMinFundingDuffs(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    layout: jint,
+) -> jlong {
+    guard(&mut env, -1, |env| {
+        let Some(layout) = layout_from_ord(layout) else {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("unknown identity creation key layout {layout}"),
+            );
+            return -1;
+        };
+        let mut duffs = 0u64;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_identity_creation_min_funding_duffs(
+                wallet_handle as Handle,
+                layout,
+                &mut duffs,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return -1;
+        }
+        match jlong::try_from(duffs) {
+            Ok(duffs) => duffs,
+            Err(_) => {
+                throw_sdk_exception(env, 1, "identity creation minimum exceeds a Java long");
+                -1
+            }
+        }
+    })
+}
+
+/// The minimum fees (credits) of an address-funded identity create of the
+/// layout with ordinal `layout`, without a refund output, at the wallet's
+/// platform version: element `n - 1` is the fee with `n` inputs, and the
+/// length is the protocol's maximum input count. Thin marshal of
+/// `platform_wallet_identity_creation_from_addresses_min_fees`. Returns
+/// `null` with a pending `DashSDKException` on error.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_identityCreationFromAddressesMinFees(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    layout: jint,
+) -> jlongArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(layout) = layout_from_ord(layout) else {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("unknown identity creation key layout {layout}"),
+            );
+            return ptr::null_mut();
+        };
+        let mut fees = IdentityCreationFeesFFI {
+            items: ptr::null_mut(),
+            count: 0,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_identity_creation_from_addresses_min_fees(
+                wallet_handle as Handle,
+                layout,
+                &mut fees,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let values: Option<Vec<jlong>> = if fees.items.is_null() {
+            Some(Vec::new())
+        } else {
+            unsafe { std::slice::from_raw_parts(fees.items, fees.count) }
+                .iter()
+                .map(|fee| jlong::try_from(*fee).ok())
+                .collect()
+        };
+        unsafe {
+            platform_wallet_ffi::platform_wallet_identity_creation_from_addresses_min_fees_free(
+                &mut fees,
+            )
+        };
+        let Some(values) = values else {
+            throw_sdk_exception(env, 1, "identity creation fee exceeds a Java long");
+            return ptr::null_mut();
+        };
+        let Ok(len) = jint::try_from(values.len()) else {
+            throw_sdk_exception(env, 1, "too many identity creation fees");
+            return ptr::null_mut();
+        };
+        match env.new_long_array(len) {
+            Ok(arr) => {
+                if env.set_long_array_region(&arr, 0, &values).is_err() {
+                    ptr::null_mut()
+                } else {
+                    arr.into_raw()
+                }
+            }
+            Err(_) => ptr::null_mut(),
+        }
+    })
+}
 
 /// Resume a previously interrupted identity registration from a tracked
 /// asset-lock outpoint. The returned managed-identity handle is transferred
@@ -1307,9 +1531,18 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_update
 
 #[cfg(test)]
 mod tests {
+    use super::{encode_layout_rows, layout_from_ord};
+    use dpp::data_contracts::SystemDataContract;
     use platform_wallet_ffi::derive_connect_key::{
         CONNECT_KEY_PURPOSE_DECRYPTION, CONNECT_KEY_PURPOSE_ENCRYPTION,
         CONNECT_KEY_SUB_FEATURE_APP_ENCRYPTION, CONNECT_KEY_SUB_FEATURE_SESSION_AUTHENTICATION,
+    };
+    use platform_wallet_ffi::identity_creation_key_layout::{
+        IdentityCreationKeyLayoutFFI, IdentityCreationKeySlotsFFI,
+    };
+    use platform_wallet_ffi::{
+        platform_wallet_identity_creation_key_layout,
+        platform_wallet_identity_creation_key_layout_free, PlatformWalletFFIResultCode,
     };
 
     const PLATFORM_WALLET_MANAGER_KT: &str = include_str!(concat!(
@@ -1338,5 +1571,62 @@ mod tests {
                 "PlatformWalletManager.kt no longer declares `{needle}`"
             );
         }
+    }
+
+    fn layout_blob(ord: i32) -> Vec<u8> {
+        let layout = layout_from_ord(ord).expect("known layout ordinal");
+        let mut slots = IdentityCreationKeySlotsFFI {
+            items: std::ptr::null_mut(),
+            count: 0,
+        };
+        let result = unsafe { platform_wallet_identity_creation_key_layout(layout, &mut slots) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        let blob = unsafe { encode_layout_rows(&slots) };
+        unsafe { platform_wallet_identity_creation_key_layout_free(&mut slots) };
+        blob
+    }
+
+    /// Golden layout BLOBs shared byte-for-byte with the Kotlin decoder test
+    /// (`RegistrationKeysTest`), so an encoder/decoder skew fails one side.
+    const GOLDEN_NEW_IDENTITY: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../kotlin-sdk/sdk/src/test/resources/golden/identity_creation_key_layout_new_identity_v1.bin"
+    ));
+    const GOLDEN_WITH_DASHPAY_KEYS: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../kotlin-sdk/sdk/src/test/resources/golden/identity_creation_key_layout_new_identity_with_dashpay_keys_v1.bin"
+    ));
+
+    #[test]
+    fn should_encode_the_new_identity_layout() {
+        assert_eq!(layout_blob(0), GOLDEN_NEW_IDENTITY);
+    }
+
+    #[test]
+    fn should_encode_the_dashpay_layout_with_contact_request_bounds() {
+        let blob = layout_blob(1);
+        assert_eq!(blob, GOLDEN_WITH_DASHPAY_KEYS);
+        // The golden file pins the real DashPay contract id, not a mirror.
+        let dashpay = SystemDataContract::Dashpay.id().to_buffer();
+        assert_eq!(blob.windows(32).filter(|w| *w == dashpay).count(), 2);
+    }
+
+    #[test]
+    fn should_map_the_kotlin_layout_ordinals() {
+        assert_eq!(
+            layout_from_ord(0),
+            Some(IdentityCreationKeyLayoutFFI::NewIdentity)
+        );
+        assert_eq!(
+            layout_from_ord(1),
+            Some(IdentityCreationKeyLayoutFFI::NewIdentityWithDashPayKeys)
+        );
+    }
+
+    #[test]
+    fn should_reject_an_unknown_layout_ordinal() {
+        // `2` was the removed asset-lock resume layout.
+        assert!(layout_from_ord(2).is_none());
+        assert!(layout_from_ord(-1).is_none());
     }
 }

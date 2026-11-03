@@ -68,32 +68,15 @@ use dashcore::PrivateKey as DashPrivateKey;
 use key_wallet::bip32::ExtendedPrivKey;
 use key_wallet::Wallet;
 use platform_wallet::wallet::identity::network::derive_ecdsa_identity_auth_keypair_from_master;
-use platform_wallet::{derive_identity_auth_keypair, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX};
+use platform_wallet::{
+    derive_identity_auth_keypair, IdentityCreationKeyLayout, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
+};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::*;
 use crate::handle::*;
+use crate::identity_creation_key_layout::IdentityCreationKeyLayoutFFI;
 
-/// Canonical default number of keys a freshly-created identity is
-/// provisioned with — the set
-/// [`platform_wallet_preview_identity_registration_key_set`] derives
-/// when the caller passes `count < 0`.
-///
-/// Mirrors the iOS reference (`CreateIdentityView.defaultKeyCount` /
-/// the per-slot table in `identity_derive_and_persist.rs`):
-///   - keyId 0 → AUTHENTICATION / MASTER   (signs IdentityCreate / IdentityUpdate)
-///   - keyId 1 → AUTHENTICATION / CRITICAL (signs token state transitions)
-///   - keyId 2 → AUTHENTICATION / HIGH     (general document operations)
-///   - keyId 3 → TRANSFER / CRITICAL       (signs IdentityCreditTransfer / …Withdrawal)
-///
-/// Without the CRITICAL auth key (keyId 1) the identity cannot mint /
-/// burn / freeze tokens; without the TRANSFER key (keyId 3) credit
-/// transfers and withdrawals are rejected on-chain with "no transfer
-/// public key". This preview row carries only the derived keypair — the
-/// DPP role→keyId mapping lives with each host's registration policy (the
-/// Kotlin `RegistrationKeys` table / the Swift create-identity flow), which
-/// stamps the role onto the registration wire rows.
-pub const IDENTITY_REGISTRATION_KEY_SET_COUNT: u32 = 4;
 use crate::identity_keys_from_mnemonic::{resolve_master_from_resolver, zeroize_and_free_row};
 use crate::types::Network;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
@@ -256,10 +239,11 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
     )
 }
 
-/// Derive the full identity-registration key **set** for a single
-/// identity: keyId 0..`count_or_neg1` at the fixed identity index
-/// `start_index`, on the DIP-9 identity-authentication path
-/// `m/9'/coin'/5'/0'/0'/start_index'/keyId'`.
+/// Derive the full identity-registration key **set** of `layout` for a
+/// single identity: one keypair per slot of the
+/// [`platform_wallet::IdentityCreationKeyLayout`], in key-id order, at the
+/// fixed identity index on the DIP-9 identity-authentication path
+/// `m/9'/coin'/5'/0'/0'/identity_index'/key_index'` (key index = key id).
 ///
 /// This is the sibling of
 /// [`platform_wallet_preview_identity_registration_keys`] — that
@@ -268,18 +252,12 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
 /// identity index and walks the *key* index, so it surfaces every
 /// keypair a freshly-created identity is built from.
 ///
-/// The rows come back in keyId order. The **per-key DPP role** (purpose
-/// / security level) is NOT encoded on the row — every row derives an
-/// ECDSA_SECP256K1 keypair, and the host's registration policy stamps the
-/// purpose / security level (and any contract bounds) by keyId when it builds
-/// the registration wire rows (the Kotlin `RegistrationKeys` table / the Swift
-/// create-identity flow).
-///
-/// `count_or_neg1 < 0` derives the canonical default set
-/// ([`IDENTITY_REGISTRATION_KEY_SET_COUNT`] = 4: MASTER auth, CRITICAL
-/// auth, HIGH auth, TRANSFER/CRITICAL). Release the result with
-/// [`platform_wallet_preview_identity_registration_keys_free`] — same
-/// row layout, same free function.
+/// The rows carry the keypairs only. The role of each key (type, purpose,
+/// security level, contract bounds) comes from the same layout through
+/// [`crate::platform_wallet_identity_creation_key_layout`]; hosts stamp it
+/// from there and decide nothing themselves. Release the result with
+/// [`platform_wallet_preview_identity_registration_keys_free`] — same row
+/// layout, same free function.
 ///
 /// # Safety
 /// Same contract as
@@ -289,14 +267,12 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_key_set(
     wallet_handle: Handle,
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     identity_index: u32,
-    count_or_neg1: i32,
+    layout: IdentityCreationKeyLayoutFFI,
     out_previews: *mut IdentityKeyPreviewsFFI,
 ) -> PlatformWalletFFIResult {
-    let count = if count_or_neg1 < 0 {
-        IDENTITY_REGISTRATION_KEY_SET_COUNT as i32
-    } else {
-        count_or_neg1
-    };
+    // Key ids are contiguous from 0 and each key derives at its own id, so
+    // walking key indices 0..len derives exactly the layout's slots.
+    let count = IdentityCreationKeyLayout::from(layout).key_count() as i32;
     preview_identity_registration_keys_inner(
         wallet_handle,
         mnemonic_resolver_handle,
