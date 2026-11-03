@@ -11,7 +11,9 @@
 
 pub mod system_function;
 
-pub use system_function::{HashFunction, StringTransformation, SystemFunction, TokenFunction};
+pub use system_function::{
+    HashFunction, RandomFunction, RandomRange, StringTransformation, SystemFunction, TokenFunction,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +29,11 @@ use serde::{Deserialize, Serialize};
 /// reads, none transient, none generated itself, and each inside every object
 /// that holds the declaring property, so a document supplying the parameters
 /// always has somewhere to put the generated value.
+///
+/// From protocol version 15 an integer property may also be declared
+/// `"generatedFrom": { "function": "sys.random.uniform" }`, with no `params`: the
+/// platform draws its value from the property's `minimum` to its `maximum`, which
+/// registration reads into [`GeneratedFrom::range`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GeneratedFrom {
@@ -34,6 +41,10 @@ pub struct GeneratedFrom {
     pub function: SystemFunction,
     /// What the function is applied to, in order.
     pub params: Vec<GenerationParam>,
+    /// The values a `sys.random` function draws from, read from the property's
+    /// `minimum` and `maximum` at registration. `None` for every other function.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub range: Option<RandomRange>,
 }
 
 impl GeneratedFrom {
@@ -74,6 +85,7 @@ mod tests {
                 StringTransformation::HomographSafeAscii,
             ),
             params: vec![GenerationParam::Property("label".to_string())],
+            range: None,
         };
         assert_eq!(declaration.params_description(), "label");
         assert_eq!(

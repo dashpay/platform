@@ -177,13 +177,6 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        let drive_version = &platform_version.drive;
-        let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
-        // A document whose type declares a `ttl` stays without storage flags when replaced,
-        // transferred, bought or repriced. Dropped before anything is sized, so the replaced
-        // elements' sizes agree with what is stored.
-        let document_and_contract_info =
-            document_and_contract_info.without_storage_flags_if_expiring();
         if !document_and_contract_info.document_type.requires_revision()
         // if it requires revision then there are reasons for us to be able to update in drive
         {
@@ -191,6 +184,40 @@ impl Drive {
                 "this document type is not mutable",
             )));
         }
+        self.update_stored_document_operations_v1(
+            document_and_contract_info,
+            block_info,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            platform_version,
+        )
+    }
+
+    /// Gathers operations for rewriting a stored document with `document_and_contract_info`'s
+    /// document: its primary storage, and each index entry whose values changed, moved from
+    /// the stored document's position to the new one. The body of
+    /// [`Self::update_document_for_contract_operations_v1`] after its refusal of document
+    /// types a client cannot update, split out unchanged (the refusal reads only the document
+    /// type, which dropping storage flags leaves as it is), so an update gathers the same
+    /// operations as before at every protocol version. `draw_random_document_properties`
+    /// calls it to fill the `sys.random` properties of a document of any type.
+    pub(in crate::drive::document) fn update_stored_document_operations_v1(
+        &self,
+        document_and_contract_info: DocumentAndContractInfo,
+        block_info: &BlockInfo,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let drive_version = &platform_version.drive;
+        let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
+        // A document whose type declares a `ttl` stays without storage flags when replaced,
+        // transferred, bought or repriced. Dropped before anything is sized, so the replaced
+        // elements' sizes agree with what is stored.
+        let document_and_contract_info =
+            document_and_contract_info.without_storage_flags_if_expiring();
 
         // If we are going for estimated costs do an add instead as it always worse than an update
         if document_and_contract_info

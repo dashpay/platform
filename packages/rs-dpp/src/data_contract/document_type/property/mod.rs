@@ -49,9 +49,10 @@ pub mod reference_lookup;
 pub mod reference_where;
 
 pub use encrypted_for::{EncryptedFor, EncryptedForRecipient, EncryptionScheme};
+pub use generated_from::system_function::random::{integer_type_bounds, integer_value_for_type};
 pub use generated_from::{
-    GeneratedFrom, GenerationParam, HashFunction, StringTransformation, SystemFunction,
-    TokenFunction,
+    GeneratedFrom, GenerationParam, HashFunction, RandomFunction, RandomRange,
+    StringTransformation, SystemFunction, TokenFunction,
 };
 pub use list_element_reference::ListElementReference;
 pub use lookup_preimage::{

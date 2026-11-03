@@ -25,7 +25,7 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{
-    is_path_listed, is_referenced_system_agreement_property,
+    integer_type_bounds, is_path_listed, is_referenced_system_agreement_property,
     is_referring_system_agreement_property, is_transient, property_at_path, property_names,
     ChooseFirstOrder, ContractReferenceModeration, ContractReferenceOwner,
     ContractReferenceRequirements, DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget,
@@ -34,9 +34,10 @@ use crate::data_contract::document_type::{
     EncryptedForRecipient, EncryptionScheme, GeneratedFrom, GenerationParam,
     IdentityKeyReferenceRequirements, KeyIdReference, KeyReferenceIdentityProperty,
     ListElementReference, LookupChooseFirst, LookupHashKey, LookupKeySource, PropertyReference,
-    ReferenceCombinator, ReferenceOperands, SystemFunction, TokenFunction, WhereBoundRead,
-    WhereCondition, WhereContainsBound, WhereLiteral, WhereLiteralKind, WhereNotEqualBound,
-    WhereOrdering, WhereOrderingBound, COMBINABLE_REFERENCE_TARGET_TYPES,
+    RandomFunction, RandomRange, ReferenceCombinator, ReferenceOperands, SystemFunction,
+    TokenFunction, WhereBoundRead, WhereCondition, WhereContainsBound, WhereLiteral,
+    WhereLiteralKind, WhereNotEqualBound, WhereOrdering, WhereOrderingBound,
+    COMBINABLE_REFERENCE_TARGET_TYPES,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -3100,7 +3101,11 @@ fn apply_generated_from_v0(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(Some(GeneratedFrom { function, params }))
+    Ok(Some(GeneratedFrom {
+        function,
+        params,
+        range: None,
+    }))
 }
 
 /// Generation 1 (protocol version 15): generation 0, and a property may also be
@@ -3110,6 +3115,10 @@ fn apply_generated_from_v0(
 /// declares them, admit 0 to 255, and it declares none of the keywords that can refuse some of
 /// those values (`enum`, `const`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`). A
 /// string transformation still generates a string property only.
+///
+/// A property may also be generated with `sys.random.uniform`, which takes no parameters
+/// (`params` may be left out) and draws an integer from the property's `minimum` to its
+/// `maximum`, read into [`GeneratedFrom::range`] ([`uniform_range`]).
 fn apply_generated_from_v1(
     inner_properties: &BTreeMap<String, &Value>,
     property_type: &DocumentPropertyType,
@@ -3178,6 +3187,7 @@ fn apply_generated_from_v1(
 
     // The property's type is the one its function generates; `sys.hash` belongs
     // to the `refersTo` lookup keys
+    let mut range = None;
     match function {
         SystemFunction::StringTransformation(_) => {
             if !matches!(property_type, DocumentPropertyType::String(_)) {
@@ -3207,10 +3217,14 @@ fn apply_generated_from_v1(
                 )));
             }
         }
+        SystemFunction::Random(RandomFunction::Uniform) => {
+            range = Some(uniform_range(inner_properties, property_type, function)?);
+        }
         SystemFunction::Hash(_) => {
             return Err(DataContractError::InvalidContractStructure(format!(
                 "generatedFrom function {function} does not generate a string or an integer: a \
-                 property is generated with a sys.stringTransformations or sys.tokens function"
+                 property is generated with a sys.stringTransformations, sys.tokens or \
+                 sys.random function"
             )));
         }
     }
@@ -3218,10 +3232,13 @@ fn apply_generated_from_v1(
         return Err(shape_error());
     };
 
-    let params = generated_from_map
-        .get(property_names::PARAMS)
-        .and_then(|value| value.as_array())
-        .ok_or_else(shape_error)?;
+    // A function that takes no parameters (`sys.random`) may leave `params` out
+    let no_params = Vec::new();
+    let params = match generated_from_map.get(property_names::PARAMS) {
+        Some(params) => params.as_array().ok_or_else(shape_error)?,
+        None if parameter_count == 0 => &no_params,
+        None => return Err(shape_error()),
+    };
     if params.len() != parameter_count {
         return Err(DataContractError::InvalidContractStructure(format!(
             "generatedFrom function {function} takes {parameter_count} parameter(s), but params \
@@ -3253,7 +3270,71 @@ fn apply_generated_from_v1(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(Some(GeneratedFrom { function, params }))
+    Ok(Some(GeneratedFrom {
+        function,
+        params,
+        range,
+    }))
+}
+
+/// The values a property generated with `function`, `sys.random.uniform`, is drawn from: its
+/// `minimum` to its `maximum`, both included. The property must be an integer one of at most
+/// 64 bits, declare both bounds, with `minimum` not above `maximum` and both inside its type,
+/// and declare none of the keywords that refuse some values in between (`enum`, `const`,
+/// `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`), so every value drawn passes its
+/// schema. At most 64 bits keeps the range within 2^64 values, which a draw maps 128 random
+/// bits onto.
+fn uniform_range(
+    map: &BTreeMap<String, &Value>,
+    property_type: &DocumentPropertyType,
+    function: SystemFunction,
+) -> Result<RandomRange, DataContractError> {
+    let refusal = |reason: String| {
+        DataContractError::InvalidContractStructure(format!(
+            "generatedFrom function {function} draws an integer from the property's minimum to \
+             its maximum, so {reason}"
+        ))
+    };
+    let Some((type_minimum, type_maximum)) = integer_type_bounds(property_type) else {
+        return Err(refusal(format!(
+            "it is only allowed on an integer property of at most 64 bits, not on a {}",
+            property_type.name()
+        )));
+    };
+    let minimum = map.get_optional_integer::<i128>(property_names::MINIMUM)?;
+    let maximum = map.get_optional_integer::<i128>(property_names::MAXIMUM)?;
+    let (Some(minimum), Some(maximum)) = (minimum, maximum) else {
+        return Err(refusal(
+            "the property must declare both a minimum and a maximum".to_string(),
+        ));
+    };
+    if minimum > maximum {
+        return Err(refusal(format!(
+            "its minimum, {minimum}, may not be above its maximum, {maximum}"
+        )));
+    }
+    if minimum < type_minimum || maximum > type_maximum {
+        return Err(refusal(format!(
+            "both must fit the property's type, {}",
+            property_type.name()
+        )));
+    }
+    if let Some(keyword) = [
+        property_names::ENUM,
+        property_names::CONST,
+        property_names::EXCLUSIVE_MINIMUM,
+        property_names::EXCLUSIVE_MAXIMUM,
+        property_names::MULTIPLE_OF,
+    ]
+    .into_iter()
+    .find(|keyword| map.contains_key(*keyword))
+    {
+        return Err(refusal(format!(
+            "the property may not declare {keyword}, which would refuse some of the values \
+             in between"
+        )));
+    }
+    Ok(RandomRange { minimum, maximum })
 }
 
 /// Whether the property schema `map` admits every token's decimals, 0 to 255: its `minimum`
@@ -3374,6 +3455,13 @@ fn refuse_state_generated_schema_path(schema: &Value, path: &str) -> Result<(), 
 /// `enum`, which compare the whole object, the value included
 /// ([`refuse_state_generated_schema_path`]).
 ///
+/// A `sys.random` function (protocol version 15) takes no parameters. A client cannot know
+/// the value either, so the same in-place declaration is required, and the type may not be
+/// indexOnly. The platform fills the value after every transition of the block is accepted,
+/// when nothing can be refused any more, so the property may not be in a unique index, where
+/// two drawn values could collide, and the type may not keep history, which would keep the
+/// placeholder.
+///
 /// Owned by parser generation 3: the only generation that admits the keyword.
 pub(super) fn validate_generated_from_declarations(
     document_type: &DocumentTypeV2,
@@ -3438,13 +3526,55 @@ pub(super) fn validate_generated_from_declarations(
             })?;
         }
 
+        if let SystemFunction::Random(_) = generated_from.function {
+            if document_type.index_only {
+                return Err(structure_error(format!(
+                    "function {} draws a value the platform keeps from the document's creation, \
+                     and an indexOnly type keeps no document: draw it on a type that stores its \
+                     documents",
+                    generated_from.function
+                )));
+            }
+            if document_type.documents_keep_history {
+                return Err(structure_error(format!(
+                    "function {} draws a value the platform writes once the block is accepted, \
+                     and a type that keeps history would keep the placeholder written before it",
+                    generated_from.function
+                )));
+            }
+            if let Some(index) = document_type.indices.values().find(|index| {
+                index.unique
+                    && index
+                        .properties
+                        .iter()
+                        .any(|property| &property.name == path)
+            }) {
+                return Err(structure_error(format!(
+                    "function {} draws a value once the block is accepted, when nothing can be \
+                     refused any more, so the property may not be in unique index \"{}\", where \
+                     two drawn values could collide",
+                    generated_from.function, index.name
+                )));
+            }
+            // A client leaves the value out, and its schema check reads a stand-in, as for a
+            // value read from state
+            refuse_state_generated_schema_path(&document_type.schema, path).map_err(|message| {
+                structure_error(format!(
+                    "function {} draws a value a client cannot know, so {message}: the client \
+                     could not tell whether its document matches",
+                    generated_from.function
+                ))
+            })?;
+        }
+
         // The kind of property a param names: the messages of the string functions are
         // those protocol version 14 gives
         let (param_kind, a_param_kind) = match generated_from.function {
             SystemFunction::Token(_) => ("identifier", "an identifier"),
-            SystemFunction::StringTransformation(_) | SystemFunction::Hash(_) => {
-                ("string", "a string")
-            }
+            // A random function takes no parameters, so the loop below never reads its kind
+            SystemFunction::StringTransformation(_)
+            | SystemFunction::Hash(_)
+            | SystemFunction::Random(_) => ("string", "a string"),
         };
         for param in generated_from.property_params() {
             if param == path {
@@ -3479,7 +3609,9 @@ pub(super) fn validate_generated_from_declarations(
                         )));
                     }
                 }
-                SystemFunction::StringTransformation(_) | SystemFunction::Hash(_) => {
+                SystemFunction::StringTransformation(_)
+                | SystemFunction::Hash(_)
+                | SystemFunction::Random(_) => {
                     if !matches!(
                         param_property.property_type,
                         DocumentPropertyType::String(_)

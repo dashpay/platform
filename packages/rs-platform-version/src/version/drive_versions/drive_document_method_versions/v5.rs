@@ -12,6 +12,9 @@ use crate::version::drive_versions::drive_document_method_versions::{
 ///   limits of `SYSTEM_LIMITS_V5`. `fetch_private_document_entries` and
 ///   `prove_private_document_entries` are `Some(0)` too (`None` before): a page of a store's
 ///   entries can be read and proved.
+/// * `draw_random_document_properties` is `Some(0)` (`None` in every earlier table): the
+///   documents a block created get their `sys.random` properties drawn from the block's random
+///   beacon.
 /// * `delete.remove_reference_for_index_level_for_contract_operations` is 2: a delete's estimate
 ///   describes an index's entries for a value (its `[0]` layer) as the references they are, as
 ///   the insert's does, not as subtrees.
@@ -22,6 +25,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
         insert_empty_private_document_store_operation: Some(0), // changed: a private document type's store is created with it
         fetch_private_document_entries: Some(0), // changed: a page of a store's entries can be read
         prove_private_document_entries: Some(0), // changed: and proved
+        draw_random_document_properties: Some(0), // changed: sys.random properties are drawn
         delete: DriveDocumentDeleteMethodVersions {
             remove_reference_for_index_level_for_contract_operations: 2, // changed: the entries layer is described as references
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.delete

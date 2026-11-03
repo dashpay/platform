@@ -104,6 +104,12 @@ impl DocumentCreateTransitionActionV0 {
             transaction,
             platform_version,
         )?;
+        // Added in place at protocol version 15, inert before it, where no type declares a
+        // `sys.random` function: every such property is written with its placeholder here,
+        // which the draw from the block's random beacon replaces before the block commits, and
+        // a sent value is refused, before the contest resolution and every later check read
+        // the data. A refusal bumps the nonce.
+        let refusal = refusal.or_else(|| document_type.generate_random_properties(&mut data, None));
         if let Some(error) = refusal {
             let bump_action =
                 BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(

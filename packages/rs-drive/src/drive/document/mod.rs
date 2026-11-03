@@ -52,6 +52,9 @@ mod delete;
 /// The values of derived index properties, read from the documents the references point at
 #[cfg(feature = "server")]
 pub(crate) mod derived_index_values;
+/// The draw of `sys.random` document properties from a block's random beacon
+#[cfg(feature = "server")]
+pub mod draw_random_document_properties;
 #[cfg(feature = "server")]
 mod estimation_costs;
 /// Document expiry: the expirations tree of documents whose type declares a `ttl`, their

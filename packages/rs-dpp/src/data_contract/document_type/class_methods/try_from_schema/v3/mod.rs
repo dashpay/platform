@@ -2114,6 +2114,8 @@ mod refusal_test_support;
 mod summable_off_count_index_tests;
 
 #[cfg(all(test, feature = "validation"))]
+mod generated_from_random_tests;
+#[cfg(all(test, feature = "validation"))]
 mod generated_from_tests;
 #[cfg(all(test, feature = "validation"))]
 mod generated_from_token_tests;

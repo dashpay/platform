@@ -11,8 +11,8 @@ use crate::data_contract::document_type::{
     ByteArrayPropertySizes, DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget,
     DocumentPropertyType, EncryptedFor, EncryptedForRecipient, EncryptionScheme, GeneratedFrom,
     GenerationParam, HashFunction, IdentityKeyReferenceRequirements, KeyIdReference,
-    KeyReferenceIdentityProperty, StringPropertySizes, StringTransformation, SystemFunction,
-    TokenFunction,
+    KeyReferenceIdentityProperty, RandomFunction, RandomRange, StringPropertySizes,
+    StringTransformation, SystemFunction, TokenFunction,
 };
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
@@ -138,6 +138,8 @@ pub(super) enum StoredEncryptionScheme {
 pub(super) struct StoredGeneratedFrom {
     function: StoredSystemFunction,
     params: Vec<String>,
+    /// [`GeneratedFrom::range`]: `(minimum, maximum)`.
+    range: Option<(i128, i128)>,
 }
 
 /// [`SystemFunction`].
@@ -146,12 +148,19 @@ pub(super) enum StoredSystemFunction {
     StringTransformation(StoredStringTransformation),
     Hash(HashFunction),
     Token(StoredTokenFunction),
+    Random(StoredRandomFunction),
 }
 
 /// [`TokenFunction`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
 pub(super) enum StoredTokenFunction {
     Decimals,
+}
+
+/// [`RandomFunction`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
+pub(super) enum StoredRandomFunction {
+    Uniform,
 }
 
 /// [`StringTransformation`].
@@ -519,7 +528,11 @@ impl From<StoredEncryptedFor> for EncryptedFor {
 
 impl From<&GeneratedFrom> for StoredGeneratedFrom {
     fn from(generated_from: &GeneratedFrom) -> Self {
-        let GeneratedFrom { function, params } = generated_from;
+        let GeneratedFrom {
+            function,
+            params,
+            range,
+        } = generated_from;
         StoredGeneratedFrom {
             function: match function {
                 SystemFunction::StringTransformation(transformation) => {
@@ -538,6 +551,9 @@ impl From<&GeneratedFrom> for StoredGeneratedFrom {
                 SystemFunction::Token(token) => StoredSystemFunction::Token(match token {
                     TokenFunction::Decimals => StoredTokenFunction::Decimals,
                 }),
+                SystemFunction::Random(random) => StoredSystemFunction::Random(match random {
+                    RandomFunction::Uniform => StoredRandomFunction::Uniform,
+                }),
             },
             params: params
                 .iter()
@@ -545,13 +561,18 @@ impl From<&GeneratedFrom> for StoredGeneratedFrom {
                     GenerationParam::Property(path) => path.clone(),
                 })
                 .collect(),
+            range: range.map(|range| (range.minimum, range.maximum)),
         }
     }
 }
 
 impl From<StoredGeneratedFrom> for GeneratedFrom {
     fn from(stored: StoredGeneratedFrom) -> Self {
-        let StoredGeneratedFrom { function, params } = stored;
+        let StoredGeneratedFrom {
+            function,
+            params,
+            range,
+        } = stored;
         GeneratedFrom {
             function: match function {
                 StoredSystemFunction::StringTransformation(transformation) => {
@@ -570,8 +591,12 @@ impl From<StoredGeneratedFrom> for GeneratedFrom {
                 StoredSystemFunction::Token(token) => SystemFunction::Token(match token {
                     StoredTokenFunction::Decimals => TokenFunction::Decimals,
                 }),
+                StoredSystemFunction::Random(random) => SystemFunction::Random(match random {
+                    StoredRandomFunction::Uniform => RandomFunction::Uniform,
+                }),
             },
             params: params.into_iter().map(GenerationParam::Property).collect(),
+            range: range.map(|(minimum, maximum)| RandomRange { minimum, maximum }),
         }
     }
 }
