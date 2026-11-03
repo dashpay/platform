@@ -737,8 +737,9 @@ pub(crate) fn state_generated_paths_left_out<'a>(
 /// ([`state_generated_paths_left_out`]) holds a value the property admits whatever the
 /// state, in place of the one the platform writes before checking it, which the client does
 /// not know. Registration admits `sys.tokens.decimals` only on an integer property holding
-/// every value from 0 to 255, inside no object declaring `const` or `enum` (which would
-/// compare the value), so 0 stands in. A `required` list naming such a property, and its
+/// every value from 0 to 255, declared in place with every object holding it (no `$ref`,
+/// which would bring in schemas it does not judge), inside no object declaring `const` or
+/// `enum` (which would compare the value), so 0 stands in. A `required` list naming such a property, and its
 /// bounds, then pass, the keys of every object are those the platform's document has, and
 /// every other check reads the data as it is. `properties` as it
 /// is on a type without such a declaration, which covers every type parsed before protocol

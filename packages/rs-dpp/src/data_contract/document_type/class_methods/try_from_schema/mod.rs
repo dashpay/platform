@@ -3288,41 +3288,58 @@ fn decimals_admission_refusal(function: SystemFunction) -> String {
     format!(
         "function {function} generates a token's decimals, so it is only allowed on an \
          integer property that admits every value from 0 to 255 (no minimum above 0, no \
-         maximum below 255, no enum, const, exclusiveMinimum, exclusiveMaximum or multipleOf, \
-         beside a $ref included)"
+         maximum below 255, no enum, const, exclusiveMinimum, exclusiveMaximum or multipleOf)"
     )
 }
 
-/// Every schema that applies to the property at the dotted `path` of `schema`, a document
-/// type's: the one its parent object declares it with, and, when that holds a `$ref`, the
-/// definition the `$ref` names, read from `schema_defs`, the contract's `$defs`, for
-/// `#/$defs/...`. JSON Schema applies both, the keywords beside the `$ref` with the
-/// definition's, where the parse reads the definition alone. Empty when the path names no
-/// property.
-fn schemas_applying_at_path<'a>(
-    schema: &'a Value,
-    schema_defs: Option<&'a BTreeMap<String, Value>>,
-    path: &str,
-) -> Result<Vec<BTreeMap<String, &'a Value>>, DataContractError> {
-    let (parent, name) = match path.rsplit_once('.') {
-        Some((parent, name)) => (schema_at_path(schema, schema_defs, parent)?, name),
-        None => (Some(resolve_schema(schema, schema_defs, schema)?), path),
-    };
-    let Some(declared) = parent
-        .as_ref()
-        .and_then(|parent| parent.get(property_names::PROPERTIES))
-        .map(|properties| properties.to_btree_ref_string_map())
-        .transpose()?
-        .and_then(|properties| properties.get(name).copied())
-    else {
-        return Ok(Vec::new());
-    };
-    let declared = declared.to_btree_ref_string_map()?;
-    let definition = match declared.get_optional_str(property_names::REF)? {
-        Some(uri) => Some(resolve_schema_ref(schema, schema_defs, uri)?.to_btree_ref_string_map()?),
-        None => None,
-    };
-    Ok(std::iter::once(declared).chain(definition).collect())
+/// Walks the dotted `path` of `schema`, a document type's, as written: from the root, through
+/// each object holding the property, to the property. Refuses, as the end of a sentence
+/// beginning "the property", a schema on the way declared with a `$ref`, and an object on the
+/// way (the root included) declaring `const` or `enum`. `Ok` when the walk reaches the
+/// property; a path the walk cannot follow is the parse's to report, which found it.
+fn refuse_state_generated_schema_path(schema: &Value, path: &str) -> Result<(), String> {
+    let mut declared = schema
+        .to_btree_ref_string_map()
+        .map_err(|error| format!("could not be read from the schema ({error})"))?;
+    let mut walked: Option<&str> = None;
+    let mut segments = path
+        .match_indices('.')
+        .map(|(index, _)| index)
+        .chain([path.len()]);
+    loop {
+        let name = walked.map_or("the document type".to_string(), |walked| {
+            format!("\"{walked}\"")
+        });
+        if declared.contains_key(property_names::REF) {
+            return Err(format!(
+                "the property and every object holding it must be declared in place, and \
+                 {name} is declared with a $ref"
+            ));
+        }
+        let Some(end) = segments.next() else {
+            return Ok(());
+        };
+        if let Some(keyword) = [property_names::CONST, property_names::ENUM]
+            .into_iter()
+            .find(|keyword| declared.contains_key(*keyword))
+        {
+            return Err(format!(
+                "the property may not sit inside an object declaring {keyword}, as {name} \
+                 does (to allow some tokens only, declare enum on the token property)"
+            ));
+        }
+        let segment = &path[walked.map_or(0, |walked| walked.len() + 1)..end];
+        let Some(next) = declared
+            .get(property_names::PROPERTIES)
+            .and_then(|properties| properties.to_btree_ref_string_map().ok())
+            .and_then(|properties| properties.get(segment).copied())
+            .and_then(|next| next.to_btree_ref_string_map().ok())
+        else {
+            return Ok(());
+        };
+        declared = next;
+        walked = Some(&path[..end]);
+    }
 }
 
 /// Checks every `generatedFrom` declaration of a document type against the
@@ -3348,19 +3365,18 @@ fn schemas_applying_at_path<'a>(
 /// indexOnly delete supplies its values again, which the platform could not
 /// check against a kept value), and the property may not be in a contested index
 /// (a client, which holds no state, leaves the property out and could not tell
-/// whether the document joins a contest) nor inside an object declaring `const` or
-/// `enum` (which compare the whole object, the value included, so a client could
-/// not tell whether its document matches). Every schema applying to an object or
-/// to the property is read ([`schemas_applying_at_path`]): the definition a `$ref`
-/// names, from `schema_defs`, the contract's `$defs`, and the keywords beside the
-/// `$ref`, which a document is checked against too; for a token's decimals, those
-/// beside the property's `$ref` must admit every decimals, as `apply_generated_from`
-/// 1 requires of the definition it reads.
+/// whether the document joins a contest). A client also leaves the value out of
+/// the document it checks, whose schema check reads a stand-in the property's own
+/// schema admits, so no other schema may judge the value: the property and every
+/// object holding it are declared in place, without a `$ref` (a definition, the
+/// keywords beside the `$ref` and the definition's own references all apply to a
+/// document), and no object holding it, the root included, declares `const` or
+/// `enum`, which compare the whole object, the value included
+/// ([`refuse_state_generated_schema_path`]).
 ///
 /// Owned by parser generation 3: the only generation that admits the keyword.
 pub(super) fn validate_generated_from_declarations(
     document_type: &DocumentTypeV2,
-    schema_defs: Option<&BTreeMap<String, Value>>,
     document_type_name: &str,
 ) -> Result<(), DataContractError> {
     let flattened_properties = &document_type.flattened_properties;
@@ -3406,47 +3422,20 @@ pub(super) fn validate_generated_from_declarations(
                     generated_from.function, index.name
                 )));
             }
-            // An object's `const` or `enum` compares the whole object, the generated value
-            // included, which a client leaving it out cannot know; the property's own
-            // `const` and `enum` are refused with its bounds (`apply_generated_from` 1)
-            let enclosing_objects =
-                std::iter::successors(path.rsplit_once('.').map(|(object, _)| object), |object| {
-                    object.rsplit_once('.').map(|(parent, _)| parent)
-                });
-            for object in enclosing_objects {
-                let object_schemas =
-                    schemas_applying_at_path(&document_type.schema, schema_defs, object)?;
-                if let Some(keyword) = [property_names::CONST, property_names::ENUM]
-                    .into_iter()
-                    .find(|keyword| {
-                        object_schemas
-                            .iter()
-                            .any(|object_schema| object_schema.contains_key(*keyword))
-                    })
-                {
-                    return Err(structure_error(format!(
-                        "function {} reads state, which a client cannot, so the property may not \
-                         sit inside an object declaring {keyword}, as \"{object}\" does: the \
-                         client could not tell whether its document matches. To allow some \
-                         tokens only, declare enum on the token property",
-                        generated_from.function
-                    )));
-                }
-            }
-            // The parse read a property declared with a `$ref` from its definition alone
-            // (`apply_generated_from` 1), while a document is also checked against the
-            // keywords beside the `$ref`: they must admit every decimals too
-            if let SystemFunction::Token(TokenFunction::Decimals) = generated_from.function {
-                for property_schema in
-                    schemas_applying_at_path(&document_type.schema, schema_defs, path)?
-                {
-                    if !admits_every_decimals(&property_schema)? {
-                        return Err(structure_error(decimals_admission_refusal(
-                            generated_from.function,
-                        )));
-                    }
-                }
-            }
+            // A client leaves the value out, and its schema check reads a stand-in that the
+            // property's own schema admits (`apply_generated_from` 1). Every other schema
+            // applying to the value must then be one this check reads: the property and every
+            // object holding it are declared in place, without a `$ref` (whose definitions,
+            // keywords beside them and further references a document is checked against
+            // too), and no such object, the document type's root included, declares `const`
+            // or `enum`, which compare the whole object, the value included
+            refuse_state_generated_schema_path(&document_type.schema, path).map_err(|message| {
+                structure_error(format!(
+                    "function {} reads state, which a client cannot, so {message}: the \
+                         client could not tell whether its document matches",
+                    generated_from.function
+                ))
+            })?;
         }
 
         // The kind of property a param names: the messages of the string functions are
