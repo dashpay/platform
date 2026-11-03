@@ -306,7 +306,19 @@ where
     // is no lock-ordering deadlock. Backpressure is pull-based — a slow
     // append simply polls the stream less often, capping in-flight
     // network fetches at `max_concurrent`.
-    let mut store = store.write().await;
+    //
+    // The wait for the guard observes the token too: a pass queued behind
+    // another writer (a spend flow, a concurrent scan in tests) has made
+    // no mutation yet, so a stop that lands here returns at once instead
+    // of after the unrelated holder is done.
+    let mut store = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => {
+            debug!("Shielded note sync cancelled while waiting for the store lock");
+            return Ok(MultiSyncNotesResult::default());
+        }
+        guard = store.write() => guard,
+    };
 
     // Snapshot each subwallet's watermark and the shared tree's
     // current leaf count. Two distinct quantities drive the rest

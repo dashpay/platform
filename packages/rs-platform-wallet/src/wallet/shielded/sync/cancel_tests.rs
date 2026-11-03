@@ -313,3 +313,41 @@ async fn should_leave_store_and_changeset_empty_when_cancelled_before_first_batc
 
     let _ = std::fs::remove_file(&path);
 }
+
+/// Cancelled while another writer holds the store: the pass has touched
+/// nothing yet, so it must return without waiting for that writer.
+#[tokio::test]
+async fn should_return_while_waiting_for_the_store_lock_when_cancelled() {
+    let path = temp_tree_path("lock_wait");
+    let store = Arc::new(RwLock::new(
+        FileBackedShieldedStore::open_path(&path, 100).expect("open store"),
+    ));
+    let subwallets = one_subwallet();
+    let sub = subwallets[0].0;
+    let cancel = CancellationToken::new();
+
+    let held = store.write().await;
+    let pass = sync_notes_from_stream(&store, &subwallets, None, &cancel, |_, _| {
+        futures::stream::iter(vec![batch(0, 4, 4)].into_iter().map(Ok))
+    });
+    futures::pin_mut!(pass);
+    assert!(
+        futures::poll!(pass.as_mut()).is_pending(),
+        "the pass is queued behind the held guard"
+    );
+
+    cancel.cancel();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(2), pass.as_mut())
+        .await
+        .expect("a cancelled pass returns without the guard")
+        .expect("pass must succeed");
+    assert_eq!(result.total_scanned, 0);
+    assert!(crate::changeset::merge::Merge::is_empty(&result.changeset));
+
+    drop(held);
+    let store = store.read().await;
+    assert_eq!(store.tree_size().unwrap(), 0, "nothing was appended");
+    assert_eq!(store.last_synced_note_index(sub).unwrap(), 0);
+
+    let _ = std::fs::remove_file(&path);
+}
