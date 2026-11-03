@@ -325,6 +325,12 @@ async fn should_preserve_strict_and_affected_state_rust_waits() {
             };
             if execution {
                 strict.expect("execution proof must satisfy a strict wait");
+            } else if combined {
+                assert!(matches!(
+                    strict,
+                    Err(SdkError::StateTransitionResultUnconfirmed(cause))
+                        if matches!(*cause, SdkError::ExecutionNotProved(_))
+                ));
             } else {
                 assert!(matches!(strict, Err(SdkError::ExecutionNotProved(_))));
             }

@@ -660,8 +660,12 @@ async fn should_not_promote_update_with_invalid_quorum_signature() {
         .update_contract(contract(2), identity_key(), &signer, None)
         .await
         .expect_err("invalid signature must fail");
-    assert_eq!(error.kind(), WasmSdkErrorKind::Proof);
-    assert!(error.is_retriable());
+    assert_eq!(error.kind(), WasmSdkErrorKind::Generic);
+    assert!(!error.is_retriable());
+    assert!(error
+        .message()
+        .contains("state transition result is unconfirmed"));
+    assert!(error.message().contains("Proof verification error:"));
     assert_eq!(
         sdk.get_cached_contract(&CONTRACT_ID.into())
             .expect("old contract")
@@ -691,7 +695,12 @@ async fn should_not_promote_update_with_corrupt_grovedb_proof() {
         .update_contract(contract(2), identity_key(), &signer, None)
         .await
         .expect_err("corrupt proof must fail");
-    assert_eq!(error.kind(), WasmSdkErrorKind::Proof);
+    assert_eq!(error.kind(), WasmSdkErrorKind::Generic);
+    assert!(!error.is_retriable());
+    assert!(error
+        .message()
+        .contains("state transition result is unconfirmed"));
+    assert!(error.message().contains("Proof verification error:"));
     assert_eq!(
         sdk.get_cached_contract(&CONTRACT_ID.into())
             .expect("old contract")
@@ -819,7 +828,12 @@ async fn should_reject_a_signed_contract_proof_differing_from_the_submitted_upda
         .update_contract(contract(3), identity_key(), &signer, None)
         .await
         .expect_err("different proved contract body");
-    assert_eq!(error.kind(), WasmSdkErrorKind::Proof);
+    assert_eq!(error.kind(), WasmSdkErrorKind::Generic);
+    assert!(!error.is_retriable());
+    assert!(error
+        .message()
+        .contains("state transition result is unconfirmed"));
+    assert!(error.message().contains("Proof verification error:"));
     assert!(
         error.to_string().contains("exact expected contract"),
         "{error}"
