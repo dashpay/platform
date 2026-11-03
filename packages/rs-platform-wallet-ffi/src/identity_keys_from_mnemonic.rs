@@ -7,7 +7,9 @@ use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPu
 use key_wallet::dip9::{
     IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
 };
-use platform_wallet::parse_mnemonic_any_language;
+use platform_wallet::{
+    master_key_for_mnemonic, parse_mnemonic_any_language, seed_for_mnemonic, PlatformWalletError,
+};
 use zeroize::Zeroizing;
 
 use crate::error::*;
@@ -135,14 +137,8 @@ pub(crate) unsafe fn resolve_master_from_resolver_classified(
     wallet_id: &[u8; 32],
     network: Network,
 ) -> Result<ExtendedPrivKey, ResolveFailure> {
-    let seed = resolve_seed_from_resolver_classified(mnemonic_resolver_handle, wallet_id)?;
-    // A seed that cannot yield a master key is the stored material being
-    // wrong, not the moment being wrong.
-    ExtendedPrivKey::new_master(network, seed.as_ref()).map_err(|e| {
-        ResolveFailure::permanent(PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("failed to build master xpriv from resolved mnemonic: {e}"),
-        ))
+    with_resolved_mnemonic(mnemonic_resolver_handle, wallet_id, |mnemonic| {
+        master_key_for_mnemonic(mnemonic, network)
     })
 }
 
@@ -179,6 +175,19 @@ pub(crate) unsafe fn resolve_seed_from_resolver_classified(
     mnemonic_resolver_handle: *mut rs_sdk_ffi::MnemonicResolverHandle,
     wallet_id: &[u8; 32],
 ) -> Result<Zeroizing<[u8; 64]>, ResolveFailure> {
+    with_resolved_mnemonic(mnemonic_resolver_handle, wallet_id, seed_for_mnemonic)
+}
+
+/// Reads the mnemonic of `wallet_id` through the resolver into a zeroizing
+/// buffer and returns what `convert` makes of it.
+///
+/// # Safety
+/// Same contract as [`resolve_seed_from_resolver`].
+unsafe fn with_resolved_mnemonic<T>(
+    mnemonic_resolver_handle: *mut rs_sdk_ffi::MnemonicResolverHandle,
+    wallet_id: &[u8; 32],
+    convert: impl FnOnce(&str) -> Result<T, PlatformWalletError>,
+) -> Result<T, ResolveFailure> {
     use rs_sdk_ffi::{mnemonic_resolver_result, MNEMONIC_RESOLVER_BUFFER_CAPACITY};
     use std::ffi::c_void;
 
@@ -236,16 +245,13 @@ pub(crate) unsafe fn resolve_seed_from_resolver_classified(
             format!("mnemonic resolver: returned invalid UTF-8: {e}"),
         ))
     })?;
-    let mnemonic = parse_mnemonic_any_language(mnemonic_str).map_err(|e| {
+    // What is stored cannot yield a key, however often it is read.
+    convert(mnemonic_str).map_err(|e| {
         ResolveFailure::permanent(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("mnemonic resolver: returned an invalid mnemonic: {e}"),
         ))
-    })?;
-
-    let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(""));
-    drop(mnemonic);
-    Ok(seed)
+    })
 }
 
 /// Build the DIP-9 identity-authentication derivation path

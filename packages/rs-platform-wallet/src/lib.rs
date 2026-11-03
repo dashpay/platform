@@ -91,7 +91,8 @@ pub use wallet::masternode_withdrawal::{
     MasternodeWithdrawalKey, MasternodeWithdrawalKeys, MasternodeWithdrawalRequest,
 };
 pub use wallet::mnemonic::{
-    first_receive_address_for_mnemonic, parse_mnemonic_any_language, wallet_id_for_mnemonic,
+    first_receive_address_for_mnemonic, master_key_for_mnemonic, parse_mnemonic_any_language,
+    seed_for_mnemonic, wallet_id_for_mnemonic,
 };
 pub use wallet::platform_wallet::PlatformWalletInfo;
 #[cfg(feature = "shielded")]

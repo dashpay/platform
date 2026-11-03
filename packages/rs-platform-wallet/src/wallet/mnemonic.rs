@@ -24,7 +24,7 @@ pub fn wallet_id_for_mnemonic(
     mnemonic: &str,
     network: Network,
 ) -> Result<WalletId, PlatformWalletError> {
-    let seed = seed_of(mnemonic)?;
+    let seed = seed_for_mnemonic(mnemonic)?;
     let root = RootExtendedPrivKey::new_master(&*seed).map_err(key_derivation)?;
     Ok(Wallet::compute_wallet_id_from_root_extended_pub_key(
         &root.to_root_extended_pub_key(),
@@ -45,8 +45,7 @@ pub fn first_receive_address_for_mnemonic(
     let path = account_type
         .derivation_path(network)
         .map_err(key_derivation)?;
-    let seed = seed_of(mnemonic)?;
-    let mut master = ExtendedPrivKey::new_master(network, &*seed).map_err(key_derivation)?;
+    let mut master = master_key_for_mnemonic(mnemonic, network)?;
     let account_xpriv = master.derive_priv(&path);
     master.private_key.zeroize();
     let mut account_xpriv = account_xpriv.map_err(key_derivation)?;
@@ -70,10 +69,21 @@ pub fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static st
     Mnemonic::from_phrase(phrase).map_err(|_| "phrase does not match any supported BIP-39 wordlist")
 }
 
-fn seed_of(mnemonic: &str) -> Result<Zeroizing<[u8; 64]>, PlatformWalletError> {
+/// Returns the 64-byte BIP-39 seed of `mnemonic`, wiped when dropped.
+pub fn seed_for_mnemonic(mnemonic: &str) -> Result<Zeroizing<[u8; 64]>, PlatformWalletError> {
     let mnemonic = parse_mnemonic_any_language(mnemonic)
         .map_err(|e| PlatformWalletError::InvalidParameter(e.to_string()))?;
     Ok(Zeroizing::new(mnemonic.to_seed("")))
+}
+
+/// Returns the BIP-32 master key of `mnemonic` on `network`, wiped when
+/// dropped.
+pub fn master_key_for_mnemonic(
+    mnemonic: &str,
+    network: Network,
+) -> Result<ExtendedPrivKey, PlatformWalletError> {
+    let seed = seed_for_mnemonic(mnemonic)?;
+    ExtendedPrivKey::new_master(network, &*seed).map_err(key_derivation)
 }
 
 #[cfg(test)]
@@ -88,6 +98,10 @@ mod tests {
     #[test]
     fn should_match_the_id_of_a_created_wallet() {
         for phrase in [ENGLISH, FRENCH] {
+            assert_eq!(
+                seed_for_mnemonic(phrase).unwrap()[..],
+                Mnemonic::from_phrase(phrase).unwrap().to_seed("")[..]
+            );
             for network in [Network::Mainnet, Network::Testnet, Network::Devnet] {
                 let wallet = Wallet::from_mnemonic(
                     Mnemonic::from_phrase(phrase).unwrap(),
