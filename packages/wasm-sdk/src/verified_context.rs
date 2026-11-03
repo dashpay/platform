@@ -53,7 +53,8 @@ export interface QuorumProofState {
  * state more than one DKG interval (24 blocks) below the lowest Core height
  * of a response the SDK verified with this context's keys, a height a
  * Platform quorum signed (the context's starting point if none was
- * verified), so the next session can prove the heights Platform reports
+ * verified, or if no kept state is that far below it, as with a recent
+ * custom checkpoint), so the next session can prove the heights Platform reports
  * from it, including a key verified from evidence up to that interval below
  * its height, for a quorum that has just retired; `states` are the newer
  * verified states, lowest first, so its proofs stay short. Every state is

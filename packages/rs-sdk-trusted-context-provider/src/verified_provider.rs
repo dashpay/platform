@@ -199,8 +199,9 @@ pub enum StartingPoint {
 /// What a session of a [`VerifiedHttpContextProvider`] verified, for the next
 /// session to start from: an anchor more than one DKG interval below the
 /// heights that session will meet, so it can prove a key whose evidence lies
-/// up to that interval below them, and the newer states, so its proofs stay
-/// short.
+/// up to that interval below them (or the session's own checkpoint when no
+/// kept state is that far below, as with a recent custom checkpoint), and
+/// the newer states, so its proofs stay short.
 ///
 /// Serialized as `{ "anchor": state, "states": [state, ...] }`, each state in
 /// the Core `ProofState` JSON form a checkpoint takes. Every state is trust
