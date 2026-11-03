@@ -17,6 +17,8 @@ use drive::util::grove_operations::GroveDBToUse;
 use crate::query::response_metadata::CheckpointUsed;
 
 impl<C> Platform<C> {
+    /// Answers a V0 request; a proved answer carries separate index and identity
+    /// proofs. Query-only, never reached from block execution.
     pub(super) fn query_identity_by_non_unique_public_key_hash_v0(
         &self,
         GetIdentityByNonUniquePublicKeyHashRequestV0 {
@@ -49,7 +51,7 @@ impl<C> Platform<C> {
         let response = if prove {
             let proof = self
                 .drive
-                .prove_full_identity_by_non_unique_public_key_hash(
+                .prove_full_identity_by_non_unique_public_key_hash_two_proofs(
                     public_key_hash,
                     start_after,
                     None,

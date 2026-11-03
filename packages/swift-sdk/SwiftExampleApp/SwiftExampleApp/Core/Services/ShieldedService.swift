@@ -119,8 +119,7 @@ class ShieldedService: ObservableObject {
     //
     // Surfaces wall-clock of each sync pass so devnet stress tests
     // (1M shielded notes via `dashpay/drive:3.1-shielded.*`) can be
-    // measured from the iOS client. See
-    // `docs/shielded-sync-timing-spec.md` for the design.
+    // measured from the iOS client.
 
     /// Wall-clock of the most recent NON-cooldown completed sync
     /// pass. Nil until the first such pass after `bind()`.
@@ -1041,7 +1040,11 @@ class ShieldedService: ObservableObject {
                 // here is the Swift-side timestamp of when the
                 // event handler runs (≈ when isSyncing flipped
                 // true → false), pairing with `currentSyncStartedAt`
-                // captured on the false → true edge. Clamp to >= 0
+                // captured on the false → true edge. Both edges must
+                // be Swift `Date()`s: `event.syncUnixSeconds` is whole
+                // seconds, so pairing it with a `Date()` gives
+                // negative or inflated durations for sub-second
+                // passes. Clamp to >= 0
                 // defensively — should never be negative with
                 // Swift-edge endpoints, but if the start timestamp
                 // is missing (e.g. event arrived without a paired

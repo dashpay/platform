@@ -1,16 +1,76 @@
 //! Helper functions for document operations
 
+use std::collections::BTreeMap;
+
+use dash_sdk::dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;
+use dash_sdk::dpp::document::Document;
+use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dash_sdk::dpp::state_transition::StateTransitionSigningOptions;
 use dash_sdk::dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use dash_sdk::dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
 use dash_sdk::dpp::tokens::token_payment_info::TokenPaymentInfo;
+use dash_sdk::dpp::version::PlatformVersion;
+use dash_sdk::dpp::ProtocolError;
 
 use crate::types::{
     DashSDKGasFeesPaidBy, DashSDKStateTransitionCreationOptions, DashSDKTokenPaymentInfo,
 };
-use crate::FFIError;
+use crate::{DashSDKError, DashSDKErrorCode, FFIError};
+
+/// Parse the properties JSON of a document to create, as `dash_sdk_document_create`
+/// takes it: a JSON object keyed by property name, each value read into a platform
+/// `Value` as JSON writes it (integers, booleans, strings, arrays and objects). Byte
+/// arrays and identifiers are still the strings the caller wrote here;
+/// [`build_document_from_properties`] decodes them against the document type.
+///
+/// Errors carry `InvalidParameter`: the text is not JSON, or not an object.
+pub(crate) fn parse_document_properties_json(
+    properties_json: &str,
+) -> Result<BTreeMap<String, Value>, DashSDKError> {
+    let properties_value: serde_json::Value =
+        serde_json::from_str(properties_json).map_err(|e| {
+            DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                format!("Invalid properties JSON: {}", e),
+            )
+        })?;
+
+    // Convert JSON to platform Value - handle hex strings for byte arrays
+    serde_json::from_value::<BTreeMap<String, Value>>(properties_value).map_err(|e| {
+        DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            format!("Failed to convert properties: {}", e),
+        )
+    })
+}
+
+/// Build the document `dash_sdk_document_create` creates from `properties`: they are
+/// sanitized against `document_type` (hex or base64 strings become byte arrays, base58
+/// or hex strings identifiers, integers narrow to their declared width, typed array
+/// elements included), then `DocumentType::create_document_from_data` builds the
+/// revision-1 document owned by `owner_id`, its id derived from `entropy`, typing the
+/// value at each of the document type's identifier paths as an identifier. Block
+/// heights are left at 0 for Platform to set.
+pub(crate) fn build_document_from_properties(
+    document_type: DocumentTypeRef<'_>,
+    mut properties: BTreeMap<String, Value>,
+    owner_id: Identifier,
+    entropy: [u8; 32],
+    platform_version: &PlatformVersion,
+) -> Result<Document, ProtocolError> {
+    document_type.sanitize_document_properties(&mut properties);
+    document_type.create_document_from_data(
+        properties.into(),
+        owner_id,
+        0, // block_height - will be set by platform
+        0, // core_block_height - will be set by platform
+        entropy,
+        platform_version,
+    )
+}
 
 /// Convert FFI GasFeesPaidBy to Rust enum
 ///
@@ -104,5 +164,36 @@ pub unsafe fn convert_state_transition_creation_options(
             Some(options.base_feature_version)
         },
         action_fee_agreement: None,
+        // 0 leaves a contested create stating the fund to join, which rs-sdk reads when it signs
+        contest_fund: if options.contest_fund == 0 {
+            None
+        } else {
+            Some(options.contest_fund)
+        },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn creation_options(contest_fund: u64) -> DashSDKStateTransitionCreationOptions {
+        DashSDKStateTransitionCreationOptions {
+            allow_signing_with_any_security_level: false,
+            allow_signing_with_any_purpose: false,
+            batch_feature_version: 0,
+            method_feature_version: 0,
+            base_feature_version: 0,
+            contest_fund,
+        }
+    }
+
+    #[test]
+    fn should_state_the_contest_fund_only_when_it_is_not_zero() {
+        let unset = unsafe { convert_state_transition_creation_options(&creation_options(0)) };
+        assert_eq!(unset, Some(StateTransitionCreationOptions::default()));
+
+        let stated = unsafe { convert_state_transition_creation_options(&creation_options(7)) };
+        assert_eq!(stated.and_then(|options| options.contest_fund), Some(7));
+    }
 }

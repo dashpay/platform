@@ -71,6 +71,8 @@ mod tests {
             updated_at_core_block_height: Some(6),
             transferred_at_core_block_height: Some(7),
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
     }
 

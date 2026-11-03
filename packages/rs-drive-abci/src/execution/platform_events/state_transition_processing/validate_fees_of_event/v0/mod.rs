@@ -264,6 +264,7 @@ where
                     processing_fee: *fees_to_add_to_pool - storage_fee,
                     fee_refunds: Default::default(),
                     removed_bytes_from_system: 0,
+                    lifetime_storage_fees: Default::default(),
                 };
                 if *fees_to_add_to_pool >= required_fee {
                     Ok(ConsensusValidationResult::new_with_data(

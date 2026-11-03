@@ -128,6 +128,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {
             resolved_options.base_feature_version,
         )?;
         let create_transition = resolved_options.apply_action_fee_agreement(create_transition)?;
+        let create_transition = resolved_options.apply_contest_fund(create_transition);
         let documents_batch_transition: BatchTransition = BatchTransitionV1 {
             owner_id,
             transitions: vec![BatchedTransition::Document(create_transition)],

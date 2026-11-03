@@ -37,3 +37,6 @@ mod protocol_version_vote_count;
 mod protocol_version_votes;
 mod token_direct_prices;
 mod tokens;
+
+#[cfg(not(target_arch = "wasm32"))]
+mod vote_poll_default_limit;

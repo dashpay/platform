@@ -34,10 +34,6 @@ impl DocumentBaseTransitionV2Methods for DocumentBaseTransitionV2 {
 }
 
 impl DocumentBaseTransitionV1Methods for DocumentBaseTransitionV2 {
-    fn token_payment_info(&self) -> Option<TokenPaymentInfo> {
-        self.token_payment_info
-    }
-
     fn token_payment_info_ref(&self) -> &Option<TokenPaymentInfo> {
         &self.token_payment_info
     }

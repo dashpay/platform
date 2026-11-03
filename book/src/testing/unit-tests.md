@@ -279,7 +279,6 @@ impl PlatformTestConfig {
             store_platform_state: false,
             block_commit_signature_verification: false,
             disable_instant_lock_signature_verification: true,
-            disable_contested_documents_is_allowed_validation: true,
             disable_checkpoints: true,
         }
     }

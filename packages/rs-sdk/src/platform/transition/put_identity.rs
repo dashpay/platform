@@ -22,6 +22,7 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use drive_proof_verifier::types::AddressInfos;
 use std::collections::{BTreeMap, BTreeSet};
+use tracing::debug;
 
 /// Trait for creating identities on the platform.
 #[async_trait::async_trait]
@@ -44,6 +45,10 @@ pub trait PutIdentity<IS: Signer<IdentityPublicKey>>: Waitable {
     ) -> Result<StateTransition, Error>;
 
     /// Creates an identity using an asset lock and waits for confirmation.
+    ///
+    /// A broadcast answered with `AlreadyExists` (this exact transition is
+    /// already in the mempool or on chain) is not an error: the result wait
+    /// that follows resolves it.
     ///
     /// In-process private-key counterpart to
     /// [`Self::put_to_platform_and_wait_for_response_with_signer`].
@@ -82,7 +87,8 @@ pub trait PutIdentity<IS: Signer<IdentityPublicKey>>: Waitable {
         AS: dpp::key_wallet::signer::Signer + Send + Sync;
 
     /// Creates an identity using an asset-lock signer and waits for
-    /// confirmation.
+    /// confirmation. `AlreadyExists` from the broadcast is resolved by the
+    /// wait, as in the private-key variant.
     ///
     /// Signer-driven counterpart to
     /// [`Self::put_to_platform_and_wait_for_response_with_private_key`].
@@ -151,7 +157,7 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
         signer: &IS,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
-        put_identity_with_asset_lock_and_private_key(
+        let state_transition = identity_create_with_asset_lock_and_private_key(
             self,
             sdk,
             asset_lock_proof,
@@ -159,7 +165,9 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
             signer,
             settings,
         )
-        .await
+        .await?;
+        state_transition.broadcast(sdk, settings).await?;
+        Ok(state_transition)
     }
 
     async fn put_to_platform_and_wait_for_response_with_private_key(
@@ -170,17 +178,20 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
         signer: &IS,
         settings: Option<PutSettings>,
     ) -> Result<Identity, Error> {
-        let state_transition = self
-            .put_to_platform_with_private_key(
-                sdk,
-                asset_lock_proof,
-                asset_lock_proof_private_key,
-                signer,
-                settings,
-            )
-            .await?;
-
-        Self::wait_for_response(sdk, state_transition, settings).await
+        let state_transition = identity_create_with_asset_lock_and_private_key(
+            self,
+            sdk,
+            asset_lock_proof,
+            asset_lock_proof_private_key,
+            signer,
+            settings,
+        )
+        .await?;
+        let broadcast = state_transition.broadcast(sdk, settings).await;
+        broadcast_then_wait(broadcast, state_transition, |st| {
+            Self::wait_for_response(sdk, st, settings)
+        })
+        .await
     }
 
     #[cfg(feature = "core_key_wallet")]
@@ -196,7 +207,7 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
     where
         AS: dpp::key_wallet::signer::Signer + Send + Sync,
     {
-        put_identity_with_asset_lock_and_signer(
+        let state_transition = identity_create_with_asset_lock_and_signer(
             self,
             sdk,
             asset_lock_proof,
@@ -205,7 +216,9 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
             identity_signer,
             settings,
         )
-        .await
+        .await?;
+        state_transition.broadcast(sdk, settings).await?;
+        Ok(state_transition)
     }
 
     #[cfg(feature = "core_key_wallet")]
@@ -221,18 +234,21 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
     where
         AS: dpp::key_wallet::signer::Signer + Send + Sync,
     {
-        let state_transition = self
-            .put_to_platform_with_signer(
-                sdk,
-                asset_lock_proof,
-                asset_lock_proof_path,
-                asset_lock_signer,
-                identity_signer,
-                settings,
-            )
-            .await?;
-
-        Self::wait_for_response(sdk, state_transition, settings).await
+        let state_transition = identity_create_with_asset_lock_and_signer(
+            self,
+            sdk,
+            asset_lock_proof,
+            asset_lock_proof_path,
+            asset_lock_signer,
+            identity_signer,
+            settings,
+        )
+        .await?;
+        let broadcast = state_transition.broadcast(sdk, settings).await;
+        broadcast_then_wait(broadcast, state_transition, |st| {
+            Self::wait_for_response(sdk, st, settings)
+        })
+        .await
     }
 
     async fn put_with_address_funding<AS: Signer<PlatformAddress> + Send + Sync>(
@@ -282,7 +298,42 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
     }
 }
 
-async fn put_identity_with_asset_lock_and_private_key<S: Signer<IdentityPublicKey>>(
+/// A broadcast whose result is waited for next: `AlreadyExists` counts as
+/// delivered. DAPI returns it only when this exact transition is already in
+/// the mempool or on chain (a broadcast that timed out after the node took it,
+/// retried on another node), so the wait resolves it; failing here would
+/// report an identity create that lands as a failure.
+fn already_known_is_delivered(broadcast: Result<(), Error>) -> Result<(), Error> {
+    match broadcast {
+        Err(Error::AlreadyExists(message)) => {
+            debug!(%message, "identity create is already known to Platform; waiting for its result");
+            Ok(())
+        }
+        other => other,
+    }
+}
+
+/// After an identity create's broadcast, wait for its result — the step both
+/// `put_to_platform_and_wait_for_response_*` variants share, with the wait
+/// injected so it can be tested without a Platform: the same signed
+/// transition is waited for after a delivered broadcast, including one DAPI
+/// reports as already known, and nothing is waited for after any other
+/// broadcast failure.
+async fn broadcast_then_wait<W, WFut>(
+    broadcast: Result<(), Error>,
+    state_transition: StateTransition,
+    wait: W,
+) -> Result<Identity, Error>
+where
+    W: FnOnce(StateTransition) -> WFut,
+    WFut: std::future::Future<Output = Result<Identity, Error>>,
+{
+    already_known_is_delivered(broadcast)?;
+    wait(state_transition).await
+}
+
+/// Build and structurally validate the identity create, without broadcasting.
+async fn identity_create_with_asset_lock_and_private_key<S: Signer<IdentityPublicKey>>(
     identity: &Identity,
     sdk: &Sdk,
     asset_lock_proof: AssetLockProof,
@@ -307,13 +358,14 @@ async fn put_identity_with_asset_lock_and_private_key<S: Signer<IdentityPublicKe
         )
         .await?;
     ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
-    state_transition.broadcast(sdk, settings).await?;
     Ok(state_transition)
 }
 
+/// Signer-driven counterpart to
+/// [`identity_create_with_asset_lock_and_private_key`].
 #[cfg(feature = "core_key_wallet")]
 #[allow(clippy::too_many_arguments)]
-async fn put_identity_with_asset_lock_and_signer<IS, AS>(
+async fn identity_create_with_asset_lock_and_signer<IS, AS>(
     identity: &Identity,
     sdk: &Sdk,
     asset_lock_proof: AssetLockProof,
@@ -329,7 +381,7 @@ where
     // `broadcast_request_for_new_identity_with_signer` reads
     // `PutSettings::user_fee_increase` internally; thread `settings`
     // through to honour the CL-height retry's hash-bumping mechanism
-    // (see the matching block in `put_identity_with_asset_lock_and_private_key`).
+    // (see the matching block in `identity_create_with_asset_lock_and_private_key`).
     let (state_transition, _) = identity
         .broadcast_request_for_new_identity_with_signer(
             asset_lock_proof,
@@ -341,7 +393,6 @@ where
         )
         .await?;
     ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
-    state_transition.broadcast(sdk, settings).await?;
     Ok(state_transition)
 }
 
@@ -415,5 +466,104 @@ async fn put_identity_with_address_funding<
             "identity proof was expected but not returned: {:?}",
             other
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_treat_an_already_known_broadcast_as_delivered() {
+        let broadcast = Err(Error::AlreadyExists(
+            "state transition already in mempool".to_string(),
+        ));
+        assert!(already_known_is_delivered(broadcast).is_ok());
+    }
+
+    fn signed_create() -> StateTransition {
+        use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+        StateTransition::IdentityCreate(
+            IdentityCreateTransitionV0 {
+                signature: vec![7; 65].into(),
+                ..Default::default()
+            }
+            .into(),
+        )
+    }
+
+    fn created() -> Identity {
+        use dpp::identity::v0::IdentityV0;
+        Identity::V0(IdentityV0 {
+            id: dpp::prelude::Identifier::from([9; 32]),
+            public_keys: Default::default(),
+            balance: 1,
+            revision: 0,
+        })
+    }
+
+    #[tokio::test]
+    async fn should_wait_for_the_same_transition_after_an_already_known_broadcast() {
+        let submitted = signed_create();
+        let waited_for = std::sync::Mutex::new(None);
+        let result = broadcast_then_wait(
+            Err(Error::AlreadyExists(
+                "tx already exists in cache".to_string(),
+            )),
+            submitted.clone(),
+            |st| {
+                *waited_for.lock().unwrap() = Some(st);
+                async { Ok(created()) }
+            },
+        )
+        .await;
+        assert_eq!(
+            result.unwrap(),
+            created(),
+            "the wait's identity is the result"
+        );
+        assert_eq!(
+            waited_for.lock().unwrap().as_ref(),
+            Some(&submitted),
+            "the wait must be for the transition that was broadcast"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_return_the_wait_rejection_after_an_already_known_broadcast() {
+        let result = broadcast_then_wait(
+            Err(Error::AlreadyExists(
+                "state transition already in mempool".to_string(),
+            )),
+            signed_create(),
+            |_| async { Err(Error::Generic("rejected by Platform".to_string())) },
+        )
+        .await;
+        assert!(
+            matches!(result, Err(Error::Generic(message)) if message == "rejected by Platform")
+        );
+    }
+
+    #[tokio::test]
+    async fn should_not_wait_after_any_other_broadcast_failure() {
+        let waited = std::sync::atomic::AtomicBool::new(false);
+        let result = broadcast_then_wait(
+            Err(Error::Generic("broadcast rejected".to_string())),
+            signed_create(),
+            |_| {
+                waited.store(true, std::sync::atomic::Ordering::SeqCst);
+                async { Ok(created()) }
+            },
+        )
+        .await;
+        assert!(matches!(result, Err(Error::Generic(_))));
+        assert!(!waited.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[test]
+    fn should_keep_every_other_broadcast_outcome() {
+        assert!(already_known_is_delivered(Ok(())).is_ok());
+        let rejected = already_known_is_delivered(Err(Error::Generic("rejected".to_string())));
+        assert!(matches!(rejected, Err(Error::Generic(_))));
     }
 }

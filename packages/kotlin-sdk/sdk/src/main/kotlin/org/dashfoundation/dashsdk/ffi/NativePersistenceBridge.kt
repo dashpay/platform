@@ -437,6 +437,40 @@ abstract class NativePersistenceBridge {
      */
     open fun onWalletChangesetChainLockHeight(walletId: ByteArray, height: Int): Int = 0
 
+    /**
+     * The wallet's DashPay coreHeight backfill record — the durable half of
+     * the contact rescan guard (dashpay/platform#4302). Fired inside the
+     * round, after the wallet changeset header, on every round whose
+     * changeset carries a record; the rescan sweep writes it on the SAME
+     * round as the lowered `syncedHeight` it belongs with, so a handler that
+     * stores both holds a record that only ever vouches for a cursor it also
+     * stored. Descriptor `([BII[BI)I`.
+     *
+     * Whole-record semantics: replace what the wallet row holds, never
+     * merge. [covered] is ONE flat `byte[]` of `72 * coveredCount` bytes —
+     * per receival account the owner identity id (32), the contact identity
+     * id (32), the account index (u32) and the height it is covered from
+     * (u32), both little-endian — the same
+     * packing the sweep slot uses for its txids. Store it as an opaque blob
+     * and hand it back unchanged on [WalletRestoreData.dashPayBackfillCovered];
+     * only native reads it.
+     *
+     * Purely additive: an implementation that ignores it keeps today's
+     * behaviour — the backfill re-fires on every launch, re-walking every
+     * filter from the earliest contact's core height. Slow, never lossy.
+     *
+     * Delivered only to a bridge that also overrides [onWalletChangesetHeader]:
+     * the record vouches for the cursor that callback stores, so a bridge
+     * keeping the inherited no-op header never receives it.
+     */
+    open fun onWalletChangesetDashPayBackfill(
+        walletId: ByteArray,
+        floor: Int,
+        rewoundFrom: Int,
+        covered: ByteArray,
+        coveredCount: Int,
+    ): Int = 0
+
     // ── Identities ────────────────────────────────────────────────────
 
     /**
@@ -562,14 +596,25 @@ abstract class NativePersistenceBridge {
     // ── Contacts ──────────────────────────────────────────────────────
 
     /**
-     * One `ContactRequestFFI` upsert. Descriptor
-     * `([B[B[BZIII[B[B[BIJZLjava/lang/String;Ljava/lang/String;ZLjava/lang/String;[I)I`.
+     * One `ContactRequestFFI` upsert, marker-less form (the signature this
+     * API had before the outbound-account marker). Native calls the
+     * overload below; this one stays so existing implementations keep
+     * compiling and keep receiving rows through the delegating default.
      *
      * The tail block ([paymentChannelBroken] / [alias] / [note] /
      * [isHidden] / [contactAccountLabel] / [acceptedAccounts]) is
      * established-row relationship metadata (contactInfo + DIP-15
      * accepted accounts) — null / false / empty on pending rows.
      * [acceptedAccounts] is never null (empty when absent).
+     *
+     * [hasExternalAccountReference] / [externalAccountReference] mirror
+     * `EstablishedContact::external_account_reference`: the incoming
+     * `accountReference` the registered outbound (sending) account was
+     * built from. Store it and hand it back on
+     * [ContactRequestRestoreData]; a cold start that restores `None`
+     * treats the account as rotated and rebuilds it on every launch
+     * (dashpay/platform#4302). Replicated onto both established rows;
+     * `false` / 0 on pending rows.
      */
     @Suppress("LongParameterList")
     open fun onPersistContactUpsert(
@@ -592,6 +637,45 @@ abstract class NativePersistenceBridge {
         contactAccountLabel: String?,
         acceptedAccounts: IntArray,
     ): Int = 0
+
+    /**
+     * The overload native calls (descriptor
+     * `([B[B[BZIII[B[B[BIJZLjava/lang/String;Ljava/lang/String;ZLjava/lang/String;[IZI)I`):
+     * the row above plus `EstablishedContact::external_account_reference` as
+     * `(hasExternalAccountReference, externalAccountReference)`. The default
+     * body delegates to the marker-less overload, so an implementation that
+     * overrides only that one keeps persisting every other field and merely
+     * loses the marker (native then rebuilds the outbound account once per
+     * launch, the pre-marker behaviour). Override this one to store it.
+     */
+    @Suppress("LongParameterList")
+    open fun onPersistContactUpsert(
+        walletId: ByteArray,
+        ownerId: ByteArray,
+        contactId: ByteArray,
+        isOutgoing: Boolean,
+        senderKeyIndex: Int,
+        recipientKeyIndex: Int,
+        accountReference: Int,
+        encryptedPublicKey: ByteArray,
+        encryptedAccountLabel: ByteArray?,
+        autoAcceptProof: ByteArray?,
+        coreHeightCreatedAt: Int,
+        createdAt: Long,
+        paymentChannelBroken: Boolean,
+        alias: String?,
+        note: String?,
+        isHidden: Boolean,
+        contactAccountLabel: String?,
+        acceptedAccounts: IntArray,
+        hasExternalAccountReference: Boolean,
+        externalAccountReference: Int,
+    ): Int = onPersistContactUpsert(
+        walletId, ownerId, contactId, isOutgoing, senderKeyIndex, recipientKeyIndex,
+        accountReference, encryptedPublicKey, encryptedAccountLabel, autoAcceptProof,
+        coreHeightCreatedAt, createdAt, paymentChannelBroken, alias, note, isHidden,
+        contactAccountLabel, acceptedAccounts,
+    )
 
     /** One sent-side `ContactRequestRemovalFFI`. Descriptor `([B[B[B)I`. */
     open fun onPersistContactRemovalSent(
@@ -968,7 +1052,41 @@ class WalletRestoreData(
      * `loadWalletList`.
      */
     @JvmField val lastAppliedChainLockBytes: ByteArray,
-)
+) {
+    // The DashPay backfill record rides as body properties, not constructor
+    // parameters, so this class keeps exactly the JVM constructors it had
+    // before the record existed: a bridge compiled against the older SDK —
+    // Java, or Kotlin using the defaulted `providerSpecialTxs` — still links
+    // (dashpay/platform#4302 review). Set them with `apply { … }`; native
+    // reads them by field name either way.
+
+    /**
+     * Whether the wallet row holds a DashPay coreHeight backfill record
+     * (dashpay/platform#4302). `false` for a wallet that never rewound for a
+     * contact or a row persisted before the record existed; native then
+     * ignores the three fields below, and the first rescan sweep behaves as
+     * it always did and writes one. Mirror of
+     * `WalletRestoreEntryFFI.has_dashpay_backfill`.
+     */
+    @JvmField var hasDashPayBackfill: Boolean = false
+
+    /** Lowest height the backfill rewound the cursor to. */
+    @JvmField var dashPayBackfillFloor: Int = 0
+
+    /**
+     * Highest cursor the backfill rewound from — the height the scan climbs
+     * back to for the backfill to be complete.
+     */
+    @JvmField var dashPayBackfillRewoundFrom: Int = 0
+
+    /**
+     * The record's cover set, exactly as [NativePersistenceBridge.onWalletChangesetDashPayBackfill]
+     * delivered it: `72` bytes per covered receival account. Native re-packs it into
+     * a `DashPayBackfillCoveredContactFFI` array; a blob that is not a whole
+     * number of entries is read as no record.
+     */
+    @JvmField var dashPayBackfillCovered: ByteArray = ByteArray(0)
+}
 
 /**
  * Kotlin staging row for the unchanged `ProviderSpecialTxRestoreEntryFFI`.
@@ -1258,7 +1376,21 @@ class ContactRequestRestoreData(
     @JvmField val isHidden: Boolean,
     @JvmField val contactAccountLabel: String?,
     @JvmField val acceptedAccounts: IntArray,
-)
+) {
+    // Body properties, not constructor parameters, for the same reason as
+    // [WalletRestoreData]'s backfill fields: the class keeps the JVM
+    // constructor it had before the marker existed.
+
+    /**
+     * `EstablishedContact::external_account_reference` as a `(present,
+     * value)` pair, exactly as [NativePersistenceBridge.onPersistContactUpsert]
+     * delivered it. `false` restores `None`, which makes native rebuild the
+     * outbound account once on the next sweep.
+     */
+    @JvmField var hasExternalAccountReference: Boolean = false
+
+    @JvmField var externalAccountReference: Int = 0
+}
 
 /**
  * One flat identity-public-key row — mirror of `IdentityKeyRestoreFFI`.

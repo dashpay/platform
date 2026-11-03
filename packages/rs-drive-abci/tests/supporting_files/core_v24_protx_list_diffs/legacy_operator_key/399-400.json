@@ -1,0 +1,13 @@
+{
+  "baseHeight": 399,
+  "blockHeight": 400,
+  "addedMNs": [],
+  "removedMNs": [],
+  "updatedMNs": [
+    {
+      "802390501809bee03accfa3742d62018a550324a918b85c6d106a51d946e8f2f": {
+        "lastPaidHeight": 400
+      }
+    }
+  ]
+}

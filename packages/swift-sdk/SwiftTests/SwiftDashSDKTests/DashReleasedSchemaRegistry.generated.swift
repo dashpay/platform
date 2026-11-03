@@ -3,6 +3,6 @@
 
 enum DashReleasedSchemaRegistry {
     static let fixtures: [DashReleasedSchemaFixture] = [
-
+        DashReleasedSchemaFixture(version: DashSchemaSnapshotV3.self, resourceName: "fb711a3d216f05936c5ad8f6dcee161203b8f5295c744f9fba3acafd475d72a9")
     ]
 }

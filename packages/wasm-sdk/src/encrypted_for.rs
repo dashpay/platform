@@ -5,7 +5,6 @@
 
 use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
-use dash_sdk::dpp::dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;
@@ -14,6 +13,7 @@ use dash_sdk::dpp::document::DocumentV0Getters;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType};
 use dash_sdk::dpp::platform_value::Value;
+use dash_sdk::dpp::secp256k1::{PublicKey, SecretKey};
 use dash_sdk::platform::encrypted_for::{
     decrypt_property, encrypt_property, EncryptedPropertyEnvelope, EncryptionKeys,
 };
@@ -154,10 +154,13 @@ fn secp256k1_public_key(key: &IdentityPublicKey, field: &str) -> Result<PublicKe
         .map_err(|e| WasmSdkError::invalid_argument(format!("{field}: {e}")))
 }
 
-fn secret_key_from_options(options: &JsValue, field: &str) -> Result<SecretKey, WasmSdkError> {
-    Ok(PrivateKeyWasm::try_from_options(options, field)?
-        .inner()
-        .inner)
+pub(crate) fn secret_key_from_options(
+    options: &JsValue,
+    field: &str,
+) -> Result<SecretKey, WasmSdkError> {
+    let key = PrivateKeyWasm::try_from_options(options, field)?;
+    SecretKey::from_secret_bytes(*key.inner().inner.to_bytes())
+        .map_err(|e| WasmSdkError::invalid_argument(format!("{field}: {e}")))
 }
 
 /// `document` with its properties coerced to the types its document type declares: a document
@@ -215,9 +218,7 @@ impl WasmSdk {
 
         // A private key that is not the sender key's would write a message nobody can read
         let sender_public_key = secp256k1_public_key(&sender_key, "senderKey")?;
-        if PublicKey::from_secret_key(&Secp256k1::signing_only(), &sender_private_key)
-            != sender_public_key
-        {
+        if PublicKey::from_secret_key(&sender_private_key) != sender_public_key {
             return Err(WasmSdkError::invalid_argument(
                 "senderPrivateKey is not the private half of senderKey",
             ));

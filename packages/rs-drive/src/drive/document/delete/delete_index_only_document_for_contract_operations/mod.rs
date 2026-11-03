@@ -4,6 +4,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -13,9 +14,7 @@ use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Prepares the operations for deleting an **indexOnly** document.
@@ -27,6 +26,19 @@ impl Drive {
     /// surviving entries must match the row commitment. Paths already
     /// drained from expired TTL buckets are skipped in validation and apply.
     ///
+    /// # Parameters
+    ///
+    /// * `document`: The document, reconstructed from the transition's values and owner.
+    /// * `contract`: The contract of the document.
+    /// * `document_type`: The document's type, which must be indexOnly and deletable.
+    /// * `previous_batch_operations`: The operations already in the batch, read before the
+    ///   stored state.
+    /// * `estimated_costs_only_with_layer_info`: The estimation map, when only estimating costs.
+    /// * `block_time_ms`: The block time; outside estimation, the TTL buckets expired by then
+    ///   are drained first, and entries already drained are skipped.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
     /// # Returns
     /// * `Ok(Vec<LowLevelDriveOperation>)` if the operation was successful.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
@@ -37,9 +49,7 @@ impl Drive {
         contract: &DataContract,
         document_type: DocumentTypeRef,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -67,6 +77,27 @@ impl Drive {
 
     /// Build against post-drain state. The caller must prepare the whole
     /// batch before invoking this method; no cleanup occurs during conversion.
+    ///
+    /// # Parameters
+    ///
+    /// * `document`: The document, reconstructed from the transition's values and owner.
+    /// * `contract`: The contract of the document.
+    /// * `document_type`: The document's type, which must be indexOnly and deletable.
+    /// * `previous_batch_operations`: The operations already in the batch, read before the
+    ///   stored state.
+    /// * `estimated_costs_only_with_layer_info`: The estimation map, when only estimating costs.
+    /// * `block_time_ms`: The block time; entries in TTL buckets expired and drained by then are
+    ///   skipped.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<LowLevelDriveOperation>)` with the row-commitment probe reads and the removal
+    ///   of every index entry of the document.
+    /// * `Err(Error)` when the method version is unknown, the document type is not indexOnly or
+    ///   its documents cannot be deleted, an index entry is missing or carries another
+    ///   document's row commitment, or a read or an operation fails.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn delete_index_only_document_for_contract_operations_without_ttl_drain(
         &self,
@@ -74,9 +105,7 @@ impl Drive {
         contract: &DataContract,
         document_type: DocumentTypeRef,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -113,6 +142,27 @@ impl Drive {
     /// `previous_fee_versions` carries the historical fee-version context
     /// deletion refunds are priced against, exactly as on
     /// `delete_document_for_contract`.
+    ///
+    /// # Parameters
+    ///
+    /// * `document`: The document, reconstructed from the transition's values and owner.
+    /// * `contract`: The contract of the document.
+    /// * `document_type`: The document's type, which must be indexOnly and deletable.
+    /// * `block_info`: The block being executed; its time drives the TTL drain and its epoch
+    ///   prices the fee.
+    /// * `apply`: Whether to apply the operations or only estimate their cost.
+    /// * `transaction`: The GroveDB transaction; without one, an applied deletion runs in a
+    ///   transaction of its own that is committed at the end.
+    /// * `platform_version`: The platform version.
+    /// * `previous_fee_versions`: The fee versions of earlier epochs the refunds are priced
+    ///   against.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(FeeResult)` with the fee of the deletion (applied or estimated) and its refunds.
+    /// * `Err(Error)` when the method version is unknown, the document type is not indexOnly or
+    ///   its documents cannot be deleted, no document with exactly these values exists for the
+    ///   owner, or a read, the batch apply, the commit or the fee calculation fails.
     #[allow(clippy::too_many_arguments)]
     pub fn delete_index_only_document_for_contract(
         &self,

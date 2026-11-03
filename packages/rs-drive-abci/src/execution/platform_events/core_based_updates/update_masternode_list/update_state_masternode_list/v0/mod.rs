@@ -1,5 +1,7 @@
+use super::without_operator_payout_changes;
 use crate::error::Error;
 use crate::execution::types::update_state_masternode_list_outcome;
+use crate::platform_types::masternode::apply_diff_replacing_revived_height;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
@@ -72,11 +74,13 @@ where
                 validator.node_ip = address.ip().to_string();
             }
 
-            if let Some(p2p_port) = dmn_state_diff.platform_p2p_port {
+            #[allow(deprecated)]
+            if let Some(p2p_port) = dmn_state_diff.legacy_platform_p2p_port {
                 validator.platform_p2p_port = p2p_port as u16;
             }
 
-            if let Some(http_port) = dmn_state_diff.platform_http_port {
+            #[allow(deprecated)]
+            if let Some(http_port) = dmn_state_diff.legacy_platform_http_port {
                 validator.platform_http_port = http_port as u16;
             }
         }
@@ -96,7 +100,9 @@ where
         updated_mns.iter().any(|(pro_tx_hash, state_diff)| {
             masternode_list.get(pro_tx_hash).is_some_and(|item| {
                 let mut updated = item.state.clone();
-                updated.apply_diff(state_diff.clone());
+                // Inert for every protocol version selecting this generation: it has always
+                // applied diffs with the revived height replaced by the diff's.
+                apply_diff_replacing_revived_height(&mut updated, state_diff.clone());
                 updated != item.state
             })
         })
@@ -121,9 +127,24 @@ where
             Some(state_core_height)
         };
 
-        let masternode_diff = self
-            .core_rpc
-            .get_protx_diff_with_masternodes(previous_core_height, core_block_height)?;
+        // Inert for every protocol version selecting this generation: it processed its blocks
+        // without updated masternodes' operator payouts, so a diff's must not reach the stored
+        // list or the identity updates.
+        let mut masternode_diff = without_operator_payout_changes(
+            self.core_rpc
+                .get_protx_diff_with_masternodes(previous_core_height, core_block_height)?,
+        );
+
+        if !start_from_scratch {
+            // Protocol versions 1 to 13 select this generation. The call changes no entry unless
+            // DEPLOYMENT_V24 is active at `core_block_height`, so blocks at earlier Core heights
+            // execute unchanged.
+            self.drop_unchanged_operator_keys(
+                state.full_masternode_list(),
+                core_block_height,
+                &mut masternode_diff.updated_mns,
+            )?;
+        }
 
         let MasternodeListDiff {
             added_mns,
@@ -169,10 +190,12 @@ where
             }
             // these 3 fields are the only fields that are useful for validators. If they change we need to update
             // validator sets
+            #[allow(deprecated)]
+            let platform_p2p_port_changed = state_diff.legacy_platform_p2p_port.is_some();
             if is_hpmn
                 && (state_diff.pose_ban_height.is_some()
                     || state_diff.service.is_some()
-                    || state_diff.platform_p2p_port.is_some())
+                    || platform_p2p_port_changed)
             {
                 // we updated the ban status the IP or the platform port, we need to update the validator in the validator list
                 Self::update_masternode_in_validator_sets(pro_tx_hash, state_diff, state);
@@ -222,7 +245,7 @@ mod tests {
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array([0u8; 32]),
             collateral_index: 0,
-            collateral_address: [0u8; 20],
+            collateral_address: Some([0u8; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: "1.2.3.4:1234".parse().expect("socket address"),
@@ -230,14 +253,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: [0u8; 20],
+                owner_address: Some([0u8; 20]),
                 voting_address: [0u8; 20],
-                payout_address: [0u8; 20],
+                payout_address: Some([0u8; 20]),
+                payouts: None,
                 pub_key_operator: vec![0u8; 48],
                 operator_payout_address: None,
                 platform_node_id: None,
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         }
     }
@@ -257,11 +284,15 @@ mod tests {
             owner_address: None,
             voting_address: None,
             payout_address: None,
+            payouts: None,
             pub_key_operator: None,
             operator_payout_address: None,
             platform_node_id: None,
-            platform_p2p_port: None,
-            platform_http_port: None,
+            #[allow(deprecated)]
+            legacy_platform_p2p_port: None,
+            #[allow(deprecated)]
+            legacy_platform_http_port: None,
+            addresses: None,
         }
     }
 
@@ -274,7 +305,7 @@ mod tests {
         PlatformState,
         ProTxHash,
     ) {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13");
         let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
 
         let pro_tx_hash = ProTxHash::from_byte_array([0x77u8; 32]);
@@ -369,7 +400,7 @@ mod tests {
 
     #[test]
     fn should_only_upsert_changed_entries_in_a_mixed_masternode_diff() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13");
         let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
         let mut state = PlatformState::default_with_protocol_versions(
             platform_version.protocol_version,

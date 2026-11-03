@@ -4,7 +4,8 @@ use crate::drive::credit_pools::epochs::epoch_key_constants::{
     KEY_START_TIME,
 };
 use crate::drive::credit_pools::epochs::epochs_root_tree_key_constants::{
-    KEY_PENDING_EPOCH_REFUNDS, KEY_STORAGE_FEE_POOL, KEY_UNPAID_EPOCH_INDEX,
+    KEY_LIFETIME_STORAGE_FEE_POOLS, KEY_PENDING_EPOCH_REFUNDS, KEY_STORAGE_FEE_POOL,
+    KEY_UNPAID_EPOCH_INDEX,
 };
 use crate::drive::RootTree;
 use crate::structure::{ElementKind, KeyEncoding, KeyMatcher, StructureNode};
@@ -62,6 +63,38 @@ pub(crate) fn structure() -> StructureNode {
     )
     .child(
         StructureNode::fixed(
+            "lifetime_storage_fee_pools",
+            KEY_LIFETIME_STORAGE_FEE_POOLS,
+            "LifetimeStorageFeePools",
+            "KEY_LIFETIME_STORAGE_FEE_POOLS",
+        )
+        .ascii()
+        .kind(ElementKind::SumTree)
+        .since(14)
+        .source(ROOT_KEYS)
+        .book("data-model/document-ttl.md")
+        .describe(
+            "Storage fees for storage that lives a known number of epochs (documents with a \
+             time to live), by the epoch they were collected in and that number, waiting for \
+             the next epoch change to spread them evenly over those epochs and remove them.",
+        )
+        .child(
+            StructureNode::dynamic(
+                "pool",
+                "collected_epoch_and_lifetime_epochs",
+                KeyMatcher::Len(4),
+                KeyEncoding::Composite,
+                "The epoch the fees were collected in, u16 big endian without the epoch trees' \
+                 offset of 256, then how many epochs their storage lives, at most one era, u16 \
+                 big endian",
+            )
+            .kind(ElementKind::SumItem)
+            .value("credits")
+            .describe("The storage fees to spread over that many epochs."),
+        ),
+    )
+    .child(
+        StructureNode::fixed(
             "pending_epoch_refunds",
             KEY_PENDING_EPOCH_REFUNDS,
             "PendingEpochRefunds",
@@ -80,7 +113,8 @@ pub(crate) fn structure() -> StructureNode {
                 "epoch_index",
                 KeyMatcher::Len(2),
                 KeyEncoding::U16Be,
-                "The epoch the refund comes out of, offset by 256",
+                "The epoch the refunded storage was paid in, u16 big endian, without the \
+                 epoch trees' offset of 256",
             )
             .kind(ElementKind::SumItem)
             .value("credits, negative")
@@ -93,11 +127,10 @@ pub(crate) fn structure() -> StructureNode {
     .child(
         StructureNode::dynamic(
             "epoch",
-            "epoch_index",
+            "epoch_index_plus_256",
             KeyMatcher::Len(2),
             KeyEncoding::U16Be,
-            "The epoch index offset by 256, so epoch keys \
-             sort after the one byte keys",
+            "The epoch index plus 256 (`EPOCH_KEY_OFFSET`), u16 big endian",
         )
         .kind(ElementKind::SumTree)
         .source(EPOCH_KEYS)

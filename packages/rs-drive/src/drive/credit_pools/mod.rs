@@ -62,6 +62,8 @@ use crate::fees::get_overflow_error;
 pub use paths::*;
 
 #[cfg(feature = "server")]
+use platform_version::version::drive_versions::DriveVersion;
+#[cfg(feature = "server")]
 use platform_version::version::PlatformVersion;
 
 #[cfg(feature = "server")]
@@ -173,6 +175,47 @@ impl Drive {
         }
 
         Ok(())
+    }
+
+    /// Reads every element of the sum tree at `path`, raw and in key order, as its key and the
+    /// value of its sum item: the pools that keep one sum item per key (the pending epoch
+    /// refunds and the lifetime storage fee pools). Any other element is corrupted state,
+    /// reported as `not_a_sum_item`.
+    pub(in crate::drive::credit_pools) fn fetch_sum_items(
+        &self,
+        path: Vec<Vec<u8>>,
+        not_a_sum_item: &'static str,
+        transaction: TransactionArg,
+        drive_version: &DriveVersion,
+    ) -> Result<Vec<(Vec<u8>, SignedCredits)>, Error> {
+        let mut query = Query::new();
+
+        query.insert_all();
+
+        let (query_result, _) = self
+            .grove
+            .query_raw(
+                &PathQuery::new_unsized(path, query),
+                transaction.is_some(),
+                true,
+                true,
+                QueryResultType::QueryKeyElementPairResultType,
+                transaction,
+                &drive_version.grove_version,
+            )
+            .unwrap()
+            .map_err(Error::from)?;
+
+        query_result
+            .to_key_elements()
+            .into_iter()
+            .map(|(key, element)| match element {
+                Element::SumItem(credits, _) => Ok((key, credits)),
+                _ => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    not_a_sum_item,
+                ))),
+            })
+            .collect()
     }
 }
 

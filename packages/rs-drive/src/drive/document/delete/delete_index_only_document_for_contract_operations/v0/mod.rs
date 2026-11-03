@@ -1,9 +1,7 @@
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use crate::util::estimated_layers::EstimatedLayers;
+use grovedb::TransactionArg;
 
-use dpp::data_contract::document_type::DocumentTypeRef;
-
-use std::collections::HashMap;
+use dpp::data_contract::document_type::{index_only_row_commits_created_at, DocumentTypeRef};
 
 use crate::util::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentOwnedInfo,
@@ -13,6 +11,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 
+use crate::drive::document::index_only_row_commitment;
 use crate::drive::Drive;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 
@@ -49,11 +48,7 @@ impl Drive {
         previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
         // With no caller transaction, TTL preparation (direct drainage
         // writes) inside the operations builder and the apply below would
@@ -112,9 +107,7 @@ impl Drive {
         contract: &DataContract,
         document_type: DocumentTypeRef,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -130,6 +123,21 @@ impl Drive {
         if !document_type.documents_can_be_deleted() {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
                 "this document type can not be deleted",
+            )));
+        }
+
+        // The values name the row as it committed to them: with no index a
+        // delete clears keyed by `$createdAt`, the row committed to none and a
+        // delete carries none (state validation refuses one that does)
+        if document.created_at().is_some()
+            && !index_only_row_commits_created_at(
+                document_type.required_fields(),
+                document_type.index_structure(),
+            )
+        {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "an indexOnly delete carries $createdAt its rows do not commit to: only \
+                 indexes whose entries outlive a delete involve it",
             )));
         }
 
@@ -162,12 +170,17 @@ impl Drive {
                 platform_version,
             )?;
         } else {
-            let expected_commitment = crate::drive::document::index_only_row_commitment(
-                &document,
-                document_type,
-                platform_version,
-            )?;
-            for index in document_type.indexes().values() {
+            let expected_commitment =
+                index_only_row_commitment(&document, document_type, platform_version)?;
+            // An index whose entries outlive the delete is neither checked
+            // nor cleared: its entries stay to expire with their window. A
+            // summableOffCountIndex index keeps no entry to check (it yields no
+            // paths): its counter moves once these entries matched.
+            for index in document_type
+                .indexes()
+                .values()
+                .filter(|index| !index.outlives_delete)
+            {
                 let matches = self.index_only_entry_commitment_matches(
                     contract.id(),
                     document_type,

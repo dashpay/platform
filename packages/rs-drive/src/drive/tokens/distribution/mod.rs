@@ -5,6 +5,8 @@ mod add_perpetual_distribution;
 #[cfg(feature = "server")]
 mod add_pre_programmed_distribution;
 #[cfg(feature = "server")]
+mod evonode_participation_rewards;
+#[cfg(feature = "server")]
 mod fetch;
 #[cfg(feature = "server")]
 mod mark_once_per_identity_release_as_distributed;

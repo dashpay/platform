@@ -137,7 +137,8 @@ fn observing_wallet(event: &WalletEvent) -> Option<&WalletId> {
         WalletEvent::TransactionInstantLocked { .. }
         | WalletEvent::ChainLockProcessed { .. }
         | WalletEvent::SyncHeightAdvanced { .. }
-        | WalletEvent::TransactionsSwept { .. } => None,
+        | WalletEvent::TransactionsSwept { .. }
+        | WalletEvent::ChainTruncated { .. } => None,
     }
 }
 
@@ -183,6 +184,11 @@ pub(crate) fn observed_spends(event: &WalletEvent) -> Vec<dashcore::OutPoint> {
         // the spend from any event, which is a gap this handler cannot close
         // without the loser's inputs travelling on the event.
         WalletEvent::TransactionsSwept { .. } => Vec::new(),
+        // A truncation reports coins that became unspent again
+        // (`restored_outpoints`), the opposite of a spend.
+        // TODO(#5380): a fence already retired by a spend the truncation
+        // undid is not re-armed.
+        WalletEvent::ChainTruncated { .. } => Vec::new(),
     }
 }
 
@@ -359,5 +365,23 @@ mod tests {
             observing_wallet(&event).is_none(),
             "a bare watermark advance must not even resolve a wallet to act on"
         );
+    }
+
+    /// A truncation hands coins back; the outpoints it names became unspent,
+    /// so reading them as spends would retire fences for coins that are free.
+    #[test]
+    fn should_report_no_spend_for_a_chain_truncation() {
+        let event = WalletEvent::ChainTruncated {
+            wallet_id: WALLET_ID,
+            height: 900_000,
+            txids: vec![Txid::from_byte_array([0x31; 32])],
+            unconfirmed_txids: Vec::new(),
+            restored_outpoints: vec![outpoint(1), outpoint(2)],
+            balance: WalletCoreBalance::default(),
+            account_balances: std::collections::BTreeMap::new(),
+        };
+
+        assert!(observed_spends(&event).is_empty());
+        assert!(observing_wallet(&event).is_none());
     }
 }

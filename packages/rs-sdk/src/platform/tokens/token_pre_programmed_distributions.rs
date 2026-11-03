@@ -38,7 +38,9 @@ impl Query<GetTokenPreProgrammedDistributionsRequest> for TokenPreProgrammedDist
     ) -> Result<GetTokenPreProgrammedDistributionsRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
 
         let start_at_info = self.start_at_info.as_ref().map(|info| {

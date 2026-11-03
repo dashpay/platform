@@ -23,6 +23,7 @@ use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 use super::VerifiedCompactedAddressBalanceChanges;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
 /// Extract KV entries from merk proof bytes using the proper decoder.
 #[allow(clippy::type_complexity)]
@@ -82,9 +83,8 @@ impl Drive {
             )));
         }
 
-        let bincode_config = bincode::config::standard()
-            .with_big_endian()
-            .with_limit::<MAX_COMPACTED_PROOF_DECODE_BYTES>();
+        let bincode_config =
+            PLATFORM_BINCODE_CONFIG.with_limit::<MAX_COMPACTED_PROOF_DECODE_BYTES>();
 
         // Decode the GroveDBProof to navigate its structure
         let grovedb_proof: GroveDBProof =
@@ -210,9 +210,8 @@ impl Drive {
                     "compacted address balance row exceeds the decoding limit".to_string(),
                 )));
             }
-            let row_decode_config = bincode::config::standard()
-                .with_big_endian()
-                .with_limit::<MAX_COMPACTED_BALANCE_ROW_DECODE_BYTES>();
+            let row_decode_config =
+                PLATFORM_BINCODE_CONFIG.with_limit::<MAX_COMPACTED_BALANCE_ROW_DECODE_BYTES>();
             let (address_balances, consumed): (
                 BTreeMap<PlatformAddress, BlockAwareCreditOperation>,
                 usize,

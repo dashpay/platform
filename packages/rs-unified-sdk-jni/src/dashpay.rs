@@ -961,6 +961,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_parseIn
             inviter_username: ptr::null_mut(),
             amount_duffs: 0,
             expiry_unix: 0,
+            inviter_display_name: ptr::null_mut(),
+            inviter_avatar_url: ptr::null_mut(),
         };
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_parse_invitation(uri_c.as_ptr(), &mut preview)
@@ -970,6 +972,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_parseIn
         }
         let username = unsafe { opt_cstr(preview.inviter_username) };
         unsafe { platform_wallet_ffi::platform_wallet_string_free(preview.inviter_username) };
+        // Not surfaced to Kotlin yet, but owned by us once the parse returns.
+        unsafe { platform_wallet_ffi::platform_wallet_string_free(preview.inviter_display_name) };
+        unsafe { platform_wallet_ffi::platform_wallet_string_free(preview.inviter_avatar_url) };
         let username_json = username
             .as_deref()
             .map(json_string)

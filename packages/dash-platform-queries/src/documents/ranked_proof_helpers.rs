@@ -19,6 +19,7 @@
 //!
 //! [`DocumentRankedEntries`]: drive_proof_verifier::DocumentRankedEntries
 
+use crate::documents::array_element_clauses::key_element_clauses;
 use crate::documents::document_query::normalize_time_range_clauses_with_metadata_time;
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
@@ -74,12 +75,21 @@ pub(super) fn assert_ranked_shape(
         has_start_at: request.start.is_some(),
     };
 
+    // Key the elements of a typed array as the server does: one pinned
+    // element (`contains`) at most.
+    let where_clauses = key_element_clauses(
+        &request.data_contract,
+        &request.document_type_name,
+        request.where_clauses.clone(),
+        false,
+        platform_version,
+    )?;
     detect_ranked_mode(
         &request.select,
         &request.group_by,
         &request.having,
         &request.order_by_clauses,
-        &request.where_clauses,
+        &where_clauses,
         pagination,
         platform_version,
     )

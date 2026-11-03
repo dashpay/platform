@@ -4,6 +4,7 @@ use crate::error::Error;
 use crate::util::grove_operations::DirectQueryType;
 use dpp::address_funds::PlatformAddress;
 use dpp::balances::credits::CreditOperation;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::ProtocolError;
 use grovedb::Element;
 use grovedb::TransactionArg;
@@ -51,9 +52,7 @@ impl Drive {
         }
 
         // Serialize the address balances map using bincode
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let serialized = bincode::encode_to_vec(address_balances, config).map_err(|e| {
             Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(format!(
@@ -161,6 +160,7 @@ mod tests {
     use super::*;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::balances::credits::BlockAwareCreditOperation;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
     use dpp::version::mocks::v2_test::TEST_PLATFORM_V2;
     use dpp::version::PlatformVersion;
 
@@ -969,9 +969,7 @@ mod tests {
 
         // Verify the value is a vec of block ranges
         if let grovedb::Element::Item(serialized_ranges, _) = element {
-            let config = bincode::config::standard()
-                .with_big_endian()
-                .with_no_limit();
+            let config = PLATFORM_BINCODE_CONFIG;
             let (ranges, _): (Vec<(u64, u64)>, usize) =
                 bincode::decode_from_slice(serialized_ranges, config)
                     .expect("should decode block ranges");
@@ -1083,9 +1081,7 @@ mod tests {
 
         // Verify the value contains BOTH block ranges
         if let grovedb::Element::Item(serialized_ranges, _) = element {
-            let config = bincode::config::standard()
-                .with_big_endian()
-                .with_no_limit();
+            let config = PLATFORM_BINCODE_CONFIG;
             let (ranges, _): (Vec<(u64, u64)>, usize) =
                 bincode::decode_from_slice(serialized_ranges, config)
                     .expect("should decode block ranges");

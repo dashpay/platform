@@ -112,10 +112,7 @@ pub fn verify_document_proof_keep_serialized(
     };
 
     let (root_hash, serialized_docs) = query
-        .verify_proof_keep_serialized(
-            supported_grovedb_proof(&proof_vec, platform_version)?,
-            platform_version,
-        )
+        .verify_proof_keep_serialized(supported_grovedb_proof(&proof_vec)?, platform_version)
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert serialized documents to JS array of Uint8Arrays
@@ -246,6 +243,8 @@ fn parse_where_clause(clause_js: &JsValue) -> Result<WhereClause, JsValue> {
         "BetweenExcludeRight" => WhereOperator::BetweenExcludeRight,
         "In" => WhereOperator::In,
         "StartsWith" => WhereOperator::StartsWith,
+        "Contains" => WhereOperator::Contains,
+        "ContainsAny" => WhereOperator::ContainsAny,
         _ => {
             return Err(JsValue::from_str(&format!(
                 "Unknown operator: {}",

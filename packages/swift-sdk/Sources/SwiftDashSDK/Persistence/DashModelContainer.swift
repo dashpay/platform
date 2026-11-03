@@ -100,7 +100,7 @@ public enum DashModelContainer {
 
     /// Create the schema for all Dash Platform models
     public static var schema: Schema {
-        Schema(versionedSchema: DashSchemaV3.self)
+        Schema(versionedSchema: DashSchemaV4.self)
     }
 
     /// Create a persistent model container for storing data.
@@ -172,7 +172,7 @@ public enum DashModelContainer {
         bridgeLegacyStore: Bool = true
     ) throws -> ModelContainer {
         SDKLogger.event("store_open_started", category: .persistence,
-                        fields: ["target_version": .publicText("3.0.0")])
+                        fields: ["target_version": .publicText("4.0.0")])
         do {
             let container: ModelContainer
             if bridgeLegacyStore {
@@ -185,7 +185,7 @@ public enum DashModelContainer {
                     configurations: [configuration])
             }
             SDKLogger.event("store_open_succeeded", category: .persistence,
-                            fields: ["target_version": .publicText("3.0.0")])
+                            fields: ["target_version": .publicText("4.0.0")])
             return container
         } catch {
             logMigrationFailure(error)
@@ -201,7 +201,7 @@ public enum DashModelContainer {
         let domain = systemDomains.contains(nsError.domain) ? nsError.domain : String(reflecting: type(of: error))
         SDKLogger.event("store_open_failed", category: .persistence, severity: .error,
                         fields: ["error_domain": .publicText(domain), "error_code": .integer(Int64(nsError.code)),
-                                 "target_version": .publicText("3.0.0")])
+                                 "target_version": .publicText("4.0.0")])
     }
 
     /// Select by the complete stored model identity, after journal recovery.
@@ -218,7 +218,7 @@ public enum DashModelContainer {
         guard ObjectIdentifier(defaultPlan) == ObjectIdentifier(DashMigrationPlan.self) else { return defaultPlan }
         guard FileManager.default.fileExists(atPath: url.path) else {
             SDKLogger.event("store_migration_route", category: .persistence, fields: [
-                "route": .publicText("new-store"), "target_version": .publicText("3.0.0")])
+                "route": .publicText("new-store"), "target_version": .publicText("4.0.0")])
             return defaultPlan
         }
         let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(type: .sqlite, at: url)
@@ -236,7 +236,7 @@ public enum DashModelContainer {
         func logRoute(_ route: String) {
             SDKLogger.event("store_migration_route", category: .persistence, fields: [
                 "source_version": .publicText(safeVersions), "source_checksum": .publicText(safeChecksum),
-                "route": .publicText(route), "target_version": .publicText("3.0.0")])
+                "route": .publicText(route), "target_version": .publicText("4.0.0")])
         }
         func matches(_ type: any VersionedSchema.Type) throws -> Bool {
             let expected = try identity(type)
@@ -266,7 +266,9 @@ public enum DashModelContainer {
             // Same plan either way. Opening a current store must neither wait
             // on nor fail with a schema probe that could only refine this line;
             // `source_checksum` above already identifies the exact graph.
-            logRoute("labelled-current-v3")
+            logRoute("published-v3-to-v4")
+        } else if versions == ["4.0.0"] {
+            logRoute("labelled-current-v4")
         } else {
             logRoute("ordinary-current-plan")
         }
@@ -287,12 +289,13 @@ public enum DashModelContainer {
 /// SwiftData migration plan for Dash Platform model updates
 public enum DashMigrationPlan: SchemaMigrationPlan {
     public static var schemas: [any VersionedSchema.Type] {
-        [DashSchemaV2.self, DashSchemaV3.self]
+        [DashSchemaV2.self, DashSchemaV3.self, DashSchemaV4.self]
     }
 
     public static var stages: [MigrationStage] {
         [
-            .lightweight(fromVersion: DashSchemaV2.self, toVersion: DashSchemaV3.self)
+            .lightweight(fromVersion: DashSchemaV2.self, toVersion: DashSchemaV3.self),
+            .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self)
         ]
     }
 }
@@ -300,9 +303,10 @@ public enum DashMigrationPlan: SchemaMigrationPlan {
 /// Separate compatibility route: V1 has fields missing from historical V2.
 /// Never insert V2 between this baseline and the current schema.
 enum DashAcceptedV1MigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [DashSchemaV1.self, DashSchemaV3.self] }
+    static var schemas: [any VersionedSchema.Type] { [DashSchemaV1.self, DashSchemaV3.self, DashSchemaV4.self] }
     static var stages: [MigrationStage] {
-        [.lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV3.self)]
+        [.lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV3.self),
+         .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self)]
     }
 }
 
@@ -372,9 +376,14 @@ public enum DashSchemaV2: VersionedSchema {
     }
 }
 
-/// Current working schema. A later shape change must preserve this graph as
-/// the fixed legacy-bridge target before introducing another live version.
+/// Published V3 and fixed legacy-bridge target. Its complete model graph is frozen.
 public enum DashSchemaV3: VersionedSchema {
     public static var versionIdentifier: Schema.Version { Schema.Version(3, 0, 0) }
+    public static var models: [any PersistentModel.Type] { DashSchemaSnapshotV3.models }
+}
+
+/// Current schema: optional asset-lock operation IDs correlate drain recovery.
+public enum DashSchemaV4: VersionedSchema {
+    public static var versionIdentifier: Schema.Version { Schema.Version(4, 0, 0) }
     public static var models: [any PersistentModel.Type] { DashModelContainer.modelTypes }
 }

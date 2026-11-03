@@ -1,7 +1,8 @@
 use crate::drive::identity::withdrawals::paths::{
-    WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY, WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
-    WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY, WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY,
-    WITHDRAWAL_TRANSACTIONS_QUEUE_KEY, WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+    WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY, WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
+    WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY, WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
+    WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY, WITHDRAWAL_TRANSACTIONS_QUEUE_KEY,
+    WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
 use crate::drive::RootTree;
 use crate::structure::{ElementKind, KeyEncoding, KeyMatcher, StructureNode};
@@ -157,6 +158,31 @@ pub(crate) fn structure() -> StructureNode {
             .kind(ElementKind::SumItem)
             .value("credits")
             .describe("Credits that entered Platform at that time."),
+        ),
+        StructureNode::fixed(
+            "core_credit_pool_balances",
+            &WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY,
+            "CoreCreditPoolBalances",
+            "WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY",
+        )
+        .kind(ElementKind::Tree)
+        .since(14)
+        .source("packages/rs-drive/src/drive/identity/withdrawals/paths.rs")
+        .describe(
+            "Core's credit pool balance after each Core block \
+             read, for the Core-anchored withdrawal limit.",
+        )
+        .child(
+            StructureNode::dynamic(
+                "balance",
+                "core_height",
+                KeyMatcher::Len(4),
+                KeyEncoding::U32Be,
+                "The Core block height",
+            )
+            .kind(ElementKind::Item)
+            .value("credits, u64 big endian")
+            .describe("The credit pool balance after that Core block."),
         ),
     ])
 }

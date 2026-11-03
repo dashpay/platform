@@ -94,7 +94,9 @@ where
 ```
 
 The `FullAbciApplication` struct wires everything together. It holds a reference
-to `Platform`, a GroveDB transaction, and the current block execution context:
+to `Platform`, a GroveDB transaction, the current block execution context, and
+the withdrawal transactions of every proposal accepted at the current height,
+which vote extensions are verified against:
 
 ```rust
 // From packages/rs-drive-abci/src/abci/app/full.rs
@@ -102,6 +104,7 @@ pub struct FullAbciApplication<'a, C> {
     pub platform: &'a Platform<C>,
     pub transaction: RwLock<Option<Transaction<'a>>>,
     pub block_execution_context: RwLock<Option<BlockExecutionContext>>,
+    pub unsigned_withdrawal_txs_by_round: RwLock<UnsignedWithdrawalTxsByRound>,
 }
 ```
 

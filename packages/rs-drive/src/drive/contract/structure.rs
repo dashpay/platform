@@ -1,7 +1,9 @@
 use crate::drive::contract::paths::{
     CONTRACT_BANLIST_KEY, CONTRACT_DOCUMENT_REMOVALS_KEY, CONTRACT_LAST_MODERATORS_FEE_CLAIM_KEY,
     CONTRACT_LAST_OWNER_FEE_CLAIM_KEY, CONTRACT_MODERATION_ACTION_COUNTS_KEY, CONTRACT_OTHER_KEY,
-    CONTRACT_SUSPENSIONS_KEY, CONTRACT_VERSION_KEY, CONTRACT_WARNINGS_KEY,
+    CONTRACT_SUSPENSIONS_KEY, CONTRACT_TEAM_ACTIONS_KEY, CONTRACT_TEAM_ACTION_INFO_KEY,
+    CONTRACT_TEAM_ACTION_SIGNERS_KEY, CONTRACT_TEAM_ACTIVE_ACTIONS_KEY,
+    CONTRACT_TEAM_CLOSED_ACTIONS_KEY, CONTRACT_VERSION_KEY, CONTRACT_WARNINGS_KEY,
 };
 use crate::drive::document::structure::document_type;
 use crate::drive::RootTree;
@@ -15,8 +17,12 @@ pub(crate) const CONTRACT_FLAGS: &str =
      history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state \
      transitions and later upgrades write none.";
 const REMOVAL_FLAGS: &str =
-    "The owner is the moderator who deleted the document. They pay for the record, \
-     which nothing deletes or replaces.";
+    "The owner is the moderator who deleted the document, restored it, or deleted it again \
+     once restored, as GroveDB's flag merge passes the record on: a longer rewrite passes to \
+     its writer, who pays for the added bytes; a shorter one refunds the bytes it frees to the \
+     moderator the record named, and passes to its writer only within the epoch the record \
+     was paid in (or once the record spans epochs), keeping the earlier moderator otherwise; \
+     a rewrite of the same size keeps the earlier moderator. Nothing deletes it.";
 const MODERATOR_FLAGS: &str =
     "The owner is the moderator who added the entry. They pay for it, and are \
      refunded when it is removed. A suspension replaced with a longer reason \
@@ -108,8 +114,8 @@ pub(crate) fn structure() -> StructureNode {
                     .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
                     .describe(
                         "The records of the documents the contract's moderators \
-                             deleted. Created with the first document type that \
-                             sets canBeDeletedByModerators, by the contract's \
+                             deleted. Created with the first document type whose \
+                             moderators' deletions keep records, by the contract's \
                              creation or by an update. Read by clients, never by a \
                              document transition, so it sorts below the rest.",
                     )
@@ -124,9 +130,9 @@ pub(crate) fn structure() -> StructureNode {
                         .kind(ElementKind::Tree)
                         .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
                         .describe(
-                            "The removed documents of one document type that sets \
-                                 canBeDeletedByModerators. Created with the document \
-                                 type, by the contract's creation or by the update \
+                            "The removed documents of one document type whose \
+                                 moderators' deletions keep records. Created with the \
+                                 document type, by the contract's creation or by the update \
                                  that adds the type.",
                         )
                         .child(
@@ -140,16 +146,86 @@ pub(crate) fn structure() -> StructureNode {
                             .value(
                                 "the document owner's id, the moderator's id, the block \
                                      time in milliseconds of the removal as a u64 big \
-                                     endian, then the moderator's reason as in a banlist \
-                                     entry",
+                                     endian, the hash of the removed document, a tag byte \
+                                     (bit 0: restored, bit 1: kept fields), the restoring \
+                                     moderator's id and the restoration time when \
+                                     restored, the kept fields when any (their length as a \
+                                     u32 big endian, then the bytes), then the moderator's \
+                                     reason as in a banlist entry",
                             )
                             .describe(
                                 "One removal: whose document it was, who removed it, \
-                                     when and why. Never deleted and never replaced: a \
-                                     document id is produced at most once.",
+                                     when and why, what it was, and who restored it. Never \
+                                     deleted: replaced in place by the restore that marks \
+                                     it and by the deletion of a restored document, which \
+                                     writes a fresh record over it.",
                             ),
                         ),
                     ),
+                    StructureNode::fixed(
+                        "team_actions",
+                        &[CONTRACT_TEAM_ACTIONS_KEY],
+                        "TeamActions",
+                        "CONTRACT_TEAM_ACTIONS_KEY",
+                    )
+                    .kind(ElementKind::Tree)
+                    .lazy()
+                    .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
+                    .describe(
+                        "The actions the contract's seated moderation team votes on, \
+                             shaped like a token group's: one member proposes, the others \
+                             approve by the action's id, and the action runs once the \
+                             approvals meet its rule. Today the deletion of a settled \
+                             document, past its type's `deleteWithin`. Created with the \
+                             contract when one of its document types sets \
+                             `moderatorAbilities.deleteSettled`: no update can add such a \
+                             type, since the elected declaration fixed at creation must give \
+                             the team `deleteDocuments` on it. Read by the team and by \
+                             clients, never by a document transition, so it sorts below the \
+                             rest.",
+                    )
+                    .children(vec![
+                        StructureNode::fixed(
+                            "active",
+                            CONTRACT_TEAM_ACTIVE_ACTIONS_KEY,
+                            "ActiveTeamActions",
+                            "CONTRACT_TEAM_ACTIVE_ACTIONS_KEY",
+                        )
+                        .ascii()
+                        .kind(ElementKind::Tree)
+                        .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
+                        .describe(
+                            "Team actions still gathering approvals. Nothing lapses: an \
+                                 action that never gets there stays.",
+                        )
+                        .child(team_action(
+                            "One action in progress. Moved to the closed actions when the \
+                                 approvals meet its rule.",
+                            &[FlagsKind::EpochOwned],
+                            "The owner is the member who proposed (the action) or approved \
+                                 (an approval), in the epoch they did, refunded when the \
+                                 action closes and moves.",
+                        )),
+                        StructureNode::fixed(
+                            "closed",
+                            CONTRACT_TEAM_CLOSED_ACTIONS_KEY,
+                            "ClosedTeamActions",
+                            "CONTRACT_TEAM_CLOSED_ACTIONS_KEY",
+                        )
+                        .ascii()
+                        .kind(ElementKind::Tree)
+                        .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
+                        .describe(
+                            "Team actions that ran, kept for good with the approvals that \
+                                 counted: those of members who left the team were dropped.",
+                        )
+                        .child(team_action(
+                            "One action that ran.",
+                            &[FlagsKind::None],
+                            "Entries moved or written when an action closes carry no \
+                                 flags: the member whose approval closed it pays for them.",
+                        )),
+                    ]),
                     StructureNode::fixed(
                         "moderation_action_counts",
                         &[CONTRACT_MODERATION_ACTION_COUNTS_KEY],
@@ -343,4 +419,47 @@ pub(crate) fn structure() -> StructureNode {
                 ]),
             ]),
     )
+}
+
+/// One team action under the active or the closed actions: what it does (`I`) and who approved
+/// it (`S`), as a token group action.
+fn team_action(description: &str, flags: &[FlagsKind], flags_note: &str) -> StructureNode {
+    StructureNode::identifier("team_action", "action_id", "The action id")
+        .kind(ElementKind::Tree)
+        .describe(description)
+        .children(vec![
+            StructureNode::fixed(
+                "info",
+                CONTRACT_TEAM_ACTION_INFO_KEY,
+                "TeamActionInfo",
+                "CONTRACT_TEAM_ACTION_INFO_KEY",
+            )
+            .ascii()
+            .kind(ElementKind::Item)
+            .flags(flags, flags_note)
+            .value(
+                "a tag byte (0: delete a settled document), the proposer's id, the block time \
+                 of the proposal as a u64 big endian, the document type name's length in one \
+                 byte and the name, the document id, the document's last modification and \
+                 its revision then (0: none), each a u64 big endian, then the reason as in a \
+                 banlist entry",
+            )
+            .describe("What the action does and why, written by its proposer."),
+            StructureNode::fixed(
+                "signers",
+                CONTRACT_TEAM_ACTION_SIGNERS_KEY,
+                "TeamActionSigners",
+                "CONTRACT_TEAM_ACTION_SIGNERS_KEY",
+            )
+            .ascii()
+            .kind(ElementKind::SumTree)
+            .describe("Who approved, the proposer first; the sum is the number of approvals.")
+            .child(
+                StructureNode::identifier("signer", "identity_id", "The member's identity id")
+                    .kind(ElementKind::SumItem)
+                    .flags(flags, flags_note)
+                    .value("1")
+                    .describe("One approval."),
+            ),
+        ])
 }

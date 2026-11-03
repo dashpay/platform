@@ -4,11 +4,13 @@
   "description": "Executable current Kotlin/Swift parity truth for the correctness, persistence, recovery, shared-policy, and immediate example-app capabilities audited from the PR #3999 baseline.",
   "declared_persistence_capabilities": [
     "asset_lock_funding_indices",
+    "asset_lock_operation_ids",
     "atomic_changesets",
     "invitations",
     "pending_contact_crypto",
     "provider_transactions",
     "shielded_viewing_keys",
+    "tracked_asset_locks",
     "unsigned_token_storage",
     "wallet_restore"
   ],
@@ -40,6 +42,9 @@
     "platform_wallet_drain_pending_contact_crypto": "packages/rs-platform-wallet-ffi/src/dashpay.rs",
     "platform_wallet_manager_create_with_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_manager_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
+    "platform_wallet_manager_shielded_fund_from_wallet_drain": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
+    "platform_wallet_manager_shielded_wallet_drain_preview": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
+    "platform_wallet_manager_shielded_wallet_drain_status": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
     "platform_wallet_manager_spv_rescan_filters": "packages/rs-platform-wallet-ffi/src/spv.rs",
     "platform_wallet_manager_sync_fault_detected": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_resume_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
@@ -1601,6 +1606,87 @@
           "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/errors/DashSdkErrorTest.kt",
           "id": "signingKeyUnavailableCode31MapsTyped",
           "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "shielded.core_wallet_drain",
+      "title": "Pooled Core-to-shielded Max with restart-safe recovery",
+      "area": "recovery",
+      "shared_apis": [
+        "platform_wallet_manager_shielded_wallet_drain_preview",
+        "platform_wallet_manager_shielded_fund_from_wallet_drain",
+        "platform_wallet_manager_shielded_wallet_drain_status"
+      ],
+      "required_persistence_capabilities": [
+        "asset_lock_funding_indices",
+        "asset_lock_operation_ids",
+        "atomic_changesets",
+        "tracked_asset_locks",
+        "wallet_restore"
+      ],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "unsupported",
+          "restart": "tested",
+          "reason": "Swift exposes preview, execution, and status with durable operation UUIDs. Restart recovery resumes the exact asset-lock outpoint: a fresh Type18 that Platform executes, or that Platform rejects because the outpoint was already consumed by an earlier attempt, durably completes the operation. Unit tests cover store reopen, failed persistence and the terminal DrainCompleted rule. An iOS wallet testnet process-death test confirmed recovery after dispatch and enabled a subsequent Max transfer. SwiftExampleApp does not yet expose this flow."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "The typed input-limit error is mapped, but JNI drain wrappers and operation-ID callbacks are not implemented."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/WalletDrainTests.swift",
+          "id": "testShouldPreserveExactOutpointAndErrorForPendingOperation",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -sdk iphonesimulator -destination \"platform=iOS Simulator,name=iPhone 17\" ARCHS=arm64 -only-testing:SwiftDashSDKTests/WalletDrainTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/AssetLockOperationPersistenceTests.swift",
+          "id": "testOperationIdSurvivesConsumptionAndStoreReopen",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -sdk iphonesimulator -destination \"platform=iOS Simulator,name=iPhone 17\" ARCHS=arm64 -only-testing:SwiftDashSDKTests/AssetLockOperationPersistenceTests",
+          "covers_restart": true
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/asset_lock/build.rs",
+          "id": "should_wallet_drain_panic_keep_exact_outpoint_and_pending_status",
+          "command": "cargo test -p platform-wallet --features shielded --lib should_wallet_drain_panic_keep_exact_outpoint_and_pending_status",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/fund_from_asset_lock.rs",
+          "id": "settle_completes_drain_on_exact_outpoint_already_consumed_report",
+          "command": "cargo test -p platform-wallet --features shielded --lib settle_completes_drain_on_exact_outpoint_already_consumed_report",
+          "covers_restart": true
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/wallet_drain_tests.rs",
+          "id": "should_resume_the_same_lock_for_a_reused_uuid_without_a_second_core_lock",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet_drain_tests",
+          "covers_restart": true
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/wallet_drain_tests.rs",
+          "id": "should_refuse_drain_on_a_buffered_persistence_backend",
+          "command": "cargo test -p platform-wallet --features shielded --lib should_refuse_drain_on_a_buffered_persistence_backend",
           "covers_restart": false
         }
       ]

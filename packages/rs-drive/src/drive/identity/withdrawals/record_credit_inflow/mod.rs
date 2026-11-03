@@ -14,6 +14,19 @@ impl Drive {
     /// unexpired inflows younger than its day-old base snapshot to the daily maximum, making
     /// it a limit on net outflow. Called once per block with the block's total credit mints
     /// (asset locks, epoch Core rewards); an `amount` of zero records nothing.
+    ///
+    /// # Parameters
+    ///
+    /// * `amount`: The credits minted into Platform.
+    /// * `block_info`: The block being executed; its time sets when the inflow expires.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` once `amount` is added to the entry for its expiration time (created if
+    ///   absent), or at once when `amount` is zero.
+    /// * `Err(Error)` when the method version is unknown or not active, or the write fails.
     pub fn record_credit_inflow(
         &self,
         amount: Credits,

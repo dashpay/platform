@@ -203,8 +203,10 @@ impl ValidateStateTransitionIdentitySignatureV0<'_> for StateTransition {
         let operation = SignatureVerificationOperation::new(public_key.key_type());
         execution_context.add_operation(ValidationOperation::SignatureVerification(operation));
 
+        // In place: before protocol version 14 the dpp tables select generation 0 of the check,
+        // the code this called before it took a platform version.
         let signature_is_valid =
-            self.verify_identity_signed_signature(public_key, &NativeBlsModule);
+            self.verify_identity_signed_signature(public_key, &NativeBlsModule, platform_version);
 
         if let Err(err) = signature_is_valid {
             let consensus_error = convert_to_consensus_signature_error(err)?;
@@ -247,6 +249,10 @@ pub fn convert_to_consensus_signature_error(
         ),
         ProtocolError::WrongPublicKeyPurposeError(err) => Ok(err.into()),
         ProtocolError::Error(_) => Err(error),
+        // In place: only the dispatcher of `verify_identity_signed_signature` returns this here,
+        // and every protocol version's table selects a generation it knows, so no version
+        // reaches it. An unknown generation is a node fault, not a bad signature.
+        ProtocolError::UnknownVersionMismatch { .. } => Err(error),
         e => Ok(ConsensusError::SignatureError(
             SignatureError::InvalidStateTransitionSignatureError(
                 InvalidStateTransitionSignatureError::new(e.to_string()),
@@ -353,6 +359,24 @@ mod tests {
                 ConsensusError::SignatureError(SignatureError::WrongPublicKeyPurposeError(_)) => {}
                 other => panic!("unexpected error variant: {:?}", other),
             }
+        }
+
+        #[test]
+        fn should_propagate_an_unknown_version_mismatch() {
+            let protocol_error = ProtocolError::UnknownVersionMismatch {
+                method: "StateTransition::verify_identity_signed_signature".to_string(),
+                known_versions: vec![0, 1],
+                received: 2,
+            };
+
+            let result = convert_to_consensus_signature_error(protocol_error);
+            assert!(
+                matches!(
+                    result,
+                    Err(ProtocolError::UnknownVersionMismatch { received: 2, .. })
+                ),
+                "{result:?}"
+            );
         }
 
         #[test]

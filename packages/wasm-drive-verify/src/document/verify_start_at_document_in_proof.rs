@@ -121,7 +121,7 @@ pub fn verify_start_at_document_in_proof(
 
     let (root_hash, document_option) = query
         .verify_start_at_document_in_proof(
-            supported_grovedb_proof(&proof_vec, platform_version)?,
+            supported_grovedb_proof(&proof_vec)?,
             is_proof_subset,
             document_id_bytes,
             platform_version,
@@ -258,6 +258,8 @@ fn parse_where_clause(clause_js: &JsValue) -> Result<WhereClause, JsValue> {
         "BetweenExcludeRight" => WhereOperator::BetweenExcludeRight,
         "In" => WhereOperator::In,
         "StartsWith" => WhereOperator::StartsWith,
+        "Contains" => WhereOperator::Contains,
+        "ContainsAny" => WhereOperator::ContainsAny,
         _ => {
             return Err(JsValue::from_str(&format!(
                 "Unknown operator: {}",

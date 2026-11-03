@@ -3,6 +3,7 @@ pub mod document;
 pub mod document_type_distinct_from;
 pub mod document_type_encryption;
 pub mod document_type_immutability;
+pub mod document_type_property_constraints;
 pub mod document_type_reference;
 pub mod document_type_typed_arrays;
 pub mod model;
@@ -19,6 +20,10 @@ pub use document_type_encryption::{
 pub use document_type_immutability::{
     DocumentTypeImmutablePropertiesJs, DocumentTypeImmutablePropertiesMapJs,
 };
+pub use document_type_property_constraints::{
+    DocumentPropertyConstraintArrayJs, DocumentPropertyConstraintMapJs,
+    DocumentPropertyConstraintViolationJs,
+};
 pub use document_type_reference::{
     DocumentPropertyReferenceArrayJs, DocumentPropertyReferenceMapJs,
 };
@@ -33,6 +38,6 @@ pub use transitions::fee_claim::{ContractFeeClaimWasm, contract_fee_pot_from_str
 pub use transitions::update::DataContractUpdateTransitionWasm;
 pub use transitions::user_moderation::{
     ContractModerationReasonInput, ContractModerationReasonJs, ContractUserModerationActionParts,
-    ContractUserModerationWasm, ContractWarningsJs, moderation_action_from_parts,
+    ContractUserModerationWasm, ContractWarningsJs, fields_from_js, moderation_action_from_parts,
     moderation_reason_to_js, moderation_warnings_to_js,
 };

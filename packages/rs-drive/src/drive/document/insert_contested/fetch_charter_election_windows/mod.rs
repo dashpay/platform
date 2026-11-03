@@ -26,6 +26,15 @@ pub struct ContestWindows {
 impl ContestWindows {
     /// The generic windows of the version tables, which every contest but a moderation election
     /// runs on: the mainnet ones on mainnet, the shorter test ones on every other network.
+    ///
+    /// # Parameters
+    ///
+    /// * `network`: The network; mainnet picks the mainnet windows, any other the test ones.
+    /// * `platform_version`: The platform version, whose tables hold the windows.
+    ///
+    /// # Returns
+    ///
+    /// The join window and the poll duration of the version tables for `network`. Infallible.
     pub fn generic(network: Network, platform_version: &PlatformVersion) -> Self {
         let validation = &platform_version.dpp.validation.voting;
         let voting = &platform_version.dpp.voting_versions;
@@ -42,7 +51,20 @@ impl ContestWindows {
     }
 
     /// The windows an elected moderation declaration gives the elections for its contract. Its
-    /// windows are seconds, each one day to four weeks.
+    /// windows are seconds, each at most four weeks and at least a day on mainnet. Any other
+    /// network takes 0: a join window of 0 lets in only the applicants of the block that
+    /// opened the election, and a vote window of 0 leaves the masternodes no time to vote, so
+    /// the tie goes to the earliest application.
+    ///
+    /// # Parameters
+    ///
+    /// * `elected`: The elected moderation declaration, with its join and vote windows in
+    ///   seconds.
+    ///
+    /// # Returns
+    ///
+    /// The join window, and as the poll duration the join window plus the vote window, both in
+    /// milliseconds (saturating). Infallible.
     pub fn of_elected_moderators(elected: &ElectedModerators) -> Self {
         let join_window_ms = u64::from(elected.join_window).saturating_mul(1000);
         let vote_window_ms = u64::from(elected.vote_window).saturating_mul(1000);

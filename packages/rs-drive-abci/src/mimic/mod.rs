@@ -8,12 +8,12 @@ use crate::execution::types::block_execution_context::v0::BlockExecutionContextV
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
 use crate::mimic::test_quorum::TestQuorumInfo;
 use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::{
-    make_extend_vote_request_id, UnsignedWithdrawalTxs,
+    tx_to_extend_vote_extension, UnsignedWithdrawalTxs,
 };
 use crate::rpc::core::CoreRPCLike;
 use ciborium::Value as CborValue;
 use dpp::block::block_info::BlockInfo;
-use dpp::bls_signatures::SignatureSchemes;
+
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -26,17 +26,19 @@ use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use tenderdash_abci::proto::abci::response_process_proposal::ProposalStatus;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{
-    CommitInfo, ExecTxResult, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal,
-    RequestProcessProposal, RequestVerifyVoteExtension, ResponsePrepareProposal,
-    ValidatorSetUpdate,
+    CommitInfo, ExecTxResult, ExtendVoteExtension, RequestExtendVote, RequestFinalizeBlock,
+    RequestPrepareProposal, RequestProcessProposal, RequestVerifyVoteExtension,
+    ResponsePrepareProposal, ValidatorSetUpdate,
 };
 use tenderdash_abci::proto::google::protobuf::Timestamp;
+use tenderdash_abci::proto::types::ConsensusParams;
 use tenderdash_abci::proto::types::{
     Block, BlockId, CanonicalVote, Data, EvidenceList, Header, PartSetHeader, SignedMsgType,
-    StateId, VoteExtension, VoteExtensionType,
+    StateId, VoteExtension,
 };
 use tenderdash_abci::proto::ToMillis;
 use tenderdash_abci::signatures::Hashable;
@@ -50,6 +52,8 @@ pub const CHAIN_ID: &str = "strategy_tests";
 
 /// The outcome struct when mimicking block execution
 pub struct MimicExecuteBlockOutcome {
+    /// Consensus parameter update emitted by both proposal handlers.
+    pub consensus_param_updates: Option<ConsensusParams>,
     /// state transaction results
     pub state_transaction_results: Vec<(StateTransition, ExecTxResult)>,
     /// withdrawal transactions
@@ -175,7 +179,7 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
             tx_records,
             app_hash,
             tx_results,
-            consensus_param_updates: _,
+            consensus_param_updates,
             core_chain_lock_update,
             validator_set_update,
             app_version,
@@ -305,23 +309,54 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
         if !options.independent_process_proposal_verification {
             //we just check as if we were the proposer
             //we must call process proposal so the app hash is set
-            self.process_proposal(request_process_proposal)
+            let process_response = self.process_proposal(request_process_proposal)
                 .unwrap_or_else(|e| {
                     panic!(
                         "should skip processing (because we prepared it) block #{} at time #{} : {:?}",
                         block_info.height, block_info.time_ms, e
                     )
                 });
+            assert_eq!(
+                process_response.status,
+                ProposalStatus::Accept as i32,
+                "proposal must be accepted at height {}",
+                block_info.height
+            );
+            assert_eq!(
+                process_response.consensus_param_updates, consensus_param_updates,
+                "proposal handlers must agree on consensus parameters at height {}",
+                block_info.height
+            );
         } else {
             //we first call process proposal as the proposer
             //we must call process proposal so the app hash is set
-            self.process_proposal(request_process_proposal.clone())
+            let process_response = self.process_proposal(request_process_proposal.clone())
                 .unwrap_or_else(|e| {
                     panic!(
                         "should skip processing (because we prepared it) block #{} at time #{} : {:?}",
                         block_info.height, block_info.time_ms, e
                     )
                 });
+            assert_eq!(
+                process_response.status,
+                ProposalStatus::Accept as i32,
+                "proposal must be accepted at height {}",
+                block_info.height
+            );
+            assert_eq!(
+                process_response.consensus_param_updates, consensus_param_updates,
+                "proposal handlers must agree on consensus parameters at height {}",
+                block_info.height
+            );
+
+            let replayed_response = self
+                .process_proposal(request_process_proposal.clone())
+                .expect("known-hash cached proposal must succeed");
+            assert_eq!(
+                replayed_response, process_response,
+                "known-hash proposer cache must preserve the response at height {}",
+                block_info.height
+            );
 
             let application_hash = self
                 .block_execution_context
@@ -365,13 +400,24 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
             };
 
             //we call process proposal as if we are a processor
-            self.process_proposal(request_process_proposal)
+            let process_response = self.process_proposal(request_process_proposal)
                 .unwrap_or_else(|e| {
                     panic!(
                         "should skip processing (because we prepared it) block #{} at time #{} : {:?}",
                         block_info.height, block_info.time_ms, e
                     )
                 });
+            assert_eq!(
+                process_response.status,
+                ProposalStatus::Accept as i32,
+                "proposal must be accepted at height {}",
+                block_info.height
+            );
+            assert_eq!(
+                process_response.consensus_param_updates, consensus_param_updates,
+                "proposal handlers must agree on consensus parameters at height {}",
+                block_info.height
+            );
 
             let process_proposal_application_hash = self
                 .block_execution_context
@@ -464,11 +510,15 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
             .unsigned_withdrawal_transactions
             .iter()
             .map(|tx| {
-                let sign_request_id = Some(make_extend_vote_request_id(tx));
+                let ExtendVoteExtension {
+                    r#type,
+                    extension,
+                    sign_request_id,
+                } = tx_to_extend_vote_extension(tx);
 
                 VoteExtension {
-                    r#type: VoteExtensionType::ThresholdRecoverRaw as i32,
-                    extension: tx.txid().to_byte_array().to_vec(),
+                    r#type,
+                    extension,
                     sign_request_id,
                     signature: vec![0; 96], //todo: signature
                 }
@@ -538,10 +588,10 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
                     );
             let block_signature = current_quorum
                 .private_key
-                .sign(SignatureSchemes::Basic, digest.as_slice())
+                .sign(digest.as_slice())
                 .expect("expected to be able to sign");
 
-            commit_info.block_signature = block_signature.as_raw_value().to_compressed().to_vec();
+            commit_info.block_signature = block_signature.to_bytes().to_vec();
         } else {
             commit_info.block_signature = [0u8; 96].to_vec();
         }
@@ -630,6 +680,7 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
         }
 
         Ok(MimicExecuteBlockOutcome {
+            consensus_param_updates,
             state_transaction_results,
             app_version,
             withdrawal_transactions,

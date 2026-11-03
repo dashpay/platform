@@ -46,7 +46,7 @@
           "refersTo": {
             "type": "deletableDocument",
             "documentType": "draft",
-            "propertyAgreement": {
+            "where": {
               "topic": "topic"
             }
           }
@@ -92,7 +92,7 @@
           "refersTo": {
             "type": "deletableDocument",
             "documentType": "draft",
-            "propertyAgreement": {
+            "where": {
               "$ownerId": "$ownerId"
             }
           }

@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import semver from 'semver';
 import { STOCK_PRERELEASE_IDS } from '../../../../src/config/stockImages.js';
 import Config from '../../../../src/config/Config.js';
 import HomeDir from '../../../../src/config/HomeDir.js';
@@ -23,6 +24,66 @@ describe('migrateConfigFileFactory', () => {
 
     mockConfigFileData = getConfigFileDataV0250();
   });
+
+  /**
+   * The config file a release writes on a fresh install: today's defaults with
+   * every default that changed since put back the way that release had it (see
+   * configs/defaults at its tag), and the Drive and rs-dapi images it stored.
+   *
+   * A release that changes a default needs a step here as well, or the fixture
+   * stops matching what earlier releases wrote.
+   *
+   * @param {string} release
+   * @param {string|null} imageTag - tag stored for both images, or null for none
+   * @return {Object}
+   */
+  function getConfigFileDataWrittenBy(release, imageTag) {
+    const configFileData = createConfigFile().toObject();
+    configFileData.configFormatVersion = release;
+
+    for (const options of Object.values(configFileData.configs)) {
+      options.platform.drive.abci.docker.image = imageTag === null ? null : `dashpay/drive:${imageTag}`;
+      options.platform.dapi.rsDapi.docker.image = imageTag === null ? null : `dashpay/rs-dapi:${imageTag}`;
+
+      const { whitelist } = options.core.rpc.users.drive_consensus;
+      const removeFromWhitelist = (method) => {
+        expect(whitelist, 'the default whitelist changed; update this fixture').to.include(method);
+        whitelist.splice(whitelist.indexOf(method), 1);
+      };
+
+      if (semver.lt(release, '5.0.0-rc.2')) {
+        removeFromWhitelist('getdeploymentinfo');
+      }
+
+      if (semver.lt(release, '5.0.0-beta.4')) {
+        delete options.platform.quorumList.cacheTtlSeconds;
+      }
+
+      if (semver.lt(release, '5.0.0-beta.2')) {
+        removeFromWhitelist('getspecialtxes');
+      }
+
+      if (semver.lt(release, '5.0.0-beta.1')) {
+        delete options.core.tor;
+        delete options.platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl;
+        options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.7';
+      }
+
+      if (semver.lt(release, '4.1.1')) {
+        options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.6.0';
+        options.platform.drive.tenderdash.consensus.unsafeOverride.commit = {
+          timeout: null,
+          bypass: null,
+        };
+      }
+
+      if (semver.lt(release, '4.1.0')) {
+        options.platform.gateway.docker.image = 'dashpay/envoy:1.35.11-impr.1';
+      }
+    }
+
+    return configFileData;
+  }
 
   // lego keys its on-disk ACME account directory by the contact address, so
   // that string decides which account a renewal runs under. A migration that
@@ -207,6 +268,150 @@ describe('migrateConfigFileFactory', () => {
     }
   });
 
+  it('should move a node any earlier release set up onto the Drive and rs-dapi images this one ships', async () => {
+    // Drive and rs-dapi carry the protocol, so a node `dashmate update` leaves
+    // on an earlier release's image keeps running the old protocol and stops
+    // when the network activates the new one.
+    //
+    // Each entry is a release and the tag it stored. Every release up to 4.1.1
+    // stored the tag it derived from its own version. 4.2 and 5.0 prereleases
+    // store none on a fresh install, but wrote their own tag into a config
+    // stamped 4.1.0 when they ran the 4.1.1 migration on it.
+    const releases = [
+      ['4.0.0', '4'],
+      ['4.1.0', '4'],
+      ['4.1.1', '4'],
+      ['4.2.0-beta.7', '4-beta'],
+      ['5.0.0-beta.6', '5-beta'],
+      ['5.0.0-rc.1', '5-rc'],
+      ['5.0.0-rc.2', '5-rc'],
+      ['5.0.0-rc.2', null],
+    ];
+
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    for (const [release, imageTag] of releases) {
+      const configFileData = getConfigFileDataWrittenBy(release, imageTag);
+
+      const migrated = migrateConfigFile(configFileData, release, version);
+
+      for (const [name, options] of Object.entries(migrated.configs)) {
+        const written = imageTag === null
+          ? `${name} config ${release} wrote with no image`
+          : `${name} config ${release} wrote with the ${imageTag} tag`;
+
+        // Unset, not re-pinned: a tag pinned here would strand the node again
+        // at the next release.
+        expect(options.platform.drive.abci.docker.image).to.equal(
+          null,
+          `drive image not unset for the ${written}`,
+        );
+        expect(options.platform.dapi.rsDapi.docker.image).to.equal(
+          null,
+          `rs-dapi image not unset for the ${written}`,
+        );
+
+        expect(() => new Config(name, options), `migrated ${written} does not load`).to.not.throw();
+      }
+    }
+  });
+
+  it('should only ever unset a stock Drive or rs-dapi tag, never pin another', async () => {
+    // A stored tag is pinned: no later release moves it. A migration that copies
+    // the default with base.get() rather than base.getStored() stores this
+    // build's own tag, which strands the node one release later - `5-rc` once
+    // 5.0 is stable, `5` once 6.0 is out. So every migration must leave a tag
+    // as it is or unset it.
+    //
+    // Each migration is run on its own, because a later one in the same upgrade
+    // can hide what an earlier one stored. Migrations older than 4.0.0 expect
+    // shapes today's config no longer has.
+    const migrations = Object.entries(container.resolve('getConfigFileMigrations')())
+      .filter(([key]) => semver.gte(key, '4.0.0'));
+
+    const stockTags = ['4', '5'].flatMap((major) => [
+      major,
+      ...STOCK_PRERELEASE_IDS.map((id) => `${major}-${id}`),
+    ]);
+
+    for (const [key, migrate] of migrations) {
+      for (const tag of stockTags) {
+        const configFileData = getConfigFileDataWrittenBy('4.1.1', tag);
+
+        const migrated = migrate(configFileData);
+
+        for (const [name, options] of Object.entries(migrated.configs)) {
+          expect(options.platform.drive.abci.docker.image).to.be.oneOf(
+            [null, `dashpay/drive:${tag}`],
+            `the ${key} migration pinned a drive image for ${name} holding ${tag}`,
+          );
+          expect(options.platform.dapi.rsDapi.docker.image).to.be.oneOf(
+            [null, `dashpay/rs-dapi:${tag}`],
+            `the ${key} migration pinned an rs-dapi image for ${name} holding ${tag}`,
+          );
+        }
+      }
+    }
+  });
+
+  it('should keep an operator Drive and rs-dapi image when updating from 4.1.1 or a 5.0 prerelease', async () => {
+    // Only tags a release stored are unset. Anything else is the operator's
+    // choice, even in the stock namespace or on a published tag no release
+    // stored: an operator holding Drive to a line on purpose must not be moved
+    // off it by an update.
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    const operatorTags = [
+      // a published minor line or exact version
+      '4.1',
+      '4.1-rc',
+      '4.1.1',
+      '5.0.0-rc.2',
+      // the stable 5 tag, which no release up to 5.0.0-rc.2 stored
+      '5',
+      // locally built or vendor-patched under the stock namespace
+      '4-local',
+      '5-rc-patched',
+      'latest',
+      // a stock tag pinned to a digest
+      '4@sha256:0000000000000000000000000000000000000000000000000000000000000000',
+    ];
+
+    for (const release of ['4.1.1', '5.0.0-rc.2']) {
+      for (const tag of operatorTags) {
+        const migrated = migrateConfigFile(getConfigFileDataWrittenBy(release, tag), release, version);
+
+        for (const [name, options] of Object.entries(migrated.configs)) {
+          expect(options.platform.drive.abci.docker.image).to.equal(
+            `dashpay/drive:${tag}`,
+            `operator drive image overwritten for ${name} from ${release}`,
+          );
+          expect(options.platform.dapi.rsDapi.docker.image).to.equal(
+            `dashpay/rs-dapi:${tag}`,
+            `operator rs-dapi image overwritten for ${name} from ${release}`,
+          );
+        }
+      }
+
+      // The stock tag under another registry name, including the fully
+      // qualified form of Docker Hub, which no release wrote.
+      for (const registry of ['registry.example.com', 'docker.io/dashpay']) {
+        const configFileData = getConfigFileDataWrittenBy(release, '4');
+        for (const options of Object.values(configFileData.configs)) {
+          options.platform.drive.abci.docker.image = `${registry}/drive:4`;
+          options.platform.dapi.rsDapi.docker.image = `${registry}/rs-dapi:4`;
+        }
+
+        const migrated = migrateConfigFile(configFileData, release, version);
+
+        for (const options of Object.values(migrated.configs)) {
+          expect(options.platform.drive.abci.docker.image).to.equal(`${registry}/drive:4`);
+          expect(options.platform.dapi.rsDapi.docker.image).to.equal(`${registry}/rs-dapi:4`);
+        }
+      }
+    }
+  });
+
   it('should apply both the 4.1.1 and 4.2.0 migrations to a 4.1.0 config', async () => {
     // Two release lines added migrations above 4.1.0 independently: the Tenderdash
     // pin and the ACME directory default. A node upgrading from 4.1.0 crosses both,
@@ -340,6 +545,103 @@ describe('migrateConfigFileFactory', () => {
       docker: baseConfig.get('core.tor.docker'),
       control: { password: 'operator-enabled' },
     });
+  });
+
+  it('should render a migrated legacy config before and after enabling Tor', async () => {
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+    const baseConfig = container.resolve('defaultConfigs').get('base');
+    const renderServiceTemplates = container.resolve('renderServiceTemplates');
+
+    for (const fromVersion of ['4.1.0', '4.1.1', '4.2.0-dev.1']) {
+      const configFileData = createConfigFile().toObject();
+      configFileData.configFormatVersion = fromVersion;
+      const devnetConfig = new Config('devnet', baseConfig.getStoredOptions());
+      devnetConfig.set('network', 'devnet');
+      configFileData.configs.devnet = devnetConfig.getStoredOptions();
+      for (const options of Object.values(configFileData.configs)) {
+        delete options.core.tor;
+      }
+
+      const migrated = migrateConfigFile(configFileData, fromVersion, version);
+
+      for (const [name, options] of Object.entries(migrated.configs)) {
+        const config = new Config(name, options);
+        const disabledConf = renderServiceTemplates(config)['core/dash.conf'];
+        expect(disabledConf).to.match(/^listenonion=0$/m);
+        expect(disabledConf.match(/^bind=.*$/gm)).to.deep.equal(['bind=0.0.0.0']);
+
+        config.set('core.tor.enabled', true);
+        const enabledConf = renderServiceTemplates(config)['core/dash.conf'];
+        expect(enabledConf).to.match(/^listenonion=1$/m);
+        expect(enabledConf.match(/^bind=.*$/gm)).to.deep.equal([
+          'bind=0.0.0.0',
+          'bind=127.0.0.1=onion',
+        ]);
+      }
+    }
+  });
+
+  it('should add the quorum list reload interval to a 5.0.0-beta.3 config, short only on local networks', async () => {
+    // Loading is what fails without it: the schema requires the option.
+    const fromVersion = '5.0.0-beta.3';
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    const configFileData = createConfigFile().toObject();
+    configFileData.configFormatVersion = fromVersion;
+    // `dashmate setup local` runs the service on `local_seed`, a config of its
+    // own next to the `local` preset.
+    configFileData.configs.local_seed = structuredClone(configFileData.configs.local);
+    configFileData.configs.local_seed.group = 'local';
+    for (const options of Object.values(configFileData.configs)) {
+      delete options.platform.quorumList.cacheTtlSeconds;
+    }
+    configFileData.configs.testnet.platform.quorumList.cacheTtlSeconds = 5;
+
+    const migrated = migrateConfigFile(configFileData, fromVersion, version);
+
+    expect(migrated.configs.local.platform.quorumList.cacheTtlSeconds).to.equal(1);
+    expect(migrated.configs.local_seed.platform.quorumList.cacheTtlSeconds).to.equal(1);
+    expect(migrated.configs.base.platform.quorumList.cacheTtlSeconds).to.equal(60);
+    expect(migrated.configs.mainnet.platform.quorumList.cacheTtlSeconds).to.equal(60);
+    // An interval the operator chose is left alone.
+    expect(migrated.configs.testnet.platform.quorumList.cacheTtlSeconds).to.equal(5);
+
+    for (const [name, options] of Object.entries(migrated.configs)) {
+      expect(() => new Config(name, options), `migrated ${name} config does not load`).to.not.throw();
+    }
+  });
+
+  it('should let Drive call getdeploymentinfo on Core from a 5.0.0-rc.1 config', async () => {
+    // Drive reads the platform activation fork with getdeploymentinfo on Core v24, and
+    // Core answers a method missing from the consensus user's whitelist with HTTP 403.
+    const fromVersion = '5.0.0-rc.1';
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    const configFileData = createConfigFile().toObject();
+    configFileData.configFormatVersion = fromVersion;
+    for (const options of Object.values(configFileData.configs)) {
+      const { whitelist } = options.core.rpc.users.drive_consensus;
+      expect(whitelist).to.include('getdeploymentinfo');
+      whitelist.splice(whitelist.indexOf('getdeploymentinfo'), 1);
+    }
+    configFileData.configs.testnet.core.rpc.users.drive_consensus.whitelist.push('getblockcount');
+    configFileData.configs.mainnet.core.rpc.users.drive_consensus.whitelist = null;
+
+    const migrated = migrateConfigFile(configFileData, fromVersion, version);
+
+    expect(migrated.configs.base.core.rpc.users.drive_consensus.whitelist)
+      .to.include('getdeploymentinfo');
+    expect(migrated.configs.local.core.rpc.users.drive_consensus.whitelist)
+      .to.include('getdeploymentinfo');
+    // A method the operator allowed stays allowed.
+    expect(migrated.configs.testnet.core.rpc.users.drive_consensus.whitelist)
+      .to.include.members(['getdeploymentinfo', 'getblockcount']);
+    // A user without a whitelist may already call every method.
+    expect(migrated.configs.mainnet.core.rpc.users.drive_consensus.whitelist).to.equal(null);
+
+    for (const [name, options] of Object.entries(migrated.configs)) {
+      expect(() => new Config(name, options), `migrated ${name} config does not load`).to.not.throw();
+    }
   });
 
   it('should keep an operator image that predates the 4.0.0 re-pin', async () => {

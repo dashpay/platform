@@ -4,6 +4,9 @@
 //! (`DocumentIndexOnlyDeleteTransition`). It is its own kind, not a
 //! version of the delete transition: `document_delete_state_transition`
 //! keeps V2's bounds and keeps evolving independently for stored types.
+//! `shield_from_asset_lock_state_transition` moves to version 1 alone: its
+//! bundle binds its kind and its asset lock, and version 0 is not admitted
+//! (`StateTransition::active_version_range` refuses it at decode).
 
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::{
     DPPStateTransitionSerializationVersions, DocumentFeatureVersionBounds,
@@ -181,9 +184,9 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
             default_current_version: 0,
         },
         shield_from_asset_lock_state_transition: FeatureVersionBounds {
-            min_version: 0,
-            max_version: 0,
-            default_current_version: 0,
+            min_version: 1, // changed: version 0, whose bundle binds nothing, is refused from here
+            max_version: 1, // changed: version 1's bundle binds its kind and its asset lock
+            default_current_version: 1,
         },
         shielded_withdrawal_state_transition: FeatureVersionBounds {
             min_version: 0,
@@ -201,6 +204,21 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
             default_current_version: 0,
         },
         identity_top_up_from_shielded_pool_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        token_shielded_transfer_with_shielded_fee_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        token_unshield_with_shielded_fee_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        token_purchase_from_shielded_pool_state_transition: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
             default_current_version: 0,

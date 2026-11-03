@@ -105,6 +105,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 return;
             }
             let lock = TrackedAssetLock {
+                operation_id: None,
                 out_point,
                 transaction: tx,
                 account_index,
@@ -977,6 +978,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 account_index = lock.account_index,
                 "resume_asset_lock: lock looked up"
             );
+            // A drain's lock is settled under the drain persistence contract
+            // whichever path resumes it (same-UUID resume, the generic
+            // exact-outpoint resume behind "Finish now", a readiness-deferred
+            // retry), so the admission policy applies here, before any
+            // dispatch or lifecycle write. Untagged legacy locks are unaffected.
+            if lock.operation_id.is_some() {
+                self.require_wallet_drain_persistence()?;
+            }
             // Only the two proof-less statuses are candidates. A lock
             // carrying an IS/Chain proof, a `RecoveredFromChain` entry
             // (reconstructed from a record the chain itself accepted), and
@@ -991,7 +1000,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 AssetLockStatus::InstantSendLocked
                 | AssetLockStatus::ChainLocked
                 | AssetLockStatus::RecoveredFromChain
-                | AssetLockStatus::Consumed => None,
+                | AssetLockStatus::Consumed
+                | AssetLockStatus::DrainCompleted => None,
             };
             // Claim the dispatch window for the two statuses that can still
             // send, while the read guard that produced this snapshot is
@@ -1070,7 +1080,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             AssetLockStatus::InstantSendLocked
             | AssetLockStatus::ChainLocked
             | AssetLockStatus::RecoveredFromChain
-            | AssetLockStatus::Consumed => None,
+            | AssetLockStatus::Consumed
+            | AssetLockStatus::DrainCompleted => None,
         };
         if status == AssetLockStatus::Built && local_finality.is_some() {
             dispatch_claim
@@ -1302,8 +1313,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     // same outpoint may confirm at any point after the
                     // pre-broadcast screen ran, and from that moment no proof
                     // for this transaction can ever arrive. Nothing inside the
-                    // wait would notice: it wakes on lock events and re-reads
-                    // the tracked funding transaction only, so an unbounded
+                    // wait would notice: it wakes on lock events, re-reads the
+                    // tracked funding transaction and looks up where that
+                    // transaction was mined, never the sibling, so an unbounded
                     // wait started before that sibling confirmed never ends.
                     // The bound costs nothing — the row is left at `Broadcast`,
                     // so a proof that lands after the expiry is returned by the
@@ -1314,7 +1326,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     } else {
                         timeout.or(Some(UNCONFIRMED_BROADCAST_PROOF_TIMEOUT))
                     };
-                    match self.wait_for_proof(out_point, bounded).await {
+                    match self.wait_for_resumed_proof(out_point, bounded).await {
                         Ok(proof) => {
                             if undispatched.is_some() {
                                 dispatch_claim
@@ -1636,8 +1648,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 //
                 // The bound costs nothing: the row is left at `Broadcast`, so
                 // a proof that lands after the expiry is picked up by the very
-                // next resume — `wait_for_proof` returns it on its first
-                // iteration, straight from the record, without waiting at all.
+                // next resume — `wait_for_resumed_proof` returns it on its
+                // first iteration, straight from the record, without waiting
+                // at all.
                 //
                 // Callers that supplied their own timeout keep their exact
                 // semantics, `FinalityTimeout` and all: `or` is the identity
@@ -1653,7 +1666,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     } else {
                         timeout.or(Some(UNCONFIRMED_BROADCAST_PROOF_TIMEOUT))
                     };
-                    match self.wait_for_proof(out_point, bounded).await {
+                    match self.wait_for_resumed_proof(out_point, bounded).await {
                         Ok(proof) => proof,
                         Err(expiry @ PlatformWalletError::FinalityTimeout(_)) => {
                             // Same reading as the `Built` arm: the wait gave
@@ -1716,12 +1729,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // holds only while the chain-locked record is still
                 // reachable — the same lost-state accident that produced a
                 // proof-less `RecoveredFromChain` row could equally have
-                // taken the record with it, and then the wait has nothing
-                // to resolve from and blocks forever on `Notify`. The bound
-                // is free where the argument holds (`wait_for_proof` returns
-                // from the record on its first iteration, before any deadline
-                // is consulted) and closes the case where it doesn't, so it
-                // is applied for uniformity with the two arms above. No
+                // taken the record with it, and then only the mined-height
+                // lookup `wait_for_resumed_proof` makes can still place the
+                // transaction; when it cannot either, the wait would block
+                // forever on `Notify`. The bound is free where the argument
+                // holds (the wait returns from the record on its first
+                // iteration, before any deadline is consulted) and closes the
+                // case where it doesn't, so it is applied for uniformity with
+                // the two arms above. No
                 // re-typing here: nothing was broadcast on this path, so
                 // `FinalityTimeout` is the honest verdict.
                 match existing_proof {
@@ -1730,18 +1745,23 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                             .await?
                     }
                     None => {
-                        let proof = self
-                            .wait_for_proof(
-                                out_point,
-                                timeout.or(Some(UNCONFIRMED_BROADCAST_PROOF_TIMEOUT)),
-                            )
-                            .await?;
+                        let bound = timeout.or(Some(UNCONFIRMED_BROADCAST_PROOF_TIMEOUT));
+                        // Chain-only: the status asserts a ChainLock proof, so
+                        // an InstantSend record does not settle it. It comes
+                        // straight from the record, so the ChainLock wait
+                        // still has the whole bound.
+                        let proof = match self.wait_for_resumed_proof(out_point, bound).await? {
+                            dpp::prelude::AssetLockProof::Instant(_) => {
+                                self.upgrade_to_chain_lock_proof(out_point, bound).await?
+                            }
+                            chain => chain,
+                        };
                         self.validate_or_upgrade_proof(proof, account_index, out_point)
                             .await?
                     }
                 }
             }
-            (AssetLockStatus::Consumed, _) => {
+            (AssetLockStatus::Consumed | AssetLockStatus::DrainCompleted, _) => {
                 // Terminal tombstone — the asset lock was already
                 // burned by a successful identity registration / top-up.
                 // Retaining this state makes the typed distinction from
@@ -2171,6 +2191,7 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point,
                     transaction: transaction.clone(),
                     account_index: 0,
@@ -2306,6 +2327,7 @@ mod tests {
                 .insert(
                     out_point,
                     TrackedAssetLock {
+                        operation_id: None,
                         out_point,
                         transaction,
                         account_index: 0,
@@ -2524,9 +2546,12 @@ mod tests {
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
             dpns_name_states: BTreeMap::new(),
+            dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
         };
         let out_point = OutPoint::new(tx.txid(), 0);
         let lock = TrackedAssetLock {
+            operation_id: None,
             out_point,
             transaction: tx,
             account_index: 0,
@@ -2682,7 +2707,7 @@ mod tests {
         /// rebuild that fails at input selection is direct proof the funding
         /// reservation is still held.
         signer: crate::test_support::WalletSigner,
-        /// The handle `SpvEventForwarder` fires on IS/ChainLock events, so
+        /// The handle `LockNotifyHandler` fires on IS/ChainLock events, so
         /// a test can wake an in-flight proof wait the way the live wallet
         /// does.
         lock_notify: Arc<Notify>,
@@ -2803,6 +2828,7 @@ mod tests {
             info.tracked_asset_locks.insert(
                 self.out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point: self.out_point,
                     transaction: self.transaction.clone(),
                     account_index: 0,
@@ -4313,6 +4339,7 @@ mod tests {
                 .insert(
                     out_point,
                     TrackedAssetLock {
+                        operation_id: None,
                         out_point,
                         transaction,
                         account_index: 0,
@@ -4826,6 +4853,7 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -4949,6 +4977,7 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5451,6 +5480,7 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5555,6 +5585,7 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5833,6 +5864,7 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5977,6 +6009,7 @@ mod tests {
                 .insert(
                     out_point,
                     TrackedAssetLock {
+                        operation_id: None,
                         out_point,
                         transaction,
                         account_index: 0,

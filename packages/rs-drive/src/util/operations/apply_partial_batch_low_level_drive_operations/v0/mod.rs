@@ -3,11 +3,11 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
 use crate::query::GroveError;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::{KeyInfoPath, OpsByLevelPath};
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::batch::OpsByLevelPath;
+use grovedb::TransactionArg;
 use grovedb_costs::OperationCost;
-use std::collections::HashMap;
 
 impl Drive {
     //this will be used later
@@ -17,9 +17,7 @@ impl Drive {
     #[allow(deprecated)]
     pub(crate) fn apply_partial_batch_low_level_drive_operations_v0(
         &self,
-        estimated_costs_only_with_layer_info: Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: Option<EstimatedLayers>,
         transaction: TransactionArg,
         batch_operations: Vec<LowLevelDriveOperation>,
         mut add_on_operations: impl FnMut(

@@ -4,28 +4,36 @@ use dpp::platform_value::{Identifier, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use platform_version::version::PlatformVersion;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::batched_transition::document_replace_transition::DocumentReplaceTransitionV0;
 use crate::drive::contract::DataContractFetchInfo;
+use crate::drive::Drive;
 use crate::error::Error;
+use grovedb::TransactionArg;
 use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::v0::DocumentReplaceTransitionActionV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+use crate::state_transition_action::batch::batched_transition::document_transition::state_generated_properties::generate_state_read_properties;
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 
 impl DocumentReplaceTransitionActionV0 {
     /// try from borrowed
     #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_document_replace_transition(
+        drive: &Drive,
+        transaction: TransactionArg,
         document_replace_transition: &DocumentReplaceTransitionV0,
         owner_id: Identifier,
         original_document: &Document,
         block_info: &BlockInfo,
         user_fee_increase: UserFeeIncrease,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
+        platform_version: &PlatformVersion,
     ) -> Result<
         (
             ConsensusValidationResult<BatchedTransitionAction>,
@@ -69,6 +77,48 @@ impl DocumentReplaceTransitionActionV0 {
                 ));
             }
         };
+        // Added in place at protocol version 14, inert before it: `fill_generated_properties`
+        // is `None` there and leaves the data as sent. From 14 on, every `generatedFrom`
+        // property the transition leaves out is generated from its params here, before the
+        // changed fields below and every later check read the data. `document_type()`
+        // cannot fail here at any version: building the base action above already resolved
+        // the document type (its token cost is read from it), and the
+        // `document_type_field_is_required` calls below resolve it the same way.
+        let mut data = data.clone();
+        base.document_type()?
+            .fill_generated_properties(&mut data, platform_version)?;
+
+        // Added in place at protocol version 15, inert before it, where no type declares a
+        // `generatedFrom` function that reads state: every such property keeps the stored
+        // value while the replace keeps the token it names, and is read from state again when
+        // it names another, before the changed fields below and every later check read the
+        // data. A refusal bumps the nonce, and the write pays for the reads either way.
+        let (refusal, fee_result) = generate_state_read_properties(
+            drive,
+            base.document_type()?,
+            base.data_contract_fetch_info_ref(),
+            &mut data,
+            Some(original_document.properties()),
+            block_info,
+            transaction,
+            platform_version,
+        )?;
+        if let Some(error) = refusal {
+            let bump_action =
+                BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(
+                    &base,
+                    owner_id,
+                    user_fee_increase,
+                );
+            return Ok((
+                ConsensusValidationResult::new_with_data_and_errors(
+                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
+                    vec![error],
+                ),
+                fee_result,
+            ));
+        }
+
         let updated_at = if base.document_type_field_is_required(property_names::UPDATED_AT)? {
             Some(block_info.time_ms)
         } else {
@@ -109,15 +159,10 @@ impl DocumentReplaceTransitionActionV0 {
 
         let original_creator_id = original_document.creator_id();
 
-        // The fields the stored document had no value for: this replace sets
-        // them for the first time. A subset of the changed fields below, kept
-        // apart because the immutable-property check treats a first-time set
-        // differently from a change or a removal.
-        let added_fields: BTreeSet<String> = data
-            .keys()
-            .filter(|key| !original_document.properties().contains_key(*key))
-            .cloned()
-            .collect();
+        // The last moderator's stamp stays as it is, each half as stored, unless the
+        // transformer stamps the replace as a moderator's
+        let original_moderated_at = original_document.moderated_at();
+        let original_moderated_by = original_document.moderated_by();
 
         // The identifier each removed field held. Kept because a removed
         // `deletableDocument` reference is only allowed on an `immutable`
@@ -191,17 +236,19 @@ impl DocumentReplaceTransitionActionV0 {
                     updated_at_core_block_height,
                     transferred_at_core_block_height:
                         original_document_transferred_at_core_block_height,
-                    data: data.clone(),
+                    data,
                     changed_data_fields: changed_fields,
-                    added_data_fields: added_fields,
                     removed_identifier_fields,
                     stored_changed_values,
                     creator_id: original_creator_id,
+                    moderated_at: original_moderated_at,
+                    moderated_by: original_moderated_by,
+                    property_constraint_reads: Default::default(),
                 }
                 .into(),
             ))
             .into(),
-            FeeResult::default(),
+            fee_result,
         ))
     }
 }

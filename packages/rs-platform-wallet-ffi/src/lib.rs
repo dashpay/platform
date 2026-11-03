@@ -24,8 +24,10 @@ pub mod dashpay_payment;
 pub mod dashpay_profile;
 pub mod dashpay_sync;
 pub mod data_contract;
+pub mod decision_proposal;
 pub mod derivation;
 pub mod derive_and_persist_callbacks;
+pub mod derive_connect_key;
 pub mod derive_identity_key_at_slot;
 pub mod document;
 pub mod dpns;
@@ -79,8 +81,12 @@ pub mod shielded_send;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
 pub mod shielded_types;
+#[cfg(feature = "shielded")]
+pub mod shielded_wallet_drain;
 pub mod sign_with_mnemonic_resolver;
 pub mod spv;
+#[cfg(test)]
+pub(crate) mod test_fixtures;
 pub mod token_persistence;
 pub mod tokens;
 pub mod tracked_masternode;
@@ -107,8 +113,10 @@ pub use dashpay_payment::*;
 pub use dashpay_profile::*;
 pub use dashpay_sync::*;
 pub use data_contract::*;
+pub use decision_proposal::*;
 pub use derivation::*;
 pub use derive_and_persist_callbacks::*;
+pub use derive_connect_key::*;
 pub use derive_identity_key_at_slot::*;
 pub use document::*;
 pub use dpns::*;
@@ -154,6 +162,8 @@ pub use shielded_send::*;
 #[cfg(feature = "shielded")]
 pub use shielded_sync::*;
 pub use shielded_types::*;
+#[cfg(feature = "shielded")]
+pub use shielded_wallet_drain::*;
 pub use sign_with_mnemonic_resolver::*;
 pub use spv::*;
 pub use token_persistence::*;

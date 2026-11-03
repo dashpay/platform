@@ -15,7 +15,7 @@
 //! Whole module is gated `feature = "server"` via the parent's
 //! `pub mod execute_point_lookup;` declaration.
 
-use super::{DriveDocumentCountQuery, SplitCountEntry};
+use super::{document_count_of_element, DriveDocumentCountQuery, SplitCountEntry};
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::version::PlatformVersion;
@@ -32,8 +32,9 @@ impl DriveDocumentCountQuery<'_> {
     /// Implementation goes through the same
     /// [`Self::point_lookup_count_path_query`] builder the prove
     /// path uses, then runs `grove.query` to fetch the matched
-    /// `CountTree` elements and sums their `count_value_or_default()`
-    /// values. The builder handles all three structural cases
+    /// `CountTree` elements and sums their document counts
+    /// ([`document_count_of_element`]: the count, or on a
+    /// `summableOffCountIndex` index the sum). The builder handles all three structural cases
     /// (Equal-only fully covered, In at any index position, In with
     /// trailing Equals via `set_subquery_path`) — there's no need
     /// for a separate recursive walker on the no-proof side.
@@ -63,16 +64,22 @@ impl DriveDocumentCountQuery<'_> {
         // - In at any position: one element per In branch that has at
         //   least one doc; missing branches contribute 0 by virtue of
         //   being absent from the result set.
-        // `count_value_or_default()` returns the `CountTree`'s count
-        // for `Element::CountTree` / `Element::SumTree` and 1 for
-        // `Element::Reference` (the unique-index-with-all-non-null
-        // case — see `Element::count_value_or_default` for the per-
-        // variant contract).
+        // `document_count_of_element` reads `count_value_or_default()`,
+        // the `CountTree`'s count for `Element::CountTree` /
+        // `Element::SumTree` and 1 for `Element::Reference` (the
+        // unique-index-with-all-non-null case — see
+        // `Element::count_value_or_default` for the per-variant
+        // contract), except on a `summableOffCountIndex` index, whose
+        // elements' sums are its document counts. That exception is
+        // inert before protocol version 14: only meta-schema v3 admits
+        // the keyword.
         let count: u64 = results
             .elements
             .iter()
             .map(|e| match e {
-                QueryResultElement::ElementResultItem(elem) => elem.count_value_or_default(),
+                QueryResultElement::ElementResultItem(elem) => {
+                    document_count_of_element(self.index, elem)
+                }
                 // `QueryElementResultType` only emits `ElementResultItem`;
                 // the other variants belong to `QueryKeyElementPairResultType`
                 // / `QueryPathKeyElementTrioResultType` which we don't
@@ -96,8 +103,8 @@ impl DriveDocumentCountQuery<'_> {
     /// fully-covered Equal/`In` count query against a `countable: true`
     /// index. Returns the raw proof bytes; the SDK-side
     /// [`Self::verify_point_lookup_count_proof`] walks the proof and
-    /// extracts `count_value_or_default()` from each verified CountTree
-    /// element.
+    /// reads each verified CountTree element's document count
+    /// ([`document_count_of_element`]).
     ///
     /// Builds the path query via
     /// [`Self::point_lookup_count_path_query`] (shared with the

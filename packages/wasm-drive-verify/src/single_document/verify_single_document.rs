@@ -135,7 +135,7 @@ pub fn verify_single_document_proof_keep_serialized(
     // Verify the proof keeping it serialized
     match query.inner.verify_proof_keep_serialized(
         is_subset,
-        supported_grovedb_proof(&proof, platform_version)?,
+        supported_grovedb_proof(&proof)?,
         platform_version,
     ) {
         Ok((root_hash, maybe_serialized_document)) => Ok(SingleDocumentProofResult {

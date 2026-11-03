@@ -2,6 +2,10 @@ mod from_document;
 pub mod v0;
 pub mod v0_methods;
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::{Display, From};
 #[cfg(feature = "serde-conversion")]
@@ -32,10 +36,10 @@ pub enum DocumentIndexOnlyDeleteTransition {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for DocumentIndexOnlyDeleteTransition {}
+impl JsonConvertible for DocumentIndexOnlyDeleteTransition {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for DocumentIndexOnlyDeleteTransition {}
+impl ValueConvertible for DocumentIndexOnlyDeleteTransition {}
 
 #[cfg(all(
     test,

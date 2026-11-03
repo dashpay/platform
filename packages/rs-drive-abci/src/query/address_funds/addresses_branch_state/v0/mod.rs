@@ -1,3 +1,4 @@
+use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
@@ -17,6 +18,22 @@ impl<C> Platform<C> {
         _platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetAddressesBranchStateResponseV0>, Error> {
+        // Drive refuses a depth outside this range with an internal error, which clients retry
+        // on every other node; checking the wire value also keeps `depth as u8` from wrapping.
+        let address_funds = &platform_version.drive.methods.address_funds;
+        let (min_depth, max_depth) = (
+            address_funds.address_funds_query_min_depth,
+            address_funds.address_funds_query_max_depth,
+        );
+        if depth < min_depth as u32 || depth > max_depth as u32 {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument(format!(
+                    "depth {} out of bounds of [{}, {}]",
+                    depth, min_depth, max_depth
+                )),
+            ));
+        }
+
         // checkpoint_height is now required and must match the height from trunk response metadata
         let merk_proof = self.drive.prove_address_funds_branch_query(
             key,
@@ -34,7 +51,7 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::setup_platform;
+    use crate::query::tests::{assert_invalid_argument_status, setup_platform};
     use dpp::dashcore::Network;
     use drive::drive::{Checkpoint, CheckpointInfo};
     use drive::grovedb::GroveDb;
@@ -49,7 +66,11 @@ mod tests {
 
         let request = GetAddressesBranchStateRequestV0 {
             key: vec![0; 1],
-            depth: 2,
+            depth: version
+                .drive
+                .methods
+                .address_funds
+                .address_funds_query_min_depth as u32,
             checkpoint_height: 0,
         };
 
@@ -62,42 +83,24 @@ mod tests {
         );
     }
 
+    /// A depth outside the allowed range is the request's fault, refused before Drive sees it;
+    /// a depth that `as u8` would wrap into the range (263 into 7) is refused as well.
     #[test]
-    fn test_branch_state_invalid_depth_returns_error() {
+    fn should_refuse_a_depth_out_of_range_as_invalid_argument() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
-        // Use a depth of 0 which should be below the minimum allowed depth
-        let request = GetAddressesBranchStateRequestV0 {
-            key: vec![0; 1],
-            depth: 0,
-            checkpoint_height: 0,
-        };
+        for depth in [0, 255, 263] {
+            let request = GetAddressesBranchStateRequestV0 {
+                key: vec![0; 1],
+                depth,
+                checkpoint_height: 0,
+            };
 
-        let result = platform.query_addresses_branch_state_v0(request, &state, version);
-
-        assert!(
-            result.is_err(),
-            "expected error for depth outside allowed range"
-        );
-    }
-
-    #[test]
-    fn test_branch_state_max_depth_exceeded_returns_error() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-
-        // Use a very large depth (255) which should be above the maximum
-        let request = GetAddressesBranchStateRequestV0 {
-            key: vec![0; 1],
-            depth: 255,
-            checkpoint_height: 0,
-        };
-
-        let result = platform.query_addresses_branch_state_v0(request, &state, version);
-
-        assert!(
-            result.is_err(),
-            "expected error for depth above max allowed range"
-        );
+            let status = assert_invalid_argument_status(
+                platform.query_addresses_branch_state_v0(request, &state, version),
+            );
+            assert!(status.message().contains("depth"), "{}", status.message());
+        }
     }
 
     #[test]

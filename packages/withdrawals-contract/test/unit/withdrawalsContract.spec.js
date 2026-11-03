@@ -245,11 +245,14 @@ describe('Withdrawals contract', () => {
 
           const document = dpp.document.create(dataContract, identityId, 'withdrawal', rawWithdrawalDocument);
           const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult, 2);
+          const error = expectJsonSchemaError(validationResult);
 
           expect(error.keyword)
             .to
             .equal('type');
+          expect(error.instancePath)
+            .to
+            .equal('/pooling');
           expect(error.params.type)
             .to
             .equal('integer');
@@ -289,11 +292,14 @@ describe('Withdrawals contract', () => {
 
           const document = dpp.document.create(dataContract, identityId, 'withdrawal', rawWithdrawalDocument);
           const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult, 2);
+          const error = expectJsonSchemaError(validationResult);
 
           expect(error.keyword)
             .to
             .equal('type');
+          expect(error.instancePath)
+            .to
+            .equal('/outputScript');
           expect(error.params.type)
             .to
             .equal('array');
@@ -351,11 +357,14 @@ describe('Withdrawals contract', () => {
 
           const document = dpp.document.create(dataContract, identityId, 'withdrawal', rawWithdrawalDocument);
           const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult, 2);
+          const error = expectJsonSchemaError(validationResult);
 
           expect(error.keyword)
             .to
             .equal('type');
+          expect(error.instancePath)
+            .to
+            .equal('/status');
           expect(error.params.type)
             .to
             .equal('integer');

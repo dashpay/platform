@@ -10,8 +10,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use dashcore::crypto::ecdsa::{EcdsaPublicKey as PublicKey, EcdsaSignature};
 use dashcore::hashes::Hash;
-use dashcore::secp256k1::{ecdsa, Message, PublicKey, Secp256k1};
 use dashcore::BlockHash;
 #[cfg(test)]
 use dashcore::Txid;
@@ -25,7 +25,9 @@ use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::{ExtendedPubKeySigner, Signer, SignerMethod};
 use key_wallet::test_utils::TestWalletContext;
+use key_wallet::transaction_checking::WalletTransactionChecker;
 use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet::{DerivationPath, Wallet};
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
@@ -134,26 +136,26 @@ impl Signer for WalletSigner {
         &self,
         path: &DerivationPath,
         sighash: [u8; 32],
-    ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
-        let secp = Secp256k1::new();
+    ) -> Result<(EcdsaSignature, PublicKey), Self::Error> {
         let key = self
             .wallet
             .derive_private_key(path)
             .map_err(|e| e.to_string())?;
-        let message = Message::from_digest(sighash);
+        // Match message-signing vectors without low-R nonce grinding.
         Ok((
-            secp.sign_ecdsa(&message, &key),
-            PublicKey::from_secret_key(&secp, &key),
+            key.sign_recoverable(&sighash)
+                .signature()
+                .map_err(|e| e.to_string())?,
+            key.public_key(),
         ))
     }
 
     async fn public_key(&self, path: &DerivationPath) -> Result<PublicKey, Self::Error> {
-        let secp = Secp256k1::new();
         let key = self
             .wallet
             .derive_private_key(path)
             .map_err(|e| e.to_string())?;
-        Ok(PublicKey::from_secret_key(&secp, &key))
+        Ok(key.public_key())
     }
 }
 
@@ -223,26 +225,13 @@ pub async fn funded_wallet_manager_with_outputs(
         }
     };
 
-    let funding_tx = Transaction::dummy(&receive_address, 0..1, outputs);
-    // Chain-locked funding, not `Mempool`: asset-lock builders only
-    // select final (confirmed / InstantSend-locked) inputs since
-    // rust-dashcore#836, so a mempool-funded fixture leaves the
-    // asset-lock tests with no eligible UTXO.
-    let result = ctx
-        .check_transaction(
-            &funding_tx,
-            TransactionContext::InChainLockedBlock(BlockInfo::new(
-                1,
-                BlockHash::all_zeros(),
-                1_700_000_000,
-            )),
-        )
-        .await;
-    assert!(
-        result.is_relevant,
-        "funding tx should be relevant to {account_type:?}"
-    );
-    assert!(result.is_new_transaction);
+    credit_chain_locked(
+        &mut ctx.managed_wallet,
+        &mut ctx.wallet,
+        &receive_address,
+        outputs,
+    )
+    .await;
 
     let signer = WalletSigner {
         wallet: ctx.wallet.clone(),
@@ -256,6 +245,8 @@ pub async fn funded_wallet_manager_with_outputs(
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        dashpay_backfill: Default::default(),
+        rewind_barrier: Default::default(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
@@ -385,6 +376,8 @@ pub(crate) async fn funded_wallet_manager_dual_standard(
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        dashpay_backfill: Default::default(),
+        rewind_barrier: Default::default(),
     };
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
@@ -488,6 +481,8 @@ pub(crate) async fn funded_wallet_manager_with_contact(
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        dashpay_backfill: Default::default(),
+        rewind_barrier: Default::default(),
     };
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
@@ -536,22 +531,13 @@ pub(crate) async fn funded_coinjoin_wallet_manager() -> (
         .expect("coinjoin receive address")
         .address;
 
-    let funding_tx = Transaction::dummy(&receive_address, 0..1, &[10_000_000]);
-    let result = ctx
-        .check_transaction(
-            &funding_tx,
-            TransactionContext::InChainLockedBlock(BlockInfo::new(
-                1,
-                BlockHash::all_zeros(),
-                1_700_000_000,
-            )),
-        )
-        .await;
-    assert!(
-        result.is_relevant,
-        "funding tx should be relevant to the CoinJoin account"
-    );
-    assert!(result.is_new_transaction);
+    credit_chain_locked(
+        &mut ctx.managed_wallet,
+        &mut ctx.wallet,
+        &receive_address,
+        &[10_000_000],
+    )
+    .await;
 
     let signer = WalletSigner {
         wallet: ctx.wallet.clone(),
@@ -565,12 +551,89 @@ pub(crate) async fn funded_coinjoin_wallet_manager() -> (
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        dashpay_backfill: Default::default(),
+        rewind_barrier: Default::default(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
 
     (Arc::new(RwLock::new(wm)), wallet_id, generation, signer)
+}
+
+/// Credits `outputs` to `address` in a chain-locked block, the funding every
+/// asset-lock fixture uses. Chain-locked, not `Mempool`: asset-lock builders
+/// only select final (confirmed / InstantSend-locked) inputs since
+/// rust-dashcore#836, so a mempool-funded fixture leaves no eligible UTXO.
+async fn credit_chain_locked(
+    managed_wallet: &mut ManagedWalletInfo,
+    wallet: &mut Wallet,
+    address: &dashcore::Address,
+    outputs: &[u64],
+) {
+    let funding_tx = Transaction::dummy(address, 0..1, outputs);
+    let result = managed_wallet
+        .check_core_transaction(
+            &funding_tx,
+            TransactionContext::InChainLockedBlock(BlockInfo::new(
+                1,
+                BlockHash::all_zeros(),
+                1_700_000_000,
+            )),
+            wallet,
+            true,
+            true,
+        )
+        .await;
+    assert!(
+        result.is_relevant,
+        "funding tx should be relevant to {address}"
+    );
+    assert!(result.is_new_transaction);
+}
+
+/// Credits one chain-locked coin of `value` duffs to the first BIP44 account of
+/// the wallet [`test_platform_wallet_manager`] created, and returns a signer
+/// over that wallet's seed. The manager keeps the wallet without private
+/// keys, so the signer is built from the same mnemonic.
+///
+/// `#[cfg(test)]` for the same reason as [`funded_coinjoin_wallet_manager`].
+#[cfg(test)]
+pub(crate) async fn fund_test_platform_wallet(
+    wallet_manager: &RwLock<WalletManager<PlatformWalletInfo>>,
+    wallet_id: &WalletId,
+    value: u64,
+) -> WalletSigner {
+    use key_wallet::mnemonic::Mnemonic;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+
+    let mut wm = wallet_manager.write().await;
+    let (wallet, info) = wm
+        .get_wallet_mut_and_info_mut(wallet_id)
+        .expect("wallet is registered");
+    let xpub = wallet
+        .accounts
+        .standard_bip44_accounts
+        .get(&0)
+        .expect("bip44 account")
+        .account_xpub;
+    let receive_address = info
+        .core_wallet
+        .first_bip44_managed_account_mut()
+        .expect("bip44 managed account")
+        .next_receive_address(Some(&xpub), true)
+        .expect("bip44 receive address");
+    credit_chain_locked(&mut info.core_wallet, wallet, &receive_address, &[value]).await;
+
+    let mnemonic = Mnemonic::from_phrase(TEST_PLATFORM_WALLET_MNEMONIC).expect("valid mnemonic");
+    WalletSigner {
+        wallet: Wallet::from_mnemonic(
+            mnemonic,
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .expect("wallet from the test mnemonic"),
+    }
 }
 
 /// Funded SPV-backed Core wallet for downstream FFI lifecycle tests. The SPV
@@ -668,15 +731,26 @@ pub async fn test_platform_wallet_manager() -> (
     Arc<crate::PlatformWalletManager<NoopTestPersister>>,
     WalletId,
 ) {
+    test_platform_wallet_manager_with(Arc::new(NoopTestPersister)).await
+}
+
+/// Mnemonic of the wallet [`test_platform_wallet_manager`] creates: the
+/// canonical all-`abandon` BIP-39 test vector.
+const TEST_PLATFORM_WALLET_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+     abandon abandon abandon abandon abandon about";
+
+/// [`test_platform_wallet_manager`] over a caller-supplied persister, for tests
+/// whose behaviour depends on what the backend attests.
+pub async fn test_platform_wallet_manager_with<P>(
+    persister: Arc<P>,
+) -> (Arc<crate::PlatformWalletManager<P>>, WalletId)
+where
+    P: crate::changeset::PlatformWalletPersistence + 'static,
+{
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
-    // Canonical all-`abandon` BIP-39 test vector.
-    const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
-         abandon abandon abandon abandon abandon about";
-
     let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
-    let persister = Arc::new(NoopTestPersister);
     let event_handler: Arc<dyn crate::events::PlatformEventHandler> =
         Arc::new(NoopTestEventHandler);
     let manager = Arc::new(crate::PlatformWalletManager::new(
@@ -685,7 +759,8 @@ pub async fn test_platform_wallet_manager() -> (
         event_handler,
     ));
 
-    let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
+    let mnemonic =
+        Mnemonic::from_phrase(TEST_PLATFORM_WALLET_MNEMONIC).expect("valid test mnemonic");
     let seed_bytes = mnemonic.to_seed("");
     // `Some(0)` skips the SPV birth-height lookup so the create never hits the
     // network.
@@ -732,7 +807,6 @@ pub(crate) async fn mnemonic_wallet_manager(
     dashcore::Address,
 ) {
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
-    use key_wallet::wallet::ManagedWalletInfo;
     use key_wallet::Mnemonic;
 
     let mnemonic = Mnemonic::from_phrase(phrase).expect("valid test mnemonic");
@@ -770,6 +844,8 @@ pub(crate) async fn mnemonic_wallet_manager(
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        dashpay_backfill: Default::default(),
+        rewind_barrier: Default::default(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);

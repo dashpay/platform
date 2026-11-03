@@ -94,6 +94,7 @@ impl DocumentPurchaseTransitionActionV0 {
                     document: modified_document,
                     original_owner_id,
                     price: *price,
+                    property_constraint_reads: Default::default(),
                 }
                 .into(),
             ))

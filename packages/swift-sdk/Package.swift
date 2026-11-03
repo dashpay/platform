@@ -40,6 +40,7 @@ let package = Package(
 
         // Integration tests against a local dashmate devnet.
         // Gated by env var `RUN_INTEGRATION_TESTS=1`
+        // Live testnet reads are gated separately by `RUN_TESTNET_TESTS=1`.
         .testTarget(
             name: "SwiftDashSDKIntegrationTests",
             dependencies: ["SwiftDashSDK"],

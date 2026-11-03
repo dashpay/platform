@@ -1,0 +1,147 @@
+{
+  "$formatVersion": "0",
+  "id": "5cgrHmr439uNGB3MbpBVHMGichHpZvMJRC7SRRVb3QWK",
+  "ownerId": "AtirhSVpAWF7dEt6dLAmesC4Sr1MsJ9bFC1nLAoNnq2S",
+  "version": 1,
+  "documentSchemas": {
+    "like": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byPost",
+          "properties": [
+            {
+              "postId": "asc"
+            }
+          ],
+          "terminal": "$ownerId",
+          "countable": "countable",
+          "rangeCountable": true,
+          "rankedCountable": true,
+          "preallocated": true
+        },
+        {
+          "name": "byAuthorPost",
+          "properties": [
+            {
+              "postAuthor": "asc"
+            },
+            {
+              "postId": "asc"
+            }
+          ],
+          "summableOffCountIndex": "byPost",
+          "rangeCountable": true,
+          "rangeSummable": true,
+          "rankedSummable": {
+            "at": ["postAuthor", "postId"]
+          },
+          "rankedAverageable": {
+            "at": ["postAuthor"]
+          },
+          "preallocated": true
+        },
+        {
+          "name": "byHashtagPost",
+          "properties": [
+            {
+              "hashtag": "asc"
+            },
+            {
+              "postId": "asc"
+            }
+          ],
+          "summableOffCountIndex": "byPost",
+          "rangeCountable": true,
+          "rangeSummable": true,
+          "rankedSummable": {
+            "at": ["hashtag", "postId"]
+          },
+          "rankedAverageable": {
+            "at": ["hashtag"]
+          },
+          "skipIfAbsent": true,
+          "preallocated": true
+        },
+        {
+          "name": "byLiker",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            }
+          ],
+          "terminal": "postId"
+        }
+      ],
+      "properties": {
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "post",
+            "where": {
+              "hashtag": "hashtag",
+              "$ownerId": "postAuthor"
+            }
+          },
+          "position": 0
+        },
+        "hashtag": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 59,
+          "position": 1
+        },
+        "postAuthor": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 2
+        }
+      },
+      "required": [
+        "postId",
+        "postAuthor"
+      ],
+      "additionalProperties": false
+    },
+    "post": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "indices": [
+        {
+          "name": "byHashtag",
+          "properties": [
+            {
+              "hashtag": "asc"
+            }
+          ]
+        }
+      ],
+      "properties": {
+        "hashtag": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 59,
+          "position": 0
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 280,
+          "position": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

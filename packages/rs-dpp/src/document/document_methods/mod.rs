@@ -3,11 +3,13 @@ use crate::data_contract::DataContract;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
+mod get_raw_array_elements_for_document_type;
 mod get_raw_for_contract;
 mod get_raw_for_document_type;
 mod hash;
 mod is_equal_ignoring_timestamps;
 
+pub(in crate::document) use get_raw_array_elements_for_document_type::*;
 pub(in crate::document) use get_raw_for_contract::*;
 pub(in crate::document) use get_raw_for_document_type::*;
 pub(in crate::document) use hash::*;
@@ -32,6 +34,15 @@ pub trait DocumentMethodsV0 {
         owner_id: Option<[u8; 32]>,
         platform_version: &PlatformVersion,
     ) -> Result<Option<Vec<u8>>, ProtocolError>;
+
+    /// The distinct index keys of the elements of the typed array at `key_path`, sorted: the
+    /// keys an index naming the array enters the document under.
+    fn get_raw_array_elements_for_document_type(
+        &self,
+        key_path: &str,
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<Vec<u8>>, ProtocolError>;
 
     fn hash(
         &self,

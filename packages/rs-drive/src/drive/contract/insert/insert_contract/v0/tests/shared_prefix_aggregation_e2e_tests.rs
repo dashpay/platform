@@ -811,6 +811,18 @@ fn shared_prefix_aggregate_v13_and_v14_layouts_coexist() {
         other => panic!("expected ProvableCountSumTree at v13, got {other:?}"),
     }
 
+    // The upgrade to v14 rewrites the unsigned `rating` keys v13 wrote, as
+    // `transition_to_version_14` does first
+    let transaction = drive.grove.start_transaction();
+    drive
+        .rekey_unsigned_integer_index_values(&transaction, platform_version_v14)
+        .expect("the v14 upgrade rewrite must succeed");
+    drive
+        .grove
+        .commit_transaction(transaction)
+        .unwrap()
+        .expect("the v14 upgrade rewrite must commit");
+
     // v14 insert into the EXISTING v13-created provable branch.
     let second_document = insert_review_document(
         &drive,

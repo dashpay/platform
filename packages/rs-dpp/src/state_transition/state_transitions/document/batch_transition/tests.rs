@@ -17,6 +17,8 @@ mod batch_transition_tests {
     use crate::state_transition::batch_transition::batched_transition::document_transition_action_type::{
         DocumentTransitionActionType, DocumentTransitionActionTypeGetter,
     };
+    use crate::shielded::SerializedAction;
+    use crate::state_transition::batch_transition::batched_transition::document_base_transition::v1::DocumentBaseTransitionV1;
     use crate::state_transition::batch_transition::batched_transition::token_base_transition::v0::TokenBaseTransitionV0;
     use crate::state_transition::batch_transition::batched_transition::token_base_transition::TokenBaseTransition;
     use crate::state_transition::batch_transition::batched_transition::token_burn_transition::v0::TokenBurnTransitionV0;
@@ -24,6 +26,11 @@ mod batch_transition_tests {
     use crate::state_transition::batch_transition::batched_transition::token_claim_transition::v0::TokenClaimTransitionV0;
     use crate::state_transition::batch_transition::batched_transition::token_claim_transition::TokenClaimTransition;
     use crate::state_transition::batch_transition::batched_transition::token_transfer_transition::v0::TokenTransferTransitionV0;
+    use crate::state_transition::batch_transition::batched_transition::token_unshield_transition::v0::TokenUnshieldTransitionV0;
+    use crate::state_transition::batch_transition::batched_transition::token_unshield_transition::TokenUnshieldTransition;
+    use crate::tokens::token_payment_info::v0::TokenPaymentInfoV0;
+    use crate::tokens::token_payment_info::v1::{TokenPaymentInfoV1, TokenShieldedPayment};
+    use crate::tokens::token_payment_info::TokenPaymentInfo;
     use crate::state_transition::batch_transition::batched_transition::token_transfer_transition::TokenTransferTransition;
     use crate::state_transition::batch_transition::batched_transition::token_transition::TokenTransition;
     use crate::state_transition::batch_transition::batched_transition::token_transition_action_type::{
@@ -115,6 +122,50 @@ mod batch_transition_tests {
             public_note: None,
             shared_encrypted_note: None,
             private_encrypted_note: None,
+        }))
+    }
+
+    /// One Orchard action spending the note whose nullifier is `nullifier`.
+    fn make_pool_action(nullifier: [u8; 32]) -> SerializedAction {
+        SerializedAction {
+            nullifier,
+            rk: [0x11; 32],
+            cmx: [0x22; 32],
+            encrypted_note: vec![0x33; 216],
+            cv_net: [0x44; 32],
+            spend_auth_sig: [0x55; 64],
+        }
+    }
+
+    /// An unshield out of the token's pool, spending the note `nullifier` names.
+    fn make_token_unshield_transition(nonce: u64, nullifier: [u8; 32]) -> TokenTransition {
+        TokenTransition::Unshield(TokenUnshieldTransition::V0(TokenUnshieldTransitionV0 {
+            base: make_token_base(nonce),
+            amount: 1_000,
+            recipient_id: Identifier::new([0xEE; 32]),
+            actions: vec![make_pool_action(nullifier)],
+            ..Default::default()
+        }))
+    }
+
+    /// A document delete whose token cost is paid out of the token's shielded pool, spending the
+    /// note `nullifier` names.
+    fn make_document_with_shielded_payment(nonce: u64, nullifier: [u8; 32]) -> DocumentTransition {
+        DocumentTransition::Delete(DocumentDeleteTransition::V0(DocumentDeleteTransitionV0 {
+            base: DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
+                id: Identifier::new([nonce as u8; 32]),
+                identity_contract_nonce: nonce,
+                document_type_name: "test_doc".to_string(),
+                data_contract_id: Identifier::new([0xAA; 32]),
+                token_payment_info: Some(TokenPaymentInfo::V1(TokenPaymentInfoV1::from_v0(
+                    TokenPaymentInfoV0::default(),
+                    TokenShieldedPayment {
+                        amount: 5,
+                        actions: vec![make_pool_action(nullifier)],
+                        ..Default::default()
+                    },
+                ))),
+            }),
         }))
     }
 
@@ -575,6 +626,102 @@ mod batch_transition_tests {
         for id in &ids {
             assert!(id.contains('-'));
         }
+    }
+
+    /// Two batches that spend the same shielded pool note can never both execute: whichever
+    /// lands first records the nullifier and the other is refused on it. Nothing else about them
+    /// need be alike — here they carry different nonces — so the nullifier is the only thing
+    /// their identifier sets can collide on, and collide they must, or the mempool holds a batch
+    /// it already knows cannot execute.
+    #[test]
+    fn v1_unique_identifiers_collide_on_a_pool_nullifier_two_batches_both_spend() {
+        let nullifier = [0x5a; 32];
+        let first = make_batch_v1(vec![BatchedTransition::Token(
+            make_token_unshield_transition(7, nullifier),
+        )]);
+        let second = make_batch_v1(vec![BatchedTransition::Token(
+            make_token_unshield_transition(8, nullifier),
+        )]);
+
+        let first_ids = first.unique_identifiers();
+        let second_ids = second.unique_identifiers();
+        assert!(
+            first_ids.iter().any(|id| second_ids.contains(id)),
+            "two batches spending one pool note must share an identifier, got {first_ids:?} \
+             and {second_ids:?}"
+        );
+    }
+
+    /// A document's token cost can be paid out of the token's shielded pool, which spends pool
+    /// notes exactly as an unshield does, so the same collision has to hold for it.
+    #[test]
+    fn v1_unique_identifiers_collide_on_a_document_shielded_payment_nullifier() {
+        let nullifier = [0x6b; 32];
+        let first = make_batch_v1(vec![BatchedTransition::Document(
+            make_document_with_shielded_payment(7, nullifier),
+        )]);
+        let second = make_batch_v1(vec![BatchedTransition::Document(
+            make_document_with_shielded_payment(8, nullifier),
+        )]);
+
+        let first_ids = first.unique_identifiers();
+        let second_ids = second.unique_identifiers();
+        assert!(
+            first_ids.iter().any(|id| second_ids.contains(id)),
+            "two batches spending one pool note must share an identifier, got {first_ids:?} \
+             and {second_ids:?}"
+        );
+    }
+
+    /// Only the first identifier reaches the mempool today, so the per-transition owner,
+    /// contract and nonce keys have to stay at the front of the list: they are what stops a
+    /// second batch replaying one nonce, and that must not be traded away for the nullifier
+    /// keys, which are appended behind them.
+    #[test]
+    fn v1_unique_identifiers_keep_the_nonce_keys_in_front_of_the_nullifier_keys() {
+        let nullifier = [0x7c; 32];
+        let batch = make_batch_v1(vec![
+            BatchedTransition::Token(make_token_unshield_transition(7, nullifier)),
+            BatchedTransition::Token(make_token_burn_transition(8, 100)),
+        ]);
+
+        let ids = batch.unique_identifiers();
+        assert_eq!(
+            ids.len(),
+            3,
+            "one key per transition plus one per pool nullifier, got {ids:?}"
+        );
+        assert!(
+            ids[0].contains('-') && ids[1].contains('-'),
+            "the nonce keys come first, got {ids:?}"
+        );
+        assert_eq!(ids[2], hex::encode(nullifier));
+    }
+
+    /// A batch that touches no pool keeps the identifiers it had: its mempool key must not move
+    /// because pool kinds exist.
+    ///
+    /// The expected keys are written out rather than rebuilt from the batch, so that a change to
+    /// how a key is spelled — the field order, the encodings, the separator, the nonce's radix —
+    /// fails here. Rebuilding them would restate whatever the code does. Each is the batch's
+    /// owner, the transition's contract and its nonce: owner `[0x02; 32]` from `make_batch_v1`,
+    /// contract `[0xAA; 32]` at nonce 1 for the document and `[0xBB; 32]` at nonce 2 for the
+    /// token, base64 for the identifiers and hex for the nonce.
+    #[test]
+    fn v1_unique_identifiers_are_unchanged_for_a_batch_without_a_pool_bundle() {
+        let batch = make_batch_v1(vec![
+            BatchedTransition::Document(make_delete_transition(1)),
+            BatchedTransition::Token(make_token_burn_transition(2, 100)),
+        ]);
+        assert_eq!(
+            batch.unique_identifiers(),
+            vec![
+                "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=\
+                 -qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo=-1",
+                "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=\
+                 -u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7s=-2",
+            ]
+        );
     }
 
     // -----------------------------------------------------------------------

@@ -55,18 +55,31 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4: DriveStateTransitionMethodV
                 token_claim_transition: 0,
                 token_direct_purchase_transition: 0,
                 token_set_price_for_direct_purchase_transition: 0,
+                token_shield_transition: 0,
+                token_unshield_transition: 0,
+                token_shielded_transfer_transition: 0,
+                token_mint_to_pool_transition: 0,
+                token_burn_from_pool_transition: 0,
+                token_claim_to_pool_transition: 0,
+                token_direct_purchase_to_pool_transition: 0,
                 identity_credit_transfer_to_addresses_transition: 0,
                 address_funds_transfer_transition: 0,
                 address_credit_withdrawal_transition: 0,
                 address_funding_from_asset_lock_transition: 0,
-                shield_transition: 0,
-                shield_from_asset_lock_transition: 0,
+                // PROTOCOL_VERSION_14: v1 also records the nullifiers the
+                // shield's actions reveal, as the spends do. v0 stays for
+                // PROTOCOL_VERSION_12 and 13 chain replay.
+                shield_transition: 1,                 // changed
+                shield_from_asset_lock_transition: 1, // changed
                 shielded_transfer_transition: 0,
                 unshield_transition: 0,
                 shielded_withdrawal_transition: 0,
                 identity_create_from_shielded_pool_transition: 0,
                 shield_from_identity_transition: 0,
                 identity_top_up_from_shielded_pool_transition: 0,
+                token_shielded_transfer_with_shielded_fee_transition: 0,
+                token_unshield_with_shielded_fee_transition: 0,
+                token_purchase_from_shielded_pool_transition: 0,
             },
         document_from_action: DriveDocumentFromActionVersions {
             document_from_create_transition_action: 1,  // changed

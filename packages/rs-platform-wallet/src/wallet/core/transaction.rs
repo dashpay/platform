@@ -641,6 +641,16 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             let (wallet, info) = manager
                 .get_wallet_and_info_mut(&self.wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound("wallet not found".into()))?;
+            // Bound to this handle's generation, as the release is: a wallet
+            // re-created under the same id since the caller last checked would
+            // otherwise reserve the NEW generation's inputs under a build
+            // stamped with the old one, which the generation-bound release
+            // then refuses to free.
+            if !Arc::ptr_eq(&info.generation, self.generation()) {
+                return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
+                    self.wallet_id,
+                )));
+            }
 
             let height = info.core_wallet.last_processed_height();
 
@@ -1006,7 +1016,7 @@ mod tests {
     use std::sync::Arc;
 
     use async_trait::async_trait;
-    use dashcore::secp256k1::{ecdsa, PublicKey};
+    use dashcore::crypto::ecdsa::{EcdsaPublicKey as PublicKey, EcdsaSignature};
     use dashcore::{Address as DashAddress, Network};
     use key_wallet::account::account_type::StandardAccountType;
     use key_wallet::signer::{Signer, SignerMethod};
@@ -1019,8 +1029,8 @@ mod tests {
     use crate::broadcaster::TransactionBroadcaster;
     use crate::test_support::{
         funded_wallet_manager, funded_wallet_manager_dual_standard,
-        funded_wallet_manager_with_contact, AlwaysMaybeSentBroadcaster, AlwaysOkBroadcaster,
-        AlwaysRejectedBroadcaster, WalletSigner,
+        funded_wallet_manager_with_contact, funded_wallet_manager_with_outputs,
+        AlwaysMaybeSentBroadcaster, AlwaysOkBroadcaster, AlwaysRejectedBroadcaster, WalletSigner,
     };
     use key_wallet::wallet::managed_wallet_info::fee::{estimate_tx_size, FeeRate};
 
@@ -1661,6 +1671,63 @@ mod tests {
         );
     }
 
+    /// A handle whose wallet was re-created under the same id since the
+    /// caller last checked funds nothing: the build is refused before it
+    /// reserves the new generation's inputs, which the old handle's
+    /// generation-bound release could never free.
+    #[tokio::test]
+    async fn should_reserve_nothing_when_finalizing_from_a_recreated_generation() {
+        let (manager, wallet_id, generation, signer) =
+            funded_wallet_manager_with_outputs(StandardAccountType::BIP44Account, &[1_200_000])
+                .await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let broadcaster = Arc::new(AlwaysOkBroadcaster);
+        let stale = CoreWallet::new(
+            Arc::clone(&sdk),
+            Arc::clone(&manager),
+            wallet_id,
+            Arc::clone(&broadcaster),
+            generation,
+        );
+        let fresh_generation = Arc::new(crate::wallet::core::WalletGeneration::new());
+        {
+            let mut wm = manager.write().await;
+            let (_, info) = wm
+                .get_wallet_and_info_mut(&wallet_id)
+                .expect("wallet present in manager");
+            info.generation = Arc::clone(&fresh_generation);
+        }
+
+        let refused = stale
+            .finalize_transaction(
+                payment_builder(50),
+                &crate::SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::WalletRemovedBeforeSend(_))
+            ),
+            "got {refused:?}"
+        );
+        // One coin: the re-created generation can only fund this if the
+        // refused build left it unreserved.
+        let fresh = CoreWallet::new(sdk, manager, wallet_id, broadcaster, fresh_generation);
+        let funded = fresh
+            .finalize_transaction(
+                payment_builder(51),
+                &crate::SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await
+            .expect("the refused build reserved nothing");
+        fresh.abandon_transaction(&funded).await;
+    }
+
     fn payment_builder(tag: u8) -> TransactionBuilder {
         TransactionBuilder::new().add_output(
             &DashAddress::dummy(Network::Testnet, usize::from(tag)),
@@ -1906,7 +1973,7 @@ mod tests {
             &self,
             _path: &DerivationPath,
             _sighash: [u8; 32],
-        ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
+        ) -> Result<(EcdsaSignature, PublicKey), Self::Error> {
             Err("intentional signer failure")
         }
 

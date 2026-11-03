@@ -100,6 +100,22 @@ impl ContestedDocumentResourceVotePoll {
             platform_version,
         )
     }
+
+    /// The prefunded voting balance a contender pays to join this contest while it holds
+    /// `contenders` contenders, see [`required_vote_resolution_fund_to_join`]. A client reads
+    /// the contenders the contest holds and states this, or more, before it joins.
+    pub fn required_vote_resolution_fund_to_join(
+        &self,
+        contenders: u16,
+        platform_version: &PlatformVersion,
+    ) -> Credits {
+        required_vote_resolution_fund_to_join(
+            &self.contract_id,
+            &self.document_type_name,
+            contenders,
+            platform_version,
+        )
+    }
 }
 
 /// The prefunded voting balance a contender pays into a contest on the contested index of
@@ -117,6 +133,119 @@ pub fn required_vote_resolution_fund(
         fund_fees.moderation_vote_resolution_fund_required_amount
     } else {
         fund_fees.contested_document_vote_resolution_fund_required_amount
+    }
+}
+
+/// The prefunded voting balance a contender pays to join a contest on the contested index of
+/// `document_type_name` in the contract `contract_id` while the contest holds `contenders`
+/// contenders: the contest's fund ([`required_vote_resolution_fund`]), doubled once the contest
+/// holds `contested_document_contenders_before_fund_doubling` contenders and again for every
+/// `contested_document_contenders_per_fund_doubling` more. From protocol version 14 that is 250
+/// and 50: the first 250 contenders pay the fund, the 251st to the 300th twice it, and the 951st
+/// to the 1,000th, the last a contest accepts, 32,768 times it (3,276.8 Dash for a DPNS name).
+/// Before 14 every contender pays the fund.
+///
+/// From 14 a contender states the most it will pay and is charged the fund this returns: what
+/// it stated beyond that stays with the contender, and one stating less is refused. Before 14 a
+/// contender states exactly the fund, and pays what it states.
+pub fn required_vote_resolution_fund_to_join(
+    contract_id: &Identifier,
+    document_type_name: &str,
+    contenders: u16,
+    platform_version: &PlatformVersion,
+) -> Credits {
+    let fund = required_vote_resolution_fund(contract_id, document_type_name, platform_version);
+    let fund_fees = &platform_version.fee_version.vote_resolution_fund_fees;
+    let contenders_per_doubling = fund_fees.contested_document_contenders_per_fund_doubling;
+    if contenders_per_doubling == 0 {
+        return fund;
+    }
+    let Some(contenders_past_flat_fund) =
+        contenders.checked_sub(fund_fees.contested_document_contenders_before_fund_doubling)
+    else {
+        return fund;
+    };
+    let doublings = 1 + u32::from(contenders_past_flat_fund / contenders_per_doubling);
+    2u64.checked_pow(doublings)
+        .map_or(Credits::MAX, |multiplier| fund.saturating_mul(multiplier))
+}
+
+#[cfg(test)]
+mod fund_to_join_tests {
+    use super::*;
+    use crate::moderation_charter::{
+        ELECTED_CHARTER_DOCUMENT_TYPE_NAME, MODERATION_CHARTERS_CONTRACT_ID,
+    };
+
+    const DASH: Credits = 100_000_000_000;
+
+    fn dpns_fund_to_join(contenders: u16, platform_version: &PlatformVersion) -> Credits {
+        required_vote_resolution_fund_to_join(
+            &Identifier::new([0xC1; 32]),
+            "domain",
+            contenders,
+            platform_version,
+        )
+    }
+
+    /// From protocol version 14 the fund a contender pays doubles once the contest holds 250
+    /// contenders and again for every 50 more, so filling a contest to its 1,000 contenders
+    /// costs 327,695 Dash
+    #[test]
+    fn should_double_the_fund_for_every_50_contenders_a_contest_holds_past_250() {
+        let platform_version = PlatformVersion::latest();
+
+        for (contenders, fund) in [
+            (0, DASH / 10),
+            (249, DASH / 10),
+            (250, DASH / 5),
+            (299, DASH / 5),
+            (300, 2 * DASH / 5),
+            (699, 512 * DASH / 10),
+            (700, 1_024 * DASH / 10),
+            (950, 32_768 * DASH / 10),
+            (999, 32_768 * DASH / 10),
+        ] {
+            assert_eq!(
+                dpns_fund_to_join(contenders, platform_version),
+                fund,
+                "joining a contest holding {contenders} contenders"
+            );
+        }
+
+        let fill = (0..1_000u16)
+            .map(|contenders| dpns_fund_to_join(contenders, platform_version))
+            .sum::<Credits>();
+        assert_eq!(fill, 327_695 * DASH);
+
+        // A moderation election doubles its own fund
+        assert_eq!(
+            required_vote_resolution_fund_to_join(
+                &MODERATION_CHARTERS_CONTRACT_ID,
+                ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+                999,
+                platform_version,
+            ),
+            16_384 * DASH
+        );
+
+        // Past what 64 bits hold the fund saturates instead of overflowing
+        assert_eq!(dpns_fund_to_join(u16::MAX, platform_version), Credits::MAX);
+    }
+
+    /// PROTOCOL_VERSION_13: every contender pays the same fund
+    #[test]
+    fn should_double_the_fund_for_every_50_contenders_a_contest_holds_past_250_protocol_version_13()
+    {
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+
+        for contenders in [0, 250, 300, 999, u16::MAX] {
+            assert_eq!(
+                dpns_fund_to_join(contenders, platform_version),
+                DASH / 5,
+                "joining a contest holding {contenders} contenders"
+            );
+        }
     }
 }
 

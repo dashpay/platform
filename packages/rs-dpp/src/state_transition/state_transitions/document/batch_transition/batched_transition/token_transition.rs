@@ -19,7 +19,14 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
 use crate::prelude::IdentityNonce;
 use crate::ProtocolError;
-use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenClaimTransition, TokenTransferTransition, TokenSetPriceForDirectPurchaseTransition};
+use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenClaimTransition, TokenTransferTransition, TokenSetPriceForDirectPurchaseTransition, TokenShieldTransition, TokenShieldedTransferTransition, TokenUnshieldTransition,
+    TokenMintToPoolTransition, TokenBurnFromPoolTransition, TokenClaimToPoolTransition,
+    TokenDirectPurchaseToPoolTransition,
+};
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::state_transition::batch_transition::batched_transition::{DocumentPurchaseTransition, DocumentTransferTransition};
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::batched_transition::token_unfreeze_transition::TokenUnfreezeTransition;
@@ -38,6 +45,14 @@ use crate::state_transition::batch_transition::token_direct_purchase_transition:
 use crate::state_transition::batch_transition::token_direct_purchase_transition::v0::v0_methods::TokenDirectPurchaseTransitionV0Methods;
 use crate::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::v0::v0_methods::TokenSetPriceForDirectPurchaseTransitionV0Methods;
 use crate::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
+use crate::shielded::{serialized_actions_digest, SerializedAction};
+use crate::state_transition::batch_transition::token_shield_transition::v0::v0_methods::TokenShieldTransitionV0Methods;
+use crate::state_transition::batch_transition::token_shielded_transfer_transition::v0::v0_methods::TokenShieldedTransferTransitionV0Methods;
+use crate::state_transition::batch_transition::token_mint_to_pool_transition::v0::v0_methods::TokenMintToPoolTransitionV0Methods;
+use crate::state_transition::batch_transition::token_burn_from_pool_transition::v0::v0_methods::TokenBurnFromPoolTransitionV0Methods;
+use crate::state_transition::batch_transition::token_claim_to_pool_transition::v0::v0_methods::TokenClaimToPoolTransitionV0Methods;
+use crate::state_transition::batch_transition::token_direct_purchase_to_pool_transition::v0::v0_methods::TokenDirectPurchaseToPoolTransitionV0Methods;
+use crate::state_transition::batch_transition::token_unshield_transition::v0::v0_methods::TokenUnshieldTransitionV0Methods;
 use crate::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
 use crate::tokens::token_event::TokenEvent;
 
@@ -90,13 +105,34 @@ pub enum TokenTransition {
 
     #[display("TokenSetPriceForDirectPurchaseTransition({})", "_0")]
     SetPriceForDirectPurchase(TokenSetPriceForDirectPurchaseTransition),
+
+    #[display("TokenShieldTransition({})", "_0")]
+    Shield(TokenShieldTransition),
+
+    #[display("TokenUnshieldTransition({})", "_0")]
+    Unshield(TokenUnshieldTransition),
+
+    #[display("TokenShieldedTransferTransition({})", "_0")]
+    ShieldedTransfer(TokenShieldedTransferTransition),
+
+    #[display("TokenMintToPoolTransition({})", "_0")]
+    MintToPool(TokenMintToPoolTransition),
+
+    #[display("TokenBurnFromPoolTransition({})", "_0")]
+    BurnFromPool(TokenBurnFromPoolTransition),
+
+    #[display("TokenClaimToPoolTransition({})", "_0")]
+    ClaimToPool(TokenClaimToPoolTransition),
+
+    #[display("TokenDirectPurchaseToPoolTransition({})", "_0")]
+    DirectPurchaseToPool(TokenDirectPurchaseToPoolTransition),
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenTransition {}
+impl JsonConvertible for TokenTransition {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenTransition {}
+impl ValueConvertible for TokenTransition {}
 
 #[cfg(all(
     test,
@@ -110,8 +146,9 @@ pub(crate) mod json_convertible_tests {
         token_burn_transition, token_claim_transition, token_config_update_transition,
         token_destroy_frozen_funds_transition, token_direct_purchase_transition,
         token_emergency_action_transition, token_freeze_transition, token_mint_transition,
-        token_set_price_for_direct_purchase_transition, token_transfer_transition,
-        token_unfreeze_transition,
+        token_set_price_for_direct_purchase_transition, token_shield_transition,
+        token_shielded_transfer_transition, token_transfer_transition, token_unfreeze_transition,
+        token_unshield_transition,
     };
 
     /// Wrapping helper — drives a single `TokenTransition::*` variant through
@@ -243,6 +280,32 @@ pub(crate) mod json_convertible_tests {
             "setPriceForDirectPurchase",
         );
     }
+
+    #[test]
+    fn umbrella_shield() {
+        assert_umbrella_round_trip(
+            TokenTransition::Shield(token_shield_transition::json_convertible_tests::fixture()),
+            "shield",
+        );
+    }
+
+    #[test]
+    fn umbrella_unshield() {
+        assert_umbrella_round_trip(
+            TokenTransition::Unshield(token_unshield_transition::json_convertible_tests::fixture()),
+            "unshield",
+        );
+    }
+
+    #[test]
+    fn umbrella_shielded_transfer() {
+        assert_umbrella_round_trip(
+            TokenTransition::ShieldedTransfer(
+                token_shielded_transfer_transition::json_convertible_tests::fixture(),
+            ),
+            "shieldedTransfer",
+        );
+    }
 }
 
 impl BatchTransitionResolversV0 for TokenTransition {
@@ -355,6 +418,64 @@ impl BatchTransitionResolversV0 for TokenTransition {
             None
         }
     }
+
+    fn as_transition_token_shield(&self) -> Option<&TokenShieldTransition> {
+        if let Self::Shield(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    fn as_transition_token_unshield(&self) -> Option<&TokenUnshieldTransition> {
+        if let Self::Unshield(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    fn as_transition_token_shielded_transfer(&self) -> Option<&TokenShieldedTransferTransition> {
+        if let Self::ShieldedTransfer(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    fn as_transition_token_mint_to_pool(&self) -> Option<&TokenMintToPoolTransition> {
+        if let Self::MintToPool(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    fn as_transition_token_burn_from_pool(&self) -> Option<&TokenBurnFromPoolTransition> {
+        if let Self::BurnFromPool(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    fn as_transition_token_claim_to_pool(&self) -> Option<&TokenClaimToPoolTransition> {
+        if let Self::ClaimToPool(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    fn as_transition_token_direct_purchase_to_pool(
+        &self,
+    ) -> Option<&TokenDirectPurchaseToPoolTransition> {
+        if let Self::DirectPurchaseToPool(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
 }
 
 pub trait TokenTransitionV0Methods {
@@ -383,6 +504,18 @@ pub trait TokenTransitionV0Methods {
     ) -> Option<Result<Identifier, ProtocolError>>;
 
     fn can_calculate_action_id(&self) -> bool;
+
+    /// The Orchard actions of the bundle this transition carries against the token's shielded
+    /// pool, or `None` for a kind that does not touch a pool.
+    ///
+    /// This is the single home for "which token transition kinds touch a shielded pool". The
+    /// question is asked wherever a pool's notes have to be accounted for outside the pool
+    /// validators — the mempool identifiers a batch claims, the proof work admission budgets,
+    /// the pools a processed transition wrote to — and every one of those follows from this
+    /// answer rather than repeating the list of kinds. The match names all kinds, so a new kind
+    /// has to declare which side it is on before it compiles.
+    fn shielded_pool_actions(&self) -> Option<&[SerializedAction]>;
+
     /// Historical document type name for the token history contract
     fn historical_document_type_name(&self) -> &str;
     /// Historical document type for the token history contract
@@ -423,6 +556,13 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::ConfigUpdate(t) => t.base(),
             TokenTransition::DirectPurchase(t) => t.base(),
             TokenTransition::SetPriceForDirectPurchase(t) => t.base(),
+            TokenTransition::Shield(t) => t.base(),
+            TokenTransition::Unshield(t) => t.base(),
+            TokenTransition::ShieldedTransfer(t) => t.base(),
+            TokenTransition::MintToPool(t) => t.base(),
+            TokenTransition::BurnFromPool(t) => t.base(),
+            TokenTransition::ClaimToPool(t) => t.base(),
+            TokenTransition::DirectPurchaseToPool(t) => t.base(),
         }
     }
 
@@ -439,6 +579,13 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::ConfigUpdate(t) => t.base_mut(),
             TokenTransition::DirectPurchase(t) => t.base_mut(),
             TokenTransition::SetPriceForDirectPurchase(t) => t.base_mut(),
+            TokenTransition::Shield(t) => t.base_mut(),
+            TokenTransition::Unshield(t) => t.base_mut(),
+            TokenTransition::ShieldedTransfer(t) => t.base_mut(),
+            TokenTransition::MintToPool(t) => t.base_mut(),
+            TokenTransition::BurnFromPool(t) => t.base_mut(),
+            TokenTransition::ClaimToPool(t) => t.base_mut(),
+            TokenTransition::DirectPurchaseToPool(t) => t.base_mut(),
         }
     }
 
@@ -471,6 +618,17 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::SetPriceForDirectPurchase(t) => {
                 Some(t.calculate_action_id(owner_id, platform_version))
             }
+            TokenTransition::MintToPool(t) => {
+                Some(t.calculate_action_id(owner_id, platform_version))
+            }
+            TokenTransition::BurnFromPool(t) => {
+                Some(t.calculate_action_id(owner_id, platform_version))
+            }
+            TokenTransition::Shield(_)
+            | TokenTransition::Unshield(_)
+            | TokenTransition::ShieldedTransfer(_)
+            | TokenTransition::ClaimToPool(_)
+            | TokenTransition::DirectPurchaseToPool(_) => None,
         }
     }
 
@@ -483,10 +641,40 @@ impl TokenTransitionV0Methods for TokenTransition {
             | TokenTransition::DestroyFrozenFunds(_)
             | TokenTransition::EmergencyAction(_)
             | TokenTransition::ConfigUpdate(_)
-            | TokenTransition::SetPriceForDirectPurchase(_) => true,
+            | TokenTransition::SetPriceForDirectPurchase(_)
+            | TokenTransition::MintToPool(_)
+            | TokenTransition::BurnFromPool(_) => true,
             TokenTransition::Transfer(_)
             | TokenTransition::Claim(_)
-            | TokenTransition::DirectPurchase(_) => false,
+            | TokenTransition::DirectPurchase(_)
+            | TokenTransition::Shield(_)
+            | TokenTransition::Unshield(_)
+            | TokenTransition::ShieldedTransfer(_)
+            | TokenTransition::ClaimToPool(_)
+            | TokenTransition::DirectPurchaseToPool(_) => false,
+        }
+    }
+
+    fn shielded_pool_actions(&self) -> Option<&[SerializedAction]> {
+        match self {
+            TokenTransition::Shield(t) => Some(t.actions()),
+            TokenTransition::Unshield(t) => Some(t.actions()),
+            TokenTransition::ShieldedTransfer(t) => Some(t.actions()),
+            TokenTransition::MintToPool(t) => Some(t.actions()),
+            TokenTransition::BurnFromPool(t) => Some(t.actions()),
+            TokenTransition::ClaimToPool(t) => Some(t.actions()),
+            TokenTransition::DirectPurchaseToPool(t) => Some(t.actions()),
+            TokenTransition::Burn(_)
+            | TokenTransition::Mint(_)
+            | TokenTransition::Transfer(_)
+            | TokenTransition::Freeze(_)
+            | TokenTransition::Unfreeze(_)
+            | TokenTransition::DestroyFrozenFunds(_)
+            | TokenTransition::Claim(_)
+            | TokenTransition::EmergencyAction(_)
+            | TokenTransition::ConfigUpdate(_)
+            | TokenTransition::DirectPurchase(_)
+            | TokenTransition::SetPriceForDirectPurchase(_) => None,
         }
     }
 
@@ -524,6 +712,13 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::Claim(_) => "claim",
             TokenTransition::DirectPurchase(_) => "directPurchase",
             TokenTransition::SetPriceForDirectPurchase(_) => "directPricing",
+            TokenTransition::Shield(_) => "shield",
+            TokenTransition::Unshield(_) => "unshield",
+            TokenTransition::ShieldedTransfer(_) => "shieldedTransfer",
+            TokenTransition::MintToPool(_) => "mintToPool",
+            TokenTransition::BurnFromPool(_) => "burnFromPool",
+            TokenTransition::ClaimToPool(_) => "claimToPool",
+            TokenTransition::DirectPurchaseToPool(_) => "directPurchaseToPool",
         }
     }
 
@@ -663,6 +858,27 @@ impl TokenTransitionV0Methods for TokenTransition {
                     claim.public_note().cloned(),
                 )
             }
+            TokenTransition::Shield(shield) => TokenEvent::Shield(shield.amount()),
+            TokenTransition::Unshield(unshield) => {
+                TokenEvent::Unshield(unshield.recipient_id(), unshield.amount())
+            }
+            TokenTransition::ShieldedTransfer(_) => TokenEvent::ShieldedTransfer,
+            TokenTransition::MintToPool(mint) => TokenEvent::MintToPool(
+                mint.amount(),
+                serialized_actions_digest(mint.actions()).into(),
+                mint.public_note().cloned(),
+            ),
+            TokenTransition::BurnFromPool(burn) => TokenEvent::BurnFromPool(
+                burn.amount(),
+                serialized_actions_digest(burn.actions()).into(),
+                burn.public_note().cloned(),
+            ),
+            // we do not know how much will be released
+            TokenTransition::ClaimToPool(_) => TokenEvent::ClaimToPool(TokenAmount::MAX),
+            TokenTransition::DirectPurchaseToPool(purchase) => TokenEvent::DirectPurchaseToPool(
+                purchase.token_count(),
+                purchase.total_agreed_price(),
+            ),
             TokenTransition::DirectPurchase(direct_purchase) => TokenEvent::DirectPurchase(
                 direct_purchase.token_count(),
                 direct_purchase.total_agreed_price(),
@@ -695,8 +911,15 @@ mod tests {
     use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
     use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
     use crate::data_contract::change_control_rules::ChangeControlRules;
+    use crate::state_transition::batch_transition::batched_transition::token_burn_from_pool_transition::TokenBurnFromPoolTransitionV0;
     use crate::state_transition::batch_transition::batched_transition::token_burn_transition::TokenBurnTransitionV0;
+    use crate::state_transition::batch_transition::batched_transition::token_claim_to_pool_transition::TokenClaimToPoolTransitionV0;
     use crate::state_transition::batch_transition::batched_transition::token_claim_transition::TokenClaimTransitionV0;
+    use crate::state_transition::batch_transition::batched_transition::token_direct_purchase_to_pool_transition::TokenDirectPurchaseToPoolTransitionV0;
+    use crate::state_transition::batch_transition::batched_transition::token_mint_to_pool_transition::TokenMintToPoolTransitionV0;
+    use crate::state_transition::batch_transition::batched_transition::token_shield_transition::TokenShieldTransitionV0;
+    use crate::state_transition::batch_transition::batched_transition::token_shielded_transfer_transition::TokenShieldedTransferTransitionV0;
+    use crate::state_transition::batch_transition::batched_transition::token_unshield_transition::TokenUnshieldTransitionV0;
     use crate::state_transition::batch_transition::batched_transition::token_config_update_transition::TokenConfigUpdateTransitionV0;
     use crate::state_transition::batch_transition::batched_transition::token_destroy_frozen_funds_transition::TokenDestroyFrozenFundsTransitionV0;
     use crate::state_transition::batch_transition::batched_transition::token_direct_purchase_transition::TokenDirectPurchaseTransitionV0;
@@ -1623,6 +1846,142 @@ mod tests {
                 );
             }
             other => panic!("Expected Claim, got {:?}", other),
+        }
+    }
+
+    /// `count` distinguishable Orchard actions.
+    fn pool_actions(count: u8) -> Vec<SerializedAction> {
+        (0..count)
+            .map(|i| SerializedAction {
+                nullifier: [i; 32],
+                rk: [i; 32],
+                cmx: [i; 32],
+                encrypted_note: vec![i; 216],
+                cv_net: [i; 32],
+                spend_auth_sig: [i; 64],
+            })
+            .collect()
+    }
+
+    /// The seven kinds that carry a bundle against the token's shielded pool must hand it over,
+    /// each with the actions it actually holds rather than another kind's. A caller that has to
+    /// account for the pool's notes — the mempool identifiers, the admitted proof work, the
+    /// pools a block wrote to — reads them from here, so a kind reporting nothing or reporting
+    /// the wrong field would drop those notes from every one of them at once.
+    #[test]
+    fn every_token_shielded_pool_kind_reports_its_bundle() {
+        let cases: Vec<(TokenTransition, u8)> = vec![
+            (
+                TokenTransition::Shield(TokenShieldTransition::V0(TokenShieldTransitionV0 {
+                    actions: pool_actions(1),
+                    ..Default::default()
+                })),
+                1,
+            ),
+            (
+                TokenTransition::Unshield(TokenUnshieldTransition::V0(TokenUnshieldTransitionV0 {
+                    actions: pool_actions(2),
+                    ..Default::default()
+                })),
+                2,
+            ),
+            (
+                TokenTransition::ShieldedTransfer(TokenShieldedTransferTransition::V0(
+                    TokenShieldedTransferTransitionV0 {
+                        actions: pool_actions(3),
+                        ..Default::default()
+                    },
+                )),
+                3,
+            ),
+            (
+                TokenTransition::MintToPool(TokenMintToPoolTransition::V0(
+                    TokenMintToPoolTransitionV0 {
+                        actions: pool_actions(4),
+                        ..Default::default()
+                    },
+                )),
+                4,
+            ),
+            (
+                TokenTransition::BurnFromPool(TokenBurnFromPoolTransition::V0(
+                    TokenBurnFromPoolTransitionV0 {
+                        actions: pool_actions(5),
+                        ..Default::default()
+                    },
+                )),
+                5,
+            ),
+            (
+                TokenTransition::ClaimToPool(TokenClaimToPoolTransition::V0(
+                    TokenClaimToPoolTransitionV0 {
+                        actions: pool_actions(6),
+                        ..Default::default()
+                    },
+                )),
+                6,
+            ),
+            (
+                TokenTransition::DirectPurchaseToPool(TokenDirectPurchaseToPoolTransition::V0(
+                    TokenDirectPurchaseToPoolTransitionV0 {
+                        actions: pool_actions(7),
+                        ..Default::default()
+                    },
+                )),
+                7,
+            ),
+        ];
+
+        for (transition, expected) in cases {
+            let actions = transition
+                .shielded_pool_actions()
+                .unwrap_or_else(|| panic!("{} must report its bundle", transition.name_for_test()));
+            assert_eq!(
+                actions,
+                pool_actions(expected).as_slice(),
+                "{} must report its own actions",
+                transition.name_for_test()
+            );
+        }
+    }
+
+    /// A kind that touches no pool must report nothing: were it to report an empty bundle
+    /// instead, the callers would treat it as a pool transition and, among other things, claim
+    /// the pool as one the transition writes to.
+    #[test]
+    fn a_kind_without_a_pool_bundle_reports_none() {
+        let transitions = vec![
+            TokenTransition::Burn(TokenBurnTransition::V0(TokenBurnTransitionV0 {
+                base: TokenBaseTransition::default(),
+                burn_amount: 1,
+                public_note: None,
+            })),
+            TokenTransition::Mint(TokenMintTransition::V0(TokenMintTransitionV0 {
+                base: TokenBaseTransition::default(),
+                issued_to_identity_id: None,
+                amount: 1,
+                public_note: None,
+            })),
+            TokenTransition::Claim(TokenClaimTransition::V0(TokenClaimTransitionV0 {
+                base: TokenBaseTransition::default(),
+                distribution_type: TokenDistributionType::Perpetual,
+                public_note: None,
+            })),
+        ];
+
+        for transition in transitions {
+            assert!(
+                transition.shielded_pool_actions().is_none(),
+                "{} touches no shielded pool",
+                transition.name_for_test()
+            );
+        }
+    }
+
+    impl TokenTransition {
+        /// The kind's name, for a failure message that says which case failed.
+        fn name_for_test(&self) -> &str {
+            self.historical_document_type_name()
         }
     }
 }

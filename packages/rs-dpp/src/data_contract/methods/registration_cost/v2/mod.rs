@@ -4,6 +4,7 @@ use crate::data_contract::associated_token::token_configuration::accessors::v0::
 use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use crate::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::property_names::INDICES;
 use crate::data_contract::document_type::{Index, IndexGrammarAdmissions};
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::fee::Credits;
@@ -118,10 +119,9 @@ impl DataContractInSerializationFormat {
             // If this is not okay the registration will fail on basic validation
             if let Ok(schema_map) = document_type_schema.to_map() {
                 // Initialize indices
-                if let Ok(Some(index_values)) = Value::inner_optional_array_slice_value(
-                    schema_map,
-                    crate::data_contract::document_type::property_names::INDICES,
-                ) {
+                if let Ok(Some(index_values)) =
+                    Value::inner_optional_array_slice_value(schema_map, INDICES)
+                {
                     for index_value in index_values {
                         if let Ok(index_value_map) = index_value.to_map() {
                             // Same keyword gates the document type parser

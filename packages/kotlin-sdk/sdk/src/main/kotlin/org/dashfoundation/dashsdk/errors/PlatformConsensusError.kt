@@ -7,10 +7,11 @@ package org.dashfoundation.dashsdk.errors
  * to. Branch on these rather than on the error message, whose wording is not
  * a contract.
  *
- * Read it from [DashSdkError.consensusError]. It is present for the wallet
- * operations whose native error still holds the SDK's consensus verdict (the
- * token state transitions among them) and `null` for every failure that was
- * not a consensus rejection.
+ * Read it from [DashSdkError.consensusError]. It is present for the state
+ * transitions whose native error still holds the SDK's consensus verdict: the
+ * rs-sdk-ffi document, token, data contract and identity transitions, and the
+ * platform-wallet operations (the token state transitions among them). It is
+ * `null` for every failure that was not a consensus rejection.
  */
 data class PlatformConsensusError(
     val code: Int,
@@ -21,7 +22,9 @@ data class PlatformConsensusError(
  * Which of rs-dpp's consensus error families an error belongs to. The native
  * layer reports it next to the code, so it is never derived from the number
  * on this side. Values mirror `PlatformWalletFFIConsensusErrorKind` in
- * `rs-platform-wallet-ffi/src/error.rs`.
+ * `rs-platform-wallet-ffi/src/error.rs` and `DashSDKConsensusErrorKind` in
+ * `rs-sdk-ffi/src/error.rs`, which a compile-time guard in
+ * `rs-unified-sdk-jni/src/support.rs` holds equal.
  */
 enum class ConsensusErrorKind {
     /** Structure or version validation failed; the transition was not executed. */

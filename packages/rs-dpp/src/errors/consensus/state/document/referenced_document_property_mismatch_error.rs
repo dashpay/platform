@@ -20,7 +20,7 @@ use thiserror::Error;
     PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
-#[error("the document's {referring_property} does not agree with the referenced document's {referenced_property} (propertyAgreement on {path})")]
+#[error("the document's {referring_property} does not agree with the referenced document's {referenced_property} (where on {path})")]
 #[platform_serialize(unversioned)]
 pub struct ReferencedDocumentPropertyMismatchError {
     /*

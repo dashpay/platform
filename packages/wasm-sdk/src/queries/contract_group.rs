@@ -2,7 +2,7 @@
 //! kind, and the groups a contract belongs to.
 
 use crate::error::WasmSdkError;
-use crate::queries::utils::{convert_optional_limit, deserialize_required_query};
+use crate::queries::utils::{convert_optional_limit, deserialize_required_query_with_identifiers};
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::platform::contract_groups::{
@@ -217,10 +217,12 @@ struct ContractGroupMembersQueryInput {
 fn parse_contract_group_members_query(
     query: ContractGroupMembersQueryJs,
 ) -> Result<ContractGroupMembersPageQuery, WasmSdkError> {
-    let input: ContractGroupMembersQueryInput = deserialize_required_query(
+    let input: ContractGroupMembersQueryInput = deserialize_required_query_with_identifiers(
         query,
         "Query object is required",
         "contract group members query",
+        &[&["contractGroupId"], &["startAfter", "contractId"]],
+        &[],
     )?;
 
     let cursor_contract_id = input
@@ -569,5 +571,241 @@ impl WasmSdk {
             metadata,
             proof,
         ))
+    }
+}
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod identifier_like_tests {
+    use super::*;
+    use dash_sdk::Sdk;
+    use js_sys::{Object, Reflect, Uint8Array};
+    use serde_json::{json, Value as JsonValue};
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    #[derive(Clone, Copy)]
+    enum InputForm {
+        Bytes,
+        Base58,
+        Hex,
+        Numbers,
+        Instance,
+    }
+
+    const FORMS: [InputForm; 5] = [
+        InputForm::Bytes,
+        InputForm::Base58,
+        InputForm::Hex,
+        InputForm::Numbers,
+        InputForm::Instance,
+    ];
+
+    fn identifier(byte: u8, form: InputForm) -> JsValue {
+        let bytes = [byte; 32];
+        match form {
+            InputForm::Bytes => Uint8Array::from(bytes.as_slice()).into(),
+            InputForm::Base58 => IdentifierWasm::from(Identifier::new(bytes))
+                .to_base58()
+                .into(),
+            InputForm::Hex => hex::encode(bytes).into(),
+            InputForm::Numbers => bytes
+                .into_iter()
+                .map(JsValue::from)
+                .collect::<Array>()
+                .into(),
+            InputForm::Instance => IdentifierWasm::from(Identifier::new(bytes)).into(),
+        }
+    }
+
+    fn object(fields: &[(&str, JsValue)]) -> JsValue {
+        let object = Object::new();
+        for (key, value) in fields {
+            Reflect::set(&object, &JsValue::from_str(key), value).expect("fixture property");
+        }
+        object.into()
+    }
+
+    fn query(kind: &str, form: InputForm) -> JsValue {
+        let mut cursor = vec![("contractId", identifier(0x22, form))];
+        match kind {
+            "documentTypes" => cursor.push(("documentTypeName", "invoice".into())),
+            "tokens" => cursor.push(("tokenPosition", 9u32.into())),
+            _ => {}
+        }
+        object(&[
+            ("contractGroupId", identifier(0x11, form)),
+            ("kind", kind.into()),
+            ("startAfter", object(&cursor)),
+            ("limit", 2u32.into()),
+        ])
+    }
+
+    fn expected_query(kind: &str) -> ContractGroupMembersPageQuery {
+        let cursor = Identifier::new([0x22; 32]);
+        ContractGroupMembersPageQuery {
+            contract_group_id: Identifier::new([0x11; 32]),
+            members: match kind {
+                "contracts" => ContractGroupMembersQuery::Contracts {
+                    start_after: Some(cursor),
+                },
+                "documentTypes" => ContractGroupMembersQuery::DocumentTypes {
+                    start_after: Some((cursor, "invoice".to_string())),
+                },
+                "tokens" => ContractGroupMembersQuery::Tokens {
+                    start_after: Some((cursor, 9)),
+                },
+                _ => panic!("unknown fixture kind"),
+            },
+            limit: Some(2),
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_parse_exact_group_and_cursor_identifiers_for_all_member_kinds() {
+        for kind in ["contracts", "documentTypes", "tokens"] {
+            let expected = expected_query(kind);
+            for form in FORMS {
+                let parsed = parse_contract_group_members_query(query(kind, form).unchecked_into())
+                    .expect("contract group members");
+                assert_eq!(parsed, expected);
+            }
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_preserve_first_page_defaults_and_zero_limits_for_all_member_kinds() {
+        for kind in ["contracts", "documentTypes", "tokens"] {
+            for form in FORMS {
+                for absent in [JsValue::NULL, JsValue::UNDEFINED] {
+                    let parsed = parse_contract_group_members_query(
+                        object(&[
+                            ("contractGroupId", identifier(0x11, form)),
+                            ("kind", kind.into()),
+                            ("startAfter", absent),
+                            ("limit", 0u32.into()),
+                        ])
+                        .unchecked_into(),
+                    )
+                    .expect("first page");
+                    let mut expected = expected_query(kind);
+                    expected.limit = None;
+                    expected.members = match kind {
+                        "contracts" => ContractGroupMembersQuery::Contracts { start_after: None },
+                        "documentTypes" => {
+                            ContractGroupMembersQuery::DocumentTypes { start_after: None }
+                        }
+                        "tokens" => ContractGroupMembersQuery::Tokens { start_after: None },
+                        _ => panic!("unknown fixture kind"),
+                    };
+                    assert_eq!(parsed, expected);
+                }
+            }
+        }
+    }
+
+    fn page_fixture(kind: &str) -> (ContractGroupMembersPage, JsonValue) {
+        let first = Identifier::new([0x33; 32]);
+        let last = Identifier::new([0x44; 32]);
+        let first_string = IdentifierWasm::from(first).to_base58();
+        let last_string = IdentifierWasm::from(last).to_base58();
+        match kind {
+            "contracts" => (
+                ContractGroupMembersPage::Contracts(vec![first, last]),
+                json!({
+                    "kind": "contracts", "contracts": [first_string, last_string],
+                    "nextStartAfter": { "contractId": last_string },
+                }),
+            ),
+            "documentTypes" => (
+                ContractGroupMembersPage::DocumentTypes(vec![
+                    (first, "receipt".to_string()),
+                    (last, "statement".to_string()),
+                ]),
+                json!({
+                    "kind": "documentTypes",
+                    "documentTypes": [
+                        { "contractId": first_string, "documentTypeName": "receipt" },
+                        { "contractId": last_string, "documentTypeName": "statement" },
+                    ],
+                    "nextStartAfter": { "contractId": last_string, "documentTypeName": "statement" },
+                }),
+            ),
+            "tokens" => (
+                ContractGroupMembersPage::Tokens(vec![(first, 3), (last, 4)]),
+                json!({
+                    "kind": "tokens",
+                    "tokens": [
+                        { "contractId": first_string, "tokenPosition": 3 },
+                        { "contractId": last_string, "tokenPosition": 4 },
+                    ],
+                    "nextStartAfter": { "contractId": last_string, "tokenPosition": 4 },
+                }),
+            ),
+            _ => panic!("unknown fixture kind"),
+        }
+    }
+
+    async fn mocked_sdk(kind: &str, page: ContractGroupMembersPage) -> WasmSdk {
+        let mut sdk = Sdk::new_mock();
+        sdk.mock()
+            .expect_fetch(expected_query(kind), Some(page))
+            .await
+            .expect("mock page");
+        WasmSdk::new_for_testing(sdk, None)
+    }
+
+    #[wasm_bindgen_test]
+    async fn should_send_equivalent_member_requests_and_return_nonempty_pages_with_proof_info() {
+        for kind in ["contracts", "documentTypes", "tokens"] {
+            for form in [InputForm::Bytes, InputForm::Instance] {
+                for proof_info in [false, true] {
+                    let (page, expected) = page_fixture(kind);
+                    let sdk = mocked_sdk(kind, page).await;
+                    let input = query(kind, form).unchecked_into();
+                    let actual = if proof_info {
+                        sdk.get_contract_group_members_with_proof_info(input)
+                            .await
+                            .expect("proof-info page")
+                            .data()
+                    } else {
+                        sdk.get_contract_group_members(input)
+                            .await
+                            .expect("members page")
+                    };
+                    assert_eq!(
+                        serialization::js_value_to_json(&actual).expect("page JSON"),
+                        expected
+                    );
+                }
+            }
+        }
+    }
+
+    #[wasm_bindgen_test]
+    async fn should_not_match_the_expected_wire_request_for_a_different_group_identifier() {
+        for kind in ["contracts", "documentTypes", "tokens"] {
+            for proof_info in [false, true] {
+                let (page, _) = page_fixture(kind);
+                let sdk = mocked_sdk(kind, page).await;
+                let input = query(kind, InputForm::Bytes);
+                Reflect::set(
+                    &input,
+                    &"contractGroupId".into(),
+                    &identifier(0x55, InputForm::Bytes),
+                )
+                .expect("different group");
+                let result = if proof_info {
+                    sdk.get_contract_group_members_with_proof_info(input.unchecked_into())
+                        .await
+                        .map(|response| response.data())
+                } else {
+                    sdk.get_contract_group_members(input.unchecked_into()).await
+                };
+                assert!(
+                    result.is_err(),
+                    "a different identifier must miss the request expectation"
+                );
+            }
+        }
     }
 }

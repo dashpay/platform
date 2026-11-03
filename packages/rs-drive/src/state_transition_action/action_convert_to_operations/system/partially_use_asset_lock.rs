@@ -72,7 +72,15 @@ impl DriveHighLevelOperationConverter for PartiallyUseAssetLockAction {
                     let inputs_ordered: Vec<_> = inputs.iter().collect();
                     let mut remaining_fee = used_credits;
 
-                    // Process fee strategy steps in order
+                    // Process fee strategy steps in order.
+                    //
+                    // Each step deducts from the input's balance as the transition carried it,
+                    // not from what an earlier step left, and sets that balance absolutely. That
+                    // holds only because a strategy names each input at most once: basic
+                    // structure validation refuses a repeated step (`FeeStrategyDuplicateError`).
+                    // Were a step to repeat, the second set would replace the first in the batch
+                    // while `total_deducted_from_inputs` counted both, and the credits would no
+                    // longer add up. Allowing repeated steps needs a running balance per input.
                     for step in &fee_strategy {
                         if remaining_fee == 0 {
                             break;

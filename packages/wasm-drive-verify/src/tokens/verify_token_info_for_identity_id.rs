@@ -49,7 +49,7 @@ pub fn verify_token_info_for_identity_id(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, token_info_option) = Drive::verify_token_info_for_identity_id(
-        supported_grovedb_proof(&proof_vec, platform_version)?,
+        supported_grovedb_proof(&proof_vec)?,
         token_id_bytes,
         identity_id_bytes,
         verify_subset_of_proof,

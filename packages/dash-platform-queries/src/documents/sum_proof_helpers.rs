@@ -19,6 +19,9 @@
 //! [`DocumentSum`]: drive_proof_verifier::DocumentSum
 //! [`DocumentSplitSums`]: drive_proof_verifier::DocumentSplitSums
 
+use crate::documents::array_element_clauses::{
+    aggregate_request_where_clauses, aggregate_where_clauses, document_type_named,
+};
 use crate::documents::document_query::normalize_time_range_clauses_with_metadata_time;
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
@@ -32,9 +35,10 @@ use dpp::{
 use drive::query::drive_document_sum_query::index_picker::{
     find_range_summable_index_for_where_clauses, find_summable_index_for_where_clauses,
 };
-use drive::query::drive_document_sum_query::mode_detection::detect_sum_mode_from_inputs;
+use drive::query::drive_document_sum_query::mode_detection::{
+    check_sum_property_against_document_type, detect_sum_mode_from_inputs,
+};
 use drive::query::drive_document_sum_query::{DocumentSumMode, DriveDocumentSumQuery, SumMode};
-use drive::query::validate_and_canonicalize_where_clauses;
 use drive::query::{SelectFunction, WhereOperator};
 use drive_proof_verifier::{
     verify_aggregate_sum_proof, verify_carrier_aggregate_sum_proof, verify_distinct_sum_proof,
@@ -60,6 +64,38 @@ pub(super) fn assert_select_is_sum(
         });
     }
     Ok(())
+}
+
+/// The refusals [`verify_sum_query`] makes from the request alone, made
+/// before it is sent, for the reasons
+/// [`check_count_request`](super::count_proof_helpers::check_count_request)
+/// gives.
+///
+/// It also refuses a sum of another property than the one the document type
+/// sums its documents by. Every node refuses that request with an internal
+/// error, which the SDK would retry on every other node and ban each one for.
+pub(super) fn check_sum_request(
+    request: &DocumentQuery,
+    folds_entries: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(), drive_proof_verifier::Error> {
+    request.ensure_no_sub_queries()?;
+    assert_select_is_sum(request)?;
+    let document_type = document_type_named(&request.data_contract, &request.document_type_name)?;
+    check_sum_property_against_document_type(document_type, &request.select.field).map_err(
+        |_| drive_proof_verifier::Error::RequestError {
+            error: format!(
+                "{} documents are summed by {}, so no node sums {} over them",
+                request.document_type_name,
+                document_type
+                    .documents_summable()
+                    .unwrap_or("another property"),
+                request.select.field
+            ),
+        },
+    )?;
+    let where_clauses = aggregate_request_where_clauses(request, folds_entries, platform_version)?;
+    resolve_sum_mode(&request.group_by, &where_clauses).map(|_| ())
 }
 
 /// Verify a SUM-shape proof and return per-branch `SumEntry`s.
@@ -90,9 +126,13 @@ pub(super) fn assert_select_is_sum(
 /// - `Total` / `PerInValue` / `RangeNoProof` are no-proof modes
 ///   that should be unreachable here (`prove = true`); reject as
 ///   `RequestError` if they bubble through.
+///
+/// `folds_entries` is whether the caller adds the verified entries up into one
+/// total ([`aggregate_where_clauses`]).
 pub(super) fn verify_sum_query(
     mut request: DocumentQuery,
     response: GetDocumentsResponse,
+    folds_entries: bool,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(Option<Vec<SumEntry>>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
@@ -116,19 +156,10 @@ pub(super) fn verify_sum_query(
     let resolved_time_ranges =
         normalize_time_range_clauses_with_metadata_time(&mut request, mtd.time_ms)?;
 
-    // Canonicalize exactly as the server dispatcher does (the shared step
-    // in `drive::query::canonicalize`): the prover merged `[f > A, f < B]`
-    // pairs into one `between*` clause before its mode detection, so mode
-    // detection here must run over the same canonical shape or a valid
-    // proof is rejected.
-    request.where_clauses = validate_and_canonicalize_where_clauses(
-        std::mem::take(&mut request.where_clauses),
-        platform_version,
-    )
-    .map_err(|e| drive_proof_verifier::Error::RequestError {
-        error: format!("where-clause canonicalization failed: {e}"),
-    })?;
-
+    // The server's dispatcher reads the clauses with a typed array's elements
+    // keyed, then canonicalized, before its mode detection; the verifier reads
+    // them the same way, or a valid proof is refused (or a refused total
+    // accepted).
     let document_type = request
         .data_contract
         .document_type_for_name(&request.document_type_name)
@@ -138,6 +169,13 @@ pub(super) fn verify_sum_query(
                 request.document_type_name, e
             ),
         })?;
+    request.where_clauses = aggregate_where_clauses(
+        document_type,
+        &request.group_by,
+        std::mem::take(&mut request.where_clauses),
+        folds_entries,
+        platform_version,
+    )?;
 
     // Resolve the SQL-shape `SumMode` the request implies. Same
     // decision tree as `validate_and_route` in the abci handler —

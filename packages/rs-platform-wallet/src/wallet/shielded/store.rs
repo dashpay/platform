@@ -1285,6 +1285,63 @@ mod tests {
         assert!(!store.mark_spent(id, &nullifier).unwrap());
     }
 
+    /// Two notes carrying one nullifier must count once.
+    ///
+    /// A nullifier is what makes a note spendable exactly once, so if two notes in a pool
+    /// share one, only one of them can ever be spent and the other's value is unreachable.
+    /// A wallet that added both to its balance would show funds it cannot move and would
+    /// build transitions that fail against the chain.
+    ///
+    /// `save_note` keys on the nullifier and overwrites, which gives the right answer. That
+    /// behaviour was written to make rescanning idempotent, and its reasoning — that
+    /// nullifiers are unique — is exactly what does not hold here. This pins the outcome
+    /// rather than the reasoning, so the guarantee survives a future rescan mechanism that
+    /// makes the original justification obsolete.
+    #[test]
+    fn should_count_two_notes_sharing_a_nullifier_once() {
+        let mut store = InMemoryShieldedStore::new();
+        let id = test_id(0);
+        let nullifier = [7u8; 32];
+        let note = ShieldedNote {
+            position: 3,
+            cmx: [9u8; 32],
+            nullifier,
+            block_height: 10,
+            is_spent: false,
+            value: 1_000,
+            note_data: vec![0u8; 115],
+        };
+        // The same note observed again at a later tree position: same commitment, same
+        // nullifier, different provenance.
+        let twin = ShieldedNote {
+            position: 11,
+            block_height: 12,
+            ..note.clone()
+        };
+
+        store.save_note(id, &note).unwrap();
+        store.save_note(id, &twin).unwrap();
+
+        assert_eq!(
+            store.get_all_notes(id).unwrap().len(),
+            1,
+            "a second note sharing a nullifier must replace the first, not join it"
+        );
+        assert_eq!(
+            store.spendable_balance(id).unwrap(),
+            1_000,
+            "BALANCE INFLATION: the wallet counted both notes, but only one is spendable, \
+             so it would offer the holder funds no transition can move"
+        );
+
+        // And the single entry really is the one note: spending it leaves nothing behind.
+        assert!(store.mark_spent(id, &nullifier).unwrap());
+        assert!(
+            store.get_unspent_notes(id).unwrap().is_empty(),
+            "spending the shared nullifier must leave no second note live"
+        );
+    }
+
     /// Resolving any of a redrive's nullifiers — landing (`mark_spent`)
     /// or release (`clear_pending`) — drops the whole record: a
     /// transition lands or dies atomically for all its nullifiers.

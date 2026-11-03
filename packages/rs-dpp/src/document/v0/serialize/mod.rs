@@ -164,6 +164,16 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
             // will encode all integers as i64.
             return Err(ProtocolError::NotSupported("Serializing with data contract version 0 or data contract config version 0 is not supported outside of feature version 0".to_string()));
         };
+        // Only format 3 has a place for the moderation stamp: an earlier format would drop it
+        // and give back other bytes than the stored document's. (`serialize` never meets one:
+        // only a type keeping fields for its moderators is stamped, which needs config version
+        // 2, whose documents are written in format 3.)
+        if feature_version < 3 && (self.moderated_at.is_some() || self.moderated_by.is_some()) {
+            return Err(ProtocolError::NotSupported(format!(
+                "document serialization format {feature_version} has no place for \
+                 $moderatedAt or $moderatedBy; serialize a moderated document in format 3"
+            )));
+        }
         match feature_version {
             0 => self.serialize_v0(document_type),
             1 => self.serialize_v1(document_type),

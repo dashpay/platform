@@ -187,7 +187,11 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99864009940)
+        // PROTOCOL_VERSION_14: the identity pays 41_080 credits more in fees than at protocol
+        // version 13. The documents expirations tree joins `Misc` (key `E`) beside the total
+        // system credits item an identity created from an asset lock rewrites, and the extra
+        // key reshapes the `Misc` Merk that write rehashes.
+        assert_eq!(balance, 99863968860)
     }
 
     #[tokio::test]
@@ -196,11 +200,12 @@ mod tests {
         // gates active from v14 derive their inspection from data the merk
         // apply already loads, so they are cost-neutral, and the ContractGroups
         // root tree v14 adds sits at key 124 under Versions (120), a node no
-        // fee-bearing transition rewrites: this balance is identical to the
-        // latest-version test's, and the pair proves the v13 -> v14 boundary
-        // changes nothing about this run's fees. A root tree placed under the
-        // asset lock path would have moved it, as happened once before when
-        // GroupActions was added:
+        // fee-bearing transition rewrites. The one v14 change this run's fees
+        // see is the documents expirations tree v14 adds under `Misc`, which
+        // reshapes the Merk of the total system credits item an asset lock
+        // rewrites (see the latest-version test); this pin holds v13 at the
+        // fee it had before. A root tree placed under the asset lock path
+        // moves it too, as happened once before when GroupActions was added:
         //                                                                                DataContract_Documents 64
         //                                 /                                                                                                       \
         //                       Identities 32                                                                                                 Balances 96
@@ -352,7 +357,8 @@ mod tests {
         assert_eq!(outcome.identities.len(), 100);
     }
 
-    #[tokio::test]
+    #[stack_size(4 * 1024 * 1024)]
+    #[test]
     async fn run_chain_insert_one_new_identity_per_block_with_epoch_change() {
         let strategy = NetworkStrategy {
             strategy: Strategy {

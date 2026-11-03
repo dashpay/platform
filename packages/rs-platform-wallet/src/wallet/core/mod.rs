@@ -15,5 +15,7 @@ pub use generation::WalletGeneration;
 pub(crate) use generation::{InBroadcastFences, InBroadcastPin};
 pub use spend_observer::SpendObservationHandler;
 pub(crate) use transaction::resolve_source_accounts;
+#[cfg(feature = "shielded")]
+pub(crate) use transaction::resolved_funding_accounts;
 pub use transaction::{SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES, SEND_FUNDING_SOURCES};
 pub use wallet::CoreWallet;

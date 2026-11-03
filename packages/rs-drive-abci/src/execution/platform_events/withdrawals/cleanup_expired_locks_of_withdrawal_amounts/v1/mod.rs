@@ -5,7 +5,9 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 
 use dpp::version::PlatformVersion;
+use dpp::withdrawal::core_credit_pool_unlock_limit::core_credit_pool_window_blocks;
 use drive::drive::identity::withdrawals::paths::{
+    get_withdrawal_core_credit_pool_balances_path_vec,
     get_withdrawal_credit_inflows_sum_tree_path_vec, get_withdrawal_transactions_sum_tree_path_vec,
 };
 use drive::grovedb::{MaybeTree, PathQuery, QueryItem, Transaction};
@@ -15,10 +17,13 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// Version 1 differs from version 0 in also pruning the expired entries of the credit
-    /// inflows sum tree, which exists from protocol version 14: both trees are keyed by the
-    /// block time their entries stop counting toward the daily withdrawal limit, on the same
-    /// 25 hour schedule, and both are pruned with the same per-block limit.
+    /// Version 1 differs from version 0 in also pruning the trees of the withdrawal limit that
+    /// exist from protocol version 14, each with the same per-block limit:
+    ///
+    /// * the expired entries of the credit inflows sum tree, keyed like the reservations by
+    ///   the block time they stop counting toward the daily withdrawal limit;
+    /// * the recorded Core credit pool balances older than the farthest window start the
+    ///   Core-anchored limit reads (Core's credit pool window back).
     pub(super) fn cleanup_expired_locks_of_withdrawal_amounts_v1(
         &self,
         block_info: &BlockInfo,
@@ -35,16 +40,40 @@ where
             return Ok(());
         }
 
+        // The Core-anchored limit never reads a balance older than its farthest window start.
+        let oldest_read_core_height =
+            block_info
+                .core_height
+                .checked_sub(core_credit_pool_window_blocks(
+                    self.config.network,
+                    platform_version,
+                )?);
+
+        // Each tree with the key its expired entries sort below: the reservations and the
+        // credit inflows by the block time they stop counting, the recorded Core credit pool
+        // balances by Core height.
+        let expired_below = [
+            Some((
+                get_withdrawal_transactions_sum_tree_path_vec(),
+                block_info.time_ms.to_be_bytes().to_vec(),
+            )),
+            Some((
+                get_withdrawal_credit_inflows_sum_tree_path_vec(),
+                block_info.time_ms.to_be_bytes().to_vec(),
+            )),
+            oldest_read_core_height.map(|core_height| {
+                (
+                    get_withdrawal_core_credit_pool_balances_path_vec(),
+                    core_height.to_be_bytes().to_vec(),
+                )
+            }),
+        ];
+
         let mut batch_operations = vec![];
 
-        for path in [
-            get_withdrawal_transactions_sum_tree_path_vec(),
-            get_withdrawal_credit_inflows_sum_tree_path_vec(),
-        ] {
-            let mut path_query = PathQuery::new_single_query_item(
-                path,
-                QueryItem::RangeTo(..block_info.time_ms.to_be_bytes().to_vec()),
-            );
+        for (path, before_key) in expired_below.into_iter().flatten() {
+            let mut path_query =
+                PathQuery::new_single_query_item(path, QueryItem::RangeTo(..before_key));
 
             path_query.query.limit = Some(limit);
 
@@ -172,5 +201,50 @@ mod tests {
             // The entry exactly at the block time is not expired yet (strict `<`).
             assert_eq!(keys, vec![now_ms.to_be_bytes().to_vec()]);
         }
+    }
+
+    /// Recorded Core credit pool balances older than the farthest window start the
+    /// Core-anchored limit reads are pruned by Core height.
+    #[test]
+    fn should_prune_core_credit_pool_balances_older_than_the_window() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let transaction = platform.drive.grove.start_transaction();
+
+        platform
+            .drive
+            .record_core_credit_pool_blocks(
+                &[(423, 1), (424, 1), (425, 1)],
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to record the blocks");
+
+        platform
+            .cleanup_expired_locks_of_withdrawal_amounts_v1(
+                &BlockInfo {
+                    time_ms: 1_000_000,
+                    height: 100,
+                    core_height: 1000,
+                    epoch: Epoch::default(),
+                },
+                &transaction,
+                platform_version,
+            )
+            .expect("expected the cleanup to succeed");
+
+        // Core's mainnet window at 1000 starts at 424: 423 goes.
+        assert_eq!(
+            platform
+                .drive
+                .fetch_core_credit_pool_balances(0..=1000, Some(&transaction), platform_version)
+                .expect("expected the balances")
+                .into_keys()
+                .collect::<Vec<_>>(),
+            vec![424, 425]
+        );
     }
 }

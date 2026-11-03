@@ -1,8 +1,13 @@
+use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
 use crate::prelude::DataContract;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 
+#[cfg(all(test, feature = "fixtures-and-mocks"))]
+mod duplicate_keys_tests;
 mod v0;
+mod v1;
+mod v2;
 use crate::document::Document;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
@@ -22,9 +27,11 @@ impl DataContractDocumentValidationMethodsV0 for DataContract {
             .validate_document
         {
             0 => self.validate_document_v0(name, document, platform_version),
+            1 => self.validate_document_v1(name, document, platform_version),
+            2 => self.validate_document_v2(name, document, platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContract::validate_document".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1, 2],
                 received: version,
             }),
         }
@@ -34,6 +41,7 @@ impl DataContractDocumentValidationMethodsV0 for DataContract {
         &self,
         name: &str,
         properties: Value,
+        system: &DocumentSystemValues,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         match platform_version
@@ -42,10 +50,12 @@ impl DataContractDocumentValidationMethodsV0 for DataContract {
             .methods
             .validate_document
         {
-            0 => self.validate_document_properties_v0(name, properties, platform_version),
+            0 => self.validate_document_properties_v0(name, properties, system, platform_version),
+            1 => self.validate_document_properties_v1(name, properties, system, platform_version),
+            2 => self.validate_document_properties_v2(name, properties, system, platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContract::validate_document_properties".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1, 2],
                 received: version,
             }),
         }

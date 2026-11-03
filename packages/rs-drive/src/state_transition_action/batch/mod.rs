@@ -45,8 +45,9 @@ pub struct ResolvedContractGroupMemberships {
 /// The contract owner a batch asks to pay its gas, with the balance the batch transformer read
 /// for them. Resolved from protocol version 14, and only when the contract owner is not the
 /// batch's own signer: fee validation checks the fee against this balance, and execution charges
-/// this identity instead of the signer when it covers the fee. A batch that failed validation
-/// is never sponsored, whatever it asked for: its signer pays for the work that ran.
+/// this identity instead of the signer when it covers the fee. The user fee increase is never
+/// theirs: the signer chose it and pays it. A batch that failed validation is never sponsored,
+/// whatever it asked for: its signer pays for the work that ran.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ResolvedGasSponsor {
     /// The contract owner
@@ -125,8 +126,13 @@ fn saturating_credits(a: Credits, b: Credits) -> Credits {
 /// move, from an identity balance into pots under the prefunded balances sum tree, so the sum
 /// of all credits is unchanged.
 ///
-/// Fee validation and execution both build the operations here, for the payer fee validation
-/// settled on, so what is estimated is what is applied.
+/// The transition's own operations may write the payer's balance too (a purchase price, a
+/// contested document's voting fund, a sale paying a contract owner who sponsors the gas):
+/// `apply_drive_operations` merges those writes with this removal into one.
+///
+/// Fee validation and execution both build the operations here: fee validation to estimate
+/// the batch for the sponsor and, when the sponsor does not pay, for the identity; execution
+/// for the payer fee validation settled on.
 pub fn action_fee_operations(
     payer_id: Identifier,
     action_fees: &[ResolvedDocumentActionFee],

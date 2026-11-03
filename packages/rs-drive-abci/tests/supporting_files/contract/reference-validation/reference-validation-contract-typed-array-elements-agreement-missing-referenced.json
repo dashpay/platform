@@ -34,8 +34,8 @@
             "refersTo": {
               "type": "permanentDocument",
               "documentType": "reason",
-              "propertyAgreement": {
-                "topic": "subject"
+              "where": {
+                "subject": "topic"
               }
             }
           },

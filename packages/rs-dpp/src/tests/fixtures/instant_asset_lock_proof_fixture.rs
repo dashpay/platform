@@ -1,17 +1,16 @@
+use secp256k1::SecretKey;
 use std::str::FromStr;
 
 use dashcore::bls_sig_utils::BLSSignature;
 use dashcore::hash_types::CycleHash;
 
 use crate::balances::credits::Duffs;
-use dashcore::secp256k1::rand::thread_rng;
-use dashcore::secp256k1::Secp256k1;
 use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dashcore::transaction::special_transaction::TransactionPayload;
 use dashcore::{
-    secp256k1::SecretKey, InstantLock, Network, OutPoint, PrivateKey, ScriptBuf, Transaction, TxIn,
-    TxOut, Txid,
+    InstantLock, Network, OutPoint, PrivateKey, ScriptBuf, Transaction, TxIn, TxOut, Txid,
 };
+use secp256k1::rand::rng;
 
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
 
@@ -46,18 +45,19 @@ pub fn instant_asset_lock_proof_transaction_fixture(
     one_time_private_key: Option<PrivateKey>,
     amount: Option<Duffs>,
 ) -> Transaction {
-    let mut rng = thread_rng();
-    let secp = Secp256k1::new();
+    let mut rng = rng();
 
     let private_key_hex = "cSBnVM4xvxarwGQuAfQFwqDg9k5tErHUHzgWsEfD4zdwUasvqRVY";
     let private_key = PrivateKey::from_str(private_key_hex).unwrap();
-    let public_key = private_key.public_key(&secp);
+    let public_key = private_key.public_key();
     let public_key_hash = public_key.pubkey_hash();
     //let from_address = Address::p2pkh(&public_key, Network::Testnet);
     let secret_key = SecretKey::new(&mut rng);
-    let one_time_private_key =
-        one_time_private_key.unwrap_or_else(|| PrivateKey::new(secret_key, Network::Testnet));
-    let one_time_public_key = one_time_private_key.public_key(&secp);
+    let one_time_private_key = one_time_private_key.unwrap_or_else(|| {
+        PrivateKey::from_byte_array(secret_key.as_secret_bytes(), Network::Testnet)
+            .expect("valid test secret key")
+    });
+    let one_time_public_key = one_time_private_key.public_key();
 
     // We are going to fund 1 Dash and
     // assume that input has 100005000

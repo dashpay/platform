@@ -24,5 +24,14 @@ describe('DAPIClient - integration', () => {
 
       expect(emittedError).to.equal(errorToEmit);
     });
+
+    it('should not throw on a BlockHeadersProvider error when nothing listens for errors', () => {
+      expect(() => {
+        dapiClient.blockHeadersProvider.emit(
+          BlockHeadersProvider.EVENTS.ERROR,
+          new Error('test error'),
+        );
+      }).to.not.throw();
+    });
   });
 });

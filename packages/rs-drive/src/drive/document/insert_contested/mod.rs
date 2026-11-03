@@ -572,7 +572,7 @@ mod tests {
         /// `add_contested_document_for_contract` targeting a document type
         /// that has no contested index (`preorder` in DPNS) must surface
         /// `DriveError::ContestedIndexNotFound` from
-        /// `add_contested_indices_for_contract_operations_v0`.
+        /// `add_contested_indices_for_contract_operations`.
         #[test]
         fn add_contested_document_for_contract_errors_on_missing_contested_index() {
             let platform_version = PlatformVersion::latest();

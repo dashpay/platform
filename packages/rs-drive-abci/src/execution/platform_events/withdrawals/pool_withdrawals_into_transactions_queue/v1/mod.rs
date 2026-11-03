@@ -3,6 +3,7 @@ use metrics::gauge;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::DocumentV0Getters;
+use dpp::fee::Credits;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
@@ -29,6 +30,37 @@ where
     pub(super) fn pool_withdrawals_into_transactions_queue_v1(
         &self,
         block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        self.pool_withdrawals_up_to_limit_v1(
+            block_info,
+            |available, daily_maximum| {
+                let current_withdrawal_limit = available;
+
+                // Store prometheus metrics
+                gauge!(GAUGE_CREDIT_WITHDRAWAL_LIMIT_AVAILABLE)
+                    .set(current_withdrawal_limit as f64);
+                gauge!(GAUGE_CREDIT_WITHDRAWAL_LIMIT_TOTAL).set(daily_maximum as f64);
+
+                Ok(current_withdrawal_limit)
+            },
+            transaction,
+            platform_version,
+        )
+    }
+
+    /// Version 1's pooling, given the amount to pool up to once the daily withdrawal limit is
+    /// known (`current_withdrawal_limit`, called with its available amount and its daily
+    /// maximum, only when withdrawals are queued). Extracted in place so version 2 can reuse
+    /// it, inert for protocol versions 1 to 13 (those selecting version 1, and through version
+    /// 0, which delegates to it, those selecting version 0): the closure of version 1 returns
+    /// the available daily limit and sets the gauges exactly where they were set before, so
+    /// every such block pools the same documents and writes the same state.
+    pub(super) fn pool_withdrawals_up_to_limit_v1(
+        &self,
+        block_info: &BlockInfo,
+        current_withdrawal_limit: impl FnOnce(Credits, Credits) -> Result<Credits, Error>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -65,11 +97,8 @@ where
             "Calculated withdrawal limit info"
         );
 
-        let current_withdrawal_limit = withdrawals_info.available();
-
-        // Store prometheus metrics
-        gauge!(GAUGE_CREDIT_WITHDRAWAL_LIMIT_AVAILABLE).set(current_withdrawal_limit as f64);
-        gauge!(GAUGE_CREDIT_WITHDRAWAL_LIMIT_TOTAL).set(withdrawals_info.daily_maximum as f64);
+        let current_withdrawal_limit =
+            current_withdrawal_limit(withdrawals_info.available(), withdrawals_info.daily_maximum)?;
 
         // Only process documents up to the current withdrawal limit.
         let mut total_withdrawal_amount = 0u64;
@@ -210,8 +239,10 @@ mod tests {
 
     #[test]
     fn test_pooling() {
-        let platform_version = PlatformVersion::latest();
+        // Version 1 is frozen: the last protocol version that selects it.
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
             .build_with_mock_rpc()
             .set_initial_state_structure();
 

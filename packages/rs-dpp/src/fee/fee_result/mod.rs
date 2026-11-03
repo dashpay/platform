@@ -50,6 +50,10 @@ use std::convert::TryFrom;
 
 pub mod refunds;
 
+/// The part of a storage fee paid for storage that lives a known number of epochs, keyed by
+/// that number of epochs.
+pub type LifetimeStorageFees = BTreeMap<u16, Credits>;
+
 /// Fee Result
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct FeeResult {
@@ -61,6 +65,11 @@ pub struct FeeResult {
     pub fee_refunds: FeeRefunds,
     /// Removed bytes not needing to be refunded to identities
     pub removed_bytes_from_system: u32,
+    /// The part of `storage_fee` paid for storage that lives a known number of epochs, keyed
+    /// by that number: the writes of a document whose type declares a `ttl` (protocol version
+    /// 14). The pools pay it out over those epochs, where the rest of `storage_fee` goes to
+    /// the perpetual storage distribution. Empty before protocol version 14.
+    pub lifetime_storage_fees: LifetimeStorageFees,
 }
 
 impl TryFrom<Vec<FeeResult>> for FeeResult {
@@ -191,6 +200,7 @@ impl FeeResult {
             processing_fee: credits,
             fee_refunds: Default::default(),
             removed_bytes_from_system: 0,
+            lifetime_storage_fees: Default::default(),
         }
     }
 
@@ -277,6 +287,18 @@ impl FeeResult {
             .ok_or(ProtocolError::Overflow(
                 "removed_bytes_from_system overflow error",
             ))?;
+        for (lifetime_epochs, credits) in rhs.lifetime_storage_fees {
+            let lifetime_credits = self
+                .lifetime_storage_fees
+                .entry(lifetime_epochs)
+                .or_default();
+            *lifetime_credits =
+                lifetime_credits
+                    .checked_add(credits)
+                    .ok_or(ProtocolError::Overflow(
+                        "lifetime storage fee overflow error",
+                    ))?;
+        }
         Ok(())
     }
 }
@@ -351,6 +373,7 @@ mod tests {
             processing_fee: 50,
             fee_refunds: refunds,
             removed_bytes_from_system: 0,
+            lifetime_storage_fees: Default::default(),
         };
         let bci = fee_result.into_balance_change(id);
         let other = bci.other_refunds();
@@ -367,6 +390,7 @@ mod tests {
             processing_fee: 58,
             fee_refunds: FeeRefunds::default(),
             removed_bytes_from_system: 10,
+            lifetime_storage_fees: Default::default(),
         };
         let id = make_id(1);
         let bci = fee_result.clone().into_balance_change(id);
@@ -388,6 +412,7 @@ mod tests {
             processing_fee: 50,
             fee_refunds: refunds,
             removed_bytes_from_system: 0,
+            lifetime_storage_fees: Default::default(),
         };
         let bci = fee_result.into_balance_change(id);
         match bci.change() {
@@ -401,6 +426,7 @@ mod tests {
             processing_fee: 50,
             fee_refunds: refunds2,
             removed_bytes_from_system: 0,
+            lifetime_storage_fees: Default::default(),
         };
         let bci2 = fee_result2.into_balance_change(id);
         let result: Result<FeeResult, FeeError> = bci2.fee_result_outcome(0);
@@ -458,6 +484,7 @@ mod tests {
             processing_fee: 50,
             fee_refunds: refunds,
             removed_bytes_from_system: 0,
+            lifetime_storage_fees: Default::default(),
         };
         let bci = fee_result.into_balance_change(id);
         match bci.change() {
@@ -471,6 +498,7 @@ mod tests {
             processing_fee: 50,
             fee_refunds: refunds2,
             removed_bytes_from_system: 0,
+            lifetime_storage_fees: Default::default(),
         };
         let bci2 = fee_result2.into_balance_change(id);
         let result: Result<FeeResult, FeeError> = bci2.fee_result_outcome(0);
@@ -489,6 +517,7 @@ mod tests {
             processing_fee: 50,
             fee_refunds: refunds,
             removed_bytes_from_system: 0,
+            lifetime_storage_fees: Default::default(),
         };
         let bci = fee_result.into_balance_change(id);
         match bci.change() {
@@ -514,6 +543,7 @@ mod tests {
             processing_fee: 50,
             fee_refunds: refunds,
             removed_bytes_from_system: 0,
+            lifetime_storage_fees: Default::default(),
         };
         let bci = fee_result.into_balance_change(id);
         assert_eq!(bci.change(), &BalanceChange::NoBalanceChange);
@@ -528,6 +558,7 @@ mod tests {
             processing_fee: 50,
             fee_refunds: refunds,
             removed_bytes_from_system: 0,
+            lifetime_storage_fees: Default::default(),
         };
         let bci = fee_result.into_balance_change(id);
         match bci.change() {

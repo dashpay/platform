@@ -4,7 +4,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.persistence.entities.DataContractEntity
+import org.dashfoundation.dashsdk.queries.Contracts
 import org.dashfoundation.example.util.LenientJson
 
 /**
@@ -12,6 +14,11 @@ import org.dashfoundation.example.util.LenientJson
  * contract JSON. The iOS app materializes the same structure into
  * SwiftData child rows via `DataContractParser`; here the detail screens
  * parse it on demand from the JSON blob instead.
+ *
+ * Like `DataContractParser`, it reads the contract with its property type
+ * shorthands (protocol version 14) written in full: a `"type": "identifier"`
+ * or `"type": "bytes"` property is a byte array here, so the screens offer
+ * the input they offer for the long form. The stored JSON stays as sent.
  */
 data class ParsedContract(
     val root: JsonObject,
@@ -25,7 +32,7 @@ data class ParsedContract(
     companion object {
         fun from(entity: DataContractEntity): ParsedContract? = try {
             val root = LenientJson
-                .parseToJsonElement(entity.serializedContract.decodeToString())
+                .parseToJsonElement(longForm(entity.serializedContract.decodeToString()))
                 .jsonObject
             val documents = (root["documents"] as? JsonObject)
                 ?: (root["documentSchemas"] as? JsonObject)
@@ -40,6 +47,19 @@ data class ParsedContract(
             )
         } catch (_: Exception) {
             null
+        }
+
+        /**
+         * [json] with its property type shorthands written in full by Rust
+         * ([Contracts.expandPropertyTypeShorthands]), or [json] as stored when
+         * that fails (JVM unit tests never load the native library).
+         */
+        private fun longForm(json: String): String = try {
+            Contracts.expandPropertyTypeShorthands(json)
+        } catch (_: DashSdkError) {
+            json
+        } catch (_: LinkageError) {
+            json
         }
 
         private fun JsonObject?.orEmpty(): JsonObject = this ?: JsonObject(emptyMap())
@@ -166,7 +186,8 @@ internal fun immutablePropertyLock(
  * ranking axes, in display order. Empty for a pre-v14 index. `countable`
  * may be authored as a boolean or one of its string variants, and the
  * `averageable` / `rangeAverageable` sugar is desugared into
- * countable + summable exactly as DPP does.
+ * countable + summable exactly as DPP does. A ranking reads as `true` or as
+ * `{ "at": ... }`, naming the levels it ranks at.
  */
 internal fun indexAxisDescriptors(index: JsonObject): List<String> {
     val descriptors = mutableListOf<String>()
@@ -185,13 +206,33 @@ internal fun indexAxisDescriptors(index: JsonObject): List<String> {
     if (summable != null) {
         descriptors += "Summable ($summable)"
     }
+    index.stringField("summableOffCountIndex")?.let { source ->
+        descriptors += "Counter of $source"
+    }
     if (index.boolField("rangeSummable") == true || rangeAverageable) {
         descriptors += "Range Sum"
     }
-    if (index.boolField("rankedCountable") == true) descriptors += "Ranked by Count"
-    if (index.boolField("rankedSummable") == true) descriptors += "Ranked by Sum"
-    if (index.boolField("rankedAverageable") == true) descriptors += "Ranked by Average"
+    rankingDescriptor(index, "rankedCountable", "Ranked by Count")?.let { descriptors += it }
+    rankingDescriptor(index, "rankedSummable", "Ranked by Sum")?.let { descriptors += it }
+    rankingDescriptor(index, "rankedAverageable", "Ranked by Average")?.let { descriptors += it }
     return descriptors
+}
+
+/**
+ * [label] for a ranking keyword authored as `true`, or with the levels of
+ * its `{ "at": <property or properties> }` form; `null` when absent.
+ *
+ * Ported from `AuthoredIndexKeywords.rankedAtLevels` in
+ * packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentIndex.swift.
+ */
+private fun rankingDescriptor(index: JsonObject, key: String, label: String): String? {
+    if (index.boolField(key) == true) return label
+    val levels = when (val at = (index[key] as? JsonObject)?.get("at")) {
+        is JsonPrimitive -> listOf(at.content)
+        is JsonArray -> at.mapNotNull { (it as? JsonPrimitive)?.content }
+        else -> emptyList()
+    }
+    return if (levels.isEmpty()) null else "$label at ${levels.joinToString(", ")}"
 }
 
 /**
@@ -200,12 +241,15 @@ internal fun indexAxisDescriptors(index: JsonObject): List<String> {
  * composite terminal joined with ` ‖ ` for display), defaulting to
  * `$ownerId` exactly as DPP normalizes an omitted terminal. `null` on
  * stored (non-indexOnly) document types, where entries are keyed by
- * document id.
+ * document id, and on a `summableOffCountIndex` index, which keeps one
+ * counter per group in place of entries.
  */
-internal fun indexTerminal(index: JsonObject, indexOnly: Boolean): String? =
-    index.stringField("terminal")
+internal fun indexTerminal(index: JsonObject, indexOnly: Boolean): String? = when {
+    index["summableOffCountIndex"] != null -> null
+    else -> index.stringField("terminal")
         ?: (index["terminal"] as? JsonArray)
             ?.mapNotNull { (it as? JsonPrimitive)?.content }
             ?.takeIf { it.isNotEmpty() }
             ?.joinToString(" ‖ ")
         ?: if (indexOnly) "\$ownerId" else null
+}

@@ -8,6 +8,10 @@ use std::ops::{Add, Div};
 use crate::block::block_info::BlockInfo;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
 use crate::ProtocolError;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 
 #[derive(
     Serialize,
@@ -97,10 +101,10 @@ impl From<RewardDistributionMomentRepr> for RewardDistributionMoment {
     }
 }
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for RewardDistributionMoment {}
+impl JsonConvertible for RewardDistributionMoment {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for RewardDistributionMoment {}
+impl ValueConvertible for RewardDistributionMoment {}
 
 #[cfg(all(
     test,

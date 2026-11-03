@@ -103,7 +103,7 @@ handles platform differences transparently.
 
 **Node.js considerations:**
 
-- Requires Node.js ≥ 18.18 (for WebAssembly and `fetch` support)
+- Requires Node.js ≥ 22
 - ESM-only package — use `import`, not `require`
 - No additional polyfills needed
 

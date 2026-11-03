@@ -5,7 +5,6 @@
 use dash_sdk::dpp::address_funds::{
     AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress,
 };
-use dash_sdk::dpp::dashcore::secp256k1::SecretKey;
 use dash_sdk::dpp::dashcore::{Network, PrivateKey};
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::signer::Signer;
@@ -59,8 +58,9 @@ impl Signer<PlatformAddress> for AddressSigner {
         })?;
 
         // Sign the data using dashcore signer
-        let signature = dash_sdk::dpp::dashcore::signer::sign(data, private_key.inner.as_ref())
-            .map_err(|e| ProtocolError::Generic(format!("Signing failed: {}", e)))?;
+        let signature =
+            dash_sdk::dpp::dashcore::signer::sign(data, private_key.inner.to_bytes().as_ref())
+                .map_err(|e| ProtocolError::Generic(format!("Signing failed: {}", e)))?;
 
         Ok(BinaryData::new(signature.to_vec()))
     }
@@ -83,8 +83,9 @@ impl Signer<PlatformAddress> for AddressSigner {
         })?;
 
         // Sign the data
-        let signature = dash_sdk::dpp::dashcore::signer::sign(data, private_key.inner.as_ref())
-            .map_err(|e| ProtocolError::Generic(format!("Signing failed: {}", e)))?;
+        let signature =
+            dash_sdk::dpp::dashcore::signer::sign(data, private_key.inner.to_bytes().as_ref())
+                .map_err(|e| ProtocolError::Generic(format!("Signing failed: {}", e)))?;
 
         // Create P2PKH witness (most common for single key)
         Ok(AddressWitness::P2pkh {
@@ -235,8 +236,8 @@ unsafe fn dash_sdk_address_transfer_funds_inner(
         };
 
         // Parse private key (32 bytes)
-        let pk_bytes = std::slice::from_raw_parts(input.private_key, 32);
-        let secret_key = match SecretKey::from_slice(pk_bytes) {
+        let pk_bytes = &*input.private_key.cast::<[u8; 32]>();
+        let private_key = match PrivateKey::from_byte_array(pk_bytes, Network::Testnet) {
             Ok(sk) => sk,
             Err(e) => {
                 return DashSDKResult::error(DashSDKError::new(
@@ -245,9 +246,6 @@ unsafe fn dash_sdk_address_transfer_funds_inner(
                 ))
             }
         };
-
-        // Create PrivateKey (network doesn't matter for signing)
-        let private_key = PrivateKey::new(secret_key, Network::Testnet);
 
         signer.add_key(&address, private_key);
         input_map.insert(address, input.amount);

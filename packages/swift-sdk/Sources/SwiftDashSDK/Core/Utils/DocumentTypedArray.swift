@@ -21,7 +21,10 @@ import Foundation
 ///
 /// The fields mirror wasm-dpp2's `DocumentTypedArrayProperty` key for key.
 /// DPP validated the declaration when the contract was registered; this type
-/// only reads it back off the schema as authored and does not re-validate it.
+/// only reads it back off the persisted schema and does not re-validate it.
+/// It reads the long form: an `items` property type shorthand (protocol
+/// version 14, `"type": "identifier"` or `"type": "bytes"` with a `size`) is
+/// written in full there by `DataContractParser`, through Rust.
 /// The element checks of `Element.value(fromInput:)` are a client-side
 /// courtesy: consensus is the authority on what a document may hold.
 public struct DocumentTypedArray: Equatable, Sendable {
@@ -52,7 +55,8 @@ public struct DocumentTypedArray: Equatable, Sendable {
         self.uniqueItems = uniqueItems
     }
 
-    /// Read one property schema dictionary, as authored in the contract.
+    /// Read one property schema dictionary, as `PersistentDocumentType.schema`
+    /// holds it: property type shorthands written in full.
     ///
     /// `nil` when the property is not a typed array: not `type: "array"`, a
     /// `byteArray` key on the property, no `items` object, an `items` schema
@@ -80,8 +84,8 @@ public struct DocumentTypedArray: Equatable, Sendable {
     /// Every typed array a document type declares, sorted by path. Walks into
     /// `object` properties, naming a nested typed array by its dotted path.
     ///
-    /// `documentTypeSchema` is the whole document type dictionary as authored
-    /// in the contract (`PersistentDocumentType.schema`).
+    /// `documentTypeSchema` is the whole document type dictionary, property
+    /// type shorthands written in full (`PersistentDocumentType.schema`).
     public static func all(inDocumentTypeSchema documentTypeSchema: [String: Any]?) -> [DocumentTypedArray] {
         var found: [DocumentTypedArray] = []
         collect(properties: documentTypeSchema?["properties"], prefix: nil, into: &found)

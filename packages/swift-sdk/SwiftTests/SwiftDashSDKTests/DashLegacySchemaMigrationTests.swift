@@ -11,15 +11,16 @@ private final class BridgeFutureMarker {
     var value: String = "future"
     init() {}
 }
-private enum BridgeFutureV4: VersionedSchema {
-    static var versionIdentifier: Schema.Version { Schema.Version(4, 0, 0) }
-    static var models: [any PersistentModel.Type] { DashSchemaV3.models + [BridgeFutureMarker.self] }
+private enum BridgeFutureV5: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(5, 0, 0) }
+    static var models: [any PersistentModel.Type] { DashSchemaV4.models + [BridgeFutureMarker.self] }
 }
 private enum BridgeFuturePlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [DashSchemaV1.self, DashSchemaV3.self, BridgeFutureV4.self] }
+    static var schemas: [any VersionedSchema.Type] { [DashSchemaV1.self, DashSchemaV3.self, DashSchemaV4.self, BridgeFutureV5.self] }
     static var stages: [MigrationStage] {
         [.lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV3.self),
-         .custom(fromVersion: DashSchemaV3.self, toVersion: BridgeFutureV4.self,
+         .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self),
+         .custom(fromVersion: DashSchemaV4.self, toVersion: BridgeFutureV5.self,
                  willMigrate: { context in
                      for wallet in try context.fetch(FetchDescriptor<PersistentWallet>()) {
                          wallet.name = "explicit future transformation"
@@ -515,6 +516,54 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
         }
     }
 
+    /// Bytes 18/19 of the SQLite header: 1 = rollback journal, 2 = WAL.
+    private func journalFormat(_ url: URL) throws -> [UInt8] {
+        let file = try FileHandle(forReadingFrom: url)
+        defer { try? file.close() }
+        return Array(try XCTUnwrap(file.read(upToCount: 20)).suffix(2))
+    }
+
+    // App-written stores are WAL. A copy that kept the WAL header but has no
+    // -wal/-shm cannot be read by a read-only connection on iOS, which is how
+    // every App Store 9.0.0 store failed its snapshot integrity check.
+    func testCopyOfWALStoreLeavesWALModeAndReadsReadOnly() throws {
+        try withStore { url in
+            let writer = try DashLegacyStoreSQLite.Connection(url, writable: true)
+            try writer.execute("PRAGMA journal_mode=WAL")
+            try writer.execute("PRAGMA wal_autocheckpoint=0")
+            try writer.execute("UPDATE ZPERSISTENTWALLET SET ZNAME='copied from WAL'")
+            XCTAssertEqual(try journalFormat(url), [2, 2])
+            let copy = url.deletingLastPathComponent().appendingPathComponent("copy.store")
+            try DashLegacyStoreSQLite.copy(from: url, to: copy)
+            XCTAssertEqual(try journalFormat(copy), [1, 1])
+            XCTAssertNoThrow(try DashLegacyStoreSQLite.integrityCheck(copy))
+            var names: [String] = []
+            try DashLegacyStoreSQLite.Connection(copy, writable: false).query("SELECT ZNAME FROM ZPERSISTENTWALLET") {
+                names.append(String(cString: sqlite3_column_text($0, 0)))
+            }
+            XCTAssertEqual(names, ["copied from WAL"])
+        }
+    }
+
+    func testWALStoreSnapshotIsReadableBeforeMigration() throws {
+        try withStore { url in
+            let writer = try DashLegacyStoreSQLite.Connection(url, writable: true)
+            try writer.execute("PRAGMA journal_mode=WAL")
+            try writer.execute("UPDATE ZPERSISTENTWALLET SET ZNAME='WAL snapshot'")
+            var checkedSnapshot = false
+            let migrated = try open(url, hooks: .init(visit: { phase, _ in
+                guard phase == .afterSnapshot else { return }
+                let backup = try XCTUnwrap(try self.operationDirectories(url).first)
+                    .appendingPathComponent("original.store")
+                XCTAssertEqual(try self.journalFormat(backup), [1, 1])
+                try DashLegacyStoreSQLite.integrityCheck(backup)
+                checkedSnapshot = true
+            }))
+            XCTAssertTrue(checkedSnapshot)
+            try verifyRows(migrated.mainContext, walletName: "WAL snapshot")
+        }
+    }
+
     func testCheckpointRejectsBusyWALAndConfirmsDeleteMode() throws {
         try withStore { url in
             try autoreleasepool {
@@ -722,7 +771,7 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
 
     func testSkippingV3UsesFixedBridgeThenRegisteredCustomFutureStage() throws {
         try withStore { url in
-            let schema = Schema(versionedSchema: BridgeFutureV4.self)
+            let schema = Schema(versionedSchema: BridgeFutureV5.self)
             var checkedV3 = false
             let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
             XCTAssertThrowsError(try DashLegacySchemaBridge.open(
@@ -839,7 +888,8 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
                 let container = try ModelContainer(for: schema, configurations: [
                     ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
                 ])
-                try verifyRows(container.mainContext)
+                XCTAssertEqual(try container.mainContext.fetchCount(
+                    FetchDescriptor<DashSchemaSnapshotV3.PersistentWallet>()), 1)
             }
             XCTAssertEqual(try DashLegacySchemaBridge.identity(at: url).versions, ["2.0.0"])
             let container = try open(url, hooks: .init(visit: { _, _ in

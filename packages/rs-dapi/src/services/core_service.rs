@@ -663,4 +663,20 @@ mod tests {
             .expect_err("overweight transaction must be rejected");
         assert_eq!(error.code(), dapi_grpc::tonic::Code::InvalidArgument);
     }
+
+    /// Core v24 relays version-3 provider transactions; a broadcast of one
+    /// reaches Core instead of being refused as undecodable.
+    #[test]
+    fn broadcast_transaction_accepts_a_core_v24_service_update() {
+        let raw = hex::decode(
+            include_str!("../../tests/vectors/core_v24_devnet/evo_pro_up_serv_tx_v3.hex").trim(),
+        )
+        .expect("vector is hex");
+        let transaction =
+            decode_broadcast_transaction(&raw).expect("a Core v24 ProUpServTx decodes");
+        assert_eq!(
+            transaction.txid().to_string(),
+            "7c58d9776ef31869b8cae3f94366e9fedb914e41a5b4c26d048c12f30f5e51ac"
+        );
+    }
 }

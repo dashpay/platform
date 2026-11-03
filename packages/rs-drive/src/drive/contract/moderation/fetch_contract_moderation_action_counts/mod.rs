@@ -1,9 +1,11 @@
 mod v0;
 
+use crate::drive::contract::paths::{contract_other_path, CONTRACT_MODERATION_ACTION_COUNTS_KEY};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::DirectQueryType;
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
@@ -12,6 +14,27 @@ use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
 impl Drive {
+    /// Whether the contract has the moderation action counts tree: every elected contract
+    /// does, but one stored, elected already, before protocol version 14 counted actions (a
+    /// development network's) has none. The reads of the counts find none there, and a proof
+    /// of them could not be built, so the query refuses such a contract whether or not it asks
+    /// for a proof.
+    pub fn contract_keeps_moderation_action_counts(
+        &self,
+        contract_id: Identifier,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
+        self.grove_has_raw(
+            (&contract_other_path(contract_id.as_slice())).into(),
+            &[CONTRACT_MODERATION_ACTION_COUNTS_KEY],
+            DirectQueryType::StatefulDirectQuery,
+            transaction,
+            &mut vec![],
+            &platform_version.drive,
+        )
+    }
+
     /// Reads the moderation action counts of the elected contract `contract_id`: for each
     /// member of the seated team who signed a counted moderation action since the moderators
     /// pot was last settled, how many. At most `limit` of them, in identity id order.

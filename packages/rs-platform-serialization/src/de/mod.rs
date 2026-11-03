@@ -200,11 +200,11 @@ pub(crate) fn decode_slice_len<D: Decoder<Context = crate::BincodeContext>>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bincode::config;
+    use crate::PLATFORM_BINCODE_CONFIG;
     use platform_version::version::PlatformVersion;
 
     fn cfg() -> impl bincode::config::Config {
-        config::standard().with_big_endian().with_no_limit()
+        PLATFORM_BINCODE_CONFIG
     }
 
     fn pv() -> &'static PlatformVersion {
@@ -214,7 +214,7 @@ mod tests {
     /// Helper: encode a u64 varint using bincode big-endian standard config,
     /// then attempt to decode it as a collection length via `decode_slice_len`.
     fn try_decode_len(value: u64) -> Result<usize, DecodeError> {
-        let config = config::standard().with_big_endian().with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         let encoded = bincode::encode_to_vec(value, config).unwrap();
         let reader = bincode::de::read::SliceReader::new(&encoded);
         let mut decoder = bincode::de::DecoderImpl::new(reader, config, ());

@@ -18,6 +18,17 @@ where
     /// Tenderdash proposes the next height without waiting for transactions or the empty-block
     /// interval. Not consensus: a read only, it never touches the state or the app hash, and the
     /// hint is local to the node that returns it.
+    ///
+    /// # Parameters
+    ///
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(true)` when the untied withdrawal transactions queue holds at least one transaction,
+    ///   `Ok(false)` when it is empty.
+    /// * `Err(Error)` when the method version is unknown or the queue read fails.
     pub fn has_pending_withdrawal_work(
         &self,
         transaction: TransactionArg,

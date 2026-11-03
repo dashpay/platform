@@ -87,6 +87,11 @@ fn decode_transaction(bytes: &[u8]) -> Result<Transaction, Error> {
     Transaction::consensus_decode(&mut &bytes[..]).map_err(|e| Error::CoreError(e.into()))
 }
 
+/// Decode the consensus-encoded block bytes of a `getBlock` reply.
+fn decode_block(bytes: &[u8]) -> Result<Block, Error> {
+    Block::consensus_decode(&mut &bytes[..]).map_err(|e| Error::CoreError(e.into()))
+}
+
 impl Sdk {
     /// Fetch a Core transaction by its id via DAPI `getTransaction`.
     ///
@@ -177,9 +182,7 @@ impl Sdk {
         if response.block.is_empty() {
             return Ok(None);
         }
-        Block::consensus_decode(&mut response.block.as_slice())
-            .map(Some)
-            .map_err(|e| Error::CoreError(e.into()))
+        decode_block(&response.block).map(Some)
     }
 
     /// Run `getTransaction`, mapping an unknown transaction (gRPC `NOT_FOUND`
@@ -473,5 +476,20 @@ mod tests {
         assert!(block_hash_from_display_bytes(&[]).is_none());
         assert!(block_hash_from_display_bytes(&[0u8; 31]).is_none());
         assert!(block_hash_from_display_bytes(&[0u8; 33]).is_none());
+    }
+
+    /// A block Core v24 mined at height 15146 on a devnet, as DAPI `getBlock`
+    /// returns it: its coinbase is a version 4 CbTx and it holds a version 3
+    /// ProRegTx.
+    const CORE_V24_BLOCK: &str = "00000020624025135b0936675af8abbe364e7d21c8e1e42eab3f2b6f6528d6ea875dad51e2664e33e00b3bf6b05a67603cddadf9daa4149e9130c7e5180e38426d20a695d5a6c76affff7f20010000000203000500010000000000000000000000000000000000000000000000000000000000000000ffffffff016affffffff036de1f505000000001976a91456208a8adff9433262bffee3c4894d2a160c21bd88ac209db40600000000016a26072d0b000000001976a91456208a8adff9433262bffee3c4894d2a160c21bd88ac00000000cf04002a3b0000db318d0bad75d80a6e14088f71657af817056edee711360d25c729905f33ed502692b21d078be4bc3103156612ba6bdcf387efdd6320a50a97985f5cdce4ead8008df9d40906f1c7c36c545b06daec45a84ffd43b5caf4045c9c9a39a146a7771de6cbdd11f5d16b22e9e358f5c483e35b12a5f3cab190026c5445dec34e632c36a0ba36a1f87bb411d7d292c5fd55cd36128877c707747286e40abec1aee7e4812eb72a56c407000000000000000000000000000000000000000000000000000000000000000000000300010001d02a36181466f1f3ec0f61a73114bdf31fa7f137fa880441d7e5e7b672493c04010000006a473044022004f9bb946ee7fab7d823a812cfb27b576f2c0cda4e597a8c92be26d8af33f155022034d05190a9b7a9aaae89fc89148639af1eb7f0601d9c959232b7a159cb2ca991012102c861a156ca6c6abecdeea95eab3ec7c93c6a37d63a5a6f62368ac94a424af15ffeffffff0200e87648170000001976a914fc52fb4219926f353f5475da7885b213c384a24188ac4d4fbfb88b0000001976a914c39aa109a7f20cefa69079374c7324e01998a12488ac00000000d10300000000000000000000000000000000000000000000000000000000000000000000000000000000000100c1dad84fdab5738de910b64d3a9ae7baf6afbd69806b8889b4ed6ccecefe7861fc3d69b7598f6ab9621fe2568403f94a1c5df398891433cdf301c67fda82f80bfe7f321465e088b8b1360c62946afcbea403cf927d5bfe230000011976a91431389f57b2f32565dcf713d2b2420914885bedcd88ac1027000000000000000000000000004f8f8fe9fd4ad5565cd6c4887bc54e2910a340bb7583c0d8d6a92d52b324095700";
+
+    /// A Core v24 block decodes with every transaction, so its merkle root
+    /// matches the header.
+    #[test]
+    fn decode_block_reads_a_core_v24_block() {
+        let bytes = hex::decode(CORE_V24_BLOCK).expect("vector is hex");
+        let block = decode_block(&bytes).expect("a Core v24 block decodes");
+        assert!(block.check_merkle_root());
+        assert_eq!(block.txdata.len(), 2);
     }
 }

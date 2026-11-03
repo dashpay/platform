@@ -10,6 +10,8 @@ use crate::fee::Credits;
 use crate::prelude::{
     DataContract, DerivationEncryptionKeyIndex, IdentityNonce, RootEncryptionKeyIndex,
 };
+#[cfg(feature = "serde-conversion")]
+use crate::serialization::json::safe_integer::{json_safe_option_encrypted_note, json_safe_u64};
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
@@ -166,6 +168,46 @@ pub enum TokenEvent {
     /// - `TokenAmount`: The amount of tokens purchased.
     /// - `Credits`: The number of credits paid.
     DirectPurchase(TokenAmount, Credits),
+
+    /// Event representing tokens moving from an identity balance into the token's shielded pool.
+    ///
+    /// - `TokenAmount`: The amount shielded.
+    Shield(TokenAmount),
+
+    /// Event representing tokens moving from the token's shielded pool to an identity balance.
+    ///
+    /// - `RecipientIdentifier`: The identity credited.
+    /// - `TokenAmount`: The amount unshielded.
+    Unshield(RecipientIdentifier, TokenAmount),
+
+    /// Event representing a transfer inside the token's shielded pool. Nothing about the
+    /// transfer (parties, amount) is public.
+    ShieldedTransfer,
+
+    /// Event representing a mint straight into the token's shielded pool.
+    ///
+    /// - `TokenAmount`: The amount minted.
+    /// - `Identifier`: Digest of the Orchard actions, so a group action commits to the notes.
+    /// - `TokenEventPublicNote`: Optional note associated with the event.
+    MintToPool(TokenAmount, Identifier, TokenEventPublicNote),
+
+    /// Event representing a burn of notes held in the token's shielded pool.
+    ///
+    /// - `TokenAmount`: The amount destroyed.
+    /// - `Identifier`: Digest of the Orchard actions, so a group action commits to the notes.
+    /// - `TokenEventPublicNote`: Optional note associated with the event.
+    BurnFromPool(TokenAmount, Identifier, TokenEventPublicNote),
+
+    /// Event representing a distribution claim paid into the token's shielded pool.
+    ///
+    /// - `TokenAmount`: The amount claimed.
+    ClaimToPool(TokenAmount),
+
+    /// Event representing a direct purchase paid into the token's shielded pool.
+    ///
+    /// - `TokenAmount`: The amount of tokens purchased.
+    /// - `Credits`: The number of credits paid.
+    DirectPurchaseToPool(TokenAmount, Credits),
 }
 
 // Manual impl because TokenEvent is a flat enum with u64-alias tuple variants
@@ -188,15 +230,13 @@ impl serde::Serialize for TokenEvent {
         struct SafeU64<'a>(&'a u64);
         impl<'a> serde::Serialize for SafeU64<'a> {
             fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-                crate::serialization::json::safe_integer::json_safe_u64::serialize(self.0, s)
+                json_safe_u64::serialize(self.0, s)
             }
         }
         struct SafeOptEncNote<'a>(&'a Option<(u32, u32, Vec<u8>)>);
         impl<'a> serde::Serialize for SafeOptEncNote<'a> {
             fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-                crate::serialization::json::safe_integer::json_safe_option_encrypted_note::serialize(
-                    self.0, s,
-                )
+                json_safe_option_encrypted_note::serialize(self.0, s)
             }
         }
 
@@ -285,6 +325,53 @@ impl serde::Serialize for TokenEvent {
                 m.serialize_entry("credits", &SafeU64(credits))?;
                 m.end()
             }
+            TokenEvent::Shield(amount) => {
+                let mut m = serializer.serialize_map(Some(2))?;
+                m.serialize_entry("$type", "shield")?;
+                m.serialize_entry("amount", &SafeU64(amount))?;
+                m.end()
+            }
+            TokenEvent::Unshield(recipient, amount) => {
+                let mut m = serializer.serialize_map(Some(3))?;
+                m.serialize_entry("$type", "unshield")?;
+                m.serialize_entry("recipient", recipient)?;
+                m.serialize_entry("amount", &SafeU64(amount))?;
+                m.end()
+            }
+            TokenEvent::ShieldedTransfer => {
+                let mut m = serializer.serialize_map(Some(1))?;
+                m.serialize_entry("$type", "shieldedTransfer")?;
+                m.end()
+            }
+            TokenEvent::MintToPool(amount, actions_digest, note) => {
+                let mut m = serializer.serialize_map(Some(4))?;
+                m.serialize_entry("$type", "mintToPool")?;
+                m.serialize_entry("amount", &SafeU64(amount))?;
+                m.serialize_entry("actionsDigest", actions_digest)?;
+                m.serialize_entry("publicNote", note)?;
+                m.end()
+            }
+            TokenEvent::BurnFromPool(amount, actions_digest, note) => {
+                let mut m = serializer.serialize_map(Some(4))?;
+                m.serialize_entry("$type", "burnFromPool")?;
+                m.serialize_entry("amount", &SafeU64(amount))?;
+                m.serialize_entry("actionsDigest", actions_digest)?;
+                m.serialize_entry("publicNote", note)?;
+                m.end()
+            }
+            TokenEvent::ClaimToPool(amount) => {
+                let mut m = serializer.serialize_map(Some(2))?;
+                m.serialize_entry("$type", "claimToPool")?;
+                m.serialize_entry("amount", &SafeU64(amount))?;
+                m.end()
+            }
+            TokenEvent::DirectPurchaseToPool(amount, credits) => {
+                let mut m = serializer.serialize_map(Some(3))?;
+                m.serialize_entry("$type", "directPurchaseToPool")?;
+                m.serialize_entry("amount", &SafeU64(amount))?;
+                m.serialize_entry("credits", &SafeU64(credits))?;
+                m.end()
+            }
         }
     }
 }
@@ -325,6 +412,7 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                 let mut amount: Option<u64> = None;
                 let mut credits: Option<u64> = None;
                 let mut recipient: Option<Identifier> = None;
+                let mut actions_digest: Option<Identifier> = None;
                 let mut burn_from: Option<Identifier> = None;
                 let mut frozen: Option<Identifier> = None;
                 let mut public_note: Option<String> = None;
@@ -342,6 +430,7 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                         "amount" => amount = Some(map.next_value::<U64Safe>()?.0),
                         "credits" => credits = Some(map.next_value::<U64Safe>()?.0),
                         "recipient" => recipient = Some(map.next_value()?),
+                        "actionsDigest" => actions_digest = Some(map.next_value()?),
                         "burnFromIdentifier" => burn_from = Some(map.next_value()?),
                         "frozenIdentifier" => frozen = Some(map.next_value()?),
                         "publicNote" => public_note = map.next_value()?,
@@ -416,6 +505,31 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                         amount.ok_or_else(|| A::Error::missing_field("amount"))?,
                         credits.ok_or_else(|| A::Error::missing_field("credits"))?,
                     )),
+                    "shield" => Ok(TokenEvent::Shield(
+                        amount.ok_or_else(|| A::Error::missing_field("amount"))?,
+                    )),
+                    "unshield" => Ok(TokenEvent::Unshield(
+                        recipient.ok_or_else(|| A::Error::missing_field("recipient"))?,
+                        amount.ok_or_else(|| A::Error::missing_field("amount"))?,
+                    )),
+                    "shieldedTransfer" => Ok(TokenEvent::ShieldedTransfer),
+                    "mintToPool" => Ok(TokenEvent::MintToPool(
+                        amount.ok_or_else(|| A::Error::missing_field("amount"))?,
+                        actions_digest.ok_or_else(|| A::Error::missing_field("actionsDigest"))?,
+                        public_note,
+                    )),
+                    "burnFromPool" => Ok(TokenEvent::BurnFromPool(
+                        amount.ok_or_else(|| A::Error::missing_field("amount"))?,
+                        actions_digest.ok_or_else(|| A::Error::missing_field("actionsDigest"))?,
+                        public_note,
+                    )),
+                    "claimToPool" => Ok(TokenEvent::ClaimToPool(
+                        amount.ok_or_else(|| A::Error::missing_field("amount"))?,
+                    )),
+                    "directPurchaseToPool" => Ok(TokenEvent::DirectPurchaseToPool(
+                        amount.ok_or_else(|| A::Error::missing_field("amount"))?,
+                        credits.ok_or_else(|| A::Error::missing_field("credits"))?,
+                    )),
                     other => Err(A::Error::unknown_variant(
                         other,
                         &[
@@ -430,6 +544,13 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                             "configUpdate",
                             "changePriceForDirectPurchase",
                             "directPurchase",
+                            "shield",
+                            "unshield",
+                            "shieldedTransfer",
+                            "mintToPool",
+                            "burnFromPool",
+                            "claimToPool",
+                            "directPurchaseToPool",
                         ],
                     )),
                 }
@@ -629,6 +750,35 @@ impl fmt::Display for TokenEvent {
             TokenEvent::DirectPurchase(amount, credits) => {
                 write!(f, "Direct purchase of {} for {} credits", amount, credits)
             }
+            TokenEvent::Shield(amount) => write!(f, "Shield {} into the token pool", amount),
+            TokenEvent::Unshield(to, amount) => {
+                write!(f, "Unshield {} from the token pool to {}", amount, to)
+            }
+            TokenEvent::ShieldedTransfer => write!(f, "Shielded transfer inside the token pool"),
+            TokenEvent::MintToPool(amount, _, note) => {
+                write!(
+                    f,
+                    "Mint {} into the token pool{}",
+                    amount,
+                    format_note(note)
+                )
+            }
+            TokenEvent::BurnFromPool(amount, _, note) => {
+                write!(
+                    f,
+                    "Burn {} from the token pool{}",
+                    amount,
+                    format_note(note)
+                )
+            }
+            TokenEvent::ClaimToPool(amount) => {
+                write!(f, "Claim {} into the token pool", amount)
+            }
+            TokenEvent::DirectPurchaseToPool(amount, credits) => write!(
+                f,
+                "Direct purchase of {} into the token pool for {} credits",
+                amount, credits
+            ),
         }
     }
 }
@@ -654,23 +804,42 @@ impl TokenEvent {
             TokenEvent::ConfigUpdate(..) => "configUpdate",
             TokenEvent::DirectPurchase(..) => "directPurchase",
             TokenEvent::ChangePriceForDirectPurchase(..) => "directPricing",
+            TokenEvent::Shield(..) => "shield",
+            TokenEvent::Unshield(..) => "unshield",
+            TokenEvent::ShieldedTransfer => "shieldedTransfer",
+            TokenEvent::MintToPool(..) => "mintToPool",
+            TokenEvent::BurnFromPool(..) => "burnFromPool",
+            TokenEvent::ClaimToPool(..) => "claimToPool",
+            TokenEvent::DirectPurchaseToPool(..) => "directPurchaseToPool",
         }
     }
 
     /// Returns a reference to the public note if the variant includes one.
+    ///
+    /// Every variant is listed: the co-signers of a pending group action read the proposer's
+    /// note here while deciding whether to sign, so a variant that carries one and is not
+    /// listed shows them nothing. Adding a variant is then a compile error rather than a note
+    /// that silently goes missing.
     pub fn public_note(&self) -> Option<&str> {
         match self {
-            TokenEvent::Mint(_, _, Some(note))
-            | TokenEvent::Burn(_, _, Some(note))
-            | TokenEvent::Freeze(_, Some(note))
-            | TokenEvent::Unfreeze(_, Some(note))
-            | TokenEvent::DestroyFrozenFunds(_, _, Some(note))
-            | TokenEvent::Transfer(_, Some(note), _, _, _)
-            | TokenEvent::Claim(_, _, Some(note))
-            | TokenEvent::EmergencyAction(_, Some(note))
-            | TokenEvent::ConfigUpdate(_, Some(note))
-            | TokenEvent::ChangePriceForDirectPurchase(_, Some(note)) => Some(note),
-            _ => None,
+            TokenEvent::Mint(_, _, note)
+            | TokenEvent::Burn(_, _, note)
+            | TokenEvent::Freeze(_, note)
+            | TokenEvent::Unfreeze(_, note)
+            | TokenEvent::DestroyFrozenFunds(_, _, note)
+            | TokenEvent::Transfer(_, note, _, _, _)
+            | TokenEvent::Claim(_, _, note)
+            | TokenEvent::EmergencyAction(_, note)
+            | TokenEvent::ConfigUpdate(_, note)
+            | TokenEvent::ChangePriceForDirectPurchase(_, note)
+            | TokenEvent::MintToPool(_, _, note)
+            | TokenEvent::BurnFromPool(_, _, note) => note.as_deref(),
+            TokenEvent::DirectPurchase(_, _)
+            | TokenEvent::Shield(_)
+            | TokenEvent::Unshield(_, _)
+            | TokenEvent::ShieldedTransfer
+            | TokenEvent::ClaimToPool(_)
+            | TokenEvent::DirectPurchaseToPool(_, _) => None,
         }
     }
 
@@ -872,6 +1041,33 @@ impl TokenEvent {
                 ("tokenAmount".to_string(), amount.into()),
                 ("purchaseCost".to_string(), total_cost.into()),
             ]),
+            TokenEvent::Shield(amount) => BTreeMap::from([
+                ("tokenId".to_string(), token_id.into()),
+                ("amount".to_string(), amount.into()),
+            ]),
+            TokenEvent::Unshield(recipient_id, amount) => BTreeMap::from([
+                ("tokenId".to_string(), token_id.into()),
+                ("recipientId".to_string(), recipient_id.into()),
+                ("amount".to_string(), amount.into()),
+            ]),
+            TokenEvent::ShieldedTransfer => {
+                BTreeMap::from([("tokenId".to_string(), token_id.into())])
+            }
+            TokenEvent::MintToPool(amount, _, _) | TokenEvent::BurnFromPool(amount, _, _) => {
+                BTreeMap::from([
+                    ("tokenId".to_string(), token_id.into()),
+                    ("amount".to_string(), amount.into()),
+                ])
+            }
+            TokenEvent::ClaimToPool(amount) => BTreeMap::from([
+                ("tokenId".to_string(), token_id.into()),
+                ("amount".to_string(), amount.into()),
+            ]),
+            TokenEvent::DirectPurchaseToPool(amount, total_cost) => BTreeMap::from([
+                ("tokenId".to_string(), token_id.into()),
+                ("tokenAmount".to_string(), amount.into()),
+                ("purchaseCost".to_string(), total_cost.into()),
+            ]),
         };
 
         let document: Document = DocumentV0 {
@@ -890,6 +1086,8 @@ impl TokenEvent {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
 
@@ -1026,5 +1224,55 @@ mod tests {
     #[test]
     fn format_note_some_returns_formatted() {
         assert_eq!(format_note(&Some("hello".to_string())), " (note: hello)");
+    }
+}
+
+#[cfg(test)]
+mod public_note_tests {
+    use super::*;
+    use crate::group::action_event::GroupActionEvent;
+
+    fn actions_digest() -> Identifier {
+        Identifier::from([7u8; 32])
+    }
+
+    /// The co-signers of a pending group action read the proposer's note off the event to
+    /// decide whether to sign it. A pool mint or burn carries one like any other proposal.
+    #[test]
+    fn should_show_the_proposers_note_on_a_pool_mint_or_burn() {
+        let mint = TokenEvent::MintToPool(
+            100,
+            actions_digest(),
+            Some("quarterly issuance".to_string()),
+        );
+        assert_eq!(mint.public_note(), Some("quarterly issuance"));
+        assert_eq!(
+            GroupActionEvent::TokenEvent(mint).public_note(),
+            Some("quarterly issuance")
+        );
+
+        let burn = TokenEvent::BurnFromPool(
+            40,
+            actions_digest(),
+            Some("retiring treasury notes".to_string()),
+        );
+        assert_eq!(burn.public_note(), Some("retiring treasury notes"));
+        assert_eq!(
+            GroupActionEvent::TokenEvent(burn).public_note(),
+            Some("retiring treasury notes")
+        );
+    }
+
+    /// A pool mint or burn the proposer left unannotated reads as no note, not as an empty one.
+    #[test]
+    fn should_report_no_note_on_an_unannotated_pool_mint_or_burn() {
+        assert_eq!(
+            TokenEvent::MintToPool(100, actions_digest(), None).public_note(),
+            None
+        );
+        assert_eq!(
+            TokenEvent::BurnFromPool(40, actions_digest(), None).public_note(),
+            None
+        );
     }
 }

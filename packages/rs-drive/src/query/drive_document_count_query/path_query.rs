@@ -15,15 +15,38 @@
 #![cfg(any(feature = "server", feature = "verify"))]
 
 use super::super::conditions::{WhereClause, WhereOperator};
-use super::DriveDocumentCountQuery;
+use super::{
+    document_count_chain_position, point_count_reads_documents,
+    prefix_to_last_count_reads_documents, DriveDocumentCountQuery,
+};
 use crate::drive::RootTree;
+use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::{
+    pins_reach_chain, prefix_to_last_path_query, refuse_a_range_total_through_a_ranked_index,
+};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::version::PlatformVersion;
 use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 
 impl DriveDocumentCountQuery<'_> {
+    /// Refuses a `summableOffCountIndex` index: its range counts are its range
+    /// sums, read through [`Self::counter_sums_query`], while its count trees
+    /// count groups, one per counter. Every count range executor and verifier
+    /// hands such an index to the sum surface before building, so this only
+    /// stops a caller that skipped that. Unversioned: only protocol version 14
+    /// admits such an index, so it refuses nothing before.
+    fn refuse_a_counter_index(&self) -> Result<(), Error> {
+        if self.index.is_summable_off_count_index() {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a count range path query over a summableOffCountIndex index: its range counts \
+                 are its range sums (counter_sums_query)",
+            )));
+        }
+        Ok(())
+    }
+
     /// Convert a single range where-clause + value into the grovedb
     /// `QueryItem` used to walk children of the property-name
     /// `ProvableCountTree`. The clause's value is serialized via the
@@ -159,6 +182,15 @@ impl DriveDocumentCountQuery<'_> {
         })
     }
 
+    /// Refuses an index a range count total cannot be read through: a
+    /// `summableOffCountIndex` index ([`Self::refuse_a_counter_index`]) and
+    /// one whose path passes through a ranked level (see
+    /// [`refuse_a_range_total_through_a_ranked_index`]).
+    fn refuse_a_range_count_total(&self) -> Result<(), Error> {
+        self.refuse_a_counter_index()?;
+        refuse_a_range_total_through_a_ranked_index(self.document_type, self.index)
+    }
+
     /// Build the grovedb `PathQuery` for an `AggregateCountOnRange`
     /// query against this count query's `range_countable` index.
     ///
@@ -186,6 +218,7 @@ impl DriveDocumentCountQuery<'_> {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        self.refuse_a_range_count_total()?;
         let range_clause = self
             .where_clauses
             .iter()
@@ -301,6 +334,7 @@ impl DriveDocumentCountQuery<'_> {
         left_to_right: bool,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        self.refuse_a_range_count_total()?;
         // The terminator property (last in the index) carries the
         // ACOR target range. The "carrier" property — the one whose
         // clause becomes the outer Query items — is either:
@@ -532,6 +566,7 @@ impl DriveDocumentCountQuery<'_> {
         left_to_right: bool,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        self.refuse_a_counter_index()?;
         let range_clause = self
             .where_clauses
             .iter()
@@ -881,16 +916,13 @@ impl DriveDocumentCountQuery<'_> {
             let Some(clause) = self.where_clauses.iter().find(|wc| wc.field == prop.name) else {
                 // Prefix-to-last: the terminal property-name tree's own
                 // element carries the whole-prefix total — but only when
-                // that tree is a plain (non-indexed) count-bearing tree;
-                // a ranked terminal is an indexed tree grovedb refuses to
+                // that tree is a plain (non-indexed) count-bearing tree, or
+                // a `summableOffCountIndex` index's sum-bearing one; a
+                // ranked terminal is an indexed tree grovedb refuses to
                 // return, and those indexes route through the value-tree
                 // arm below instead.
-                let terminal_ranked = self.index.ranked_countable
-                    || self.index.ranked_summable
-                    || self.index.ranked_averageable;
                 if position + 1 == self.index.properties.len()
-                    && self.index.range_countable
-                    && !terminal_ranked
+                    && prefix_to_last_count_reads_documents(self.index)
                 {
                     prefix_to_last_key = Some(level_key.into_bytes());
                     break;
@@ -901,14 +933,11 @@ impl DriveDocumentCountQuery<'_> {
                 // whose count IS the whole-subtree total, and the
                 // fully-covered selector below reads them verbatim — the
                 // loop just stops here instead of at the terminal.
-                let min_at_position = self
-                    .index
-                    .ranked_countable_at
-                    .iter()
-                    .filter_map(|at| self.index.properties.iter().position(|p| &p.name == at))
-                    .min();
-                let deepest_pin_is_count_bearing =
-                    position >= 1 && min_at_position.is_some_and(|min_at| min_at < position);
+                let deepest_pin_is_count_bearing = pins_reach_chain(
+                    self.index,
+                    position,
+                    document_count_chain_position(self.index),
+                );
                 if deepest_pin_is_count_bearing {
                     // Fail closed on a gapped set reaching the builder
                     // directly: a clause on any deeper property means the
@@ -1024,17 +1053,20 @@ impl DriveDocumentCountQuery<'_> {
         //
         // So gate the optimization on `countable.is_countable()`:
         // every countable index uses the compact shape. The picker
-        // upstream already requires the index to be countable to be
-        // selected (`find_countable_index_for_where_clauses` / the
-        // range_countable picker for range shapes), so reaching this
-        // builder with a non-countable index would be a bug — but
-        // we keep the gate explicit for clarity.
+        // upstream selects only an index this gate admits
+        // (`point_count_reads_documents`, shared with
+        // `find_countable_index_for_where_clauses`), so reaching this
+        // builder with any other index would be a bug — but we keep the
+        // gate explicit for clarity.
         //
         // The loop above already enforces full coverage of every
         // index property, so the terminator is always proven; this
         // flag is the only differentiator between the two output
         // shapes.
-        let count_tree_terminator = self.index.countable.is_countable();
+        //
+        // A `summableOffCountIndex` index keeps its counter at that key: the
+        // read takes its sum, the group's document count.
+        let count_tree_terminator = point_count_reads_documents(self.index);
 
         // CountTree storage convention for non-countable indexes
         // (defensive — picker upstream filters these out): the count
@@ -1047,31 +1079,16 @@ impl DriveDocumentCountQuery<'_> {
         // count-bearing under `rangeCountable`, its aggregate the sum of
         // every last-property value tree's count, i.e. the whole-prefix
         // total — read as one element by its level key from the last
-        // pin's value tree. Structurally the `Key([0])` shape with the
-        // terminal level key in place of the bucket key: nothing is
-        // hoisted, so the `In` branches keep their full trailing pairs
-        // in `set_subquery_path`.
+        // pin's value tree (the shape the sum surface builds too). Moved
+        // unchanged into the shared builder, so every protocol version
+        // builds the proof it built before.
         if let Some(terminal_level_key) = prefix_to_last_key {
-            return Ok(match in_outer_keys {
-                None => {
-                    let mut query = Query::new();
-                    query.insert_key(terminal_level_key);
-                    PathQuery::new(base_path, SizedQuery::new(query, None, None))
-                }
-                Some(keys) => {
-                    let mut outer_query = Query::new();
-                    for key in keys {
-                        outer_query.insert_key(key);
-                    }
-                    let mut subquery = Query::new();
-                    subquery.insert_key(terminal_level_key);
-                    if !subquery_path_extension.is_empty() {
-                        outer_query.set_subquery_path(subquery_path_extension);
-                    }
-                    outer_query.set_subquery(subquery);
-                    PathQuery::new(base_path, SizedQuery::new(outer_query, None, None))
-                }
-            });
+            return Ok(prefix_to_last_path_query(
+                base_path,
+                in_outer_keys,
+                subquery_path_extension,
+                terminal_level_key,
+            ));
         }
 
         match in_outer_keys {

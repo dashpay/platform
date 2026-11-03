@@ -75,9 +75,7 @@ impl PlatformSerializable for DocumentAlreadyPresentError {
     type Error = ProtocolError;
 
     fn serialize_to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = platform_serialization::PLATFORM_BINCODE_CONFIG;
         bincode::encode_to_vec(self, config)
             .map_err(|e| {
                 ProtocolError::PlatformSerializationError(
@@ -103,8 +101,7 @@ impl PlatformSerializableWithPlatformVersion for ConsensusError {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
-        let config = bincode::config::standard()
-            .with_big_endian()
+        let config = platform_serialization::PLATFORM_BINCODE_CONFIG
             .with_limit::<{ 2000 }>();
         platform_serialization::platform_encode_to_vec(self, config, platform_version)
             .map_err(|e| match e {
@@ -229,7 +226,7 @@ The `PlatformSignable` derive solves a specific problem: when you sign a state t
 Here is how it is used on `DataContractCreateTransitionV0` in `packages/rs-dpp/src/state_transition/state_transitions/contract/data_contract_create_transition/v0/mod.rs`:
 
 ```rust
-#[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformSignable)]
+#[derive(Debug, Clone, Encode, PartialEq, PlatformSignable)]
 pub struct DataContractCreateTransitionV0 {
     pub data_contract: DataContractInSerializationFormat,
     pub identity_nonce: IdentityNonce,
@@ -240,6 +237,8 @@ pub struct DataContractCreateTransitionV0 {
     pub signature: BinaryData,
 }
 ```
+
+(It derives `Encode` but not `Decode`: it decodes through a private copy of itself that refuses a contract in the stored format, which only state holds. The copy's fields must follow the struct's.)
 
 The `#[platform_signable(exclude_from_sig_hash)]` attribute marks fields that should be excluded from the signature hash. The derive generates:
 
@@ -275,7 +274,7 @@ impl<'a> From<&'a DataContractCreateTransitionV0>
 
 impl crate::serialization::Signable for DataContractCreateTransitionV0 {
     fn signable_bytes(&self) -> Result<Vec<u8>, ProtocolError> {
-        let config = bincode::config::standard().with_big_endian();
+        let config = platform_serialization::PLATFORM_BINCODE_CONFIG;
         let intermediate: DataContractCreateTransitionV0Signable = self.into();
         bincode::encode_to_vec(intermediate, config).map_err(|e| {
             ProtocolError::PlatformSerializationError(
@@ -316,7 +315,7 @@ The `signable_bytes` implementation on the enum encodes a variant index (as `u16
 ```rust
 impl Signable for StateTransition {
     fn signable_bytes(&self) -> Result<Vec<u8>, ProtocolError> {
-        let config = bincode::config::standard().with_big_endian();
+        let config = platform_serialization::PLATFORM_BINCODE_CONFIG;
         let signable_bytes = match self {
             StateTransition::DataContractCreate(ref inner) => {
                 let mut buf = bincode::encode_to_vec(&(0u16), config).unwrap();

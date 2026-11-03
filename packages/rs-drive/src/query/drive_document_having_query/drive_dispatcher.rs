@@ -9,7 +9,7 @@ use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::having::HavingClause;
 use crate::query::projection::SelectProjection;
-use crate::query::{OrderClause, ResolvedTimeRange, WhereClause};
+use crate::query::{key_array_element_clauses, OrderClause, ResolvedTimeRange, WhereClause};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -127,18 +127,27 @@ impl Drive {
         // property.
         if request.resolved_time_ranges.len() > 1 {
             return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                "at most one time-range selection (IN_TIME_RANGE) is supported per \
-                 having-range query; this one resolves {:?}, and no single index can \
-                 bucket more than one field",
+                "at most one window selection (IN_TIME_RANGE or IN_INTEGER_RANGE) is \
+                 supported per having-range query; this one resolves {:?}, and no single \
+                 index can bucket more than one field",
                 request.resolved_time_ranges
             ))));
         }
+        // A typed array's elements are keyed first: one pinned element
+        // (`contains`) at most, since rankings under several are not merged
+        // per document (see [`key_array_element_clauses`]).
+        let where_clauses = key_array_element_clauses(
+            request.where_clauses.to_vec(),
+            request.document_type,
+            false,
+            platform_version,
+        )?;
         let mode = detect_having_mode(
             &request.select,
             request.group_by,
             request.having,
             request.order_by,
-            request.where_clauses,
+            &where_clauses,
             RankedPaginationInputs {
                 limit: request.limit,
                 offset: request.offset,

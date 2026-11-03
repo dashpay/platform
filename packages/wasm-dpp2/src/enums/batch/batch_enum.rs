@@ -41,6 +41,13 @@ impl TryFrom<&JsValue> for BatchTypeWasm {
             }
         } else {
             match value.as_f64() {
+                // `as u8` would read NaN, -1 or 0.5 as Create
+                Some(enum_val) if enum_val.fract() != 0.0 || !(0.0..=255.0).contains(&enum_val) => {
+                    Err(WasmDppError::invalid_argument(format!(
+                        "unknown batch type value: {}",
+                        enum_val
+                    )))
+                }
                 None => Err(WasmDppError::invalid_argument(
                     "cannot read value from enum",
                 )),
@@ -82,6 +89,23 @@ impl From<BatchTypeWasm> for String {
             BatchTypeWasm::UpdatePrice => String::from("updatePrice"),
             BatchTypeWasm::IgnoreWhileBumpingRevision => String::from("ignoreWhileBumpingRevision"),
             BatchTypeWasm::IndexOnlyDelete => String::from("indexOnlyDelete"),
+        }
+    }
+}
+
+impl From<BatchTypeWasm> for DocumentTransitionActionType {
+    fn from(batch_type: BatchTypeWasm) -> Self {
+        match batch_type {
+            BatchTypeWasm::Create => DocumentTransitionActionType::Create,
+            BatchTypeWasm::Replace => DocumentTransitionActionType::Replace,
+            BatchTypeWasm::Delete => DocumentTransitionActionType::Delete,
+            BatchTypeWasm::Transfer => DocumentTransitionActionType::Transfer,
+            BatchTypeWasm::Purchase => DocumentTransitionActionType::Purchase,
+            BatchTypeWasm::UpdatePrice => DocumentTransitionActionType::UpdatePrice,
+            BatchTypeWasm::IgnoreWhileBumpingRevision => {
+                DocumentTransitionActionType::IgnoreWhileBumpingRevision
+            }
+            BatchTypeWasm::IndexOnlyDelete => DocumentTransitionActionType::IndexOnlyDelete,
         }
     }
 }

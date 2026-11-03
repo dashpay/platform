@@ -18,6 +18,21 @@ impl<'a> DriveDocumentQuery<'a> {
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Lowers a query with multiple `In` clauses into a path query whose
     /// levels carry one key set per `In` clause.
+    ///
+    /// # Parameters
+    ///
+    /// * `document_type_path`: The path of the document type's tree the query starts from.
+    /// * `starts_at_document`: The cursor document and whether it is included (`startAt`) or
+    ///   excluded (`startAfter`), if any.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(PathQuery)` walking the equality prefix, one key-set level per `In` clause, then
+    ///   the optional range level and the remaining index levels.
+    /// * `Err(Error)` when the method version is unknown, a cursor is given, no index fits the
+    ///   clauses, the product of the `In` list sizes is too large, or a value does not
+    ///   serialize.
     pub(in crate::query) fn get_non_primary_key_multiple_in_path_query(
         &self,
         document_type_path: Vec<Vec<u8>>,

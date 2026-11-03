@@ -54,8 +54,8 @@
           "refersTo": {
             "type": "permanentDocument",
             "documentType": "post",
-            "propertyAgreement": {
-              "authorId": "$ownerId"
+            "where": {
+              "$ownerId": "authorId"
             }
           },
           "position": 1

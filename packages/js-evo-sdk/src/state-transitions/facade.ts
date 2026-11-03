@@ -16,6 +16,11 @@ export class StateTransitionsFacade {
     return w.broadcastStateTransition(stateTransition, settings);
   }
 
+  /**
+   * Verifies that this specific transition executed. An authenticated
+   * affected-state snapshot is rejected with `ExecutionNotProved`; use
+   * `waitForAffectedState` when a snapshot is the intended result.
+   */
   async waitForResponse(
     stateTransition: wasm.StateTransition,
     settings?: wasm.PutSettings,
@@ -24,6 +29,14 @@ export class StateTransitionsFacade {
     return w.waitForResponse(stateTransition, settings);
   }
 
+  /**
+   * Broadcasts, then strictly verifies execution of this transition.
+   * `ExecutionNotProved` means the accepted broadcast was followed by an
+   * authenticated snapshot, which establishes neither execution nor failure
+   * of this transition. To wait for an authenticated snapshot, call
+   * `waitForAffectedState` on the submitted transition without broadcasting
+   * it again; the new wait may observe a later block.
+   */
   async broadcastAndWait(
     stateTransition: wasm.StateTransition,
     settings?: wasm.PutSettings,
@@ -36,8 +49,11 @@ export class StateTransitionsFacade {
    * Like `waitForResponse`, but accepts proofs that only authenticate the
    * state the transition affects (balance top-ups, credit transfers and
    * withdrawals, address funds movements, shields, no-history token
-   * operations, key limits updates). The result is a verified, height-pinned snapshot — NOT
-   * evidence that this specific transition executed.
+   * operations, key limits updates, contract updates, contract moderation
+   * and fee claims, and creates and deletes of indexOnly documents).
+   * Execution-proved outcomes are accepted too. A snapshot authenticates
+   * state at the proof's block; it does not prove this transition executed.
+   * This generic JavaScript result does not expose the proof height.
    */
   async waitForAffectedState(
     stateTransition: wasm.StateTransition,
@@ -59,6 +75,10 @@ export class StateTransitionsFacade {
     return w.broadcastAndWaitForAffectedState(stateTransition, settings);
   }
 
+  /**
+   * Looks up a transition's status by hash. This method does not authenticate
+   * a returned proof; use a full-transition wait for verified results.
+   */
   async waitForStateTransitionResult(stateTransitionHash: string): Promise<wasm.StateTransitionResult> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.waitForStateTransitionResult(stateTransitionHash);

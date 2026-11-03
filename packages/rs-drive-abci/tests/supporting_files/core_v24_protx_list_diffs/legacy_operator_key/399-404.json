@@ -1,0 +1,81 @@
+{
+  "baseHeight": 399,
+  "blockHeight": 404,
+  "addedMNs": [],
+  "removedMNs": [],
+  "updatedMNs": [
+    {
+      "02cc32acbd70020b192abdddfd8ab6d682b0e75c6cbe225f60fe6cf9da08859b": {
+        "version": 3,
+        "service": "127.0.0.1:30002",
+        "lastPaidHeight": 402,
+        "votingAddress": "yd59MzNMSWf5LdNE9qxZGrcFeR2BzjuqM2",
+        "payouts": [
+          {
+            "address": "yXCxDa7nTBA31La9SVxh2Dr5k9BrF6JBcJ",
+            "script": "76a914776efcc75b86258a0e57fe0ae4ac9220dcd43f1988ac",
+            "reward": 10000
+          }
+        ],
+        "pubKeyOperator": "b10633a672392e26860cbff612b28d84f71beb34c2092d015b0d522905d628d38d746c1088c654632c65c6a7f008095d",
+        "addresses": {
+          "core_p2p": [
+            "127.0.0.1:30002"
+          ]
+        }
+      }
+    },
+    {
+      "802390501809bee03accfa3742d62018a550324a918b85c6d106a51d946e8f2f": {
+        "version": 3,
+        "service": "[::]:0",
+        "lastPaidHeight": 404,
+        "PoSeBanHeight": 404,
+        "payouts": [
+          {
+            "address": "yNz4SEKxjetayb6PYEoBJuTpKVkLuBdAWM",
+            "script": "76a9141d3dc3ae7f74bea67970601790b9764ff777d53188ac",
+            "reward": 10000
+          }
+        ],
+        "pubKeyOperator": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "f18c25367cd4f2ba6e8cdf86d0ffcf2694b6206b75597fe1ab5b80b966dbdf4b": {
+        "version": 3,
+        "service": "127.0.0.1:30001",
+        "lastPaidHeight": 401,
+        "payouts": [
+          {
+            "address": "yXkZa7p2ne58x2XQYdNthAxfXy9cHiWxF5",
+            "script": "76a9147d6964fc3445684608bd81ab3772baebae46735d88ac",
+            "reward": 10000
+          }
+        ],
+        "pubKeyOperator": "86ebb5ebd9079d73577e0900c9c10139d7d7213247e32b9b8823cd80e6a18e16a497ac57508e23b4a0e0510bfc880ad9",
+        "addresses": {
+          "core_p2p": [
+            "127.0.0.1:30001"
+          ]
+        }
+      }
+    },
+    {
+      "192a79c8bcd46a6f8500b3010d6f4145a6580a0a0294500dfbb96dbd4c2dd625": {
+        "version": 3,
+        "service": "[::]:0",
+        "lastPaidHeight": 403,
+        "PoSeBanHeight": 403,
+        "payouts": [
+          {
+            "address": "ybFJK42oGazedqiffcBRavvuzyt9ZeHGyR",
+            "script": "76a914a3c118b5c366b55179728c64178fd372d8cf6d4788ac",
+            "reward": 10000
+          }
+        ],
+        "pubKeyOperator": "ac4121f7c123b5e265d59053f5988a4d2677a794f2ab8b9147b88436b47c690fdd44af7868ca9047199c346c9323b3bf"
+      }
+    }
+  ]
+}

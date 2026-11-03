@@ -46,6 +46,11 @@ class AppState: ObservableObject {
             UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhostPlatform")
             UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhostCore")
             UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhost")
+            // Docker endpoints only matter on regtest. The Options picker turns
+            // Docker off after it has published the next network, whose own
+            // `currentNetwork` rebuild then picks the flag up; rebuilding here
+            // too would race that rebuild.
+            guard currentNetwork == .regtest else { return }
             Task { await switchNetwork(to: currentNetwork) }
         }
     }

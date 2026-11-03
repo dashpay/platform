@@ -9,6 +9,18 @@ use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Proves the contract groups a contract belongs to, or that it belongs to none.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract_id`: The contract's id.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<u8>)` with the GroveDB proof of the contract's memberships, or of their
+    ///   absence.
+    /// * `Err(Error)` when the method version is unknown or proving fails.
     pub fn prove_contract_group_memberships_for_contract(
         &self,
         contract_id: Identifier,

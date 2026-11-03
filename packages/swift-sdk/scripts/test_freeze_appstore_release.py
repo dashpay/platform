@@ -16,6 +16,9 @@ import urllib.error
 
 import freeze_appstore_release as worker
 
+# Deliberately not the live Platform branch: the worker must take its base from the caller.
+BASE = "trunk-dev"
+
 
 def git(directory, *args):
     result = subprocess.run(["git", *args], cwd=directory, capture_output=True, text=True)
@@ -220,7 +223,8 @@ class GitHubTests(unittest.TestCase):
     def test_pr_listing_is_paginated(self):
         api = worker.GitHub("secret")
         api.request = mock.Mock(side_effect=[[{}] * 100, [{"number": 101}]])
-        self.assertEqual(len(api.pull_requests("codex/freeze-swift-schema-v2.0.0")), 101)
+        self.assertEqual(len(api.pull_requests("codex/freeze-swift-schema-v2.0.0", BASE)), 101)
+        self.assertIn("base=trunk-dev", api.request.call_args.args[1])
         self.assertIn("page=2", api.request.call_args.args[1])
         self.assertIn("sort=created", api.request.call_args.args[1])
         self.assertIn("direction=desc", api.request.call_args.args[1])
@@ -235,7 +239,7 @@ class WorkerIntegrationTests(unittest.TestCase):
         PublicationTests.setUp(self)
         self.platform = self.root / "platform"
         self.platform.mkdir()
-        git(self.platform, "init", "-b", worker.BASE_BRANCH)
+        git(self.platform, "init", "-b", BASE)
         git(self.platform, "config", "user.name", "Test")
         git(self.platform, "config", "user.email", "test@example.invalid")
         git(self.platform, "config", "commit.gpgsign", "false")
@@ -284,7 +288,8 @@ p.write_text(json.dumps(r))
         with mock.patch.object(worker, "git", side_effect=self.redirected_git), \
              mock.patch.object(worker, "GitHub", return_value=self.api), \
              contextlib.redirect_stdout(io.StringIO()):
-            worker.prepare(self.platform, self.data, self.proof["release_id"], self.commit, "test-token", dry_run)
+            worker.prepare(self.platform, self.data, self.proof["release_id"], self.commit, "test-token", dry_run,
+                           base_branch=BASE)
 
     def test_dry_run_does_not_publish_or_modify_checkout(self):
         before = git(self.remote, "show-ref")
@@ -292,6 +297,18 @@ p.write_text(json.dumps(r))
         self.assertEqual(git(self.remote, "show-ref"), before)
         self.api.request.assert_not_called()
         self.assertEqual(git(self.platform, "status", "--porcelain"), "")
+
+    def test_unsafe_base_branch_is_rejected_before_git_or_api(self):
+        for base in ["", "../trunk-dev", "trunk dev", "-trunk"]:
+            with self.subTest(base=base), \
+                 mock.patch.object(worker, "git") as git_call, \
+                 mock.patch.object(worker, "GitHub") as github:
+                with self.assertRaisesRegex(worker.ReleaseError, "Platform base branch"):
+                    worker.prepare(self.platform, self.data, self.proof["release_id"], self.commit,
+                                   "test-token", base_branch=base)
+                git_call.assert_not_called()
+                github.assert_not_called()
+        self.assertEqual(worker.require_branch("release/v5.0"), "release/v5.0")
 
     def test_fixture_check_closes_connection_on_success_or_failure(self):
         for corrupt in (False, True):
@@ -325,6 +342,7 @@ p.write_text(json.dumps(r))
     def test_push_then_retry_reuses_draft_pr_and_commit(self):
         self.prepare()
         self.assertTrue(self.api.request.call_args.args[2]["draft"])
+        self.assertEqual(self.api.request.call_args.args[2]["base"], BASE)
         branch = "codex/freeze-swift-schema-v2.0.0"
         before = git(self.remote, "rev-parse", branch)
         self.api.pull_requests.return_value = [{"state": "open", "html_url": "https://example.invalid/pr"}]
@@ -392,7 +410,7 @@ p.write_text(json.dumps(r))
         (self.platform / ".gitattributes").write_text("* filter=capture\n")
         git(self.platform, "add", ".gitattributes")
         git(self.platform, "commit", "-m", "draft-controlled filter selection")
-        git(self.platform, "push", str(self.remote), worker.BASE_BRANCH)
+        git(self.platform, "push", str(self.remote), BASE)
         with mock.patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": str(config),
                                          "SCHEMA_RELEASE_TOKEN": "synthetic-secret"}):
             self.prepare()
@@ -406,7 +424,7 @@ p.write_text(json.dumps(r))
         git(self.platform, "commit", "-m", name)
         commit = git(self.platform, "rev-parse", "HEAD")
         git(self.platform, "push", str(self.remote), f"HEAD:refs/heads/{name}")
-        git(self.platform, "checkout", worker.BASE_BRANCH)
+        git(self.platform, "checkout", BASE)
         git(self.platform, "branch", "-D", name)
         git(self.remote, "update-ref", "-d", f"refs/heads/{name}")
         return commit
@@ -418,7 +436,7 @@ p.write_text(json.dumps(r))
         self.prepare()
         self.assertEqual(git(self.remote, "rev-parse", worker.SOURCE_TAG_PREFIX + source), source)
         branch = "codex/freeze-swift-schema-v2.0.0"
-        git(self.remote, "update-ref", f"refs/heads/{worker.BASE_BRANCH}", git(self.remote, "rev-parse", branch))
+        git(self.remote, "update-ref", f"refs/heads/{BASE}", git(self.remote, "rev-parse", branch))
         git(self.remote, "reflog", "expire", "--expire=now", "--all")
         git(self.remote, "gc", "--prune=now")
         fresh = self.root / "fresh"
@@ -436,7 +454,7 @@ p.write_text(json.dumps(r))
         self.commit = self.save()
         without_tags = self.root / "checkout-without-source-tags"
         git(self.root, "clone", "--no-local", "--no-tags", "--single-branch", "--branch",
-            worker.BASE_BRANCH, str(self.remote), str(without_tags))
+            BASE, str(self.remote), str(without_tags))
         with self.assertRaisesRegex(RuntimeError, "Test git cat-file failed"):
             git(without_tags, "cat-file", "-t", source)
         self.platform = without_tags
@@ -467,7 +485,7 @@ p.write_text(json.dumps(r))
         write_json(self.platform / worker.REGISTRY, base_registry)
         git(self.platform, "add", ".")
         git(self.platform, "commit", "-m", "register historical source")
-        git(self.platform, "push", str(self.remote), f"{worker.BASE_BRANCH}:refs/heads/{worker.BASE_BRANCH}")
+        git(self.platform, "push", str(self.remote), f"{BASE}:refs/heads/{BASE}")
         ref = worker.SOURCE_TAG_PREFIX + source
         self.assertNotIn(ref, git(self.remote, "show-ref"))
         self.prepare(dry_run=True)
@@ -481,7 +499,7 @@ p.write_text(json.dumps(r))
         source = self.unreachable_source("released-source")
         self.manifest["platform_sha"] = source
         self.commit = self.save()
-        wrong = git(self.remote, "rev-parse", worker.BASE_BRANCH)
+        wrong = git(self.remote, "rev-parse", BASE)
         git(self.remote, "update-ref", worker.SOURCE_TAG_PREFIX + source, wrong)
         for dry_run in (True, False):
             with self.subTest(dry_run=dry_run), self.assertRaisesRegex(worker.ReleaseError, "different object"):
@@ -525,7 +543,7 @@ p.write_text(json.dumps(r))
     def test_already_merged_release_creates_no_commit_or_pr(self):
         self.prepare()
         branch = "codex/freeze-swift-schema-v2.0.0"
-        git(self.remote, "update-ref", f"refs/heads/{worker.BASE_BRANCH}", git(self.remote, "rev-parse", branch))
+        git(self.remote, "update-ref", f"refs/heads/{BASE}", git(self.remote, "rev-parse", branch))
         self.api.pull_requests.return_value = [{"state": "closed", "merged_at": "2026-09-18"}]
         self.api.request.reset_mock()
         before = git(self.remote, "show-ref")
@@ -539,7 +557,7 @@ p.write_text(json.dumps(r))
         self.prepare()
         branch = "codex/freeze-swift-schema-v2.0.0"
         merged_commit = git(self.remote, "rev-parse", branch)
-        git(self.remote, "update-ref", f"refs/heads/{worker.BASE_BRANCH}", merged_commit)
+        git(self.remote, "update-ref", f"refs/heads/{BASE}", merged_commit)
         self.api.pull_requests.return_value = [{"state": "closed", "merged_at": "2026-09-18"}]
         self.api.request.reset_mock()
         ref = worker.SOURCE_TAG_PREFIX + self.manifest["platform_sha"]
@@ -559,7 +577,7 @@ p.write_text(json.dumps(r))
         self.prepare()
         branch = "codex/freeze-swift-schema-v2.0.0"
         merged_commit = git(self.remote, "rev-parse", branch)
-        git(self.remote, "update-ref", f"refs/heads/{worker.BASE_BRANCH}", merged_commit)
+        git(self.remote, "update-ref", f"refs/heads/{BASE}", merged_commit)
         self.api.pull_requests.return_value = [
             {"state": "closed", "merged_at": None},
             {"state": "closed", "merged_at": "2026-09-18"},

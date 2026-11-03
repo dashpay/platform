@@ -2,6 +2,7 @@ use platform_version::version::PlatformVersion;
 use crate::consensus::basic::token::{InvalidTokenConfigUpdateNoChangeError, InvalidTokenNoteTooBigError, TokenNoteOnlyAllowedWhenProposerError};
 use crate::consensus::basic::{BasicError, UnsupportedFeatureError};
 use crate::consensus::ConsensusError;
+use crate::data_contract::associated_token::token_configuration::validate_minimum_pool_notes_for_outgoing_bound;
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use crate::state_transition::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
 use crate::state_transition::batch_transition::TokenConfigUpdateTransition;
@@ -45,6 +46,23 @@ impl TokenConfigUpdateTransitionStructureValidationV0 for TokenConfigUpdateTrans
                     ),
                 )),
             ));
+        }
+
+        // The pool's outgoing notes threshold is bounded like the one a contract declares. The
+        // item exists from protocol version 14 only: before it the batch pre-activation gate
+        // refuses the transition unpaid, and software older than it cannot even decode the
+        // item, so this check is never reached there.
+        if let TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(minimum_pool_notes) =
+            self.update_token_configuration_item()
+        {
+            let result = validate_minimum_pool_notes_for_outgoing_bound(
+                *minimum_pool_notes,
+                self.base().token_contract_position(),
+                platform_version,
+            );
+            if !result.is_valid() {
+                return Ok(result);
+            }
         }
 
         if let Some(public_note) = self.public_note() {

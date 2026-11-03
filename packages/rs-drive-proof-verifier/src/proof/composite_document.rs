@@ -21,13 +21,14 @@
 //! path proves.
 
 use crate::error::MapGroveDbError;
-use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
+use crate::verify::{document_query_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
 use dpp::document::Document;
 use dpp::version::PlatformVersion;
+use drive::drive::contract::moderation::types::ContractDocumentRemovalEntry;
 use drive::query::{DriveDocumentQuery, SubQueryResult};
 use drive::verify::RootHash;
 
@@ -47,6 +48,12 @@ pub struct CompositeDocuments {
     /// document, in first-appearance order, each one a PROVEN absence;
     /// empty for every other sub-query.
     pub sub_result_missing_ids: Vec<Vec<dpp::identifier::Identifier>>,
+    /// One list per sub-query, in request order: for a by-id join off a
+    /// `moderatedDocument` property, the derived ids whose document the
+    /// contract's moderators removed, each with its PROVEN removal record,
+    /// in first-appearance order; empty for every other sub-query. There a
+    /// derived id with neither a document nor a record is an invalid proof.
+    pub sub_result_removals: Vec<Vec<ContractDocumentRemovalEntry>>,
 }
 
 /// Verify a composite query's single merged proof and bind its root
@@ -60,6 +67,10 @@ pub struct CompositeDocuments {
 /// hash the proof commits to is only an attested fact once it is tied
 /// to the quorum-signed app hash, and this function exists so the
 /// composition can never be skipped by accident.
+///
+/// `platform_version` must be the protocol version `mtd` names, or the latest known
+/// version when `mtd` names a newer one; otherwise the answer is refused with
+/// [`Error::ProofProtocolVersionMismatch`].
 pub fn verify_composite_documents_proof(
     query: &DriveDocumentQuery,
     proof: &Proof,
@@ -69,12 +80,12 @@ pub fn verify_composite_documents_proof(
 ) -> Result<(RootHash, CompositeDocuments), Error> {
     let (root_hash, result) = query
         .verify_composite_documents_proof(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            document_query_proof_bytes(proof, mtd, platform_version)?,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-    verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
     Ok((
         root_hash,
@@ -82,6 +93,7 @@ pub fn verify_composite_documents_proof(
             page_documents: result.page_documents,
             sub_results: result.sub_results,
             sub_result_missing_ids: result.sub_result_missing_ids,
+            sub_result_removals: result.sub_result_removals,
         },
     ))
 }

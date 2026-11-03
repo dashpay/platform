@@ -4,25 +4,35 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerInformation;
-use std::collections::HashMap;
 
 impl Drive {
     /// Records that `recipient_id` claimed the once-per-identity distribution of a token at
     /// `claimed_at_ms`, so every later claim by that identity is rejected.
+    ///
+    /// # Parameters
+    ///
+    /// * `token_id`: The token.
+    /// * `recipient_id`: The claiming identity, which keys the claim and pays for its storage.
+    /// * `claimed_at_ms`: The block time of the claim, stored as the claim's value.
+    /// * `block_info`: The block being executed; its epoch goes in the storage flags.
+    /// * `estimated_costs_only_with_layer_info`: The estimation map, when only estimating costs.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<LowLevelDriveOperation>)` with the insert of the claim item.
+    /// * `Err(Error)` when the method version is unknown or building the insert fails.
     pub fn mark_once_per_identity_release_as_distributed_operations(
         &self,
         token_id: [u8; 32],
         recipient_id: [u8; 32],
         claimed_at_ms: TimestampMillis,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match platform_version

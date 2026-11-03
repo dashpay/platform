@@ -10,21 +10,37 @@
 //! validation rejections, and the verifier's root-equality check (two
 //! proofs straddling a state change are refused).
 
-use super::index_only_e2e_tests::{build_like, insert_like, platform_version, setup_likes};
+use super::index_only_e2e_tests::{
+    assert_live_root_hash, build_like as build_tagged_like, build_tip, insert_like, insert_tip,
+    platform_version, setup_likes as setup_tagged_likes,
+};
+use crate::drive::contract::moderation::types::ContractDocumentRemovalEntry;
+use crate::drive::Drive;
+use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
-use crate::query::{DriveDocumentQuery, OrderClause, WhereClause, WhereOperator};
+use crate::query::moderated_join::removals_path_query;
+use crate::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
+use crate::util::batch::{ContractModerationOperationType, DocumentOperationType, DriveOperation};
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
-use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use crate::util::object_size_info::{
+    DataContractInfo, DocumentAndContractInfo, DocumentTypeInfo, OwnedDocumentInfo,
+};
 use crate::util::storage_flags::StorageFlags;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+use crate::util::test_helpers::with_likes_read_whole_through_by_liker;
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+use dpp::data_contract::config::moderation::{
+    ContractDocumentRemoval, ContractModerationConfig, ContractModerationReason, ContractModerators,
+};
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
-use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_contract;
 use grovedb::{GroveDb, PathQuery};
+use std::collections::BTreeMap;
 
 const POST_A: [u8; 32] = [0xA1; 32];
 const POST_B: [u8; 32] = [0xB2; 32];
@@ -33,10 +49,46 @@ const OWNER_1: [u8; 32] = [0x11; 32];
 const OWNER_2: [u8; 32] = [0x22; 32];
 const OWNER_3: [u8; 32] = [0x33; 32];
 
+const LIKES_CONTRACT: &str =
+    "tests/supporting_files/contract/yappr-likes/yappr-likes-contract.json";
+
+/// A drive with the likes contract, its `like` read whole through `byLiker`.
+fn setup_likes() -> (Drive, DataContract) {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let pv = platform_version();
+    let contract = with_likes_read_whole_through_by_liker(
+        json_document_to_contract(LIKES_CONTRACT, false, pv)
+            .expect("expected to parse the yappr-likes contract"),
+        pv,
+    );
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("expected to apply the yappr-likes contract");
+    (drive, contract)
+}
+
+/// A like of `post` by `owner`, of a `like` read whole through `byLiker`
+/// (no hashtag).
+fn build_like(contract: &DataContract, post: [u8; 32], owner: [u8; 32], seed: u64) -> Document {
+    let mut like = build_tagged_like(contract, "", post, owner, seed);
+    like.set_properties(BTreeMap::from([(
+        "postId".to_string(),
+        Value::Identifier(post),
+    )]));
+    like
+}
+
 /// Inserts a `post` document (regular, non-indexOnly type) with an
 /// explicit id so likes can reference it.
 fn insert_post(
-    drive: &crate::drive::Drive,
+    drive: &Drive,
     contract: &DataContract,
     id: [u8; 32],
     hashtag: &str,
@@ -151,12 +203,12 @@ fn should_return_liked_posts_with_proof_parity() {
     insert_post(&drive, &contract, POST_A, "dash", "post a", 10);
     insert_post(&drive, &contract, POST_B, "dash", "post b", 11);
     insert_post(&drive, &contract, POST_C, "btc", "post c", 12);
-    for (post, hashtag, owner, seed) in [
-        (POST_A, "dash", OWNER_1, 1u64),
-        (POST_B, "dash", OWNER_1, 2),
-        (POST_C, "btc", OWNER_2, 3),
+    for (post, owner, seed) in [
+        (POST_A, OWNER_1, 1u64),
+        (POST_B, OWNER_1, 2),
+        (POST_C, OWNER_2, 3),
     ] {
-        let like = build_like(&contract, hashtag, post, owner, seed);
+        let like = build_like(&contract, post, owner, seed);
         insert_like(&drive, &contract, &like, true).expect("insert like");
     }
 
@@ -229,6 +281,135 @@ fn should_return_liked_posts_with_proof_parity() {
     assert!(verified.missing_outer_ids.is_empty());
 }
 
+/// A `documentsSummable` post is stored as an item carrying a sum: the
+/// chained verifier reads it as the outer document it is, and both halves
+/// verify to the live root.
+#[test]
+fn should_verify_liked_posts_that_carry_a_sum() {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let pv = platform_version();
+    let mut contract = with_likes_read_whole_through_by_liker(
+        json_document_to_contract(LIKES_CONTRACT, false, pv)
+            .expect("expected to parse the yappr-likes contract"),
+        pv,
+    );
+    let mut schemas = BTreeMap::new();
+    for (name, schema) in contract.document_schemas() {
+        let mut json: serde_json::Value = schema.clone().try_into().expect("a JSON schema");
+        if name == "post" {
+            json["properties"]["boost"] = serde_json::json!({ "type": "integer", "minimum": 0, "maximum": 1000, "position": 2 });
+            json["required"] = serde_json::json!(["boost"]);
+            json["documentsSummable"] = "boost".into();
+        }
+        schemas.insert(name, Value::from(json));
+    }
+    let defs = contract.schema_defs().cloned();
+    contract
+        .set_document_schemas(schemas, defs, true, &mut vec![], pv)
+        .expect("expected summable posts to parse");
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("expected to apply the contract");
+    let post_type = contract
+        .document_type_for_name("post")
+        .expect("post doctype exists");
+    for (id, boost, seed) in [(POST_A, 3u64, 10u64), (POST_B, 5, 11)] {
+        let mut post = post_type
+            .random_document(Some(seed), pv)
+            .expect("random post");
+        post.set_properties(BTreeMap::from([
+            ("hashtag".to_string(), Value::Text("dash".to_string())),
+            ("message".to_string(), Value::Text(format!("post {seed}"))),
+            ("boost".to_string(), Value::U64(boost)),
+        ]));
+        post.set_id(Identifier::from(id));
+        post.set_owner_id(Identifier::from(OWNER_1));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&post, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type: post_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                pv,
+                None,
+            )
+            .expect("insert post");
+        let like = build_like(&contract, id, OWNER_1, seed);
+        insert_like(&drive, &contract, &like, true).expect("insert like");
+    }
+
+    let chained = chained_posts_i_liked(&contract, OWNER_1, None, Some(10));
+    let outcome = drive
+        .query_chained_documents(&chained, None, None, pv)
+        .expect("chained query executes");
+    let (proof, _) = drive
+        .query_chained_documents_with_proof(&chained, pv)
+        .expect("chained proof generates");
+    let (root_hash, verified) = chained
+        .verify_chained_documents_proof(proof.as_slice(), pv)
+        .expect("a chained proof over summable posts verifies");
+    assert_live_root_hash(&drive, root_hash);
+    assert_eq!(verified.outer_documents, outcome.result.outer_documents);
+    assert_eq!(
+        verified
+            .outer_documents
+            .iter()
+            .map(|post| post.id().to_buffer())
+            .collect::<Vec<_>>(),
+        vec![POST_A, POST_B]
+    );
+}
+
+/// The fixture's like keeps an optional hashtag in `byHashtagPost` alone, so
+/// `byLiker` cannot say whether a like has one: without a proof the chained
+/// read is refused before any read, as a documents query through `byLiker`
+/// is, while the proved read returns the liked posts.
+#[test]
+fn should_refuse_a_chained_read_without_a_proof_through_an_index_lacking_a_property() {
+    let (drive, contract) = setup_tagged_likes();
+    let pv = platform_version();
+    insert_post(&drive, &contract, POST_A, "dash", "post a", 10);
+    let like = build_tagged_like(&contract, "dash", POST_A, OWNER_1, 1);
+    insert_like(&drive, &contract, &like, true).expect("insert like");
+
+    let chained = chained_posts_i_liked(&contract, OWNER_1, None, Some(10));
+    let refused = drive.query_chained_documents(&chained, None, None, pv);
+    assert!(
+        matches!(refused, Err(Error::Query(QuerySyntaxError::Unsupported(_)))),
+        "got {refused:?}"
+    );
+    let (proof, _) = drive
+        .query_chained_documents_with_proof(&chained, pv)
+        .expect("chained proof generates");
+    let (root_hash, verified) = chained
+        .verify_chained_documents_proof(proof.as_slice(), pv)
+        .expect("chained proof verifies");
+    assert_live_root_hash(&drive, root_hash);
+    assert_eq!(
+        verified
+            .outer_documents
+            .iter()
+            .map(|post| post.id().to_buffer())
+            .collect::<Vec<_>>(),
+        vec![POST_A]
+    );
+}
+
 /// An empty inner page proves alone: the bootstrap pass finds no join
 /// values and the merged query degenerates to the inner component.
 #[test]
@@ -259,7 +440,7 @@ fn should_paginate_through_the_inner_cursor() {
     insert_post(&drive, &contract, POST_A, "dash", "post a", 10);
     insert_post(&drive, &contract, POST_B, "dash", "post b", 11);
     for (post, seed) in [(POST_A, 1u64), (POST_B, 2)] {
-        let like = build_like(&contract, "dash", post, OWNER_1, seed);
+        let like = build_like(&contract, post, OWNER_1, seed);
         insert_like(&drive, &contract, &like, true).expect("insert like");
     }
 
@@ -357,7 +538,7 @@ fn should_refuse_a_dangling_reference() {
     let (drive, contract) = setup_likes();
     let pv = platform_version();
     // A like referencing POST_A — which was never inserted.
-    let like = build_like(&contract, "dash", POST_A, OWNER_1, 1);
+    let like = build_like(&contract, POST_A, OWNER_1, 1);
     insert_like(&drive, &contract, &like, true).expect("insert like");
 
     let chained = chained_posts_i_liked(&contract, OWNER_1, None, Some(10));
@@ -381,7 +562,7 @@ fn should_reject_an_inner_only_proof() {
     insert_post(&drive, &contract, POST_A, "dash", "post a", 10);
     insert_post(&drive, &contract, POST_B, "dash", "post b", 11);
     for (post, seed) in [(POST_A, 1u64), (POST_B, 2)] {
-        let like = build_like(&contract, "dash", post, OWNER_1, seed);
+        let like = build_like(&contract, post, OWNER_1, seed);
         insert_like(&drive, &contract, &like, true).expect("insert like");
     }
 
@@ -419,13 +600,13 @@ const POSTS: [[u8; 32]; 7] = [
 
 /// Inserts every post of [`POSTS`] except `missing`, and OWNER_1's like
 /// of every post of [`POSTS`], the missing ones included.
-fn setup_liked_posts(missing: &[[u8; 32]]) -> (crate::drive::Drive, DataContract) {
+fn setup_liked_posts(missing: &[[u8; 32]]) -> (Drive, DataContract) {
     let (drive, contract) = setup_likes();
     for (i, post) in POSTS.iter().enumerate() {
         if !missing.contains(post) {
             insert_post(&drive, &contract, *post, "dash", "post", 100 + i as u64);
         }
-        let like = build_like(&contract, "dash", *post, OWNER_1, 1 + i as u64);
+        let like = build_like(&contract, *post, OWNER_1, 1 + i as u64);
         insert_like(&drive, &contract, &like, true).expect("insert like");
     }
     (drive, contract)
@@ -546,11 +727,14 @@ fn should_reject_a_proof_withholding_an_existing_referenced_post() {
 const DELETABLE_POSTS_CONTRACT: &str =
     "tests/supporting_files/contract/yappr-likes/yappr-likes-deletable-posts-contract.json";
 
-fn setup_likes_with_deletable_posts() -> (crate::drive::Drive, DataContract) {
+fn setup_likes_with_deletable_posts() -> (Drive, DataContract) {
     let drive = setup_drive_with_initial_state_structure(None);
     let pv = platform_version();
-    let contract = json_document_to_contract(DELETABLE_POSTS_CONTRACT, false, pv)
-        .expect("expected to parse the deletable posts contract");
+    let contract = with_likes_read_whole_through_by_liker(
+        json_document_to_contract(DELETABLE_POSTS_CONTRACT, false, pv)
+            .expect("expected to parse the deletable posts contract"),
+        pv,
+    );
     drive
         .apply_contract(
             &contract,
@@ -564,7 +748,7 @@ fn setup_likes_with_deletable_posts() -> (crate::drive::Drive, DataContract) {
     (drive, contract)
 }
 
-fn delete_post(drive: &crate::drive::Drive, contract: &DataContract, id: [u8; 32]) {
+fn delete_post(drive: &Drive, contract: &DataContract, id: [u8; 32]) {
     drive
         .delete_document_for_contract(
             Identifier::from(id),
@@ -596,7 +780,7 @@ fn should_leave_out_a_deleted_post_of_a_deletable_document_join() {
         let (drive, contract) = setup_likes_with_deletable_posts();
         for (i, post) in POSTS.iter().enumerate() {
             insert_post(&drive, &contract, *post, "dash", "post", 100 + i as u64);
-            let like = build_like(&contract, "dash", *post, OWNER_1, 1 + i as u64);
+            let like = build_like(&contract, *post, OWNER_1, 1 + i as u64);
             insert_like(&drive, &contract, &like, true).expect("insert like");
         }
         for post in &deleted {
@@ -657,7 +841,7 @@ fn should_reject_a_proof_withholding_an_existing_post_of_a_deletable_document_jo
     let (drive, contract) = setup_likes_with_deletable_posts();
     for (i, post) in POSTS.iter().enumerate() {
         insert_post(&drive, &contract, *post, "dash", "post", 100 + i as u64);
-        let like = build_like(&contract, "dash", *post, OWNER_1, 1 + i as u64);
+        let like = build_like(&contract, *post, OWNER_1, 1 + i as u64);
         insert_like(&drive, &contract, &like, true).expect("insert like");
     }
     // One post really is deleted, so honest holes and withheld posts mix.
@@ -713,4 +897,703 @@ fn should_reject_a_proof_withholding_an_existing_post_of_a_deletable_document_jo
         existing
     );
     assert_eq!(verified.missing_outer_ids, vec![Identifier::from(POSTS[4])]);
+}
+
+/// `contract` with its `post` type left to the contract owner's moderators alone, on the
+/// record (`canBeDeleted: false` beside `moderatorAbilities.delete`, whose removals keep a
+/// record by default), and every reference to it a `refersTo: moderatedDocument` one.
+/// `preallocated` indexes, which need a `permanentDocument` edge, are dropped.
+pub(super) fn with_moderated_posts(mut contract: DataContract) -> DataContract {
+    let pv = platform_version();
+    contract.set_config(contract.config().clone().with_moderation(Some(
+        ContractModerationConfig {
+            banlist: false,
+            suspensions: false,
+            warnings: false,
+            moderators: ContractModerators::ContractOwner,
+        },
+    )));
+    let mut schemas = BTreeMap::new();
+    for (name, schema) in contract.document_schemas() {
+        let mut json: serde_json::Value = schema.clone().try_into().expect("a JSON schema");
+        if name == "post" {
+            json["canBeDeleted"] = false.into();
+            json["moderatorAbilities"] = serde_json::json!({ "delete": true });
+        }
+        if let Some(properties) = json
+            .get_mut("properties")
+            .and_then(|properties| properties.as_object_mut())
+        {
+            for property in properties.values_mut() {
+                if property["refersTo"]["documentType"] == "post" {
+                    property["refersTo"]["type"] = "moderatedDocument".into();
+                }
+            }
+        }
+        if let Some(indices) = json
+            .get_mut("indices")
+            .and_then(|indices| indices.as_array_mut())
+        {
+            for index in indices {
+                if let Some(index) = index.as_object_mut() {
+                    index.remove("preallocated");
+                }
+            }
+        }
+        schemas.insert(name, Value::from(json));
+    }
+    let defs = contract.schema_defs().cloned();
+    contract
+        .set_document_schemas(schemas, defs, true, &mut vec![], pv)
+        .expect("expected the moderated variant to parse");
+    contract
+}
+
+fn setup_likes_with_moderated_posts() -> (Drive, DataContract) {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let pv = platform_version();
+    let contract = with_moderated_posts(with_likes_read_whole_through_by_liker(
+        json_document_to_contract(DELETABLE_POSTS_CONTRACT, false, pv)
+            .expect("expected to parse the deletable posts contract"),
+        pv,
+    ));
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("expected to apply the moderated posts contract");
+    (drive, contract)
+}
+
+/// The record a moderator's removal of `id` leaves.
+pub(super) fn removal_of(id: [u8; 32]) -> ContractDocumentRemoval {
+    ContractDocumentRemoval {
+        document_owner_id: Identifier::from(OWNER_1),
+        moderator_id: Identifier::from([0x77; 32]),
+        reason: ContractModerationReason::from_text("spam"),
+        removed_at: 1_000 + id[0] as u64,
+        document_hash: id,
+        restoration: None,
+        kept_fields: Default::default(),
+    }
+}
+
+/// A moderator's removal of the post `id`, as the moderation transition writes it: the post
+/// deleted past `canBeDeleted: false`, and, when given, its removal record.
+pub(super) fn remove_post(
+    drive: &Drive,
+    contract: &DataContract,
+    id: [u8; 32],
+    record: Option<ContractDocumentRemoval>,
+) {
+    let mut operations = vec![DriveOperation::DocumentOperation(
+        DocumentOperationType::ForceDeleteDocument {
+            document_id: Identifier::from(id),
+            contract_info: DataContractInfo::BorrowedDataContract(contract),
+            document_type_info: DocumentTypeInfo::DocumentTypeName("post".to_string()),
+        },
+    )];
+    if let Some(removal) = record {
+        let moderator_id = removal.moderator_id;
+        operations.push(DriveOperation::ContractModerationOperation(
+            ContractModerationOperationType::AddDocumentRemoval {
+                contract_id: contract.id(),
+                document_type_name: "post".to_string(),
+                document_id: Identifier::from(id),
+                removal: Box::new(removal),
+                replaced_record_size: None,
+                estimated_kept_fields_size: 0,
+                moderator_id,
+            },
+        ));
+    }
+    operations.push(DriveOperation::ContractModerationOperation(
+        ContractModerationOperationType::ForfeitStorageRefunds,
+    ));
+    drive
+        .apply_drive_operations(
+            operations,
+            true,
+            &BlockInfo::default(),
+            None,
+            platform_version(),
+            None,
+        )
+        .expect("expected to remove the post");
+}
+
+/// A `moderatedDocument` join reports a post a moderator removed by its removal record: the
+/// like stays in the inner half, the outer half is one post short, the record is proven beside
+/// it, and the server and the verifier agree. Nothing is reported missing: a moderated target
+/// leaves state on its record alone.
+#[test]
+fn should_report_a_removed_post_of_a_moderated_document_join_by_its_record() {
+    let pv = platform_version();
+    let mut cases: Vec<Vec<[u8; 32]>> = POSTS.iter().map(|post| vec![*post]).collect();
+    cases.push(vec![POSTS[2], POSTS[3]]);
+    cases.push(POSTS.to_vec());
+
+    for removed in cases {
+        let (drive, contract) = setup_likes_with_moderated_posts();
+        for (i, post) in POSTS.iter().enumerate() {
+            insert_post(&drive, &contract, *post, "dash", "post", 100 + i as u64);
+            let like = build_like(&contract, *post, OWNER_1, 1 + i as u64);
+            insert_like(&drive, &contract, &like, true).expect("insert like");
+        }
+        for post in &removed {
+            remove_post(&drive, &contract, *post, Some(removal_of(*post)));
+        }
+        let expected: Vec<[u8; 32]> = POSTS
+            .iter()
+            .filter(|post| !removed.contains(post))
+            .copied()
+            .collect();
+        let expected_records: Vec<ContractDocumentRemovalEntry> = removed
+            .iter()
+            .map(|post| ContractDocumentRemovalEntry {
+                document_id: Identifier::from(*post),
+                removal: removal_of(*post),
+            })
+            .collect();
+
+        let chained = chained_posts_i_liked(&contract, OWNER_1, None, Some(10));
+        let outcome = drive
+            .query_chained_documents(&chained, None, None, pv)
+            .expect("a removed post does not fail a moderatedDocument join");
+        assert_eq!(outcome.result.inner_documents.len(), POSTS.len());
+        assert_eq!(
+            outcome
+                .result
+                .outer_documents
+                .iter()
+                .map(|d| d.id().to_buffer())
+                .collect::<Vec<_>>(),
+            expected,
+            "removed {removed:?}"
+        );
+        assert!(outcome.result.missing_outer_ids.is_empty());
+        assert_eq!(
+            outcome.result.removed_outer_documents, expected_records,
+            "the removed posts are reported with their records, in first-appearance order"
+        );
+
+        let (proof, _) = drive
+            .query_chained_documents_with_proof(&chained, pv)
+            .expect("chained proof generates");
+        let (_root, verified) = chained
+            .verify_chained_documents_proof(proof.as_slice(), pv)
+            .expect("the proof verifies with the removed posts' records proven");
+        assert_eq!(verified.inner_documents.len(), POSTS.len());
+        assert_eq!(verified.outer_documents, outcome.result.outer_documents);
+        assert!(verified.missing_outer_ids.is_empty());
+        assert_eq!(
+            verified.removed_outer_documents,
+            outcome.result.removed_outer_documents
+        );
+    }
+}
+
+/// A post a `moderatedDocument` join finds neither in state nor on the record left state in a
+/// way the reference rules out: the server refuses the page and so does the verifier, as for a
+/// missing `permanentDocument` target. Only a removal without a record can make that state,
+/// which the document type's `deleteKeepsRecord` never lets a moderator do.
+#[test]
+fn should_refuse_a_moderated_document_join_whose_post_left_without_a_record() {
+    let pv = platform_version();
+    let (drive, contract) = setup_likes_with_moderated_posts();
+    for (i, post) in POSTS.iter().enumerate() {
+        insert_post(&drive, &contract, *post, "dash", "post", 100 + i as u64);
+        let like = build_like(&contract, *post, OWNER_1, 1 + i as u64);
+        insert_like(&drive, &contract, &like, true).expect("insert like");
+    }
+    remove_post(&drive, &contract, POSTS[1], Some(removal_of(POSTS[1])));
+    remove_post(&drive, &contract, POSTS[4], None);
+    let chained = chained_posts_i_liked(&contract, OWNER_1, None, Some(10));
+
+    let refused = drive.query_chained_documents(&chained, None, None, pv);
+    assert!(
+        matches!(refused, Err(Error::Proof(_))),
+        "the server refuses the unrecorded removal, got {refused:?}"
+    );
+    let (proof, _) = drive
+        .query_chained_documents_with_proof(&chained, pv)
+        .expect("the proof generates: only its assembly refuses");
+    let refused = chained.verify_chained_documents_proof(proof.as_slice(), pv);
+    assert!(
+        matches!(refused, Err(Error::Proof(_))),
+        "the verifier refuses the unrecorded removal, got {refused:?}"
+    );
+}
+
+/// What makes a reported removal sound: the records component names every join value, so a
+/// prover can pass neither a removed post off as missing without its record, nor an existing
+/// post off as removed. Withholding a join value's record or document leaves the proof without
+/// coverage for a key the verifier's re-derived query demands, and grovedb refuses it.
+#[test]
+fn should_reject_a_proof_withholding_a_removal_record_of_a_moderated_document_join() {
+    let pv = platform_version();
+    let (drive, contract) = setup_likes_with_moderated_posts();
+    for (i, post) in POSTS.iter().enumerate() {
+        insert_post(&drive, &contract, *post, "dash", "post", 100 + i as u64);
+        let like = build_like(&contract, *post, OWNER_1, 1 + i as u64);
+        insert_like(&drive, &contract, &like, true).expect("insert like");
+    }
+    remove_post(&drive, &contract, POSTS[2], Some(removal_of(POSTS[2])));
+    let chained = chained_posts_i_liked(&contract, OWNER_1, None, Some(10));
+    let join_values: Vec<Identifier> = POSTS.iter().map(|post| Identifier::from(*post)).collect();
+    let honest = chained
+        .chained_proof_path_queries(&join_values, pv)
+        .expect("path queries");
+    assert_eq!(
+        honest.len(),
+        3,
+        "inner, outer by ids and the removal records"
+    );
+
+    // The honest components, with the records of one join value left out, and with them all
+    // left out (a node that proves the join as a deletable one)
+    let without_one_record = {
+        let mut path_queries = honest.clone();
+        path_queries[2] = removals_path_query(
+            contract.id(),
+            "post",
+            &join_values
+                .iter()
+                .filter(|id| id.to_buffer() != POSTS[2])
+                .copied()
+                .collect::<Vec<_>>(),
+            path_queries[2].query.query.left_to_right,
+        );
+        path_queries
+    };
+    let without_records = honest[..2].to_vec();
+    for (case, path_queries) in [
+        ("one record withheld", without_one_record),
+        ("every record withheld", without_records),
+    ] {
+        let path_query_refs: Vec<&PathQuery> = path_queries.iter().collect();
+        let dishonest_proof = drive
+            .grove
+            .prove_query_many(path_query_refs, None, &pv.drive.grove_version)
+            .unwrap()
+            .expect("the dishonest proof generates");
+        let refused = chained.verify_chained_documents_proof(dishonest_proof.as_slice(), pv);
+        assert!(
+            matches!(refused, Err(Error::GroveDB(_))),
+            "{case}: must be refused by grovedb, got {refused:?}"
+        );
+    }
+
+    let (proof, _) = drive
+        .query_chained_documents_with_proof(&chained, pv)
+        .expect("chained proof generates");
+    let (_root, verified) = chained
+        .verify_chained_documents_proof(proof.as_slice(), pv)
+        .expect("the honest proof verifies");
+    assert_eq!(
+        verified.removed_outer_documents,
+        vec![ContractDocumentRemovalEntry {
+            document_id: Identifier::from(POSTS[2]),
+            removal: removal_of(POSTS[2]),
+        }]
+    );
+}
+
+const PREALLOCATED_LIKES_CONTRACT: &str =
+    "tests/supporting_files/contract/yappr-likes/yappr-likes-preallocated-contract.json";
+
+/// A drive with the likes contract of `fixture` applied as written.
+fn setup_likes_fixture(fixture: &str) -> (Drive, DataContract) {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let pv = platform_version();
+    let contract = json_document_to_contract(fixture, false, pv)
+        .expect("expected to parse the yappr-likes contract variant");
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("expected to apply the yappr-likes contract variant");
+    (drive, contract)
+}
+
+/// The posts liked under `hashtag`, through `like.byHashtagPost`
+/// (`[hashtag, postId]`, terminal `$ownerId`). Only `hashtag` is fixed, so
+/// the walk fans out across one `postId` branch per liked post, each
+/// holding that post's likers, and the join property is the prefix
+/// property the walk fans out across.
+fn chained_posts_liked_under<'a>(
+    contract: &'a DataContract,
+    hashtag: &str,
+    ascending: bool,
+    limit: u16,
+) -> DriveDocumentQuery<'a> {
+    let mut order_by: indexmap::IndexMap<String, OrderClause> = Default::default();
+    order_by.insert(
+        "postId".to_string(),
+        OrderClause {
+            field: "postId".to_string(),
+            ascending,
+        },
+    );
+    DriveDocumentQuery {
+        contract,
+        document_type: contract
+            .document_type_for_name("like")
+            .expect("like doctype exists"),
+        internal_clauses: InternalClauses::extract_from_clauses(
+            vec![WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text(hashtag.to_string()),
+            }],
+            platform_version(),
+        )
+        .expect("clauses extract"),
+        offset: None,
+        limit: Some(limit),
+        order_by,
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
+    }
+    .with_by_id_join(
+        "postId",
+        contract
+            .document_type_for_name("post")
+            .expect("post doctype exists"),
+    )
+}
+
+/// The posts `owner` tipped, through `tip.byTipperAmount` (`[$ownerId,
+/// amount]`, terminal `postId`). Only `$ownerId` is fixed, so the walk fans
+/// out across one `amount` branch per distinct amount, each holding the
+/// posts tipped that much, and the join property is the terminal.
+fn chained_posts_tipped_by<'a>(
+    contract: &'a DataContract,
+    owner: [u8; 32],
+    ascending: bool,
+    limit: u16,
+) -> DriveDocumentQuery<'a> {
+    let mut order_by: indexmap::IndexMap<String, OrderClause> = Default::default();
+    order_by.insert(
+        "amount".to_string(),
+        OrderClause {
+            field: "amount".to_string(),
+            ascending,
+        },
+    );
+    DriveDocumentQuery {
+        contract,
+        document_type: contract
+            .document_type_for_name("tip")
+            .expect("tip doctype exists"),
+        internal_clauses: InternalClauses::extract_from_clauses(
+            vec![WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(owner),
+            }],
+            platform_version(),
+        )
+        .expect("clauses extract"),
+        offset: None,
+        limit: Some(limit),
+        order_by,
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
+    }
+    .with_by_id_join(
+        "postId",
+        contract
+            .document_type_for_name("post")
+            .expect("post doctype exists"),
+    )
+}
+
+/// For a page with rows, the merged query the proof covers is the one the
+/// merge built when the inner half still carried its limit as a global
+/// one: grovedb's merge lifts a global limit into the same per-instance
+/// cap, so such a page proves to the same bytes as before.
+fn assert_merged_query_matches_the_lifted_global_limit(
+    chained: &DriveDocumentQuery,
+    join_values: &[Identifier],
+) {
+    let pv = platform_version();
+    let components = chained
+        .chained_proof_path_queries(join_values, pv)
+        .expect("the chained path queries build");
+    let mut lifted = components.clone();
+    lifted[0] = chained
+        .construct_path_query(None, pv)
+        .expect("the inner path query builds");
+    assert!(
+        lifted[0].query.limit.is_some(),
+        "the plain lowering carries the limit as a global one"
+    );
+    let merge = |path_queries: &[PathQuery]| {
+        PathQuery::merge(path_queries.iter().collect(), &pv.drive.grove_version)
+            .expect("the components merge")
+    };
+    assert_eq!(merge(&components), merge(&lifted));
+}
+
+/// Reads `chained` without and with a proof, verifies the proof, checks
+/// that every read agrees, and returns the join value of each inner row
+/// and the verified outer post ids.
+fn chained_round_trip(
+    drive: &Drive,
+    chained: &DriveDocumentQuery,
+    what: &str,
+) -> (Vec<[u8; 32]>, Vec<[u8; 32]>) {
+    let pv = platform_version();
+    let outcome = drive
+        .query_chained_documents(chained, None, None, pv)
+        .unwrap_or_else(|e| panic!("{what}: the chained read executes: {e}"));
+    let (proof, proved_inner) = drive
+        .query_chained_documents_with_proof(chained, pv)
+        .unwrap_or_else(|e| panic!("{what}: the chained proof generates: {e}"));
+    let (root_hash, verified) = chained
+        .verify_chained_documents_proof(proof.as_slice(), pv)
+        .unwrap_or_else(|e| panic!("{what}: the chained proof verifies: {e}"));
+    assert_live_root_hash(drive, root_hash);
+    assert_eq!(
+        proved_inner, outcome.result.inner_documents,
+        "{what}: the proved inner page"
+    );
+    assert_eq!(
+        verified.inner_documents, outcome.result.inner_documents,
+        "{what}: the verified inner page"
+    );
+    assert_eq!(
+        verified.outer_documents, outcome.result.outer_documents,
+        "{what}: the verified outer half"
+    );
+    let join_values = chained
+        .chained_join_values(&verified.inner_documents)
+        .expect("join values");
+    if !join_values.is_empty() {
+        assert_merged_query_matches_the_lifted_global_limit(chained, &join_values);
+    }
+    let rows = verified
+        .inner_documents
+        .iter()
+        .map(|like| {
+            like.properties()
+                .get("postId")
+                .expect("join value present")
+                .to_identifier()
+                .expect("identifier")
+                .to_buffer()
+        })
+        .collect();
+    let outer = verified
+        .outer_documents
+        .iter()
+        .map(|post| post.id().to_buffer())
+        .collect();
+    (rows, outer)
+}
+
+/// An inner page whose walk fans out across an index's prefix values
+/// proves and verifies whatever its limit. With only `hashtag` fixed,
+/// `byHashtagPost` holds one `postId` branch per liked post; the merged
+/// proof carries the page's limit as a cap on rows, so it shows every
+/// branch, and the verifier used to read the page back under a global
+/// limit, which refused a proof showing more branches than the limit
+/// ("Proof returns more data than limit").
+#[test]
+fn should_prove_a_chained_page_that_fans_out_across_a_prefix_level() {
+    let (drive, contract) = setup_tagged_likes();
+    for (post, hashtag, seed) in [
+        (POST_A, "dash", 10u64),
+        (POST_B, "dash", 11),
+        (POST_C, "dash", 12),
+        (POSTS[0], "btc", 13),
+    ] {
+        insert_post(&drive, &contract, post, hashtag, "post", seed);
+    }
+    // Three likers of A, one each of B and C under `dash`, and a `btc`
+    // like the hashtag clause leaves out.
+    for (hashtag, post, owner, seed) in [
+        ("dash", POST_A, OWNER_1, 1u64),
+        ("dash", POST_A, OWNER_2, 2),
+        ("dash", POST_A, OWNER_3, 3),
+        ("dash", POST_B, OWNER_1, 4),
+        ("dash", POST_C, OWNER_2, 5),
+        ("btc", POSTS[0], OWNER_1, 6),
+    ] {
+        let like = build_tagged_like(&contract, hashtag, post, owner, seed);
+        insert_like(&drive, &contract, &like, true).expect("insert like");
+    }
+
+    // Limits below the three branches the walk fans out across, at and
+    // above the five rows.
+    for (limit, rows, outer) in [
+        (1u16, vec![POST_A], vec![POST_A]),
+        (2, vec![POST_A; 2], vec![POST_A]),
+        (3, vec![POST_A; 3], vec![POST_A]),
+        (
+            4,
+            vec![POST_A, POST_A, POST_A, POST_B],
+            vec![POST_A, POST_B],
+        ),
+        (
+            5,
+            vec![POST_A, POST_A, POST_A, POST_B, POST_C],
+            vec![POST_A, POST_B, POST_C],
+        ),
+        (
+            10,
+            vec![POST_A, POST_A, POST_A, POST_B, POST_C],
+            vec![POST_A, POST_B, POST_C],
+        ),
+    ] {
+        let chained = chained_posts_liked_under(&contract, "dash", true, limit);
+        assert_eq!(
+            chained_round_trip(&drive, &chained, &format!("ascending, limit {limit}")),
+            (rows, outer),
+            "ascending, limit {limit}"
+        );
+    }
+
+    // Newest-key first, the walk meets C's branch before B's and A's.
+    for (limit, rows, outer) in [
+        (1u16, vec![POST_C], vec![POST_C]),
+        (2, vec![POST_C, POST_B], vec![POST_C, POST_B]),
+        (
+            3,
+            vec![POST_C, POST_B, POST_A],
+            vec![POST_C, POST_B, POST_A],
+        ),
+    ] {
+        let chained = chained_posts_liked_under(&contract, "dash", false, limit);
+        assert_eq!(
+            chained_round_trip(&drive, &chained, &format!("descending, limit {limit}")),
+            (rows, outer),
+            "descending, limit {limit}"
+        );
+    }
+}
+
+/// The same fan-out with the join property as the index's terminal: with
+/// only `$ownerId` fixed, `byTipperAmount` holds one `amount` branch per
+/// distinct amount tipped, and one branch may hold several rows.
+#[test]
+fn should_prove_a_chained_page_joined_through_its_terminal_that_fans_out_across_a_prefix_level() {
+    let (drive, contract) = setup_likes();
+    for (i, post) in POSTS[..5].iter().enumerate() {
+        insert_post(&drive, &contract, *post, "dash", "post", 100 + i as u64);
+    }
+    // OWNER_1's amounts: 10 for posts 1 and 3, 20 for post 2, 30 for post
+    // 0. OWNER_2's tip is left out by the owner clause.
+    for (post, owner, amount, seed) in [
+        (POSTS[0], OWNER_1, 30u64, 1u64),
+        (POSTS[1], OWNER_1, 10, 2),
+        (POSTS[2], OWNER_1, 20, 3),
+        (POSTS[3], OWNER_1, 10, 4),
+        (POSTS[4], OWNER_2, 15, 5),
+    ] {
+        let tip = build_tip(&contract, post, owner, amount, seed);
+        insert_tip(&drive, &contract, &tip, true).expect("insert tip");
+    }
+
+    // Limits below the three amount branches, below, at and above the
+    // four rows.
+    let ascending = [POSTS[1], POSTS[3], POSTS[2], POSTS[0]];
+    for limit in [1u16, 2, 3, 4, 6] {
+        let expected = ascending[..ascending.len().min(limit as usize)].to_vec();
+        let chained = chained_posts_tipped_by(&contract, OWNER_1, true, limit);
+        assert_eq!(
+            chained_round_trip(&drive, &chained, &format!("ascending, limit {limit}")),
+            (expected.clone(), expected),
+            "ascending, limit {limit}"
+        );
+    }
+    let descending = [POSTS[0], POSTS[2], POSTS[3], POSTS[1]];
+    for limit in [1u16, 2, 3, 4] {
+        let expected = descending[..limit as usize].to_vec();
+        let chained = chained_posts_tipped_by(&contract, OWNER_1, false, limit);
+        assert_eq!(
+            chained_round_trip(&drive, &chained, &format!("descending, limit {limit}")),
+            (expected.clone(), expected),
+            "descending, limit {limit}"
+        );
+    }
+
+    // An owner with no tips: an empty page proves alone.
+    let chained = chained_posts_tipped_by(&contract, OWNER_3, true, 2);
+    assert_eq!(
+        chained_round_trip(&drive, &chained, "no tips"),
+        (vec![], vec![])
+    );
+}
+
+/// An empty index branch on the inner page's walk. The preallocated
+/// fixture creates `like.byHashtagPost` buckets when a post is inserted,
+/// so post C, which nobody liked, holds an empty bucket the newest-first
+/// walk visits before B's and A's. Grovedb charges that bucket against a
+/// global limit but not against the per-instance cap the proof carries,
+/// so the server reads the inner page with the proof's own query: the
+/// join values it derives the outer half from are the ones the verifier
+/// reads out of the proof.
+#[test]
+fn should_read_the_inner_page_under_the_proofs_budget_past_an_empty_index_branch() {
+    let (drive, contract) = setup_likes_fixture(PREALLOCATED_LIKES_CONTRACT);
+    for (post, seed) in [(POST_A, 10u64), (POST_B, 11), (POST_C, 12)] {
+        insert_post(&drive, &contract, post, "dash", "post", seed);
+    }
+    for (post, owner, seed) in [
+        (POST_A, OWNER_1, 1u64),
+        (POST_A, OWNER_2, 2),
+        (POST_B, OWNER_1, 3),
+    ] {
+        let like = build_tagged_like(&contract, "dash", post, owner, seed);
+        insert_like(&drive, &contract, &like, true).expect("insert like");
+    }
+
+    // Past C's empty bucket: B's one like, then the first of A's two.
+    let chained = chained_posts_liked_under(&contract, "dash", false, 2);
+    assert_eq!(
+        chained_round_trip(&drive, &chained, "past the empty bucket"),
+        (vec![POST_B, POST_A], vec![POST_B, POST_A])
+    );
+}
+
+/// A page through an index that does not fan out reads and proves as it
+/// did: `byLiker` with `$ownerId` fixed lands on one branch whose rows are
+/// the page, at any limit.
+#[test]
+fn should_prove_a_chained_page_through_an_index_that_does_not_fan_out() {
+    let (drive, contract) = setup_likes();
+    for (post, seed) in [(POST_A, 10u64), (POST_B, 11), (POST_C, 12)] {
+        insert_post(&drive, &contract, post, "dash", "post", seed);
+        let like = build_like(&contract, post, OWNER_1, seed);
+        insert_like(&drive, &contract, &like, true).expect("insert like");
+    }
+
+    let liked = [POST_A, POST_B, POST_C];
+    for limit in [1u16, 2, 3, 10] {
+        let expected = liked[..liked.len().min(limit as usize)].to_vec();
+        let chained = chained_posts_i_liked(&contract, OWNER_1, None, Some(limit));
+        assert_eq!(
+            chained_round_trip(&drive, &chained, &format!("limit {limit}")),
+            (expected.clone(), expected),
+            "limit {limit}"
+        );
+    }
 }

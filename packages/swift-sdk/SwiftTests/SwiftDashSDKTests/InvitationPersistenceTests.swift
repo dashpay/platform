@@ -67,6 +67,7 @@ final class InvitationPersistenceTests: XCTestCase {
             // `PersistentDashpayPayment` rows, so the sweep's Failed flip
             // may ride this store's rounds — genuinely attested.
             | PlatformWalletPersistenceCapabilities.dashpayPayments
+            | PlatformWalletPersistenceCapabilities.assetLockOperationIds
 
         XCTAssertEqual(
             capabilities.version,

@@ -6,7 +6,7 @@
 //! DashPay state is rehydrated from the identities `entry_blob`, which is the
 //! authoritative load source. They exist for future per-profile/per-payment
 //! indexed queries. Round-trip pinned by
-//! `tests/sqlite_dashpay_overlay_contract.rs`.
+//! `tests/integration/sqlite_dashpay_overlay_contract.rs`.
 //!
 //! # …which is why the payment overlay is also PATCHED into `entry_blob`
 //!

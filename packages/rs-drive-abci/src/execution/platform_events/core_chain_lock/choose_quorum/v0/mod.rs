@@ -1,4 +1,4 @@
-use dpp::bls_signatures::{Bls12381G2Impl, PublicKey as BlsPublicKey};
+use dpp::bls::PublicKey as BlsPublicKey;
 use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
 use dpp::dashcore::QuorumHash;
 use dpp::dashcore_rpc::dashcore_rpc_json::QuorumType;
@@ -12,15 +12,11 @@ impl<C> Platform<C> {
     /// Based on DIP8 deterministically chooses a pseudorandom quorum from the list of quorums
     pub(super) fn choose_quorum_v0<'a>(
         llmq_quorum_type: QuorumType,
-        quorums: &'a BTreeMap<QuorumHash, BlsPublicKey<Bls12381G2Impl>>,
+        quorums: &'a BTreeMap<QuorumHash, BlsPublicKey>,
         request_id: &[u8; 32],
-    ) -> Option<(ReversedQuorumHashBytes, &'a BlsPublicKey<Bls12381G2Impl>)> {
+    ) -> Option<(ReversedQuorumHashBytes, &'a BlsPublicKey)> {
         // Scoring system logic
-        let mut scores: Vec<(
-            ReversedQuorumHashBytes,
-            &BlsPublicKey<Bls12381G2Impl>,
-            [u8; 32],
-        )> = Vec::new();
+        let mut scores: Vec<(ReversedQuorumHashBytes, &BlsPublicKey, [u8; 32])> = Vec::new();
 
         for (quorum_hash, public_key) in quorums {
             let mut quorum_hash_bytes = quorum_hash.to_byte_array().to_vec();
@@ -41,7 +37,8 @@ impl<C> Platform<C> {
 
             // Finalize the hash
             let hash_result = sha256d::Hash::from_engine(hasher);
-            scores.push((quorum_hash_bytes, public_key, hash_result.into()));
+            // Scores use raw digest bytes, without reversal, at every protocol version.
+            scores.push((quorum_hash_bytes, public_key, hash_result.to_byte_array()));
         }
 
         if scores.is_empty() {
@@ -83,7 +80,8 @@ impl<C> Platform<C> {
 
             // Finalize the hash
             let hash_result = sha256d::Hash::from_engine(hasher);
-            scores.push((quorum_hash_bytes, key, hash_result.into()));
+            // Scores use raw digest bytes, without reversal, at every protocol version.
+            scores.push((quorum_hash_bytes, key, hash_result.to_byte_array()));
         }
 
         scores.sort_by_key(|k| k.2);
@@ -95,7 +93,7 @@ impl<C> Platform<C> {
 mod tests {
     use crate::platform_types::platform::Platform;
     use crate::rpc::core::MockCoreRPCLike;
-    use dpp::bls_signatures::SecretKey;
+    use dpp::bls::SecretKey;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::QuorumHash;
     use dpp::dashcore_rpc::dashcore_rpc_json::QuorumType;

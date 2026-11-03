@@ -27,12 +27,18 @@ const DOCUMENT_TYPED_ARRAY_PROPERTY_TS: &'static str = r#"
  *
  * `type` names the element kind as DPP parses it: `byteArray` is an
  * `items` schema with `byteArray: true`, and `identifier` one that also
- * carries the identifier `contentMediaType`. The bound names are the schema
- * keywords' own: `minLength` / `maxLength` count a string element's
- * characters, `minItems` / `maxItems` a byte array element's bytes,
- * `minimum` / `maximum` an integer or number element's range, and `enum`
- * the values an element must be one of, in declared order. A bound is
- * absent when the schema omits it.
+ * carries the identifier `contentMediaType`. From protocol version 14 the
+ * schema may write them as the shorthands `{ type: 'bytes', size }` (a
+ * `byteArray` with `minItems` and `maxItems` both `size`) and
+ * `{ type: 'identifier' }`, which parse to the same kinds. The bound
+ * names are the schema keywords' own: `minLength` / `maxLength` count a
+ * string element's characters, `minItems` / `maxItems` a byte array
+ * element's bytes, `minimum` / `maximum` an integer or number element's
+ * range, and `enum` the values an element must be one of, in declared
+ * order. The bounds are read from the parsed element, so a `bytes`
+ * shorthand reports its `size` as `minItems` and `maxItems`, and an
+ * identifier, written either way, reports none. Any other bound is absent
+ * when the schema omits it.
  */
 export type DocumentTypedArrayItem =
   | { type: 'integer'; minimum?: number; maximum?: number; enum?: number[] }
@@ -59,8 +65,11 @@ export type DocumentTypedArrayItem =
  *
  * Mirrors the typed array form of the v3 document meta-schema, which is
  * active from protocol version 14. The field names are the schema
- * keywords' own, so what `contract.toJSON()` shows and what these accessors
- * return line up key for key.
+ * keywords' own, but the values are the parsed property's: `contract.toJSON()`
+ * shows the schema as the contract was sent, so an element written with a
+ * shorthand (`{ type: 'bytes', size: 20 }`) or as a long-form identifier
+ * appears there as written, while `items` here gives its parsed kind and
+ * bounds.
  */
 export type DocumentTypedArrayProperty = {
   /**

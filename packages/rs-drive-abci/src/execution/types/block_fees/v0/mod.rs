@@ -1,5 +1,5 @@
 use dpp::fee::epoch::CreditsPerEpoch;
-use dpp::fee::fee_result::FeeResult;
+use dpp::fee::fee_result::{FeeResult, LifetimeStorageFees};
 use serde::{Deserialize, Serialize};
 
 /// Aggregated fees after block execution
@@ -12,6 +12,11 @@ pub struct BlockFeesV0 {
     pub storage_fee: u64,
     /// Fee refunds per epoch
     pub refunds_per_epoch: CreditsPerEpoch,
+    /// The part of `storage_fee` for storage that lives a known number of epochs, by that
+    /// number (document time to live, protocol version 14): it goes to the lifetime storage
+    /// fee pools instead of the storage fee distribution pool.
+    #[serde(default)]
+    pub lifetime_storage_fees: LifetimeStorageFees,
 }
 
 #[allow(dead_code)]
@@ -47,6 +52,10 @@ pub trait BlockFeesV0Getters {
 
     /// Returns the fee refunds per epoch.
     fn refunds_per_epoch_mut(&mut self) -> &mut CreditsPerEpoch;
+
+    /// Returns the part of the storage fee for storage that lives a known number of epochs,
+    /// by that number.
+    fn lifetime_storage_fees(&self) -> &LifetimeStorageFees;
 }
 
 /// `BlockFeesV0Setters` trait provides setter methods for `BlockFeesV0`.
@@ -82,6 +91,10 @@ impl BlockFeesV0Getters for BlockFeesV0 {
     fn refunds_per_epoch_mut(&mut self) -> &mut CreditsPerEpoch {
         &mut self.refunds_per_epoch
     }
+
+    fn lifetime_storage_fees(&self) -> &LifetimeStorageFees {
+        &self.lifetime_storage_fees
+    }
 }
 
 impl BlockFeesV0Setters for BlockFeesV0 {
@@ -104,6 +117,7 @@ impl From<FeeResult> for BlockFeesV0 {
             storage_fee: value.storage_fee,
             processing_fee: value.processing_fee,
             refunds_per_epoch: value.fee_refunds.sum_per_epoch(),
+            lifetime_storage_fees: value.lifetime_storage_fees,
         }
     }
 }
@@ -119,6 +133,7 @@ mod tests {
             processing_fee: 100,
             storage_fee: 200,
             refunds_per_epoch: CreditsPerEpoch::default(),
+            ..Default::default()
         }
     }
 

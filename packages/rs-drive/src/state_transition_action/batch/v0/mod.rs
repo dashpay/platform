@@ -23,6 +23,7 @@ use crate::state_transition_action::batch::batched_transition::BatchedTransition
 use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_transition_action::TokenDirectPurchaseTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_to_pool_transition_action::TokenDirectPurchaseToPoolTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
 
 /// action v0
@@ -234,6 +235,13 @@ impl BatchTransitionActionV0 {
                 BatchedTransitionAction::TokenAction(
                     TokenTransitionAction::DirectPurchaseAction(token_purchase),
                 ) => Some(token_purchase.total_agreed_price()),
+                BatchedTransitionAction::TokenAction(
+                    // Previously swallowed by the catch-all below. The action cannot be in a
+                    // batch on the released protocol versions: the purchase-into-pool kind is
+                    // refused unpaid at the batch's `is_allowed` gate before the batch becomes
+                    // actions, so the fold sees the same sequence of prices there.
+                    TokenTransitionAction::DirectPurchaseToPoolAction(token_purchase),
+                ) => Some(token_purchase.total_agreed_price()),
                 _ => None,
             })
             .fold((None, false), |(acc, _), price| match acc {
@@ -259,10 +267,19 @@ impl BatchTransitionActionV0 {
             .filter_map(|transition| match transition {
                 BatchedTransitionAction::DocumentAction(
                     DocumentTransitionAction::CreateAction(document_create_transition_action),
-                ) => document_create_transition_action
-                    .prefunded_voting_balance()
-                    .iter()
-                    .try_fold(0u64, |acc, &(_, val)| acc.checked_add(val)),
+                ) => {
+                    let contest_fund = document_create_transition_action
+                        .prefunded_voting_balance()
+                        .iter()
+                        .try_fold(0u64, |acc, &(_, val)| acc.checked_add(val));
+                    // A decision proposal's fund (protocol version 15) leaves its owner's balance
+                    // for its poll's as a contest's does; a create is one or the other
+                    let decision_proposal_fund = document_create_transition_action
+                        .decision_proposal()
+                        .and_then(|decision_proposal| decision_proposal.stated_fund.as_ref())
+                        .map_or(0, |(_, fund)| *fund);
+                    contest_fund.and_then(|fund| fund.checked_add(decision_proposal_fund))
+                }
                 _ => None,
             })
             .fold((None, false), |(acc, _), price| match acc {

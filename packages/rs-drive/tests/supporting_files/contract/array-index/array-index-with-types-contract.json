@@ -1,0 +1,65 @@
+{
+  "$formatVersion": "0",
+  "id": "9NRsVP68gRuYYwE6djM5jD3GwCGvUqUxRKTdaQRnqsPf",
+  "ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+  "version": 1,
+  "documentSchemas": {
+    "item": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        { "name": "byOwner", "properties": [{ "$ownerId": "asc" }] },
+        { "name": "byTag", "properties": [{ "tags": "asc" }] },
+        { "name": "byScore", "properties": [{ "scores": "asc" }], "countable": "countable" },
+        { "name": "byIdentifier", "properties": [{ "identifiers": "asc" }] },
+        { "name": "byKey", "properties": [{ "keys": "asc" }, { "name": "asc" }] },
+        { "name": "byFlag", "properties": [{ "flags": "asc" }] }
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 63,
+          "position": 0
+        },
+        "tags": {
+          "type": "array",
+          "maxItems": 10,
+          "items": { "type": "string", "maxLength": 50 },
+          "position": 1
+        },
+        "scores": {
+          "type": "array",
+          "maxItems": 10,
+          "items": { "type": "integer", "minimum": -1000000, "maximum": 1000000 },
+          "position": 2
+        },
+        "identifiers": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32
+          },
+          "position": 3
+        },
+        "keys": {
+          "type": "array",
+          "maxItems": 4,
+          "items": { "type": "array", "byteArray": true, "minItems": 1, "maxItems": 16 },
+          "position": 4
+        },
+        "flags": {
+          "type": "array",
+          "maxItems": 2,
+          "items": { "type": "boolean" },
+          "position": 5
+        }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    }
+  }
+}

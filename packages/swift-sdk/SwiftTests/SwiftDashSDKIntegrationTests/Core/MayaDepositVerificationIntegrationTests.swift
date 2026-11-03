@@ -69,7 +69,7 @@ final class MayaDepositVerificationIntegrationTests: IntegrationTestCase {
 
     func testPrompt04StaticProofAndLegacyFeeParity() async throws {
         try skipUnlessEnabled()
-        try env.walletManager.startSpv(config: env.spvConfig)
+        try await env.walletManager.startSpv(config: env.spvConfig)
 
         let shortDeposit = try await buildDepositObservation(
             name: "short-memo-single-input",
@@ -135,7 +135,7 @@ final class MayaDepositVerificationIntegrationTests: IntegrationTestCase {
     /// the failed call.
     func testOpReturnCeilingBoundaryAndRejectionPreservesBuilder() async throws {
         try skipUnlessEnabled()
-        try env.walletManager.startSpv(config: env.spvConfig)
+        try await env.walletManager.startSpv(config: env.spvConfig)
 
         let wallet = try await env.makeTestWallet(name: "maya-op-return-boundary")
         let coreWallet = wallet.getCoreWallet()

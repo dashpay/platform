@@ -352,6 +352,7 @@ describe('ContractsFacade', () => {
       reason: { code: 2, text: 'spam' },
       removedAt: BigInt(1800000000000),
       documentHash: '11'.repeat(32),
+      keptFields: { hashtag: 'dash', $createdAt: BigInt(1799999990000) },
     };
 
     it('should forward moderatorDeleteDocument() to contractDeleteDocument() and return the removal record', async function run() {
@@ -372,6 +373,11 @@ describe('ContractsFacade', () => {
 
       expect(stub).to.be.calledOnceWithExactly(options);
       expect(result).to.equal(record);
+      // What the type keeps public of the removed document rides with the record.
+      expect(result.keptFields).to.deep.equal({
+        hashtag: 'dash',
+        $createdAt: BigInt(1799999990000),
+      });
     });
 
     it('should delete a document without a reason', async function run() {
@@ -391,6 +397,22 @@ describe('ContractsFacade', () => {
 
       expect(stub).to.be.calledOnceWithExactly(options);
       expect(result.reason).to.deep.equal({ text: '' });
+    });
+
+    it('should resolve with no record on a type whose deletions keep none', async function run() {
+      const stub = this.sinon.stub(wasmSdk, 'contractDeleteDocument').resolves(undefined);
+      const options = {
+        identity: Object.create(wasmSDKPackage.Identity.prototype),
+        contractId,
+        documentTypeName,
+        documentId,
+        signer,
+      };
+
+      const result = await client.contracts.moderatorDeleteDocument(options);
+
+      expect(stub).to.be.calledOnceWithExactly(options);
+      expect(result).to.equal(undefined);
     });
 
     it('should forward moderatorRestoreDocument() to contractRestoreDocument() and return the marked record', async function run() {
@@ -416,6 +438,24 @@ describe('ContractsFacade', () => {
       expect(stub).to.be.calledOnceWithExactly(options);
       expect(result).to.equal(record);
       expect(result.restoredBy).to.equal(identityId);
+    });
+
+    it('should forward moderatorChangeDocumentFields() to contractChangeDocumentFields() and return the changed document', async function run() {
+      const changed = Object.create(wasmSDKPackage.Document.prototype);
+      const stub = this.sinon.stub(wasmSdk, 'contractChangeDocumentFields').resolves(changed);
+      const options = {
+        identity: Object.create(wasmSDKPackage.Identity.prototype),
+        contractId,
+        documentTypeName,
+        documentId,
+        fields: { status: 2, resolution: null },
+        signer,
+      };
+
+      const result = await client.contracts.moderatorChangeDocumentFields(options);
+
+      expect(stub).to.be.calledOnceWithExactly(options);
+      expect(result).to.equal(changed);
     });
 
     it('should fetch the removal records of the documents named, which carry no cursor', async function run() {
@@ -449,6 +489,130 @@ describe('ContractsFacade', () => {
       const result = await client.contracts.documentRemovalsWithProof(query);
 
       expect(stub).to.be.calledOnceWithExactly(query);
+      expect(result).to.equal(response);
+    });
+
+    // The proposal of a settled document's deletion names the document and the reason, and
+    // resolves to the team action it opened; an approval names that action alone.
+    const settledReason = { code: 3, text: 'doxxing', reasonDocumentId: contractId };
+    const actionId = 'cGfHiC6Kgg3FpFZvgwGcswsCRtp4aBP2fzuXRQPizuN';
+    const teamAction = {
+      actionId,
+      proposerId: identityId,
+      proposedAt: BigInt(1800000000000),
+      event: {
+        type: 'deleteSettledDocument',
+        documentTypeName,
+        documentId,
+        documentLastModifiedAt: BigInt(1700000000000),
+        documentRevision: BigInt(2),
+        reason: settledReason,
+      },
+      approvalCount: 2,
+    };
+
+    it('should forward moderatorDeleteSettledDocument() to contractDeleteSettledDocument() and return the team action it opened', async function run() {
+      const signature = { contractId, actionId, status: 'active' };
+      const stub = this.sinon.stub(wasmSdk, 'contractDeleteSettledDocument').resolves(signature);
+      const options = {
+        identity: Object.create(wasmSDKPackage.Identity.prototype),
+        contractId,
+        documentTypeName,
+        documentId,
+        reason: settledReason,
+        signer,
+      };
+
+      const result = await client.contracts.moderatorDeleteSettledDocument(options);
+
+      expect(stub).to.be.calledOnceWithExactly(options);
+      expect(result).to.equal(signature);
+      // Short of the rule: the document stays, and the others approve the action by its id.
+      expect(result.actionId).to.equal(actionId);
+      expect(result.status).to.equal('active');
+    });
+
+    it('should forward moderatorApproveTeamAction() to contractApproveTeamAction() and resolve closed once the approvals meet the rule', async function run() {
+      const signature = { contractId, actionId, status: 'closed' };
+      const stub = this.sinon.stub(wasmSdk, 'contractApproveTeamAction').resolves(signature);
+      const options = {
+        identity: Object.create(wasmSDKPackage.Identity.prototype),
+        contractId,
+        actionId,
+        signer,
+      };
+
+      const result = await client.contracts.moderatorApproveTeamAction(options);
+
+      expect(stub).to.be.calledOnceWithExactly(options);
+      expect(result).to.equal(signature);
+      expect(result.status).to.equal('closed');
+    });
+
+    it('should fetch a page of team actions and its cursor', async function run() {
+      const page = { actions: [teamAction], nextStartAtActionId: actionId };
+      const stub = this.sinon.stub(wasmSdk, 'getContractTeamActions').resolves(page);
+      const query = { contractId, status: 'active' as const, limit: 1 };
+
+      const result = await client.contracts.teamActions(query);
+
+      expect(stub).to.be.calledOnceWithExactly(query);
+      expect(result.actions).to.deep.equal([teamAction]);
+      expect(result.nextStartAtActionId).to.equal(actionId);
+    });
+
+    it('should fetch team actions with proof', async function run() {
+      const response = { data: { actions: [] }, proof: {}, metadata: {} };
+      const stub = this.sinon.stub(wasmSdk, 'getContractTeamActionsWithProofInfo').resolves(response);
+      const query = {
+        contractId, status: 'closed' as const, startAtActionId: actionId, startAtActionIdIncluded: true,
+      };
+
+      const result = await client.contracts.teamActionsWithProof(query);
+
+      expect(stub).to.be.calledOnceWithExactly(query);
+      expect(result).to.equal(response);
+    });
+
+    it('should fetch the signers of a team action', async function run() {
+      const signers = { signerIds: [identityId, contractId] };
+      const stub = this.sinon.stub(wasmSdk, 'getContractTeamActionSigners').resolves(signers);
+      const query = { contractId, status: 'active' as const, actionId };
+
+      const result = await client.contracts.teamActionSigners(query);
+
+      expect(stub).to.be.calledOnceWithExactly(query);
+      expect(result.signerIds).to.deep.equal([identityId, contractId]);
+    });
+
+    it('should fetch the signers of a team action with proof', async function run() {
+      const response = { data: { signerIds: [] }, proof: {}, metadata: {} };
+      const stub = this.sinon.stub(wasmSdk, 'getContractTeamActionSignersWithProofInfo').resolves(response);
+      const query = { contractId, status: 'closed' as const, actionId };
+
+      const result = await client.contracts.teamActionSignersWithProof(query);
+
+      expect(stub).to.be.calledOnceWithExactly(query);
+      expect(result).to.equal(response);
+    });
+
+    it('should forward moderationActionCounts() to getContractModerationActionCounts()', async function run() {
+      const counts = { counts: [{ identityId, count: 3 }] };
+      const stub = this.sinon.stub(wasmSdk, 'getContractModerationActionCounts').resolves(counts);
+
+      const result = await client.contracts.moderationActionCounts(contractId);
+
+      expect(stub).to.be.calledOnceWithExactly(contractId);
+      expect(result.counts).to.deep.equal([{ identityId, count: 3 }]);
+    });
+
+    it('should fetch the moderation action counts with proof', async function run() {
+      const response = { data: { counts: [] }, proof: {}, metadata: {} };
+      const stub = this.sinon.stub(wasmSdk, 'getContractModerationActionCountsWithProofInfo').resolves(response);
+
+      const result = await client.contracts.moderationActionCountsWithProof(contractId);
+
+      expect(stub).to.be.calledOnceWithExactly(contractId);
       expect(result).to.equal(response);
     });
   });

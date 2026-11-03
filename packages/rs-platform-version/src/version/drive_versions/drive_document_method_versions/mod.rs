@@ -4,6 +4,7 @@ pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentMethodVersions {
@@ -15,6 +16,42 @@ pub struct DriveDocumentMethodVersions {
     pub estimation_costs: DriveDocumentEstimationCostsMethodVersions,
     pub index_uniqueness: DriveDocumentIndexUniquenessMethodVersions,
     pub primary_key_tree_type: FeatureVersion,
+    pub expiration: DriveDocumentExpirationMethodVersions,
+    /// `Drive::fetch_property_constraint_aggregate`: a `countOf` or `sumOf` total a
+    /// `propertyConstraints` rule reads, from the count or sum tree keeping it. Reachable
+    /// from protocol version 14 only, the first version whose parser reads a rule; the slot
+    /// is 0 in every table.
+    pub fetch_property_constraint_aggregate: FeatureVersion,
+    /// `insert_empty_private_document_store_operation`: the operation creating the store of a
+    /// private document type at the type's key `[0]` when a contract registers the type or an
+    /// update adds it, sized from the protocol version's private document store limits
+    /// (`SystemLimits::private_document_store_target_chunk_bytes` and the two chunk power
+    /// bounds). `Some(0)` from `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (protocol version 15),
+    /// `None` in every earlier table, which admit no private document type.
+    pub insert_empty_private_document_store_operation: OptionalFeatureVersion,
+    /// `fetch_private_document_entries`: a page of the entries of a private document type's
+    /// store, in append order, each split into Drive's header and the client's entry.
+    /// `Some(0)` from `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (protocol version 15), `None` before.
+    pub fetch_private_document_entries: OptionalFeatureVersion,
+    /// `prove_private_document_entries`: the proof of such a page, which
+    /// `verify_private_document_entries` checks. `Some(0)` from
+    /// `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (protocol version 15), `None` before.
+    pub prove_private_document_entries: OptionalFeatureVersion,
+}
+
+/// Drive methods of document expiry: the expirations tree under `Misc` that indexes every
+/// document of a type declaring a `ttl` by the time it expires, and the cleanup that
+/// deletes expired documents after each block's state transitions. Reachable from protocol
+/// version 14 only, the first version whose parser reads the `ttl` keyword; the slots are
+/// 0 in every table.
+#[derive(Clone, Debug, Default)]
+pub struct DriveDocumentExpirationMethodVersions {
+    pub insert_document_ttl_trees: FeatureVersion,
+    pub add_document_expiration_operations: FeatureVersion,
+    pub remove_document_expiration_operations: FeatureVersion,
+    pub fetch_expired_documents: FeatureVersion,
+    pub remove_expired_documents: FeatureVersion,
+    pub add_estimation_costs_for_document_expiration: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -85,6 +122,13 @@ pub struct DriveDocumentQueryMethodVersions {
     /// structurally and reports duplicate-field and overlap errors
     /// instead. Flips together with `non_primary_key_path_query`.
     pub where_clause_grouping: FeatureVersion,
+    /// Reading a query's `startAt`/`startAfter` cursor document from the
+    /// type's primary-key tree. v0 decodes only a plain `Item` and refuses
+    /// any other element as a corrupted path, so a cursor on a
+    /// `documentsSummable` type, whose documents are stored as
+    /// `ItemWithSumItem`, fails every query; v1 (protocol version 14)
+    /// decodes any item element, as the proof verifier always has.
+    pub start_at_document: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -164,7 +208,12 @@ pub struct DriveDocumentIndexUniquenessMethodVersions {
     pub validate_document_transfer_transition_action_uniqueness: FeatureVersion,
     pub validate_document_purchase_transition_action_uniqueness: FeatureVersion,
     pub validate_document_update_price_transition_action_uniqueness: FeatureVersion,
-    pub validate_restored_document_uniqueness: FeatureVersion,
+    pub validate_moderated_document_uniqueness: FeatureVersion,
+    /// The shared uniqueness check every method above reaches. 0 takes the
+    /// V0 request (protocol versions 1 to 9), 1 the V1 request (10 to 13),
+    /// 2 the V1 request and reads a dotted index property name as a path
+    /// into nested objects, the way the insert path reads it (14 on).
+    pub validate_uniqueness_of_data: FeatureVersion,
 }
 
 #[cfg(test)]

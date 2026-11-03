@@ -94,12 +94,12 @@ data class PendingInputEntity(
      * lifetime rule: the end-of-round collector deletes the tombstone once
      * the chainlock finality boundary `min(chainlockHeight, syncedHeight)`
      * reaches it — key-wallet's `prune_finalized_observed_spends`
-     * condition verbatim, no observation-age margin — because at that
-     * boundary the funding transaction (necessarily mined at or below
-     * the winner's height) has been filter-scanned with no false
-     * negatives, so an undrained row is provably not the wallet's coin.
-     * A genuine claim drains into its TXO on funding arrival and leaves
-     * the collectible set with the row.
+     * condition over applied chainlocks, no observation-age margin —
+     * because at that boundary the funding transaction (necessarily mined
+     * at or below the winner's height) has been filter-scanned with no
+     * false negatives, so an undrained row is provably not the wallet's
+     * coin. A genuine claim drains into its TXO on funding arrival and
+     * leaves the collectible set with the row.
      *
      * NULL is never collected. A mempool/IS-context sweep (unmined
      * winner) writes its tombstone unstamped on purpose: under DIP-10

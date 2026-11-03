@@ -28,14 +28,18 @@ fn pending_tree_already_queued(
     existing_operations: &mut Vec<LowLevelDriveOperation>,
     drive_operation: &LowLevelDriveOperation,
 ) -> Result<bool, Error> {
-    let (GroveOperation(candidate) | EphemeralGroveOperation(candidate)) = drive_operation else {
+    // The `, _` of both patterns below is the pricing rule an ephemeral operation gained with
+    // document time to live (protocol version 14), ignored here: the match reads only the
+    // grove operation, as it did before, at every protocol version.
+    let (GroveOperation(candidate) | EphemeralGroveOperation(candidate, _)) = drive_operation
+    else {
         return Err(Error::Drive(DriveError::CorruptedCodeExecution(
             "an empty-tree insert must be a grove operation",
         )));
     };
     let mut i = 0;
     while i < existing_operations.len() {
-        let (GroveOperation(previous) | EphemeralGroveOperation(previous)) =
+        let (GroveOperation(previous) | EphemeralGroveOperation(previous, _)) =
             &existing_operations[i]
         else {
             i += 1;

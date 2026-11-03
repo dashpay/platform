@@ -12,12 +12,20 @@ use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicK
 use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dash_sdk::dpp::platform_value::Identifier;
+use dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+use dash_sdk::dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
+use dash_sdk::dpp::voting::vote_polls::VotePoll;
+use dash_sdk::dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
+use dash_sdk::dpp::voting::votes::resource_vote::ResourceVote;
+use dash_sdk::dpp::voting::votes::Vote;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
+use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
 use dash_sdk::platform::transition::update_identity_key_limits::{
     raised_key_limits, UpdateIdentityKeyLimits,
 };
+use dash_sdk::platform::transition::vote::PutVote;
 use js_sys::BigInt;
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
@@ -26,8 +34,11 @@ use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
 use wasm_dpp2::utils::{
     try_from_options_optional, try_from_options_optional_with, try_from_options_with, try_to_array,
-    try_to_u64, IntoWasm,
+    try_to_string, try_to_u64, IntoWasm,
 };
+use wasm_dpp2::voting::resource_vote_choice::ResourceVoteChoiceWasm;
+use wasm_dpp2::voting::vote::VoteWasm;
+use wasm_dpp2::voting::vote_poll::VotePollWasm;
 use wasm_dpp2::PrivateKeyWasm;
 use wasm_dpp2::{IdentityPublicKeyInCreationWasm, IdentitySignerWasm, IdentityWasm};
 
@@ -125,7 +136,7 @@ impl WasmSdk {
                 settings,
             )
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to create identity: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to create identity", e))?;
 
         Ok(())
     }
@@ -213,7 +224,7 @@ impl WasmSdk {
                 settings,
             )
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to top up identity: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to top up identity", e))?;
 
         Ok(BigInt::from(new_balance))
     }
@@ -496,7 +507,7 @@ impl WasmSdk {
                 settings,
             )
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Withdrawal failed: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Withdrawal failed", e))?;
 
         Ok(BigInt::from(remaining_balance))
     }
@@ -689,14 +700,14 @@ impl WasmSdk {
             None,
         )
         .await
-        .map_err(|e| WasmSdkError::generic(format!("Failed to create update transition: {}", e)))?;
+        .map_err(|e| WasmSdkError::with_context("Failed to create update transition", e))?;
 
         // Broadcast the transition
         use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
         state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast update: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to broadcast update", e))?;
 
         Ok(())
     }
@@ -710,25 +721,29 @@ impl WasmSdk {
 #[wasm_bindgen(typescript_custom_section)]
 const MASTERNODE_VOTE_OPTIONS_TS: &'static str = r#"
 /**
- * Options for submitting a masternode vote for a contested resource.
+ * Options for submitting a masternode vote: on a contested resource, or on a yes/no poll such
+ * as a decision proposal's (protocol version 15).
  */
 export interface MasternodeVoteOptions {
   /**
-   * The ProTxHash of the masternode.
+   * The ProTxHash of the masternode: an Identifier, its 32 bytes, the hex Core's RPC shows,
+   * or base58.
    */
-  masternodeProTxHash: Identifier;
+  masternodeProTxHash: IdentifierLike;
 
   /**
-   * The vote poll to vote on.
-   * Use VotePoll.createContestedDocumentResourceVotePoll() to create.
+   * The vote poll to vote on: a contested resource poll
+   * (VotePoll.createContestedDocumentResourceVotePoll() creates one), or a yes/no poll as
+   * getVotePollsByEndDate returns it.
    */
   votePoll: VotePoll;
 
   /**
-   * The vote choice.
-   * Use ResourceVoteChoice.towardsIdentity(), ResourceVoteChoice.abstain(), or ResourceVoteChoice.lock().
+   * The vote choice. On a contested resource, a ResourceVoteChoice:
+   * ResourceVoteChoice.towardsIdentity(), ResourceVoteChoice.abstain(), or
+   * ResourceVoteChoice.lock(). On a yes/no poll, 'yes', 'no' or 'abstain'.
    */
-  voteChoice: ResourceVoteChoice;
+  voteChoice: ResourceVoteChoice | YesNoAbstainVoteChoiceName;
 
   /**
    * The masternode's voting public key.
@@ -756,84 +771,108 @@ extern "C" {
     pub type MasternodeVoteOptionsJs;
 }
 
-/// Main input struct for masternode vote options.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MasternodeVoteOptionsInput {
-    masternode_pro_tx_hash: IdentifierWasm,
-}
-
-fn deserialize_masternode_vote_options(
-    options: JsValue,
-) -> Result<MasternodeVoteOptionsInput, WasmSdkError> {
-    deserialize_required_query(
-        options,
-        "Options object is required",
-        "masternode vote options",
-    )
-}
-
 #[wasm_bindgen]
 impl WasmSdk {
-    /// Submit a masternode vote for a contested resource.
+    /// Submit a masternode vote on a contested resource, or on a yes/no poll such as a
+    /// decision proposal's. A yes/no vote names the poll by its id, which the SDK derives from
+    /// the poll's purpose.
     ///
     /// This method handles the complete voting flow:
-    /// 1. Creates the voting public key from the signer
-    /// 2. Builds and signs the vote transition
-    /// 3. Broadcasts and waits for confirmation
+    /// 1. Builds and signs the vote transition with the voting key
+    /// 2. Broadcasts it and waits for the block that records it
+    /// 3. Verifies the proof of the recorded vote
     ///
-    /// @param options - Vote options including masternode ID, vote poll, choice, and signer
-    /// @returns Promise that resolves when the vote is submitted
+    /// @param options - Vote options including masternode ProTxHash, vote poll, choice, and signer
+    /// @returns The vote as Platform recorded it
     #[wasm_bindgen(js_name = "masternodeVote")]
     pub async fn masternode_vote(
         &self,
         options: MasternodeVoteOptionsJs,
-    ) -> Result<(), WasmSdkError> {
-        use wasm_dpp2::voting::resource_vote_choice::ResourceVoteChoiceWasm;
-        use wasm_dpp2::voting::vote_poll::VotePollWasm;
+    ) -> Result<VoteWasm, WasmSdkError> {
+        let pro_tx_hash: Identifier =
+            IdentifierWasm::try_from_options(&options, "masternodeProTxHash")?.into();
+        let vote_poll: VotePoll = VotePollWasm::try_from_options(&options, "votePoll")?.into();
+        match vote_poll {
+            VotePoll::ContestedDocumentResourceVotePoll(_) => {
+                let resource_vote_choice: ResourceVoteChoice =
+                    ResourceVoteChoiceWasm::try_from_options(&options, "voteChoice")?.into();
+                let signing = MasternodeVoteSigning::from_options(&options)?;
+                let vote = Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0::try_new(
+                    vote_poll,
+                    resource_vote_choice,
+                )?));
+                self.put_masternode_vote(pro_tx_hash, vote, signing).await
+            }
+            VotePoll::YesNoVotePoll(vote_poll) => {
+                let vote_choice = yes_no_vote_choice_from_options(&options, "voteChoice")?;
+                let signing = MasternodeVoteSigning::from_options(&options)?;
+                let vote = self
+                    .inner_sdk()
+                    .yes_no_vote(&vote_poll.purpose, vote_choice)
+                    .await?;
+                self.put_masternode_vote(pro_tx_hash, vote, signing).await
+            }
+        }
+    }
+}
 
-        // Extract complex types first (borrows &options)
-        let vote_poll: dash_sdk::dpp::voting::vote_polls::VotePoll =
-            VotePollWasm::try_from_options(&options, "votePoll")?.into();
-        let resource_vote_choice: dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice =
-            ResourceVoteChoiceWasm::try_from_options(&options, "voteChoice")?.into();
-        let voting_public_key: IdentityPublicKey =
-            IdentityPublicKeyWasm::try_from_options(&options, "votingKey")?.into();
-        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
-        let settings =
-            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+/// How a masternode vote is signed and broadcast: the `votingKey`, `signer` and `settings` of
+/// a vote's options, read before anything reaches the network.
+pub(crate) struct MasternodeVoteSigning {
+    voting_public_key: IdentityPublicKey,
+    signer: IdentitySignerWasm,
+    settings: Option<PutSettings>,
+}
 
-        // Deserialize simple fields last (consumes options)
-        let parsed = deserialize_masternode_vote_options(options.into())?;
+impl MasternodeVoteSigning {
+    /// Reads `votingKey`, `signer` and `settings` from `options`.
+    pub(crate) fn from_options(options: &JsValue) -> Result<Self, WasmSdkError> {
+        Ok(Self {
+            voting_public_key: IdentityPublicKeyWasm::try_from_options(options, "votingKey")?
+                .into(),
+            signer: IdentitySignerWasm::try_from_options(options, "signer")?,
+            settings: try_from_options_optional::<PutSettingsInput>(options, "settings")?
+                .map(Into::into),
+        })
+    }
+}
 
-        // Convert ProTxHash
-        let pro_tx_hash: Identifier = parsed.masternode_pro_tx_hash.into();
+impl WasmSdk {
+    /// Signs `vote` for the masternode `pro_tx_hash` as `signing` says, broadcasts it, and
+    /// returns the vote as Platform recorded it.
+    pub(crate) async fn put_masternode_vote(
+        &self,
+        pro_tx_hash: Identifier,
+        vote: Vote,
+        signing: MasternodeVoteSigning,
+    ) -> Result<VoteWasm, WasmSdkError> {
+        let recorded_vote = vote
+            .put_to_platform_and_wait_for_response(
+                pro_tx_hash,
+                &signing.voting_public_key,
+                self.inner_sdk(),
+                &signing.signer,
+                signing.settings,
+            )
+            .await?;
 
-        // Create the resource vote
-        use dash_sdk::dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
-        use dash_sdk::dpp::voting::votes::resource_vote::ResourceVote;
-        let resource_vote = ResourceVote::V0(ResourceVoteV0 {
-            vote_poll,
-            resource_vote_choice,
-        });
+        Ok(recorded_vote.into())
+    }
+}
 
-        // Create the vote
-        use dash_sdk::dpp::voting::votes::Vote;
-        let vote = Vote::ResourceVote(resource_vote);
-
-        // Submit the vote using PutVote trait
-        use dash_sdk::platform::transition::vote::PutVote;
-
-        vote.put_to_platform(
-            pro_tx_hash,
-            &voting_public_key,
-            self.inner_sdk(),
-            &signer,
-            settings,
-        )
-        .await?;
-
-        Ok(())
+/// The answer `property` of `options` gives on a yes/no poll: `'yes'`, `'no'` or `'abstain'`.
+pub(crate) fn yes_no_vote_choice_from_options(
+    options: &JsValue,
+    property: &str,
+) -> Result<YesNoAbstainVoteChoice, WasmSdkError> {
+    let choice = try_from_options_with(options, property, |value| try_to_string(value, property))?;
+    match choice.as_str() {
+        "yes" => Ok(YesNoAbstainVoteChoice::Yes),
+        "no" => Ok(YesNoAbstainVoteChoice::No),
+        "abstain" => Ok(YesNoAbstainVoteChoice::Abstain),
+        other => Err(WasmSdkError::invalid_argument(format!(
+            "{property} on a yes/no poll is 'yes', 'no' or 'abstain', got '{other}'"
+        ))),
     }
 }
 

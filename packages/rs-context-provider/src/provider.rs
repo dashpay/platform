@@ -3,13 +3,21 @@ use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
 use drive::{error::proof::ProofError, query::ContractLookupFn};
-use std::{ops::Deref, sync::Arc};
+use std::{future::Future, ops::Deref, pin::Pin, sync::Arc};
 
 #[cfg(feature = "mocks")]
 use {
     dpp::data_contract::serialized_version::DataContractInSerializationFormat, hex::ToHex,
     std::io::ErrorKind,
 };
+
+/// Future returned by [ContextProvider::fetch_quorum_public_key].
+///
+/// `Send` on every target because the SDK's request futures are `Send`
+/// everywhere, and `'static` so that wrappers such as `Mutex<T>` can forward
+/// the call without holding a guard across an await.
+pub type QuorumKeyFuture =
+    Pin<Box<dyn Future<Output = Result<Option<[u8; 48]>, ContextProviderError>> + Send + 'static>>;
 
 /// Interface between the Sdk and state of the application.
 ///
@@ -91,6 +99,39 @@ pub trait ContextProvider: Send + Sync {
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], ContextProviderError>; // public key is 48 bytes
 
+    /// Fetches the public key of a quorum this provider does not hold yet.
+    ///
+    /// The SDK calls this from async code when proof verification failed
+    /// because [get_quorum_public_key](Self::get_quorum_public_key) had no key
+    /// for the quorum, and verifies the same response again when a key comes
+    /// back. This lets a provider that caches quorum keys, and cannot block
+    /// inside the synchronous lookup, fetch a key that is newer than its cache.
+    ///
+    /// The arguments come from a response that has not been verified yet. The
+    /// key must come from the provider's own trusted source, never from the
+    /// arguments, and the work done must stay bounded whatever they are.
+    ///
+    /// # Returns
+    ///
+    /// * `None`: an asynchronous fetch would not help, for example because the
+    ///   provider cannot fetch keys or its synchronous lookup already fetched.
+    ///   This is the default.
+    /// * `Some(future)`, resolving to:
+    ///   * `Ok(Some(key))`: the key, which `get_quorum_public_key` now returns
+    ///     as well.
+    ///   * `Ok(None)`: the trusted source, asked after this call was made,
+    ///     answered and does not know this quorum.
+    ///   * `Err(_)`: the provider could not find out, for example because its
+    ///     trusted source was unreachable.
+    fn fetch_quorum_public_key(
+        &self,
+        _quorum_type: u32,
+        _quorum_hash: [u8; 32],
+        _core_chain_locked_height: u32,
+    ) -> Option<QuorumKeyFuture> {
+        None
+    }
+
     /// Gets the platform activation height from core. Once this has happened this can be hardcoded.
     ///
     /// # Returns
@@ -128,6 +169,16 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
     ) -> Result<[u8; 48], ContextProviderError> {
         self.as_ref()
             .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
+    }
+
+    fn fetch_quorum_public_key(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) -> Option<QuorumKeyFuture> {
+        self.as_ref()
+            .fetch_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
@@ -169,6 +220,17 @@ where
     ) -> Result<[u8; 48], ContextProviderError> {
         let lock = self.lock().expect("lock poisoned");
         lock.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
+    }
+
+    fn fetch_quorum_public_key(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) -> Option<QuorumKeyFuture> {
+        // The future is 'static, so the guard is released before it is awaited.
+        let lock = self.lock().expect("lock poisoned");
+        lock.fetch_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
@@ -351,5 +413,131 @@ impl ContextProvider for MockContextProvider {
 impl<'a, T: ContextProvider + 'a> AsRef<dyn ContextProvider + 'a> for Arc<T> {
     fn as_ref(&self) -> &(dyn ContextProvider + 'a) {
         self.deref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
+
+    /// Provider whose `fetch_quorum_public_key` counts its calls and records
+    /// the quorum it was asked for.
+    #[derive(Default)]
+    struct FetchingProvider {
+        calls: AtomicUsize,
+        asked: Mutex<Option<(u32, [u8; 32], u32)>>,
+    }
+
+    impl ContextProvider for FetchingProvider {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Err(ContextProviderError::InvalidQuorum(
+                "not cached".to_string(),
+            ))
+        }
+
+        fn fetch_quorum_public_key(
+            &self,
+            quorum_type: u32,
+            quorum_hash: [u8; 32],
+            core_chain_locked_height: u32,
+        ) -> Option<QuorumKeyFuture> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            *self.asked.lock().unwrap() =
+                Some((quorum_type, quorum_hash, core_chain_locked_height));
+            Some(Box::pin(async { Ok(Some([7u8; 48])) }))
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
+    }
+
+    /// The SDK reaches its provider through `Arc`, `Box<dyn ContextProvider>`
+    /// and `Mutex` wrappers. A wrapper that fell back to the default `None`
+    /// would silently turn off fetching of keys newer than the provider's
+    /// cache, so every wrapper must reach the inner provider with the same
+    /// arguments.
+    #[test]
+    fn should_forward_quorum_key_fetches_through_every_wrapper() {
+        fn assert_forwards(provider: &dyn ContextProvider, inner: &FetchingProvider, call: usize) {
+            assert!(provider
+                .fetch_quorum_public_key(6, [0xab; 32], 42)
+                .is_some());
+            assert_eq!(inner.calls.load(Ordering::SeqCst), call);
+            assert_eq!(*inner.asked.lock().unwrap(), Some((6, [0xab; 32], 42)));
+        }
+
+        let inner = Arc::new(FetchingProvider::default());
+
+        let arc: Arc<FetchingProvider> = Arc::clone(&inner);
+        assert_forwards(&arc, &inner, 1);
+
+        let boxed: Arc<Box<dyn ContextProvider>> =
+            Arc::new(Box::new(Arc::clone(&inner)) as Box<dyn ContextProvider>);
+        assert_forwards(&boxed, &inner, 2);
+
+        let mutex = std::sync::Mutex::new(Arc::clone(&inner));
+        assert_forwards(&mutex, &inner, 3);
+    }
+
+    /// Providers that do not override the method keep their behaviour: the
+    /// SDK sees `None` and reports the original verification error.
+    #[test]
+    fn should_not_fetch_quorum_keys_by_default() {
+        struct CacheOnly;
+        impl ContextProvider for CacheOnly {
+            fn get_data_contract(
+                &self,
+                _id: &Identifier,
+                _platform_version: &PlatformVersion,
+            ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+                Ok(None)
+            }
+            fn get_token_configuration(
+                &self,
+                _token_id: &Identifier,
+            ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+                Ok(None)
+            }
+            fn get_quorum_public_key(
+                &self,
+                _quorum_type: u32,
+                _quorum_hash: [u8; 32],
+                _core_chain_locked_height: u32,
+            ) -> Result<[u8; 48], ContextProviderError> {
+                Err(ContextProviderError::InvalidQuorum(
+                    "not cached".to_string(),
+                ))
+            }
+            fn get_platform_activation_height(
+                &self,
+            ) -> Result<CoreBlockHeight, ContextProviderError> {
+                Ok(1)
+            }
+        }
+
+        assert!(CacheOnly.fetch_quorum_public_key(6, [0; 32], 1).is_none());
     }
 }

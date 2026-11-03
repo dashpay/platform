@@ -53,11 +53,8 @@
           "refersTo": {
             "type": "permanentDocument",
             "documentType": "ballot",
-            "lookup": {
-              "index": "byCharter",
-              "keys": {
-                "submittedCharterId": "."
-              }
+            "findBy": {
+              "submittedCharterId": "."
             }
           }
         }

@@ -3,10 +3,11 @@
 //! the block time it was paid out in, and the identity that claimed it.
 
 use crate::error::WasmSdkError;
+use crate::queries::utils::parse_contract_id;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::platform::contract_fee_pots::{ContractFeePotState, ContractFeePots};
-use dash_sdk::platform::{Fetch, Identifier};
+use dash_sdk::platform::Fetch;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
@@ -46,11 +47,6 @@ export interface ContractFeePots {
   moderators: ContractFeePotState;
 }
 "#;
-
-fn parse_contract_id(id: IdentifierLikeJs) -> Result<Identifier, WasmSdkError> {
-    id.try_into()
-        .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract id: {err}")))
-}
 
 fn pot_to_js(pot: &ContractFeePotState) -> Result<JsValue, WasmSdkError> {
     let result = js_sys::Object::new();

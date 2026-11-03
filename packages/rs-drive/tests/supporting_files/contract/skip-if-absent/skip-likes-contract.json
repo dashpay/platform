@@ -1,0 +1,79 @@
+{
+  "$formatVersion": "0",
+  "id": "8ZqBvYVdVLLZrPpW9fyEEyKmCyUQ1mvhWCCJvBavXUhV",
+  "ownerId": "AtirhSVpAWF7dEt6dLAmesC4Sr1MsJ9bFC1nLAoNnq2S",
+  "version": 1,
+  "documentSchemas": {
+    "like": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byPost",
+          "properties": [{ "postId": "asc" }],
+          "terminal": "$ownerId",
+          "rangeCountable": true,
+          "rankedCountable": true
+        },
+        {
+          "name": "byHashtagPost",
+          "properties": [{ "hashtag": "asc" }, { "postId": "asc" }],
+          "terminal": "$ownerId",
+          "rangeCountable": true,
+          "rankedCountable": { "at": ["hashtag", "postId"] },
+          "skipIfAbsent": true
+        },
+        {
+          "name": "byDayPost",
+          "properties": [{ "$createdAt": "asc" }, { "postId": "asc" }],
+          "terminal": "$ownerId",
+          "rangeCountable": true,
+          "rankedCountable": true,
+          "timeRange": { "on": "$createdAt", "range": 86400, "step": 86400, "ttl": 604800 }
+        },
+        {
+          "name": "byDayHashtagPost",
+          "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }, { "postId": "asc" }],
+          "terminal": "$ownerId",
+          "rangeCountable": true,
+          "rankedCountable": { "at": ["hashtag", "postId"] },
+          "timeRange": { "on": "$createdAt", "range": 86400, "step": 86400, "ttl": 604800 },
+          "skipIfAbsent": true
+        },
+        {
+          "name": "byRollingHashtagPost",
+          "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }, { "postId": "asc" }],
+          "terminal": "$ownerId",
+          "rangeCountable": true,
+          "rankedCountable": { "at": ["hashtag", "postId"] },
+          "timeRange": { "on": "$createdAt", "range": 86400, "step": 21600, "ttl": 604800 },
+          "skipIfAbsent": ["hashtag"]
+        },
+        {
+          "name": "byLiker",
+          "properties": [{ "$ownerId": "asc" }],
+          "terminal": "postId"
+        }
+      ],
+      "properties": {
+        "hashtag": {
+          "type": "string",
+          "maxLength": 61,
+          "position": 0
+        },
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 1
+        }
+      },
+      "required": ["$createdAt", "postId"],
+      "additionalProperties": false
+    }
+  }
+}

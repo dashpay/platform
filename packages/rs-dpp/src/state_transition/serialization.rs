@@ -120,6 +120,24 @@ impl StateTransition {
                 )?
                 .into()
             }
+            StateTransitionType::TokenShieldedTransferWithShieldedFee => {
+                TokenShieldedTransferWithShieldedFeeTransition::deserialize_from_bytes_untrusted_exact(
+                    bytes,
+                )?
+                .into()
+            }
+            StateTransitionType::TokenUnshieldWithShieldedFee => {
+                TokenUnshieldWithShieldedFeeTransition::deserialize_from_bytes_untrusted_exact(
+                    bytes,
+                )?
+                .into()
+            }
+            StateTransitionType::TokenPurchaseFromShieldedPool => {
+                TokenPurchaseFromShieldedPoolTransition::deserialize_from_bytes_untrusted_exact(
+                    bytes,
+                )?
+                .into()
+            }
             StateTransitionType::IdentityKeyLimitsUpdate => {
                 IdentityKeyLimitsUpdateTransition::deserialize_from_bytes_untrusted_exact(bytes)?
                     .into()
@@ -202,6 +220,7 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
+    use platform_serialization::PLATFORM_BINCODE_CONFIG;
 
     #[test]
     /// Given mainnet transaction 6CDCC15AC4EC68DBB414EE0DA692DFE363A996A0F285423BEFC3A29F87948A0D,
@@ -782,9 +801,7 @@ mod tests {
     /// contain `fake_len` bytes. The total payload is small but the decoded
     /// length would trigger a huge allocation without the limit guard.
     fn craft_oversized_vec_payload(fake_len: u64) -> Vec<u8> {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         // Build the payload: variant discriminant + version + bogus vec length + filler
         let mut buf = Vec::new();
         // StateTransition enum discriminant for IdentityCreditWithdrawal (index 5)
@@ -1045,8 +1062,7 @@ mod tests {
             signature: Default::default(),
         }
         .into();
-        let tagged = bincode::encode_to_vec(&st, bincode::config::standard().with_big_endian())
-            .expect("encodes");
+        let tagged = bincode::encode_to_vec(&st, PLATFORM_BINCODE_CONFIG).expect("encodes");
 
         match StateTransition::deserialize_untagged_untrusted_exact(
             StateTransitionType::IdentityCreditWithdrawal,

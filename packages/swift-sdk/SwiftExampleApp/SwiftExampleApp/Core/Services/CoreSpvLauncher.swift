@@ -13,10 +13,12 @@ import SwiftDashSDK
 @MainActor
 enum CoreSpvLauncher {
     /// Build the start config for `network` and start SPV on
-    /// `walletManager`. `startSpv` itself returns immediately (it spawns
-    /// the sync loop on the shared tokio runtime), but resolving the
-    /// peer override is done off the main actor first: on devnet
-    /// `peerOverride` blocks on a `DispatchSemaphore` up to ~6 s inside
+    /// `walletManager`. The async `startSpv` runs the blocking native
+    /// start (opening the SPV store, which can take seconds on a
+    /// one-time storage migration) off the main actor and suspends until
+    /// the sync loop is spawned. Resolving the peer override is likewise
+    /// done off the main actor first: on devnet `peerOverride` blocks on
+    /// a `DispatchSemaphore` up to ~6 s inside
     /// `SDK.discoverActiveMasternodes`, which would freeze the UI on a
     /// cold launch.
     ///
@@ -38,7 +40,7 @@ enum CoreSpvLauncher {
         try await start(
             network: network,
             stillCurrent: stillCurrent,
-            startSpv: { config in try walletManager.startSpv(config: config) }
+            startSpv: { config in try await walletManager.startSpv(config: config) }
         )
     }
 
@@ -53,7 +55,7 @@ enum CoreSpvLauncher {
     static func start(
         network: Network,
         stillCurrent: @MainActor () -> Bool,
-        startSpv: @MainActor (PlatformSpvStartConfig) throws -> Void
+        startSpv: @MainActor (PlatformSpvStartConfig) async throws -> Void
     ) async throws {
         // Network-derived; safe to compute pre-await because we bail on a
         // `stillCurrent` mismatch below before invoking `startSpv` — and
@@ -97,7 +99,7 @@ enum CoreSpvLauncher {
             restrictToConfiguredPeers: restrictToConfiguredPeers,
             devnetName: devnetName
         )
-        try startSpv(config)
+        try await startSpv(config)
     }
 
     /// Resolve the SPV peer override for the given network / docker

@@ -3,8 +3,9 @@
 //! leader. Thin bindings over `dash_sdk::platform::moderation_charters`, where every read is a
 //! proved document query on the system contract.
 
-use crate::encrypted_for::message_from_options;
+use crate::encrypted_for::{message_from_options, secret_key_from_options};
 use crate::error::WasmSdkError;
+use crate::queries::utils::{documents_map, documents_page_of};
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::moderation_charter::{
     ELECTED_CHARTER_DOCUMENT_TYPE_NAME, JOIN_REQUEST_DOCUMENT_TYPE_NAME,
@@ -16,15 +17,12 @@ use dash_sdk::platform::moderation_charters::{
     ResignationRequestInput,
 };
 use dash_sdk::platform::{Document, Fetch, Identifier, Identity};
-use drive_proof_verifier::types::Documents;
 use js_sys::{Array, Map};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
 use wasm_dpp2::identity::IdentityWasm;
-use wasm_dpp2::utils::{try_from_options_optional_with, try_to_u32};
-use wasm_dpp2::PrivateKeyWasm;
 
 #[wasm_bindgen(typescript_custom_section)]
 const MODERATION_CHARTERS_TS: &'static str = r#"
@@ -137,6 +135,43 @@ impl ModerationTeamWasm {
             .collect()
     }
 
+    /// The members the charter's election seated, in declared order, removed since or not: each
+    /// holds a seat. Compare with `members`, the team as it is now.
+    #[wasm_bindgen(getter = electedMembers, unchecked_return_type = "Identifier[]")]
+    pub fn elected_members(&self) -> Array {
+        self.0
+            .elected_members
+            .iter()
+            .map(|id| JsValue::from(IdentifierWasm::from(*id)))
+            .collect()
+    }
+
+    /// The most members the team can hold, given the target contract's elected declaration's
+    /// `maxAddedModerators`: the leader, the members the charter elected (a removed one keeps
+    /// its seat) and the additions allowed, filled or not, as consensus counts them. A
+    /// `moderatorAbilities.deleteSettled` rule asking for more approvals needs every seat's, so
+    /// a settled deletion needs `Math.min(approvals, seats)`. An active team action's
+    /// `approvalCount` is an upper bound: its `signerIds` that `contains` accepts are the
+    /// approvals that count.
+    /// A `maxAddedModerators` that is not an integer from 0 to 65535 is refused.
+    #[wasm_bindgen(js_name = "seats")]
+    pub fn seats(
+        &self,
+        #[wasm_bindgen(js_name = "maxAddedModerators")] max_added_moderators: f64,
+    ) -> Result<u16, WasmSdkError> {
+        // A number, not a u16 parameter: wasm-bindgen would wrap one out of range silently
+        if max_added_moderators.fract() != 0.0
+            || !(0.0..=f64::from(u16::MAX)).contains(&max_added_moderators)
+        {
+            return Err(WasmSdkError::invalid_argument(format!(
+                "maxAddedModerators must be an integer from 0 to {}, got {}",
+                u16::MAX,
+                max_added_moderators
+            )));
+        }
+        Ok(self.0.seats(max_added_moderators as u16))
+    }
+
     /// Whether `identityId` is on the team: the leader or an active member.
     #[wasm_bindgen(js_name = "contains")]
     pub fn contains(
@@ -159,10 +194,7 @@ fn page_query(
         return Err(WasmSdkError::invalid_argument("Query object is required"));
     }
     let id = IdentifierWasm::try_from_options(query, id_field)?.into();
-    let start_after =
-        IdentifierWasm::try_from_optional_options(query, "startAfter")?.map(Identifier::from);
-    let limit = try_from_options_optional_with(query, "limit", |value| try_to_u32(value, "limit"))?;
-    Ok((id, CharterDocumentsPage { limit, start_after }))
+    Ok((id, documents_page_of(query)?))
 }
 
 fn document_wasm(document: Document, document_type_name: &str) -> DocumentWasm {
@@ -172,25 +204,6 @@ fn document_wasm(document: Document, document_type_name: &str) -> DocumentWasm {
         document_type_name.to_string(),
         None,
     )
-}
-
-fn documents_map(documents: Documents, document_type_name: &str) -> Map {
-    let map = Map::new();
-    for (id, document) in documents {
-        let key: JsValue = IdentifierWasm::from(id).to_base58().into();
-        match document {
-            Some(document) => {
-                map.set(
-                    &key,
-                    &JsValue::from(document_wasm(document, document_type_name)),
-                );
-            }
-            None => {
-                map.set(&key, &JsValue::NULL);
-            }
-        }
-    }
-    map
 }
 
 fn request_wasm(request: ModerationCharterRequest) -> DocumentWasm {
@@ -298,6 +311,7 @@ impl WasmSdk {
             .await?;
         Ok(documents_map(
             documents,
+            MODERATION_CHARTERS_CONTRACT_ID,
             SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
         ))
     }
@@ -319,7 +333,11 @@ impl WasmSdk {
             .as_ref()
             .fetch_join_requests(submitted_charter_id, page)
             .await?;
-        Ok(documents_map(documents, JOIN_REQUEST_DOCUMENT_TYPE_NAME))
+        Ok(documents_map(
+            documents,
+            MODERATION_CHARTERS_CONTRACT_ID,
+            JOIN_REQUEST_DOCUMENT_TYPE_NAME,
+        ))
     }
 
     /// The resignation requests for a seated charter the leader has not acted on: those whose
@@ -366,10 +384,7 @@ impl WasmSdk {
         let submitted_charter_id: Identifier =
             IdentifierWasm::try_from_options(&options, "submittedCharterId")?.into();
         let message = message_from_options(&options, "message")?;
-        let writer_encryption_key =
-            PrivateKeyWasm::try_from_options(&options, "writerEncryptionKey")?
-                .inner()
-                .inner;
+        let writer_encryption_key = secret_key_from_options(&options, "writerEncryptionKey")?;
         let writer = self.writer_from_options(&options).await?;
         let request = self
             .as_ref()
@@ -396,10 +411,7 @@ impl WasmSdk {
         let elected_charter_id: Identifier =
             IdentifierWasm::try_from_options(&options, "electedCharterId")?.into();
         let message = message_from_options(&options, "message")?;
-        let writer_encryption_key =
-            PrivateKeyWasm::try_from_options(&options, "writerEncryptionKey")?
-                .inner()
-                .inner;
+        let writer_encryption_key = secret_key_from_options(&options, "writerEncryptionKey")?;
         let writer = self.writer_from_options(&options).await?;
         let request = self
             .as_ref()

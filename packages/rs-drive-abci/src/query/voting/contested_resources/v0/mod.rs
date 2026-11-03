@@ -11,6 +11,7 @@ use dapi_grpc::platform::v0::get_contested_resources_response::GetContestedResou
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::platform_value::Value;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
@@ -208,9 +209,7 @@ impl<C> Platform<C> {
                     Err(e) => return Err(e.into()),
                 };
 
-            let encode_config = bincode::config::standard()
-                .with_big_endian()
-                .with_no_limit();
+            let encode_config = PLATFORM_BINCODE_CONFIG;
 
             let contested_resource_values = results
                 .into_iter()
@@ -241,6 +240,7 @@ mod tests {
     use super::*;
     use crate::query::tests::setup_platform;
     use dpp::dashcore::Network;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
     #[test]
     fn test_query_contested_resources_invalid_contract_id() {
@@ -445,8 +445,7 @@ mod tests {
     fn test_query_contested_resources_too_many_cursor_values_rejected_before_decoding() {
         let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
         let encoded =
-            bincode::encode_to_vec(Value::U8(1), bincode::config::standard().with_big_endian())
-                .expect("encode");
+            bincode::encode_to_vec(Value::U8(1), PLATFORM_BINCODE_CONFIG).expect("encode");
 
         let request = GetContestedResourcesRequestV0 {
             start_index_values: vec![encoded; 3],
@@ -489,7 +488,7 @@ mod tests {
         use dapi_grpc::platform::v0::get_contested_resources_request::get_contested_resources_request_v0::StartAtValueInfo;
 
         let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
-        let config = bincode::config::standard().with_big_endian();
+        let config = PLATFORM_BINCODE_CONFIG;
         let end_value =
             bincode::encode_to_vec(Value::Text("label".to_string()), config).expect("encode");
         let start_at_value =

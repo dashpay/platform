@@ -40,7 +40,7 @@
 //!   `wallet_id`), build the master `ExtendedPrivKey`, and drive
 //!   `discover_from_master`. The mnemonic / seed / master scalar all
 //!   live in `Zeroizing` buffers (the master's `private_key` is
-//!   explicitly `non_secure_erase`d — `ExtendedPrivKey` has no `Drop`)
+//!   explicitly `zeroize`d — `ExtendedPrivKey` also wipes on `Drop`)
 //!   and are scrubbed before this function returns. This is the path
 //!   the iOS app takes. If the resolver is null for such a wallet, the
 //!   call returns an error hinting that a mnemonic resolver handle is
@@ -63,6 +63,7 @@ use crate::runtime::block_on_worker;
 use crate::types::Network;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 use rs_sdk_ffi::MnemonicResolverHandle;
+use zeroize::Zeroize;
 
 /// Heap-allocated array of 32-byte identity ids returned by
 /// [`platform_wallet_discover_identities`]. Release by handing the
@@ -219,7 +220,7 @@ pub unsafe extern "C" fn platform_wallet_discover_identities(
         // so the discovery and preview paths can't drift; the helper
         // holds the mnemonic / seed in `Zeroizing` buffers and scrubs
         // them before returning. The master's inner scalar is wiped by
-        // us below (`ExtendedPrivKey` has no `Drop`).
+        // us below (`ExtendedPrivKey` also wipes on `Drop`).
         let master = match unsafe {
             resolve_master_from_resolver(mnemonic_resolver_handle, &wallet_id, network)
         } {
@@ -233,9 +234,9 @@ pub unsafe extern "C" fn platform_wallet_discover_identities(
         // `master`), so we hand ownership in and wipe it INSIDE the
         // future once `discover_from_master` is done deriving.
         //
-        // `ExtendedPrivKey` has no `Drop` / `Zeroize`, so the inner
+        // `ExtendedPrivKey` also wipes on `Drop` / `Zeroize`, so the inner
         // secp256k1 scalar is scrubbed explicitly with
-        // `non_secure_erase` — same hygiene as
+        // `zeroize` — same hygiene as
         // `dash_sdk_sign_with_mnemonic_resolver_and_path` and
         // `mnemonic_resolver_core_signer`. (`seed` / `mnemonic_buf` are
         // `Zeroizing` and already scrubbed inside
@@ -243,7 +244,7 @@ pub unsafe extern "C" fn platform_wallet_discover_identities(
         block_on_worker(async move {
             let mut master = master;
             let scan_result = identity.discover_from_master(opts, &master).await;
-            master.private_key.non_secure_erase();
+            master.private_key.zeroize();
             scan_result
         })
         .map_err(PlatformWalletFFIResult::from)

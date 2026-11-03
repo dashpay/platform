@@ -72,7 +72,7 @@ ARG DEPS_IMAGE=deps-${DEPS_IMAGE:-base}
 #
 # DEPS: INSTALL AND CACHE DEPENDENCIES
 #
-FROM node:20-alpine${ALPINE_VERSION} AS deps-base
+FROM node:22-alpine${ALPINE_VERSION} AS deps-base
 
 #
 # Install some dependencies
@@ -164,6 +164,9 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else e
 # Note that CC / CXX can be updated later on (eg. when configuring sccache)
 RUN rm /usr/bin/cc && \
     ln -s /usr/bin/clang /usr/bin/cc
+# rs-x11-hash archives its wasm32 build with `llvm-ar`, which Alpine keeps off PATH
+RUN ln -s "$(ls -d /usr/lib/llvm*/bin | sort -V | tail -n 1)/llvm-ar" /usr/local/bin/llvm-ar && \
+    llvm-ar --version
 RUN <<EOS
 echo "export CXX='clang++'" >> /root/env
 echo "export CC='clang'" >> /root/env
@@ -351,8 +354,10 @@ RUN --mount=type=secret,id=AWS \
     DOWNLOAD_URL="https://github.com/cargo-bins/cargo-binstall/releases/download/v${BINSTALL_VERSION}/cargo-binstall-${CARGO_BINSTALL_ARCH}.tgz"; \
     # Download and extract the cargo-binstall binary
     curl -A "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0" -L --proto '=https' --tlsv1.2 -sSf "$DOWNLOAD_URL" | tar -xvzf -;  \
-    ./cargo-binstall -y --force cargo-binstall@${BINSTALL_VERSION}; \
-    rm ./cargo-binstall; \
+    # The archive already holds this cargo-binstall version, so install it directly. Letting it
+    # reinstall itself queries the GitHub API and, when that is rate limited, falls back to a
+    # source build that no longer compiles with the current Rust toolchain
+    mv ./cargo-binstall "${CARGO_HOME:-$HOME/.cargo}/bin/cargo-binstall"; \
     cargo binstall -V
 
 RUN --mount=type=secret,id=AWS \
@@ -403,6 +408,8 @@ COPY --parents \
     packages/keyword-search-contract \
     packages/app-connect-contract \
     packages/moderation-charters-contract \
+    packages/decision-proposals-contract \
+    packages/token-market-contract \
     packages/data-contracts \
     packages/strategy-tests \
     packages/simple-signer \
@@ -410,6 +417,7 @@ COPY --parents \
     # TODO: We don't need those. Maybe dynamically remove them from workspace or move outside of monorepo?
     packages/rs-drive-proof-verifier \
     packages/rs-context-provider \
+    packages/rs-core-proof \
     packages/rs-sdk-trusted-context-provider \
     packages/rs-platform-wallet \
     packages/rs-platform-wallet-storage \
@@ -420,6 +428,7 @@ COPY --parents \
     packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-sdk-cxx \
     packages/rs-unified-sdk-ffi \
     packages/rs-unified-sdk-jni \
     packages/check-features \
@@ -527,6 +536,8 @@ COPY --parents \
     packages/keyword-search-contract \
     packages/app-connect-contract \
     packages/moderation-charters-contract \
+    packages/decision-proposals-contract \
+    packages/token-market-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
     packages/dpns-contract \
@@ -539,6 +550,7 @@ COPY --parents \
     # TODO: We don't need those. Maybe dynamically remove them from workspace or move outside of monorepo?
     packages/rs-drive-proof-verifier \
     packages/rs-context-provider \
+    packages/rs-core-proof \
     packages/rs-sdk-trusted-context-provider \
     packages/rs-platform-wallet \
     packages/rs-platform-wallet-storage \
@@ -549,6 +561,7 @@ COPY --parents \
     packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-sdk-cxx \
     packages/rs-unified-sdk-ffi \
     packages/rs-unified-sdk-jni \
     packages/check-features \
@@ -692,6 +705,7 @@ COPY --parents \
     packages/rs-json-schema-compatibility-validator \
     # rs-sdk stack (needed to build wasm-sdk / evo-sdk for the test suite)
     packages/rs-context-provider \
+    packages/rs-core-proof \
     packages/rs-dapi-client \
     packages/rs-dash-platform-macros \
     packages/rs-drive \
@@ -711,6 +725,8 @@ COPY --parents \
     packages/keyword-search-contract \
     packages/app-connect-contract \
     packages/moderation-charters-contract \
+    packages/decision-proposals-contract \
+    packages/token-market-contract \
     packages/masternode-reward-shares-contract \
     packages/dpns-contract \
     packages/data-contracts \
@@ -828,7 +844,10 @@ RUN yarn workspaces focus --production dashmate
 #
 #  STAGE: FINAL DASHMATE HELPER IMAGE
 #
-FROM node:20-alpine${ALPINE_VERSION} AS dashmate-helper
+# Node 24 is the newest usable LTS line: on Node 26 `cbor` (through
+# nofilter 3.1.0) fails every decode with "Insufficient data", which breaks
+# js-dapi-client, and the image ships neither Yarn nor Corepack.
+FROM node:24-alpine${ALPINE_VERSION} AS dashmate-helper
 
 RUN apk add --no-cache docker-cli docker-cli-compose curl
 
@@ -855,6 +874,8 @@ COPY --from=build-dashmate-helper /platform/packages/document-history-contract p
 COPY --from=build-dashmate-helper /platform/packages/keyword-search-contract packages/keyword-search-contract
 COPY --from=build-dashmate-helper /platform/packages/app-connect-contract packages/app-connect-contract
 COPY --from=build-dashmate-helper /platform/packages/moderation-charters-contract packages/moderation-charters-contract
+COPY --from=build-dashmate-helper /platform/packages/decision-proposals-contract packages/decision-proposals-contract
+COPY --from=build-dashmate-helper /platform/packages/token-market-contract packages/token-market-contract
 COPY --from=build-dashmate-helper /platform/packages/withdrawals-contract packages/withdrawals-contract
 COPY --from=build-dashmate-helper /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
 COPY --from=build-dashmate-helper /platform/packages/dpns-contract packages/dpns-contract
@@ -880,7 +901,7 @@ RUN yarn workspaces focus --production @dashevo/platform-test-suite
 #
 #  STAGE: FINAL TEST SUITE IMAGE
 #
-FROM node:20-alpine${ALPINE_VERSION} AS test-suite
+FROM node:22-alpine${ALPINE_VERSION} AS test-suite
 
 RUN apk add --no-cache bash
 
@@ -960,6 +981,8 @@ COPY --parents \
     packages/keyword-search-contract \
     packages/app-connect-contract \
     packages/moderation-charters-contract \
+    packages/decision-proposals-contract \
+    packages/token-market-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
     packages/dpns-contract \
@@ -970,6 +993,7 @@ COPY --parents \
     packages/rs-json-schema-compatibility-validator \
     packages/rs-drive-proof-verifier \
     packages/rs-context-provider \
+    packages/rs-core-proof \
     packages/rs-sdk-trusted-context-provider \
     packages/wasm-dpp \
     packages/wasm-dpp2 \
@@ -978,6 +1002,7 @@ COPY --parents \
     packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-sdk-cxx \
     packages/rs-unified-sdk-ffi \
     packages/rs-unified-sdk-jni \
     packages/rs-platform-wallet \

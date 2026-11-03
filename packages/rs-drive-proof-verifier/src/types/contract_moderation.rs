@@ -2,9 +2,12 @@
 //! share: one identity's status on the lists queried ([`ContractModerationListStatuses`]) and one
 //! page of a contract's banlist, suspension list or warning list ([`ContractModerationEntries`],
 //! read with a [`ContractModerationEntriesQuery`]). The records of the documents its moderators deleted
-//! ([`ContractDocumentRemovals`], read with a [`ContractDocumentRemovalsQuery`]) and the fee
-//! pots of a contract ([`ContractFeePots`]) are read here too: the pots are what its document
-//! action fees pay its owner and its moderators.
+//! ([`ContractDocumentRemovals`], read with a [`ContractDocumentRemovalsQuery`]), the actions
+//! its seated moderation team votes on ([`ContractTeamActions`], read with a
+//! [`ContractTeamActionsQuery`]) and who approved one ([`ContractTeamActionSigners`]), how many
+//! moderation actions each member of that team signed since the last payout
+//! ([`ContractModerationActionCounts`]), and the fee pots of a contract ([`ContractFeePots`]) are
+//! read here too: the pots are what its document action fees pay its owner and its moderators.
 
 use crate::Error;
 use dapi_grpc::platform::v0::get_contract_document_removals_request::get_contract_document_removals_request_v0::Selection;
@@ -15,7 +18,14 @@ use dapi_grpc::platform::v0::get_contract_fee_pots_response::ContractFeePotLastC
 use dapi_grpc::platform::v0::get_contract_fee_pots_response::{
     ContractFeePot as ContractFeePotProto, ContractFeePots as ContractFeePotsProto,
 };
+use dapi_grpc::platform::v0::get_contract_moderation_action_counts_response::ContractModerationActionCount as ContractModerationActionCountProto;
 use dapi_grpc::platform::v0::get_contract_moderation_entries_response::ContractModerationEntry as ContractModerationEntryProto;
+use dapi_grpc::platform::v0::get_contract_team_actions_request::{
+    ActionStatus as TeamActionStatusProto, StartAtActionId,
+};
+use dapi_grpc::platform::v0::get_contract_team_actions_response::{
+    contract_team_action, ContractTeamAction as ContractTeamActionProto,
+};
 #[cfg(test)]
 use dapi_grpc::platform::v0::ContractModerationDocument as ContractModerationDocumentProto;
 use dapi_grpc::platform::v0::ContractModerationList as ContractModerationListProto;
@@ -25,7 +35,8 @@ pub use dpp::data_contract::config::moderation::{
     ContractBan, ContractDocumentRemoval, ContractDocumentRestoration, ContractModerationDocument,
     ContractModerationList,
     ContractModerationListStatus, ContractModerationListStatuses, ContractModerationReason,
-    ContractModerationStatus, ContractSuspension, ContractWarning,
+    ContractModerationStatus, ContractSuspension, ContractTeamAction, ContractTeamActionEvent,
+    ContractWarning,
 };
 pub use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use dpp::identifier::Identifier;
@@ -35,7 +46,10 @@ pub use drive::drive::contract::fee_pots::types::{ContractFeePotState, ContractF
 pub use drive::drive::contract::moderation::types::{
     ContractDocumentRemovalEntry, ContractDocumentRemovalsQuery,
     ContractDocumentRemovalsSelection, ContractModerationEntriesQuery, ContractModerationEntry,
+    ContractTeamActionEntry, ContractTeamActionsQuery,
 };
+pub use dpp::group::group_action_status::GroupActionStatus;
+use std::collections::BTreeMap;
 
 /// The page size a request without a limit asks for, which is also the largest page a node
 /// returns: the platform version's `max_returned_elements`, the number the node reads too.
@@ -76,9 +90,9 @@ impl ContractModerationEntries {
 pub const CONTRACT_FEE_POTS_QUERIED: [ContractFeePot; 2] =
     [ContractFeePot::Owner, ContractFeePot::Moderators];
 
-/// The page size a removals request without a limit asks for, which is also the largest page a
-/// node returns and the most document ids one may name: the platform version's
-/// `max_returned_elements`, the number the node reads too.
+/// The page size a removals request without a limit asks for, which is also
+/// the largest page a node returns and the most document ids one may name: the platform
+/// version's `max_returned_elements`, the number the node reads too.
 pub fn default_contract_document_removals_limit(platform_version: &PlatformVersion) -> u16 {
     platform_version.drive_abci.query.max_returned_elements
 }
@@ -102,20 +116,85 @@ impl ContractDocumentRemovals {
         &self,
         query: &ContractDocumentRemovalsQuery,
     ) -> Option<ContractDocumentRemovalsQuery> {
-        let ContractDocumentRemovalsSelection::Page { limit, .. } = &query.selection else {
-            return None;
-        };
-        let limit = *limit;
-        if self.0.len() < usize::from(limit) {
+        next_records_page(
+            query,
+            self.0.len(),
+            self.0.last().map(|entry| entry.document_id),
+        )
+    }
+}
+
+/// The page after one holding `returned` records by document id, the last `last_document_id`,
+/// read with `query`: `None` when that page held fewer records than it asked for, and so was the
+/// last, and for a read by ids, which names every record it wants.
+fn next_records_page(
+    query: &ContractDocumentRemovalsQuery,
+    returned: usize,
+    last_document_id: Option<Identifier>,
+) -> Option<ContractDocumentRemovalsQuery> {
+    let ContractDocumentRemovalsSelection::Page { limit, .. } = &query.selection else {
+        return None;
+    };
+    if returned < usize::from(*limit) {
+        return None;
+    }
+    last_document_id.map(|document_id| ContractDocumentRemovalsQuery {
+        document_type_name: query.document_type_name.clone(),
+        selection: ContractDocumentRemovalsSelection::Page {
+            start_after: Some(document_id),
+            limit: *limit,
+        },
+    })
+}
+
+/// One page of the actions a contract's seated moderation team votes on, active or closed, in
+/// action id order. A page shorter than the limit is the last one.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ContractTeamActions(pub Vec<ContractTeamActionEntry>);
+
+impl ContractTeamActions {
+    /// The actions read.
+    pub fn actions(&self) -> &[ContractTeamActionEntry] {
+        &self.0
+    }
+
+    /// The query for the page after this one, or `None` when this page is the last: it holds
+    /// fewer actions than `query` asked for.
+    pub fn next_query(&self, query: &ContractTeamActionsQuery) -> Option<ContractTeamActionsQuery> {
+        if self.0.len() < usize::from(query.limit) {
             return None;
         }
-        self.0.last().map(|entry| ContractDocumentRemovalsQuery {
-            document_type_name: query.document_type_name.clone(),
-            selection: ContractDocumentRemovalsSelection::Page {
-                start_after: Some(entry.document_id),
-                limit,
-            },
+        self.0.last().map(|entry| ContractTeamActionsQuery {
+            status: query.status,
+            start_at: Some((entry.action_id, false)),
+            limit: query.limit,
         })
+    }
+}
+
+/// Who approved one of the actions a contract's seated moderation team votes on, the proposer
+/// among them, in identity id order. Empty when there is no such action with the status asked.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ContractTeamActionSigners(pub Vec<Identifier>);
+
+impl ContractTeamActionSigners {
+    /// The members that approved.
+    pub fn signers(&self) -> &[Identifier] {
+        &self.0
+    }
+}
+
+/// How many counted moderation actions (a ban, a suspension, a warning or a document deletion)
+/// each member of an elected contract's seated team signed since the moderators pot was last
+/// paid out, which resets every count. A member that did not act since has no count. A payout
+/// by actions shares that part of the pot in proportion to them.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ContractModerationActionCounts(pub BTreeMap<Identifier, u32>);
+
+impl ContractModerationActionCounts {
+    /// The counts, by member.
+    pub fn counts(&self) -> &BTreeMap<Identifier, u32> {
+        &self.0
     }
 }
 
@@ -335,35 +414,9 @@ pub fn removals_query_from_request(
     selection: Option<Selection>,
     platform_version: &PlatformVersion,
 ) -> Result<ContractDocumentRemovalsQuery, Error> {
-    let selection = selection.ok_or_else(|| Error::RequestError {
-        error: "either document_ids or page must be set".to_string(),
-    })?;
-    let selection = match selection {
-        Selection::DocumentIds(DocumentIds { document_ids }) => {
-            ContractDocumentRemovalsSelection::DocumentIds(
-                document_ids
-                    .iter()
-                    .map(|bytes| identifier_from_request(bytes, "document_ids"))
-                    .collect::<Result<Vec<Identifier>, Error>>()?,
-            )
-        }
-        Selection::Page(Page { start_after, limit }) => ContractDocumentRemovalsSelection::Page {
-            start_after: start_after
-                .as_deref()
-                .map(|bytes| identifier_from_request(bytes, "start_after"))
-                .transpose()?,
-            // The page size when the request names none: the largest page, the number the node
-            // read and proved. A limit no u16 holds is past every bound, and is refused below
-            // as the largest u16 is.
-            limit: limit.map_or(
-                default_contract_document_removals_limit(platform_version),
-                |limit| u16::try_from(limit).unwrap_or(u16::MAX),
-            ),
-        },
-    };
     let query = ContractDocumentRemovalsQuery {
         document_type_name,
-        selection,
+        selection: document_selection_from_request(selection, platform_version)?,
     };
     // The bounds the node enforced, from the one place they are written.
     Drive::check_contract_document_removals_query(&query, platform_version).map_err(|error| {
@@ -427,6 +480,8 @@ pub fn removals_from_response(
                             })
                         })
                         .transpose()?,
+                    // Read under the document's type, as documents are, by whoever holds it
+                    kept_fields: removal.kept_fields,
                 },
             })
         })
@@ -447,6 +502,167 @@ pub fn removals_from_response(
         }
     }
     Ok(ContractDocumentRemovals(entries))
+}
+
+/// The documents a removals request selects: the ids it names, or one page after an optional
+/// cursor. A request that selects nothing asks for no records at all and is refused rather
+/// than read as a page. The bounds are checked by the caller, against the read it builds.
+fn document_selection_from_request(
+    selection: Option<Selection>,
+    platform_version: &PlatformVersion,
+) -> Result<ContractDocumentRemovalsSelection, Error> {
+    let selection = selection.ok_or_else(|| Error::RequestError {
+        error: "either document_ids or page must be set".to_string(),
+    })?;
+    Ok(match selection {
+        Selection::DocumentIds(DocumentIds { document_ids }) => {
+            ContractDocumentRemovalsSelection::DocumentIds(
+                document_ids
+                    .iter()
+                    .map(|bytes| identifier_from_request(bytes, "document_ids"))
+                    .collect::<Result<Vec<Identifier>, Error>>()?,
+            )
+        }
+        Selection::Page(Page { start_after, limit }) => ContractDocumentRemovalsSelection::Page {
+            start_after: start_after
+                .as_deref()
+                .map(|bytes| identifier_from_request(bytes, "start_after"))
+                .transpose()?,
+            // The page size when the request names none: the largest page, the number the node
+            // read and proved. A limit no u16 holds is past every bound, and is refused by the
+            // caller as the largest u16 is.
+            limit: limit.map_or(
+                default_contract_document_removals_limit(platform_version),
+                |limit| u16::try_from(limit).unwrap_or(u16::MAX),
+            ),
+        },
+    })
+}
+
+/// The status a team actions or team action signers request names. Both requests carry the
+/// same two statuses, each in an enum of its own; `status` is the wire number.
+pub fn team_action_status_from_request(status: i32) -> Result<GroupActionStatus, Error> {
+    match TeamActionStatusProto::try_from(status) {
+        Ok(TeamActionStatusProto::Active) => Ok(GroupActionStatus::ActionActive),
+        Ok(TeamActionStatusProto::Closed) => Ok(GroupActionStatus::ActionClosed),
+        Err(_) => Err(Error::RequestError {
+            error: format!("status {status} is not an action status"),
+        }),
+    }
+}
+
+/// The Drive query of a team actions request: the status, where the page starts and its limit,
+/// under the bounds the node enforces, so a request outside them never got a proof.
+pub fn team_actions_query_from_request(
+    status: i32,
+    start_at_action_id: Option<StartAtActionId>,
+    count: Option<u32>,
+    platform_version: &PlatformVersion,
+) -> Result<ContractTeamActionsQuery, Error> {
+    let query = ContractTeamActionsQuery {
+        status: team_action_status_from_request(status)?,
+        start_at: start_at_action_id
+            .map(|start| {
+                identifier_from_request(&start.start_action_id, "start_action_id")
+                    .map(|action_id| (action_id, start.start_action_id_included))
+            })
+            .transpose()?,
+        // The page size when the request names none: the largest page, the number the node
+        // read and proved. A count no u16 holds is past every bound, and is refused below as the
+        // largest u16 is.
+        limit: count.map_or(
+            default_contract_document_removals_limit(platform_version),
+            |count| u16::try_from(count).unwrap_or(u16::MAX),
+        ),
+    };
+    // The bounds the node enforced, from the one place they are written.
+    Drive::check_contract_team_actions_query(&query, platform_version).map_err(|error| {
+        Error::RequestError {
+            error: error.to_string(),
+        }
+    })?;
+    Ok(query)
+}
+
+/// The actions of an unproved team actions response. Every action names itself, its proposer
+/// and its document by a 32 byte identifier and carries what it does and a reason, so a
+/// response missing any of them is refused, and so is one that answers with more actions than
+/// the query could hold.
+pub fn team_actions_from_response(
+    actions: Vec<ContractTeamActionProto>,
+    query: &ContractTeamActionsQuery,
+) -> Result<ContractTeamActions, Error> {
+    if actions.len() > usize::from(query.limit) {
+        return Err(Error::ResponseDecodeError {
+            error: format!(
+                "{} team actions returned, the query asked for at most {}",
+                actions.len(),
+                query.limit
+            ),
+        });
+    }
+    let entries = actions
+        .into_iter()
+        .map(|action| {
+            let Some(contract_team_action::Event::DeleteSettledDocument(deletion)) = action.event
+            else {
+                return Err(Error::ResponseDecodeError {
+                    error: "a team action carries no event".to_string(),
+                });
+            };
+            Ok(ContractTeamActionEntry {
+                action_id: identifier_from_response(&action.action_id, "team action id")?,
+                action: ContractTeamAction {
+                    proposer_id: identifier_from_response(
+                        &action.proposer_id,
+                        "team action proposer id",
+                    )?,
+                    proposed_at: action.proposed_at,
+                    event: ContractTeamActionEvent::DeleteSettledDocument {
+                        document_type_name: deletion.document_type_name,
+                        document_id: identifier_from_response(
+                            &deletion.document_id,
+                            "team action document id",
+                        )?,
+                        document_last_modified_at: deletion.document_last_modified_at,
+                        document_revision: deletion.document_revision,
+                        reason: reason_from_response(deletion.reason)?,
+                    },
+                },
+                approval_count: action.approval_count,
+            })
+        })
+        .collect::<Result<Vec<ContractTeamActionEntry>, Error>>()?;
+    Ok(ContractTeamActions(entries))
+}
+
+/// The counts of an unproved moderation action counts response, each member a 32 byte
+/// identifier named once.
+pub fn moderation_action_counts_from_response(
+    counts: Vec<ContractModerationActionCountProto>,
+) -> Result<ContractModerationActionCounts, Error> {
+    let mut by_member = BTreeMap::new();
+    for count in counts {
+        let identity_id =
+            identifier_from_response(&count.identity_id, "moderation action counter")?;
+        if by_member.insert(identity_id, count.count).is_some() {
+            return Err(Error::ResponseDecodeError {
+                error: format!("moderation action counts name {} twice", identity_id),
+            });
+        }
+    }
+    Ok(ContractModerationActionCounts(by_member))
+}
+
+/// The approvals of an unproved team action signers response, each a 32 byte identifier.
+pub fn team_action_signers_from_response(
+    signer_ids: Vec<Vec<u8>>,
+) -> Result<ContractTeamActionSigners, Error> {
+    signer_ids
+        .iter()
+        .map(|signer_id| identifier_from_response(signer_id, "team action signer id"))
+        .collect::<Result<Vec<Identifier>, Error>>()
+        .map(ContractTeamActionSigners)
 }
 
 /// One pot of an unproved response. The epoch of a last claim is a u16 on the chain and its
@@ -902,6 +1118,12 @@ mod tests {
                 moderator_id: id(0x78),
                 restored_at: 2_000 + u64::from(seed),
             }),
+            // Every odd record keeps fields of its document, as the document encoded them.
+            kept_fields: if seed.is_multiple_of(2) {
+                Vec::new()
+            } else {
+                vec![1, 3, b't', b'a', b'g', seed]
+            },
         }
     }
 
@@ -925,6 +1147,7 @@ mod tests {
                     moderator_id: restoration.moderator_id.to_vec(),
                     restored_at: restoration.restored_at,
                 }),
+            kept_fields: removal.kept_fields,
         }
     }
 
@@ -1152,6 +1375,200 @@ mod tests {
         }]);
         assert_eq!(short.next_query(&query), None);
         assert_eq!(page.next_query(&ids_query(&[1, 2])), None);
+    }
+
+    fn team_action(seed: u8) -> ContractTeamAction {
+        ContractTeamAction {
+            proposer_id: id(0x77),
+            proposed_at: 1_000 + u64::from(seed),
+            event: ContractTeamActionEvent::DeleteSettledDocument {
+                document_type_name: POST.to_string(),
+                document_id: id(seed),
+                document_last_modified_at: 500 + u64::from(seed),
+                // Every other one is of a type whose documents carry no revision.
+                document_revision: (!seed.is_multiple_of(2)).then(|| u64::from(seed) + 1),
+                reason: ContractModerationReason::from_text("doxxing"),
+            },
+        }
+    }
+
+    fn team_action_proto(seed: u8) -> ContractTeamActionProto {
+        let ContractTeamActionEvent::DeleteSettledDocument {
+            document_last_modified_at,
+            document_revision,
+            ..
+        } = team_action(seed).event;
+        ContractTeamActionProto {
+            action_id: id(seed + 0x10).to_vec(),
+            proposer_id: id(0x77).to_vec(),
+            proposed_at: 1_000 + u64::from(seed),
+            event: Some(contract_team_action::Event::DeleteSettledDocument(
+                dapi_grpc::platform::v0::get_contract_team_actions_response::DeleteSettledDocument {
+                    document_type_name: POST.to_string(),
+                    document_id: id(seed).to_vec(),
+                    document_last_modified_at,
+                    document_revision,
+                    reason: Some(ContractModerationReasonProto {
+                        code: None,
+                        text: "doxxing".to_string(),
+                        documents: vec![],
+                        reason_document_id: None,
+                    }),
+                },
+            )),
+            approval_count: u32::from(seed),
+        }
+    }
+
+    fn team_action_entry(seed: u8) -> ContractTeamActionEntry {
+        ContractTeamActionEntry {
+            action_id: id(seed + 0x10),
+            action: team_action(seed),
+            approval_count: u32::from(seed),
+        }
+    }
+
+    fn team_actions_page(limit: u16) -> ContractTeamActionsQuery {
+        ContractTeamActionsQuery {
+            status: GroupActionStatus::ActionActive,
+            start_at: None,
+            limit,
+        }
+    }
+
+    #[test]
+    fn should_build_the_team_actions_query_of_a_request() {
+        let platform_version = PlatformVersion::latest();
+        let max = default_contract_document_removals_limit(platform_version);
+        let active = TeamActionStatusProto::Active as i32;
+        let closed = TeamActionStatusProto::Closed as i32;
+        assert_eq!(
+            team_actions_query_from_request(active, None, None, platform_version)
+                .expect("expected a query"),
+            team_actions_page(max)
+        );
+        assert_eq!(
+            team_actions_query_from_request(
+                closed,
+                Some(StartAtActionId {
+                    start_action_id: id(3).to_vec(),
+                    start_action_id_included: true,
+                }),
+                Some(5),
+                platform_version
+            )
+            .expect("expected a query"),
+            ContractTeamActionsQuery {
+                status: GroupActionStatus::ActionClosed,
+                start_at: Some((id(3), true)),
+                limit: 5,
+            }
+        );
+
+        for (status, start, count, needle) in [
+            (7, None, None, "is not an action status"),
+            (active, None, Some(0), "limit must be between 1 and"),
+            (
+                active,
+                None,
+                Some(u32::from(max) + 1),
+                "limit must be between 1 and",
+            ),
+            (
+                active,
+                Some(StartAtActionId {
+                    start_action_id: vec![1; 5],
+                    start_action_id_included: false,
+                }),
+                None,
+                "start_action_id",
+            ),
+        ] {
+            let err = team_actions_query_from_request(status, start, count, platform_version)
+                .expect_err("expected the request to be refused");
+            assert!(
+                matches!(&err, Error::RequestError { error } if error.contains(needle)),
+                "{needle}: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_read_the_team_actions_of_an_unproved_response() {
+        assert_eq!(
+            team_actions_from_response(
+                vec![team_action_proto(1), team_action_proto(2)],
+                &team_actions_page(2)
+            )
+            .expect("expected the actions"),
+            ContractTeamActions(vec![team_action_entry(1), team_action_entry(2)])
+        );
+        // More actions than the page holds
+        team_actions_from_response(
+            vec![team_action_proto(1), team_action_proto(2)],
+            &team_actions_page(1),
+        )
+        .expect_err("expected a page too long to be refused");
+        // An action without an event, or with a malformed id or reason
+        let mut no_event = team_action_proto(1);
+        no_event.event = None;
+        let mut short_id = team_action_proto(1);
+        short_id.action_id = vec![1; 31];
+        let mut no_reason = team_action_proto(1);
+        if let Some(contract_team_action::Event::DeleteSettledDocument(deletion)) =
+            no_reason.event.as_mut()
+        {
+            deletion.reason = None;
+        }
+        for malformed in [no_event, short_id, no_reason] {
+            team_actions_from_response(vec![malformed], &team_actions_page(2))
+                .expect_err("expected a malformed action to be refused");
+        }
+
+        assert_eq!(
+            team_action_signers_from_response(vec![id(1).to_vec(), id(2).to_vec()])
+                .expect("expected the signers"),
+            ContractTeamActionSigners(vec![id(1), id(2)])
+        );
+        team_action_signers_from_response(vec![vec![1; 31]])
+            .expect_err("expected a malformed signer id to be refused");
+    }
+
+    #[test]
+    fn should_read_the_moderation_action_counts_of_a_response() {
+        let count = |seed: u8, count: u32| ContractModerationActionCountProto {
+            identity_id: id(seed).to_vec(),
+            count,
+        };
+        assert_eq!(
+            moderation_action_counts_from_response(vec![count(2, 5), count(1, 3)])
+                .expect("expected the counts"),
+            ContractModerationActionCounts(BTreeMap::from([(id(1), 3), (id(2), 5)]))
+        );
+        moderation_action_counts_from_response(vec![count(1, 3), count(1, 4)])
+            .expect_err("expected a member counted twice to be refused");
+        moderation_action_counts_from_response(vec![ContractModerationActionCountProto {
+            identity_id: vec![1; 31],
+            count: 1,
+        }])
+        .expect_err("expected a malformed member id to be refused");
+    }
+
+    #[test]
+    fn should_continue_after_a_full_team_actions_page_only() {
+        let query = team_actions_page(2);
+        let page = ContractTeamActions(vec![team_action_entry(1), team_action_entry(2)]);
+        assert_eq!(
+            page.next_query(&query),
+            Some(ContractTeamActionsQuery {
+                status: GroupActionStatus::ActionActive,
+                start_at: Some((id(0x12), false)),
+                limit: 2,
+            })
+        );
+        assert_eq!(ContractTeamActions::default().next_query(&query), None);
+        let short = ContractTeamActions(vec![team_action_entry(1)]);
+        assert_eq!(short.next_query(&query), None);
     }
 
     #[test]

@@ -4,7 +4,11 @@
 mod broadcast_state_transition;
 mod error_mapping;
 mod get_status;
+mod shielded_proof_failure_budget;
 mod wait_for_state_transition_result;
+
+#[cfg(test)]
+mod protobuf_request_errors;
 
 use dapi_grpc::platform::v0::get_path_elements_request;
 use dapi_grpc::platform::v0::platform_server::Platform;
@@ -26,6 +30,7 @@ use tokio::time::sleep;
 use tracing::{info, trace, warn};
 
 pub use error_mapping::TenderdashStatus;
+pub use shielded_proof_failure_budget::ShieldedProofFailureBudget;
 
 const MAX_PENDING_STATE_TRANSITION_WAITS: usize = 1_024;
 
@@ -110,13 +115,20 @@ macro_rules! drive_method {
                         return Ok((Response::new(decoded), true));
                     }
 
-                    // Fetch from Drive
+                    // Fetch from Drive, noting the cache's generation first: a block clearing
+                    // the cache while the call is in flight leaves this answer stale
+                    let generation = cache.generation();
                     trace!(method, "Calling Drive method");
                     let drive_call = client.$method_name(request);
                     let resp = drive_call.await?;
                     // Store in cache using inner message
                     trace!(method, "Caching response");
-                    cache.put(key, resp.get_ref());
+                    cache.put_from_generation(
+                        key,
+                        resp.get_ref(),
+                        dapi_grpc::Message::encoded_len(resp.get_ref()),
+                        generation,
+                    );
                     trace!(method, "Response cached");
 
                     Ok((resp, false))
@@ -151,6 +163,7 @@ pub struct PlatformServiceImpl {
     pub platform_cache: crate::cache::LruResponseCache,
     pub subscriber_manager: Arc<crate::services::streaming_service::SubscriberManager>,
     pub state_transition_wait_permits: Arc<Semaphore>,
+    pub shielded_proof_failure_budget: Arc<ShieldedProofFailureBudget>,
     #[allow(dead_code)]
     // workers - dropping will cancel all spawned tasks
     workers: Workers,
@@ -213,6 +226,7 @@ impl PlatformServiceImpl {
             state_transition_wait_permits: Arc::new(Semaphore::new(
                 MAX_PENDING_STATE_TRANSITION_WAITS,
             )),
+            shielded_proof_failure_budget: Arc::new(ShieldedProofFailureBudget::default()),
             workers,
         }
     }
@@ -437,6 +451,24 @@ impl Platform for PlatformServiceImpl {
     );
 
     drive_method!(
+        get_contract_team_actions,
+        dapi_grpc::platform::v0::GetContractTeamActionsRequest,
+        dapi_grpc::platform::v0::GetContractTeamActionsResponse
+    );
+
+    drive_method!(
+        get_contract_team_action_signers,
+        dapi_grpc::platform::v0::GetContractTeamActionSignersRequest,
+        dapi_grpc::platform::v0::GetContractTeamActionSignersResponse
+    );
+
+    drive_method!(
+        get_contract_moderation_action_counts,
+        dapi_grpc::platform::v0::GetContractModerationActionCountsRequest,
+        dapi_grpc::platform::v0::GetContractModerationActionCountsResponse
+    );
+
+    drive_method!(
         get_contract_fee_pots,
         dapi_grpc::platform::v0::GetContractFeePotsRequest,
         dapi_grpc::platform::v0::GetContractFeePotsResponse
@@ -515,10 +547,16 @@ impl Platform for PlatformServiceImpl {
                 return Ok((Response::new(decoded), true));
             }
 
+            let generation = cache.generation();
             trace!(method, "Calling Drive method");
             let response = client.get_path_elements(request).await?;
             trace!(method, "Caching response");
-            cache.put(key, response.get_ref());
+            cache.put_from_generation(
+                key,
+                response.get_ref(),
+                dapi_grpc::Message::encoded_len(response.get_ref()),
+                generation,
+            );
             Ok((response, false))
         }
         .await;
@@ -579,6 +617,18 @@ impl Platform for PlatformServiceImpl {
         get_vote_polls_by_end_date,
         dapi_grpc::platform::v0::GetVotePollsByEndDateRequest,
         dapi_grpc::platform::v0::GetVotePollsByEndDateResponse
+    );
+
+    drive_method!(
+        get_yes_no_vote_poll_state,
+        dapi_grpc::platform::v0::GetYesNoVotePollStateRequest,
+        dapi_grpc::platform::v0::GetYesNoVotePollStateResponse
+    );
+
+    drive_method!(
+        get_masternode_yes_no_vote,
+        dapi_grpc::platform::v0::GetMasternodeYesNoVoteRequest,
+        dapi_grpc::platform::v0::GetMasternodeYesNoVoteResponse
     );
 
     // Token balance methods
@@ -741,6 +791,12 @@ impl Platform for PlatformServiceImpl {
         get_shielded_nullifiers,
         dapi_grpc::platform::v0::GetShieldedNullifiersRequest,
         dapi_grpc::platform::v0::GetShieldedNullifiersResponse
+    );
+
+    drive_method!(
+        get_private_document_entries,
+        dapi_grpc::platform::v0::GetPrivateDocumentEntriesRequest,
+        dapi_grpc::platform::v0::GetPrivateDocumentEntriesResponse
     );
 }
 

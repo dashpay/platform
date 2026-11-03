@@ -2,6 +2,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use dpp::address_funds::PlatformAddress;
 use dpp::balances::credits::BlockAwareCreditOperation;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::ProtocolError;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
@@ -44,9 +45,7 @@ impl Drive {
         // 2. Second query: ascending from (start_block_height, 0) to get ranges
         //    that start at or after start_block_height
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let mut compacted_changes = Vec::new();
         let limit_usize = limit.map(|l| l as usize);

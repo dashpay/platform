@@ -14,6 +14,19 @@ use platform_version::version::PlatformVersion;
 impl Drive {
     /// Fetches the contract groups a contract belongs to, as a whole, through its document
     /// types and through its tokens. Empty when the contract belongs to no group.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract_id`: The contract's id.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(ContractGroupMembershipsForContract)` with the groups of the whole contract, of
+    ///   each document type and of each token; empty when it belongs to no group.
+    /// * `Err(Error)` when the method version is unknown, a read fails, or a stored membership
+    ///   is malformed.
     pub fn fetch_contract_group_memberships_for_contract(
         &self,
         contract_id: Identifier,
@@ -42,6 +55,20 @@ impl Drive {
 
     /// Fetches the contract groups a contract belongs to and the fee of the lookup, so that
     /// consensus validation can bill it.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract_id`: The contract's id.
+    /// * `epoch`: The epoch the reads are priced in.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok((FeeResult, ContractGroupMembershipsForContract))`: the fee of the reads and the
+    ///   contract's memberships, empty when it belongs to no group.
+    /// * `Err(Error)` when the method version is unknown, a read fails, a stored membership is
+    ///   malformed, or the fee cannot be calculated.
     pub fn fetch_contract_group_memberships_for_contract_with_fee(
         &self,
         contract_id: Identifier,
@@ -72,6 +99,20 @@ impl Drive {
 
     /// Fetches the contract groups a contract belongs to, recording the reads in
     /// `drive_operations`.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract_id`: The contract's id.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `drive_operations`: The operations accumulator the reads are appended to, for billing.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(ContractGroupMembershipsForContract)` with the groups of the whole contract, of
+    ///   each document type and of each token; empty when it belongs to no group.
+    /// * `Err(Error)` when the method version is unknown, a read fails, or a stored membership
+    ///   is malformed.
     pub fn fetch_contract_group_memberships_for_contract_add_to_operations(
         &self,
         contract_id: Identifier,

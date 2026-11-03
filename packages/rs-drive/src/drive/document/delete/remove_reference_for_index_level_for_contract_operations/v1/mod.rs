@@ -1,20 +1,19 @@
+use crate::util::estimated_layers::EstimatedLayers;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
-use grovedb::batch::KeyInfoPath;
 
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
 use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees};
-use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg};
+use grovedb::{EstimatedLayerInformation, EstimatedLayerSizes, MaybeTree, TransactionArg};
 
-use dpp::data_contract::document_type::IndexLevelTypeInfo;
 use dpp::data_contract::document_type::IndexType::{ContestedResourceIndex, NonUniqueIndex};
+use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevelTypeInfo};
 use grovedb::EstimatedSumTrees::NoSumTrees;
-use std::collections::HashMap;
 
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::document_reference_size;
 use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
 use crate::drive::document::index_only::{index_only_member_key, index_only_terminal_max_key_size};
-use crate::drive::document::index_only_entry_payload_max_size;
+use crate::drive::document::{index_only_entry_payload_max_size, INDEX_ONLY_ROW_COMMITMENT_SIZE};
 use crate::error::drive::DriveError;
 use crate::util::storage_flags::StorageFlags;
 
@@ -51,13 +50,52 @@ impl Drive {
         all_fields_null: bool,
         storage_flags: &Option<&StorageFlags>,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         skip_missing_expired_entry: bool,
         event_id: [u8; 32],
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        self.remove_reference_for_index_level_describing_entries_as(
+            document_and_contract_info,
+            index_path_info,
+            index_type,
+            any_fields_null,
+            all_fields_null,
+            storage_flags,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            skip_missing_expired_entry,
+            event_id,
+            transaction,
+            batch_operations,
+            |_, flags_size| AllSubtrees(DEFAULT_HASH_SIZE_U8, NoSumTrees, flags_size),
+            platform_version,
+        )
+    }
+
+    /// v1's removal, with the `[0]` layer of a non-unique, contested or null-field index (the
+    /// index's entries for one value, keyed by document id) described for an estimate as
+    /// `entries_layer_sizes` gives it from the document type and the storage flags' size. v1
+    /// describes it as subtrees; v2 as the references they are.
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn remove_reference_for_index_level_describing_entries_as(
+        &self,
+        document_and_contract_info: &DocumentAndContractInfo,
+        index_path_info: PathInfo<0>,
+        index_type: &IndexLevelTypeInfo,
+        any_fields_null: bool,
+        all_fields_null: bool,
+        storage_flags: &Option<&StorageFlags>,
+        previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
+        skip_missing_expired_entry: bool,
+        event_id: [u8; 32],
+        transaction: TransactionArg,
+        batch_operations: &mut Vec<LowLevelDriveOperation>,
+        entries_layer_sizes: fn(DocumentTypeRef, Option<u32>) -> EstimatedLayerSizes,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         if all_fields_null && !index_type.should_insert_with_all_null {
@@ -78,11 +116,9 @@ impl Drive {
                 .iter()
                 .map(|key_info| match key_info {
                     KnownKey(key) => Ok(key.clone()),
-                    _ => Err(Error::Drive(
-                        crate::error::drive::DriveError::CorruptedCodeExecution(
-                            "expired-entry skip is stateful-only; its path must be known",
-                        ),
-                    )),
+                    _ => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "expired-entry skip is stateful-only; its path must be known",
+                    ))),
                 })
                 .collect::<Result<_, _>>()?;
             // The layouts that store the reference inside a `[0]` subtree
@@ -134,7 +170,7 @@ impl Drive {
             let member_key_max_size =
                 index_only_terminal_max_key_size(document_type, terminal, platform_version)?;
             // The stored item: the commitment plus the type's entry payload.
-            let entry_value_size = crate::drive::document::INDEX_ONLY_ROW_COMMITMENT_SIZE
+            let entry_value_size = INDEX_ONLY_ROW_COMMITMENT_SIZE
                 + index_only_entry_payload_max_size(document_type, platform_version)?;
 
             // Sum-bearing entries (`ItemWithSumItem`) carry the i64 sum
@@ -264,15 +300,14 @@ impl Drive {
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
-                // On this level we will have a 0 and all the top index paths
+                // The `[0]` layer: the index's entries for this value
                 estimated_costs_only_with_layer_info.insert(
                     key_info_path.clone(),
                     EstimatedLayerInformation {
                         tree_type: reference_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
-                        estimated_layer_sizes: AllSubtrees(
-                            DEFAULT_HASH_SIZE_U8,
-                            NoSumTrees,
+                        estimated_layer_sizes: entries_layer_sizes(
+                            document_type,
                             storage_flags.map(|s| s.serialized_size()),
                         ),
                     },

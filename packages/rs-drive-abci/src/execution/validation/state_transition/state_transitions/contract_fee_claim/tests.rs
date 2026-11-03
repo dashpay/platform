@@ -14,6 +14,8 @@ use dapi_grpc::platform::v0::get_documents_request::{
     GetDocumentsRequestV0, Version as GetDocumentsRequestVersion,
 };
 use dapi_grpc::platform::v0::GetDocumentsRequest;
+use dpp::consensus::basic::BasicError;
+use dpp::consensus::ConsensusError;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::{Epoch, EpochIndex};
 use dpp::consensus::codes::ErrorWithCode;
@@ -874,8 +876,8 @@ async fn should_not_be_active_before_protocol_version_14() {
     assert!(
         matches!(
             &execution,
-            StateTransitionExecutionResult::InternalError(message)
-                if message.contains("ContractFeeClaim") && message.contains("not active")
+            StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error)))
+                if error.state_transition_type().starts_with("ContractFeeClaim")
         ),
         "expected the transition to be inactive before protocol version 14, got {execution:?}"
     );

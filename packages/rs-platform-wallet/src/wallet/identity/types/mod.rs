@@ -14,4 +14,4 @@ pub use dashpay::{
     ContactProfileEntry, ContactRequest, DashPayProfile, DashpayAddressMatch, EstablishedContact,
     PaymentDirection, PaymentEntry, PaymentStatus, ProfileUpdate,
 };
-pub use key_storage::{DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData};
+pub use key_storage::{DpnsFetch, DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData};

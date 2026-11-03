@@ -114,7 +114,7 @@ pub(super) fn derive_platform_deserialize_enum(
                 } else {
                     quote! {
                         #index => {
-                            let config = bincode::config::standard().with_big_endian().with_no_limit();
+                            let config = platform_serialization::PLATFORM_BINCODE_CONFIG;
                             let deserialized : #versioned_variant_name = #decode_from_slice(&data, config)#map_err?;
                             deserialized.into()
                         },
@@ -158,7 +158,7 @@ pub(super) fn derive_platform_deserialize_enum(
                     } else {
                         quote! {
                         #index => {
-                            let config = bincode::config::standard().with_big_endian().with_big_endian().with_limit::<{ #limit }>();
+                            let config = platform_serialization::PLATFORM_BINCODE_CONFIG.with_limit::<{ #limit }>();
                             let deserialized : #versioned_variant_name = #decode_from_slice(&data, config)#map_err?;
                             deserialized.into()
                         },
@@ -222,7 +222,7 @@ pub(super) fn derive_platform_deserialize_enum(
                 ) -> Result<(Self, usize), ProtocolError>
                 where
                     Self: Sized {
-                    let config = bincode::config::standard().with_big_endian().with_limit::<{ #limit }>();
+                    let config = platform_serialization::PLATFORM_BINCODE_CONFIG.with_limit::<{ #limit }>();
                     #decode_from_slice(&data, config)#limit_map_err
                 }
 
@@ -231,7 +231,7 @@ pub(super) fn derive_platform_deserialize_enum(
                 ) -> Result<(Self, usize), ProtocolError>
                 where
                     Self: Sized {
-                    let config = bincode::config::standard().with_big_endian().with_no_limit();
+                    let config = platform_serialization::PLATFORM_BINCODE_CONFIG;
                     #decode_from_slice(&data, config)#map_err
                 }
             }
@@ -244,7 +244,7 @@ pub(super) fn derive_platform_deserialize_enum(
                 ) -> Result<(Self, usize), ProtocolError>
                 where
                     Self: Sized {
-                    let config = bincode::config::standard().with_big_endian().with_no_limit();
+                    let config = platform_serialization::PLATFORM_BINCODE_CONFIG;
                     #decode_from_slice(&data, config)#map_err
                 }
 
@@ -253,7 +253,7 @@ pub(super) fn derive_platform_deserialize_enum(
                 ) -> Result<(Self, usize), ProtocolError>
                 where
                     Self: Sized {
-                    let config = bincode::config::standard().with_big_endian().with_no_limit();
+                    let config = platform_serialization::PLATFORM_BINCODE_CONFIG;
                     #decode_from_slice(&data, config)#map_err
                 }
             }

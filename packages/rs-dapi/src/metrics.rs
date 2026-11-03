@@ -566,6 +566,9 @@ fn known_grpc_endpoint(path: &str) -> &'static str {
                 "getContractModerationStatus",
                 "getContractModerationEntries",
                 "getContractDocumentRemovals",
+                "getContractTeamActions",
+                "getContractTeamActionSigners",
+                "getContractModerationActionCounts",
                 "getContractFeePots",
                 "getDataContracts",
                 "getDataContractsByRange",
@@ -584,6 +587,8 @@ fn known_grpc_endpoint(path: &str) -> &'static str {
                 "getContestedResourceVotersForIdentity",
                 "getContestedResourceIdentityVotes",
                 "getVotePollsByEndDate",
+                "getYesNoVotePollState",
+                "getMasternodeYesNoVote",
                 "getPrefundedSpecializedBalance",
                 "getTotalCreditsInPlatform",
                 "getPathElements",
@@ -615,6 +620,7 @@ fn known_grpc_endpoint(path: &str) -> &'static str {
                 "getShieldedPoolState",
                 "getShieldedNotesCount",
                 "getShieldedNullifiers",
+                "getPrivateDocumentEntries",
             ]
         )
     })

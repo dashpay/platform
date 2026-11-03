@@ -3,18 +3,28 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerInformation;
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds the estimated layer information for the once-per-identity distribution trees: the
     /// token distributions root, the once-per-identity root, and, when `token_id` is given, the
     /// token's claims subtree.
+    ///
+    /// # Parameters
+    ///
+    /// * `token_id`: The token whose claims subtree is also estimated, or `None` for the roots
+    ///   only.
+    /// * `estimated_costs_only_with_layer_info`: The estimation map the layers are added to.
+    /// * `drive_version`: The drive version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` once the layers are added to the map.
+    /// * `Err(Error)` when the method version is unknown.
     pub(crate) fn add_estimation_costs_for_token_once_per_identity_distribution(
         token_id: Option<[u8; 32]>,
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         match drive_version

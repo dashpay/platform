@@ -1,7 +1,8 @@
 use crate::drive::Drive;
-use crate::error::Error;
+use crate::error::{drive::DriveError, Error};
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
 use dpp::platform_value::Bytes36;
@@ -9,13 +10,24 @@ use dpp::platform_value::Bytes36;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 /// Operations on the System
+///
+/// `AddToSystemCredits` and `RemoveFromSystemCredits` compute the new total from the one
+/// committed before their batch, and GroveDB keeps only the last write of a key, so a batch
+/// must carry at most one of them: a second would replace the first, and the total would no
+/// longer match the credits in the trees. Every batch does today (at most one per state
+/// transition, one per block for the epoch payout), and `DriveOperation::merge_balance_writes`
+/// does not merge them. A batch that needs two must sum them into one.
 #[derive(Clone, Debug)]
 pub enum SystemOperationType {
+    /// Returns allocated credits to the applying block's processing pool after ordinary
+    /// writes and debt repayment, without creating new system credits.
+    AddToCurrentEpochProcessingPool {
+        /// The amount returned to the pool.
+        amount: Credits,
+    },
     /// We want to add credits to the system.
     AddToSystemCredits {
         /// The amount of credits we are seeking to add
@@ -40,14 +52,17 @@ impl DriveLowLevelOperationConverter for SystemOperationType {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         _block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
+            SystemOperationType::AddToCurrentEpochProcessingPool { .. } => {
+                Err(Error::Drive(DriveError::NotSupported(
+                    "processing pool credits require apply_drive_operations generation 1",
+                )))
+            }
             SystemOperationType::AddToSystemCredits { amount } => drive
                 .add_to_system_credits_operations(
                     amount,

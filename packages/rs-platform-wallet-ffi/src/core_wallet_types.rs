@@ -108,6 +108,50 @@ pub struct UtxoCreditVerdictFFI {
     pub spent_at_height: u32,
 }
 
+/// One receival contact the DashPay coreHeight backfill covers, and the
+/// height it covers it from — the C mirror of
+/// [`DashPayBackfillCoveredContact`](platform_wallet::changeset::DashPayBackfillCoveredContact).
+///
+/// Delivered through the persistence extension's
+/// `on_persist_wallet_dashpay_backfill_fn` slot alongside the record's
+/// `floor` / `rewound_from`, and handed back at restore on
+/// `WalletRestoreEntryFFI::dashpay_backfill_covered`. Rides the extension
+/// rather than `WalletChangeSetFFI` for the layout reason documented there:
+/// that struct crosses by bare pointer and cannot prove a new field present,
+/// while the extension's `struct_size` can.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DashPayBackfillCoveredContactFFI {
+    /// Our identity — the owner of the receival account.
+    pub owner_identity_id: [u8; 32],
+    /// The contact whose payments the receival account collects.
+    pub contact_identity_id: [u8; 32],
+    /// The receival account's index — coverage is per receival account, not
+    /// per relationship.
+    pub account_index: u32,
+    /// Lowest height the scan is guaranteed to test with this contact's
+    /// addresses watched.
+    pub covered_from: u32,
+}
+
+/// Project a backfill record's cover set into its C mirrors for the
+/// extension slot, in record order (sorted by `(owner, contact,
+/// account_index)`).
+pub fn build_dashpay_backfill_covered_for_callback(
+    record: &platform_wallet::changeset::DashPayBackfillRecord,
+) -> Vec<DashPayBackfillCoveredContactFFI> {
+    record
+        .covered()
+        .iter()
+        .map(|entry| DashPayBackfillCoveredContactFFI {
+            owner_identity_id: entry.owner.to_buffer(),
+            contact_identity_id: entry.contact.to_buffer(),
+            account_index: entry.account_index,
+            covered_from: entry.covered_from,
+        })
+        .collect()
+}
+
 /// Project a changeset's credit verdicts into their C mirrors for the
 /// extension slot, in outpoint order (the map's own ordering — stable,
 /// so a host log of a round is reproducible).
@@ -449,8 +493,8 @@ impl WalletChangeSetFFI {
     /// only when a re-emitted `TransactionRecord` flows through `records`
     /// with `context = InstantSend(..)`. The standalone IS-lock map is
     /// dropped here. Acceptable as long as the event adapter re-emits
-    /// affected records (it currently does for `TransactionDetected`
-    /// and `BlockProcessed` but NOT for `TransactionInstantLocked`).
+    /// affected records (it does for `TransactionDetected`,
+    /// `BlockProcessed` and `TransactionInstantLocked`).
     /// When the standalone IS-lock event needs to flow to Swift, add
     /// a `BTreeMap`-shaped FFI field here and populate it.
     pub fn from_changeset(cs: &platform_wallet::changeset::CoreChangeSet) -> Self {
@@ -1797,29 +1841,21 @@ mod tests {
         unsafe { free_wallet_changeset_ffi(&ffi) };
     }
 
-    /// A folded wallet-level record files the transaction row under the
-    /// FUNDING account while carrying the sibling account's owned
-    /// outputs (dashpay/platform#4387), and `OutputDetail` has no
-    /// owning-account field — so deriving TXOs from the folded record
-    /// persisted the sibling's change under the funding account, and
-    /// the Swift/Kotlin stores restored it into the wrong account's
-    /// map. TXO deltas must instead come from `account_records` (the
-    /// raw per-account slices), with only the transaction rows read
-    /// from the folded `records`.
-    #[test]
-    fn txos_route_to_their_owning_accounts_bucket() {
+    /// A send paying 900_000 out and 99_000 back as change, from one
+    /// 1_000_000 coin, with the details of each part.
+    struct SendWithChange {
+        tx: dashcore::Transaction,
+        our_input: key_wallet::managed_account::transaction_record::InputDetail,
+        sent: key_wallet::managed_account::transaction_record::OutputDetail,
+        change: key_wallet::managed_account::transaction_record::OutputDetail,
+    }
+
+    fn send_with_change() -> SendWithChange {
         use dashcore::{Address, Network, OutPoint, ScriptBuf, TxIn, TxOut, Witness};
         use key_wallet::managed_account::transaction_record::{
-            InputDetail, OutputDetail, OutputRole, TransactionDirection, TransactionRecord,
+            InputDetail, OutputDetail, OutputRole,
         };
-        use key_wallet::transaction_checking::transaction_router::TransactionType;
-        use key_wallet::transaction_checking::TransactionContext;
 
-        let coinjoin = AccountType::CoinJoin { index: 0 };
-        let bip44 = AccountType::Standard {
-            index: 0,
-            standard_account_type: StandardAccountType::BIP44Account,
-        };
         let dest = Address::dummy(Network::Testnet, 1);
         let change_addr = Address::dummy(Network::Testnet, 2);
         let funded_addr = Address::dummy(Network::Testnet, 3);
@@ -1861,6 +1897,42 @@ mod tests {
             address: Some(change_addr.clone()),
             value: 99_000,
         };
+        SendWithChange {
+            tx,
+            our_input,
+            sent,
+            change,
+        }
+    }
+
+    /// A folded wallet-level record files the transaction row under the
+    /// FUNDING account while carrying the sibling account's owned
+    /// outputs (dashpay/platform#4387), and `OutputDetail` has no
+    /// owning-account field — so deriving TXOs from the folded record
+    /// persisted the sibling's change under the funding account, and
+    /// the Swift/Kotlin stores restored it into the wrong account's
+    /// map. TXO deltas must instead come from `account_records` (the
+    /// raw per-account slices), with only the transaction rows read
+    /// from the folded `records`.
+    #[test]
+    fn txos_route_to_their_owning_accounts_bucket() {
+        use key_wallet::managed_account::transaction_record::{
+            InputDetail, OutputDetail, OutputRole, TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::transaction_router::TransactionType;
+        use key_wallet::transaction_checking::TransactionContext;
+
+        let coinjoin = AccountType::CoinJoin { index: 0 };
+        let bip44 = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let SendWithChange {
+            tx,
+            our_input,
+            sent,
+            change,
+        } = send_with_change();
         let rec = |account, direction, inputs: Vec<InputDetail>, outputs, net| {
             TransactionRecord::new(
                 tx.clone(),
@@ -1951,6 +2023,67 @@ mod tests {
             bip44_bucket.utxos_added_count, 1,
             "the change TXO lands in its OWNING account's bucket"
         );
+        unsafe { free_wallet_changeset_ffi(&ffi) };
+    }
+
+    /// The conversion of a send's record that carries an InstantSend context
+    /// and is in no block: its change coin goes to the owning account's
+    /// bucket as locked and unconfirmed. An InstantSend lock's changeset
+    /// names no coins of its own, so this row is where a persister learns
+    /// the change is locked. The record here is built by hand; that the
+    /// lock re-emits one of this shape is the bridge's test
+    /// (`should_re_emit_the_change_of_an_unmined_send_with_its_lock`).
+    #[test]
+    fn should_file_the_change_of_a_locked_unmined_send_as_instant_locked() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use dashcore::OutPoint;
+        use key_wallet::managed_account::transaction_record::{
+            TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::transaction_router::TransactionType;
+        use key_wallet::transaction_checking::TransactionContext;
+
+        let bip44 = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let SendWithChange {
+            tx,
+            our_input,
+            sent,
+            change,
+        } = send_with_change();
+        let txid = tx.txid();
+        let locked_send = TransactionRecord::new(
+            tx,
+            bip44,
+            TransactionContext::InstantSend(InstantLock::default()),
+            TransactionType::Standard,
+            TransactionDirection::Outgoing,
+            vec![our_input],
+            vec![sent, change],
+            -901_000,
+        );
+
+        let cs = CoreChangeSet {
+            records: vec![locked_send.clone()],
+            account_records: vec![locked_send],
+            ..CoreChangeSet::default()
+        };
+        let ffi = WalletChangeSetFFI::from_changeset(&cs);
+        assert_eq!(ffi.accounts_count, 1);
+        let bucket = unsafe { &*ffi.accounts };
+        let tags = account_type_to_tags(&bip44);
+        assert_eq!(bucket.type_tag, tags.type_tag);
+        assert_eq!(bucket.standard_tag, tags.standard_tag);
+        assert_eq!(bucket.account_index, tags.index);
+        assert_eq!(bucket.utxos_added_count, 1, "the change, not the payment");
+        let change = unsafe { &*bucket.utxos_added };
+        assert_eq!(OutPoint::from(&change.outpoint), OutPoint { txid, vout: 1 });
+        assert_eq!(change.amount, 99_000);
+        assert!(change.is_instantlocked);
+        assert!(!change.is_confirmed);
+        assert_eq!(change.height, 0);
         unsafe { free_wallet_changeset_ffi(&ffi) };
     }
 

@@ -47,6 +47,9 @@ pub enum StateTransitionType {
     IdentityKeyLimitsUpdate = 23,
     ContractUserModeration = 24,
     ContractFeeClaim = 25,
+    TokenShieldedTransferWithShieldedFee = 26,
+    TokenUnshieldWithShieldedFee = 27,
+    TokenPurchaseFromShieldedPool = 28,
 }
 
 impl std::fmt::Display for StateTransitionType {
@@ -146,6 +149,18 @@ mod tests {
                 "ContractUserModeration",
             ),
             (StateTransitionType::ContractFeeClaim, "ContractFeeClaim"),
+            (
+                StateTransitionType::TokenShieldedTransferWithShieldedFee,
+                "TokenShieldedTransferWithShieldedFee",
+            ),
+            (
+                StateTransitionType::TokenUnshieldWithShieldedFee,
+                "TokenUnshieldWithShieldedFee",
+            ),
+            (
+                StateTransitionType::TokenPurchaseFromShieldedPool,
+                "TokenPurchaseFromShieldedPool",
+            ),
         ];
         for (variant, expected) in cases {
             assert_eq!(
@@ -186,6 +201,12 @@ mod tests {
             (23, StateTransitionType::IdentityKeyLimitsUpdate),
             (24, StateTransitionType::ContractUserModeration),
             (25, StateTransitionType::ContractFeeClaim),
+            (
+                26,
+                StateTransitionType::TokenShieldedTransferWithShieldedFee,
+            ),
+            (27, StateTransitionType::TokenUnshieldWithShieldedFee),
+            (28, StateTransitionType::TokenPurchaseFromShieldedPool),
         ];
         for (val, expected) in pairs {
             let result = StateTransitionType::try_from(val).unwrap();
@@ -195,7 +216,7 @@ mod tests {
 
     #[test]
     fn test_try_from_u8_invalid() {
-        assert!(StateTransitionType::try_from(26u8).is_err());
+        assert!(StateTransitionType::try_from(29u8).is_err());
         assert!(StateTransitionType::try_from(255u8).is_err());
     }
 
@@ -228,6 +249,9 @@ mod tests {
             StateTransitionType::IdentityKeyLimitsUpdate,
             StateTransitionType::ContractUserModeration,
             StateTransitionType::ContractFeeClaim,
+            StateTransitionType::TokenShieldedTransferWithShieldedFee,
+            StateTransitionType::TokenUnshieldWithShieldedFee,
+            StateTransitionType::TokenPurchaseFromShieldedPool,
         ];
         for variant in all_variants {
             let val: u8 = variant.into();

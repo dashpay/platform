@@ -126,7 +126,7 @@
           "refersTo": {
             "type": "deletableDocument",
             "documentType": "post",
-            "propertyAgreement": {
+            "where": {
               "hashtag": "hashtag"
             }
           },

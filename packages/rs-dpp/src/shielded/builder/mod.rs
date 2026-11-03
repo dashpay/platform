@@ -29,6 +29,7 @@
 //! )?;
 //! ```
 
+mod document_token_payment;
 mod identity_create_from_shielded_pool;
 mod identity_top_up_from_shielded_pool;
 mod shield;
@@ -36,9 +37,18 @@ mod shield_from_asset_lock;
 mod shield_from_identity;
 mod shielded_transfer;
 mod shielded_withdrawal;
+mod token_burn_from_pool;
+mod token_claim_to_pool;
+mod token_direct_purchase_to_pool;
+mod token_mint_to_pool;
+mod token_pool_paid;
+mod token_shield;
+mod token_shielded_transfer;
+mod token_unshield;
 mod unshield;
 
 pub use self::shield::build_shield_transition;
+pub use document_token_payment::build_document_shielded_token_payment;
 pub use identity_create_from_shielded_pool::{
     build_identity_create_from_shielded_pool_transition, IdentityCreateFromShieldedPoolBuildResult,
 };
@@ -49,6 +59,18 @@ pub use shield_from_asset_lock::build_shield_from_asset_lock_transition_with_sig
 pub use shield_from_identity::build_shield_from_identity_transition;
 pub use shielded_transfer::build_shielded_transfer_transition;
 pub use shielded_withdrawal::build_shielded_withdrawal_transition;
+pub use token_burn_from_pool::build_token_burn_from_pool_transition;
+pub use token_claim_to_pool::build_token_claim_to_pool_transition;
+pub use token_direct_purchase_to_pool::build_token_direct_purchase_to_pool_transition;
+pub use token_mint_to_pool::build_token_mint_to_pool_transition;
+pub use token_pool_paid::{
+    build_token_purchase_from_shielded_pool_transition,
+    build_token_shielded_transfer_with_shielded_fee_transition,
+    build_token_unshield_with_shielded_fee_transition, ShieldedFeePayer, TokenPoolSpender,
+};
+pub use token_shield::build_token_shield_transition;
+pub use token_shielded_transfer::build_token_shielded_transfer_transition;
+pub use token_unshield::build_token_unshield_transition;
 pub use unshield::build_unshield_transition;
 
 use grovedb_commitment_tree::{
@@ -197,6 +219,7 @@ pub(crate) fn build_output_only_bundle<P: OrchardProver>(
     memo: [u8; 36],
     sender_ovk: Option<OutgoingViewingKey>,
     dummy_outputs: usize,
+    extra_sighash_data: &[u8],
     prover: &P,
 ) -> Result<Bundle<Authorized, i64, DashMemo>, ProtocolError> {
     let payment_address = PaymentAddress::from(recipient);
@@ -229,7 +252,7 @@ pub(crate) fn build_output_only_bundle<P: OrchardProver>(
             })?;
     }
 
-    prove_and_sign_bundle(builder, prover, &[], &[])
+    prove_and_sign_bundle(builder, prover, &[], extra_sighash_data)
 }
 
 /// Builds a spend+output Orchard bundle.
@@ -380,10 +403,17 @@ where
 #[cfg(test)]
 pub(crate) mod test_helpers {
     use super::*;
+    use crate::address_funds::AddressWitness;
+    use crate::identity::signer::Signer;
+    use crate::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
     use grovedb_commitment_tree::{
         FullViewingKey, Hashable, MerkleHashOrchard, Note, NoteValue, ProvingKey, RandomSeed, Rho,
         Scope, SpendingKey, NOTE_COMMITMENT_TREE_DEPTH,
     };
+    use platform_value::BinaryData;
+    use platform_version::version::PlatformVersion;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
     use std::sync::OnceLock;
 
     static PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
@@ -409,6 +439,52 @@ pub(crate) mod test_helpers {
         let payment_address = fvk.address_at(0u32, Scope::External);
         OrchardAddress::from_raw_bytes(&payment_address.to_raw_address_bytes())
             .expect("valid orchard address bytes")
+    }
+
+    /// An identity signer that never verifies: it returns a fixed 65-byte signature so batch
+    /// constructors can be exercised without real keys.
+    #[derive(Debug)]
+    pub struct DummyIdentitySigner;
+
+    #[async_trait::async_trait]
+    impl Signer<IdentityPublicKey> for DummyIdentitySigner {
+        async fn sign(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
+            Ok(BinaryData::new(vec![0u8; 65]))
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            Err(ProtocolError::ShieldedBuildError(
+                "identity signer never creates address witnesses".to_string(),
+            ))
+        }
+
+        fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+            true
+        }
+    }
+
+    /// A critical authentication key an identity could sign a batch transition with.
+    pub fn test_identity_key() -> IdentityPublicKey {
+        let mut rng = StdRng::seed_from_u64(42);
+        let (key, _) = IdentityPublicKey::random_key_with_known_attributes(
+            0,
+            &mut rng,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_SECP256K1,
+            None,
+            PlatformVersion::latest(),
+        )
+        .expect("authentication key");
+        key
     }
 
     /// Creates a SpendableNote with the given value.
@@ -458,8 +534,9 @@ mod mod_tests {
     #[test]
     fn output_only_bundle_flags_and_value_balance() {
         let recipient = test_orchard_address();
-        let bundle = build_output_only_bundle(&recipient, 10_000, [0u8; 36], None, 0, &TestProver)
-            .expect("bundle should build");
+        let bundle =
+            build_output_only_bundle(&recipient, 10_000, [0u8; 36], None, 0, &[], &TestProver)
+                .expect("bundle should build");
 
         // Spends are disabled for Shield / ShieldFromAssetLock bundles.
         assert!(!bundle.flags().spends_enabled());
@@ -492,9 +569,16 @@ mod mod_tests {
 
         // (dummy_outputs, expected on-wire action count).
         for (dummies, expected_actions) in [(0usize, 2usize), (1, 2), (5, 6)] {
-            let bundle =
-                build_output_only_bundle(&recipient, amount, [0u8; 36], None, dummies, &TestProver)
-                    .expect("bundle should build");
+            let bundle = build_output_only_bundle(
+                &recipient,
+                amount,
+                [0u8; 36],
+                None,
+                dummies,
+                &[],
+                &TestProver,
+            )
+            .expect("bundle should build");
             assert_eq!(
                 bundle.actions().len(),
                 expected_actions,
@@ -517,8 +601,9 @@ mod mod_tests {
     #[test]
     fn serialize_authorized_bundle_preserves_fields() {
         let recipient = test_orchard_address();
-        let bundle = build_output_only_bundle(&recipient, 7_777, [3u8; 36], None, 0, &TestProver)
-            .expect("bundle should build");
+        let bundle =
+            build_output_only_bundle(&recipient, 7_777, [3u8; 36], None, 0, &[], &TestProver)
+                .expect("bundle should build");
         let sb = serialize_authorized_bundle(&bundle);
 
         assert_eq!(sb.value_balance, *bundle.value_balance());
@@ -566,6 +651,7 @@ mod mod_tests {
             memo,
             Some(sender_ovk.clone()),
             0,
+            &[],
             &TestProver,
         )
         .expect("bundle should build");

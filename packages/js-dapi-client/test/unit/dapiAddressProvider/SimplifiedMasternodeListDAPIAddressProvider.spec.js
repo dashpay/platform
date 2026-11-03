@@ -3,6 +3,7 @@ const SimplifiedMNListEntry = require('@dashevo/dashcore-lib/lib/deterministicmn
 const DAPIAddress = require('../../../lib/dapiAddressProvider/DAPIAddress');
 
 const SimplifiedMasternodeListDAPIAddressProvider = require('../../../lib/dapiAddressProvider/SimplifiedMasternodeListDAPIAddressProvider');
+const ListDAPIAddressProvider = require('../../../lib/dapiAddressProvider/ListDAPIAddressProvider');
 
 describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
   let smlDAPIAddressProvider;
@@ -193,6 +194,40 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
       expect(smlProviderMock.getSimplifiedMNList).to.be.calledOnceWithExactly();
       expect(listDAPIAddressProviderMock.getAllAddresses).to.be.calledOnceWithExactly();
       expect(listDAPIAddressProviderMock.getLiveAddress).to.be.calledOnceWithExactly();
+    });
+  });
+
+  describe('#getLiveAddress on regtest', () => {
+    it('should point discovered addresses to the local gateways', async () => {
+      const options = { network: 'local' };
+      const listDAPIAddressProvider = new ListDAPIAddressProvider([], options);
+
+      smlDAPIAddressProvider = new SimplifiedMasternodeListDAPIAddressProvider(
+        smlProviderMock,
+        listDAPIAddressProvider,
+        [],
+        options,
+      );
+
+      const expectedAddresses = validMasternodeList.map((smlEntry) => ({
+        host: '127.0.0.1',
+        port: smlEntry.platformHTTPPort,
+        protocol: 'https',
+        allowSelfSignedCertificate: true,
+        proRegTxHash: smlEntry.proRegTxHash,
+      }));
+
+      await smlDAPIAddressProvider.getLiveAddress();
+
+      const addressPool = listDAPIAddressProvider.getAllAddresses();
+      expect(addressPool.map((address) => address.toJSON())).to.deep.equal(expectedAddresses);
+
+      // A refresh reuses the same address objects, so their ban state is kept
+      await smlDAPIAddressProvider.getLiveAddress();
+
+      const refreshedPool = listDAPIAddressProvider.getAllAddresses();
+      expect(refreshedPool.map((address) => address.toJSON())).to.deep.equal(expectedAddresses);
+      refreshedPool.forEach((address, index) => expect(address).to.equal(addressPool[index]));
     });
   });
 

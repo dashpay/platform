@@ -37,7 +37,8 @@ use jni::objects::{JByteArray, JClass, JString, JValue};
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jobject};
 use jni::JNIEnv;
 use platform_wallet_ffi::core_wallet_types::OutPointFFI;
-use platform_wallet_ffi::error::platform_wallet_ffi_result_free;
+use platform_wallet_ffi::derive_connect_key::ConnectDerivedKeyFFI;
+use platform_wallet_ffi::error::{platform_wallet_ffi_result_free, PlatformWalletFFIResult};
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_discovery::DiscoveredIdentityIdsFFI;
 use platform_wallet_ffi::identity_key_preview::{IdentityKeyPreviewFFI, IdentityKeyPreviewsFFI};
@@ -482,6 +483,170 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
     })
 }
 
+/// DashPay Connect key derivation at the DIP-13 sub-feature paths
+/// (`m/9'/coin'/5'/<subFeature>'/0'/identityId'/leaf'[/purpose'/rotation']`,
+/// dashpay/dips#191). Thin marshaler over
+/// `dash_sdk_derive_connect_key_v2_with_resolver`: resolver-keyed and pure
+/// like its slot-derive siblings, so it is safe from persistence-callback
+/// context. Returns `[privateKey: byte[32], publicKey: byte[33]]`; the
+/// Rust-side key is zeroized before return and Kotlin owns the copy.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_deriveConnectKeyV2WithResolver(
+    mut env: JNIEnv,
+    _class: JClass,
+    network_ord: jint,
+    wallet_id: JByteArray,
+    resolver_handle: jlong,
+    sub_feature: jint,
+    identity_id: JByteArray,
+    leaf: JByteArray,
+    purpose: jint,
+    rotation: jint,
+) -> jni::sys::jobjectArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if sub_feature < 0 {
+            throw_sdk_exception(env, 1, "subFeature must be non-negative");
+            return ptr::null_mut();
+        }
+        // The FFI refuses any combination other than (6, 0, 0) and
+        // (7, 1 or 2, any 31-bit rotation).
+        if purpose < 0 {
+            throw_sdk_exception(env, 1, "purpose must be non-negative");
+            return ptr::null_mut();
+        }
+        if rotation < 0 {
+            throw_sdk_exception(env, 1, "rotation must be non-negative");
+            return ptr::null_mut();
+        }
+        if resolver_handle == 0 {
+            throw_sdk_exception(env, 1, "resolverHandle must be non-zero");
+            return ptr::null_mut();
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return ptr::null_mut();
+        };
+        let Some(identity) = read_id32(env, &identity_id, "identityId") else {
+            return ptr::null_mut();
+        };
+        let Some(leaf) = read_id32(env, &leaf, "leaf") else {
+            return ptr::null_mut();
+        };
+
+        let mut out = ConnectDerivedKeyFFI::empty();
+        let result = unsafe {
+            platform_wallet_ffi::dash_sdk_derive_connect_key_v2_with_resolver(
+                net_from_ord(network_ord),
+                wid.as_ptr(),
+                resolver_handle as *mut MnemonicResolverHandle,
+                sub_feature as u32,
+                identity.as_ptr(),
+                leaf.as_ptr(),
+                purpose as u32,
+                rotation as u32,
+                &mut out as *mut ConnectDerivedKeyFFI,
+            )
+        };
+        connect_key_to_java(env, result, &mut out)
+    })
+}
+
+/// Pre-rotation DashPay Connect app encryption key
+/// (`m/9'/coin'/5'/7'/0'/identityId'/contractId'/purpose'`), for recognising
+/// keys registered on testnet/devnet before DIP-13 gained the `rotation'`
+/// level. Thin marshaler over
+/// `dash_sdk_derive_legacy_app_encryption_key_with_resolver`; returns
+/// `[privateKey: byte[32], publicKey: byte[33]]` like
+/// `deriveConnectKeyV2WithResolver`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_deriveLegacyAppEncryptionKeyWithResolver(
+    mut env: JNIEnv,
+    _class: JClass,
+    network_ord: jint,
+    wallet_id: JByteArray,
+    resolver_handle: jlong,
+    identity_id: JByteArray,
+    contract_id: JByteArray,
+    purpose: jint,
+) -> jni::sys::jobjectArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        // The FFI refuses any purpose other than 1 or 2.
+        if purpose < 0 {
+            throw_sdk_exception(env, 1, "purpose must be non-negative");
+            return ptr::null_mut();
+        }
+        if resolver_handle == 0 {
+            throw_sdk_exception(env, 1, "resolverHandle must be non-zero");
+            return ptr::null_mut();
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return ptr::null_mut();
+        };
+        let Some(identity) = read_id32(env, &identity_id, "identityId") else {
+            return ptr::null_mut();
+        };
+        let Some(contract) = read_id32(env, &contract_id, "contractId") else {
+            return ptr::null_mut();
+        };
+
+        let mut out = ConnectDerivedKeyFFI::empty();
+        let result = unsafe {
+            platform_wallet_ffi::dash_sdk_derive_legacy_app_encryption_key_with_resolver(
+                net_from_ord(network_ord),
+                wid.as_ptr(),
+                resolver_handle as *mut MnemonicResolverHandle,
+                identity.as_ptr(),
+                contract.as_ptr(),
+                purpose as u32,
+                &mut out as *mut ConnectDerivedKeyFFI,
+            )
+        };
+        connect_key_to_java(env, result, &mut out)
+    })
+}
+
+/// Turn a connect-key FFI result into `[privateKey, publicKey]`, or throw
+/// its error. Wipes `out` in place either way (by reference, so no copy of
+/// the scalar is left behind).
+fn connect_key_to_java(
+    env: &mut JNIEnv,
+    result: PlatformWalletFFIResult,
+    out: &mut ConnectDerivedKeyFFI,
+) -> jni::sys::jobjectArray {
+    if take_pwffi_error(env, result) {
+        unsafe { platform_wallet_ffi::dash_sdk_derive_connect_key_free(out) };
+        return ptr::null_mut();
+    }
+
+    // Copy both halves before the free wipes the inline buffers; the
+    // private copy is zeroized on drop.
+    let scalar = zeroize::Zeroizing::new(out.private_key_bytes);
+    let pubkey = out.public_key_bytes;
+    unsafe { platform_wallet_ffi::dash_sdk_derive_connect_key_free(out) };
+
+    let Ok(priv_arr) = env.byte_array_from_slice(&*scalar) else {
+        let _ = env.exception_clear();
+        throw_sdk_exception(env, 99, "connect key marshalling failed");
+        return ptr::null_mut();
+    };
+    let build = (|| -> Result<jni::sys::jobjectArray, jni::errors::Error> {
+        let pub_arr = env.byte_array_from_slice(&pubkey)?;
+        let byte_array_class = env.find_class("[B")?;
+        let result = env.new_object_array(2, byte_array_class, jni::objects::JObject::null())?;
+        env.set_object_array_element(&result, 0, &priv_arr)?;
+        env.set_object_array_element(&result, 1, pub_arr)?;
+        Ok(result.into_raw())
+    })();
+    build.unwrap_or_else(|_| {
+        let _ = env.exception_clear();
+        // `Zeroizing` only wipes the Rust copy; overwrite the JVM copy of
+        // the private key too, since it never reaches Kotlin's cleanup.
+        let _ = env.set_byte_array_region(&priv_arr, 0, &[0i8; 32]);
+        throw_sdk_exception(env, 99, "connect key marshalling failed");
+        ptr::null_mut()
+    })
+}
+
 // ── Registration (wallet-balance funded) ──────────────────────────────
 
 /// Resume a previously interrupted identity registration from a tracked
@@ -839,6 +1004,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_discov
 /// Register a DPNS name for an identity, signed via the external signer.
 /// Works on watch-only wallets (no seed Rust-side). Returns the full
 /// domain name (e.g. `"alice.dash"`).
+///
+/// `maxContestFund` is the most, in credits, the registration pays into
+/// the contest a contested name joins; `0` states the fund to join read
+/// just before the domain is submitted.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_registerDpnsName(
     mut env: JNIEnv,
@@ -846,9 +1015,14 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
     wallet_handle: jlong,
     identity_id: JByteArray,
     label: JString,
+    max_contest_fund: jlong,
     signer_handle: jlong,
 ) -> jni::sys::jstring {
     guard(&mut env, ptr::null_mut(), |env| {
+        if max_contest_fund < 0 {
+            throw_sdk_exception(env, 1, "maxContestFund must be non-negative");
+            return ptr::null_mut();
+        }
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return ptr::null_mut();
         };
@@ -874,6 +1048,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
                 wallet_handle as Handle,
                 id.as_ptr(),
                 c_label.as_ptr(),
+                max_contest_fund as u64,
                 signer_handle as *mut SignerHandle,
                 &mut out_full as *mut *mut c_char,
             )
@@ -1128,4 +1303,40 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_update
             .map(|a| a.into_raw())
             .unwrap_or(ptr::null_mut())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use platform_wallet_ffi::derive_connect_key::{
+        CONNECT_KEY_PURPOSE_DECRYPTION, CONNECT_KEY_PURPOSE_ENCRYPTION,
+        CONNECT_KEY_SUB_FEATURE_APP_ENCRYPTION, CONNECT_KEY_SUB_FEATURE_SESSION_AUTHENTICATION,
+    };
+
+    const PLATFORM_WALLET_MANAGER_KT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../kotlin-sdk/sdk/src/main/kotlin/org/dashfoundation/dashsdk/wallet/PlatformWalletManager.kt"
+    ));
+
+    /// Kotlin's `ConnectSubFeature` / `ConnectKeyPurpose` literals are the
+    /// FFI's constants; a drift would derive keys at paths nothing looks for.
+    #[test]
+    fn kotlin_connect_key_constants_match_the_ffi() {
+        for (entry, value) in [
+            (
+                "SESSION_AUTHENTICATION",
+                CONNECT_KEY_SUB_FEATURE_SESSION_AUTHENTICATION,
+            ),
+            ("APP_ENCRYPTION", CONNECT_KEY_SUB_FEATURE_APP_ENCRYPTION),
+            ("ENCRYPTION", CONNECT_KEY_PURPOSE_ENCRYPTION),
+            ("DECRYPTION", CONNECT_KEY_PURPOSE_DECRYPTION),
+        ] {
+            let needle = format!("{entry}({value}),");
+            assert!(
+                PLATFORM_WALLET_MANAGER_KT
+                    .lines()
+                    .any(|line| line.trim() == needle),
+                "PlatformWalletManager.kt no longer declares `{needle}`"
+            );
+        }
+    }
 }

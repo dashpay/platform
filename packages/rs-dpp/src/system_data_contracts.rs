@@ -79,6 +79,20 @@ impl ConfigurationForSystemContract for SystemDataContract {
                 config.set_sized_integer_types_enabled(true);
                 Ok(config)
             }
+            SystemDataContract::DecisionProposals => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(true);
+                Ok(config)
+            }
+            // Every integer of an order is a signed 8-byte value: the `depth` index of each
+            // order type sums one of them, which a summed property must be, and a partial fill
+            // rewrites `remaining` (and a bid's `escrow`) without changing the stored size of
+            // the order.
+            SystemDataContract::TokenMarket => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
         }
     }
 }
@@ -150,6 +164,82 @@ mod tests {
     use crate::data_contract::serialized_version::DataContractInSerializationFormat;
     use crate::serialization::PlatformSerializableWithPlatformVersion;
     use platform_version::TryIntoPlatformVersioned;
+    /// A system contract is written by genesis and protocol upgrades, which nothing refuses
+    /// before Drive does, so each must fit the contract size caps at every protocol version
+    /// that has it: its bytes in the format transitions carry under `max_serialized_size`
+    /// and, where contracts are stored compiled, its compiled bytes under
+    /// `max_compiled_contract_size`.
+    #[cfg(feature = "validation")]
+    #[test]
+    fn should_fit_every_system_contract_under_the_contract_size_caps() {
+        use crate::serialization::PlatformSerializableWithPlatformVersion;
+        use platform_version::version::PLATFORM_VERSIONS;
+
+        for platform_version in PLATFORM_VERSIONS.iter() {
+            let contract_versions = &platform_version.system_data_contracts;
+            for system_contract in SystemDataContract::ALL {
+                // Only the contracts a version has; any of them failing to load fails the test
+                let absent = match system_contract {
+                    // A reserved slot, with no contract at any version
+                    SystemDataContract::FeatureFlags => true,
+                    // Inserted by the upgrade to protocol version 13; earlier meta-schemas
+                    // refuse its schema
+                    SystemDataContract::DocumentHistory => platform_version.protocol_version < 13,
+                    SystemDataContract::AppConnect => contract_versions.app_connect == 0,
+                    SystemDataContract::ModerationCharters => {
+                        contract_versions.moderation_charters == 0
+                    }
+                    SystemDataContract::DecisionProposals => {
+                        contract_versions.decision_proposals == 0
+                    }
+                    SystemDataContract::TokenMarket => contract_versions.token_market == 0,
+                    SystemDataContract::Withdrawals
+                    | SystemDataContract::MasternodeRewards
+                    | SystemDataContract::DPNS
+                    | SystemDataContract::Dashpay
+                    | SystemDataContract::WalletUtils
+                    | SystemDataContract::TokenHistory
+                    | SystemDataContract::KeywordSearch => false,
+                };
+                if absent {
+                    continue;
+                }
+                let contract = load_system_data_contract(system_contract, platform_version)
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "{system_contract:?} does not load at protocol version {}: {error}",
+                            platform_version.protocol_version
+                        )
+                    });
+                let origin = format!(
+                    "{system_contract:?} at protocol version {}",
+                    platform_version.protocol_version
+                );
+                let carried_size = contract
+                    .serialize_to_bytes_with_platform_version(platform_version)
+                    .expect("expected the system contract to serialize")
+                    .len();
+                assert!(
+                    carried_size
+                        <= platform_version.dpp.contract_versions.max_serialized_size as usize,
+                    "{origin} serializes to {carried_size} bytes"
+                );
+                let stored_size = contract
+                    .serialize_to_storage_bytes(platform_version)
+                    .expect("expected the system contract to serialize for storage")
+                    .len();
+                if let Some(max_compiled_size) =
+                    platform_version.system_limits.max_compiled_contract_size
+                {
+                    assert!(
+                        stored_size <= max_compiled_size as usize,
+                        "{origin} is stored in {stored_size} bytes"
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn test_load_system_data_contract_v8_vs_v9() {
         let contract_1 = load_system_data_contract(
@@ -399,6 +489,33 @@ mod moderation_charters_tests {
             .validate_document(type_name, document, PlatformVersion::latest())
             .expect("validation executes")
             .errors
+    }
+
+    /// The members a charter elects bound how many approvals a `deleteSettled` rule may ask
+    /// for, through `SystemLimits::max_moderation_charter_elected_members`: the limit and the
+    /// schema must agree.
+    #[test]
+    fn should_elect_as_many_members_as_the_system_limit_says() {
+        let contract = contract();
+        let members = document_type(&contract, ELECTED_CHARTER_DOCUMENT_TYPE_NAME)
+            .schema()
+            .get_optional_value("properties")
+            .ok()
+            .flatten()
+            .and_then(|properties| properties.get_optional_value("members").ok().flatten())
+            .and_then(|members| {
+                members
+                    .get_optional_integer::<u16>("maxItems")
+                    .ok()
+                    .flatten()
+            })
+            .expect("electedCharter.members declares maxItems");
+        assert_eq!(
+            members,
+            PlatformVersion::latest()
+                .system_limits
+                .max_moderation_charter_elected_members
+        );
     }
 
     #[test]
@@ -661,7 +778,12 @@ mod moderation_charters_tests {
             }) => {
                 assert_eq!(document_type_name, JOIN_REQUEST_DOCUMENT_TYPE_NAME);
                 assert_eq!(max_items, 15);
-                assert_eq!(lookup.index, "bySubmittedCharter");
+                assert_eq!(
+                    lookup.resolve_index(
+                        document_type(&contract, JOIN_REQUEST_DOCUMENT_TYPE_NAME).as_ref()
+                    ),
+                    Ok("bySubmittedCharter".to_string())
+                );
                 assert_eq!(
                     lookup.keys.get(property_names::SUBMITTED_CHARTER_ID),
                     Some(&LookupKeySource::Property(
@@ -971,7 +1093,12 @@ mod moderation_charters_tests {
                 },
             ) => {
                 assert_eq!(document_type_name, JOIN_REQUEST_DOCUMENT_TYPE_NAME);
-                assert_eq!(lookup.index, "bySubmittedCharter");
+                assert_eq!(
+                    lookup.resolve_index(
+                        document_type(&contract, JOIN_REQUEST_DOCUMENT_TYPE_NAME).as_ref()
+                    ),
+                    Ok("bySubmittedCharter".to_string())
+                );
                 assert_eq!(
                     lookup.keys.get("$ownerId"),
                     Some(&LookupKeySource::ReferenceValue)
@@ -1080,7 +1207,12 @@ mod moderation_charters_tests {
                     Some(property_names::ELECTED_CHARTER_ID)
                 );
                 assert_eq!(document_type_name, ADDED_MODERATOR_DOCUMENT_TYPE_NAME);
-                assert_eq!(lookup.index, "byElectedCharterMember");
+                assert_eq!(
+                    lookup.resolve_index(
+                        document_type(&contract, ADDED_MODERATOR_DOCUMENT_TYPE_NAME).as_ref()
+                    ),
+                    Ok("byElectedCharterMember".to_string())
+                );
                 assert_eq!(
                     lookup.keys.get(property_names::MEMBER_ID),
                     Some(&LookupKeySource::ReferenceValue)
@@ -1112,5 +1244,339 @@ mod moderation_charters_tests {
             }
             other => panic!("senderKeyId: {other:?}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod dpns_v3_tests {
+    use super::*;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::document_type::accessors::{
+        DocumentTypeV0Getters, DocumentTypeV2Getters,
+    };
+    use crate::data_contract::document_type::property_constraints::{
+        AggregateBinding, AggregateKind, AggregateRead, ConstraintComparison, ConstraintExpression,
+        EqualityKind, PropertyConstraint,
+    };
+    use crate::data_contract::document_type::{
+        ChooseFirstOrder, DocumentReferenceKind, DocumentTypeRef, HashFunction, LookupChooseFirst,
+        LookupHashKey, LookupKeyParam, LookupKeySource,
+    };
+    use crate::util::hash::hash_double;
+    use platform_value::{Identifier, Value};
+    use std::collections::BTreeMap;
+
+    /// DPNS v3, registered as the chain registers it, under full validation.
+    fn dpns() -> DataContract {
+        load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+            .expect("DPNS v3 registers under full validation")
+    }
+
+    fn document_type<'a>(contract: &'a DataContract, name: &str) -> DocumentTypeRef<'a> {
+        contract
+            .document_type_for_name(name)
+            .unwrap_or_else(|_| panic!("the {name} type"))
+    }
+
+    fn name_params() -> Vec<LookupKeyParam> {
+        vec![
+            LookupKeyParam::Property("normalizedLabel".to_string()),
+            LookupKeyParam::Const(".".to_string()),
+            LookupKeyParam::Property("normalizedParentDomainName".to_string()),
+        ]
+    }
+
+    /// A domain finds its creator's own preorder by the creator's id and the hash of the
+    /// normalized name, made in an earlier block, chosen first by creation height among the
+    /// preorders of the name that hold the hash of their own owner's id and the name, and
+    /// deletes it. The salt stays declared, unused, so domains written under v1 and v2 decode
+    #[test]
+    fn should_find_the_creators_own_preorder_chosen_first_among_those_of_the_name() {
+        let contract = dpns();
+        let domain = document_type(&contract, "domain");
+        let declaration = domain
+            .creator_reference()
+            .and_then(|target| target.as_any_document_reference())
+            .expect("the domain's creatorRefersTo is a document reference");
+        assert_eq!(declaration.document_type_name, "preorder");
+        assert_eq!(declaration.kind, DocumentReferenceKind::Deletable);
+        let lookup = declaration.lookup.expect("found by findBy");
+        assert_eq!(lookup.keys.get("$ownerId"), Some(&LookupKeySource::OwnerId));
+        assert_eq!(
+            lookup.keys.get("nameHash"),
+            Some(&LookupKeySource::Hash(LookupHashKey {
+                function: HashFunction::Sha256d,
+                params: name_params(),
+            }))
+        );
+        assert_eq!(lookup.minimum_age_blocks, Some(1));
+        assert_eq!(
+            lookup.choose_first,
+            Some(LookupChooseFirst {
+                among: "nameHash".to_string(),
+                valid_when_property: "ownerNameHash".to_string(),
+                valid_when: LookupHashKey {
+                    function: HashFunction::Sha256d,
+                    params: [vec![LookupKeyParam::Writer], name_params()].concat(),
+                },
+                by: vec![ChooseFirstOrder {
+                    property: "$createdAtBlockHeight".to_string(),
+                    ascending: true,
+                }],
+            })
+        );
+        assert!(lookup.consume);
+
+        let salt = domain
+            .flattened_properties()
+            .get("preorderSalt")
+            .expect("preorderSalt stays declared");
+        assert!(salt.transient);
+        assert!(salt.property_type.reference().is_none());
+        assert!(salt.revealed_reference.is_none());
+        assert!(!domain.required_fields().contains("preorderSalt"));
+    }
+
+    /// The preorder of `b0b.dash` by an identity holds the double SHA-256 of the normalized
+    /// label, "." and the normalized parent, and, to count, the same with that identity's id
+    /// first
+    #[test]
+    fn should_hash_the_normalized_name_and_the_creator_with_it() {
+        let contract = dpns();
+        let domain = document_type(&contract, "domain");
+        let lookup = domain
+            .creator_reference()
+            .and_then(|target| target.as_any_document_reference())
+            .and_then(|declaration| declaration.lookup)
+            .expect("the creator reference is found by findBy");
+        let name_key = domain
+            .creator_reference()
+            .and_then(|target| target.lookup_hash_key())
+            .expect("the creator reference holds a findBy function");
+        let owner_name_key = &lookup
+            .choose_first
+            .as_ref()
+            .expect("the creator reference chooses the first preorder")
+            .valid_when;
+        let creator = Identifier::from([3; 32]);
+        let data = BTreeMap::from([
+            (
+                "normalizedLabel".to_string(),
+                Value::Text("b0b".to_string()),
+            ),
+            (
+                "normalizedParentDomainName".to_string(),
+                Value::Text("dash".to_string()),
+            ),
+        ]);
+
+        let (name_hash, _) = name_key
+            .key_value(domain, None, creator, &data)
+            .expect("the name preimage assembles");
+        let (owner_name_hash, _) = owner_name_key
+            .key_value(domain, None, creator, &data)
+            .expect("the owner and name preimage assembles");
+
+        assert_eq!(name_hash, hash_double(b"b0b.dash"));
+        let mut preimage = creator.to_buffer().to_vec();
+        preimage.extend(b"b0b.dash");
+        assert_eq!(owner_name_hash, hash_double(preimage));
+    }
+
+    /// A preorder lives an hour, is unique per owner and name hash, and is indexed by its
+    /// name hash and creation height
+    #[test]
+    fn should_expire_preorders_after_an_hour_and_index_them_by_name_hash() {
+        let contract = dpns();
+        let preorder = document_type(&contract, "preorder");
+        assert_eq!(preorder.documents_ttl_seconds(), Some(3600));
+
+        let index_properties = |name: &str| {
+            let index = preorder
+                .indexes()
+                .get(name)
+                .unwrap_or_else(|| panic!("the {name} index"));
+            (
+                index
+                    .properties
+                    .iter()
+                    .map(|property| property.name.clone())
+                    .collect::<Vec<_>>(),
+                index.unique,
+            )
+        };
+        assert_eq!(
+            index_properties("ownerAndNameHash"),
+            (vec!["$ownerId".to_string(), "nameHash".to_string()], true)
+        );
+        assert_eq!(
+            index_properties("nameHashAndHeight"),
+            (
+                vec!["nameHash".to_string(), "$createdAtBlockHeight".to_string()],
+                false
+            )
+        );
+    }
+
+    /// A name holds at most `max_choose_first_candidates` preorders, counted by its name hash
+    /// through the countable `nameHash` index: the competitors a reveal reads are then always
+    /// all of those before the revealer's own, so none can be pushed past the read
+    #[test]
+    fn should_hold_a_name_to_the_preorders_a_reveal_reads() {
+        let contract = dpns();
+        let preorder = document_type(&contract, "preorder");
+        let index = preorder
+            .indexes()
+            .get("nameHash")
+            .expect("the nameHash index");
+        assert!(index.countable.is_countable());
+        assert!(!index.unique);
+
+        let cap = preorder
+            .property_constraints()
+            .get("atMostAThousandPerName")
+            .expect("the per-name preorder cap");
+        let by_name_hash = AggregateRead {
+            kind: AggregateKind::Count,
+            document_type: "preorder".to_string(),
+            filter: [(
+                "nameHash".to_string(),
+                AggregateBinding::Property {
+                    path: "nameHash".to_string(),
+                    kind: Some(EqualityKind::Bytes),
+                },
+            )]
+            .into(),
+            of_own_type: true,
+        };
+        assert_eq!(
+            cap,
+            &PropertyConstraint::Compare {
+                comparison: ConstraintComparison::LessThanOrEqual,
+                left: ConstraintExpression::Aggregate(by_name_hash.clone()),
+                right: ConstraintExpression::Value(i128::from(
+                    PlatformVersion::latest()
+                        .system_limits
+                        .max_choose_first_candidates
+                )),
+            }
+        );
+        assert_eq!(
+            by_name_hash
+                .answering_index(&preorder)
+                .map(|index| index.name.as_str()),
+            Some("nameHash")
+        );
+    }
+}
+
+#[cfg(all(test, feature = "token-market-contract", feature = "validation"))]
+mod token_market_tests {
+    use super::*;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::document_type::accessors::{
+        DocumentTypeV0Getters, DocumentTypeV2Getters,
+    };
+    use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
+    use crate::data_contract::document_type::DocumentPropertyType;
+    use crate::document::transfer::Transferable;
+    use crate::nft::TradeMode;
+    use crate::system_data_contracts::token_market_contract::v1::document_types::{ask, bid};
+
+    /// The order types are what the marketplace transitions rely on: only they create orders,
+    /// orders stay mutable and deletable so a partial fill can rewrite them and a close can
+    /// delete them with their storage flags, every integer is a signed 8-byte value, and the
+    /// `depth` index sums what the order holds in escrow.
+    #[test]
+    fn should_load_the_order_types_the_marketplace_writes() {
+        let contract =
+            load_system_data_contract(SystemDataContract::TokenMarket, PlatformVersion::latest())
+                .expect("the token market contract loads with full validation");
+        assert_eq!(contract.id(), token_market_contract::ID);
+        assert_eq!(contract.owner_id(), token_market_contract::OWNER_ID);
+        assert_eq!(contract.document_types().len(), 2);
+
+        for (name, summed) in [
+            (ask::NAME, ask::properties::REMAINING),
+            (bid::NAME, bid::properties::ESCROW),
+        ] {
+            let document_type = contract
+                .document_type_for_name(name)
+                .unwrap_or_else(|_| panic!("the {name} type"));
+            assert!(document_type.documents_mutable(), "{name} is mutable");
+            assert!(
+                document_type.documents_can_be_deleted(),
+                "{name} is deletable"
+            );
+            assert_eq!(
+                document_type.creation_restriction_mode(),
+                CreationRestrictionMode::NoCreationAllowed,
+                "only the marketplace transitions create {name} orders"
+            );
+            // The data trigger bindings refuse a user's replace and delete; these defaults
+            // refuse the remaining document transitions (transfer, purchase, price update and
+            // index-only delete), so a schema edit that enables one fails here.
+            assert_eq!(
+                document_type.documents_transferable(),
+                Transferable::Never,
+                "{name} orders cannot be transferred"
+            );
+            assert_eq!(
+                document_type.trade_mode(),
+                TradeMode::None,
+                "{name} orders cannot be priced or purchased as documents"
+            );
+            assert!(
+                !document_type.index_only(),
+                "{name} orders are not index-only"
+            );
+            for property in document_type.properties().values() {
+                if matches!(
+                    property.property_type,
+                    DocumentPropertyType::U8
+                        | DocumentPropertyType::U16
+                        | DocumentPropertyType::U32
+                        | DocumentPropertyType::U64
+                        | DocumentPropertyType::I8
+                        | DocumentPropertyType::I16
+                        | DocumentPropertyType::I32
+                ) {
+                    panic!("{name} stores an integer narrower than i64 or unsigned");
+                }
+            }
+            let depth = document_type
+                .indexes()
+                .get(ask::indexes::DEPTH)
+                .unwrap_or_else(|| panic!("{name} has a depth index"));
+            assert_eq!(depth.summable.as_deref(), Some(summed));
+            // Prices are per whole token at each order's decimals, so the book and the depth
+            // sums are kept apart per scale: a query names the token and the decimals.
+            let index_properties = |index_name: &str| -> Vec<String> {
+                document_type
+                    .indexes()
+                    .get(index_name)
+                    .unwrap_or_else(|| panic!("{name} has a {index_name} index"))
+                    .properties
+                    .iter()
+                    .map(|property| property.name.clone())
+                    .collect()
+            };
+            assert_eq!(
+                index_properties(ask::indexes::DEPTH),
+                ["tokenId", "decimals", "price"]
+            );
+            assert_eq!(
+                index_properties(ask::indexes::BOOK),
+                ["tokenId", "decimals", "price", "$createdAt"]
+            );
+        }
+    }
+
+    #[test]
+    fn should_not_exist_before_protocol_version_15() {
+        let platform_version = PlatformVersion::get(14).expect("protocol version 14");
+        assert!(
+            load_system_data_contract(SystemDataContract::TokenMarket, platform_version).is_err()
+        );
     }
 }

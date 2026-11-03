@@ -103,7 +103,7 @@ joiner. The type declares `requiresIdentityEncryptionBoundedKey`.
 
 | Property | Type | Meaning |
 | --- | --- | --- |
-| `submittedCharterId` | identifier, required, `refersTo` a `submittedCharter` with `propertyAgreement: { "recipientId": "$ownerId" }` | The proposal; `recipientId` must be its owner, the leader |
+| `submittedCharterId` | identifier, required, `refersTo` a `submittedCharter` with `where: { "$ownerId": "recipientId" }` | The proposal; its owner must be `recipientId`, the leader |
 | `recipientId` | identifier, required, `refersTo: { "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": { "purpose": "decryption", "boundTo": "submittedCharter" } }` | The leader, and through `recipientKeyId` the key the message is encrypted to: a decryption key bound to this contract's `submittedCharter` type |
 | `recipientKeyId` | integer 0 to 4294967295, required | The leader's key id |
 | `senderKeyId` | integer 0 to 4294967295, required, `refersTo: { "type": "identityPublicKey", "identityProperty": "$ownerId", "keyRequirements": { "purpose": "encryption", "boundTo": "joinRequest" } }` | The owner's encryption key, bound to this contract's `joinRequest` type, the shared secret is derived from |
@@ -111,8 +111,9 @@ joiner. The type declares `requiresIdentityEncryptionBoundedKey`.
 
 Indexes: `bySubmittedCharter` (`submittedCharterId`, `$ownerId`), unique, so
 one offer per identity per proposal, and the index an elected charter's
-members are looked up through; `byOwner` (`$ownerId`). The type is neither
-transferable nor tradeable, which a lookup keyed on `$ownerId` requires.
+members are found by (`findBy` naming exactly its two properties); `byOwner`
+(`$ownerId`). The type is neither transferable nor tradeable, which a `findBy`
+reading `$ownerId` requires.
 
 ## `electedCharter`
 
@@ -121,12 +122,12 @@ A proposal put to the vote with its team. Its owner is the leader.
 | Property | Type | Meaning |
 | --- | --- | --- |
 | `targetContractId` | identifier, required, `refersTo: { "type": "contract", "contractRequirements": { "moderation": "electionOpen" } }` | The contract contended for; it must declare elected moderation and its own `electionDelay` since its creation must have passed (40135 otherwise) |
-| `submittedCharterId` | identifier, required, `refersTo` a `submittedCharter` with `propertyAgreement: { "$ownerId": "$ownerId", "targetContractId": "targetContractId" }` | The proposal the team runs on: only its owner may file this, and for the proposal's own target |
-| `members` | typed array of at most 15 unique identifiers, required, elements `distinctFrom: "$ownerId"` and `refersTo` a `joinRequest` through `lookup: { "index": "bySubmittedCharter", "keys": { "submittedCharterId": "submittedCharterId", "$ownerId": "." } }` | The team besides the leader; may be empty. Each member must be the owner of a join request for this proposal, found through the join request's unique index, and none may be the leader |
+| `submittedCharterId` | identifier, required, `refersTo` a `submittedCharter` with `where: { "$ownerId": "$ownerId", "targetContractId": "targetContractId" }` | The proposal the team runs on: only its owner may file this, and for the proposal's own target |
+| `members` | typed array of at most 15 unique identifiers, required, elements `distinctFrom: "$ownerId"` and `refersTo` a `joinRequest` with `findBy: { "submittedCharterId": "submittedCharterId", "$ownerId": "." }` | The team besides the leader; may be empty. Each member must be the owner of a join request for this proposal, found through the join request's unique index over exactly those two properties, and none may be the leader |
 
-The lookup reads: for each member, the join request whose
+The `findBy` reads: for each member, the join request whose
 `submittedCharterId` is this document's `submittedCharterId` and whose owner is
-the member. A member with no such request refuses the create with
+the member, found through `bySubmittedCharter`. A member with no such request refuses the create with
 `ReferencedEntityNotFoundError` (40120), naming the element (`members[1]`).
 
 Indexes: `byTargetContract`, the contested index below, and
@@ -149,9 +150,9 @@ put an elected member back, a request to withdraw it.
 
 | Type | Properties | Rules |
 | --- | --- | --- |
-| `addedModerator` | `electedCharterId`, `submittedCharterId`, `memberId` | `electedCharterId` carries `propertyAgreement: { "$ownerId": "$ownerId", "submittedCharterId": "submittedCharterId" }`: only the leader adds, and `submittedCharterId` is the charter's proposal. `memberId` refers to a `joinRequest` through the same `lookup` as `members` and is `distinctFrom: "$ownerId"`: an addition needs the member's consent, disclosed on the proposal |
-| `removedModerator` | `electedCharterId`, `memberId` | Only the leader removes (`propertyAgreement: { "$ownerId": "$ownerId" }`); no resignation is needed; `memberId` must be one of the charter's elected `members` (`refersTo: { "type": "listElement", "documentType": "electedCharter", "propertyAgreement": { "electedCharterId": "$id" }, "inList": "members" }`, 40120 otherwise): an added member is taken off by deleting its addition. Deleting a removal puts the member back |
-| `resignationRequest` | `electedCharterId`, `recipientId`, `recipientKeyId`, `senderKeyId`, `encryptedMessage` | The owner is the member asking to leave, and must be on the team: `ownerRefersTo: { "anyOf": [...] }` requires the writer to be an element of the elected charter's `members` (`listElement`, the charter found by `electedCharterId` through `propertyAgreement: { "electedCharterId": "$id" }`) or the `memberId` of an `addedModerator` for that charter (a `deletableDocument` reference with a `lookup` through `byElectedCharterMember`, `"."` the writer: the addition must exist when the request is filed). The leader is in neither list, so it cannot file one. The message is encrypted to the leader (`propertyAgreement: { "recipientId": "$ownerId" }` on `electedCharterId`) with the leader's decryption key bound to `submittedCharter` and the member's encryption key bound to `joinRequest`, the keys join requests use. A request changes nothing by itself: the leader acts on it by deleting the member's addition, or with a `removedModerator` for an elected member. Deleting it withdraws the request, and nothing refers to it |
+| `addedModerator` | `electedCharterId`, `submittedCharterId`, `memberId` | `electedCharterId` carries `where: { "$ownerId": "$ownerId", "submittedCharterId": "submittedCharterId" }`: only the leader adds, and `submittedCharterId` is the charter's proposal. `memberId` refers to a `joinRequest` with the same `findBy` as `members` and is `distinctFrom: "$ownerId"`: an addition needs the member's consent, disclosed on the proposal |
+| `removedModerator` | `electedCharterId`, `memberId` | Only the leader removes (`where: { "$ownerId": "$ownerId" }`); no resignation is needed; `memberId` must be one of the charter's elected `members` (`refersTo: { "type": "permanentDocument", "documentType": "electedCharter", "findBy": { "$id": "electedCharterId" }, "inList": "members" }`, 40120 otherwise): an added member is taken off by deleting its addition. Deleting a removal puts the member back |
+| `resignationRequest` | `electedCharterId`, `recipientId`, `recipientKeyId`, `senderKeyId`, `encryptedMessage` | The owner is the member asking to leave, and must be on the team: `ownerRefersTo: { "anyOf": [...] }` requires the writer to be an element of the elected charter's `members` (`inList`, the charter found by `findBy: { "$id": "electedCharterId" }`) or the `memberId` of an `addedModerator` for that charter (a `deletableDocument` reference with `findBy: { "electedCharterId": "electedCharterId", "memberId": "." }`, found through `byElectedCharterMember`, `"."` the writer: the addition must exist when the request is filed). The leader is in neither list, so it cannot file one. The message is encrypted to the leader (`where: { "$ownerId": "recipientId" }` on `electedCharterId`) with the leader's decryption key bound to `submittedCharter` and the member's encryption key bound to `joinRequest`, the keys join requests use. A request changes nothing by itself: the leader acts on it by deleting the member's addition, or with a `removedModerator` for an elected member. Deleting it withdraws the request, and nothing refers to it |
 
 **The cap on additions.** The target contract's elected declaration carries
 `maxAddedModerators`: how many members a seated team's leader may have added

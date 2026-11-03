@@ -10,6 +10,11 @@ description = "Trusted HTTP-based context provider for Dash Platform SDK"
 
 dash-async = { path = "../rs-dash-async" }
 dash-context-provider = { path = "../rs-context-provider" }
+# The system data contract ids, without any contract: the provider refuses a contract under a
+# system id before that contract exists, in every build.
+data-contracts = { path = "../data-contracts", default-features = false }
+# Verifies the quorum proofs behind `VerifiedHttpContextProvider`.
+dash-core-proof = { path = "../rs-core-proof" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "dash-sdk-features",
     "bls-signatures",
@@ -26,8 +31,10 @@ arc-swap = "1.7.1"
 hex = "0.4.3"
 url = "2.5"
 # `try_join!` / `join!` for the concurrent quorum fetches in `update_quorum_caches`
-# and `refresh_quorum_caches`.
+# and `refresh_quorum_caches`, and `Shared` for the refreshes misses share.
 futures = { version = "0.3.30" }
+# Monotonic clock that also works on wasm32, for spacing out refreshes.
+web-time = "1.1"
 
 [features]
 default = []
@@ -44,6 +51,8 @@ all-system-contracts = [
     "document-history-contract",
     "app-connect-contract",
     "moderation-charters-contract",
+    "decision-proposals-contract",
+    "token-market-contract",
 ]
 
 # Individual contract features - these enable specific contracts in DPP
@@ -56,6 +65,34 @@ keywords-contract = ["dpp/keywords-contract"]
 document-history-contract = ["dpp/document-history-contract"]
 app-connect-contract = ["dpp/app-connect-contract"]
 moderation-charters-contract = ["dpp/moderation-charters-contract"]
+decision-proposals-contract = ["dpp/decision-proposals-contract"]
+token-market-contract = ["dpp/token-market-contract"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Runs the browser's non-`Send` quorum fetches and timers on the local executor.
+wasm-bindgen-futures = { version = "0.4.58" }
+gloo-timers = { version = "0.3.0", features = ["futures"] }
+# Browser `fetch` for proof requests: unlike reqwest on wasm32 it can refuse
+# redirects, abort, and bound a body while streaming it.
+js-sys = "0.3.85"
+wasm-bindgen = "0.2.108"
+wasm-streams = "0.5"
+web-sys = { version = "0.3.85", features = [
+    "AbortController",
+    "AbortSignal",
+    "Headers",
+    "ReadableStream",
+    "Request",
+    "RequestCache",
+    "RequestCredentials",
+    "RequestInit",
+    "RequestRedirect",
+    "Response",
+] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Waits out the gap between two refreshes of the quorum lists.
+tokio = { version = "1.40", features = ["time"] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 reqwest = { version = "0.12", features = ["json"] }
@@ -63,5 +100,9 @@ reqwest = { version = "0.12", features = ["json"] }
 [target.'cfg(target_os = "android")'.dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
 
-[dev-dependencies]
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+# Runs the browser transport's tests under Node.js or a browser.
+wasm-bindgen-test = "0.3.58"

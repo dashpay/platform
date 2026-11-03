@@ -1,0 +1,45 @@
+{
+  "baseHeight": 1,
+  "blockHeight": 1000,
+  "addedMNs": [
+    {
+      "type": "Evo",
+      "proTxHash": "86e4a4274da5610322340e2f34adf8f6f2899f78b2ce1c31281b6d1754a88d76",
+      "collateralHash": "b881e375496b24e492820639e8dbe466b86af721eba6fcfdd5c9acf9d3e0afff",
+      "collateralIndex": 0,
+      "collateralAddress": "yRzZJpqMjbUdXCyCqHFUeU3vnJ2Z5Pzs3Q",
+      "operatorReward": 0,
+      "state": {
+        "version": 2,
+        "service": "192.0.2.60:9999",
+        "addresses": {
+          "core_p2p": [
+            "192.0.2.60:9999"
+          ],
+          "platform_https": [
+            "192.0.2.60:443"
+          ],
+          "platform_p2p": [
+            "192.0.2.60:26656"
+          ]
+        },
+        "registeredHeight": 900,
+        "lastPaidHeight": 990,
+        "consecutivePayments": 0,
+        "PoSePenalty": 0,
+        "PoSeRevivedHeight": -1,
+        "PoSeBanHeight": -1,
+        "revocationReason": 0,
+        "ownerAddress": "yMbm9SVj9uygvMChEDMPoW6R3Fw1fLRaRz",
+        "votingAddress": "ySM11LUD65Bi4p1gm68XLkdWc65TBKRzvQ",
+        "platformNodeID": "416e5b04d3047def070bea5175431ca7732b4b7b",
+        "platformP2PPort": 26656,
+        "platformHTTPPort": 443,
+        "payoutAddress": "yaQv7p9egV1wB22MEzZ8vyyAHcYWUTNndN",
+        "pubKeyOperator": "b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7"
+      }
+    }
+  ],
+  "removedMNs": [],
+  "updatedMNs": []
+}

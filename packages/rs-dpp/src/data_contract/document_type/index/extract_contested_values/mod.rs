@@ -90,6 +90,8 @@ mod tests {
             required_since: None,
             distinct_from: None,
             encrypted_for: None,
+            generated_from: None,
+            revealed_reference: None,
         };
         let document_properties = IndexMap::from([
             (

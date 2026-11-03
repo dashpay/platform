@@ -14,8 +14,17 @@ use crate::nft::TradeMode;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Only in tests and builds with `fixtures-and-mocks`: see [`Self::schema_mut`].
+#[cfg(any(test, feature = "fixtures-and-mocks"))]
 pub trait DocumentTypeV0MutGetters {
-    /// Gets the schema as mut
+    /// Gets the schema as mut.
+    ///
+    /// Only the raw schema changes: everything parsing derived from it (properties, indexes,
+    /// rules, flags, validators) stays as it was, so the document type no longer means what its
+    /// schema says, and a contract stored in format version 2 with it would keep the stale
+    /// compiled form beside the edited schema. So it is for tests that build such types; to
+    /// change what a document type means, set its schema on the contract
+    /// (`set_document_schema`), which parses it again.
     fn schema_mut(&mut self) -> &mut Value;
 }
 
@@ -23,6 +32,17 @@ pub trait DocumentTypeV0Getters {
     /// Returns the name of the document type.
     fn name(&self) -> &String;
 
+    /// Returns the schema exactly as the contract was sent, which is what the
+    /// contract stores and serializes. From protocol version 14 it, and the
+    /// contract's `schema_defs()`, may spell a property with a type shorthand
+    /// (`"type": "identifier"`, or `"type": "bytes"` with a `size`). Read a
+    /// property's type from the parsed properties, never from these schemas'
+    /// `type` keywords. A raw read that must follow a `$ref` rewrites the root
+    /// [`DocumentType::enrich_with_base_schema`](crate::data_contract::document_type::DocumentType::enrich_with_base_schema)
+    /// builds from this schema and the `$defs` with
+    /// [`DocumentType::expand_property_type_shorthands`](crate::data_contract::document_type::DocumentType::expand_property_type_shorthands),
+    /// which rewrites its `properties` and its `$defs` together; rewriting this
+    /// schema alone leaves the definitions a `$ref` names as sent.
     fn schema(&self) -> &Value;
 
     fn schema_owned(self) -> Value;

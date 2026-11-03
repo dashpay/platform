@@ -1,4 +1,8 @@
 use crate::asset_lock::reduced_asset_lock_value::AssetLockValue;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 
 pub mod reduced_asset_lock_value;
 
@@ -18,10 +22,10 @@ pub enum StoredAssetLockInfo {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for StoredAssetLockInfo {}
+impl JsonConvertible for StoredAssetLockInfo {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for StoredAssetLockInfo {}
+impl ValueConvertible for StoredAssetLockInfo {}
 
 #[cfg(all(
     test,

@@ -1,0 +1,204 @@
+{
+  "$formatVersion": "1",
+  "id": "5jKh25biPsnrmLWXXuqKNH2Q67j69T4Q7Zew5c8wJKaV",
+  "ownerId": "5sAHJgXjaUPK3X1YQWV9x2ZvaS9VVaS3ENzFCNE8nzDu",
+  "version": 1,
+  "documentSchemas": {
+    "namePreorder": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "ttl": 3600,
+      "properties": {
+        "ownerNameHash": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 0
+        },
+        "nameHash": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 1
+        }
+      },
+      "indices": [
+        {
+          "name": "ownerAndNameHash",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            },
+            {
+              "ownerNameHash": "asc"
+            }
+          ],
+          "unique": true
+        },
+        {
+          "name": "ownerAndName",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            },
+            {
+              "nameHash": "asc"
+            }
+          ],
+          "unique": true
+        },
+        {
+          "name": "nameHashByHeight",
+          "properties": [
+            {
+              "nameHash": "asc"
+            },
+            {
+              "$createdAtBlockHeight": "asc"
+            }
+          ]
+        }
+      ],
+      "required": [
+        "$createdAt",
+        "$createdAtBlockHeight",
+        "ownerNameHash",
+        "nameHash"
+      ],
+      "additionalProperties": false
+    },
+    "unindexedPreorder": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "ttl": 3600,
+      "properties": {
+        "ownerNameHash": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 0
+        },
+        "nameHash": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 1
+        }
+      },
+      "indices": [
+        {
+          "name": "ownerAndNameHash",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            },
+            {
+              "ownerNameHash": "asc"
+            }
+          ],
+          "unique": true
+        },
+        {
+          "name": "ownerAndName",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            },
+            {
+              "nameHash": "asc"
+            }
+          ],
+          "unique": true
+        }
+      ],
+      "required": [
+        "$createdAt",
+        "$createdAtBlockHeight",
+        "ownerNameHash",
+        "nameHash"
+      ],
+      "additionalProperties": false
+    },
+    "copyablePreorder": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "ttl": 3600,
+      "properties": {
+        "ownerNameHash": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 0
+        },
+        "nameHash": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 1
+        }
+      },
+      "indices": [
+        {
+          "name": "ownerAndNameHash",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            },
+            {
+              "ownerNameHash": "asc"
+            }
+          ],
+          "unique": true
+        },
+        {
+          "name": "ownerAndName",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            },
+            {
+              "nameHash": "asc"
+            }
+          ],
+          "unique": true
+        },
+        {
+          "name": "nameHashByHeight",
+          "properties": [
+            {
+              "nameHash": "asc"
+            },
+            {
+              "$createdAtBlockHeight": "asc"
+            }
+          ]
+        },
+        {
+          "name": "ownerNameHashAlone",
+          "properties": [
+            {
+              "ownerNameHash": "asc"
+            }
+          ],
+          "unique": true
+        }
+      ],
+      "required": [
+        "$createdAt",
+        "$createdAtBlockHeight",
+        "ownerNameHash",
+        "nameHash"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

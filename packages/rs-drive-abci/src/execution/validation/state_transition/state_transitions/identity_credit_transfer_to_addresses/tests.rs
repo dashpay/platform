@@ -5069,11 +5069,13 @@ mod tests {
             );
         }
 
-        /// Test that when balance equals (total_outputs + actual_fee_from_first_run) with 128 outputs,
-        /// the second run succeeds because fee estimation is now accurate enough with count sum trees.
-        /// (Previously this would fail because fee estimation used a higher worst-case estimate.)
+        /// Test that with 128 outputs, as with one, a balance of (total_outputs +
+        /// actual_fee_from_first_run) is refused, the estimate the balance check uses coming in at
+        /// or above the applied fee: since grovedb `GROVE_V4` (protocol version 14) it sizes each
+        /// rewritten root of an address balance sum tree as the apply stores it. A balance topped
+        /// up to the required one then succeeds.
         #[tokio::test]
-        async fn test_exact_actual_fee_balance_succeeds_with_128_outputs() {
+        async fn test_exact_actual_fee_balance_fails_and_estimate_succeeds_with_128_outputs() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -5176,14 +5178,14 @@ mod tests {
                 )
                 .expect("should remove balance");
 
-            // Second run - this should fail because fee estimation is higher than actual fee
+            // Second run - refused: the estimate is above the actual fee
             let platform_state2 = platform.state.load();
             let transaction2 = platform.drive.grove.start_transaction();
 
             let processing_result2 = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![transition_bytes],
+                    &vec![transition_bytes.clone()],
                     &platform_state2,
                     &BlockInfo::default(),
                     &transaction2,
@@ -5193,12 +5195,52 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            // With count sum trees, fee estimation is now accurate enough that exact balance succeeds
-            assert_matches!(
-                processing_result2.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution{ .. }] => {
-                    // Success - fee estimation is now accurate enough with count sum trees
+            let required_balance = match processing_result2.execution_results().as_slice() {
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(err)),
+                )] => {
+                    assert_eq!(err.balance(), exact_balance);
+                    err.required_balance()
                 }
+                other => panic!("expected the actual fee alone to be refused, got {other:?}"),
+            };
+            assert!(
+                required_balance > exact_balance,
+                "Required balance {required_balance} should be greater than exact balance {exact_balance}"
+            );
+            drop(transaction2);
+
+            // Third run - topped up to the required balance, the transfer succeeds
+            platform
+                .drive
+                .add_to_identity_balance(
+                    identity.id().to_buffer(),
+                    required_balance - exact_balance,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("should add balance");
+            let platform_state3 = platform.state.load();
+            let transaction3 = platform.drive.grove.start_transaction();
+
+            let processing_result3 = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition_bytes],
+                    &platform_state3,
+                    &BlockInfo::default(),
+                    &transaction3,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result3.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 

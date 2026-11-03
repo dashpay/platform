@@ -114,12 +114,9 @@
               {
                 "type": "permanentDocument",
                 "documentType": "joinRequest",
-                "lookup": {
-                  "index": "bySubmittedCharter",
-                  "keys": {
-                    "submittedCharterId": "submittedCharterId",
-                    "$ownerId": "."
-                  }
+                "findBy": {
+                  "submittedCharterId": "submittedCharterId",
+                  "$ownerId": "."
                 }
               },
               {

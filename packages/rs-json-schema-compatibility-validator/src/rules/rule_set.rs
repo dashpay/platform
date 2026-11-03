@@ -1512,6 +1512,50 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<CompatibilityRulesCollection> = Laz
                 ],
             },
         ),
+        // `generatedFrom` (a string property whose value a built-in function
+        // generates from other properties of the same document type) is frozen
+        // like `distinctFrom`: adding, removing or changing its function or
+        // params changes which documents the type accepts, and what the
+        // platform writes into those that leave the property out.
+        (
+            "generatedFrom",
+            CompatibilityRules {
+                allow_addition: false,
+                allow_removal: false,
+                allow_replacement_callback: FALSE_CALLBACK.clone(),
+                subschema_levels_depth: None,
+                inner: None,
+                #[cfg(any(test, feature = "examples"))]
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "generatedFrom": { "function": "sys.stringTransformations.homographSafeASCII", "params": ["label"] } }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/generatedFrom".to_string(),
+                            value: json!({ "function": "sys.stringTransformations.homographSafeASCII", "params": ["label"] }),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "generatedFrom": { "function": "sys.stringTransformations.homographSafeASCII", "params": ["label"] } }),
+                        json!({}),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/generatedFrom".to_string(),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "generatedFrom": { "function": "sys.stringTransformations.homographSafeASCII", "params": ["label"] } }),
+                        json!({ "generatedFrom": { "function": "sys.stringTransformations.homographSafeASCII", "params": ["displayName"] } }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/generatedFrom/params/0".to_string(),
+                            value: json!("displayName"),
+                        })),
+                    )
+                        .into(),
+                ],
+            },
+        ),
         // `maxBytes` (the most UTF-8 bytes a string may take) moves like
         // `maxLength`: raising or dropping the bound keeps every stored document
         // valid, adding or lowering it would not.

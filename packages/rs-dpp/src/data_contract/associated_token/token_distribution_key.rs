@@ -7,6 +7,10 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use crate::prelude::TimestampMillis;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 
 /// Represents the type of token distribution.
 ///
@@ -265,28 +269,28 @@ pub struct TokenDistributionKey {
 
 // --- canonical conversion trait impls (unification pass 1) ---
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenDistributionTypeWithResolvedRecipient {}
+impl JsonConvertible for TokenDistributionTypeWithResolvedRecipient {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenDistributionTypeWithResolvedRecipient {}
+impl ValueConvertible for TokenDistributionTypeWithResolvedRecipient {}
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenDistributionInfo {}
+impl JsonConvertible for TokenDistributionInfo {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenDistributionInfo {}
+impl ValueConvertible for TokenDistributionInfo {}
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenDistributionType {}
+impl JsonConvertible for TokenDistributionType {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenDistributionType {}
+impl ValueConvertible for TokenDistributionType {}
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenDistributionKey {}
+impl JsonConvertible for TokenDistributionKey {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenDistributionKey {}
+impl ValueConvertible for TokenDistributionKey {}
 
 #[cfg(all(
     test,

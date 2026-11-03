@@ -3,7 +3,7 @@
 //! by-id join while validating the shape, on the server and in the verifier
 //! alike:
 //!
-//! - a document reference resolved by a unique index (`refersTo.lookup`),
+//! - a document reference found by `findBy` through a unique index,
 //!   whose value is not the referenced document's `$id`;
 //! - a reference expression (`refersTo: { "anyOf": [...] }` or
 //!   `{ "allOf": [...] }`): an `anyOf` value may be the id of a document of any
@@ -132,7 +132,9 @@ fn lookup_join_contract() -> DataContract {
     join_contract(platform_value!({
         "type": "permanentDocument",
         "documentType": "profile",
-        "lookup": { "index": "byOwner", "keys": { "$ownerId": "." } }
+        "findBy": {
+            "$ownerId": "."
+        }
     }))
 }
 
@@ -152,8 +154,8 @@ fn expression_join_contract(combinator: &str) -> DataContract {
     join_contract(refers_to)
 }
 
-/// The lookup refusal names the index the value goes through.
-const LOOKUP_REFUSAL: &str = "unique index \"byOwner\"";
+/// The refusal names the properties `findBy` finds the document by.
+const LOOKUP_REFUSAL: &str = "by findBy ($ownerId)";
 
 /// The expression refusal names the declaration.
 const EXPRESSION_REFUSAL: &str = "declares a refersTo anyOf or allOf expression";

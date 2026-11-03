@@ -3,6 +3,7 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
+use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
 use crate::data_contract::document_type::DocumentType;
 
 use crate::consensus::basic::document::{
@@ -28,10 +29,22 @@ pub trait DataContractDocumentValidationMethodsV0 {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 
+    /// Validates a document's properties, `value`, against its document type: the
+    /// schema, the string byte caps and the `propertyConstraints` rules. `system` holds
+    /// the system values of the document version being written, what a rule's `$ownerId`
+    /// and system times and heights read: an owner the caller does not know equals no
+    /// identifier, and a rule reading a time or height it does not know is not judged.
+    /// Consensus passes the writer and the block's time and heights on create, and the
+    /// stored ones where a replace keeps them. A client (`system.consensus` false) does not
+    /// know a property generated from state (`sys.tokens`) that `value` leaves out while
+    /// supplying its parameter, which the platform writes before checking the document:
+    /// from generation 1, the schema checks a value the property admits in its place, and
+    /// a rule reading it is not judged.
     fn validate_document_properties(
         &self,
         name: &str,
         value: Value,
+        system: &DocumentSystemValues,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }
@@ -42,6 +55,7 @@ impl DataContract {
         &self,
         name: &str,
         value: Value,
+        system: &DocumentSystemValues,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         let Some(document_type) = self.document_type_optional_for_name(name) else {
@@ -101,6 +115,15 @@ impl DataContract {
         let max_bytes_result =
             document_type.validate_max_bytes_properties(&value, platform_version)?;
 
+        // Added in place at protocol version 14, inert before it: the meta-schemas there
+        // refuse `generatedFrom`, their parser ignores it (`apply_generated_from` is
+        // `None`, so no property carries a declaration) and `validate_generated_from` is
+        // `None`, so the check returns an empty result without reading `value`. Computed and
+        // reported like `maxBytes`, after it, so a schema error keeps precedence and every
+        // value it compares is known to be a string.
+        let generated_from_result =
+            document_type.validate_generated_from_properties(&value, platform_version)?;
+
         // Added in place at protocol version 14, inert for every earlier version that
         // selects this generation: `validate_property_constraints` is `None` in all of their
         // tables, so the call returns an empty result without reading `value`. (Only parser
@@ -110,7 +133,7 @@ impl DataContract {
         // schema error keeps precedence and every value a rule reads is known to be an
         // integer.
         let property_constraints_result =
-            document_type.validate_property_constraints(&value, platform_version)?;
+            document_type.validate_property_constraints(&value, system, platform_version)?;
 
         let json_value = match value.try_into_validating_json() {
             Ok(json_value) => json_value,
@@ -147,6 +170,9 @@ impl DataContract {
         if !max_bytes_result.is_valid() {
             return Ok(max_bytes_result);
         }
+        if !generated_from_result.is_valid() {
+            return Ok(generated_from_result);
+        }
 
         Ok(property_constraints_result)
     }
@@ -159,7 +185,12 @@ impl DataContract {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         // Validate user defined properties
-        self.validate_document_properties_v0(name, document.properties().into(), platform_version)
+        self.validate_document_properties_v0(
+            name,
+            document.properties().into(),
+            &DocumentSystemValues::of_document(document),
+            platform_version,
+        )
     }
 }
 
@@ -170,12 +201,13 @@ mod tests {
     use crate::consensus::basic::BasicError;
     use crate::consensus::ConsensusError;
     use crate::data_contract::created_data_contract::CreatedDataContract;
+    use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
     use crate::tests::fixtures::get_data_contract_fixture;
     use platform_value::Value;
     use platform_version::version::PlatformVersion;
 
     fn data_contract() -> CreatedDataContract {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
         get_data_contract_fixture(None, 0, platform_version.protocol_version)
     }
 
@@ -193,12 +225,12 @@ mod tests {
 
     #[test]
     fn should_reject_excessive_document_value_depth_before_field_size_validation() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
         let data_contract = data_contract().data_contract_owned();
         let max_depth = platform_version
             .system_limits
             .max_document_value_depth
-            .expect("latest protocol should enforce document value depth");
+            .expect("protocol version 13 should enforce document value depth");
         let value = nested_document_value(
             max_depth as usize + 1,
             Value::Text(
@@ -207,7 +239,12 @@ mod tests {
         );
 
         let result = data_contract
-            .validate_document_properties("noTimeDocument", value, platform_version)
+            .validate_document_properties(
+                "noTimeDocument",
+                value,
+                &DocumentSystemValues::default(),
+                platform_version,
+            )
             .expect("validation should return a consensus result");
 
         let Some(ConsensusError::BasicError(BasicError::ValueError(ValueError { .. }))) =
@@ -226,12 +263,12 @@ mod tests {
 
     #[test]
     fn should_allow_document_value_depth_at_the_limit() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
         let data_contract = data_contract().data_contract_owned();
         let max_depth = platform_version
             .system_limits
             .max_document_value_depth
-            .expect("latest protocol should enforce document value depth");
+            .expect("protocol version 13 should enforce document value depth");
         let value = nested_document_value(
             max_depth as usize,
             Value::Text(
@@ -240,7 +277,12 @@ mod tests {
         );
 
         let result = data_contract
-            .validate_document_properties("noTimeDocument", value, platform_version)
+            .validate_document_properties(
+                "noTimeDocument",
+                value,
+                &DocumentSystemValues::default(),
+                platform_version,
+            )
             .expect("validation should return a consensus result");
 
         assert!(matches!(
@@ -253,7 +295,7 @@ mod tests {
 
     #[test]
     fn should_preserve_valid_document_properties() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
         let data_contract = data_contract().data_contract_owned();
         let value = Value::Map(vec![(
             Value::Text("name".to_owned()),
@@ -261,7 +303,12 @@ mod tests {
         )]);
 
         let result = data_contract
-            .validate_document_properties("noTimeDocument", value, platform_version)
+            .validate_document_properties(
+                "noTimeDocument",
+                value,
+                &DocumentSystemValues::default(),
+                platform_version,
+            )
             .expect("validation should return a consensus result");
 
         assert!(

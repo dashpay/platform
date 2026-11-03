@@ -86,6 +86,29 @@ class IndexKeywordDescriptorsTest {
     }
 
     @Test
+    fun shouldListACounterIndexSourceAndAtRankingsWithNoTerminal() {
+        val index = buildJsonObject {
+            put("summableOffCountIndex", "byPost")
+            put("rangeSummable", true)
+            put(
+                "rankedSummable",
+                buildJsonObject { put("at", buildJsonArray { add("postAuthor"); add("postId") }) },
+            )
+            put("rankedAverageable", buildJsonObject { put("at", "postAuthor") })
+        }
+        assertEquals(
+            listOf(
+                "Counter of byPost",
+                "Range Sum",
+                "Ranked by Sum at postAuthor, postId",
+                "Ranked by Average at postAuthor",
+            ),
+            indexAxisDescriptors(index),
+        )
+        assertNull(indexTerminal(index, indexOnly = true))
+    }
+
+    @Test
     fun terminalDefaultsToOwnerIdOnlyOnIndexOnlyTypes() {
         val bare = JsonObject(emptyMap())
         assertNull(indexTerminal(bare, indexOnly = false))

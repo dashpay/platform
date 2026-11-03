@@ -14,6 +14,22 @@ impl Drive {
     /// use [`Drive::fetch_contract_group_info`] to tell an absent group from an empty one.
     ///
     /// `limit` must be between 1 and the configured maximum query limit.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract_group_id`: The group's id.
+    /// * `query`: The kind of member (contracts, document types or tokens) and the cursor to
+    ///   continue after.
+    /// * `limit`: The most entries the page holds.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(ContractGroupMembersPage)` with the page of the queried kind; empty when the group
+    ///   is absent or has no more members of that kind.
+    /// * `Err(Error)` when the method version is unknown, `limit` is out of range, a read
+    ///   fails, or a stored member is malformed.
     pub fn fetch_contract_group_members(
         &self,
         contract_group_id: Identifier,

@@ -20,10 +20,8 @@
 #
 # No coverage here: code coverage is collected only by the nightly run of the
 # full workspace workflow (tests-rs-workspace.yml, `coverage` input), which
-# also measures the wallet crates. Known trade-offs: this fast path stays
-# pinned to the macOS runners (unlike the full workspace job, which schedules
-# onto any `rust-ci` self-hosted runner), so wallet PRs depend on a mac
-# runner being online; and the scoped `-p` builds feature-unify shared deps
+# also measures the wallet crates. Both workflows use the same Linux image
+# pool, including ARM64 Linux VMs on Macs. The scoped `-p` builds feature-unify shared deps
 # differently than `--workspace` builds, so the shared target/ carries an
 # extra artifact flavor.
 on:
@@ -35,9 +33,35 @@ on:
         default: false
 
 jobs:
+  select-runner:
+    name: Select compatible runner image
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository
+      || github.event.pull_request.head.repo.owner.login == 'thepastaclaw'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 135
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: read
+      actions: read
+    outputs:
+      labels: ${{ steps.select.outputs.labels }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Select provisioned pool or exact PR candidate
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/runner-image.py select --kind rust
+
   test-mac:
-    name: Wallet tests (macOS)
-    runs-on: [self-hosted, macOS, ARM64]
+    name: Wallet tests (Linux image)
+    needs: select-runner
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.labels) }}
     if: >-
       github.event_name != 'pull_request'
       || github.event.pull_request.head.repo.full_name == github.repository
@@ -58,7 +82,7 @@ jobs:
       # shares the same runner workspace — wiping it on a wallet-only PR
       # would force the next nightly into a ~2.5 min cold rebuild. The size
       # guard below still removes the whole target/ if it outgrows the caps.
-      - name: Prune macOS runner disk before tests
+      - name: Prune runner disk before tests
         run: |
           for path in ../target-backup-before-*-clean-*; do
             if [ -e "$path" ]; then
@@ -77,6 +101,11 @@ jobs:
 
           TARGET_MAX_MB=120000
           MIN_FREE_MB=60000
+          TOTAL=$(df -m . | awk 'NR == 2 {print $2}')
+          if [ "${TOTAL:-0}" -gt 0 ]; then
+            [ $((TOTAL / 3)) -lt "$TARGET_MAX_MB" ] && TARGET_MAX_MB=$((TOTAL / 3))
+            [ $((TOTAL / 5)) -lt "$MIN_FREE_MB" ] && MIN_FREE_MB=$((TOTAL / 5))
+          fi
           SIZE=$(du -sm target 2>/dev/null | awk '{print $1}' || echo 0)
           FREE=$(df -m . | awk 'NR == 2 {print $4}')
           SIZE=${SIZE:-0}
@@ -89,33 +118,14 @@ jobs:
             rm -rf target
           fi
 
-      - name: Verify build dependencies (macOS)
-        run: |
-          # Persistent runners must be provisioned before accepting CI jobs.
-          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
-          echo "/opt/homebrew/opt/llvm/bin" >> "$GITHUB_PATH"
-          export PATH="/opt/homebrew/opt/llvm/bin:/opt/homebrew/bin:$PATH"
-
-          missing=0
-          for tool in cmake llvm-config; do
-            if ! "$tool" --version >/dev/null 2>&1; then
-              echo "::error::Missing or unusable $tool. Provision this dependency on the runner before running CI."
-              missing=1
-            fi
-          done
-          for library in /opt/homebrew/opt/gmp/include/gmp.h /opt/homebrew/opt/gmp/lib/libgmp.dylib /opt/homebrew/opt/llvm/lib/libclang.dylib; do
-            if [ ! -r "$library" ]; then
-              echo "::error::Missing or unreadable $library. Provision this dependency on the runner before running CI."
-              missing=1
-            fi
-          done
-          exit "$missing"
-
       - name: Setup Rust
         uses: ./.github/actions/rust
         with:
           cache: false
           components: rustfmt, clippy
+
+      - name: Verify repository-pinned cargo-nextest
+        run: test "$(cargo nextest --version | awk 'NR == 1 {print $2}')" = "$CI_CARGO_NEXTEST_VERSION"
 
       # Enforce the invariant the scoped --package lists below rely on: the
       # only workspace crate depending (transitively) on the wallet crates is
@@ -131,7 +141,7 @@ jobs:
 
       - name: Find unused dependencies
         run: |
-          cargo install cargo-machete 2>/dev/null || true
+          test "$(cargo machete --version | awk '{print $NF}')" = "$CI_CARGO_MACHETE_VERSION"
           cargo machete
 
       - name: Detect immutable structure changes

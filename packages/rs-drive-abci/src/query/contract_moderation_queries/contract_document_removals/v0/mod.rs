@@ -2,7 +2,9 @@ use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
-use crate::query::contract_moderation_queries::{identifier_from_request, reason_to_response};
+use crate::query::contract_moderation_queries::{
+    identifier_from_request, removal_entry_to_response,
+};
 use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_contract_document_removals_request::get_contract_document_removals_request_v0::Selection;
@@ -10,9 +12,7 @@ use dapi_grpc::platform::v0::get_contract_document_removals_request::{
     DocumentIds, GetContractDocumentRemovalsRequestV0, Page,
 };
 use dapi_grpc::platform::v0::get_contract_document_removals_response::{
-    get_contract_document_removals_response_v0,
-    ContractDocumentRemoval as ContractDocumentRemovalProto, ContractDocumentRemovals,
-    ContractDocumentRestoration as ContractDocumentRestorationProto,
+    get_contract_document_removals_response_v0, ContractDocumentRemovals,
     GetContractDocumentRemovalsResponseV0,
 };
 use dpp::check_validation_result_with_data;
@@ -101,14 +101,16 @@ impl<C> Platform<C> {
                 format!("contract {} not found", contract_id),
             )));
         };
-        let deletable_by_moderators = contract_fetch_info
+        // Only a type whose moderators' deletions keep records has a records tree to read.
+        let keeps_records = contract_fetch_info
             .contract
             .document_type_optional_for_name(&query.document_type_name)
-            .is_some_and(|document_type| document_type.documents_can_be_deleted_by_moderators());
-        if !deletable_by_moderators {
+            .is_some_and(|document_type| document_type.moderator_deletions_keep_records());
+        if !keeps_records {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::InvalidArgument(format!(
-                    "contract {} has no document type {} whose documents moderators can delete",
+                    "contract {} has no document type {} whose moderators' deletions keep \
+                     records",
                     contract_id, query.document_type_name
                 )),
             ));
@@ -131,28 +133,12 @@ impl<C> Platform<C> {
                 .drive
                 .fetch_contract_document_removals(contract_id, &query, None, platform_version));
 
+            let removals = entries.into_iter().map(removal_entry_to_response).collect();
+
             GetContractDocumentRemovalsResponseV0 {
                 result: Some(
                     get_contract_document_removals_response_v0::Result::Removals(
-                        ContractDocumentRemovals {
-                            removals: entries
-                                .into_iter()
-                                .map(|entry| ContractDocumentRemovalProto {
-                                    document_id: entry.document_id.to_vec(),
-                                    document_owner_id: entry.removal.document_owner_id.to_vec(),
-                                    moderator_id: entry.removal.moderator_id.to_vec(),
-                                    removed_at: entry.removal.removed_at,
-                                    reason: Some(reason_to_response(entry.removal.reason)),
-                                    document_hash: entry.removal.document_hash.to_vec(),
-                                    restoration: entry.removal.restoration.map(|restoration| {
-                                        ContractDocumentRestorationProto {
-                                            moderator_id: restoration.moderator_id.to_vec(),
-                                            restored_at: restoration.restored_at,
-                                        }
-                                    }),
-                                })
-                                .collect(),
-                        },
+                        ContractDocumentRemovals { removals },
                     ),
                 ),
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
@@ -167,6 +153,10 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::query::tests::{setup_platform, store_data_contract};
+    use dapi_grpc::platform::v0::get_contract_document_removals_response::{
+        ContractDocumentRemoval as ContractDocumentRemovalProto,
+        ContractDocumentRestoration as ContractDocumentRestorationProto,
+    };
     use dapi_grpc::platform::v0::ContractModerationReason as ContractModerationReasonProto;
     use dpp::block::block_info::BlockInfo;
     use dpp::dashcore::Network;
@@ -205,7 +195,7 @@ mod tests {
                         "text": { "type": "string", "maxLength": 50, "position": 0 },
                     },
                     "additionalProperties": false,
-                    "canBeDeletedByModerators": true,
+                    "moderatorAbilities": { "delete": true },
                 }),
                 true,
                 &mut vec![],
@@ -232,6 +222,13 @@ mod tests {
                 moderator_id: Identifier::from([0x78; 32]),
                 restored_at: 2_000 + seed as u64,
             }),
+            // Every odd record keeps fields of its document, as the document encoded them: the
+            // response carries them as the record stores them.
+            kept_fields: if seed.is_multiple_of(2) {
+                Vec::new()
+            } else {
+                vec![1, 3, b't', b'a', b'g', seed, 0]
+            },
         }
     }
 
@@ -243,8 +240,9 @@ mod tests {
                         contract_id: contract.id(),
                         document_type_name: POST.to_string(),
                         document_id: Identifier::from([seed; 32]),
-                        removal: removal(seed),
-                        replaces_existing: false,
+                        removal: Box::new(removal(seed)),
+                        replaced_record_size: None,
+                        estimated_kept_fields_size: 0,
                         moderator_id: Identifier::from([0x77; 32]),
                     },
                 )],
@@ -304,6 +302,7 @@ mod tests {
                     moderator_id: restoration.moderator_id.to_vec(),
                     restored_at: restoration.restored_at,
                 }),
+            kept_fields: removal.kept_fields,
         }
     }
 

@@ -63,11 +63,11 @@ impl DriveDocumentCountQuery<'_> {
     /// [`Self::point_lookup_count_path_query`] does NOT set
     /// `absence_proofs_for_non_existing_searched_keys: true`, so:
     ///
-    /// - **Present branches** → `Some(element)` triples →
-    ///   `Some(element.count_value_or_default())` on the entry. The
+    /// - **Present branches** → `Some(element)` triples → the element's
+    ///   document count on the entry (`document_count_of_element`). The
     ///   element is the terminator value tree's CountTree, whose
     ///   `count_value_or_default()` returns the per-branch doc count
-    ///   directly.
+    ///   directly; on a `summableOffCountIndex` index its sum does.
     /// - **Absent branches** (queried In value with no element in
     ///   the merk tree) → silently omitted from the elements stream.
     ///   Callers detect "queried but absent" by diffing the
@@ -101,8 +101,15 @@ impl DriveDocumentCountQuery<'_> {
                 .map_err(|e| Error::GroveDB(Box::new(e)))?;
 
         // The layout decoder lives with the path-query builder — see
-        // `point_lookup_count_entries` for the In-value placement.
-        let out = point_lookup_count_entries(base_path_len, has_in_clause, elements);
+        // `point_lookup_count_entries` for the In-value placement. Edited
+        // in place in this shipped generation (protocol versions 1 to 14):
+        // `self.index` changes the decode only on a `summableOffCountIndex`
+        // index, which only meta-schema v3 (protocol version 14) admits, and
+        // the decode looks through a wrapped element on every index, where
+        // the only wrapper a count read reaches before protocol version 14 is
+        // `NotSummed`, whose count grovedb passes through, so the count is
+        // the same (see `point_lookup_count_entries`).
+        let out = point_lookup_count_entries(self.index, base_path_len, has_in_clause, elements);
         Ok((root_hash, out))
     }
 }

@@ -738,14 +738,15 @@ mod tests {
             min_value: None,
             max_value: None,
         };
-        let v14 = PlatformVersion::get(14).expect("v14 must exist");
+        let latest = PlatformVersion::latest();
         assert_eq!(
-            v14.dpp
+            latest
+                .dpp
                 .token_versions
                 .distribution_function_evaluate_version,
             1
         );
-        assert_eq!(distribution.evaluate(0, 1, v14).unwrap(), 31_402);
+        assert_eq!(distribution.evaluate(0, 1, latest).unwrap(), 31_402);
     }
 
     #[test]

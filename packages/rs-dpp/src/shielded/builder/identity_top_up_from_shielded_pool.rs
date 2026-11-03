@@ -2,7 +2,9 @@ use grovedb_commitment_tree::{Anchor, FullViewingKey, SpendAuthorizingKey};
 
 use crate::address_funds::OrchardAddress;
 use crate::fee::Credits;
-use crate::shielded::compute_shielded_identity_top_up_fee;
+use crate::shielded::{
+    compute_shielded_identity_top_up_fee, identity_top_up_from_shielded_extra_sighash_data,
+};
 use crate::state_transition::identity_top_up_from_shielded_pool_transition::methods::IdentityTopUpFromShieldedPoolTransitionMethodsV0;
 use crate::state_transition::identity_top_up_from_shielded_pool_transition::IdentityTopUpFromShieldedPoolTransition;
 use crate::state_transition::StateTransition;
@@ -54,7 +56,7 @@ pub fn build_identity_top_up_from_shielded_pool_transition<P: OrchardProver>(
 
     let change_amount = total_spent - required;
 
-    let extra_sighash_data = crate::shielded::identity_top_up_from_shielded_extra_sighash_data(
+    let extra_sighash_data = identity_top_up_from_shielded_extra_sighash_data(
         &identity_id.to_buffer(),
         required,
         platform_version,

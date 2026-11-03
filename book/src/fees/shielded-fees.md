@@ -46,6 +46,42 @@ The fee is derived differently depending on the shielded transition type:
 | **ShieldFromIdentity** | `fee = metered(storage + processing) + shielded_verification_fee`, paid from the funding identity's balance | Identity balance to pool (protocol version 14). Charged exactly like `Shield`, but on the identity side: the identity signature covers the whole outputs-only bundle, the metered note writes and identity writes go through the standard identity-paid path (`IdentityCreditTransferToAddresses` model), and only the ZK compute fee is added as `additional_fixed_fee_cost`. `user_fee_increase` applies. The identity must hold `amount + fee`; consensus rejects a short balance with `IdentityInsufficientBalanceError`. The pool and the identity are both balance trees, so no system-credit adjustment is emitted. See [Entry-Transition Fees](#entry-transition-fees-shield-shieldfromassetlock-and-shieldfromidentity). |
 | **IdentityTopUpFromShieldedPool** | `fee = compute_shielded_identity_top_up_fee(num_actions)` = `compute_minimum_shielded_fee(num_actions) + identity_balance_storage_fee`, carved from `value_balance` | Shielded pool to an EXISTING identity's balance (protocol version 14). `value_balance` (the transition's `topUpAmount`) is the gross amount leaving the pool; the identity receives `topUpAmount - fee` and validation requires `topUpAmount >= fee`. Same flat pool-paid model as `Unshield`, with the identity balance write as a flat component built like `Unshield`'s address write but calibrated to its measured cost: the top-up rewrites the existing identity's balance element and its Merk path (320 replaced bytes, 175,320 credits of processing, no storage), folded into one flat figure with headroom like the other shielded components, so `identity_balance_storage_fee = 8 x per_byte_rate` (`SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES`). The target identity and gross amount are bound into the Orchard sighash; the identity must already exist; no system-credit adjustment. |
 
+### Token shielded pool fees
+
+Token pools (protocol version 14, see [Token Shielded Pools](../data-model/token-shielded-pools.md))
+hold tokens, and tokens cannot pay fees, so none of the three token pool transitions carves a
+fee from the bundle. They are `TokenTransition` variants inside a `Batch`, and the batch's
+signing identity pays in credits through the standard identity-paid path.
+
+| Transition | Fee Formula | Explanation |
+|---|---|---|
+| **TokenShield** | `fee = metered(storage + processing) + shielded_verification_fee`, paid by the signing identity | Same model as `ShieldFromIdentity`: the dummy nullifier inserts, the note appends, the identity token balance write and the pool balance write are metered, and `compute_shielded_verification_fee(num_actions)` is added as a precalculated operation before the proof is verified. `value_balance` is `-amount` in tokens and carries no fee. |
+| **TokenUnshield** | `fee = metered(storage + processing) + shielded_verification_fee`, paid by the signing identity | `value_balance` equals the unshielded token amount exactly; the recipient receives the full amount. Nullifier inserts, note appends and the two balance writes are metered. |
+| **TokenShieldedTransfer** | `fee = metered(storage + processing) + shielded_verification_fee`, paid by the signing identity | `value_balance` is exactly zero; consensus rejects any other value. Only the nullifier inserts and note appends are metered. |
+| **TokenMintToPool**, **TokenClaimToPool**, **TokenDirectPurchaseToPool** | same model | Outputs-only bundles; the dummy nullifier inserts, the note appends and the supply and pool balance writes are metered, the verification fee is charged by the action transformer so CheckTx and block execution price the bundle identically. |
+| **TokenBurnFromPool** | same model | Nullifier inserts, change note appends and the supply and pool balance writes are metered. |
+| Document with a **TokenPaymentInfo::V1** | same model, on top of the document's own fee | The shielded payment bundle's verification fee is added by the batch transformer before anything can fail; the pool writes it causes are metered. |
+
+Because the verification fee is charged before the proof is checked, an invalid proof is a paid
+failure: the identity is charged, its identity contract nonce advances, and no token moves.
+
+### Identity-less token pool transitions
+
+`TokenShieldedTransferWithShieldedFee` (26), `TokenUnshieldWithShieldedFee` (27) and
+`TokenPurchaseFromShieldedPool` (28) have no identity: the fee is carved from a second bundle
+spent in the credit shielded pool, exactly as `ShieldedTransfer` carves its own fee.
+
+| Transition | Fee Formula | Explanation |
+|---|---|---|
+| **TokenShieldedTransferWithShieldedFee** | `credit_amount == base(fee_actions) + base(token_actions)` | Two bundles are verified and stored, so the fee is the base shielded fee of each (`compute_token_pool_paid_shielded_fee`). Pure fee: overpayment is rejected. |
+| **TokenUnshieldWithShieldedFee** | `credit_amount == base(fee_actions) + base(token_actions) + identity balance bytes` | Adds the flat storage of the recipient's token balance item. Pure fee. |
+| **TokenPurchaseFromShieldedPool** | `credit_amount == total_agreed_price + base(fee_actions) + base(token_actions) + balance write + supply bytes` | The agreed price rides on top of the fee and is credited to the contract owner; `credit_amount - total_agreed_price` must equal the fee exactly. |
+
+The fee bundle's value balance is `credit_amount`; the minimum-fee validation, the SDK builders
+and the transformer all use the same `compute_token_*` function so the threshold never drifts
+from what is carved. An invalid proof or a spent nullifier is an unpaid rejection: nothing is
+committed and no fee is charged, the same as for the credit pool's pool-paid transitions.
+
 For `ShieldedTransfer`, the client constructs the bundle so that `total_spent −
 total_output = desired_fee`. The Orchard circuit proves that value is conserved
 (inputs = outputs + value_balance), and the binding signature cryptographically
@@ -67,6 +103,14 @@ is funded by a consumed asset lock with no metering anchor, so it pays the flat
 `compute_minimum_shielded_fee(num_actions)` (plus the asset-lock base cost). `num_actions`
 is the on-wire action count of the bundle (a single-output, spends-disabled Orchard bundle
 pads to 2 actions, so the minimum is the 2-action fee).
+
+Every action of an outputs-only bundle still reveals a nullifier, that of a dummy spend,
+which becomes the new note's `rho`. From protocol version 14 the entry transitions record
+those nullifiers and refuse one repeated inside the bundle or already recorded
+(`NullifierAlreadySpentError`), as the spends do, so every revealed nullifier is recorded
+once. `Shield` and `ShieldFromIdentity` meter the nullifier writes like the rest of their
+storage; `ShieldFromAssetLock`'s flat fee already prices a note and a nullifier write per
+action (see [Per-Action Storage Fee](#3-per-action-storage-fee)).
 
 ### Shield
 
@@ -99,8 +143,8 @@ compute` funding gate is `validate_fees_of_event`.
 `ShieldFromIdentity` (protocol version 14) is `Shield` with the identity balance as
 the funding side. It is identity-signed (TRANSFER key, identity nonce) like
 `IdentityCreditTransferToAddresses`, and carries the same outputs-only Orchard bundle
-as `Shield`. The fee model is identical to `Shield`'s: GroveDB meters the note
-inserts and the identity balance and nonce writes, and the shielded compute fee is
+as `Shield`. The fee model is identical to `Shield`'s: GroveDB meters the note and
+nullifier inserts and the identity balance and nonce writes, and the shielded compute fee is
 added as `additional_fixed_fee_cost`:
 
 ```
@@ -110,13 +154,18 @@ identity_balance_after = identity_balance_before - amount - fee
 
 `user_fee_increase` applies to the metered processing portion. The stateless
 floor requires `identity_balance >= amount + compute_shielded_identity_balance_write_fee`,
-the conservative complete fee (`compute_minimum_shielded_fee` plus the flat
-`SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES` identity-write component at the
-storage rate: 20 effective bytes covering the nonce and balance rewrites, which add no
-storage but replace 883 bytes of Merk path for a measured 466,760 credits of
-processing, folded into one flat figure with headroom like the other shielded
-components), so an identity that could not pay the complete fee is refused before the
-Orchard proof is verified. The authoritative gate is the identity-paid fee
+the conservative complete admission estimate: `compute_minimum_shielded_fee`, plus
+PV14's versioned `shielded_identity_action_write_storage_bytes` (400 effective
+bytes per action) and `shielded_identity_balance_write_storage_bytes` (500 flat
+bytes), each priced at the storage rate. The allowances cover the complete
+execution-event estimate: note/nullifier writes at the estimator's depth 16,
+identity nonce/balance writes at its maximum-element depth, and the signature
+and state-read validation context. They are admission reserves, not physical
+payload sizes or changes to the actual metered charge. For two actions the
+base wallet estimate is `114,140,000 + (2 × 400 + 500) × 27,400 = 149,760,000`
+credits. Historical tables preserve the preceding zero per-action and 20-byte
+flat allowance. An identity that could not pay the
+complete fee is therefore refused before the Orchard proof is verified. The authoritative gate is the identity-paid fee
 validation of the execution event (`Paid`), which rejects with
 `IdentityInsufficientBalanceError`. The identity balance and the pool total are
 both terms of the block conservation equation, so the converter emits no
@@ -189,11 +238,10 @@ min_fee = proof_verification_fee + num_actions × (processing_fee + storage_fee)
 ### 1. Proof Verification Fee (per bundle)
 
 A single Halo 2 ZK proof covers the entire bundle regardless of action count.
-Verifying it is the most expensive operation — benchmarked at approximately
-30× the cost of a per-action signature verification. This is a fixed cost per
-bundle.
+The bundle's base verification work is benchmarked at approximately 5 ms.
+This is a fixed cost per bundle.
 
-**Current value:** `100,000,000` credits (100M)
+**Protocol version 14 value:** `40,000,000` credits (40M)
 
 ### 2. Per-Action Processing Fee
 
@@ -205,17 +253,14 @@ batch verification. For a spend-bearing action that marginal work includes:
 - Nullifier duplicate check (hash + tree lookup)
 - Note commitment insertion into the Sinsemilla-based Merkle tree
 
-Output-only entry transitions (Shield / ShieldFromAssetLock) do no spends or
-nullifier checks, but each output action still enlarges the proof and so carries
+Output-only entry transitions (Shield / ShieldFromAssetLock / ShieldFromIdentity) do
+no spends, but each output action still enlarges the proof and so carries
 the same per-action processing charge — this fee tracks the marginal verification
-work, not a fixed per-action checklist.
+work, not a fixed per-action checklist. From protocol version 14 it also prices the
+check of the nullifier each of their actions reveals.
 
-The fee is calibrated at roughly a 4.5:1 ratio against the fixed
-proof-verification fee (100M : 22M) rather than the looser ratio used before the
-recalibration. (Note the two ratios on this page use different baselines: the
-“30×” in §1 is the proof fee relative to a single RedPallas signature
-verification, whereas this 4.5:1 is the proof fee relative to the per-action
-processing fee.)
+At protocol version 14, the proof and per-action fees are versioned independently.
+Their numerical ratio is about 1.8:1 (40M : 22M).
 
 **Current value:** `22,000,000` credits (22M)
 
@@ -225,33 +270,33 @@ Each action permanently stores data in two places:
 
 | Storage | Bytes | Contents |
 |---|---|---|
-| BulkAppendTree (commitment tree) | 280 | 32 cmx + 32 rho + 216 encrypted note |
+| BulkAppendTree (commitment tree) | 312 | 32 cmx + 32 rho + 32 cv_net + 216 encrypted note |
 | Nullifier tree | 32 | nullifier key (value is empty) |
-| **Total** | **312** | |
+| **Total physical payload** | **344** | |
 
-The storage fee is derived from the platform's existing per-byte storage rates:
+Protocol version 14 prices a 550-byte allowance per action, covering the physical
+payload and database framing, at the platform's per-byte storage rates:
 
 ```
-storage_fee_per_action = 312 × (storage_disk_usage_credit_per_byte
+storage_fee_per_action = 550 × (storage_disk_usage_credit_per_byte
                               + storage_processing_credit_per_byte)
-                       = 312 × (27,000 + 400)
-                       = 312 × 27,400
-                       = 8,548,800
+                       = 550 × (27,000 + 400)
+                       = 550 × 27,400
+                       = 15,070,000
 ```
 
-This is not a separate constant — it is computed dynamically from the storage fee
-version, ensuring shielded storage costs stay consistent with transparent storage
-costs as fee parameters evolve.
+The byte allowance is versioned. Its per-byte rates come from the storage fee
+version, so the fee tracks changes to those rates.
 
 ## Fee Table
 
-Combining all three components:
+Combining all three components at protocol version 14:
 
 | Actions | Proof Fee | Processing | Storage | Total Minimum Fee |
 |---|---|---|---|---|
-| 2 | 100,000,000 | 44,000,000 | 17,097,600 | **161,097,600** |
-| 3 | 100,000,000 | 66,000,000 | 25,646,400 | **191,646,400** |
-| 4 | 100,000,000 | 88,000,000 | 34,195,200 | **222,195,200** |
+| 2 | 40,000,000 | 44,000,000 | 30,140,000 | **114,140,000** |
+| 3 | 40,000,000 | 66,000,000 | 45,210,000 | **151,210,000** |
+| 4 | 40,000,000 | 88,000,000 | 60,280,000 | **188,280,000** |
 
 Note: The Orchard protocol requires a minimum of 2 actions per bundle for privacy
 (even a single-input single-output transfer produces 2 actions with a dummy padding
@@ -264,13 +309,13 @@ add a flat component on top of this base:
 - **`Unshield` adds the output-address write cost**: a flat
   `unshield_address_storage_fee = 222 × per_byte_rate = 222 × 27,400 = 6,082,800` credits,
   independent of action count. So the 2-action Unshield fee is
-  `161,097,600 + 6,082,800 = 167,180,400` credits (and likewise `+6,082,800` at every action
+  `114,140,000 + 6,082,800 = 120,222,800` credits (and likewise `+6,082,800` at every action
   count). See the [Fee Extraction](#fee-extraction-by-transition-type) Unshield row for why this
   component exists.
 - **`ShieldedWithdrawal` adds the Core withdrawal-document storage cost**: a flat
   `withdrawal_document_storage_fee = 4100 × per_byte_rate = 4100 × 27,400 = 112,340,000` credits,
   independent of action count. So the 2-action ShieldedWithdrawal fee is
-  `161,097,600 + 112,340,000 = 273,437,600` credits (and likewise `+112,340,000` at every action
+  `114,140,000 + 112,340,000 = 226,480,000` credits (and likewise `+112,340,000` at every action
   count). See the [Fee Extraction](#fee-extraction-by-transition-type) ShieldedWithdrawal row for
   why this component exists.
 - **`IdentityTopUpFromShieldedPool` adds the identity balance write cost**: a flat
@@ -324,8 +369,9 @@ pub struct DriveAbciValidationConstants {
     pub minimum_pool_notes_for_outgoing: u64,
     pub shielded_anchor_retention_blocks: u64,
     pub shielded_anchor_pruning_interval: u64,
-    pub shielded_proof_verification_fee: u64,      // 100_000_000
+    pub shielded_proof_verification_fee: u64,      // 40_000_000 at protocol 14
     pub shielded_per_action_processing_fee: u64,    // 22_000_000
+    pub shielded_storage_bytes_per_action: u64,     // 550 at protocol 14
     pub shielded_implicit_fee_cap: u64,             // 20_000_000_000 (0.2 DASH)
 }
 ```
@@ -334,15 +380,15 @@ The `shielded_implicit_fee_cap` bounds the surplus that a `ShieldFromAssetLock` 
 implicitly donate to the fee pools when no `surplus_output` is set (see
 [Entry-Transition Fees](#entry-transition-fees-shield-shieldfromassetlock-and-shieldfromidentity)).
 
-The storage component is not a separate constant — it is derived at runtime from
+The storage component is derived at runtime from
 `fee_version.storage.storage_disk_usage_credit_per_byte` and
 `fee_version.storage.storage_processing_credit_per_byte`, multiplied by the
-constant `SHIELDED_STORAGE_BYTES_PER_ACTION = 312`.
+versioned `shielded_storage_bytes_per_action` allowance.
 
 This design means:
 - **Proof and processing fees** can be tuned independently via version bumps
 - **Storage fees** automatically track changes to the platform-wide storage rates
-- No "magic number" for storage cost exists in the version constants
+- **Storage allowances** can be calibrated independently of the per-byte rates
 
 ## How Fees Flow After Validation
 

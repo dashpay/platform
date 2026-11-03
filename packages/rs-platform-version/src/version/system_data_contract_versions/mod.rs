@@ -1,6 +1,7 @@
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
 
 use crate::version::FeatureVersion;
 
@@ -16,4 +17,8 @@ pub struct SystemDataContractVersions {
     pub document_history: FeatureVersion,
     pub app_connect: FeatureVersion,
     pub moderation_charters: FeatureVersion,
+    pub decision_proposals: FeatureVersion,
+    /// The token market contract (protocol version 15): the open listings and offers of the
+    /// token marketplace. 0 before it exists.
+    pub token_market: FeatureVersion,
 }

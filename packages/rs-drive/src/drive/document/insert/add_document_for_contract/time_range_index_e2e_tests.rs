@@ -23,7 +23,7 @@ use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::document_type::{DocumentTypeRef, IndexBucketing};
 use dpp::data_contract::DataContractFactory;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
@@ -897,7 +897,9 @@ fn created_at_resolution(document_type: DocumentTypeRef) -> Vec<ResolvedTimeRang
         .values()
         .find_map(|index| index.time_range.clone())
         .expect("the fixture declares a time-range index");
-    vec![ResolvedTimeRange { transform }]
+    vec![ResolvedTimeRange {
+        transform: transform.into(),
+    }]
 }
 
 /// A `$createdAt == created_at` query, optionally ANDed with
@@ -1658,7 +1660,9 @@ fn two_resolved_time_ranges_are_rejected() {
     let query = build_created_at_query(&contract, document_type, 6 * HOUR_MS, Some("ibiza"), {
         let mut resolutions = created_at_resolution(document_type);
         let mut second = resolutions[0].clone();
-        second.transform.source = "hashtag".to_string();
+        if let IndexBucketing::Time(transform) = &mut second.transform {
+            transform.source = "hashtag".to_string();
+        }
         resolutions.push(second);
         resolutions
     });
@@ -2099,7 +2103,9 @@ fn grid_resolution(contract: &DataContract, index_name: &str) -> Vec<ResolvedTim
         .time_range
         .clone()
         .expect("the index carries a transform");
-    vec![ResolvedTimeRange { transform }]
+    vec![ResolvedTimeRange {
+        transform: transform.into(),
+    }]
 }
 
 /// Two grids over `$createdAt`: a document fans out into each grid's own
@@ -2138,13 +2144,19 @@ fn two_grids_over_one_timestamp_write_and_read_independently() {
     assert_eq!(
         trending[0]
             .transform
+            .time_range()
+            .expect("a time grid")
             .containing_buckets(created_at)
             .first()
             .copied(),
         Some(shared_bucket)
     );
     assert_eq!(
-        daily[0].transform.containing_buckets(created_at),
+        daily[0]
+            .transform
+            .time_range()
+            .expect("a time grid")
+            .containing_buckets(created_at),
         vec![shared_bucket],
         "the same numeric start on both grids is the point of this fixture"
     );
@@ -2291,7 +2303,14 @@ fn multi_grid_resolution_requires_and_honors_a_grid_spec() {
     )
     .expect("naming the daily grid resolves against it");
     assert_eq!(clause.value, Value::U64(24 * HOUR_MS));
-    assert_eq!(resolution.transform.range_seconds, 24 * HOUR_SECONDS);
+    assert_eq!(
+        resolution
+            .transform
+            .time_range()
+            .expect("a time grid")
+            .range_seconds,
+        24 * HOUR_SECONDS
+    );
 
     let (clause, resolution) = resolve_time_range_bucket_clause(
         "$createdAt",
@@ -2311,7 +2330,14 @@ fn multi_grid_resolution_requires_and_honors_a_grid_spec() {
         "at 25h both grids' newest start is 24h — same number, different \
          subtree, which is exactly why provenance carries the grid"
     );
-    assert_eq!(resolution.transform.step_seconds, 2 * HOUR_SECONDS);
+    assert_eq!(
+        resolution
+            .transform
+            .time_range()
+            .expect("a time grid")
+            .step_seconds,
+        2 * HOUR_SECONDS
+    );
 
     let error = resolve_time_range_bucket_clause(
         "$createdAt",

@@ -55,6 +55,7 @@ async fn test_token_contract_info_query_prove_true() {
     let settings = QuerySettings {
         request_settings: &request_settings,
         protocol_version: PlatformVersion::latest(),
+        verified_protocol_version: 0,
         prove: true,
     };
     let request = query.query(&settings).unwrap();
@@ -76,6 +77,7 @@ async fn test_token_contract_info_query_prove_false() {
     let settings = QuerySettings {
         request_settings: &request_settings,
         protocol_version: PlatformVersion::latest(),
+        verified_protocol_version: 0,
         prove: false,
     };
     let request = query.query(&settings).unwrap();

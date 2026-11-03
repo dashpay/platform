@@ -20,7 +20,7 @@ use super::tracked::TrackedAssetLock;
 use key_wallet_manager::WalletManager;
 
 /// Default fee rate in duffs per kilobyte for asset lock transactions.
-pub(super) const DEFAULT_FEE_PER_KB: u64 = 1000;
+pub(crate) const DEFAULT_FEE_PER_KB: u64 = 1000;
 
 /// Manages the full asset lock lifecycle: build, broadcast, proof, and tracking.
 ///
@@ -36,7 +36,7 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     pub(super) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     /// Identifies which wallet within the manager this manager operates on.
     pub(super) wallet_id: WalletId,
-    /// Notified on InstantLock / ChainLock events by SpvEventForwarder.
+    /// Notified on InstantLock / ChainLock events by `LockNotifyHandler`.
     /// Used by `wait_for_proof()` and `wait_for_chain_lock()`.
     pub(super) lock_notify: Arc<Notify>,
     /// Transaction broadcaster — pluggable so the same `AssetLockManager`
@@ -128,6 +128,8 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// foreground, reconnect) from stacking up one retry per attempt: a
     /// second deferral while the first is still waiting is a no-op. Held
     /// only for set arithmetic, never across an await.
+    pub(super) drain_operations:
+        Arc<std::sync::Mutex<BTreeMap<[u8; 16], Arc<super::AssetLockOperationContext>>>>,
     pub(super) deferred_resumes: Arc<std::sync::Mutex<BTreeSet<OutPoint>>>,
     /// Finds the block a funding transaction was mined in when its wallet
     /// record carries no height, so the ChainLock-proof wait can resolve
@@ -166,6 +168,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             persister,
             build_persist_serial: Arc::new(tokio::sync::Mutex::new(())),
             resume_dispatch_claims: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
+            drain_operations: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
             deferred_resumes: Arc::new(std::sync::Mutex::new(BTreeSet::new())),
             mined_height_locator: Arc::new(NoMinedHeightLocator),
             #[cfg(test)]
@@ -201,6 +204,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             persister: self.persister.clone(),
             build_persist_serial: Arc::clone(&self.build_persist_serial),
             resume_dispatch_claims: Arc::clone(&self.resume_dispatch_claims),
+            drain_operations: Arc::clone(&self.drain_operations),
             deferred_resumes: Arc::clone(&self.deferred_resumes),
             mined_height_locator: Arc::clone(&self.mined_height_locator),
             #[cfg(test)]

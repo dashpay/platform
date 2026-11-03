@@ -1,11 +1,12 @@
 use super::EMPTY_KEYWORDS;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
-use crate::data_contract::config::moderation::document_schema_lets_moderators_delete;
+use crate::data_contract::config::moderation::document_schema_grants_moderator_abilities;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::group::Group;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::v1::DataContractInSerializationFormatV1;
+use crate::data_contract::serialized_version::v2::DataContractInSerializationFormatV2;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::v1::DataContractV1;
 use crate::data_contract::{
@@ -31,6 +32,7 @@ use std::fmt;
 
 pub(in crate::data_contract) mod v0;
 pub(in crate::data_contract) mod v1;
+pub(in crate::data_contract) mod v2;
 
 pub mod property_names {
     pub const ID: &str = "id";
@@ -116,14 +118,61 @@ pub enum DataContractInSerializationFormat {
     V0(DataContractInSerializationFormatV0),
     #[cfg_attr(feature = "serde-conversion", serde(rename = "1"))]
     V1(DataContractInSerializationFormatV1),
+    /// The stored format, which only state holds: never carried by a state transition.
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "2"))]
+    V2(DataContractInSerializationFormatV2),
+}
+
+/// The contract of a contract state transition as decoding reads it: the variants of
+/// [`DataContractInSerializationFormat`] a transition may carry, at the same tags (bincode) and
+/// `$formatVersion`s (serde), so the same input reads as the same contract, and none for format
+/// version 2, the stored format, which only state holds. Both refuse that format at its tag, as
+/// software without the format refuses it, so none of its compiled types is built: bincode before
+/// reading any of the contract, the tag coming first; serde on reaching `$formatVersion`, having
+/// kept as generic values only the entries the input puts before it, as for formats 0 and 1.
+/// What this crate serializes puts the tag first.
+#[derive(Decode, DecodeUntrusted)]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Deserialize),
+    serde(tag = "$formatVersion")
+)]
+pub(crate) enum TransitionContractFormat {
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
+    V0(DataContractInSerializationFormatV0),
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "1"))]
+    V1(DataContractInSerializationFormatV1),
+}
+
+impl From<TransitionContractFormat> for DataContractInSerializationFormat {
+    fn from(format: TransitionContractFormat) -> Self {
+        match format {
+            TransitionContractFormat::V0(v0) => DataContractInSerializationFormat::V0(v0),
+            TransitionContractFormat::V1(v1) => DataContractInSerializationFormat::V1(v1),
+        }
+    }
 }
 
 impl DataContractInSerializationFormat {
+    /// The contract as its document schemas define it: format version 2 becomes its format
+    /// version 1, without the compiled document types, so reading it parses the schemas. Bytes
+    /// that neither this node's state nor a verified proof vouches for are read this way: only
+    /// those hold compiled types that are what their schemas compile to.
+    pub fn into_schema_form(self) -> Self {
+        match self {
+            DataContractInSerializationFormat::V2(stored) => {
+                DataContractInSerializationFormat::V1(stored.into())
+            }
+            format => format,
+        }
+    }
+
     /// Returns the unique identifier for the data contract.
     pub fn id(&self) -> Identifier {
         match self {
             DataContractInSerializationFormat::V0(v0) => v0.id,
             DataContractInSerializationFormat::V1(v1) => v1.id,
+            DataContractInSerializationFormat::V2(v2) => v2.base.id,
         }
     }
 
@@ -132,6 +181,7 @@ impl DataContractInSerializationFormat {
         match self {
             DataContractInSerializationFormat::V0(v0) => v0.owner_id,
             DataContractInSerializationFormat::V1(v1) => v1.owner_id,
+            DataContractInSerializationFormat::V2(v2) => v2.base.owner_id,
         }
     }
 
@@ -139,23 +189,38 @@ impl DataContractInSerializationFormat {
         match self {
             DataContractInSerializationFormat::V0(v0) => &v0.document_schemas,
             DataContractInSerializationFormat::V1(v1) => &v1.document_schemas,
+            DataContractInSerializationFormat::V2(v2) => &v2.base.document_schemas,
         }
     }
 
-    /// Whether any document schema sets `canBeDeletedByModerators: true`, read from the raw
+    /// Whether any document schema gives the contract's moderators an ability
+    /// (`moderatorAbilities` deleting documents or changing their fields), read from the raw
     /// schemas: a contract in this format has no parsed document types. Used where a
     /// moderation declaration is validated before the contract is parsed, since a
     /// declaration that keeps no list is only valid with such a document type.
-    pub fn has_document_type_deletable_by_moderators(&self) -> bool {
+    pub fn has_document_type_with_moderator_abilities(&self) -> bool {
         self.document_schemas()
             .values()
-            .any(document_schema_lets_moderators_delete)
+            .any(document_schema_grants_moderator_abilities)
     }
 
-    pub fn document_schemas_mut(&mut self) -> &mut BTreeMap<DocumentName, Value> {
+    /// The raw document schemas, to change. Refuses a contract in format version 2, the stored
+    /// format: its compiled document types would no longer be those of the schemas changed, and
+    /// dropping them all would read every type, the unchanged ones included, by whatever parser
+    /// a later version brings. Change its format version 1
+    /// ([`Self::into_schema_form`]) and store the contract again, which compiles every type at
+    /// the storing version, or compile the types changed one by one.
+    pub fn document_schemas_mut(
+        &mut self,
+    ) -> Result<&mut BTreeMap<DocumentName, Value>, ProtocolError> {
         match self {
-            DataContractInSerializationFormat::V0(v0) => &mut v0.document_schemas,
-            DataContractInSerializationFormat::V1(v1) => &mut v1.document_schemas,
+            DataContractInSerializationFormat::V0(v0) => Ok(&mut v0.document_schemas),
+            DataContractInSerializationFormat::V1(v1) => Ok(&mut v1.document_schemas),
+            DataContractInSerializationFormat::V2(_) => Err(ProtocolError::NotSupported(
+                "the schemas of a contract in the stored format are not changed in place: its \
+                 compiled document types would no longer be theirs"
+                    .to_string(),
+            )),
         }
     }
 
@@ -163,6 +228,7 @@ impl DataContractInSerializationFormat {
         match self {
             DataContractInSerializationFormat::V0(v0) => v0.schema_defs.as_ref(),
             DataContractInSerializationFormat::V1(v1) => v1.schema_defs.as_ref(),
+            DataContractInSerializationFormat::V2(v2) => v2.base.schema_defs.as_ref(),
         }
     }
 
@@ -170,6 +236,7 @@ impl DataContractInSerializationFormat {
         match self {
             DataContractInSerializationFormat::V0(v0) => v0.version,
             DataContractInSerializationFormat::V1(v1) => v1.version,
+            DataContractInSerializationFormat::V2(v2) => v2.base.version,
         }
     }
 
@@ -178,6 +245,7 @@ impl DataContractInSerializationFormat {
         match self {
             DataContractInSerializationFormat::V0(v0) => &v0.config,
             DataContractInSerializationFormat::V1(v1) => &v1.config,
+            DataContractInSerializationFormat::V2(v2) => &v2.base.config,
         }
     }
 
@@ -185,12 +253,14 @@ impl DataContractInSerializationFormat {
         match self {
             DataContractInSerializationFormat::V0(_) => &EMPTY_GROUPS,
             DataContractInSerializationFormat::V1(v1) => &v1.groups,
+            DataContractInSerializationFormat::V2(v2) => &v2.base.groups,
         }
     }
     pub fn tokens(&self) -> &BTreeMap<TokenContractPosition, TokenConfiguration> {
         match self {
             DataContractInSerializationFormat::V0(_) => &EMPTY_TOKENS,
             DataContractInSerializationFormat::V1(v1) => &v1.tokens,
+            DataContractInSerializationFormat::V2(v2) => &v2.base.tokens,
         }
     }
 
@@ -198,6 +268,7 @@ impl DataContractInSerializationFormat {
         match self {
             DataContractInSerializationFormat::V0(_) => &EMPTY_KEYWORDS,
             DataContractInSerializationFormat::V1(v1) => &v1.keywords,
+            DataContractInSerializationFormat::V2(v2) => &v2.base.keywords,
         }
     }
 
@@ -205,6 +276,7 @@ impl DataContractInSerializationFormat {
         match self {
             DataContractInSerializationFormat::V0(_) => &None,
             DataContractInSerializationFormat::V1(v1) => &v1.description,
+            DataContractInSerializationFormat::V2(v2) => &v2.base.description,
         }
     }
 
@@ -267,6 +339,46 @@ impl DataContractInSerializationFormat {
                 }
             }
             _ => Some(DataContractMismatch::FormatVersionMismatch),
+        }
+    }
+
+    /// `contract` in the format a node stores it in at `platform_version`
+    /// (`contract_storage_serialization_version`): format version 0 or 1 as
+    /// [`Self::try_from_platform_versioned`] gives it through protocol version 14, or format
+    /// version 2, the compiled form.
+    pub fn try_from_data_contract_for_storage(
+        contract: &DataContract,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        contract
+            .config()
+            .ensure_admitted_by_platform_version(platform_version)?;
+        match platform_version
+            .dpp
+            .contract_versions
+            .contract_storage_serialization_version
+        {
+            0 => {
+                let v0_format: DataContractInSerializationFormatV0 =
+                    contract.clone().into_platform_versioned(platform_version);
+                Ok(v0_format.into())
+            }
+            1 => {
+                let v1_format: DataContractInSerializationFormatV1 =
+                    contract.clone().into_platform_versioned(platform_version);
+                Ok(v1_format.into())
+            }
+            2 => Ok(DataContractInSerializationFormatV2::try_from_data_contract(
+                contract,
+                platform_version,
+            )?
+            .into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DataContractInSerializationFormat::try_from_data_contract_for_storage"
+                    .to_string(),
+                known_versions: vec![0, 1, 2],
+                received: version,
+            }),
         }
     }
 }

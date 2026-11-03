@@ -1,6 +1,10 @@
 use crate::consensus::basic::data_contract::UnknownGasFeesPaidByError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::Display;
@@ -79,10 +83,10 @@ impl GasFeesPaidBy {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for GasFeesPaidBy {}
+impl JsonConvertible for GasFeesPaidBy {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for GasFeesPaidBy {}
+impl ValueConvertible for GasFeesPaidBy {}
 
 impl From<GasFeesPaidBy> for u8 {
     fn from(value: GasFeesPaidBy) -> Self {

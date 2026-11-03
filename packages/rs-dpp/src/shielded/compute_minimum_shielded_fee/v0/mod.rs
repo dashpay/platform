@@ -1,7 +1,7 @@
 use crate::fee::Credits;
 use crate::shielded::{
-    SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES, SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES,
-    SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES, SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES,
+    SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES, SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES,
+    SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES,
 };
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
@@ -15,9 +15,10 @@ use platform_version::version::PlatformVersion;
 /// `processing_fee` that prices the MARGINAL verification work each additional action adds to the
 /// bundle (a larger bundle is a larger circuit and a longer batch verification). For spend-bearing
 /// transitions that marginal work includes the per-action RedPallas spend-auth signature
-/// verification and nullifier check; output-only entry transitions (Shield / ShieldFromAssetLock)
-/// do no spends or nullifier checks, but each output action still enlarges the proof and so carries
-/// the same per-action processing charge.
+/// verification and nullifier check; output-only entry transitions (Shield / ShieldFromAssetLock /
+/// ShieldFromIdentity) do no spends, but each output action still enlarges the proof and so carries
+/// the same per-action processing charge, which from protocol version 14 also prices the check of
+/// the nullifier the action reveals.
 ///
 /// It carries **no storage term**: storage is the real cost of the note/nullifier writes and is
 /// metered separately by GroveDB.
@@ -195,24 +196,26 @@ pub fn compute_shielded_unshield_fee_v0(
 /// v0 of the `ShieldFromIdentity` **admission floor**:
 ///
 ///   `floor = compute_minimum_shielded_fee_v0(num_actions)
-///            + SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES × (disk + processing) credits/byte`
+///            + (num_actions × shielded_identity_action_write_storage_bytes
+///               + shielded_identity_balance_write_storage_bytes) × (disk + processing)`
 ///
-/// [`compute_minimum_shielded_fee_v0`] plus one flat component for the identity-side writes
-/// (the nonce and balance rewrites), built the same way as
-/// [`compute_shielded_unshield_fee_v0`]'s address-write component: the writes' replace-only tree
-/// work (they add no storage) folded into a flat effective-byte figure with headroom, see
-/// `SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES`. The transition's real fee is metered at
-/// execution; this floor is the conservative stand-in the stateless balance pre-check uses so
-/// that a short identity is refused before the Orchard proof is verified, and the client-side
-/// estimate of the total fee.
+/// The versioned allowances cover the complete execution-event admission estimate,
+/// including note/nullifier writes, identity nonce/balance writes and validation.
+/// They are effective bytes priced at the full storage rate, not physical payload
+/// sizes. Execution charges the actual metered fee, which may be lower.
 ///
-/// All arithmetic is checked: an overflow (only reachable via pathological fee constants)
-/// surfaces as `ProtocolError::Overflow` instead of silently wrapping.
+/// Identity shielding is refused by `is_allowed` before protocol version 14;
+/// historical tables retain the preceding wallet formula's zero per-action and
+/// 20-byte flat allowance. All arithmetic is checked.
 pub fn compute_shielded_identity_balance_write_fee_v0(
     num_actions: usize,
     platform_version: &PlatformVersion,
 ) -> Result<Credits, ProtocolError> {
     let storage = &platform_version.fee_version.storage;
+    let constants = &platform_version
+        .drive_abci
+        .validation_and_processing
+        .event_constants;
 
     let base_fee = compute_minimum_shielded_fee_v0(num_actions, platform_version)?;
 
@@ -222,8 +225,14 @@ pub fn compute_shielded_identity_balance_write_fee_v0(
         .ok_or(ProtocolError::Overflow(
             "shielded storage per-byte rate overflow",
         ))?;
-    let identity_write_fee = SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES
-        .checked_mul(per_byte_rate)
+    let action_write_bytes = (num_actions as u64)
+        .checked_mul(constants.shielded_identity_action_write_storage_bytes)
+        .ok_or(ProtocolError::Overflow(
+            "shielded identity action write bytes overflow",
+        ))?;
+    let identity_write_fee = action_write_bytes
+        .checked_add(constants.shielded_identity_balance_write_storage_bytes)
+        .and_then(|bytes| bytes.checked_mul(per_byte_rate))
         .ok_or(ProtocolError::Overflow(
             "shielded identity balance write fee overflow",
         ))?;
@@ -324,6 +333,37 @@ pub fn compute_shielded_identity_create_fee_v0(
         ))
 }
 
+/// Version 0 of the identity-less token pool transition fee: the base for each of the two
+/// bundles plus `extra_storage_bytes` at the storage rate.
+pub fn compute_token_pool_paid_shielded_fee_v0(
+    token_actions: usize,
+    fee_actions: usize,
+    extra_storage_bytes: u64,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, ProtocolError> {
+    let storage = &platform_version.fee_version.storage;
+    let fee_bundle = compute_minimum_shielded_fee_v0(fee_actions, platform_version)?;
+    let token_bundle = compute_minimum_shielded_fee_v0(token_actions, platform_version)?;
+    let per_byte_rate = storage
+        .storage_disk_usage_credit_per_byte
+        .checked_add(storage.storage_processing_credit_per_byte)
+        .ok_or(ProtocolError::Overflow(
+            "shielded storage per-byte rate overflow",
+        ))?;
+    let extra_storage_fee =
+        extra_storage_bytes
+            .checked_mul(per_byte_rate)
+            .ok_or(ProtocolError::Overflow(
+                "token pool paid transition storage fee overflow",
+            ))?;
+    fee_bundle
+        .checked_add(token_bundle)
+        .and_then(|fee| fee.checked_add(extra_storage_fee))
+        .ok_or(ProtocolError::Overflow(
+            "token pool paid transition fee overflow",
+        ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -333,8 +373,9 @@ mod tests {
     /// version's own constant tables, and must decompose as
     /// `compute_fee + num_actions × storage_allowance` — the component split the pool-paid
     /// booking and the fee-floor tests rely on.
-    /// The `ShieldFromIdentity` admission floor is the minimum fee plus the flat
-    /// identity-write allowance at the storage rate, and strictly above the compute fee.
+    /// The `ShieldFromIdentity` admission floor is the minimum fee plus the per-action write
+    /// allowance and the flat identity-write allowance at the storage rate, and strictly above
+    /// the compute fee.
     #[test]
     fn compute_shielded_identity_balance_write_fee_v0_adds_identity_write_allowance() {
         let platform_version = PlatformVersion::latest();
@@ -351,9 +392,42 @@ mod tests {
                 .expect("compute");
             assert_eq!(
                 floor,
-                minimum + SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES * per_byte_rate
+                minimum
+                    + (num_actions as u64
+                        * platform_version
+                            .drive_abci
+                            .validation_and_processing
+                            .event_constants
+                            .shielded_identity_action_write_storage_bytes
+                        + platform_version
+                            .drive_abci
+                            .validation_and_processing
+                            .event_constants
+                            .shielded_identity_balance_write_storage_bytes)
+                        * per_byte_rate
             );
             assert!(floor > compute);
+        }
+    }
+
+    #[test]
+    fn should_preserve_historical_identity_shield_wallet_estimates() {
+        // The transition is unavailable before protocol 14, but clients may still
+        // ask for the estimate at a historical protocol version.
+        for protocol in [12, 13] {
+            let platform_version = PlatformVersion::get(protocol).expect("historical version");
+            let storage = &platform_version.fee_version.storage;
+            let per_byte_rate = storage.storage_disk_usage_credit_per_byte
+                + storage.storage_processing_credit_per_byte;
+            for num_actions in [1, 2, 6, 16] {
+                assert_eq!(
+                    compute_shielded_identity_balance_write_fee_v0(num_actions, platform_version)
+                        .expect("historical estimate"),
+                    compute_minimum_shielded_fee_v0(num_actions, platform_version)
+                        .expect("historical minimum")
+                        + 20 * per_byte_rate,
+                );
+            }
         }
     }
 
@@ -531,5 +605,66 @@ mod tests {
                 "the unshield address-write component must be flat (independent of action count)"
             );
         }
+    }
+
+    /// A token unshield credits the recipient's token balance, and the recipient only has to be an
+    /// existing identity — not an existing holder — so the fee has to cover CREATING that balance
+    /// item, not merely rewriting one. Its component is therefore the insert allowance, strictly
+    /// dearer than the replace-only allowance an `IdentityTopUpFromShieldedPool` needs for a
+    /// balance that already exists. Folding the two back into one constant would either underfund
+    /// the insert or overcharge the top-up, so both halves of that relationship are pinned.
+    ///
+    /// The allowance is flat and identical for every recipient, which is not merely conservatism:
+    /// `credit_amount` is public and must equal this fee exactly, so a component that varied with
+    /// the recipient's holdings would publish whether they hold this token for the first time.
+    #[test]
+    fn compute_token_unshield_with_shielded_fee_fee_prices_a_balance_insert_for_every_recipient() {
+        use crate::shielded::{
+            compute_token_shielded_transfer_with_shielded_fee_fee,
+            compute_token_unshield_with_shielded_fee_fee,
+            SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES,
+        };
+
+        let platform_version = PlatformVersion::latest();
+        let storage = &platform_version.fee_version.storage;
+        let per_byte_rate =
+            storage.storage_disk_usage_credit_per_byte + storage.storage_processing_credit_per_byte;
+        let insert_cost = SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES * per_byte_rate;
+
+        for (token_actions, fee_actions) in [(2usize, 2usize), (2, 5), (7, 2), (16, 16)] {
+            let unshield = compute_token_unshield_with_shielded_fee_fee(
+                token_actions,
+                fee_actions,
+                platform_version,
+            )
+            .expect("token unshield fee");
+            // A shielded transfer writes nothing outside the pools, so it is the two bundles alone.
+            let both_bundles = compute_token_shielded_transfer_with_shielded_fee_fee(
+                token_actions,
+                fee_actions,
+                platform_version,
+            )
+            .expect("token shielded transfer fee");
+            assert_eq!(
+                unshield,
+                both_bundles + insert_cost,
+                "a token unshield of {token_actions}+{fee_actions} actions must be the two \
+                 bundles plus exactly one {SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES}-byte \
+                 balance-insert component"
+            );
+            assert_eq!(
+                unshield - both_bundles,
+                insert_cost,
+                "the balance-insert component must be flat (independent of action count)"
+            );
+        }
+
+        // The top-up tops up an identity that already exists, so it keeps the replace-only one.
+        assert_eq!(
+            compute_shielded_identity_top_up_fee_v0(2, platform_version).expect("top up fee"),
+            compute_minimum_shielded_fee_v0(2, platform_version).expect("minimum shielded fee")
+                + SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES * per_byte_rate,
+            "pricing the unshield's insert must not move the top-up off its rewrite allowance"
+        );
     }
 }

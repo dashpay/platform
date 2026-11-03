@@ -13,7 +13,8 @@ use thiserror::Error;
 /// Encoded by position in consensus errors: a new reason goes at the end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
 pub enum PropertyConstraintViolation {
-    /// Both sides of the rule evaluate, but they do not compare as it requires.
+    /// The rule evaluates without a fault but does not hold: its comparison
+    /// does not, or its `anyOf`, `allOf` or `not` comes out false.
     NotMet,
     /// A value the rule reads, or a result it computes on the way, does not fit
     /// a 128-bit signed integer.
@@ -32,7 +33,7 @@ pub enum PropertyConstraintViolation {
 impl fmt::Display for PropertyConstraintViolation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::NotMet => "its two sides do not compare as it requires",
+            Self::NotMet => "it does not hold",
             Self::Overflow => "a value it reads or computes does not fit a 128-bit signed integer",
             Self::DivisionByZero => "it divides by zero",
             Self::NegativeExponent => "it raises to a negative power",
@@ -42,9 +43,9 @@ impl fmt::Display for PropertyConstraintViolation {
 }
 
 /// A created or replaced document breaks a rule of its document type's
-/// `propertyConstraints`: the comparison does not hold, or evaluating it
-/// overflowed, divided by zero, raised to a negative power or read a value that
-/// is not an integer.
+/// `propertyConstraints`: the rule does not hold, or evaluating it overflowed,
+/// divided by zero, raised to a negative power or read a value that is not an
+/// integer.
 ///
 /// A pure structure check on document create and replace (protocol version 14):
 /// it reads the transition alone, so it is a basic error, not a state one.

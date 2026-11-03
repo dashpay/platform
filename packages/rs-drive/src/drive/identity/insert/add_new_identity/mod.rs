@@ -2,14 +2,13 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::Identity;
 use dpp::version::PlatformVersion;
 
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 mod v0;
 
@@ -93,9 +92,7 @@ impl Drive {
         is_masternode_identity: bool,
         block_info: &BlockInfo,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -176,9 +173,12 @@ mod tests {
     #[test]
     fn test_insert_identity_estimated_costs_latest_version() {
         let platform_version = PlatformVersion::latest();
+        // Grove version 4 sizes the replaced root key of the balances sum
+        // tree as a sum tree, 9 replaced bytes (3_600 credits) above the
+        // first version's plain-tree sizing.
         let expected_fee_result = FeeResult {
             storage_fee: 128871000,
-            processing_fee: 11764980,
+            processing_fee: 11768580,
             ..Default::default()
         };
 

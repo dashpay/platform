@@ -128,7 +128,7 @@ pub fn verify_action_infos_in_contract_vec(
 
     let (root_hash, actions_vec): (RootHash, Vec<(Identifier, GroupAction)>) =
         Drive::verify_action_infos_in_contract(
-            supported_grovedb_proof(&proof_vec, platform_version)?,
+            supported_grovedb_proof(&proof_vec)?,
             Identifier::from(contract_id_bytes),
             group_contract_position,
             action_status_enum,
@@ -210,7 +210,7 @@ pub fn verify_action_infos_in_contract_map(
 
     let (root_hash, actions_map): (RootHash, BTreeMap<Identifier, GroupAction>) =
         Drive::verify_action_infos_in_contract(
-            supported_grovedb_proof(&proof_vec, platform_version)?,
+            supported_grovedb_proof(&proof_vec)?,
             Identifier::from(contract_id_bytes),
             group_contract_position,
             action_status_enum,
