@@ -77,6 +77,9 @@ impl DocumentCreateTransitionActionStateValidationV3 for DocumentCreateTransitio
         // entry the contest awards at its end, leaving the award nothing to take.
         // The poll is read at its path, which encodes the values as index keys, so a create of
         // `"\0"` finds the live contest of `""` (both are the key `[0]`) and is refused too.
+        // A batch holds one document transition (`max_transitions_in_documents_batch`, pinned
+        // to 1 at every protocol version by a test), so no earlier create of the same batch can
+        // open the contest before this one is checked.
         if self.prefunded_voting_balance().is_some() {
             return Ok(SimpleConsensusValidationResult::new());
         }
