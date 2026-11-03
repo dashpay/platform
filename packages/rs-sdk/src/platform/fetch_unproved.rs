@@ -12,6 +12,14 @@ use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use rs_dapi_client::{ExecutionError, ExecutionResponse, InnerInto, IntoInner};
 use std::fmt::Debug;
 
+/// Fetch an object from Platform without verifying a proof.
+///
+/// The value comes back exactly as the serving node reported it. In the
+/// vocabulary of the book chapter `book/src/sdk/results-receipts-and-proofs.md`
+/// it is unproven execution-result text, whatever its Rust type: it is not
+/// bound to a signed state root, so it must not be persisted or displayed as
+/// verified state. Use [`Fetch`](crate::platform::Fetch) when the value has
+/// to be proven.
 #[async_trait::async_trait]
 pub trait FetchUnproved
 where
