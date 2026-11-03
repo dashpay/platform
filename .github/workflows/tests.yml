@@ -65,6 +65,7 @@ jobs:
       rs-packages: ${{ steps.override.outputs.rs-packages || steps.filter-rs.outputs.changes }}
       rs-workflows-changed: ${{ steps.filter-rs-workflows.outputs.rs-workflows }}
       arm64-image-changed: ${{ steps.filter-rs-workflows.outputs.arm64-image }}
+      runner-image-changed: ${{ steps.filter-rs-workflows.outputs.runner-image }}
       rs-scope: ${{ steps.rs-scope.outputs.scope }}
       shielded-changed: ${{ steps.override.outputs.shielded-changed || steps.filter-shielded.outputs.shielded-changed }}
       doctests-changed: ${{ steps.override.outputs.doctests-changed || steps.filter-doctests.outputs.doctests-changed }}
@@ -119,6 +120,8 @@ jobs:
               - .github/actions/rust/**
             arm64-image:
               - .github/runner-requirements.arm64.json
+            runner-image:
+              - .github/runner-requirements.json
 
       - uses: dorny/paths-filter@v4
         id: filter-e2e
@@ -492,6 +495,9 @@ jobs:
       # Anything other than an explicit 'false' (including an empty output
       # from a skipped detector step) fails safe into running the suite.
       shielded-changed: ${{ needs.changes.outputs.shielded-changed != 'false' }}
+      # Same fail-safe: anything but an explicit 'false' keeps runner
+      # selection on a GitHub-hosted runner, where it may wait for a candidate.
+      runner-image-changed: ${{ needs.changes.outputs.runner-image-changed != 'false' }}
       # Code coverage runs nightly only. PR and push runs execute the same
       # test phases without instrumentation and upload nothing to Codecov.
       coverage: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.coverage == true) }}
@@ -509,6 +515,8 @@ jobs:
     with:
       runner-architecture: ARM64
       validate-arm64-image: true
+      # ARM64 selection never waits for a candidate image.
+      runner-image-changed: false
       doctests-changed: true
       shielded-changed: true
       coverage: false
@@ -525,6 +533,7 @@ jobs:
     uses: ./.github/workflows/tests-rs-wallet.yml
     with:
       doctests-changed: ${{ needs.changes.outputs.doctests-changed == 'true' }}
+      runner-image-changed: ${{ needs.changes.outputs.runner-image-changed != 'false' }}
 
   swift-sdk-build:
     name: Swift SDK build
