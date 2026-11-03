@@ -3,6 +3,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::DirectQueryType;
 
 use crate::drive::prefunded_specialized_balances::{
@@ -14,9 +15,8 @@ use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use dpp::balances::credits::MAX_CREDITS;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
+use grovedb::batch::QualifiedGroveDbOp;
+use grovedb::{Element, TransactionArg, TreeType};
 
 impl Drive {
     /// The operations to add to the specialized balance
@@ -25,9 +25,7 @@ impl Drive {
         &self,
         specialized_balance_id: Identifier,
         amount: u64,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -97,11 +95,11 @@ mod tests {
     use crate::error::drive::DriveError;
     use crate::error::identity::IdentityError;
     use crate::error::Error;
+    use crate::util::estimated_layers::EstimatedLayers;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::balances::credits::MAX_CREDITS;
     use dpp::identifier::Identifier;
     use dpp::version::PlatformVersion;
-    use std::collections::HashMap;
 
     #[test]
     fn stateless_query_branch_runs_without_errors_for_missing_id() {
@@ -112,7 +110,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let id = Identifier::from([42u8; 32]);
 
-        let mut estimated = Some(HashMap::new());
+        let mut estimated = Some(EstimatedLayers::new());
         let ops = drive
             .add_prefunded_specialized_balance_operations_v1(
                 id,

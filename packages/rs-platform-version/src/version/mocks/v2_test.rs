@@ -188,6 +188,11 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 max_version: 0,
                 default_current_version: 0,
             },
+            private_document_entries: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
             document_query_helpers: DriveAbciDocumentQueryHelperVersions {
                 compute_aggregate_mode_and_check_limit: 0,
             },
@@ -600,6 +605,9 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_index_property_name_bytes: 255,
         max_compiled_contract_size: None,
         max_private_document_entry_size: None,
+        private_document_store_target_chunk_bytes: None,
+        private_document_store_min_chunk_power: None,
+        private_document_store_max_chunk_power: None,
         max_references_per_document: 256,
         max_reference_operands: 4,
         max_reference_expression_depth: 4,

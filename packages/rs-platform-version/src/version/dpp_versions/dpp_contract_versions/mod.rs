@@ -277,4 +277,87 @@ mod tests {
             );
         }
     }
+
+    /// Drive creates a private type's store through `insert_empty_private_document_store_operation`,
+    /// sized from the private document store limits, and reads, proves and verifies a page of
+    /// it through `fetch_private_document_entries`, `prove_private_document_entries` and
+    /// `verify_private_document_entries`: a protocol version parsing private types without
+    /// them could not register or read one, and one setting them where no type is private
+    /// states a rule nothing reads.
+    #[test]
+    fn should_set_the_private_document_store_methods_and_limits_exactly_where_private_types_parse()
+    {
+        for platform_version in PLATFORM_VERSIONS.iter() {
+            let parses_private = platform_version
+                .dpp
+                .contract_versions
+                .document_type_versions
+                .schema
+                .parse_private_document
+                .is_some();
+            let limits = &platform_version.system_limits;
+            for (name, is_set) in [
+                (
+                    "private_document_store_target_chunk_bytes",
+                    limits.private_document_store_target_chunk_bytes.is_some(),
+                ),
+                (
+                    "private_document_store_min_chunk_power",
+                    limits.private_document_store_min_chunk_power.is_some(),
+                ),
+                (
+                    "private_document_store_max_chunk_power",
+                    limits.private_document_store_max_chunk_power.is_some(),
+                ),
+                (
+                    "max_private_document_entry_size",
+                    limits.max_private_document_entry_size.is_some(),
+                ),
+                (
+                    "insert_empty_private_document_store_operation",
+                    platform_version
+                        .drive
+                        .methods
+                        .document
+                        .insert_empty_private_document_store_operation
+                        .is_some(),
+                ),
+                (
+                    "fetch_private_document_entries",
+                    platform_version
+                        .drive
+                        .methods
+                        .document
+                        .fetch_private_document_entries
+                        .is_some(),
+                ),
+                (
+                    "prove_private_document_entries",
+                    platform_version
+                        .drive
+                        .methods
+                        .document
+                        .prove_private_document_entries
+                        .is_some(),
+                ),
+                (
+                    "verify_private_document_entries",
+                    platform_version
+                        .drive
+                        .methods
+                        .verify
+                        .document
+                        .verify_private_document_entries
+                        .is_some(),
+                ),
+            ] {
+                assert_eq!(
+                    is_set,
+                    parses_private,
+                    "protocol version {}: {name} set {is_set}, private types parsed {parses_private}",
+                    platform_version.protocol_version
+                );
+            }
+        }
+    }
 }

@@ -1,11 +1,11 @@
 use crate::drive::constants::AVERAGE_BALANCE_SIZE;
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{EstimatedLevel, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::EstimatedSumTrees::SomeSumTrees;
 use grovedb::{EstimatedLayerInformation, TreeType};
-use std::collections::HashMap;
 
 /// Size of a PlatformAddress key (1 byte type + 20 bytes hash)
 pub const PLATFORM_ADDRESS_KEY_SIZE: u32 = 21;
@@ -22,10 +22,10 @@ impl Drive {
     /// - CLEAR_ADDRESS_POOL level: Contains address entries with balance and nonce
     ///
     /// # Parameters
-    /// * `estimated_costs_only_with_layer_info`: A mutable reference to a `HashMap`
+    /// * `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers`
     ///   that stores estimated layer information based on the key information path.
     pub(super) fn add_estimation_costs_for_address_balance_update_v0(
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         //                                                                                DataContract_Documents 64
         //                                 /                                                                                                       \

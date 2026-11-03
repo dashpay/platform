@@ -120,9 +120,12 @@ it means is up to the people who read it.
 
 ## From the SDKs
 
-The Rust SDK (`dash_sdk::platform::decision_proposals`) and the JavaScript SDKs
+The Rust SDK (`dash_sdk::platform::decision_proposals`), the JavaScript SDKs
 (`sdk.decisionProposals` in `@dashevo/evo-sdk`, the `*DecisionProposal*`
-methods of `@dashevo/wasm-sdk`) build a proposal to create as a document, give
+methods of `@dashevo/wasm-sdk`) and the mobile SDKs (the
+`dash_sdk_decision_proposal_*` C functions of `rs-sdk-ffi`, wrapped by the
+Swift SDK and by the Kotlin SDK's `Sdk.decisionProposals` and
+`PlatformWalletManager.decisionProposals`) build a proposal to create as a document, give
 an existing one new text to replace it with, list proposals through the three
 indexes a page at a time, and read and answer a proposal's poll by the
 proposal's id. A masternode's vote names the poll by its id, which the SDKs

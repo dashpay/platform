@@ -11,6 +11,10 @@ pub struct DriveAbciQueryVersions {
     pub proofs_query: FeatureVersion,
     pub document_query: FeatureVersionBounds,
     pub document_history: FeatureVersionBounds,
+    /// `getPrivateDocumentEntries`: a page of the entries of a private document type's store.
+    /// Served from protocol version 15, where Drive's private document entry methods are
+    /// active; earlier versions answer that the feature is not active.
+    pub private_document_entries: FeatureVersionBounds,
     /// Per-helper version slots for internal v1-document-query
     /// routing helpers. Separate from `document_query` (which
     /// versions the wire surface) because the helper output is

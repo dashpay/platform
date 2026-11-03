@@ -42,6 +42,7 @@ pub mod document_sum;
 pub mod groups;
 pub mod identity_keys_remaining_budgets;
 pub mod identity_token_balance;
+pub mod private_document_entries;
 pub mod token_contract_info;
 pub mod token_direct_purchase;
 pub mod token_info;

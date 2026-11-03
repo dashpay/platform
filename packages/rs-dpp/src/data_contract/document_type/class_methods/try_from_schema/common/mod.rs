@@ -711,10 +711,56 @@ fn validate_document_type_schema(
     check_document_type_schema(ctx, root_schema, json_schema_validator)
 }
 
+/// The first rule of full validation under `check_document_type_schema` 1 (protocol version
+/// 15), run by the parser on the `schema` of the type `name` and the contract's `schema_defs`
+/// as sent, before it expands their property type shorthands: no object of either names a
+/// key twice ([`native_schema::refuse_a_repeated_doctype_key`]). Version 0 refuses nothing.
+///
+/// The walk reads up to the whole schema and `$defs`, whatever their references say, and
+/// sets `read` to the number of values it read, refused or not, for the parser to bill when
+/// it is refused before it records the schema's size
+/// ([`validate_schema_depth_and_account_for_size`]). Version 0 walks nothing and leaves
+/// `read` as it is.
+#[cfg(feature = "validation")]
+pub(super) fn refuse_a_repeated_doctype_key(
+    schema: &Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    name: &str,
+    read: &mut Option<u64>,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .check_document_type_schema
+    {
+        0 => Ok(()),
+        1 => {
+            let mut values_read = 0;
+            let walked = native_schema::refuse_a_repeated_doctype_key(
+                schema,
+                schema_defs,
+                name,
+                &mut values_read,
+            );
+            *read = Some(values_read);
+            walked
+        }
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "DocumentType::check_document_type_schema".to_string(),
+            known_versions: vec![0, 1],
+            received: version,
+        }),
+    }
+}
+
 /// The schema check of full validation, versioned on `check_document_type_schema`: 0 checks
 /// the enriched schema against the document meta-schema through the `jsonschema` crate and
 /// compiles it; 1 (protocol version 15) checks it natively ([`native_schema`]), with the
-/// rules of document meta-schema v3.
+/// rules of document meta-schema v3, once [`refuse_a_repeated_doctype_key`] has run on it
+/// as sent.
 #[cfg(feature = "validation")]
 fn check_document_type_schema(
     ctx: &CoreParseContext<'_>,
