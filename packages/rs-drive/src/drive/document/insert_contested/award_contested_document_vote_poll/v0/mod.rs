@@ -14,6 +14,7 @@ use crate::util::grove_operations::DirectQueryType;
 use crate::util::object_size_info::DocumentInfo::DocumentAndSerialization;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::document_type::ContestedIndexResolution;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::prelude::TimestampMillis;
@@ -26,10 +27,6 @@ use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDoc
 use grovedb::TransactionArg;
 use grovedb_costs::CostContext;
 use itertools::Itertools;
-
-/// How many of the contenders sharing the top tally are deserialized for the tie-break.
-/// The same bound the block executor applied before the selection moved here.
-const MAX_TOP_CONTENDERS_TO_TIE_BREAK: usize = 100;
 
 impl Drive {
     /// Selects and awards the winner of an ended contested resource vote poll.
@@ -48,11 +45,13 @@ impl Drive {
     ///    award, so a caller can neither award early, nor name an arbitrary end date, nor
     ///    award again after cleanup.
     /// 3. The winner is derived from the vote state: contenders with their tallies, sorted
-    ///    by tally descending, the top tally group tie-broken by the greatest `$createdAt`,
-    ///    then the greatest creation block height, then the greatest creation core height,
-    ///    then the greatest document id, the rule the block executor applied before the
-    ///    selection moved here. No contenders is `NoWinner`; a lock tally strictly above
-    ///    the top tally is `Locked`; otherwise the winner is awarded.
+    ///    by tally descending, the top tally group tie-broken by the earliest `$createdAt`,
+    ///    then the lowest creation block height, then the lowest creation core height, then
+    ///    the lowest document id, the rule the block executor applies from protocol version
+    ///    14 (`check_for_ended_vote_polls` generation 1). No contenders is `NoWinner`; a lock
+    ///    tally strictly above the top tally is `Locked`, unless the contested index is
+    ///    resolved without locking, where the lock tally is ignored; otherwise the winner is
+    ///    awarded.
     ///
     /// Only then is the winner's stored document inserted, through the same generic
     /// document insert the block executor used before this operation existed, so a
@@ -140,6 +139,12 @@ impl Drive {
 
         // 3. Native selection.
         let document_type = vote_poll.document_type()?;
+        let locking_allowed = vote_poll
+            .index()?
+            .contested_index
+            .as_ref()
+            .map(|contested| contested.resolution)
+            != Some(ContestedIndexResolution::MasternodeVoteNoLocking);
 
         let query = ContestedDocumentVotePollDriveQuery {
             vote_poll: vote_poll.into(),
@@ -187,7 +192,6 @@ impl Drive {
         let top_contender_documents = sorted_contenders
             .iter()
             .take_while(|contender| contender.final_vote_tally == highest_vote_tally)
-            .take(MAX_TOP_CONTENDERS_TO_TIE_BREAK)
             .enumerate()
             .map(|(position, contender)| {
                 Document::from_bytes(
@@ -203,7 +207,7 @@ impl Drive {
         let maybe_top_contender_position =
             top_contender_documents
                 .into_iter()
-                .max_by(|(_, a), (_, b)| {
+                .min_by(|(_, a), (_, b)| {
                     a.created_at()
                         .cmp(&b.created_at())
                         .then_with(|| {
@@ -225,8 +229,9 @@ impl Drive {
             });
         };
 
-        // A lock tied with the top contender does not lock: the top contender gets it.
-        if locked_vote_tally > highest_vote_tally {
+        // A lock tied with the top contender does not lock: the top contender gets it. A
+        // contest resolved without locking ignores its lock tally.
+        if locking_allowed && locked_vote_tally > highest_vote_tally {
             return Ok(ContestedDocumentVotePollAwardOutcome {
                 vote_poll: vote_poll.clone(),
                 winner: ContestedDocumentVotePollWinnerInfo::Locked,
@@ -301,6 +306,9 @@ mod tests {
 
     const CONTESTED_DPNS: &str =
         "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index.json";
+    /// The same contract with its contested index resolved without locking.
+    const CONTESTED_DPNS_NO_LOCKING: &str =
+        "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index-no-locking.json";
     const LABEL: &str = "quantum";
     /// The block the contest starts in.
     const START_TIME_MS: TimestampMillis = 1_000;
@@ -513,11 +521,17 @@ mod tests {
     /// contenders join at `START_TIME_MS`, `created_at_offsets` apart, so a test can
     /// choose which one was created first.
     fn setup_contest(created_at_offsets: [TimestampMillis; 2]) -> Contest {
+        setup_contest_on(CONTESTED_DPNS, created_at_offsets)
+    }
+
+    /// Starts a contest between two contenders on the contract at `contract_path`, a
+    /// contested DPNS fixture.
+    fn setup_contest_on(contract_path: &str, created_at_offsets: [TimestampMillis; 2]) -> Contest {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let contract = setup_contract(
             &drive,
-            CONTESTED_DPNS,
+            contract_path,
             None,
             None,
             None::<fn(&mut DataContract)>,
@@ -684,11 +698,11 @@ mod tests {
         assert_awarded(&contest, *second, second_document);
     }
 
-    /// A tie on the tally goes to the contender whose document carries the greatest
-    /// `$createdAt`: the native tie-break the block executor always applied.
+    /// A tie on the tally goes to the contender whose document carries the earliest
+    /// `$createdAt`: the tie-break the block executor applies from protocol version 14.
     #[test]
-    fn should_break_a_tie_by_the_greatest_creation_time() {
-        let contest = setup_contest([0, 500]);
+    fn should_break_a_tie_by_the_earliest_creation_time() {
+        let contest = setup_contest([500, 0]);
         let [(first, _), (second, second_document)] = &contest.contenders;
         contest.vote(ResourceVoteChoice::TowardsIdentity(*first), 3, 0xA0);
         contest.vote(ResourceVoteChoice::TowardsIdentity(*second), 3, 0xB0);
@@ -702,15 +716,15 @@ mod tests {
         assert_awarded(&contest, *second, second_document);
     }
 
-    /// A tie on the tally and on creation goes to the greatest document id.
+    /// A tie on the tally and on creation goes to the lowest document id.
     #[test]
-    fn should_break_a_full_tie_by_the_greatest_document_id() {
+    fn should_break_a_full_tie_by_the_lowest_document_id() {
         let contest = setup_contest([0, 0]);
         let [(first, first_document), (second, second_document)] = &contest.contenders;
         contest.vote(ResourceVoteChoice::TowardsIdentity(*first), 3, 0xA0);
         contest.vote(ResourceVoteChoice::TowardsIdentity(*second), 3, 0xB0);
 
-        let (expected_winner, expected_document) = if first_document.id() > second_document.id() {
+        let (expected_winner, expected_document) = if first_document.id() < second_document.id() {
             (*first, first_document)
         } else {
             (*second, second_document)
@@ -742,6 +756,25 @@ mod tests {
         assert_eq!(contest.root_hash(), root_hash_before);
     }
 
+    /// A contest resolved without locking ignores its lock tally: the top contender is
+    /// awarded even when lock votes exceed its tally.
+    #[test]
+    fn should_ignore_lock_votes_on_a_contest_resolved_without_locking() {
+        let contest = setup_contest_on(CONTESTED_DPNS_NO_LOCKING, [0, 0]);
+        let [(first, first_document), (second, _)] = &contest.contenders;
+        contest.vote(ResourceVoteChoice::TowardsIdentity(*first), 2, 0xA0);
+        contest.vote(ResourceVoteChoice::TowardsIdentity(*second), 1, 0xB0);
+        contest.vote(ResourceVoteChoice::Lock, 3, 0xC0);
+
+        let outcome = contest.award().expect("expected the award to succeed");
+
+        assert_eq!(
+            outcome.winner,
+            ContestedDocumentVotePollWinnerInfo::WonByIdentity(*first)
+        );
+        assert_awarded(&contest, *first, first_document);
+    }
+
     /// A lock tally equal to the top tally does not lock: the top contender is awarded.
     #[test]
     fn should_award_when_lock_votes_only_tie_the_top_tally() {
@@ -766,7 +799,7 @@ mod tests {
         // poll cannot start without a contender, so the no-winner outcome is unreachable
         // through a started contest. This pins that zero votes still award rather than
         // stall the poll.
-        let contest = setup_contest([0, 100]);
+        let contest = setup_contest([100, 0]);
         let [_, (second, second_document)] = &contest.contenders;
 
         let outcome = contest.award().expect("expected the award to succeed");

@@ -23,7 +23,7 @@ where
     /// contender and ignores the lock tally of a contest resolved without locking. Generation
     /// 2 (protocol version 17) delegates selection and insert to
     /// `Drive::award_contested_document_vote_poll`, the native award operation that
-    /// re-derives the winner from state and takes no contender.
+    /// re-derives the winner from state with generation 1's rule and takes no contender.
     pub(in crate::execution) fn check_for_ended_vote_polls(
         &self,
         last_committed_platform_state: &PlatformState,

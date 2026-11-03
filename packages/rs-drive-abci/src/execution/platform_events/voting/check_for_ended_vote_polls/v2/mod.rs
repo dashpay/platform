@@ -24,10 +24,12 @@ where
     /// Generation 2 awards through `Drive::award_contested_document_vote_poll`, the native
     /// award operation: the poll's contract is fetched from state by id, the winner is
     /// selected and its document inserted inside Drive, from state alone, so this event
-    /// supplies no contender and no contract metadata and cannot redirect an award. It then
-    /// records the finalized poll, resolved as the award resolved it, with the votes it
-    /// received and cleans the poll up, all on the block transaction, exactly as generation
-    /// 1 did after selecting the winner itself.
+    /// supplies no contender and no contract metadata and cannot redirect an award. Drive
+    /// applies generation 1's selection rule (ties to the earliest contender, the lock tally
+    /// ignored on a contest resolved without locking). It then records the finalized poll,
+    /// resolved as the award resolved it, with the votes it received and cleans the poll up,
+    /// all on the block transaction, exactly as generation 1 did after selecting the winner
+    /// itself.
     #[inline(always)]
     pub(super) fn check_for_ended_vote_polls_v2(
         &self,

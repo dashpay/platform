@@ -49,9 +49,10 @@ impl Drive {
     /// awards is read from state too: the poll's stored status must be `Started`, the poll
     /// must be queued for finalization at `end_date`
     /// and the block time must have reached that end date, the winner is the contender with
-    /// the highest vote tally (ties broken by the greatest creation time, then the greatest
-    /// document id, exactly as the block executor selected before this operation existed), a lock tally
-    /// above the top contender locks the poll, and the awarded bytes are the contender
+    /// the highest vote tally (ties broken by the earliest creation time, then the lowest
+    /// document id, exactly as the block executor selects from protocol version 14), a lock
+    /// tally above the top contender locks the poll unless the contested index is resolved
+    /// without locking, and the awarded bytes are the contender
     /// document as it was stored when the contest was joined. No data trigger, creation
     /// restriction or other document rule runs on the insert: the award is a native block
     /// event outside every ordinary-action rule scope.
