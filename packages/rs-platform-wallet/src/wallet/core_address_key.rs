@@ -75,6 +75,8 @@ impl PlatformWallet {
     ///   a valid address for this wallet's network.
     /// - [`PlatformWalletError::AddressNotFound`] if the address is valid
     ///   but not tracked by any of this wallet's accounts.
+    /// - [`PlatformWalletError::WalletNotFound`] if the wallet was removed
+    ///   from its manager, such as while the caller resolved the mnemonic.
     /// - [`PlatformWalletError::KeyDerivation`] if key derivation fails —
     ///   including passing `None` for a watch-only wallet that has no
     ///   resident private keys.
@@ -92,9 +94,12 @@ impl PlatformWallet {
         // wallet from the same guard. No Swift callback runs under this
         // guard — the mnemonic resolver (if any) already ran on the FFI
         // side and produced `resolved_master` before we were called.
-        let state = self.state_blocking();
+        let manager = self.wallet_manager().blocking_read();
+        let (wallet, info) = manager
+            .get_wallet_and_info(&self.wallet_id())
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id())))?;
 
-        let path = state
+        let path = info
             .core_wallet
             .accounts
             .all_accounts()
@@ -106,7 +111,7 @@ impl PlatformWallet {
                 ))
             })?;
 
-        private_key_at(path, state.wallet(), resolved_master, network)
+        private_key_at(path, wallet, resolved_master, network)
     }
 
     /// Returns the derivation path of `address_str` among the first
@@ -384,7 +389,7 @@ mod tests {
     }
 
     #[test]
-    fn should_report_a_removed_wallet_as_missing_to_the_scan() {
+    fn should_report_a_removed_wallet_as_missing() {
         let runtime = Runtime::new().unwrap();
         let (manager, wallet_id) = runtime.block_on(test_platform_wallet_manager());
         let wallet = runtime.block_on(manager.get_wallet(&wallet_id)).unwrap();
@@ -401,6 +406,10 @@ mod tests {
         ));
         assert!(matches!(
             wallet.bip44_address_private_key(&address, None),
+            Err(PlatformWalletError::WalletNotFound(_))
+        ));
+        assert!(matches!(
+            wallet.derive_core_address_private_key(&address, None),
             Err(PlatformWalletError::WalletNotFound(_))
         ));
     }
