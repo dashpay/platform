@@ -593,8 +593,9 @@ error. A saved state that stores an unknown number therefore fails to load with
 a descriptive error instead of aborting the node.
 
 Several schedules may share one number when they differ only in groups the
-history never serves: `FEE_VERSION1` and `FEE_VERSION2` both carry number 1
-because only `data_contract_registration` changed between them. A schedule that
+history never serves: `FEE_VERSION1` through `FEE_VERSION4` all carry number 1
+because they differ only in groups such as `data_contract_registration`,
+`vote_resolution_fund_fees` and `document_ttl`. A schedule that
 changes storage rates must be registered under a new number, because that
 number is what prices refunds of bytes written while it was active. Unit tests
 in `rs-platform-version` pin that every schedule a protocol version references

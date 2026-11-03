@@ -467,11 +467,11 @@ impl LowLevelDriveOperation {
     /// Should only be used by Calculate fee (generation 1).
     ///
     /// Identical to `consume_to_fees_v0` except that refunds go through
-    /// `FeeRefunds::from_storage_removal_v1`. Ephemeral (TTL) operations keep generation 0's
-    /// pricing: added bytes bill to processing at the ephemeral rate, never to storage, and a
-    /// sectioned removal on an ephemeral batch is an error. The fee version number 1 arm keeps
-    /// pricing against an empty history, so on every schedule shipped so far the two
-    /// generations agree.
+    /// `FeeRefunds::from_storage_removal_v1`. Ephemeral operations keep generation 0's
+    /// pricing: a document with a `ttl` pays its added bytes as a lifetime storage fee, a
+    /// `timeRange` TTL sub-level bills them to processing at the ephemeral rate, and neither
+    /// refunds anything. The fee version number 1 arm keeps pricing against an empty history,
+    /// so on every schedule shipped so far the two generations agree.
     pub fn consume_to_fees_v1(
         drive_operations: Vec<LowLevelDriveOperation>,
         epoch: &Epoch,
@@ -487,7 +487,42 @@ impl LowLevelDriveOperation {
                     processing_fee: op.cost(fee_version),
                     ..Default::default()
                 }),
-                CalculatedEphemeralCostOperation(cost) => {
+                CalculatedEphemeralCostOperation(cost, EphemeralPricing::DocumentTtl {
+                    credit_per_byte,
+                    lifetime_epochs,
+                }) => {
+                    // The writes of a document whose type declares a `ttl`:
+                    // each added byte costs the price of the document's
+                    // remaining lifetime, as a storage fee the pools pay
+                    // out over the epochs it has left to live. Processing
+                    // is billed as for any batch.
+                    let storage_fee = (cost.storage_cost.added_bytes as u64)
+                        .checked_mul(credit_per_byte)
+                        .ok_or(Error::Fee(FeeError::Overflow(
+                            "overflow pricing the bytes of a document with a time to live",
+                        )))?;
+                    let processing_fee = cost.ephemeral_cost(fee_version)?;
+                    let lifetime_storage_fees = if storage_fee > 0 {
+                        LifetimeStorageFees::from([(lifetime_epochs, storage_fee)])
+                    } else {
+                        LifetimeStorageFees::new()
+                    };
+                    // The elements of such a document carry no storage flags,
+                    // so removals are basic. A sectioned (refundable) removal
+                    // could only come from an element someone else paid for;
+                    // its bytes leave the system all the same and no refund
+                    // is owed through this batch, whose writes refund nothing.
+                    let removed_bytes_from_system =
+                        cost.storage_cost.removed_bytes.total_removed_bytes();
+                    Ok(FeeResult {
+                        storage_fee,
+                        processing_fee,
+                        fee_refunds: FeeRefunds::default(),
+                        removed_bytes_from_system,
+                        lifetime_storage_fees,
+                    })
+                }
+                CalculatedEphemeralCostOperation(cost, EphemeralPricing::TimeRangeTtl) => {
                     // TTL'd-subtree bytes: the added bytes bill to
                     // PROCESSING at the ephemeral rate instead of to
                     // storage — they provably live at most `ttl` plus a
@@ -525,6 +560,7 @@ impl LowLevelDriveOperation {
                         processing_fee,
                         fee_refunds: FeeRefunds::default(),
                         removed_bytes_from_system,
+                        lifetime_storage_fees: Default::default(),
                     })
                 }
                 _ => {
@@ -574,6 +610,7 @@ impl LowLevelDriveOperation {
                         processing_fee,
                         fee_refunds,
                         removed_bytes_from_system,
+                        lifetime_storage_fees: Default::default(),
                     })
                 }
             })
@@ -3193,31 +3230,58 @@ mod tests {
                 .collect()
         }
 
-        /// An ephemeral (TTL) batch adding 100 bytes and removing 30 basic bytes.
+        /// A `timeRange` TTL batch adding 100 bytes and removing 30 basic bytes.
         fn ephemeral_operation() -> LowLevelDriveOperation {
-            CalculatedEphemeralCostOperation(OperationCost {
-                storage_cost: StorageCost {
-                    added_bytes: 100,
-                    replaced_bytes: 0,
-                    removed_bytes: BasicStorageRemoval(30),
+            CalculatedEphemeralCostOperation(
+                OperationCost {
+                    storage_cost: StorageCost {
+                        added_bytes: 100,
+                        replaced_bytes: 0,
+                        removed_bytes: BasicStorageRemoval(30),
+                    },
+                    ..Default::default()
                 },
-                ..Default::default()
-            })
+                EphemeralPricing::TimeRangeTtl,
+            )
         }
 
-        /// An ephemeral (TTL) batch that claims a sectioned removal, which TTL subtrees can
+        /// A `timeRange` TTL batch that claims a sectioned removal, which TTL subtrees can
         /// never produce.
         fn ephemeral_operation_with_sectioned_removal() -> LowLevelDriveOperation {
             let mut removal = BTreeMap::new();
             removal.insert(IDENTITY, IntMap::from_iter([(5u16, 100u32)]));
-            CalculatedEphemeralCostOperation(OperationCost {
-                storage_cost: StorageCost {
-                    added_bytes: 100,
-                    replaced_bytes: 0,
-                    removed_bytes: SectionedStorageRemoval(removal),
+            CalculatedEphemeralCostOperation(
+                OperationCost {
+                    storage_cost: StorageCost {
+                        added_bytes: 100,
+                        replaced_bytes: 0,
+                        removed_bytes: SectionedStorageRemoval(removal),
+                    },
+                    ..Default::default()
                 },
-                ..Default::default()
-            })
+                EphemeralPricing::TimeRangeTtl,
+            )
+        }
+
+        /// The writes of a document with a `ttl`: 100 added bytes at 500 credits each, paid out
+        /// over 4 epochs, and a sectioned removal of 100 bytes someone else paid for.
+        fn document_ttl_operation() -> LowLevelDriveOperation {
+            let mut removal = BTreeMap::new();
+            removal.insert(IDENTITY, IntMap::from_iter([(5u16, 100u32)]));
+            CalculatedEphemeralCostOperation(
+                OperationCost {
+                    storage_cost: StorageCost {
+                        added_bytes: 100,
+                        replaced_bytes: 0,
+                        removed_bytes: SectionedStorageRemoval(removal),
+                    },
+                    ..Default::default()
+                },
+                EphemeralPricing::DocumentTtl {
+                    credit_per_byte: 500,
+                    lifetime_epochs: 4,
+                },
+            )
         }
 
         /// Runs the requested generation of `consume_to_fees` on one operation.
@@ -3266,7 +3330,8 @@ mod tests {
         }
 
         #[test]
-        fn should_bill_ephemeral_bytes_to_processing_at_the_ephemeral_rate_in_both_generations() {
+        fn should_bill_time_range_ttl_bytes_to_processing_at_the_ephemeral_rate_in_both_generations(
+        ) {
             // TTL subtree bytes never pay the perpetual storage price. Both generations must
             // price them identically: no storage fee, processing carries the ephemeral bytes
             // fee on top of the operation's ephemeral cost, no refunds, basic removal reported.
@@ -3296,7 +3361,43 @@ mod tests {
         }
 
         #[test]
-        fn should_reject_a_sectioned_removal_on_an_ephemeral_batch_in_both_generations() {
+        fn should_price_document_ttl_bytes_as_lifetime_storage_fees_in_both_generations() {
+            // A document with a `ttl` pays its added bytes as a storage fee spread over the
+            // epochs it has left to live, and its batch refunds nothing, not even a sectioned
+            // removal under a fee history with a rate boundary.
+            let expected_processing = document_ttl_operation()
+                .operation_cost()
+                .expect("calculated cost")
+                .ephemeral_cost(&SYNTHETIC_FEE_VERSION_2)
+                .expect("ephemeral cost");
+            let history = boundary_history();
+
+            for generation in [0, 1] {
+                let fee_result = consume_operation(
+                    generation,
+                    document_ttl_operation(),
+                    &SYNTHETIC_FEE_VERSION_2,
+                    Some(&history),
+                )
+                .expect("document ttl bytes are priced without the fee history");
+
+                assert_eq!(fee_result.storage_fee, 100 * 500, "generation {generation}");
+                assert_eq!(
+                    fee_result.processing_fee, expected_processing,
+                    "generation {generation}"
+                );
+                assert_eq!(
+                    fee_result.lifetime_storage_fees,
+                    LifetimeStorageFees::from([(4, 100 * 500)]),
+                    "generation {generation}"
+                );
+                assert_eq!(fee_result.fee_refunds, FeeRefunds::default());
+                assert_eq!(fee_result.removed_bytes_from_system, 100);
+            }
+        }
+
+        #[test]
+        fn should_reject_a_sectioned_removal_on_a_time_range_ttl_batch_in_both_generations() {
             let history = boundary_history();
             for generation in [0, 1] {
                 let error = consume_operation(

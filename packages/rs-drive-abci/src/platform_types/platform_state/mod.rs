@@ -703,7 +703,7 @@ mod tests {
             let state = latest_state();
             let mut saving = PlatformStateForSavingV1::try_from(state).expect("saving form");
             saving.previous_fee_versions.insert(3, 99);
-            let config = config::standard().with_big_endian().with_no_limit();
+            let config = PLATFORM_BINCODE_CONFIG;
             let bytes = bincode::encode_to_vec(PlatformStateForSaving::V1(saving), config)
                 .expect("encode saving form");
 

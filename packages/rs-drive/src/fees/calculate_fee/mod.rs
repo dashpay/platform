@@ -68,6 +68,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fees::op::EphemeralPricing;
     use crate::fees::op::LowLevelDriveOperation::CalculatedCostOperation;
     use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
     use dpp::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
@@ -334,17 +335,20 @@ mod tests {
         }
     }
 
-    /// An ephemeral (TTL) batch adding 100 bytes, as TTL batch application and estimation
+    /// A `timeRange` TTL batch adding 100 bytes, as TTL batch application and estimation
     /// produce it.
     fn ephemeral_operation() -> LowLevelDriveOperation {
-        LowLevelDriveOperation::CalculatedEphemeralCostOperation(OperationCost {
-            storage_cost: StorageCost {
-                added_bytes: 100,
-                replaced_bytes: 0,
-                removed_bytes: NoStorageRemoval,
+        LowLevelDriveOperation::CalculatedEphemeralCostOperation(
+            OperationCost {
+                storage_cost: StorageCost {
+                    added_bytes: 100,
+                    replaced_bytes: 0,
+                    removed_bytes: NoStorageRemoval,
+                },
+                ..Default::default()
             },
-            ..Default::default()
-        })
+            EphemeralPricing::TimeRangeTtl,
+        )
     }
 
     #[test]
@@ -396,15 +400,17 @@ mod tests {
             let platform_version = platform_version_with_doubled_storage_rate(calculate_fee);
             let mut removal = BTreeMap::new();
             removal.insert(IDENTITY, IntMap::from_iter([(5u16, 100u32)]));
-            let operation =
-                LowLevelDriveOperation::CalculatedEphemeralCostOperation(OperationCost {
+            let operation = LowLevelDriveOperation::CalculatedEphemeralCostOperation(
+                OperationCost {
                     storage_cost: StorageCost {
                         added_bytes: 0,
                         replaced_bytes: 0,
                         removed_bytes: SectionedStorageRemoval(removal),
                     },
                     ..Default::default()
-                });
+                },
+                EphemeralPricing::TimeRangeTtl,
+            );
 
             let error = Drive::calculate_fee(
                 None,
