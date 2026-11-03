@@ -73,7 +73,7 @@ pub use masternode::{
     aggregate_masternodes, ListMembership, MasternodeKeyRole, MasternodeRecord, MasternodeSource,
     MasternodeStatus, TrackedMasternode, TrackedMasternodeSnapshot, WalletMasternodes,
 };
-pub use wallet::core_address_key::CoreAddressPrivateKey;
+pub use wallet::core_address_key::{CoreAddressKeyError, CoreAddressPrivateKey};
 pub use wallet::identity::network::{
     derive_identity_auth_keypair, AutoAcceptProofSource, ContactCryptoProvider, ContactInfoOpened,
     ContactInfoPublishOutcome, ContactInfoSealed, PreparedDashPayPayment, SeedBindingVerification,
