@@ -1,10 +1,11 @@
 //! Cancellation of a note-sync pass (dashpay/platform#5200).
 //!
 //! Feeds `sync_notes_from_stream` a synthetic batch stream so the
-//! cancel and finalize paths run without a network. The stream yields
-//! real-shaped batches, then a tail future that cancels the token and
-//! pends forever — exactly the moment a stop would land between two
-//! chunk fetches.
+//! cancel path runs without a network. The stream yields real-shaped
+//! batches, then a tail future that cancels the token and pends forever
+//! — exactly the moment a stop would land between two chunk fetches.
+//! A cut-short pass keeps the tree progress it made and publishes
+//! nothing else; the next pass re-walks from the completed watermark.
 
 use std::sync::Arc;
 
@@ -99,7 +100,7 @@ async fn run(
 }
 
 #[tokio::test]
-async fn should_finalize_consumed_prefix_when_cancelled_mid_stream() {
+async fn should_keep_tree_progress_and_publish_nothing_when_cancelled_mid_stream() {
     let path = temp_tree_path("prefix");
     let store = Arc::new(RwLock::new(
         FileBackedShieldedStore::open_path(&path, 100).expect("open store"),
@@ -116,21 +117,20 @@ async fn should_finalize_consumed_prefix_when_cancelled_mid_stream() {
     )
     .await;
 
-    // The prefix the pass consumed is finalized like a completed pass.
-    assert_eq!(result.total_scanned, 8);
+    // The appended leaves stay, checkpointed; nothing else is published.
+    assert_eq!(result.total_scanned, 0, "a cut-short pass reports no scan");
+    assert!(crate::changeset::merge::Merge::is_empty(&result.changeset));
     let store = store.read().await;
     assert_eq!(store.tree_size().unwrap(), 8, "both batches appended");
-    assert_eq!(
-        store.last_synced_note_index(sub).unwrap(),
-        8,
-        "watermark covers exactly the consumed batches"
-    );
     assert!(
         store.witness(7).unwrap().is_some(),
         "a checkpoint covers the appended leaves"
     );
-    // A resume cursor, not a completed scan: the ledger's coverage and
-    // provenance are untouched, so an unhydrated account stays unavailable.
+    assert_eq!(
+        store.last_synced_note_index(sub).unwrap(),
+        0,
+        "the watermark only moves when a pass reaches the tip"
+    );
     let balance = store.local_account_balance(sub).unwrap();
     assert_eq!(balance.last_scanned_index, None);
     assert_eq!(balance.source, ShieldedBalanceSource::NoHistory);
@@ -171,7 +171,7 @@ async fn should_return_empty_without_touching_store_when_cancelled_before_scan()
 }
 
 #[tokio::test]
-async fn should_resume_from_partial_watermark_on_next_pass() {
+async fn should_rewalk_the_appended_prefix_without_reappending_on_next_pass() {
     let path = temp_tree_path("resume");
     let store = Arc::new(RwLock::new(
         FileBackedShieldedStore::open_path(&path, 100).expect("open store"),
@@ -188,11 +188,12 @@ async fn should_resume_from_partial_watermark_on_next_pass() {
         batches_then_cancel(vec![batch(0, 4, 12), batch(4, 4, 12)], cancel.clone()),
     )
     .await;
-    assert_eq!(store.read().await.last_synced_note_index(sub).unwrap(), 8);
+    assert_eq!(store.read().await.last_synced_note_index(sub).unwrap(), 0);
+    assert_eq!(store.read().await.tree_size().unwrap(), 8);
 
-    // Pass 2: the SDK re-fetches from the chunk-aligned start (0 here), so
-    // the stream re-delivers the first two batches — gate-skipped by the
-    // tree-size snapshot — and then the new one. Runs to completion.
+    // Pass 2: re-walks from the completed watermark (0), so the stream
+    // re-delivers the first two batches — gate-skipped by the tree-size
+    // snapshot — and then the new one. Runs to completion.
     let cancel = CancellationToken::new();
     let result = run(
         &store,
@@ -207,8 +208,8 @@ async fn should_resume_from_partial_watermark_on_next_pass() {
     .await;
 
     assert_eq!(
-        result.total_scanned, 4,
-        "only the new notes count as scan volume"
+        result.total_scanned, 12,
+        "the whole range from the completed watermark is scanned"
     );
     let store = store.read().await;
     assert_eq!(
@@ -235,10 +236,10 @@ async fn should_resume_from_partial_watermark_on_next_pass() {
 
 /// Two subwallets, one already past where the cancelled prefix ends.
 /// `aligned_start` is the union MIN, so the pass walks 0..8 while the
-/// second subwallet sits at 12: its watermark must not move backwards,
-/// and the changeset must not carry a rewound value to the host.
+/// second subwallet sits at 12: neither watermark moves, and the
+/// changeset carries nothing to the host.
 #[tokio::test]
-async fn should_not_rewind_a_more_advanced_subwallet_when_cancelled() {
+async fn should_leave_every_watermark_alone_when_cancelled() {
     let path = temp_tree_path("no_rewind");
     let store = Arc::new(RwLock::new(
         FileBackedShieldedStore::open_path(&path, 100).expect("open store"),
@@ -261,25 +262,23 @@ async fn should_not_rewind_a_more_advanced_subwallet_when_cancelled() {
     .await;
 
     let store = store.read().await;
-    assert_eq!(store.last_synced_note_index(lagging).unwrap(), 8);
+    assert_eq!(store.tree_size().unwrap(), 8);
+    assert_eq!(store.last_synced_note_index(lagging).unwrap(), 0);
     assert_eq!(
         store.last_synced_note_index(advanced).unwrap(),
         12,
         "a partial prefix below a subwallet's watermark must not rewind it"
     );
     assert!(
-        result.changeset.synced_indices.is_empty(),
-        "a cancelled pass sends no watermark to the host: neither the partial \
-         cursor (the host would restore it as completed coverage) nor a \
-         rewound one"
+        crate::changeset::merge::Merge::is_empty(&result.changeset),
+        "a cancelled pass sends nothing to the host"
     );
 
     let _ = std::fs::remove_file(&path);
 }
 
 /// Cancelled after the store lock but before the first batch: nothing
-/// was consumed, so the store and the changeset stay untouched and the
-/// coordinator's empty-pass gate can fire.
+/// was consumed, so the store and the changeset stay untouched.
 #[tokio::test]
 async fn should_leave_store_and_changeset_empty_when_cancelled_before_first_batch() {
     let path = temp_tree_path("first_batch");

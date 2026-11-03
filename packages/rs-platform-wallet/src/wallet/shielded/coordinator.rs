@@ -1314,14 +1314,15 @@ impl NetworkShieldedCoordinator {
     /// [`WalletPersister`].
     ///
     /// Cancellation: `cancel` is checked before every network step and
-    /// between note batches. Once it fires, the pass skips what is left
-    /// of the network work (the rest of the scan, spend re-drives and
-    /// stranded-reservation releases) but still finalizes and flushes to
-    /// the host persisters whatever the scan had consumed: a note saved
-    /// in the store under an advanced watermark is never re-emitted, so
-    /// an unflushed changeset would leave the host mirror permanently
-    /// behind. The caught-up cooldown is not stamped for a cancelled
-    /// pass, so the next pass walks Platform again right away.
+    /// between note batches. A scan cut short keeps the commitments it
+    /// appended to the local tree and publishes nothing else (see
+    /// [`sync_notes_across`]): the pass then returns the empty summary,
+    /// so the manager reports no completion and the host sees no
+    /// partial ledger. A stop that lands after the scan completed skips
+    /// the remaining network work (spend re-drives, stranded releases,
+    /// identity-shield re-drives) but still runs the store-only steps
+    /// and flushes the completed scan to the host persisters. The
+    /// caught-up cooldown is never stamped by a cancelled pass.
     ///
     /// [`sync_notes_across`]: super::sync::sync_notes_across
     /// [`PlatformEventManager::on_shielded_sync_completed`]:
@@ -1421,25 +1422,24 @@ impl NetworkShieldedCoordinator {
             Err(e) => return self.fail_all_wallets(&subwallets, &e),
         };
         // Everything below that talks to the network is skipped once the
-        // pass is cancelled; the store-only steps and the host flush of
-        // what the scan consumed still run (see the method docs).
+        // pass is cancelled; the store-only steps and the host flush of a
+        // COMPLETED scan still run (see the method docs).
         //
-        // Snapshotted here on purpose: the scan is the step that was or
-        // was not cut short, and the cooldown decision below is about
-        // whether that scan reached the tip. A stop that lands during the
-        // store-only steps after a complete scan does not change that.
+        // Snapshotted here on purpose: the cooldown decision below is
+        // about whether the scan reached the tip. A stop that lands during
+        // the store-only steps after a complete scan does not change that.
         let cancelled = cancel.is_cancelled();
-        // A pass cut short before the scan consumed anything (the stop
-        // landed in the prefetch, or before the store lock) has nothing to
-        // flush and nothing to report: hand back the empty summary so the
-        // manager treats it as "no pass ran" — `build_per_wallet_summary`
+        // A scan cut short publishes nothing (`sync_notes_across` returns
+        // the empty result whether the stop landed in the prefetch, before
+        // the store lock or between batches): hand back the empty summary
+        // so the manager treats it as "no pass ran" — `build_per_wallet_summary`
         // would otherwise mint an all-zero `Ok` for every registered
         // wallet, and the host would see a completion event for no work.
         if cancelled
             && notes.total_scanned == 0
             && crate::changeset::merge::Merge::is_empty(&notes.changeset)
         {
-            tracing::debug!("Coordinator sync cancelled before the scan consumed anything");
+            tracing::debug!("Coordinator sync cancelled; the scan published nothing");
             return summary;
         }
         // Scan-based spend detection now happens INSIDE
@@ -1510,27 +1510,21 @@ impl NetworkShieldedCoordinator {
 
         // Restore-path activity derivation: reconstruct per-operation
         // activity entries best-effort from the notes / outgoing notes
-        // this pass (and earlier passes) persisted. Runs every completed
-        // pass so it doubles as the one-time backfill over an
-        // already-populated store — `derive_activity_from_scan_data`
-        // skips clusters whose id a live entry already owns, and
-        // `save_activity` upserts by id, so re-running is idempotent.
-        // Failures are logged and swallowed: a derivation miss must never
-        // fail a sync pass.
+        // this pass (and earlier passes) persisted. Runs every pass so it
+        // doubles as the one-time backfill over an already-populated
+        // store — `derive_activity_from_scan_data` skips clusters whose
+        // id a live entry already owns, and `save_activity` upserts by
+        // id, so re-running is idempotent. Failures are logged and
+        // swallowed: a derivation miss must never fail a sync pass.
         //
-        // Deferred on a cancelled pass. Derived entries are immutable
-        // clusters keyed by the discovering chunk's proof height: an
-        // entry derived from a consumed prefix would freeze the cluster,
-        // and a note the resumed pass finds at the same height could only
-        // confirm that entry, never extend it — the amount and cmx set
-        // would permanently omit the later note. The raw notes, spent
-        // marks and cursor are flushed regardless; the next pass that
-        // reaches the tip derives over all of them at once, exactly as an
-        // uninterrupted scan would have.
+        // Only a completed scan reaches this point (a cut-short one
+        // returned above), which matters here: derived entries are
+        // immutable clusters keyed by the discovering chunk's proof
+        // height, so deriving over a consumed prefix would freeze a
+        // cluster that a later note at the same height could only
+        // confirm, never extend.
         let mut notes = notes;
-        if cancelled {
-            tracing::debug!("Shielded activity derivation deferred: pass cancelled");
-        } else if let Err(e) = self
+        if let Err(e) = self
             .derive_activity_into_changeset(&subwallets, &mut notes.changeset)
             .await
         {
@@ -1593,12 +1587,10 @@ impl NetworkShieldedCoordinator {
         // Cooldown decision based on aggregate activity across
         // every subwallet — any new commitment scanned or
         // newly-spent nullifier anywhere on the network clears
-        // the stamp so the next pass runs immediately — a cancelled pass
-        // included: what it consumed is real activity, and leaving a
-        // stamp from before it would park the next background pass
-        // behind the cooldown. Only a NEW stamp needs an uncancelled
-        // pass: a cancelled one proves nothing about being caught up (it
-        // may have stopped before its first batch).
+        // the stamp so the next pass runs immediately. Only a NEW stamp
+        // needs an uncancelled pass: a stop after a complete scan that
+        // found nothing proves nothing about staying caught up, so the
+        // next pass walks Platform again right away.
         let any_activity = notes.total_scanned > 0 || newly_spent_per_sub.values().any(|&n| n > 0);
         if let Ok(mut guard) = self.last_caught_up_at.lock() {
             if any_activity {

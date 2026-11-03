@@ -469,23 +469,15 @@ pub trait ShieldedStore: Send + Sync {
     /// (scanning through position `N-1` sets this to `N`).
     fn last_synced_note_index(&self, id: SubwalletId) -> Result<u64, Self::Error>;
 
-    /// Persist the sync watermark (next index to scan) for `id` as the
-    /// end of a COMPLETE scan: also records it as the scan coverage
-    /// behind [`local_account_balance`](Self::local_account_balance)
-    /// and stamps the balance source `ScannedThisSession`.
+    /// Persist the sync watermark (next index to scan) for `id`. Only a
+    /// pass that reached the tip calls this: the setter also records the
+    /// scan coverage and the `ScannedThisSession` balance source behind
+    /// [`local_account_balance`](Self::local_account_balance).
     fn set_last_synced_note_index(
         &mut self,
         id: SubwalletId,
         index: u64,
     ) -> Result<(), Self::Error>;
-
-    /// Persist the sync watermark (next index to scan) for `id` as a
-    /// RESUME cursor only: the pass that reached `index` was cut short,
-    /// so the next pass resumes from here, but the scan coverage and
-    /// balance source behind
-    /// [`local_account_balance`](Self::local_account_balance) stay as
-    /// they were — a consumed prefix is not evidence of a complete scan.
-    fn set_resume_note_index(&mut self, id: SubwalletId, index: u64) -> Result<(), Self::Error>;
 
     // ── Per-subwallet lifecycle ────────────────────────────────────────
 
@@ -1119,11 +1111,6 @@ impl ShieldedStore for InMemoryShieldedStore {
         state.last_synced_index = index;
         state.last_scanned_index = Some(index);
         state.balance_source = ShieldedBalanceSource::ScannedThisSession;
-        Ok(())
-    }
-
-    fn set_resume_note_index(&mut self, id: SubwalletId, index: u64) -> Result<(), Self::Error> {
-        self.subwallets.entry(id).or_default().last_synced_index = index;
         Ok(())
     }
 

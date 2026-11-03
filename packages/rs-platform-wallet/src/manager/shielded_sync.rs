@@ -310,13 +310,14 @@ impl ShieldedSyncManager {
     /// any. Returns immediately.
     ///
     /// A pass already inside `coordinator.sync()` observes the
-    /// cancellation at its next batch or network boundary, finalizes the
-    /// prefix it consumed and flushes that to the persisters, then
-    /// releases `is_syncing`. So this is **not** a barrier: for a real
-    /// "nothing is running and nothing more will be persisted" guarantee
-    /// — required by Clear, unregister, and rebind — use
-    /// [`quiesce`](Self::quiesce), which calls this first and then waits
-    /// for that finalize.
+    /// cancellation at its next batch or network boundary: a scan cut
+    /// short keeps the commitments it appended to the local tree and
+    /// publishes nothing else, a scan that had completed still flushes
+    /// its result, then the pass releases `is_syncing`. So this is
+    /// **not** a barrier: for a real "nothing is running and nothing
+    /// more will be persisted" guarantee — required by Clear,
+    /// unregister, and rebind — use [`quiesce`](Self::quiesce), which
+    /// calls this first and then waits for that release.
     pub fn stop(&self) {
         // Cancel the current pass parent and rotate in a fresh one, so a
         // pass that starts after this stop runs under an uncancelled token.
@@ -485,12 +486,12 @@ impl ShieldedSyncManager {
             ShieldedSyncPassSummary::default()
         };
 
-        // A pass cancelled before it did anything is not a completed pass:
-        // no timestamp, no completion event (same as losing the slot CAS).
-        // The coordinator returns the empty summary for exactly that case
-        // (a cancelled scan that consumed nothing); one that did consume
-        // batches has flushed them to the persisters, so it is reported
-        // like any other pass and the host applies the deltas.
+        // A pass whose scan was cut short is not a completed pass: no
+        // timestamp, no completion event (same as losing the slot CAS).
+        // The coordinator returns the empty summary for exactly that case;
+        // a pass stopped only after its scan completed has flushed the
+        // scan to the persisters, so it is reported like any other pass
+        // and the host applies the deltas.
         if pass_cancel.is_cancelled() && summary.is_empty() {
             return summary;
         }
@@ -533,9 +534,9 @@ impl ShieldedSyncManager {
     /// Returns `Ok(None)` if `wallet_id` isn't registered on the
     /// coordinator (e.g. shielded support hasn't been configured,
     /// or the wallet has never called `bind_shielded`), if
-    /// another sync pass was already in flight, or if the pass was
-    /// cancelled by [`stop`](Self::stop) before it consumed any
-    /// scan data (the coordinator then reports no wallets).
+    /// another sync pass was already in flight, or if the pass's scan
+    /// was cut short by [`stop`](Self::stop) (the coordinator then
+    /// reports no wallets).
     pub async fn sync_wallet(
         &self,
         wallet_id: &WalletId,

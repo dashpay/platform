@@ -26,7 +26,7 @@
 //! [`NetworkShieldedCoordinator::sync`]:
 //!     super::coordinator::NetworkShieldedCoordinator::sync
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use dash_sdk::platform::shielded::notes_sync::types::ShieldedChunkBatch;
@@ -198,11 +198,16 @@ impl MultiSyncNotesResult {
 ///
 /// Cancellation: `cancel` is observed before the store is locked and
 /// between batches. A cancelled pass stops pulling batches (dropping
-/// the in-flight network fetches) and then finalizes the prefix it
-/// consumed exactly as a completed pass would — checkpoint, note saves,
-/// spend replay, watermark — so the store and the returned changeset
-/// stay consistent with each other. It is a clean early stop, not an
-/// error.
+/// the in-flight network fetches), checkpoints the commitments it
+/// appended to the local tree, and publishes NOTHING else: no notes, no
+/// spent marks, no watermark, an empty result. A consumed prefix is not
+/// a complete scan — a receipt in it may already be spent by an action
+/// in a chunk it never reached, and the ledger has no way to hold such a
+/// note without offering it for selection. The next pass re-walks from
+/// the last completed watermark; the appended leaves make that re-walk
+/// skip every append and checkpoint it already made, so what a stop
+/// costs is the download and decryption of the chunks it had consumed.
+/// It is a clean early stop, not an error.
 pub(super) async fn sync_notes_across<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
@@ -464,15 +469,15 @@ where
 
         loop {
             // Batches arrive in tree order as a contiguous prefix, so
-            // stopping between two of them leaves a shorter but valid scan:
-            // the finalize checkpoints and watermarks exactly what was
-            // consumed. `biased` so a pending stop wins over a ready batch.
+            // stopping between two of them leaves the tree one checkpoint
+            // further along and nothing else to publish. `biased` so a
+            // pending stop wins over a ready batch.
             let item = tokio::select! {
                 biased;
                 _ = cancel.cancelled() => {
                     debug!(
                         total_scanned = total_notes_scanned,
-                        "Shielded note sync cancelled; finalizing the consumed prefix"
+                        "Shielded note sync cancelled; committing tree progress only"
                     );
                     break true;
                 }
@@ -657,6 +662,20 @@ where
             .map_err(|e| PlatformWalletError::ShieldedTreeUpdateFailed(e.to_string()))?;
     }
 
+    // A cancelled pass ends here: the appended leaves are checkpointed
+    // (the next pass skips them), and nothing the prefix decrypted is
+    // saved, replayed, watermarked or handed to the caller. See the
+    // cancellation note on `sync_notes_across` for why a consumed prefix
+    // must not reach the ledger.
+    if cancelled {
+        drop(store);
+        info!(
+            total_scanned = total_notes_scanned,
+            appended, "Shielded note sync stopped; tree progress kept, nothing published"
+        );
+        return Ok(MultiSyncNotesResult::default());
+    }
+
     // Save decrypted notes per subwallet; count new notes per
     // subwallet; build a single consolidated changeset.
     let mut per_subwallet_new_notes: BTreeMap<SubwalletId, usize> = BTreeMap::new();
@@ -672,38 +691,16 @@ where
         // Gate on THIS subwallet's own watermark (not the network
         // min): a caught-up subwallet skips re-deriving nullifiers
         // for notes it already stored, while a lagging one still
-        // saves everything from its own start.
+        // saves everything from its own start. `save_note` is an
+        // idempotent overwrite-by-nullifier, so a stray re-save is
+        // harmless — but gating per-subwallet keeps the
+        // `per_subwallet_new_notes` count honest.
         let sub_watermark = watermarks.get(id).copied().unwrap_or(0);
-        // Notes the store already holds, by nullifier. A position above
-        // the watermark can still be a known note: a restart after a
-        // cancelled pass resumes from the last COMPLETED watermark (the
-        // cancelled cursor is not persisted) and re-walks a prefix whose
-        // receipts the host restored, possibly already marked spent by
-        // that same pass. `save_note` replaces by nullifier, so re-saving
-        // one as a fresh `is_spent: false` receipt would resurrect a
-        // spent note until the replay reaches its nullifier — which a
-        // second stop can prevent. A known note is left alone and not
-        // re-emitted: the host has it.
-        let known_nullifiers: BTreeSet<[u8; 32]> = store
-            .get_all_notes(*id)
-            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
-            .into_iter()
-            .map(|note| note.nullifier)
-            .collect();
         for d in discovered {
             if d.position < sub_watermark {
                 continue;
             }
             let nullifier = d.note.nullifier(&views.full_viewing_key);
-            if known_nullifiers.contains(&nullifier.to_bytes()) {
-                debug!(
-                    wallet_id = %hex::encode(id.wallet_id),
-                    account = id.account_index,
-                    position = d.position,
-                    "Note already on file; replayed receipt left as is"
-                );
-                continue;
-            }
             let value = d.note.value().inner();
             debug!(
                 wallet_id = %hex::encode(id.wallet_id),
@@ -794,40 +791,17 @@ where
     // `result.total_notes_scanned`.
     //
     // Never rewind. `aligned_start` is the MIN watermark across the
-    // union, so a pass cut short after a few batches can end below a
-    // subwallet that was already further along; a completed pass
-    // always reaches the tip, which is at or past every watermark.
-    // A cancelled pass leaves such a subwallet's row alone entirely:
-    // its consumed prefix never covered that subwallet. Where it did
-    // advance a subwallet, only the in-memory RESUME cursor moves: the
-    // prefix is not a complete scan, so the scan coverage and balance
-    // source the completed-pass setter stamps (`ScannedThisSession`,
-    // which lets `local_balance_snapshot` report an unhydrated account
-    // as ready) stay untouched until a pass runs to the tip.
-    //
-    // The cursor is NOT sent to the host. The changeset's watermark is
-    // the one the host restores as completed-scan coverage (`Restored`
-    // provenance with `last_scanned_index` set), and the persistence
-    // contract has no separate resume field; emitting a partial cursor
-    // there would make a restart report an account as covered up to a
-    // position no pass ever completed. So a restart resumes from the
-    // last COMPLETED watermark and re-walks the prefix: cheap, since
-    // the appended leaves are gate-skipped by the tree size and the
-    // receipts the host restored are recognised by nullifier and left
-    // alone (spent state included). The consumed notes and spent marks
-    // still reach the host below, so none of them is lost.
+    // union, so a pass that re-walks a lagging subwallet's range can
+    // end below a subwallet that was already further along; a completed
+    // pass reaches the tip, which is at or past every watermark. Only a
+    // completed pass gets here (a cancelled one returned above), so the
+    // write is unconditional: the setter also stamps the scan coverage
+    // and the `ScannedThisSession` balance source, which is exactly what
+    // reaching the tip means.
     let new_index = aligned_start + total_notes_scanned;
     for (id, _) in subwallets {
         let prior = watermarks.get(id).copied().unwrap_or(0);
         let advanced = prior.max(new_index);
-        if cancelled {
-            if advanced > prior {
-                store
-                    .set_resume_note_index(*id, advanced)
-                    .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-            }
-            continue;
-        }
         store
             .set_last_synced_note_index(*id, advanced)
             .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;

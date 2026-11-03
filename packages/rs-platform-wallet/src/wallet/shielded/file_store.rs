@@ -877,11 +877,6 @@ impl ShieldedStore for FileBackedShieldedStore {
         Ok(())
     }
 
-    fn set_resume_note_index(&mut self, id: SubwalletId, index: u64) -> Result<(), Self::Error> {
-        self.subwallets.entry(id).or_default().last_synced_index = index;
-        Ok(())
-    }
-
     fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
         // The redrive table IS durable (unlike the rest of subwallet
         // state), so purging the in-memory map alone would leave this

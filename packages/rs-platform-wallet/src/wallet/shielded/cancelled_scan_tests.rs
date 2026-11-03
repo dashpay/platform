@@ -1,18 +1,18 @@
-//! A cancelled scan pass must not certify what it did not cover
-//! (dashpay/platform#5200 review).
+//! A cancelled scan pass publishes nothing (dashpay/platform#5200 review).
 //!
 //! Drives the real coordinator against a mock Platform whose pool spans
 //! two fetch chunks, each holding one owned note, and cancels the pass
 //! from the tree-progress callback after the first chunk lands. The
-//! consumed prefix is flushed, but it is a resume point, not a complete
-//! scan: no activity entry is derived from it and the ledger stays
-//! unavailable. The resumed pass then yields exactly what an
-//! uninterrupted scan yields — one entry carrying both notes.
+//! appended commitments stay in the local tree; no note, spent mark,
+//! watermark, activity entry or completion leaves the scan, and the
+//! ledger stays unavailable. The next pass re-walks from the completed
+//! watermark and yields exactly what an uninterrupted scan yields — one
+//! entry carrying both notes.
 //!
-//! The host side is checked through a recording persister: the consumed
-//! receipt reaches the host, the partial cursor does not, and a restart
-//! restored from what the host recorded carries no scan coverage until
-//! a pass completes.
+//! The host side is checked through a recording persister: nothing
+//! reaches the host on a cancelled pass, and a restart restored from
+//! what the host recorded carries no scan coverage until a pass
+//! completes.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -230,7 +230,7 @@ async fn two_chunk_pool(
 
 /// A pool of full chunks, each opening with the given notes and padded
 /// with opaque ones, except the last chunk, which holds its notes alone
-/// and so ends the pool.
+/// and so ends the pool. Returns the SDK and the chunk size.
 async fn chunked_pool(leading: &[Vec<ShieldedEncryptedNote>]) -> (Arc<Sdk>, u64) {
     let mut sdk = Sdk::new_mock();
     let count = 2048
@@ -302,6 +302,34 @@ async fn coordinator_over(
     (coordinator, host)
 }
 
+/// Cancel once the `after`-th chunk has been committed to the tree.
+fn cancel_after(cancel: &CancellationToken, after: u64) -> Arc<dyn Fn(u64, u64) + Send + Sync> {
+    let stop = cancel.clone();
+    let committed = Arc::new(AtomicU64::new(0));
+    Arc::new(move |_, _| {
+        if committed.fetch_add(1, Ordering::SeqCst) + 1 >= after {
+            stop.cancel();
+        }
+    })
+}
+
+/// Run one pass that is stopped after `after` chunks, bounded in time.
+async fn cancelled_pass(
+    coordinator: &NetworkShieldedCoordinator,
+    after: u64,
+) -> crate::manager::shielded_sync::ShieldedSyncPassSummary {
+    let cancel = CancellationToken::new();
+    coordinator.install_tree_progress_handler(Some(cancel_after(&cancel, after)));
+    let summary = tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        coordinator.sync(true, &cancel),
+    )
+    .await
+    .expect("a cancelled pass returns");
+    coordinator.install_tree_progress_handler(None);
+    summary
+}
+
 fn host_synced_index(host: &RecordingPersistence, sub: SubwalletId) -> Option<u64> {
     host.recorded()
         .iter()
@@ -335,7 +363,7 @@ async fn activity(coordinator: &NetworkShieldedCoordinator) -> Vec<ShieldedActiv
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn should_defer_activity_and_readiness_until_a_pass_completes() {
+async fn should_publish_nothing_when_cancelled_and_match_an_uninterrupted_scan_after() {
     let keys = viewing_keys();
     let sub = SubwalletId::new(WALLET, 0);
     let first = owned_note(&keys, FIRST_VALUE);
@@ -364,66 +392,49 @@ async fn should_defer_activity_and_readiness_until_a_pass_completes() {
     // Pass 1: the stop lands after the first chunk is committed.
     let (sdk, count) = two_chunk_pool(&first, &second).await;
     let (coordinator, host) = coordinator_over(sdk, &keys).await;
-    let cancel = CancellationToken::new();
-    let stop = cancel.clone();
-    coordinator.install_tree_progress_handler(Some(Arc::new(move |_, _| stop.cancel())));
-    let summary = tokio::time::timeout(
-        std::time::Duration::from_secs(60),
-        coordinator.sync(true, &cancel),
-    )
-    .await
-    .expect("a cancelled pass returns");
-    coordinator.install_tree_progress_handler(None);
-    assert_eq!(summary.success_count(), 1, "the consumed prefix is flushed");
+    let summary = cancelled_pass(&coordinator, 1).await;
+    assert!(
+        summary.wallet_results.is_empty(),
+        "a cut-short pass reports no completion: {summary:?}"
+    );
     {
         let store = coordinator.store().read().await;
-        let notes = store.get_all_notes(sub).expect("notes");
         assert_eq!(
-            notes.len(),
-            1,
-            "only the first chunk's receipt was consumed"
+            store.tree_size().expect("tree"),
+            count,
+            "the first chunk's commitments stay appended"
         );
-        assert_eq!(notes[0].value, FIRST_VALUE);
+        assert!(
+            store.get_all_notes(sub).expect("notes").is_empty(),
+            "a receipt from a consumed prefix does not enter the ledger"
+        );
         assert_eq!(
             store.last_synced_note_index(sub).expect("watermark"),
-            count,
-            "the resume cursor covers the consumed chunk"
+            0,
+            "the watermark only moves when a pass reaches the tip"
         );
         let balance = store.local_account_balance(sub).expect("balance");
-        assert_eq!(
-            balance.source,
-            ShieldedBalanceSource::NoHistory,
-            "a consumed prefix is not a completed scan"
-        );
+        assert_eq!(balance.source, ShieldedBalanceSource::NoHistory);
         assert_eq!(balance.last_scanned_index, None);
     }
-    assert!(
-        activity(&coordinator).await.is_empty(),
-        "no activity entry may be derived from a partial scan"
-    );
-    // The host got the consumed receipt (the advanced in-memory cursor
-    // means no later pass re-emits it), but not the cursor itself, which
-    // it would restore as completed-scan coverage.
-    assert_eq!(host_note_values(&host, sub), vec![FIRST_VALUE]);
-    assert_eq!(host_synced_index(&host, sub), None);
-    assert!(host
-        .recorded()
-        .iter()
-        .all(|changeset| changeset.activity_entries.is_empty()));
+    assert!(activity(&coordinator).await.is_empty());
+    assert!(host.recorded().is_empty(), "nothing reaches the host");
     assert_eq!(
         coordinator
             .local_balance_snapshot(WALLET)
             .await
             .expect("snapshot"),
         ShieldedLocalBalanceState::RestoreIncomplete,
-        "an unhydrated account must not read as ready on a partial scan"
+        "an unhydrated account must not read as ready after a cut-short pass"
     );
 
-    // Pass 2: resumes from the cursor and reaches the tip.
+    // Pass 2: re-walks from the completed watermark (appends are skipped
+    // by the tree size) and reaches the tip.
     let summary = coordinator.sync(true, &CancellationToken::new()).await;
     assert_eq!(summary.success_count(), 1);
     {
         let store = coordinator.store().read().await;
+        assert_eq!(store.tree_size().expect("tree"), count + 1);
         assert_eq!(store.get_all_notes(sub).expect("notes").len(), 2);
         let balance = store.local_account_balance(sub).expect("balance");
         assert_eq!(balance.source, ShieldedBalanceSource::ScannedThisSession);
@@ -433,7 +444,7 @@ async fn should_defer_activity_and_readiness_until_a_pass_completes() {
     assert_eq!(
         activity(&coordinator).await,
         expected,
-        "cancel + resume must derive the same history as one uninterrupted scan"
+        "cancel + re-walk must derive the same history as one uninterrupted scan"
     );
     assert_eq!(
         host_note_values(&host, sub),
@@ -442,7 +453,7 @@ async fn should_defer_activity_and_readiness_until_a_pass_completes() {
     assert_eq!(
         host_synced_index(&host, sub),
         Some(count + 1),
-        "the completed pass is the first watermark the host sees"
+        "the completed pass is the first thing the host sees"
     );
     match coordinator
         .local_balance_snapshot(WALLET)
@@ -461,9 +472,10 @@ async fn should_defer_activity_and_readiness_until_a_pass_completes() {
 
 /// Cancel → persist → restart → restore, with no owned note in the
 /// cancelled prefix (the worst case: a restored account that reads as
-/// covered would read as an empty, finished scan). The host restored
-/// nothing that claims coverage, and the first pass after the restart
-/// finds the receipt the cancelled pass never reached.
+/// covered would read as an empty, finished scan). The host has nothing
+/// to restore, the reopened tree still holds the appended prefix, and
+/// the first pass after the restart finds the receipt the cancelled
+/// pass never reached.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn should_not_restore_scan_coverage_from_a_cancelled_prefix() {
     let keys = viewing_keys();
@@ -482,21 +494,13 @@ async fn should_not_restore_scan_coverage_from_a_cancelled_prefix() {
     {
         let (sdk, count) = two_chunk_pool(&first, &second).await;
         let coordinator = coordinator_at(sdk, &path, &keys, Arc::clone(&host)).await;
-        let cancel = CancellationToken::new();
-        let stop = cancel.clone();
-        coordinator.install_tree_progress_handler(Some(Arc::new(move |_, _| stop.cancel())));
-        tokio::time::timeout(
-            std::time::Duration::from_secs(60),
-            coordinator.sync(true, &cancel),
-        )
-        .await
-        .expect("a cancelled pass returns");
+        cancelled_pass(&coordinator, 1).await;
         let store = coordinator.store().read().await;
-        assert_eq!(store.last_synced_note_index(sub).expect("cursor"), count);
+        assert_eq!(store.tree_size().expect("tree"), count);
+        assert_eq!(store.last_synced_note_index(sub).expect("cursor"), 0);
         assert!(store.get_all_notes(sub).expect("notes").is_empty());
     }
-    assert!(host_note_values(&host, sub).is_empty());
-    assert_eq!(host_synced_index(&host, sub), None);
+    assert!(host.recorded().is_empty());
 
     // Session 2: reopen the same tree file, restore what the host kept,
     // and read the ledger offline as a cold bind does.
@@ -523,16 +527,15 @@ async fn should_not_restore_scan_coverage_from_a_cancelled_prefix() {
         }
         other => panic!("expected the hydrated ledger, got {other:?}"),
     }
-    assert_eq!(
-        coordinator
-            .store()
-            .read()
-            .await
-            .last_synced_note_index(sub)
-            .expect("cursor"),
-        0,
-        "the restart resumes from the last completed watermark"
-    );
+    {
+        let store = coordinator.store().read().await;
+        assert_eq!(
+            store.tree_size().expect("tree"),
+            count,
+            "the reopened tree keeps the appended prefix"
+        );
+        assert_eq!(store.last_synced_note_index(sub).expect("cursor"), 0);
+    }
 
     // The first pass after the restart re-walks the prefix (gate-skipped
     // by the persisted tree) and reaches the receipt.
@@ -550,13 +553,14 @@ async fn should_not_restore_scan_coverage_from_a_cancelled_prefix() {
 }
 
 /// The receipt is in chunk 0 and the action that spends it in chunk 1.
-/// Session 1 is cancelled after chunk 1, so the host holds the receipt
-/// marked spent and no watermark. Session 2 restores it, re-walks from
-/// the completed watermark and is cancelled after chunk 0 — before the
-/// nullifier replay could mark it spent again. The replayed receipt
-/// must not come back unspent, in the store or towards the host.
+/// Session 1 is cancelled after chunk 1 and session 2, after a restart,
+/// after chunk 0 — the one order in which a published prefix would have
+/// shown the receipt as spendable (receipt in, spend not yet replayed).
+/// Neither stop publishes anything, so the receipt never appears
+/// unspent in the ledger, in a balance or at the host; the pass that
+/// reaches the tip records it spent from the start.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn should_keep_a_replayed_receipt_spent_across_a_cancelled_restart() {
+async fn should_never_show_a_spent_receipt_as_spendable_across_cancelled_restarts() {
     let keys = viewing_keys();
     let sub = SubwalletId::new(WALLET, 0);
     let (receipt, own_nullifier) = owned_note_with_nullifier(&keys, FIRST_VALUE);
@@ -566,44 +570,20 @@ async fn should_keep_a_replayed_receipt_spent_across_a_cancelled_restart() {
     let layout = [vec![receipt], vec![spend], vec![tail]];
     let path = tree_path();
 
-    /// Cancel once the `after`-th chunk has been committed.
-    fn cancel_after(cancel: &CancellationToken, after: u64) -> Arc<dyn Fn(u64, u64) + Send + Sync> {
-        let stop = cancel.clone();
-        let committed = Arc::new(std::sync::atomic::AtomicU64::new(0));
-        Arc::new(move |_, _| {
-            if committed.fetch_add(1, Ordering::SeqCst) + 1 >= after {
-                stop.cancel();
-            }
-        })
-    }
-
     // Session 1: receipt and its spend consumed, then stopped.
     let host = Arc::new(RecordingPersistence::default());
     {
-        let (sdk, _) = chunked_pool(&layout).await;
+        let (sdk, count) = chunked_pool(&layout).await;
         let coordinator = coordinator_at(sdk, &path, &keys, Arc::clone(&host)).await;
-        let cancel = CancellationToken::new();
-        coordinator.install_tree_progress_handler(Some(cancel_after(&cancel, 2)));
-        tokio::time::timeout(
-            std::time::Duration::from_secs(60),
-            coordinator.sync(true, &cancel),
-        )
-        .await
-        .expect("a cancelled pass returns");
+        cancelled_pass(&coordinator, 2).await;
         let store = coordinator.store().read().await;
-        let notes = store.get_all_notes(sub).expect("notes");
-        assert_eq!(notes.len(), 1);
-        assert!(notes[0].is_spent, "the spend in chunk 1 was replayed");
+        assert_eq!(store.tree_size().expect("tree"), 2 * count);
+        assert!(store.get_all_notes(sub).expect("notes").is_empty());
         assert_eq!(store.spendable_balance(sub).expect("balance"), 0);
     }
-    assert_eq!(host_note_values(&host, sub), vec![FIRST_VALUE]);
-    assert!(host.recorded().iter().any(|changeset| changeset
-        .nullifiers_spent
-        .get(&sub)
-        .is_some_and(|nfs| nfs.contains(&own_nullifier))));
-    assert_eq!(host_synced_index(&host, sub), None);
+    assert!(host.recorded().is_empty());
 
-    // Session 2: restore the spent receipt, re-walk chunk 0, stop again.
+    // Session 2: restart, re-walk chunk 0 only, stop again.
     let (sdk, count) = chunked_pool(&layout).await;
     let coordinator = coordinator_at(sdk, &path, &keys, Arc::clone(&host)).await;
     coordinator
@@ -611,41 +591,31 @@ async fn should_keep_a_replayed_receipt_spent_across_a_cancelled_restart() {
         .await
         .expect("restore");
     coordinator.mark_hydrated(WALLET, true).await;
+    cancelled_pass(&coordinator, 1).await;
     {
         let store = coordinator.store().read().await;
-        let notes = store.get_all_notes(sub).expect("notes");
-        assert_eq!(notes.len(), 1);
-        assert!(notes[0].is_spent, "restore installs the receipt as spent");
-    }
-    let recorded_before = host.recorded().len();
-    let cancel = CancellationToken::new();
-    coordinator.install_tree_progress_handler(Some(cancel_after(&cancel, 1)));
-    tokio::time::timeout(
-        std::time::Duration::from_secs(60),
-        coordinator.sync(true, &cancel),
-    )
-    .await
-    .expect("a cancelled pass returns");
-    coordinator.install_tree_progress_handler(None);
-    {
-        let store = coordinator.store().read().await;
-        let notes = store.get_all_notes(sub).expect("notes");
-        assert_eq!(notes.len(), 1);
         assert!(
-            notes[0].is_spent,
-            "a replayed receipt must keep its spent state"
+            store.get_all_notes(sub).expect("notes").is_empty(),
+            "a receipt whose spend was not replayed must not enter the ledger"
         );
         assert_eq!(store.spendable_balance(sub).expect("balance"), 0);
-        assert_eq!(store.last_synced_note_index(sub).expect("cursor"), count);
+        assert_eq!(store.last_synced_note_index(sub).expect("cursor"), 0);
+        assert_eq!(store.tree_size().expect("tree"), 2 * count);
     }
-    assert!(
-        host.recorded()[recorded_before..]
-            .iter()
-            .all(|changeset| !changeset.notes_saved.contains_key(&sub)),
-        "a replayed receipt is not re-emitted to the host"
-    );
+    assert!(host.recorded().is_empty(), "nothing reaches the host");
+    match coordinator
+        .local_balance_snapshot(WALLET)
+        .await
+        .expect("snapshot")
+    {
+        ShieldedLocalBalanceState::Ready(snapshot) => {
+            assert_eq!(snapshot.accounts[&0].spendable_credits, 0);
+        }
+        other => panic!("expected the hydrated ledger, got {other:?}"),
+    }
 
-    // The pass that reaches the tip keeps it spent and finds the tail.
+    // The pass that reaches the tip records the receipt spent from the
+    // start and finds the tail.
     coordinator.sync(true, &CancellationToken::new()).await;
     let store = coordinator.store().read().await;
     let mut values: Vec<(u64, bool)> = store
@@ -658,5 +628,13 @@ async fn should_keep_a_replayed_receipt_spent_across_a_cancelled_restart() {
     assert_eq!(values, vec![(FIRST_VALUE, true), (SECOND_VALUE, false)]);
     assert_eq!(store.spendable_balance(sub).expect("balance"), SECOND_VALUE);
     drop(store);
+    assert_eq!(
+        host_note_values(&host, sub),
+        vec![FIRST_VALUE, SECOND_VALUE]
+    );
+    assert!(host.recorded().iter().any(|changeset| changeset
+        .nullifiers_spent
+        .get(&sub)
+        .is_some_and(|nfs| nfs.contains(&own_nullifier))));
     let _ = std::fs::remove_file(&path);
 }
