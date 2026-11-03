@@ -576,8 +576,11 @@ impl VerifiedHttpContextProvider {
     }
 
     /// The lowest Core height of a response verified with this provider's
-    /// keys, if any.
-    fn lowest_verified_core_height(&self) -> Option<u32> {
+    /// keys this session, as reported through
+    /// [`core_height_verified`](ContextProvider::core_height_verified), if
+    /// any. [`continuation`](Self::continuation) anchors one DKG interval
+    /// below it.
+    pub fn lowest_verified_core_height(&self) -> Option<u32> {
         Some(
             self.inner
                 .lowest_verified_core_height
