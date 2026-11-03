@@ -2040,9 +2040,19 @@ impl NetworkStrategy {
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
         let mut finalize_block_operations = vec![];
         let platform_state = platform.state.load();
-        let platform_version = platform_state
-            .current_platform_version()
-            .expect("expected platform version");
+        // Build the transitions for the version the block executes under, as
+        // run_block_proposal picks it: the first block of a new epoch runs on
+        // the version locked in for that epoch, so an upgrade activates there
+        // and that block's transitions (document ids, for one) must follow it.
+        let block_protocol_version = if platform_state.last_committed_block_info().is_some()
+            && block_info.epoch.index != platform_state.last_committed_block_epoch().index
+        {
+            platform_state.next_epoch_protocol_version()
+        } else {
+            platform_state.current_protocol_version_in_consensus()
+        };
+        let platform_version =
+            PlatformVersion::get(block_protocol_version).expect("expected platform version");
 
         let identity_state_transitions_result = self
             .identity_state_transitions_for_block(
@@ -3118,6 +3128,12 @@ pub struct ChainExecutionOutcome<'a> {
     /// height to the validator set update at that height
     pub validator_set_updates: BTreeMap<u64, ValidatorSetUpdate>,
     pub state_transition_results_per_block: BTreeMap<u64, Vec<(StateTransition, ExecTxResult)>>,
+    /// The application hash every finalized block committed, by height, so a
+    /// test can compare two runs block by block instead of only at the end.
+    pub app_hashes_per_block: BTreeMap<u64, [u8; 32]>,
+    /// The protocol version that executed every finalized block, by height;
+    /// pins where an upgrade activated in a run.
+    pub protocol_versions_per_block: BTreeMap<u64, u64>,
     pub signer: SimpleSigner,
 }
 
