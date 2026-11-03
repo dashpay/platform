@@ -4,6 +4,7 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
+use dpp::platform_value::Value;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
@@ -92,6 +93,11 @@ impl DocumentCreateTransitionActionStateValidationV3 for DocumentCreateTransitio
                 platform_version,
             )
             .map_err(Error::Protocol)?;
+        // A unique index entry holding a null is kept per document, not under the one key the
+        // award takes, so such a document takes nothing from a contest: nothing is read
+        if index_values.iter().any(Value::is_null) {
+            return Ok(SimpleConsensusValidationResult::new());
+        }
         let vote_poll = ContestedDocumentResourceVotePoll {
             contract_id: self.base().data_contract_id(),
             document_type_name: self.base().document_type_name().clone(),

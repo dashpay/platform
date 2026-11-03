@@ -4220,12 +4220,15 @@ pub(in crate::execution) mod tests {
         use dpp::consensus::basic::BasicError;
         use dpp::consensus::state::state_error::StateError;
         use dpp::dashcore::Network;
+        use dpp::data_contract::config::DataContractConfig;
         use dpp::data_contract::errors::DataContractError;
         use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
         use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
         use dpp::state_transition::batch_transition::{
             BatchTransitionV0, DocumentCreateTransition,
         };
+        use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
+        use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
         use dpp::ProtocolError;
         use drive::error::drive::DriveError as DriveInnerError;
 
@@ -4539,6 +4542,87 @@ pub(in crate::execution) mod tests {
                 resolver_result.is_ok(),
                 "control: got {:?}",
                 resolver_result
+            );
+        }
+
+        /// From protocol version 15 a contract registered earlier with such a contest can no
+        /// longer be updated: an update carries the whole contract, which full validation
+        /// checks like a registration.
+        #[tokio::test]
+        async fn should_refuse_updating_a_contract_keeping_the_contest_at_the_latest_protocol_version(
+        ) {
+            let platform_config = PlatformConfig {
+                network: Network::Mainnet,
+                ..Default::default()
+            };
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .with_config(platform_config)
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+            let platform_version = PlatformVersion::latest();
+
+            let mut rng = StdRng::seed_from_u64(0x0F1E_1D01);
+            let (identity, signer, key) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(2.0));
+
+            // The fixture's config is version 0, which an update can no longer keep
+            let contract = setup_contract(
+                &platform.drive,
+                CONTRACT,
+                None,
+                Some(identity.id().to_buffer()),
+                Some(|contract: &mut DataContract| {
+                    contract.set_config(
+                        DataContractConfig::default_for_version(platform_version)
+                            .expect("expected the default config"),
+                    )
+                }),
+                None,
+                Some(platform_version),
+            );
+            let mut updated_contract = contract.clone();
+            updated_contract.set_version(2);
+
+            let transition = DataContractUpdateTransition::new_from_data_contract(
+                updated_contract,
+                &identity.into_partial_identity_info(),
+                key.id(),
+                1,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to create the update transition");
+            let serialized_transition = transition
+                .serialize_to_bytes()
+                .expect("expected to serialize the transition");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default_with_time(3000),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process the state transition");
+
+            assert_matches!(
+                processing_result.into_execution_results().remove(0),
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(BasicError::ContractError(
+                        DataContractError::InvalidContractStructure(_)
+                    )),
+                    ..
+                }
             );
         }
     }

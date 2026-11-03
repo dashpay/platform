@@ -380,8 +380,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     and document create state validation 3 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`)
 ///     refuses a create outside the contest of a type registered earlier with one while a
 ///     contest for the same values is live (`DuplicateUniqueIndexError`), looking the poll
-///     up by the values as given. Only such a type pays that lookup. Protocol v14 and
-///     earlier keep `check_document_type_schema` 0 and document create state validation 2.
+///     up by the values as given. Only such a type pays that lookup, and not for a document
+///     with a null index value, whose unique index entry is kept per document. A contract
+///     registered earlier with such a contest keeps it, but an update, which carries the
+///     whole contract, is refused like a registration. Protocol v14 and earlier keep
+///     `check_document_type_schema` 0 and document create state validation 2.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14)
