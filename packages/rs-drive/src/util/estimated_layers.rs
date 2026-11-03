@@ -697,6 +697,29 @@ mod tests {
         assert_eq!(level_at(&estimation, &path), Some(5));
     }
 
+    /// `insert_estimated_layer_keeping_deeper` writes the deeper of two descriptions and keeps
+    /// the other: a shallower description of wider nodes and a deeper one of narrower nodes
+    /// resolve to the wider nodes at the deeper depth, in either order.
+    #[test]
+    fn should_resolve_with_the_nodes_of_a_description_not_kept_deeper() {
+        let path = KeyInfoPath::from_known_path([[1u8].as_slice()]);
+        let shallow_wide = at_level(3, AllItems(32, 8, None));
+        let deep_narrow = at_level(4, AllItems(1, 1, None));
+        let deep_wide = at_level(4, AllItems(32, 8, None));
+        assert!(credits(&deep_wide) > credits(&deep_narrow));
+        for order in orders(&[shallow_wide, deep_narrow]) {
+            let mut estimation = EstimatedLayers::new();
+            for description in &order {
+                insert_estimated_layer_keeping_deeper(&mut estimation, path.clone(), *description);
+            }
+            assert_eq!(estimation.get(&path), Some(&deep_narrow), "order {order:?}");
+            let resolved = estimation
+                .resolve(PlatformVersion::latest())
+                .expect("expected to resolve");
+            assert_eq!(resolved.get(&path), Some(&deep_wide), "order {order:?}");
+        }
+    }
+
     #[test]
     fn should_put_back_a_deeper_level_an_estimation_overwrote() {
         let deep = KeyInfoPath::from_known_path([[1u8].as_slice()]);
