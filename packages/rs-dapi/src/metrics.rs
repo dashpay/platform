@@ -620,6 +620,7 @@ fn known_grpc_endpoint(path: &str) -> &'static str {
                 "getShieldedPoolState",
                 "getShieldedNotesCount",
                 "getShieldedNullifiers",
+                "getPrivateDocumentEntries",
             ]
         )
     })

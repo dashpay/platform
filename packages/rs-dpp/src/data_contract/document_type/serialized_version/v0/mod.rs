@@ -18,6 +18,7 @@ mod index;
 mod nested;
 mod property;
 mod rules;
+mod storage;
 mod validation_schema;
 
 use crate::data_contract::config::moderation::SettledDeletionRule;
@@ -41,6 +42,7 @@ use property::{properties_from_stored, stored_properties, StoredProperties};
 use rules::StoredRule;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
+use storage::StoredDocumentStorage;
 use validation_schema::StoredValidation;
 
 #[cfg(feature = "validation")]
@@ -96,7 +98,7 @@ pub struct DocumentTypeInSerializationFormatV0 {
     range_countable: bool,
     documents_summable: Option<String>,
     range_summable: bool,
-    index_only: bool,
+    storage: StoredDocumentStorage,
     action_fees: Option<StoredActionFees>,
     documents_can_be_deleted_by_moderators: bool,
     documents_can_be_deleted_by_moderators_for: Option<u32>,
@@ -205,6 +207,7 @@ impl DocumentTypeInSerializationFormatV0 {
             delete_constraints,
             documents_ttl_seconds,
             derived_index_properties,
+            private_document,
         } = document_type.as_ref();
         Ok(DocumentTypeInSerializationFormatV0 {
             properties: stored_properties(properties),
@@ -240,7 +243,7 @@ impl DocumentTypeInSerializationFormatV0 {
             range_countable: *range_countable,
             documents_summable: documents_summable.clone(),
             range_summable: *range_summable,
-            index_only: *index_only,
+            storage: StoredDocumentStorage::of(*index_only, *private_document)?,
             action_fees: action_fees.as_ref().map(StoredActionFees::from),
             documents_can_be_deleted_by_moderators: *documents_can_be_deleted_by_moderators,
             documents_can_be_deleted_by_moderators_for: *documents_can_be_deleted_by_moderators_for,
@@ -342,7 +345,7 @@ impl DocumentTypeInSerializationFormatV0 {
             range_countable,
             documents_summable,
             range_summable,
-            index_only,
+            storage,
             action_fees,
             documents_can_be_deleted_by_moderators,
             documents_can_be_deleted_by_moderators_for,
@@ -359,6 +362,8 @@ impl DocumentTypeInSerializationFormatV0 {
             derived_index_properties,
             validation,
         } = self;
+
+        let (index_only, private_document) = storage.into_parts()?;
 
         let properties = properties_from_stored(properties)?;
         let flattened_properties = properties_from_stored(flattened_properties)?;
@@ -464,6 +469,7 @@ impl DocumentTypeInSerializationFormatV0 {
                 .into_iter()
                 .map(|(name, derived)| Ok((name, derived.try_into()?)))
                 .collect::<Result<_, ProtocolError>>()?,
+            private_document,
         }))
     }
 }

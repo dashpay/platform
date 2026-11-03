@@ -764,6 +764,22 @@ impl_transport_request_grpc!(
     get_masternode_yes_no_vote
 );
 
+// rpc getPrivateDocumentEntries(GetPrivateDocumentEntriesRequest) returns (GetPrivateDocumentEntriesResponse);
+impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
+    platform_proto::GetPrivateDocumentEntriesRequest,
+    platform_proto::GetPrivateDocumentEntriesResponse,
+    PlatformGrpcClient,
+    // A page reads at most a chunk of the store, about 512 KiB; its proof can carry the store's
+    // first chunk too, as the anchor of its chunks, so up to about 1 MiB.
+    RequestSettings {
+        timeout: Some(LARGE_RESPONSE_TIMEOUT),
+        ..RequestSettings::default()
+    },
+    get_private_document_entries
+);
+
 // rpc GetEvonodesProposedEpochBlocksByIdsRequest(GetEvonodesProposedEpochBlocksByIdsRequest) returns (GetEvonodesProposedEpochBlocksResponse);
 impl_transport_request_grpc!(
     names_nothing: |request| match &request.version {
