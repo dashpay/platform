@@ -97,7 +97,17 @@ runs:
 
     - name: Build packages
       shell: bash
-      run: yarn build
+      run: |
+        set -euo pipefail
+        # Binaryen otherwise sizes its pool from host CPUs, ignoring Docker's
+        # CPU quota. Preserve explicit disposable-runner budgets; give ordinary
+        # workers a conservative per-process default without changing optimization.
+        export BINARYEN_CORES="${BINARYEN_CORES:-2}"
+        if [[ ! "$BINARYEN_CORES" =~ ^[1-9][0-9]*$ ]]; then
+          echo "BINARYEN_CORES must be a positive integer" >&2
+          exit 1
+        fi
+        yarn build
       env:
         CARGO_BUILD_PROFILE: release
 
