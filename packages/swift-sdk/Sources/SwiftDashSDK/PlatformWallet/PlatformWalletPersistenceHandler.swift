@@ -2956,15 +2956,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 // link and no stamp, whatever spender an earlier round
                 // recorded or this round's `upsertTransaction`, which ran
                 // first, just linked — that spender is the one the truncation
-                // dropped. Its ordinary pending claims go too, rather than
-                // draining into a link below; a swept tombstone still drains,
-                // holding a coin this store never materialised as the SQLite
-                // store's placeholder does.
+                // dropped. Its pending claims go too, rather than draining
+                // into a link or a hold below: they come from that spender or
+                // from a sweep winner the truncation dropped.
+                // `applyRoundRestorations` writes it again at the end of the
+                // round, after the callbacks and sweeps that run later.
                 record.isSpent = false
                 record.supersededByTxid = nil
                 record.spendingTransaction = nil
                 record.spendingInputIndex = nil
-                for row in pendingInputRows(outpoint: outpoint) where !row.isSweptTombstone {
+                for row in pendingInputRows(outpoint: outpoint) {
                     backgroundContext.delete(row)
                 }
                 roundUtxoCreditTally.restored += 1
@@ -3430,6 +3431,34 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    /// Write the round's restored coins unspent, unlinked and unstamped, and
+    /// drop every pending claim on them — after every account slice and every
+    /// sweep, so nothing later in the round can undo it.
+    ///
+    /// `upsertUtxo` already wrote each one that way, but the round can mark it
+    /// spent again afterwards. Rust sends a transaction to every account it
+    /// involves and the restored coin only to its owner, so the dropped
+    /// spender's record can reach a later account's `upsertTransaction` and
+    /// link the spend again. A sweep the round carries can hold the coin as
+    /// an input its loser shared with the winner the truncation dropped. The
+    /// restored verdict is the wallet's last word on the coin
+    /// (`CoreChangeSet::restores`): a newer spend would have removed it.
+    private func applyRoundRestorations(walletId: Data) {
+        for (outpoint, entry) in roundUtxoCreditVerdicts
+        where entry.verdict == UtxoCreditVerdictCode.restored {
+            if let txo = fetchTxoRow(outpoint: outpoint), Self.resolvedWalletId(of: txo) == walletId {
+                txo.isSpent = false
+                txo.supersededByTxid = nil
+                txo.spendingTransaction = nil
+                txo.spendingInputIndex = nil
+                txo.lastUpdated = Date()
+            }
+            for row in pendingInputRows(outpoint: outpoint) {
+                backgroundContext.delete(row)
+            }
+        }
+    }
+
     /// Closes a persistence round. Commits all per-kind writes
     /// accumulated in `backgroundContext` since the matching
     /// `beginChangeset` in one `save()` (success path), or discards
@@ -3520,6 +3549,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     backgroundContext.rollback()
                     return false
                 }
+                applyRoundRestorations(walletId: walletId)
                 // The round's one collector pass: after every account slice
                 // and every sweep, on the boundary the round's own writes
                 // left on the wallet row — see

@@ -335,14 +335,20 @@ pub struct CoreChangeSet {
     /// a re-delivery.
     ///
     /// A restoration is the newest word on its coin, so a spend of it in
-    /// the same changeset is older and loses: see [`Self::restores`].
+    /// the same changeset is older and loses, whether a record's input or a
+    /// sweep's hold: see [`Self::restores`]. Persisters therefore apply
+    /// restorations after everything else in the round, sweeps and every
+    /// account's records included.
     ///
     /// Merge: extended, and an older spend of a restored coin leaves
     /// [`Self::spent_utxos`], an older verdict on it leaves
     /// [`Self::utxo_credit_verdicts`]. A newer changeset spending one of
     /// these coins or carrying a verdict on it drops it, and a newer
-    /// re-delivery of the same coin replaces the older one. `serde(default)` for the same backward-compatible reading as
-    /// [`Self::sweeps`].
+    /// re-delivery of the same coin replaces the older one. A newer sweep
+    /// holding the coin needs no rule of its own: its winner spent a coin
+    /// the wallet held, so that changeset carries the spend in
+    /// [`Self::spent_utxos`]. `serde(default)` for the same
+    /// backward-compatible reading as [`Self::sweeps`].
     #[cfg_attr(feature = "serde", serde(default))]
     pub restored_utxos: Vec<RestoredUtxo>,
 }
@@ -353,10 +359,11 @@ impl CoreChangeSet {
     /// Such a coin is live, whatever else the changeset says about it:
     /// [`Merge`] keeps a restoration only while no newer changeset spends the
     /// coin or carries a verdict on it, and removes older spends and verdicts
-    /// of it. A spend of it in this changeset's records is therefore older
-    /// too: a consumer that derives spends from the records must drop it, and
-    /// a spender link to it that such a record, or an earlier changeset, left
-    /// in a store is obsolete.
+    /// of it. A spend of it in this changeset's records or a hold on it in
+    /// this changeset's sweeps is therefore older too: a consumer that derives
+    /// spends from the records must drop it, and a spender link, sweep hold or
+    /// placeholder that such a record, sweep or earlier changeset left in a
+    /// store is obsolete.
     pub fn restores(&self, outpoint: &OutPoint) -> bool {
         self.restored_utxos
             .iter()

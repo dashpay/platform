@@ -1253,6 +1253,107 @@ fn a_held_input_with_no_utxo_row_survives_restart_and_stays_spent_when_funded() 
     );
 }
 
+/// A chain truncation that drops a sweep's winner hands the coin it took
+/// back, and that restoration outranks every hold the older sweep left.
+/// L spends O while O's funding is still unknown; W, mined, sweeps L and
+/// holds O; O's funding arrives late; truncation drops W and restores O.
+///
+/// Buffered into one drain, the merged changeset carries both the sweep and
+/// the restoration, and the store applies sweeps after `new_utxos` — so the
+/// sweep would hold O again. Persisted round by round, the sweep's
+/// placeholder keeps `spent` set through the funding upsert. Either way O
+/// must reopen unspent; without the restoration it stays held.
+#[test]
+fn a_restored_coin_outranks_an_older_sweeps_hold() {
+    use platform_wallet::changeset::{Merge, RestoredUtxo};
+
+    let addr = p2pkh(0x0E);
+    let funding_txid = Txid::from_byte_array([0xE1; 32]);
+    let coin = make_utxo(&addr, funding_txid, 0, 4_000);
+    let loser_txid = Txid::from_byte_array([0xE2; 32]);
+    let winner_txid = Txid::from_byte_array([0xE3; 32]);
+    let sweep = || CoreChangeSet {
+        sweeps: vec![SweepBatch {
+            txids: vec![loser_txid],
+            superseded_by: winner_txid,
+            winner_mined_height: Some(WINNER_HEIGHT),
+            released_outpoints: vec![],
+        }],
+        ..Default::default()
+    };
+    let funding = || CoreChangeSet {
+        new_utxos: vec![coin.clone()],
+        ..Default::default()
+    };
+    let restore = || CoreChangeSet {
+        new_utxos: vec![coin.clone()],
+        restored_utxos: vec![RestoredUtxo {
+            account_type: AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            utxo: coin.clone(),
+        }],
+        ..Default::default()
+    };
+
+    for (byte, buffered, restored) in [
+        (0xD1, true, true),
+        (0xD2, false, true),
+        (0xD3, true, false),
+        (0xD4, false, false),
+    ] {
+        let (persister, _tmp, path) = fresh_persister();
+        let w: WalletId = wid(byte);
+        ensure_wallet_meta(&persister, &w);
+        let apply = |cs: CoreChangeSet| {
+            let mut conn = persister.lock_conn_for_test();
+            let tx = conn.transaction().unwrap();
+            core_state::apply(&tx, &w, &cs).unwrap();
+            tx.commit().unwrap();
+        };
+        {
+            let conn = persister.lock_conn_for_test();
+            derive_address(&conn, &w, 0, &addr);
+        }
+        apply(CoreChangeSet {
+            records: vec![tx_record(
+                loser_txid,
+                vec![coin.outpoint],
+                vec![TxOut {
+                    value: 1_000,
+                    script_pubkey: p2pkh(0x0F).script_pubkey(),
+                }],
+            )],
+            ..Default::default()
+        });
+        let mut rounds = vec![sweep(), funding()];
+        if restored {
+            rounds.push(restore());
+        }
+        if buffered {
+            let mut batch = CoreChangeSet::default();
+            for round in rounds {
+                batch.merge(round);
+            }
+            apply(batch);
+        } else {
+            for round in rounds {
+                apply(round);
+            }
+        }
+        drop(persister);
+
+        let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+        let conn = persister.lock_conn_for_test();
+        assert_eq!(
+            unspent(&conn, &w).contains(&coin.outpoint),
+            restored,
+            "buffered={buffered} restored={restored}: only the restoration frees the coin"
+        );
+    }
+}
+
 /// A held-but-unfunded input's placeholder (see the test above) can itself
 /// need to move again: its first winner can go on to lose a later sweep
 /// while the outpoint is still unfunded. Unlike the mobile backends' pending-

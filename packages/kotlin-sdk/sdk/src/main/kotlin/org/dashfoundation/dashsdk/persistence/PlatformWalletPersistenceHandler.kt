@@ -259,6 +259,12 @@ class PlatformWalletPersistenceHandler(
          */
         val utxoCreditVerdicts: HashMap<String, Byte> = HashMap()
 
+        /**
+         * The outpoints [utxoCreditVerdicts] marks restored, as 36-byte keys.
+         * [onChangesetEnd] applies them last ([applyRestorations]).
+         */
+        val restoredOutpoints: MutableList<ByteArray> = mutableListOf()
+
         /** How [upsertUtxoRow] applied [utxoCreditVerdicts] — logged once, as
          *  counts, by [onChangesetEnd]. */
         val utxoCreditTally = UtxoCreditVerdictTally()
@@ -549,6 +555,7 @@ class PlatformWalletPersistenceHandler(
                     if (buffer.sweepBatches.isNotEmpty()) {
                         applySweepRound(database, walletId, buffer.sweepBatches)
                     }
+                    applyRestorations(database, walletId, buffer.restoredOutpoints)
                     if (buffer.finalityAdvanced) {
                         collectFinalizedSweptTombstones(database, walletId)
                     }
@@ -1190,6 +1197,7 @@ class PlatformWalletPersistenceHandler(
         for (i in 0 until count) {
             val outpoint = outpoints.copyOfRange(i * OUTPOINT_BYTES, (i + 1) * OUTPOINT_BYTES)
             round.utxoCreditVerdicts[outpoint.toHex()] = verdicts[i]
+            if (verdicts[i] == UTXO_CREDIT_VERDICT_RESTORED) round.restoredOutpoints += outpoint
         }
         0
     }
@@ -1309,7 +1317,8 @@ class PlatformWalletPersistenceHandler(
         // written unspent with no link and no stamp, whatever spender an
         // earlier round recorded or this round's transaction callback, which
         // ran first, just linked — that spender is the one the truncation
-        // dropped.
+        // dropped. [applyRestorations] writes it again at the end of the
+        // round, after the callbacks and sweeps that run later.
         val restored = creditVerdict == UTXO_CREDIT_VERDICT_RESTORED
         val linked = !restored && existing?.spendingTxid != null
         val keepSpentState = !restored && (linked || (existing != null && creditVerdict != null))
@@ -1356,17 +1365,15 @@ class PlatformWalletPersistenceHandler(
         // so the UTXO-restore path won't hand this consumed output back to
         // Rust as spendable.
         //
-        // A restored coin's ordinary claims come from the spender the
-        // truncation dropped, so they are deleted, not drained. A swept
-        // tombstone still drains: on a coin this store never materialised it
-        // holds, as the SQLite store's placeholder does.
+        // A restored coin's claims come from the spender or the sweep winner
+        // the truncation dropped, so they are deleted, not drained.
         val claims = db.documentDao().getPendingInputsByOutpoint(outpoint)
-        val (dropped, pending) = if (restored) {
-            claims.partition { !it.isSweptTombstone }
+        val pending = if (restored) {
+            for (p in claims) db.documentDao().deletePendingInput(p)
+            emptyList()
         } else {
-            emptyList<PendingInputEntity>() to claims
+            claims
         }
-        for (p in dropped) db.documentDao().deletePendingInput(p)
         if (pending.isNotEmpty()) {
             // A tombstone outranks every ordinary row regardless of age:
             // ordinary rows are competing *observations*, a tombstone is
@@ -2639,6 +2646,41 @@ class PlatformWalletPersistenceHandler(
             }
         }
         0
+    }
+
+    /**
+     * Write the round's restored coins unspent, unlinked and unstamped, and
+     * drop every pending claim on them — after every account slice and every
+     * sweep, so nothing later in the round can undo it.
+     *
+     * [upsertUtxoRow] already wrote each one that way, but the round can mark
+     * it spent again afterwards. Rust sends a transaction to every account it
+     * involves and the restored coin only to its owner, so the dropped
+     * spender's record can reach a later account's callback and link the
+     * spend again. A sweep the round carries can hold the coin as an input
+     * its loser shared with the winner the truncation dropped. The restored
+     * verdict is the wallet's last word on the coin
+     * (`CoreChangeSet::restores`): a newer spend would have removed it.
+     */
+    private suspend fun applyRestorations(db: DashDatabase, walletId: ByteArray, outpoints: List<ByteArray>) {
+        if (outpoints.isEmpty()) return
+        for (row in chunkedFlatMap(outpoints) { db.txoDao().getByOutpoints(it) }) {
+            if (!row.walletId.contentEquals(walletId)) continue
+            db.txoDao().upsert(
+                row.copy(
+                    isSpent = false,
+                    spendingTxid = null,
+                    spendingInputIndex = null,
+                    supersededByTxid = null,
+                    lastUpdated = now(),
+                ),
+            )
+        }
+        for (outpoint in outpoints) {
+            for (p in db.documentDao().getPendingInputsByOutpoint(outpoint)) {
+                db.documentDao().deletePendingInput(p)
+            }
+        }
     }
 
     /**

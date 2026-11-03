@@ -9592,17 +9592,35 @@ class PlatformWalletPersistenceHandlerTest {
     private val uncredited = PlatformWalletPersistenceHandler.UTXO_CREDIT_VERDICT_UNCREDITED
     private val restoredVerdict = PlatformWalletPersistenceHandler.UTXO_CREDIT_VERDICT_RESTORED
 
-    /** The dropped spender's record in block 200, inside whatever bracket the caller opened. */
-    private fun stageBlockSpendOf(outpoint: ByteArray) {
+    /**
+     * The dropped spender's record in block 200, as [accountIndex]'s callback
+     * delivers it, inside whatever bracket the caller opened.
+     */
+    private fun stageBlockSpendOf(outpoint: ByteArray, accountIndex: Int = 0) {
         recordTransaction(
             handler,
             walletId, droppedSpenderTxid, ByteArray(10) { 5 }, 2, 200, ByteArray(32) { 7 },
             1_700_000_200, 1, "Standard", 0, -19_549, 0, false, "", 1_700_000_200,
             outpoint, 1,
+            accountTypeTag = 0,
+            accountIndex = accountIndex,
         )
     }
 
     private val droppedSpenderTxid = ByteArray(32) { 0x64 }
+
+    /** A mempool spend of [outpoint] that a mined winner later sweeps. */
+    private fun stageSweptLoserSpendOf(outpoint: ByteArray) {
+        recordTransaction(
+            handler,
+            walletId, sweptLoserTxid, ByteArray(10) { 8 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -19_549, 0, false, "", 1_700_000_100,
+            outpoint, 1,
+        )
+    }
+
+    private val sweptLoserTxid = ByteArray(32) { 0x65 }
+    private val droppedWinnerTxid = ByteArray(32) { 0x66 }
 
     @Test
     fun observedSpentVerdictWritesTheRowSpentAndKeepsItOutOfTheRestore() = runTest {
@@ -9764,6 +9782,77 @@ class PlatformWalletPersistenceHandlerTest {
         val row = db.txoDao().getByOutpoint(outpoint)!!
         assertFalse(row.isSpent)
         assertNull(row.spendingTxid)
+        assertEquals(1, newHandler().onLoadWalletList().single().utxos.size)
+    }
+
+    @Test
+    fun aRestoredCoinOutranksALaterAccountsCopyOfTheDroppedSpender() = runTest {
+        // Rust sends the dropped spender's record to every account it
+        // involves and the restored coin only to its owner. Here the second
+        // account's copy arrives after the coin's write and links the spend
+        // again; the end of the round restores the coin.
+        seedWalletWithAddress(walletId, bornSpentAddress)
+        val outpoint = makeOutpoint(bornSpentFundingTxid, 0)
+        verdictRound { stageBornSpentUtxo(handler, bornSpentFundingTxid) }
+
+        verdictRound {
+            stageVerdicts(handler, CreditVerdict(bornSpentFundingTxid, 0, restoredVerdict))
+            stageBlockSpendOf(outpoint, accountIndex = 0)
+            stageBornSpentUtxo(handler, bornSpentFundingTxid)
+            stageBlockSpendOf(outpoint, accountIndex = 1)
+        }
+        val row = db.txoDao().getByOutpoint(outpoint)!!
+        assertFalse(row.isSpent)
+        assertNull(row.spendingTxid)
+        assertTrue(db.documentDao().getPendingInputsByOutpoint(outpoint).isEmpty())
+        assertEquals(1, newHandler().onLoadWalletList().single().utxos.size)
+    }
+
+    @Test
+    fun aRestoredCoinOutranksAnOlderSweepsHoldInTheSameRound() = runTest {
+        // L spends the coin before its funding is known; W, mined, sweeps L
+        // and holds the coin; the funding arrives late; a truncation drops W
+        // and restores the coin. Folded into one round, the sweep runs after
+        // the coin's write and holds it again from L's stored inputs.
+        seedWalletWithAddress(walletId, bornSpentAddress)
+        val outpoint = makeOutpoint(bornSpentFundingTxid, 0)
+        verdictRound { stageSweptLoserSpendOf(outpoint) }
+
+        verdictRound {
+            stageVerdicts(handler, CreditVerdict(bornSpentFundingTxid, 0, restoredVerdict))
+            stageBornSpentUtxo(handler, bornSpentFundingTxid)
+            sweep(handler, walletId, listOf(sweptLoserTxid), droppedWinnerTxid, emptyList(), 300)
+        }
+        assertNull("the sweep still removes its loser", db.transactionDao().getByTxid(sweptLoserTxid))
+        val row = db.txoDao().getByOutpoint(outpoint)!!
+        assertFalse(row.isSpent)
+        assertNull(row.supersededByTxid)
+        assertTrue(db.documentDao().getPendingInputsByOutpoint(outpoint).isEmpty())
+        assertEquals(1, newHandler().onLoadWalletList().single().utxos.size)
+    }
+
+    @Test
+    fun aRestoredCoinOutranksAnEarlierRoundsSweepTombstone() = runTest {
+        // The same story persisted round by round: the sweep left a tombstone
+        // on the unfunded coin, which the coin's own write would drain into a
+        // hold.
+        seedWalletWithAddress(walletId, bornSpentAddress)
+        val outpoint = makeOutpoint(bornSpentFundingTxid, 0)
+        verdictRound { stageSweptLoserSpendOf(outpoint) }
+        verdictRound { sweep(handler, walletId, listOf(sweptLoserTxid), droppedWinnerTxid, emptyList(), 300) }
+        assertTrue(
+            "control: the sweep tombstoned the claim",
+            db.documentDao().getPendingInputsByOutpoint(outpoint).single().isSweptTombstone,
+        )
+
+        verdictRound {
+            stageVerdicts(handler, CreditVerdict(bornSpentFundingTxid, 0, restoredVerdict))
+            stageBornSpentUtxo(handler, bornSpentFundingTxid)
+        }
+        val row = db.txoDao().getByOutpoint(outpoint)!!
+        assertFalse(row.isSpent)
+        assertNull(row.supersededByTxid)
+        assertTrue(db.documentDao().getPendingInputsByOutpoint(outpoint).isEmpty())
         assertEquals(1, newHandler().onLoadWalletList().single().utxos.size)
     }
 
