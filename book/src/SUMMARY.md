@@ -11,6 +11,7 @@
 
 - [Monorepo Overview](architecture/overview.md)
 - [Component Pipeline](architecture/component-pipeline.md)
+- [Core Fork Activations](architecture/core-fork-activations.md)
 
 # Contributing
 
