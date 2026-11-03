@@ -57,7 +57,7 @@ pub use manager::PlatformWalletManager;
 pub use spv::{SpvQuorumPublicKey, SpvRuntime};
 pub use wallet::asset_lock::manager::AssetLockManager;
 pub use wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
-pub use wallet::asset_lock::AssetLockFunding;
+pub use wallet::asset_lock::{AssetLockBuiltObserver, AssetLockFunding};
 pub use wallet::core::WalletBalance;
 pub use wallet::core::{
     CoreWallet, SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES, SEND_FUNDING_SOURCES,
@@ -75,8 +75,8 @@ pub use masternode::{
 pub use wallet::core_address_key::CoreAddressPrivateKey;
 pub use wallet::identity::network::{
     derive_identity_auth_keypair, AutoAcceptProofSource, ContactCryptoProvider, ContactInfoOpened,
-    ContactInfoPublishOutcome, ContactInfoSealed, SeedBindingVerification, IDENTITY_GAP_LIMIT,
-    MASTER_KEY_INDEX,
+    ContactInfoPublishOutcome, ContactInfoSealed, PreparedDashPayPayment, SeedBindingVerification,
+    IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
 };
 pub use wallet::identity::{
     calculate_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,

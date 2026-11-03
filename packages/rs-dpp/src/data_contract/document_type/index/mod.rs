@@ -317,22 +317,11 @@ impl LazyRegex {
         }
     }
 
-    /// The regex of `regex_str`, compiled now and kept, or the error compiling it returns:
-    /// for a pattern that did not pass through the schema parser's check, such as one read
-    /// back from a stored document type.
-    pub fn try_compiled(regex_str: String) -> Result<Self, regex::Error> {
-        let regex = Regex::new(&regex_str)?;
-        Ok(LazyRegex {
-            regex: OnceLock::from(Some(regex)),
-            regex_str,
-        })
-    }
-
     /// Whether `string` matches the pattern, compiled on first use. A pattern that does not
-    /// compile matches nothing: consensus never holds one, since registration refuses it and a
-    /// stored document type that holds one does not read back ([`Self::try_compiled`]), so only
-    /// a contract that skipped both, parsed without validation by a client, reaches it, and the
-    /// network refuses what that contract's contested documents would need.
+    /// compile matches nothing: consensus never holds one, since registration refuses it, so
+    /// only a contract registration never checked reaches it, one parsed without validation by
+    /// a client or read back from a forged proof, and the network refuses what that contract's
+    /// contested documents would need.
     pub fn is_match(&self, string: &str) -> bool {
         self.regex
             .get_or_init(|| Regex::new(&self.regex_str).ok())
@@ -342,6 +331,11 @@ impl LazyRegex {
 
     pub fn as_str(&self) -> &str {
         self.regex_str.as_str()
+    }
+
+    /// Whether the pattern has been compiled yet, which happens on its first match.
+    pub fn is_compiled(&self) -> bool {
+        self.regex.get().is_some_and(|compiled| compiled.is_some())
     }
 }
 

@@ -13,6 +13,7 @@ pub mod contract_moderation;
 pub mod dashpay;
 pub mod data_contracts_by_range;
 pub mod data_contracts_latest_versions;
+pub mod decision_proposals;
 mod delegate;
 pub mod documents;
 pub mod dpns_usernames;
@@ -25,6 +26,7 @@ pub mod group_actions;
 pub mod identities_contract_keys_query;
 pub mod identity_keys_remaining_budgets;
 pub mod moderation_charters;
+pub mod private_document_entries;
 pub mod query;
 pub mod query_settings;
 #[cfg(feature = "shielded")]
@@ -34,6 +36,7 @@ pub mod tokens;
 pub mod transition;
 pub mod trunk_branch_sync;
 pub mod types;
+pub mod yes_no_vote_polls;
 
 pub use dapi_grpc::platform::v0 as proto;
 #[cfg(feature = "mocks")]

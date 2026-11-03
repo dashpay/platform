@@ -13,7 +13,7 @@ impl YesNoVotePollStateDriveQuery {
         proof: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, YesNoVotePollState), Error> {
-        let path_query = self.construct_path_query(platform_version)?;
+        let path_query = self.construct_path_query();
         let (root_hash, proved_key_values) = GroveDb::verify_query_with_absence_proof(
             proof,
             &path_query,

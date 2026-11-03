@@ -19,9 +19,7 @@ where
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<YesNoVotePollState, Error> {
-        let query = YesNoVotePollStateDriveQuery {
-            vote_poll: vote_poll.clone(),
-        };
+        let query = YesNoVotePollStateDriveQuery::for_vote_poll(vote_poll, platform_version)?;
         Ok(query.execute_no_proof(&self.drive, transaction, &mut vec![], platform_version)?)
     }
 }

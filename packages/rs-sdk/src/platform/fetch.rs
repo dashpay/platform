@@ -308,19 +308,20 @@ where
     }
 }
 
-/// Refuse, before it is sent, a request that `O` cannot be verified from
-/// ([`FromProof::check_request`]), at the `platform_version` it was encoded with.
+/// Refuse, before it is sent, a request that no node serves, or that `O` cannot be
+/// verified from ([`FromProof::check_request`]), at the `platform_version` it was encoded
+/// with.
 ///
 /// The refusal is the caller's mistake, not a node's, so it is a non-retryable
-/// [`Error::Config`] rather than the retried [`Error::Proof`] the verifier would
-/// return for the same request once a node had answered it.
+/// [`Error::InvalidRequest`] rather than the retried [`Error::Proof`] the verifier
+/// would return for the same request once a node had answered it.
 pub(super) fn check_before_sending<R, O: FromProof<R>>(
     request: &O::Request,
     platform_version: &PlatformVersion,
 ) -> Result<(), Error> {
     O::check_request(request, platform_version).map_err(|error| match error {
-        drive_proof_verifier::Error::RequestError { error } => Error::Config(error),
-        error => Error::Config(error.to_string()),
+        drive_proof_verifier::Error::RequestError { error } => Error::InvalidRequest(error),
+        error => Error::InvalidRequest(error.to_string()),
     })
 }
 
@@ -479,4 +480,58 @@ impl Fetch for drive_proof_verifier::types::ShieldedEncryptedNotes {
 impl Fetch for drive_proof_verifier::types::ShieldedNullifierStatuses {
     type Query = platform_proto::GetShieldedNullifiersRequest;
     type Request = platform_proto::GetShieldedNullifiersRequest;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_before_sending;
+    use crate::Error;
+    use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+    use dash_context_provider::ContextProvider;
+    use dpp::dashcore::Network;
+    use dpp::version::PlatformVersion;
+    use drive_proof_verifier::FromProof;
+
+    /// A result type whose check refuses every request with another verifier error than a
+    /// request error.
+    struct RefusesEveryRequest;
+
+    impl FromProof<()> for RefusesEveryRequest {
+        type Request = ();
+        type Response = ();
+
+        fn check_request(
+            _: &Self::Request,
+            _: &PlatformVersion,
+        ) -> Result<(), drive_proof_verifier::Error> {
+            Err(drive_proof_verifier::Error::ResultEncodingError {
+                error: "no answer encodes as this result".to_string(),
+            })
+        }
+
+        fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+            _: I,
+            _: O,
+            _: Network,
+            _: &PlatformVersion,
+            _: &'a dyn ContextProvider,
+        ) -> Result<(Option<Self>, ResponseMetadata, Proof), drive_proof_verifier::Error>
+        where
+            Self: Sized + 'a,
+        {
+            unreachable!("the request is refused before it is sent")
+        }
+    }
+
+    /// Whatever error a result type's check reports, the request is the caller's to change:
+    /// it is refused without being sent or retried.
+    #[test]
+    fn should_refuse_before_sending_whatever_error_the_check_reports() {
+        let error = check_before_sending::<(), RefusesEveryRequest>(&(), PlatformVersion::latest())
+            .expect_err("the check refuses");
+        assert!(
+            matches!(&error, Error::InvalidRequest(reason) if reason.contains("no answer encodes")),
+            "{error:?}"
+        );
+    }
 }

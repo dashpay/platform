@@ -822,6 +822,9 @@ pub(crate) async fn remove_wallet_and_tear_down_generation<
                 .remove_entries_for_wallet(core);
             crate::handle::CORE_SIGNED_TRANSACTION_STORAGE
                 .remove_matching(|tx| tx.wallet.is_same_generation(core));
+            crate::handle::PREPARED_DASHPAY_PAYMENT_STORAGE.remove_matching(|prepared| {
+                prepared.payment.core_wallet().is_same_generation(core)
+            });
         })
         .await?;
     Ok(())

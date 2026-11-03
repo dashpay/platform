@@ -22,7 +22,7 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::v11::DR
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v10::DRIVE_VERSION_V10;
-use crate::version::fee::v3::FEE_VERSION3;
+use crate::version::fee::v4::FEE_VERSION4;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v4::SYSTEM_DATA_CONTRACT_VERSIONS_V4;
 use crate::version::system_limits::v5::SYSTEM_LIMITS_V5;
@@ -155,6 +155,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    bytes, where the meta-schema admitted 256 characters, treats `0.0` and
 ///    `-0.0` as one value in a list that must be unique, such as an `enum`'s
 ///    members, however long the list, as the document check of note 6 does,
+///    refuses a document type schema, or the contract's `$defs`, naming a key
+///    twice in any object it holds, at its root or below it, as sent, whose
+///    first entry the parser may read where every check reads the last
+///    (`InvalidContractStructure`; a stored contract with one, which no JSON
+///    could have written, must drop it to be updated),
 ///    and refuses a document type the typed validation schema does not represent
 ///    (`InvalidContractStructure`), so every type registered from this version
 ///    has its documents checked natively (note 6). The parser is generation 3
@@ -201,8 +206,12 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///
 /// 10. **Yes/no vote polls**: a second kind of masternode vote poll, which asks
 ///     "should this happen?" and passes on a supermajority of yes over yes plus
-///     no with a minimum of voting power cast. A masternode vote naming a yes/no
-///     poll is active from this version (`StateTransition::active_version_range`);
+///     no with a minimum of voting power cast. A poll is identified by its purpose
+///     (a decision proposal's document id): its id is derived from the purpose
+///     alone, a vote names the poll by that id, and the rule is kept in the poll's
+///     stored info. A minimum given as a share of the network's voting power
+///     leaves PoSe-banned masternodes out of the total. A masternode vote naming a
+///     yes/no poll is active from this version (`StateTransition::active_version_range`);
 ///     the polls live under the votes tree's decisions branch, which genesis
 ///     (`create_initial_state_structure` 4 behind
 ///     `>= YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION`, 15) and
@@ -210,9 +219,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) looks up the previous answer, and
 ///     `DRIVE_VERSION_V10` registers and sweeps the votes. Opening a yes/no poll
 ///     (`Drive::open_yes_no_vote_poll`; every `yes_no` drive method is `Some(0)`) is active
-///     from this version, for an end date at most `max_yes_no_vote_poll_duration_ms`
-///     (four weeks, a `SystemLimits` field read only by the opener) after the
-///     opening block, and its end date entry goes through
+///     from this version, for an end date from `min_yes_no_vote_poll_duration_ms` (one week)
+///     to `max_yes_no_vote_poll_duration_ms` (four weeks) after the opening block
+///     (`YesNoVotePoll::end_date_window`), and its end date entry goes through
 ///     `add_vote_poll_end_date_query_operations` 1, which adds only the entry when
 ///     the batch already queues the end date's tree with other storage flags.
 ///     Every other yes/no method is active from this version too and `None`
@@ -221,15 +230,149 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     voting), removing finished polls from the end date index
 ///     (`remove_vote_poll_end_date_query_operations`) and the proof verifiers
 ///     (`DRIVE_VERIFY_METHOD_VERSIONS_V4`).
-///     Nothing calls the opener yet, so at this version every yes/no vote is
-///     refused for want of a poll.
+///     A poll's pass threshold is at least `min_yes_no_vote_poll_supermajority_percent` (50,
+///     a simple majority) of yes plus no. Decision proposals (note 12) open the polls.
+///
+/// 11. **A consume deletes what its lookup read**: document reference validation 1
+///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) reads the commitment that the `refersTo` lookup of
+///     a reference declaring `consume` finds with its stored element's storage flags
+///     (`query_documents_with_flags`), and keeps that read in the `ConsumedDocument`. Any other
+///     lookup reads as document reference validation 0's does. The create
+///     conversion 1 (`DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5`, which `DRIVE_VERSION_V10`
+///     selects) deletes the document from it
+///     (`Drive::force_delete_read_document_for_contract_operations`, the force delete's
+///     operations less its read), where conversion 0 deletes it by id and bills a second read.
+///     A consume costs one document read less: a DPNS v3 name create's processing fee drops by
+///     10,660 credits. Storage fees and refunds are unchanged. Protocol v14 and earlier keep
+///     document reference validation 0 and the create conversion 0.
+///
+/// 12. **Decision proposals**: the decision proposals system contract
+///     (`SystemDataContract::DecisionProposals`, `SYSTEM_DATA_CONTRACT_VERSIONS_V4`'s
+///     `decision_proposals` 1) is registered at genesis from this version (`create_genesis_state`
+///     1, `>= 15`) and inserted by `transition_to_version_15`. Creating its `proposal` opens a
+///     yes/no poll (note 10) whose purpose is the proposal and whose rule the proposal states:
+///     the create states the decision proposal fund (`FEE_VERSION4`'s
+///     `decision_proposal_fund_required_amount`, 0.5 Dash) as its prefunded voting balance,
+///     under the name `proposal`. Document create structure validation 2
+///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuses any other fund, a rule outside the limits
+///     (`DecisionProposalVotePoll::from_proposal`, `VOTING_VERSION_V3`'s
+///     `decision_proposal_vote_poll`) and an end date outside one to four weeks after the block,
+///     so check_tx refuses what a block would; the create conversion 1 reads the poll from the
+///     proposal,
+///     moves the fund from the proposer to the poll's prefunded balance and opens the poll
+///     (`DriveOperation::VotePollOperation`, which estimates the opening's costs too, as
+///     check_tx's fee estimate converts a create no state validation has seen). Signaling
+///     only: nothing acts on a result. A proposal's rule never changes (`immutable`); its
+///     owner may edit its title, description and url for `min(1 day, run / 5)` after creating
+///     it (conditional `immutable` entries), and every version is kept (`documentsKeepHistory`).
+///     Protocol v14 and earlier have no such contract.
+///
+/// 13. **Private document types**: `CONTRACT_VERSIONS_V7` selects `parse_private_document` 0:
+///     a document type may declare `private` (`{ "entrySize": n }`), which the native schema
+///     check of note 7 admits where that version is set, and meta-schema v3 refuses. Its
+///     documents are fixed-size encrypted entries, which the chain never reads. Every parse
+///     holds such a type to the keywords a private type may declare (no index, history,
+///     transfer, trade, cost, rule or reference; documents neither mutable nor deletable; no
+///     system field; no elected moderation), and registration holds `entrySize` to
+///     `max_private_document_entry_size`, 4096 bytes in `SYSTEM_LIMITS_V5`. The compiled
+///     stored form of note 8 records the declaration. A contract update cannot add, remove or
+///     change it (`DocumentTypeUpdateError`). No reference may name a private type: a
+///     `findBy`, an `inList` list, a `countOf` or a `sumOf` naming one of the same contract is
+///     refused by the contract parse (`InvalidContractStructure`), and every other reference,
+///     to a type of the same contract or another, by contract registration
+///     (`ReferencedDocumentTypePrivateError`, 40150). A Batch refuses every document
+///     transition on a private type (`DocumentTypePrivateError`, 10425) as soon as it
+///     resolves the type, before the contract moderation gate. Protocol v14 and earlier keep
+///     `parse_private_document` `None`: their parse ignores the keyword, registration refuses
+///     it from protocol version 12 on (meta-schemas v1 to v3 close the doctype level), and no
+///     stored contract carries it (the protocol version 12 migration stripped unknown
+///     doctype-level keys from the contracts admitted under meta-schema v0).
+///     Drive keeps a private type's entries in a GroveDB private document store at the
+///     type's key `[0]`, created with the contract or the update adding the type, in place
+///     of the primary-key tree (`insert_empty_private_document_store_operation` 0,
+///     `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`, `None` before); each stored entry is the client's behind a 16-byte header.
+///     The store's chunk power is the largest keeping a compacted chunk near
+///     `private_document_store_target_chunk_bytes` (512 KiB), bounded by
+///     `private_document_store_min_chunk_power` and `private_document_store_max_chunk_power`
+///     (4 and 11), all in `SYSTEM_LIMITS_V5`; it is committed into the store. Document
+///     queries refuse a private type; `getPrivateDocumentEntries` reads and proves a page of
+///     its store, from a position to the end of the chunk holding it, with the chunk power the
+///     store committed (`fetch_private_document_entries` and `prove_private_document_entries`
+///     `Some(0)` in `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`, `verify_private_document_entries`
+///     `Some(0)` in `DRIVE_VERIFY_METHOD_VERSIONS_V4`, `None` before).
+///
+/// 14. **A batch's fee estimate no longer depends on the order of its operations**:
+///     `apply_drive_operations` 2 (`DRIVE_VERSION_V10`) resolves an estimated batch's layer
+///     descriptions once the whole batch is lowered (`EstimatedLayers::resolve`). Each layer a
+///     batch's writes describe more than one way, the nested estimators of one operation
+///     included, is described by the costliest of them (`costliest_layer`): the deepest depth any
+///     of them has, and at that depth the nodes GroveDB's `average_case_merk_propagate` prices
+///     dearest, each description priced at that depth (so the kept description may pair one
+///     write's nodes with another's depth), among the descriptions of subtrees when a write
+///     describes the layer as holding subtrees, then a fixed tie-break. The root is also kept at
+///     the level of the deepest root key the batch writes under, as the root's shape records it,
+///     as some estimators name a shallower one (the credit shielded pool's level 3 for
+///     `ShieldedBalances` and the contract groups' level 3 for `ContractGroups`, both at level 4;
+///     the identity nonce's and revision's level 0 for `Identities` at level 1).
+///
+///     Generation 1 priced every layer with the description written last, so the order mattered:
+///     an identity contract nonce update (the root at level 1) built after a prefunded
+///     specialized balance write (the root at level 3) lowered the estimate of both, and a token
+///     mint, whose balance estimator describes the root at level 2 after its supply estimator
+///     described it at level 3, was priced below its supply's description. Two estimators write
+///     a layer only when nothing described it yet (the contract fee pot's root, at level 3, and
+///     the contract other tree's contract root): generation 1 kept the earlier description, so
+///     an action fee's pot write, which comes after the transition's own operations, was priced
+///     at the level 1 its identity balance write gave the root. The estimate rises for a batch
+///     whose priced description was not the costliest: an ordinary document transition (the
+///     root at the nonce's level 1, not the document's 0), a document transition paying an
+///     action fee (the root at the pot's level 3, not 1), a token mint, and a transition writing
+///     to the credit shielded pool (the root at level 4, not 3; token pools sit under `Tokens`).
+///
+///     Three estimators describe their layers as they are from this version:
+///     `remove_reference_for_index_level_for_contract_operations` 2 describes an index's entries
+///     for a value (its `[0]` layer) as references, as the insert does, where 1 described them as
+///     subtrees, so a create consuming a document of its own type under the same index value
+///     was priced with the cheaper description; `stateless_delete_of_non_tree_for_costs` 1 gives
+///     each height of a delete's climb the layer GroveDB deletes in there, where 0 gave the one
+///     above it; and `for_total_system_credits_update` 1 describes `Misc` with its expirations
+///     and token supplies trees beside the credits item, where 0 described the credits item
+///     alone, which generation 1 could not price after a token mint in the same batch.
+///
+///     The estimate is consensus: `validate_fees_of_event` checks a payer's balance against it,
+///     decides whether a gas sponsor or the signer pays (a strict sponsorship is refused), checks
+///     a budgeted signing key's remaining budget against its user fee increase (refusing the
+///     transition, unpaid, with `IdentityPublicKeyBudgetExceededError`), and checks a shield's
+///     pool fee and a shielded spend's denomination against it; check_tx reports it as
+///     `gas_wanted`. A raised estimate can so refuse what protocol v14 admitted. The fee a
+///     transition pays is unchanged, as applying a batch is generation 1's. Protocol v14 keeps
+///     `apply_drive_operations` 1 and the estimators' earlier versions, and protocol v13 and
+///     earlier keep `apply_drive_operations` 0; neither resolves an estimate.
+///
+/// 15. **A token's decimals, generated**: `CONTRACT_VERSIONS_V7` selects
+///     `apply_generated_from` 1, which admits the `generatedFrom` function
+///     `sys.tokens.decimals` on an integer property admitting 0 to 255: the
+///     decimals of the token an identifier property names, read from the
+///     token's contract. It is the first function that reads state, so its
+///     value is generated when a document is created and kept after, unless a
+///     replace names another token: the document create and replace
+///     transformers write a left-out value, or check a sent one, from state or
+///     from the stored document (`generate_state_read_properties`), billing the
+///     reads, and refuse a token that does not exist
+///     (`ReferencedEntityNotFoundError`) or a sent value other than the one
+///     generated or kept (`DocumentPropertyNotGeneratedError`). Registration
+///     refuses it on an indexOnly type and in a contested index; clients leave
+///     the property out, and a proof verifier takes it from the proved
+///     document. Those call sites were extended in place and are inert before
+///     this version, where no type declares such a function. Protocol v14 and
+///     earlier keep `apply_generated_from` 0.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10)
+    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10)
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -241,18 +384,18 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8)
+        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); parse_private_document 0 parses private document types (note 13); apply_generated_from 1 admits sys.tokens.decimals (note 15)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
-        voting_versions: VOTING_VERSION_V3, // changed: the yes/no poll's stored info, id, parameter rules and decision rules are active (note 10)
+        voting_versions: VOTING_VERSION_V3, // changed: the yes/no poll's stored info, id, parameter rules and decision rules are active (note 10), and the decision proposal's poll (note 12)
         token_versions: TOKEN_VERSIONS_V3,
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
         methods: DPP_METHOD_VERSIONS_V3,
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
-    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3)
-    fee_version: FEE_VERSION3,
-    system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8)
+    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12)
+    fee_version: FEE_VERSION4, // changed: decision proposals prefund their poll with 0.5 Dash (note 12)
+    system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes, and the private document store limits size its store (note 13)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

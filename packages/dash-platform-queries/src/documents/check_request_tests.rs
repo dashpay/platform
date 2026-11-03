@@ -10,7 +10,10 @@
 
 use crate::documents::composite_document_query::CompositeSubQuery;
 use crate::documents::document_query::{DocumentQuery, RankingDirection};
-use dapi_grpc::platform::v0::GetDocumentsResponse;
+use dapi_grpc::platform::v0::get_documents_response::{
+    self, get_documents_response_v0, GetDocumentsResponseV0,
+};
+use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::{ContextProvider, ContextProviderError};
 use dpp::dashcore::Network;
 use dpp::data_contract::{DataContract, DataContractFactory, TokenConfiguration};
@@ -221,6 +224,100 @@ fn should_refuse_a_view_of_a_query_that_selects_something_else() {
     }
 }
 
+/// A documents select returns the documents themselves: a grouping or a `having`
+/// clause has no meaning for it, and every node refuses it.
+#[test]
+fn should_refuse_a_documents_select_grouped_or_filtered_by_an_aggregate() {
+    let views: [(&str, Check); 2] = [
+        ("Document", check::<Document>),
+        ("Documents", check::<Documents>),
+    ];
+    for (view, check) in views {
+        for query in [
+            query().with_group_by("restaurantId"),
+            query().with_having(having().having),
+        ] {
+            let error = refusal(view, check, &query);
+            assert!(error.contains("cannot be grouped"), "{view}: {error}");
+        }
+    }
+}
+
+/// A `tip` whose documents are summed by `amount`.
+fn tip_contract() -> Arc<DataContract> {
+    let schemas = platform_value!({"tip": {
+        "type": "object",
+        "documentsSummable": "amount",
+        "properties": {
+            "recipient": {"type": "string", "minLength": 1, "maxLength": 63, "position": 0},
+            "amount": {"type": "integer", "minimum": 0, "maximum": 4294967295u64, "position": 1},
+            "sentAt": {"type": "integer", "minimum": 0, "position": 2}
+        },
+        "required": ["recipient", "amount", "sentAt"],
+        "indices": [
+            {"name": "byRecipient",
+             "properties": [{"recipient": "asc"}],
+             "summable": "amount"}
+        ],
+        "additionalProperties": false
+    }});
+    Arc::new(
+        DataContractFactory::new(PlatformVersion::latest().protocol_version)
+            .expect("factory")
+            .create_with_value_config(Identifier::new([8u8; 32]), 0, schemas, None, None)
+            .expect("the tip contract is well-formed")
+            .data_contract_owned(),
+    )
+}
+
+/// A document type summed by one property keeps no totals of another, so every node
+/// refuses a sum of another property, whatever the where clauses and indexes, with an
+/// internal error: the SDK would ask each node in turn and ban it for the answer.
+#[test]
+fn should_refuse_a_sum_of_another_property_than_the_type_sums_its_documents_by() {
+    let sum_of = |field: &str| {
+        DocumentQuery::new(tip_contract(), "tip")
+            .expect("the contract has this document type")
+            .with_select(SelectProjection::sum(field))
+    };
+    let recipients_in = WhereClause {
+        field: "recipient".to_string(),
+        operator: WhereOperator::In,
+        value: platform_value!(["a", "b"]),
+    };
+    let split = |field: &str| {
+        sum_of(field)
+            .with_where(recipients_in.clone())
+            .with_group_by("recipient")
+    };
+    let views: [(&str, Check, DocumentQuery, DocumentQuery); 2] = [
+        (
+            "DocumentSum",
+            check::<DocumentSum>,
+            sum_of("sentAt"),
+            sum_of("amount"),
+        ),
+        (
+            "DocumentSplitSums",
+            check::<DocumentSplitSums>,
+            split("sentAt"),
+            split("amount"),
+        ),
+    ];
+    for (view, check, other_property, own_property) in views {
+        let error = refusal(view, check, &other_property);
+        assert!(
+            error.contains("summed by amount, so no node sums sentAt"),
+            "{view}: {error}"
+        );
+        assert!(
+            check(&own_property).is_ok(),
+            "{view}: {:?}",
+            check(&own_property)
+        );
+    }
+}
+
 /// A node routing with an older query table reads only the order direction
 /// of a ranked request, so it serves one outside the ranked grammar as a
 /// plain grouped aggregate.
@@ -420,6 +517,41 @@ fn should_accept_pending_window_selections_before_they_are_resolved() {
             assert!(check(&query).is_ok(), "{view}: {:?}", check(&query));
         }
     }
+}
+
+/// A window selection is resolved against the answer's block time before the
+/// proof and its signature are checked, so a window that does not resolve may
+/// come from a forged block time. It stays a request error, which moves the
+/// request to another node and bans this one, and never a verified result no
+/// node can return.
+#[test]
+fn should_keep_a_window_that_does_not_resolve_at_the_answers_block_time_a_request_error() {
+    let query = query()
+        .with_select(SelectProjection::count_star())
+        .with_time_range("$createdAt", TimeRangeSelector::Newest);
+    let response = GetDocumentsResponse {
+        version: Some(get_documents_response::Version::V0(
+            GetDocumentsResponseV0 {
+                result: Some(get_documents_response_v0::Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata {
+                    time_ms: 1_700_000_000_000,
+                    protocol_version: PlatformVersion::latest().protocol_version,
+                    ..Default::default()
+                }),
+            },
+        )),
+    };
+    let answer = <DocumentCount as FromProof<DocumentQuery>>::maybe_from_proof_with_metadata(
+        query,
+        response,
+        Network::Testnet,
+        PlatformVersion::latest(),
+        &NoProvider,
+    );
+    assert!(
+        matches!(answer, Err(Error::RequestError { .. })),
+        "{answer:?}"
+    );
 }
 
 /// A `post` whose `hashtags` is a typed array of strings.

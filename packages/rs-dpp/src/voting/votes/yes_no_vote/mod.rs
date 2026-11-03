@@ -52,18 +52,12 @@ pub enum YesNoVote {
 mod json_convertible_tests_yes_no_vote {
     use super::*;
     use crate::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
-    use crate::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
-    use platform_value::{platform_value, BinaryData};
+    use platform_value::{platform_value, Identifier};
     use serde_json::json;
 
     fn fixture() -> YesNoVote {
         YesNoVote::V0(YesNoVoteV0 {
-            vote_poll: YesNoVotePoll {
-                resource_path: vec![BinaryData::new(vec![0xc1; 4])],
-                supermajority_numerator: 2,
-                supermajority_denominator: 3,
-                minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 400 },
-            },
+            vote_poll_id: Identifier::new([0xc1; 32]),
             vote_choice: YesNoAbstainVoteChoice::Yes,
         })
     }
@@ -77,12 +71,7 @@ mod json_convertible_tests_yes_no_vote {
             json,
             json!({
                 "$formatVersion": "0",
-                "votePoll": {
-                    "resourcePath": ["wcHBwQ=="],
-                    "supermajorityNumerator": 2,
-                    "supermajorityDenominator": 3,
-                    "minimumVotingPower": { "$type": "absolute", "votingPower": 400 },
-                },
+                "votePollId": Identifier::new([0xc1; 32]).to_string(platform_value::string_encoding::Encoding::Base58),
                 "voteChoice": "yes",
             })
         );
@@ -99,12 +88,7 @@ mod json_convertible_tests_yes_no_vote {
             value,
             platform_value!({
                 "$formatVersion": "0",
-                "votePoll": {
-                    "resourcePath": [platform_value::Value::Bytes(vec![0xc1; 4])],
-                    "supermajorityNumerator": 2u8,
-                    "supermajorityDenominator": 3u8,
-                    "minimumVotingPower": { "$type": "absolute", "votingPower": 400u32 },
-                },
+                "votePollId": Identifier::new([0xc1; 32]),
                 "voteChoice": "yes",
             })
         );

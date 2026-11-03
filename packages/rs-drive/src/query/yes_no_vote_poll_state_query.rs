@@ -1,4 +1,6 @@
-use crate::drive::votes::paths::{YesNoVotePollPaths, YES_NO_VOTE_POLL_STORED_INFO_KEY};
+use crate::drive::votes::paths::{
+    vote_decisions_active_polls_poll_tree_path_vec, YES_NO_VOTE_POLL_STORED_INFO_KEY,
+};
 use crate::drive::votes::YesNoAbstainVoteChoiceToKeyTrait;
 #[cfg(feature = "server")]
 use crate::drive::Drive;
@@ -9,6 +11,7 @@ use crate::fees::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
+use dpp::identifier::Identifier;
 use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
 use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStoredInfo;
@@ -38,32 +41,39 @@ pub struct YesNoVotePollState {
 /// trees, whose sums are the tallies.
 #[derive(Debug, PartialEq, Clone)]
 pub struct YesNoVotePollStateDriveQuery {
-    /// The poll asked about
-    pub vote_poll: YesNoVotePoll,
+    /// The id of the poll asked about, as `YesNoVotePoll::unique_id` derives it
+    pub vote_poll_id: Identifier,
 }
 
 impl YesNoVotePollStateDriveQuery {
-    /// The path query: the four keys of the poll's tree, whose path the platform version
-    /// selects how to derive.
-    pub fn construct_path_query(
-        &self,
+    /// The query for the state of `vote_poll`, whose id the platform version selects how to
+    /// derive.
+    pub fn for_vote_poll(
+        vote_poll: &YesNoVotePoll,
         platform_version: &PlatformVersion,
-    ) -> Result<PathQuery, Error> {
-        let path = self.vote_poll.poll_path_vec(platform_version)?;
+    ) -> Result<Self, Error> {
+        Ok(YesNoVotePollStateDriveQuery {
+            vote_poll_id: vote_poll.unique_id(platform_version)?,
+        })
+    }
+
+    /// The path query: the four keys of the poll's tree.
+    pub fn construct_path_query(&self) -> PathQuery {
+        let path = vote_decisions_active_polls_poll_tree_path_vec(self.vote_poll_id.as_bytes());
         let mut query = Query::new_with_direction(true);
         query.insert_key(vec![YES_NO_VOTE_POLL_STORED_INFO_KEY]);
         for vote_choice in YesNoAbstainVoteChoice::ALL {
             query.insert_key(vec![vote_choice.to_tree_key()]);
         }
         // Four keys at most; absence proofs need the limit stated.
-        Ok(PathQuery::new(
+        PathQuery::new(
             path,
             SizedQuery::new(
                 query,
                 Some(1 + YesNoAbstainVoteChoice::ALL.len() as u16),
                 None,
             ),
-        ))
+        )
     }
 
     /// Reads the state out of the elements of the poll's tree, by key. Keys that are absent
@@ -148,7 +158,7 @@ impl YesNoVotePollStateDriveQuery {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         Self::ensure_active(platform_version)?;
-        let path_query = self.construct_path_query(platform_version)?;
+        let path_query = self.construct_path_query();
         drive.grove_get_proved_path_query(
             &path_query,
             transaction,
@@ -169,7 +179,7 @@ impl YesNoVotePollStateDriveQuery {
         Self::ensure_active(platform_version)?;
         // A poll that was never opened has no tree (a chain without the decisions trees has no
         // parent either); the proof path reports the same as an empty state, so does this one.
-        let path_query = self.construct_path_query(platform_version)?;
+        let path_query = self.construct_path_query();
         let key_elements = match drive.grove_get_raw_path_query(
             &path_query,
             transaction,
@@ -220,7 +230,8 @@ mod tests {
             ],
             platform_version,
         );
-        let query = YesNoVotePollStateDriveQuery { vote_poll };
+        let query = YesNoVotePollStateDriveQuery::for_vote_poll(&vote_poll, platform_version)
+            .expect("expected the poll id");
         let state = query
             .execute_no_proof(&drive, None, &mut vec![], platform_version)
             .expect("expected the state");
@@ -258,7 +269,8 @@ mod tests {
     fn should_prove_and_verify_the_absence_of_a_poll() {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
-        let query = YesNoVotePollStateDriveQuery { vote_poll: poll() };
+        let query = YesNoVotePollStateDriveQuery::for_vote_poll(&poll(), platform_version)
+            .expect("expected the poll id");
         let proof = query
             .execute_with_proof(&drive, None, &mut vec![], platform_version)
             .expect("expected a proof");

@@ -23,6 +23,9 @@ describe('PlatformPromiseClient', () => {
       getIdentityNonce: this.sinon.stub().resolves(response),
       getIdentityKeys: this.sinon.stub().resolves(response),
       getIdentityBalance: this.sinon.stub().resolves(response),
+      getYesNoVotePollState: this.sinon.stub().resolves(response),
+      getMasternodeYesNoVote: this.sinon.stub().resolves(response),
+      getPrivateDocumentEntries: this.sinon.stub().resolves(response),
     };
   });
 
@@ -179,6 +182,84 @@ describe('PlatformPromiseClient', () => {
       expect(result).to.equal(response);
       expect(platformPromiseClient.client.getIdentityBalance)
         .to.be.calledOnceWith(request);
+    });
+  });
+
+  describe('#getYesNoVotePollState', () => {
+    it('should get yes/no vote poll state', async () => {
+      const result = await platformPromiseClient.getYesNoVotePollState(request);
+
+      expect(result).to.equal(response);
+      expect(platformPromiseClient.client.getYesNoVotePollState)
+        .to.be.calledOnceWith(request);
+    });
+
+    it('should throw an error when metadata is not an object', async () => {
+      try {
+        platformPromiseClient.getYesNoVotePollState({}, 'metadata');
+
+        expect.fail('Error was not thrown');
+      } catch (e) {
+        expect(e.message).to.equal('metadata must be an object');
+      }
+    });
+  });
+
+  describe('#getMasternodeYesNoVote', () => {
+    it('should get masternode yes/no vote', async () => {
+      const result = await platformPromiseClient.getMasternodeYesNoVote(request);
+
+      expect(result).to.equal(response);
+      expect(platformPromiseClient.client.getMasternodeYesNoVote)
+        .to.be.calledOnceWith(request);
+    });
+
+    it('should throw an error when metadata is not an object', async () => {
+      try {
+        platformPromiseClient.getMasternodeYesNoVote({}, 'metadata');
+
+        expect.fail('Error was not thrown');
+      } catch (e) {
+        expect(e.message).to.equal('metadata must be an object');
+      }
+    });
+  });
+
+  describe('#getPrivateDocumentEntries', () => {
+    it('should get private document entries', async () => {
+      const result = await platformPromiseClient.getPrivateDocumentEntries(request);
+
+      expect(result).to.equal(response);
+      expect(platformPromiseClient.client.getPrivateDocumentEntries)
+        .to.be.calledOnceWith(request);
+    });
+
+    it('should keep the message conversion when the caller passes interceptors', async () => {
+      const passThrough = (options, nextCall) => nextCall(options);
+
+      await platformPromiseClient.getPrivateDocumentEntries(
+        request,
+        {},
+        { interceptors: [passThrough], deadline: 5 },
+      );
+
+      const [, , callOptions] = platformPromiseClient.client.getPrivateDocumentEntries
+        .firstCall.args;
+      expect(callOptions.deadline).to.equal(5);
+      expect(callOptions.interceptors).to.have.lengthOf(2);
+      expect(callOptions.interceptors[0]).to.equal(passThrough);
+      expect(callOptions.interceptors[1]).to.be.a('function');
+      expect(callOptions.interceptors[1]).to.not.equal(passThrough);
+    });
+
+    it('should throw an error when metadata is not an object', async () => {
+      try {
+        platformPromiseClient.getPrivateDocumentEntries({}, 'metadata');
+
+        expect.fail('Error was not thrown');
+      } catch (e) {
+        expect(e.message).to.equal('metadata must be an object');
+      }
     });
   });
 });

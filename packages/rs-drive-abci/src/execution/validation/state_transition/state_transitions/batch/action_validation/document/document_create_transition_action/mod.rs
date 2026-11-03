@@ -13,11 +13,13 @@ use crate::execution::validation::state_transition::batch::action_validation::do
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::state_v2::DocumentCreateTransitionActionStateValidationV2;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::advanced_structure_v0::DocumentCreateTransitionActionStructureValidationV0;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::advanced_structure_v1::DocumentCreateTransitionActionStructureValidationV1;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::advanced_structure_v2::DocumentCreateTransitionActionStructureValidationV2;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::ConsumedLookupDocument;
 use crate::platform_types::platform::PlatformStateRef;
 
 mod advanced_structure_v0;
 mod advanced_structure_v1;
+mod advanced_structure_v2;
 mod state_v0;
 mod state_v1;
 mod state_v2;
@@ -69,9 +71,12 @@ impl DocumentCreateTransitionActionValidation for DocumentCreateTransitionAction
             // V1 introduces the cross-check that the prefunded voting balance names the same
             // contested vote poll that the document itself resolves to
             1 => self.validate_structure_v1(owner_id, block_info, network, platform_version),
+            // V2 holds a decision proposal (protocol version 15) to the decision proposal fund,
+            // a rule within the system limits and an end date one to four weeks away
+            2 => self.validate_structure_v2(owner_id, block_info, network, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentCreateTransitionAction::validate_structure".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
