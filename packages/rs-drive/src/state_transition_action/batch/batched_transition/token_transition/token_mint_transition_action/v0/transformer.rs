@@ -6,7 +6,6 @@ use dpp::consensus::basic::token::{ChoosingTokenMintRecipientNotAllowedError, De
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_mint_transition::v0::TokenMintTransitionV0;
 use dpp::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV1;
-use dpp::balances::credits::TokenAmount;
 use dpp::ProtocolError;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
@@ -17,6 +16,8 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::fee::fee_result::FeeResult;
+use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
+use dpp::tokens::token_event::TokenEvent;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use platform_version::version::PlatformVersion;
 use crate::drive::Drive;
@@ -383,7 +384,9 @@ impl TokenMintTransitionActionV0 {
 
     /// Converts a `TokenMintTransitionV1` into a `TokenMintTransitionActionV0`: the version 0
     /// conversion of its version 0 fields, the mint action it yields carrying the random
-    /// minimum amount.
+    /// minimum amount. A random mint of a token keeping minting history also pays in advance
+    /// for the history index entries the settlement of its amount may create
+    /// (`Drive::prepay_random_token_history_entries`).
     ///
     /// # Arguments
     ///
@@ -393,7 +396,8 @@ impl TokenMintTransitionActionV0 {
     /// # Returns
     ///
     /// * `Result<(ConsensusValidationResult<BatchedTransitionAction>, FeeResult), Error>` - The
-    ///   mint action, or the nonce bump of a refused mint, and the fees of the lookups it made.
+    ///   mint action, or the nonce bump of a refused mint, and the fees of the lookups it made,
+    ///   and of the prepaid history index entries.
     #[allow(clippy::too_many_arguments)]
     pub fn try_from_token_mint_transition_v1_with_contract_lookup(
         drive: &Drive,
@@ -413,24 +417,63 @@ impl TokenMintTransitionActionV0 {
         Error,
     > {
         let (v0, random_minimum_amount) = value.into_v0_and_random_minimum_amount();
-        let (mut result, fee_result) = Self::try_from_token_mint_transition_with_contract_lookup(
-            drive,
-            owner_id,
-            v0,
-            approximate_without_state_for_costs,
-            transaction,
-            block_info,
-            user_fee_increase,
-            get_data_contract,
-            platform_version,
-        )?;
-        set_random_minimum_amount(&mut result, random_minimum_amount);
+        let (mut result, mut fee_result) =
+            Self::try_from_token_mint_transition_with_contract_lookup(
+                drive,
+                owner_id,
+                v0,
+                approximate_without_state_for_costs,
+                transaction,
+                block_info,
+                user_fee_increase,
+                get_data_contract,
+                platform_version,
+            )?;
+        // A refused mint holds a nonce bump instead, which has no random amount and writes no
+        // history
+        if let Some(BatchedTransitionAction::TokenAction(TokenTransitionAction::MintAction(
+            TokenMintTransitionAction::V0(mint),
+        ))) = result.data.as_mut()
+        {
+            mint.random_minimum_amount = random_minimum_amount;
+
+            // The execution writes the mint's history document holding the range's minimum,
+            // and the settlement moves its `byAmount` index entry to the drawn amount, which may
+            // create a branch the settlement does not bill. So the mint prepays that entry at
+            // the average case: what Drive's fee estimation gives for inserting the document's
+            // entries into the indexes holding the amount, without reading state. The execution
+            // writes the history only for a mint it performs, which a random mint always is (it
+            // is no group action).
+            if let Some(minimum) = random_minimum_amount {
+                if mint.base.perform_action()
+                    && mint
+                        .base
+                        .token_configuration()?
+                        .keeps_history()
+                        .keeps_minting_history()
+                {
+                    let history_event = TokenEvent::Mint(
+                        minimum,
+                        mint.identity_balance_holder_id,
+                        mint.public_note.clone(),
+                    );
+                    fee_result.checked_add_assign(drive.prepay_random_token_history_entries(
+                        mint.base.token_id(),
+                        owner_id,
+                        mint.base.identity_contract_nonce(),
+                        history_event,
+                        block_info,
+                        transaction,
+                        platform_version,
+                    )?)?;
+                }
+            }
+        }
         Ok((result, fee_result))
     }
 
-    /// Converts a borrowed `TokenMintTransitionV1` into a `TokenMintTransitionActionV0`: the
-    /// version 0 conversion of its version 0 fields, the mint action it yields carrying the
-    /// random minimum amount.
+    /// Converts a borrowed `TokenMintTransitionV1` into a `TokenMintTransitionActionV0`:
+    /// [`Self::try_from_token_mint_transition_v1_with_contract_lookup`] of a copy.
     ///
     /// # Arguments
     ///
@@ -440,7 +483,8 @@ impl TokenMintTransitionActionV0 {
     /// # Returns
     ///
     /// * `Result<(ConsensusValidationResult<BatchedTransitionAction>, FeeResult), Error>` - The
-    ///   mint action, or the nonce bump of a refused mint, and the fees of the lookups it made.
+    ///   mint action, or the nonce bump of a refused mint, and the fees of the lookups it made,
+    ///   and of the prepaid history index entries.
     #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_token_mint_transition_v1_with_contract_lookup(
         drive: &Drive,
@@ -459,34 +503,152 @@ impl TokenMintTransitionActionV0 {
         ),
         Error,
     > {
-        let (v0, random_minimum_amount) = value.clone().into_v0_and_random_minimum_amount();
-        let (mut result, fee_result) =
-            Self::try_from_borrowed_token_mint_transition_with_contract_lookup(
-                drive,
-                owner_id,
-                &v0,
-                approximate_without_state_for_costs,
-                transaction,
-                block_info,
-                user_fee_increase,
-                get_data_contract,
-                platform_version,
-            )?;
-        set_random_minimum_amount(&mut result, random_minimum_amount);
-        Ok((result, fee_result))
+        // One copy of the fields, moved into the owned conversion, which builds the same action
+        // as the borrowed one does without copying the note a second time
+        Self::try_from_token_mint_transition_v1_with_contract_lookup(
+            drive,
+            owner_id,
+            value.clone(),
+            approximate_without_state_for_costs,
+            transaction,
+            block_info,
+            user_fee_increase,
+            get_data_contract,
+            platform_version,
+        )
     }
 }
 
-/// Sets `random_minimum_amount` on the mint action `result` holds; a refused mint holds a nonce
-/// bump instead, which has none.
-fn set_random_minimum_amount(
-    result: &mut ConsensusValidationResult<BatchedTransitionAction>,
-    random_minimum_amount: Option<TokenAmount>,
-) {
-    if let Some(BatchedTransitionAction::TokenAction(TokenTransitionAction::MintAction(
-        TokenMintTransitionAction::V0(mint),
-    ))) = result.data.as_mut()
-    {
-        mint.random_minimum_amount = random_minimum_amount;
+#[cfg(test)]
+mod random_amount_prepay_tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+    use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+    use dpp::data_contract::associated_token::token_keeps_history_rules::v0::TokenKeepsHistoryRulesV0;
+    use dpp::data_contract::config::v0::DataContractConfigV0;
+    use dpp::data_contract::v1::DataContractV1;
+    use dpp::data_contract::DataContract;
+    use dpp::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+    use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+    use grovedb_costs::OperationCost;
+    use std::collections::BTreeMap;
+
+    const CONTRACT: [u8; 32] = [3; 32];
+    const MINTER: [u8; 32] = [1; 32];
+    const RECIPIENT: [u8; 32] = [2; 32];
+    const MINIMUM: u64 = 100;
+    const MAXIMUM: u64 = 1_000;
+
+    /// A contract whose token, at position 0, keeps every kind of history when `keeps_history`
+    /// and none otherwise, and lets a mint choose its recipient.
+    fn token_contract(keeps_history: bool) -> Arc<DataContractFetchInfo> {
+        let mut token = TokenConfigurationV0::default_most_restrictive();
+        token.keeps_history =
+            TokenKeepsHistoryRulesV0::default_for_keeping_all_history(keeps_history).into();
+        assert!(
+            token
+                .distribution_rules
+                .minting_allow_choosing_destination(),
+            "expected the token to let a mint choose its recipient"
+        );
+        let contract = DataContract::V1(DataContractV1 {
+            id: CONTRACT.into(),
+            version: 0,
+            owner_id: MINTER.into(),
+            document_types: Default::default(),
+            config: DataContractConfigV0::default().into(),
+            schema_defs: None,
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
+            groups: Default::default(),
+            tokens: BTreeMap::from([(0, TokenConfiguration::V0(token))]),
+            keywords: Vec::new(),
+            description: None,
+        });
+        Arc::new(DataContractFetchInfo {
+            contract,
+            storage_flags: None,
+            cost: OperationCost::default(),
+            fee: None,
+        })
+    }
+
+    /// What building the action of a mint of up to `MAXIMUM` tokens bills, a random one from
+    /// `MINIMUM` when `random`.
+    fn mint_fee(keeps_history: bool, random: bool) -> FeeResult {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let fetch_info = token_contract(keeps_history);
+        let token_id = fetch_info
+            .contract
+            .token_id(0)
+            .expect("expected a token at position 0");
+        let random_minimum_amount = random.then_some(MINIMUM);
+        let transition = TokenMintTransitionV1 {
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce: 1,
+                token_contract_position: 0,
+                data_contract_id: CONTRACT.into(),
+                token_id,
+                using_group_info: None,
+            }),
+            issued_to_identity_id: Some(RECIPIENT.into()),
+            amount: MAXIMUM,
+            public_note: Some("for the raffle".to_string()),
+            random_minimum_amount,
+        };
+        let (result, fee_result) =
+            TokenMintTransitionActionV0::try_from_borrowed_token_mint_transition_v1_with_contract_lookup(
+                &drive,
+                MINTER.into(),
+                &transition,
+                false,
+                None,
+                &BlockInfo::default(),
+                0,
+                |_| Ok(fetch_info.clone()),
+                platform_version,
+            )
+            .expect("expected the action to build");
+        assert!(
+            result.is_valid(),
+            "expected a valid mint: {:?}",
+            result.errors
+        );
+        let Some(BatchedTransitionAction::TokenAction(TokenTransitionAction::MintAction(
+            TokenMintTransitionAction::V0(mint),
+        ))) = result.data
+        else {
+            panic!("expected a mint action");
+        };
+        assert_eq!(mint.random_minimum_amount, random_minimum_amount);
+        assert_eq!(mint.mint_amount, MAXIMUM);
+        assert_eq!(mint.identity_balance_holder_id, Identifier::from(RECIPIENT));
+        assert_eq!(mint.public_note.as_deref(), Some("for the raffle"));
+        fee_result
+    }
+
+    #[test]
+    fn should_prepay_the_history_entry_of_a_random_mint() {
+        let random = mint_fee(true, true);
+        let fixed = mint_fee(true, false);
+        assert!(
+            random.storage_fee > fixed.storage_fee,
+            "expected the random mint to prepay storage: {random:?} vs {fixed:?}"
+        );
+        assert!(
+            random.processing_fee > fixed.processing_fee,
+            "expected the random mint to prepay processing: {random:?} vs {fixed:?}"
+        );
+    }
+
+    #[test]
+    fn should_prepay_nothing_for_a_random_mint_of_a_token_keeping_no_minting_history() {
+        assert_eq!(mint_fee(false, true), mint_fee(false, false));
     }
 }

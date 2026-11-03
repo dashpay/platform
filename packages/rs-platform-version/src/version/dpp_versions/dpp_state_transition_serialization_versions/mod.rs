@@ -1,4 +1,4 @@
-use versioned_feature_core::FeatureVersionBounds;
+use versioned_feature_core::{FeatureVersionBounds, OptionalFeatureVersion};
 
 pub mod v1;
 pub mod v2;
@@ -54,6 +54,14 @@ pub struct DPPStateTransitionSerializationVersions {
     pub token_shielded_transfer_with_shielded_fee_state_transition: FeatureVersionBounds,
     pub token_unshield_with_shielded_fee_state_transition: FeatureVersionBounds,
     pub token_purchase_from_shielded_pool_state_transition: FeatureVersionBounds,
+    /// A token transfer or a token mint moving a random amount: format version 1 of either,
+    /// which carries `random_minimum_amount`. `StateTransition::active_version_range` makes a
+    /// batch carrying one active from the first protocol version whose table has this `Some`.
+    /// `None` refuses the batch at decode, which every table does for now, protocol version
+    /// 15's included (it shares `STATE_TRANSITION_SERIALIZATION_VERSIONS_V3` with 14): block
+    /// execution does not settle the amounts yet (`settle_random_token_amounts` waits for the
+    /// beacon Tenderdash delivers), so a reservation would never be paid out. 0 decodes it.
+    pub random_token_amount: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

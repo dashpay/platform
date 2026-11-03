@@ -5,7 +5,9 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::balances::credits::TokenAmount;
 use dpp::block::block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{Identifier, IdentityNonce};
+use dpp::tokens::token_event::TokenEvent;
 use dpp::util::hash::hash_double;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
@@ -104,7 +106,9 @@ impl Drive {
     /// When the token keeps the history of the kind, the transition's history document, which
     /// holds the range's minimum, is rewritten in place to hold `v`. Settling only pays out or
     /// releases what the block reserved, so it cannot fail for a logical reason. Nobody pays:
-    /// the transition paid for its execution when the block ran it, and the settlement is free.
+    /// the transition paid for its execution when the block ran it, and prepaid the history
+    /// index entries the rewrite may create ([`Self::prepay_random_token_history_entries`]), so
+    /// the settlement is free.
     ///
     /// # Parameters
     /// - `beacon`: the block's random beacon.
@@ -145,6 +149,70 @@ impl Drive {
             })),
             None => Err(Error::Drive(DriveError::VersionNotActive {
                 method: "settle_random_token_amounts".to_string(),
+                known_versions: vec![0],
+            })),
+        }
+    }
+
+    /// What a random token transfer or mint (protocol version 15) whose token keeps the
+    /// history of its kind pays in advance for the settlement's rewrite of its history document
+    /// ([`Self::settle_random_token_amounts`]). The transition writes the document holding the
+    /// range's minimum, and the settlement moves its entry in each index of the document's type
+    /// holding `amount` (`byAmount`, under the token) to the drawn amount. The branch it moves
+    /// into may not exist yet: the settlement creates it, and is not billed. So the transition
+    /// pays for those entries once more, at what Drive's fee estimation gives for inserting the
+    /// document's entries into those indexes without reading state: the average layer
+    /// information it prices a dry run with, as if the branches had to be created (the average
+    /// case, whatever the draw finds). Selected by the settlement's method version, whose cost
+    /// model it is part of.
+    ///
+    /// # Parameters
+    /// - `token_id`: the token.
+    /// - `owner_id`: the identity that sent the transition, whose history document it is.
+    /// - `identity_contract_nonce`: the transition's identity contract nonce, which keys the
+    ///   history document.
+    /// - `event`: the history event the transition records, a transfer or a mint of the range's
+    ///   minimum.
+    /// - `block_info`: the block, whose epoch prices the entries.
+    /// - `transaction`: the block's transaction.
+    /// - `platform_version`: selects the method version; `None` before protocol version 15,
+    ///   which is the first to decode a random token amount.
+    ///
+    /// # Returns
+    /// The fee of those entries.
+    #[allow(clippy::too_many_arguments)]
+    pub fn prepay_random_token_history_entries(
+        &self,
+        token_id: Identifier,
+        owner_id: Identifier,
+        identity_contract_nonce: IdentityNonce,
+        event: TokenEvent,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<FeeResult, Error> {
+        match platform_version
+            .drive
+            .methods
+            .token
+            .settle_random_token_amounts
+        {
+            Some(0) => self.prepay_random_token_history_entries_v0(
+                token_id,
+                owner_id,
+                identity_contract_nonce,
+                event,
+                block_info,
+                transaction,
+                platform_version,
+            ),
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "prepay_random_token_history_entries".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "prepay_random_token_history_entries".to_string(),
                 known_versions: vec![0],
             })),
         }

@@ -52,12 +52,10 @@ impl Drive {
         Ok(drawn)
     }
 
-    /// Generation 0 of [`Self::prepay_random_document_index_entries`]: the indexes of
-    /// `document_type` holding a `sys.random` property, alone in a copy of the type
-    /// (`with_only_indexes`), and the document's entries in them gathered as the insert gathers
-    /// a document's index entries in a dry run, with the layers above the type estimated as for
-    /// any document insert and the storage flags the create writes them with, then priced as
-    /// the dry run's operations are.
+    /// Generation 0 of [`Self::prepay_random_document_index_entries`]: the entries of the
+    /// document in the indexes of `document_type` holding a `sys.random` property
+    /// ([`Self::prepay_drawn_index_entries_v0`]), carrying the storage flags the create writes
+    /// them with.
     #[allow(clippy::too_many_arguments)]
     #[inline(always)]
     pub(super) fn prepay_random_document_index_entries_v0(
@@ -70,18 +68,58 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        let drawn_into = |index: &Index| indexes_a_random_property(document_type, index);
-        if !document_type.indexes().values().any(drawn_into) {
+        // The flags the create writes the document's elements with
+        let storage_flags =
+            StorageFlags::new_single_epoch(block_info.epoch.index, Some(owner_id.to_buffer()));
+        self.prepay_drawn_index_entries_v0(
+            document,
+            owner_id,
+            Some(storage_flags),
+            contract,
+            document_type,
+            |index| indexes_a_random_property(document_type, index),
+            block_info,
+            transaction,
+            platform_version,
+        )
+    }
+
+    /// What Drive's fee estimation gives, without reading state, for inserting the entries
+    /// `document`, of `document_type` in `contract`, written by `owner_id` with
+    /// `storage_flags`, takes in the indexes of its type that `drawn_into` selects: the indexes
+    /// holding a value a block's random beacon draws once the block is accepted, whose rewrite
+    /// moves the document's entries and may create the branches they move into, unbilled. The
+    /// selected indexes stand alone in a copy of the type (`with_only_indexes`), the entries
+    /// are gathered as the insert gathers a document's index entries in a dry run, with the
+    /// layers above the type estimated as for any document insert (the average layer
+    /// information, as if the branches had to be created), and priced as the dry run's
+    /// operations are. Zero when `drawn_into` selects no index of the type.
+    ///
+    /// Shared by the prepayments of generation 0 of both draws: a `sys.random` document
+    /// property's ([`Self::prepay_random_document_index_entries`]) and the amount a random
+    /// token transfer or mint writes into its history document
+    /// (`Drive::prepay_random_token_history_entries`).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn prepay_drawn_index_entries_v0(
+        &self,
+        document: &Document,
+        owner_id: Identifier,
+        storage_flags: Option<StorageFlags>,
+        contract: &DataContract,
+        document_type: DocumentTypeRef,
+        drawn_into: impl Fn(&Index) -> bool,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<FeeResult, Error> {
+        if !document_type.indexes().values().any(&drawn_into) {
             return Ok(FeeResult::default());
         }
-        let indexes_drawn_into = document_type.with_only_indexes(drawn_into, platform_version)?;
-        let owner = owner_id.to_buffer();
-        // The flags the create writes the document's elements with
-        let storage_flags = StorageFlags::new_single_epoch(block_info.epoch.index, Some(owner));
+        let indexes_drawn_into = document_type.with_only_indexes(&drawn_into, platform_version)?;
         let document_and_contract_info = DocumentAndContractInfo {
             owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefInfo((document, Some(Cow::Owned(storage_flags)))),
-                owner_id: Some(owner),
+                document_info: DocumentRefInfo((document, storage_flags.map(Cow::Owned))),
+                owner_id: Some(owner_id.to_buffer()),
             },
             contract,
             document_type: indexes_drawn_into.as_ref(),

@@ -15,10 +15,12 @@ use dpp::balances::credits::TokenAmount;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::{integer_value_for_type, RandomRange};
+use dpp::data_contract::document_type::{integer_value_for_type, Index, RandomRange};
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
-use dpp::prelude::DataContract;
+use dpp::fee::fee_result::FeeResult;
+use dpp::prelude::{DataContract, Identifier, IdentityNonce};
+use dpp::tokens::token_event::TokenEvent;
 use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
 use std::borrow::Cow;
@@ -165,6 +167,53 @@ impl Drive {
         )
     }
 
+    /// Generation 0 of [`Self::prepay_random_token_history_entries`]: the entries of the
+    /// history document `event` builds, as `add_token_transaction_history_operations` writes
+    /// it (without storage flags), in the indexes of its type holding the amount
+    /// (`Drive::prepay_drawn_index_entries_v0`).
+    #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
+    pub(super) fn prepay_random_token_history_entries_v0(
+        &self,
+        token_id: Identifier,
+        owner_id: Identifier,
+        identity_contract_nonce: IdentityNonce,
+        event: TokenEvent,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<FeeResult, Error> {
+        let token_history_contract = self
+            .cache
+            .system_data_contracts
+            .load_token_history(platform_version)?;
+        let contract: &DataContract = &token_history_contract;
+        let document_type = event.associated_document_type(contract)?;
+        let document = event.build_historical_document_owned(
+            token_id,
+            owner_id,
+            identity_contract_nonce,
+            block_info,
+            platform_version,
+        )?;
+        self.prepay_drawn_index_entries_v0(
+            &document,
+            owner_id,
+            None,
+            contract,
+            document_type,
+            |index: &Index| {
+                index
+                    .properties
+                    .iter()
+                    .any(|property| property.name == HISTORY_AMOUNT_PROPERTY)
+            },
+            block_info,
+            transaction,
+            platform_version,
+        )
+    }
+
     /// The operations rewriting the history document of `request`'s transition to hold
     /// `amount`, none when the token keeps no history of the kind: the transition then wrote no
     /// history document. The document is found the way it was written
@@ -281,9 +330,7 @@ mod tests {
     use crate::util::batch::DriveOperation;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::platform_value::Value;
-    use dpp::prelude::Identifier;
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
-    use dpp::tokens::token_event::TokenEvent;
 
     const BEACON: [u8; 96] = [7; 96];
     const TOKEN: [u8; 32] = [5; 32];
