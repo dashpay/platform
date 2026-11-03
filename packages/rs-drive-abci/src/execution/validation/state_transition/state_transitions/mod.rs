@@ -4243,6 +4243,9 @@ pub(in crate::execution) mod tests {
         const EMPTY_STRING_SPLIT_CONTRACT: &str =
             "tests/supporting_files/contract/dpns/dpns-contract-contested-empty-string-split.json";
 
+        /// [`CONTRACT`] with the contested index over `[$ownerId, normalizedLabel]`.
+        const OWNER_ID_CONTRACT: &str = "tests/supporting_files/contract/dpns/dpns-contract-contested-field-match-outside-index-owner-id.json";
+
         /// [`CONTRACT`] with an optional byte array `tag` in the contested index.
         const BYTE_ARRAY_CONTRACT: &str = "tests/supporting_files/contract/dpns/dpns-contract-contested-field-match-outside-index-byte-array.json";
 
@@ -4662,6 +4665,57 @@ pub(in crate::execution) mod tests {
                 resolver_result.is_ok(),
                 "the award must go through; got {:?}",
                 resolver_result
+            );
+        }
+
+        /// A create's data never holds a system property, so no create can address the poll of a
+        /// contest over an index holding one (`$ownerId`), and no such contest can be live: a
+        /// create outside it is admitted, as at protocol version 14, with nothing read for it.
+        #[tokio::test]
+        async fn should_admit_a_create_on_a_contested_index_holding_a_system_property_at_the_latest_protocol_version(
+        ) {
+            let platform_config = PlatformConfig {
+                network: Network::Mainnet,
+                ..Default::default()
+            };
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .with_config(platform_config)
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+            let platform_version = PlatformVersion::latest();
+
+            let mut rng = StdRng::seed_from_u64(0x0F1E_1D02);
+            let creator = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let contract_owner = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let contract = setup_contract(
+                &platform.drive,
+                OWNER_ID_CONTRACT,
+                None,
+                Some(contract_owner.0.id().to_buffer()),
+                None::<fn(&mut DataContract)>,
+                None,
+                Some(platform_version),
+            );
+
+            let result = create_domain(
+                &platform,
+                &contract,
+                &creator,
+                &mut rng,
+                "Quantum",
+                "quantum",
+                Some("dash"),
+                &[],
+                false,
+                4000,
+                platform_version,
+            )
+            .await;
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "a create outside a contest that can not be opened must be admitted"
             );
         }
 

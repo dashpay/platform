@@ -4,6 +4,7 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
+use dpp::platform_value::Value;
 use dpp::document::Document;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
@@ -99,9 +100,16 @@ impl DocumentCreateTransitionActionStateValidationV3 for DocumentCreateTransitio
                 platform_version,
             )
             .map_err(Error::Protocol)?;
-        // A document whose unique index entry Drive keeps per document (a value it lacks, or
-        // one with an empty index key, such as an empty byte array) takes nothing from a
-        // contest: nothing is read
+        // The values are read from the create's data, as a contested create reads the values of
+        // the poll it opens. A missing one is either a user property the document lacks, whose
+        // unique index entry Drive keeps per document, or a system property (`$ownerId`), which
+        // the data never holds: a contested create can not address a poll through it, so no
+        // contest over this index can be live. Either way nothing is read
+        if index_values.iter().any(Value::is_null) {
+            return Ok(SimpleConsensusValidationResult::new());
+        }
+        // Nor for a document whose unique index entry Drive keeps per document because a value
+        // has an empty index key, such as an empty byte array
         let document =
             Document::try_from_create_transition_action(self, owner_id, platform_version)?;
         if !unique_index_entry_is_shared(

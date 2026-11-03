@@ -409,7 +409,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     poll at its path, which encodes the values as index keys, so a create of `"\0"` finds
 ///     the contest of `""`. Only such a type pays that lookup, and not for a document
 ///     with an empty index key (a missing value, or an empty byte array), whose unique index
-///     entry Drive keeps per document (`unique_index_entry_is_shared`). A contract
+///     entry Drive keeps per document (`unique_index_entry_is_shared`), nor for an index
+///     holding a system property (`$ownerId`), whose poll no create can address. A contract
 ///     registered earlier with such a contest keeps it, but an update, which carries the
 ///     whole contract, is refused like a registration. Protocol v14 and earlier keep
 ///     `check_document_type_schema` 0 and document create state validation 2.
