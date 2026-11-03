@@ -1,7 +1,5 @@
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fees::op::LowLevelDriveOperation;
-use crate::fees::op::LowLevelDriveOperation::CalculatedCostOperation;
 use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
@@ -15,16 +13,24 @@ impl Drive {
     /// Applies a contract and returns the fee for applying, pricing it before anything is
     /// committed.
     ///
-    /// Generation 2 differs from generation 1 in one thing, when it commits: when the caller
-    /// supplies no transaction and the operations are applied, the write and its pricing share
-    /// one owned transaction that is committed only after `Drive::calculate_fee` succeeded. The
-    /// operations are generation 1's ([`Self::apply_contract_with_serialization_operations_v1`],
-    /// the compiled-storage builder). Generation 1 applied the batch (committing it on its own
-    /// without a caller transaction) and priced it afterwards, so from protocol version 15,
-    /// where pricing an owner-attributed storage removal without the fee history is an error, a
-    /// call passing no history would have persisted the write and then failed. It now fails
-    /// before anything is written. With a caller transaction nothing is committed by Drive in
-    /// either generation.
+    /// Generation 2 differs from generation 1 in when it commits and in how often it prices the
+    /// contract's lookup. The operations are generation 1's
+    /// ([`Self::apply_contract_with_serialization_operations_v1`], the compiled-storage builder).
+    ///
+    /// * When the caller supplies no transaction and the operations are applied, the write and
+    ///   its pricing share one owned transaction that is committed only after
+    ///   `Drive::calculate_fee` succeeded. Generation 1 applied the batch (committing it on its
+    ///   own without a caller transaction) and priced it afterwards, so from protocol version
+    ///   15, where pricing an owner-attributed storage removal without the fee history is an
+    ///   error, a call passing no history would have persisted the write and then failed. It now
+    ///   fails before anything is written. With a caller transaction nothing is committed by
+    ///   Drive in either generation.
+    /// * The builder's reads of the stored contract are priced once, as
+    ///   `apply_batch_low_level_drive_operations` hands them back with the batch's costs.
+    ///   Generations 0 and 1 also pushed their sum again, so they price the lookup twice. No
+    ///   production caller is charged this fee: genesis and the protocol upgrades' system
+    ///   contract re-stores discard it, and state transitions apply contracts through
+    ///   `apply_drive_operations`.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn apply_contract_with_serialization_v2(
@@ -51,7 +57,6 @@ impl Drive {
             transaction,
             platform_version,
         )?;
-        let fetch_cost = LowLevelDriveOperation::combine_cost_operations(&batch_operations);
         self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,
@@ -59,16 +64,8 @@ impl Drive {
             &mut cost_operations,
             &platform_version.drive,
         )?;
-        // Known and kept as generation 1 does it: `apply_batch_low_level_drive_operations` has
-        // already appended the builder's read costs to `cost_operations`, so this push counts
-        // them a second time and the returned processing fee prices the reads twice. Every
-        // generation since 0 does this, and no production caller is charged the fee: genesis and
-        // the protocol upgrade's system contract re-stores discard it, and state transitions
-        // apply contracts through `apply_drive_operations`, which prices the builder once. This
-        // generation changes only when it commits, so dropping the push is left to a later
-        // generation of this wrapper.
-        cost_operations.push(CalculatedCostOperation(fetch_cost));
 
+        // The batch's costs already hold the builder's reads, so nothing is added to them.
         // A pricing error drops the owned transaction with everything it wrote.
         let fees = Drive::calculate_fee(
             None,

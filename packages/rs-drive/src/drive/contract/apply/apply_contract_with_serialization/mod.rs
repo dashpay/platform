@@ -185,7 +185,9 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::contract::paths::{contract_keeping_history_root_path, contract_root_path};
+    use crate::drive::contract::serialize_contract_for_storage;
     use crate::drive::Drive;
+    use crate::fees::op::LowLevelDriveOperation;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
@@ -295,5 +297,76 @@ mod tests {
         contract.set_version(2);
         apply_at(&drive, &contract, 0, PlatformVersion::latest());
         assert_eq!(stored_bytes(&drive, &contract)[0], 2);
+    }
+
+    #[test]
+    fn should_price_the_lookup_of_an_unchanged_contract_once_from_protocol_version_15() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(None);
+        let contract = fixture_contract(platform_version);
+        apply_at(&drive, &contract, 0, platform_version);
+        let stored = stored_bytes(&drive, &contract);
+        let serialization = serialize_contract_for_storage(&contract, platform_version)
+            .expect("expected to serialize the contract");
+        let block_info = BlockInfo::default();
+
+        // Applying an unchanged contract only looks it up
+        let lookup = drive
+            .apply_contract_with_serialization_operations(
+                &contract,
+                serialization.clone(),
+                &block_info,
+                &mut None,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected the operations");
+        assert!(!lookup.is_empty());
+        assert!(lookup.iter().all(|operation| matches!(
+            operation,
+            LowLevelDriveOperation::CalculatedCostOperation(_)
+        )));
+        let lookup_fee = Drive::calculate_fee(
+            None,
+            Some(lookup),
+            &block_info.epoch,
+            drive.config.epochs_per_era,
+            platform_version,
+            None,
+        )
+        .expect("expected to price the lookup");
+        assert!(lookup_fee.processing_fee > 0);
+
+        let fee = drive
+            .apply_contract_with_serialization(
+                &contract,
+                serialization.clone(),
+                block_info,
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected to apply the contract");
+        assert_eq!(fee, lookup_fee);
+        assert_eq!(stored_bytes(&drive, &contract), stored);
+
+        // Generation 1 pushed the lookup's cost again after applying the batch
+        let generation_1_fee = drive
+            .apply_contract_with_serialization_v1(
+                &contract,
+                serialization,
+                block_info,
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected to apply the contract");
+        assert_eq!(
+            generation_1_fee.processing_fee,
+            2 * lookup_fee.processing_fee
+        );
     }
 }
