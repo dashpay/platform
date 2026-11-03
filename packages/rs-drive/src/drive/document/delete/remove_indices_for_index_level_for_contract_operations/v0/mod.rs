@@ -1,4 +1,4 @@
-use grovedb::batch::KeyInfoPath;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::AllSubtrees;
@@ -7,7 +7,6 @@ use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
 use dpp::data_contract::document_type::IndexLevel;
 
 use grovedb::EstimatedSumTrees::NoSumTrees;
-use std::collections::HashMap;
 
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
@@ -45,9 +44,7 @@ impl Drive {
         parent_value_tree_is_range_countable: bool,
         storage_flags: &Option<&StorageFlags>,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         event_id: [u8; 32],
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,

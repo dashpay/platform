@@ -15,6 +15,7 @@ pub mod unsupported_protocol_version_error;
 pub mod basic_error;
 pub mod contract_group;
 pub mod contract_moderation;
+pub mod decision_proposal;
 pub mod group;
 pub mod invalid_identifier_error;
 pub mod json_schema_compilation_error;

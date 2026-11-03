@@ -52,6 +52,7 @@ const ADDITIONS: &[(&str, Verdict)] = &[
     // Added in 5.1: a 5.0 node does not know the methods.
     ("rpc getYesNoVotePollState GetYesNoVotePollStateRequest", Verdict::Gate(15)),
     ("rpc getMasternodeYesNoVote GetMasternodeYesNoVoteRequest", Verdict::Gate(15)),
+    ("rpc getPrivateDocumentEntries GetPrivateDocumentEntriesRequest", Verdict::Gate(15)),
     // A 4.1 node drops both and proves the plain page or the inner query instead. The SDK
     // refuses them before protocol 14 from the query they are encoded from, which reads its
     // version tables; the wire request declares nothing.
@@ -167,6 +168,7 @@ requests!(
     GetVotePollsByEndDateRequest,
     GetYesNoVotePollStateRequest,
     GetMasternodeYesNoVoteRequest,
+    GetPrivateDocumentEntriesRequest,
     GetPrefundedSpecializedBalanceRequest,
     GetTotalCreditsInPlatformRequest,
     GetPathElementsRequest,

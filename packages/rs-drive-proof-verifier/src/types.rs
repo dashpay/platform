@@ -25,6 +25,8 @@ pub mod groups;
 pub mod identity_keys_remaining_budgets;
 /// Identity token balance
 pub mod identity_token_balance;
+/// A page of the entries of a private document type's store
+pub mod private_document_entries;
 /// Token contract info
 pub mod token_contract_info;
 /// Token info
