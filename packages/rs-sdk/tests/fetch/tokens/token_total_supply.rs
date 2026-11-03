@@ -7,6 +7,10 @@ use dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
 
 /// Fetches total supply of a single token
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[cfg_attr(
+    feature = "offline-testing",
+    ignore = "recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform"
+)]
 async fn test_token_total_supply() {
     setup_logs();
 

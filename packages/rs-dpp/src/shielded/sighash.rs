@@ -138,6 +138,44 @@ pub fn unshield_extra_sighash_data_v0(output_address: &[u8], unshielding_amount:
     data
 }
 
+/// Builds the transparent `extra_data` bound into an `IdentityTopUpFromShieldedPool`'s platform
+/// sighash, with the byte layout `identity_id (32) || top_up_amount (u64 LE)`.
+///
+/// Like `Unshield`, the transition carries no platform signature, so the state-determining
+/// transparent fields (which identity is credited, and the gross amount leaving the pool) must be
+/// committed into the Orchard binding sighash; otherwise a relayer could take a valid spend bundle
+/// and re-point it at a different identity. The client builder and the consensus verifier both
+/// call this single function.
+pub fn identity_top_up_from_shielded_extra_sighash_data(
+    identity_id: &[u8; 32],
+    top_up_amount: u64,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, ProtocolError> {
+    match platform_version.dpp.methods.shielded_extra_sighash_data {
+        0 => Ok(identity_top_up_from_shielded_extra_sighash_data_v0(
+            identity_id,
+            top_up_amount,
+        )),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "identity_top_up_from_shielded_extra_sighash_data".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// v0 byte layout of [`identity_top_up_from_shielded_extra_sighash_data`]. Frozen: never mutate;
+/// a layout change requires a new `_v1` + version bump.
+pub fn identity_top_up_from_shielded_extra_sighash_data_v0(
+    identity_id: &[u8; 32],
+    top_up_amount: u64,
+) -> Vec<u8> {
+    let mut data = Vec::with_capacity(32 + 8);
+    data.extend_from_slice(identity_id);
+    data.extend_from_slice(&top_up_amount.to_le_bytes());
+    data
+}
+
 /// Builds the transparent `extra_data` bound into an `IdentityCreateFromShieldedPool`'s platform
 /// sighash, with the byte layout
 /// `identity_id (32) || denomination (u64 LE)
@@ -146,7 +184,17 @@ pub fn unshield_extra_sighash_data_v0(output_address: &[u8], unshielding_amount:
 ///   || for each key in supplied order: key_id (u32 LE) || purpose (u8) || security_level (u8)
 ///   || key_type (u8) || key_data_len (u16 LE) || key_data || read_only (u8)
 ///   || contract_bounds (tag u8: 0=None, 1=SingleContract id(32), 2=SingleContractDocumentType
-///   id(32) name_len(u16 LE) name)`.
+///   id(32) name_len(u16 LE) name, 3=ContractGroup id(32))`.
+///
+/// Tag 3 is never reached: `IdentityCreateFromShieldedPool` refuses a key bound to a contract
+/// group before this preimage is built (consensus in `validate_shielded_proof` v1, the builder
+/// up front). The arm only keeps the encoder total without a panic on a block-execution path,
+/// so the v0 bytes of every reachable input are unchanged.
+///
+/// The budget and the expiry of a version 1 key are not in the layout either, and for the same
+/// reason never need to be: a key that carries either is refused at the same two places, so
+/// every key that reaches this preimage is fully described by the fields above. A version 1 key
+/// without limits binds the same bytes as its version 0 equivalent.
 ///
 /// `IdentityCreateFromShieldedPool` carries NO platform identity signature: authorization is 100%
 /// the Orchard proof + per-action spend-auth signatures + binding signature over this sighash. The
@@ -239,6 +287,11 @@ pub fn identity_create_from_shielded_extra_sighash_data_v0(
                 let name = document_type_name.as_bytes();
                 data.extend_from_slice(&(name.len() as u16).to_le_bytes());
                 data.extend_from_slice(name);
+            }
+            Some(ContractBounds::ContractGroup { id }) => {
+                // Unreachable: refused before the preimage is built (see the layout doc).
+                data.push(3u8);
+                data.extend_from_slice(id.as_bytes());
             }
         }
     }
@@ -482,6 +535,26 @@ mod tests {
                 ),
                 "contract_bounds must be bound"
             );
+        }
+
+        #[test]
+        fn should_encode_the_reserved_contract_group_tag_at_the_end_of_the_key() {
+            use crate::identity::identity_public_key::contract_bounds::ContractBounds;
+            use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
+            // Consensus and the builder refuse a group-bound key before this preimage is built;
+            // the arm exists so the encoder stays total. Pin what it writes.
+            let mut key = mk_key(0, 0xAA);
+            key.set_contract_bounds(Some(ContractBounds::ContractGroup {
+                id: platform_value::Identifier::new([0x44; 32]),
+            }));
+            let data = identity_create_from_shielded_extra_sighash_data(
+                &[0x11u8; 32],
+                10_000_000_000,
+                &PlatformAddress::P2pkh([0x01u8; 20]),
+                &[key],
+            );
+            assert_eq!(data[data.len() - 33], 3);
+            assert_eq!(&data[data.len() - 32..], &[0x44u8; 32]);
         }
     }
 }

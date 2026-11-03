@@ -30,8 +30,11 @@ pub trait DocumentCreateTransitionActionValidation {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 
+    /// Validates the create against state. From version 2 it also settles what a contested
+    /// create pays into its contest: the fund to join it, which may be less than the most the
+    /// contender stated.
     fn validate_state(
-        &self,
+        &mut self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
         block_info: &BlockInfo,
@@ -69,7 +72,7 @@ impl DocumentCreateTransitionActionValidation for DocumentCreateTransitionAction
     }
 
     fn validate_state(
-        &self,
+        &mut self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
         block_info: &BlockInfo,

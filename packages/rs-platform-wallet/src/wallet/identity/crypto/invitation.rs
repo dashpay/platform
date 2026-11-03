@@ -27,7 +27,10 @@
 //!   order-independent (the two legacy wallets differ in param order).
 //! - `islock` is optional: a missing param **and** the literal string `"null"`
 //!   (which Android emits for chainlock-confirmed invites) both mean "no instant
-//!   lock" — the claim reconstructs a ChainLock proof instead.
+//!   lock" — the claim reconstructs a ChainLock proof instead. The hex decodes
+//!   as the deterministic InstantSend lock; a lock in the older
+//!   non-deterministic format does not decode, so the claim fails rather than
+//!   guessing (no live wallet emits that format).
 //! - `assetlocktx` is kept as the raw hex string; the claim tries it as-given
 //!   then byte-reversed on a fetch miss, mirroring the legacy endianness retry.
 //!
@@ -40,6 +43,28 @@
 //! force a large allocation; the WIF is decoded + compression-checked at parse,
 //! and its network is validated against the wallet at claim (a wrong-network WIF
 //! is a valid key on the wrong chain, caught before the funding fetch).
+//!
+//! What the design does and does not protect against:
+//! - Every theft reduces to "who holds the link". Platform checks the claim's
+//!   signature against the key of the asset-lock output, and the new identity's
+//!   id is derived from the funding outpoint, so someone who watches a claim in
+//!   flight but lacks the voucher key cannot redirect it, and two racing claims
+//!   target the same identity (exactly one commits).
+//! - The inviter can always re-derive the voucher key, so after handing over a
+//!   link it can still claim or reclaim the voucher first. Nothing is stolen
+//!   (the funds were the inviter's), but the invitee is denied onboarding with
+//!   no sign of why. For the same reason, reclaiming a leaked link is a race the
+//!   inviter can lose.
+//! - Nothing signs the link, so whoever controls the channel it travels over
+//!   can swap in a different invite. The worst outcome is the invitee sending a
+//!   contact request to the attacker's identity, which an ordinary contact
+//!   request achieves anyway. Signing would not help: the channel is the trust
+//!   root.
+//! - Because the identity id comes from the funding outpoint, the inviter knows
+//!   the invitee's identity id before the invitee claims it.
+//! - The legacy wallets wrapped the link in an AppsFlyer OneLink, which sends
+//!   the plaintext `pk` to AppsFlyer's servers. We parse that host but never
+//!   emit it.
 
 use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use dashcore::transaction::special_transaction::TransactionPayload;

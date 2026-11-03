@@ -4,6 +4,7 @@ use crate::ProtocolError;
 use dashcore::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::AssetUnlockBaseTransactionInfo;
 use platform_version::version::PlatformVersion;
 mod v0;
+mod v1;
 impl Document {
     pub fn try_into_asset_unlock_base_transaction_info(
         &self,
@@ -17,8 +18,10 @@ impl Document {
             .try_into_asset_unlock_base_transaction_info
         {
             0 => self.try_into_asset_unlock_base_transaction_info_v0(transaction_index),
+            1 => self
+                .try_into_asset_unlock_base_transaction_info_v1(transaction_index, platform_version),
             v => Err(ProtocolError::UnknownVersionError(format!(
-                "Unknown IdentityCreateTransition version for try_from_identity_with_signer {v}"
+                "Unknown document method version for try_into_asset_unlock_base_transaction_info {v}"
             ))),
         }
     }

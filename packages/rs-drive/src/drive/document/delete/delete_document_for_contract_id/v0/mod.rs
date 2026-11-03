@@ -57,6 +57,7 @@ impl Drive {
             contract,
             document_type_name,
             estimated_costs_only_with_layer_info,
+            block_info.time_ms,
             transaction,
             &mut drive_operations,
             platform_version,

@@ -43,10 +43,25 @@ impl DriveDocumentQuery<'_> {
         self.validate_in_clause_shape(platform_version)?;
         let (start_at_document_path, start_at_document_key) =
             self.start_at_document_path_and_key(&document_id);
-        let path_query = PathQuery::new_single_key(
+        let mut path_query = PathQuery::new_single_key(
             start_at_document_path.clone(),
             start_at_document_key.clone(),
         );
+        if is_proof_subset {
+            // Inside a page proof this one-key lookup is merged with the main
+            // query, and grovedb's merge needs every input to walk the same
+            // way, so the prover emits the cursor layer in the page's
+            // `orderBy` direction (see `construct_path_query_operations`).
+            // A V1 layer proof only verifies in the op family of the
+            // direction it is read in, so read it the same way here. A single
+            // key decodes identically either way; this only selects the op
+            // family, and the direction never depends on the cursor document.
+            path_query.query.query.left_to_right = self
+                .construct_path_query(None, platform_version)?
+                .query
+                .query
+                .left_to_right;
+        }
         let (root_hash, mut proved_key_values) = if is_proof_subset {
             GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
         } else {

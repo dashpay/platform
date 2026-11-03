@@ -12,7 +12,6 @@
 //! here: after a successful claim the UI asks the invitee whether to establish
 //! contact with the sender and, if so, calls the existing contact-request path
 //! ([`send_contact_request_with_external_signer`](IdentityWallet::send_contact_request_with_external_signer)).
-//! See `docs/dashpay/DIP15_INVITATIONS_SPEC.md`.
 
 use std::collections::BTreeMap;
 

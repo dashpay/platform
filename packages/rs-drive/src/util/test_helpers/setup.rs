@@ -36,10 +36,14 @@ impl Default for SetupFeePoolsOptions {
 
 #[cfg(feature = "full")]
 /// Sets up Drive using a temporary directory and the optionally given Drive configuration settings.
+///
+/// The returned Drive owns the directory, which is removed when the Drive is dropped.
 pub fn setup_drive(drive_config: Option<DriveConfig>) -> Drive {
     let tmp_dir = TempDir::new().unwrap();
 
-    let (drive, _) = Drive::open(tmp_dir, drive_config).expect("should open Drive successfully");
+    let (mut drive, _) =
+        Drive::open(tmp_dir.path(), drive_config).expect("should open Drive successfully");
+    drive.temp_dir = Some(tmp_dir);
 
     drive
 }
@@ -108,4 +112,61 @@ pub fn setup_document(
             None,
         )
         .unwrap();
+}
+
+#[cfg(all(test, feature = "full"))]
+mod tests {
+    use super::*;
+    use crate::drive::system::misc_path;
+    use grovedb::Element;
+
+    #[test]
+    fn should_write_new_database_files_after_setup_returns() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let grove_version = &PlatformVersion::latest().drive.grove_version;
+        let item = Element::new_item(vec![7; 1024]);
+
+        drive
+            .grove
+            .insert(
+                &misc_path(),
+                b"after setup",
+                item.clone(),
+                None,
+                None,
+                grove_version,
+            )
+            .unwrap()
+            .expect("should insert an item");
+
+        // A flush starts a new log file and writes the memtable to a new table file, both
+        // created in the Drive's directory, so it fails once that directory is gone.
+        drive
+            .grove
+            .flush()
+            .expect("should flush the memtable to disk");
+
+        let stored = drive
+            .grove
+            .get(&misc_path(), b"after setup", None, grove_version)
+            .unwrap()
+            .expect("should read the item back");
+        assert_eq!(stored, item);
+    }
+
+    #[test]
+    fn should_remove_the_temp_directory_when_the_drive_is_dropped() {
+        let drive = setup_drive(None);
+        let path = drive
+            .temp_dir
+            .as_ref()
+            .expect("setup_drive should hand its temporary directory to the Drive")
+            .path()
+            .to_path_buf();
+        assert!(path.exists());
+
+        drop(drive);
+
+        assert!(!path.exists());
+    }
 }

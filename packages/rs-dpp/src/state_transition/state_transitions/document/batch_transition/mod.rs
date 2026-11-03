@@ -1,4 +1,4 @@
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 use std::convert::TryInto;
 
@@ -33,7 +33,9 @@ pub use self::batched_transition::{
     token_unfreeze_transition, token_unfreeze_transition::TokenUnfreezeTransition,
 };
 
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
+};
 use platform_versioning::PlatformVersioned;
 
 pub mod accessors;
@@ -57,6 +59,10 @@ use crate::state_transition::data_contract_update_transition::{
 use crate::state_transition::batch_transition::fields::property_names;
 
 use crate::identity::state_transition::OptionallyAssetLockProved;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 pub use v0::*;
 pub use v1::*;
 
@@ -66,11 +72,13 @@ pub use v1::*;
     PartialEq,
     Encode,
     Decode,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSerialize,
     PlatformSignable,
     PlatformVersioned,
     From,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",
@@ -89,10 +97,10 @@ pub enum BatchTransition {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for BatchTransition {}
+impl JsonConvertible for BatchTransition {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for BatchTransition {}
+impl ValueConvertible for BatchTransition {}
 
 impl StateTransitionFieldTypes for BatchTransition {
     fn binary_property_paths() -> Vec<&'static str> {

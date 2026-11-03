@@ -102,6 +102,6 @@ pub mod from_request;
 /// Implementation of unproved verification
 pub mod unproved;
 
-// Needed for #[derive(PlatformSerialize, PlatformDeserialize)]
+// Needed for #[derive(PlatformSerialize, PlatformDeserializeTrusted, PlatformDeserializeUntrusted)]
 #[cfg(feature = "mocks")]
 use dpp::serialization;

@@ -3,8 +3,7 @@
 //! pre-v14 construction in `non_primary_key_path_query::v0` in two
 //! ways: cursor pagination over a multi-branch level is sibling-branch
 //! correct, and every cursorless left-over level takes its direction
-//! from `order_by`. Frozen: changes to already-live behavior belong in
-//! a new version module.
+//! from `order_by`. This lowering is first activated in protocol v14.
 
 use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
@@ -15,13 +14,41 @@ use crate::query::{DriveDocumentQuery, StartAtDocument};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::IndexProperty;
 use dpp::document::document_methods::DocumentMethodsV0;
-use dpp::document::Document;
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 use indexmap::IndexMap;
 
 impl<'a> DriveDocumentQuery<'a> {
+    #[cfg(any(feature = "server", feature = "verify"))]
+    /// Counterpart of [`Self::inner_query_from_starts_at_for_id`] for
+    /// this lowering: the document-id bound follows the id level's walk
+    /// direction, so a right-to-left id level (a descending last
+    /// property with duplicate values) continues below the cursor's id
+    /// instead of above it. Only non-unique id levels take a direction;
+    /// a unique index's id level holds NULL-valued documents and always
+    /// walks left to right through the v0 helper.
+    pub(in crate::query) fn inner_query_from_starts_at_for_id_ordered(
+        starts_at_document: Option<&StartAtDocument>,
+        left_to_right: bool,
+    ) -> Query {
+        match starts_at_document {
+            None => {
+                let mut inner_query = Query::new_with_direction(left_to_right);
+                inner_query.insert_all();
+                inner_query
+            }
+            Some(StartAtDocument {
+                document, included, ..
+            }) => Self::inner_query_starts_from_key(
+                Some(document.id().to_vec()),
+                left_to_right,
+                *included,
+            ),
+        }
+    }
+
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Counterpart of [`Self::recursive_create_query`] for this
     /// lowering: identical cursor threading, but recursion goes through
@@ -58,6 +85,28 @@ impl<'a> DriveDocumentQuery<'a> {
                     order_by,
                     platform_version,
                 )?;
+                if left_over.is_empty() && !unique {
+                    if let Some(cursor) = starts_at_document {
+                        // An ordering-only query can end at this property,
+                        // but duplicate keys still need the document-id bound.
+                        let cursor_key = cursor.document.get_raw_for_document_type(
+                            indexed_property.name.as_str(),
+                            cursor.document_type,
+                            None,
+                            platform_version,
+                        )?;
+                        Self::recursive_conditional_insert_on_query_ordered(
+                            &mut inner_query,
+                            cursor_key,
+                            left_over,
+                            unique,
+                            cursor,
+                            left_to_right,
+                            order_by,
+                            platform_version,
+                        )?;
+                    }
+                }
                 Ok(Some(inner_query))
             }
         }
@@ -98,12 +147,14 @@ impl<'a> DriveDocumentQuery<'a> {
                     }
                     false => {
                         query.set_subquery_key(vec![0]);
-                        // we just get all by document id order ascending
-                        let full_query =
-                            Self::inner_query_from_starts_at_for_id(None, default_left_to_right);
+                        // Every id level walks in the level's direction.
+                        let full_query = Self::inner_query_from_starts_at_for_id_ordered(
+                            None,
+                            default_left_to_right,
+                        );
                         query.set_subquery(full_query);
 
-                        let inner_query = Self::inner_query_from_starts_at_for_id(
+                        let inner_query = Self::inner_query_from_starts_at_for_id_ordered(
                             starts_at_document,
                             default_left_to_right,
                         );
@@ -139,7 +190,14 @@ impl<'a> DriveDocumentQuery<'a> {
                         .ok()
                         .flatten();
 
-                    // We should always include if we have left_over
+                    // The cursor's key stays in the level whenever a deeper
+                    // left-over level still refines the cursor; a terminal
+                    // key is kept only for an included cursor. An excluded
+                    // terminal key would visit nothing but the cursor's
+                    // exhausted id subtree, which GroveDB charges against
+                    // the limit; the caller therefore lowers `startAfter`
+                    // as an included cursor with a padded limit (see
+                    // `DriveDocumentQuery::pads_cursor_page`).
                     let non_conditional_included =
                         !left_over.is_empty() || *included || start_at_key.is_none();
 
@@ -224,7 +282,7 @@ impl<'a> DriveDocumentQuery<'a> {
                         );
                     }
                     false => {
-                        let inner_query = Self::inner_query_from_starts_at_for_id(
+                        let inner_query = Self::inner_query_from_starts_at_for_id_ordered(
                             Some(starts_at_document),
                             default_left_to_right,
                         );
@@ -246,7 +304,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 let StartAtDocument {
                     document,
                     document_type,
-                    ..
+                    included,
                 } = starts_at_document;
 
                 let lower_start_at_key = document
@@ -259,9 +317,14 @@ impl<'a> DriveDocumentQuery<'a> {
                     .ok()
                     .flatten();
 
-                // We include it if we are not unique,
-                // or if we are unique but the value is empty
-                let non_conditional_included = !unique || lower_start_at_key.is_none();
+                // Same rule as the non-conditional level: the cursor's key
+                // stays whenever a deeper left-over level still refines it;
+                // a terminal key is kept only for an included cursor. (The
+                // caller lowers `startAfter` as an included cursor with a
+                // padded limit, see `DriveDocumentQuery::pads_cursor_page`,
+                // so an excluded terminal key is not reached from there.)
+                let non_conditional_included =
+                    !left_over.is_empty() || *included || lower_start_at_key.is_none();
 
                 let mut non_conditional_query = Self::inner_query_starts_from_key(
                     lower_start_at_key.clone(),
@@ -305,8 +368,8 @@ impl<'a> DriveDocumentQuery<'a> {
     /// from the pre-v14 construction
     /// ([`Self::get_non_primary_key_path_query_v0`]) in two ways: cursor
     /// pagination over a multi-branch level (an `In` or range last
-    /// clause with left-over index properties) trims the branches
-    /// ordered before the cursor's branch, gives the branches ordered
+    /// clause with an inner clause or left-over index properties) trims
+    /// the branches ordered before the cursor's branch, gives those ordered
     /// after it an unfiltered default subquery, and refines only the
     /// cursor's own branch with a conditional subquery — where the
     /// pre-v14 construction baked the cursor's per-level start keys into
@@ -327,15 +390,15 @@ impl<'a> DriveDocumentQuery<'a> {
             )));
         }
         let index = self.find_best_index(platform_version)?;
-        let ordered_clauses: Vec<&WhereClause> = index
+        let last_equal_clause = index
             .properties
             .iter()
             .filter_map(|field| self.internal_clauses.equal_clauses.get(field.name.as_str()))
-            .collect();
+            .next_back();
         let (last_clause, last_clause_is_range, subquery_clause) =
             match self.internal_clauses.in_clauses.first() {
                 None => match &self.internal_clauses.range_clause {
-                    None => (ordered_clauses.last().copied(), false, None),
+                    None => (last_equal_clause, false, None),
                     Some(where_clause) => (Some(where_clause), true, None),
                 },
                 Some(in_clause) => match &self.internal_clauses.range_clause {
@@ -411,7 +474,7 @@ impl<'a> DriveDocumentQuery<'a> {
         // would misalign every level below the hole.
         if !query_covers_index_prefix_contiguously(
             &index.properties,
-            &|field| self.internal_clauses.equal_clauses.contains_key(field),
+            |field: &str| self.internal_clauses.equal_clauses.contains_key(field),
             last_clause,
             subquery_clause,
             intermediate_values.len(),
@@ -464,20 +527,99 @@ impl<'a> DriveDocumentQuery<'a> {
                 };
 
                 // Cursor pagination over a multi-branch level: the level fans
-                // out (an `In` or range last clause), left-over properties
-                // hang under each branch, and a cursor document is present.
+                // out (an `In` or range last clause), another clause or
+                // left-over properties hang under each branch, and a cursor
+                // document is present.
                 let sibling_aware_cursor_lowering = last_clause_is_range
-                    && subquery_clause.is_none()
-                    && !left_over_index_properties.is_empty()
+                    && (subquery_clause.is_some() || !left_over_index_properties.is_empty())
                     && starts_at_document.is_some();
 
-                let starts_at_document_with_branch_included = if sibling_aware_cursor_lowering {
-                    starts_at_document
-                        .as_ref()
-                        .map(|(document, _)| (document.clone(), true))
-                } else {
-                    None
+                // The cursor's outer key, and whether it satisfies the outer
+                // clause. Only then is the cursor's branch kept at this level:
+                // a cursor sitting on a strict bound or past the range must
+                // not widen the clause's own range, and its branch holds no
+                // matching row anyway.
+                let cursor_outer_key = match &starts_at_document {
+                    Some((document, _)) => document.get_raw_for_document_type(
+                        where_clause.field.as_str(),
+                        self.document_type,
+                        None,
+                        platform_version,
+                    )?,
+                    _ => None,
                 };
+                let cursor_outer_key_in_clause = match cursor_outer_key.as_ref() {
+                    Some(key) => where_clause
+                        .to_path_query(self.document_type, &None, left_to_right, platform_version)?
+                        .items
+                        .iter()
+                        .any(|item| item.contains(key)),
+                    None => false,
+                };
+                // The cursor's inner key under an inner clause: whether it
+                // satisfies that clause, whether it stays in the cursor
+                // branch's range (inside the clause, and either the cursor
+                // is included or deeper left-over levels refine it: a
+                // cursor on a strict bound or past the range must not widen
+                // the clause's own range), and whether the branch has
+                // anything left to visit at all. A branch with nothing after
+                // the cursor is left out entirely: visiting it would find
+                // nothing and cost a page slot.
+                let (cursor_inner_key, inner_included, cursor_branch_live) =
+                    match (&starts_at_document, subquery_clause) {
+                        (Some((document, included)), Some(subquery_where_clause))
+                            if sibling_aware_cursor_lowering =>
+                        {
+                            let inner_left_to_right = self
+                                .order_by
+                                .get(subquery_where_clause.field.as_str())
+                                .map(|order_clause| order_clause.ascending)
+                                .unwrap_or(true);
+                            let cursor_inner_key = document.get_raw_for_document_type(
+                                subquery_where_clause.field.as_str(),
+                                self.document_type,
+                                None,
+                                platform_version,
+                            )?;
+                            let clause_items = subquery_where_clause
+                                .to_path_query(
+                                    self.document_type,
+                                    &None,
+                                    inner_left_to_right,
+                                    platform_version,
+                                )?
+                                .items;
+                            let cursor_inner_key_in_clause =
+                                cursor_inner_key.as_ref().is_some_and(|key| {
+                                    clause_items.iter().any(|item| item.contains(key))
+                                });
+                            let inner_included = cursor_inner_key_in_clause
+                                && (*included || !left_over_index_properties.is_empty());
+                            let cursor_branch_live = !subquery_where_clause
+                                .to_path_query(
+                                    self.document_type,
+                                    &Some((document.clone(), inner_included)),
+                                    inner_left_to_right,
+                                    platform_version,
+                                )?
+                                .items
+                                .is_empty();
+                            (cursor_inner_key, inner_included, cursor_branch_live)
+                        }
+                        _ => (None, false, true),
+                    };
+                let starts_at_document_in_clause =
+                    starts_at_document.as_ref().map(|(document, included)| {
+                        (
+                            document.clone(),
+                            cursor_outer_key_in_clause
+                                && if sibling_aware_cursor_lowering {
+                                    cursor_branch_live
+                                } else {
+                                    *included
+                                },
+                        )
+                    });
 
                 // We should set the starts at document to be included for the query if there are
                 // left over index properties.
@@ -494,18 +636,20 @@ impl<'a> DriveDocumentQuery<'a> {
                     .as_ref()
                     .is_some_and(|transform| transform.source == where_clause.field);
 
-                let query_starts_at_document = if left_over_index_properties.is_empty() {
+                let query_starts_at_document = if sibling_aware_cursor_lowering {
+                    // Keep the cursor's outer branch for both startAt and
+                    // startAfter: its remaining inner rows still belong to
+                    // the page. Only its conditional subquery uses the cursor.
+                    &starts_at_document_in_clause
+                } else if left_over_index_properties.is_empty() {
                     if last_clause_is_on_transformed_source {
                         &None
                     } else {
-                        &starts_at_document
+                        // A padded cursor must not turn a strict terminal
+                        // bound into an inclusive one when the cursor is
+                        // outside the clause.
+                        &starts_at_document_in_clause
                     }
-                } else if sibling_aware_cursor_lowering {
-                    // The cursor's branch always stays included at this level,
-                    // trimming only the branches ordered before it; whether
-                    // the cursor document itself is included is decided by the
-                    // conditional subquery below.
-                    &starts_at_document_with_branch_included
                 } else {
                     &None
                 };
@@ -520,13 +664,19 @@ impl<'a> DriveDocumentQuery<'a> {
                 match subquery_clause {
                     None => {
                         if sibling_aware_cursor_lowering {
-                            let (document, included) = starts_at_document
-                                .as_ref()
-                                .expect("starts_at_document was checked above");
-
-                            let (first, deeper_left_over) = left_over_index_properties
-                                .split_first()
-                                .expect("left_over_index_properties was checked above");
+                            let Some((document, included)) = starts_at_document.as_ref() else {
+                                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                                    "sibling-aware cursor lowering requires a cursor document",
+                                )));
+                            };
+                            let Some((first, deeper_left_over)) =
+                                left_over_index_properties.split_first()
+                            else {
+                                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                                    "sibling-aware cursor lowering requires left-over index \
+                                     properties",
+                                )));
+                            };
                             let first_left_to_right = self
                                 .order_by
                                 .get(first.name.as_str())
@@ -550,18 +700,9 @@ impl<'a> DriveDocumentQuery<'a> {
                             query.set_subquery_key(first.name.as_bytes().to_vec());
 
                             // The cursor's branch continues from the cursor.
-                            let start_at_key = document
-                                .get_raw_for_document_type(
-                                    where_clause.field.as_str(),
-                                    self.document_type,
-                                    None,
-                                    platform_version,
-                                )
-                                .ok()
-                                .flatten();
                             Self::recursive_conditional_insert_on_query_ordered(
                                 &mut query,
-                                start_at_key,
+                                cursor_outer_key.clone(),
                                 left_over_index_properties.as_slice(),
                                 index.unique,
                                 &StartAtDocument {
@@ -613,14 +754,16 @@ impl<'a> DriveDocumentQuery<'a> {
                             match cursor_in_bucket {
                                 Some((document, included)) if !index.unique => {
                                     query.set_subquery_key(vec![0]);
-                                    query.set_subquery(Self::inner_query_from_starts_at_for_id(
-                                        Some(&StartAtDocument {
-                                            document: document.clone(),
-                                            document_type: self.document_type,
-                                            included,
-                                        }),
-                                        left_to_right,
-                                    ));
+                                    query.set_subquery(
+                                        Self::inner_query_from_starts_at_for_id_ordered(
+                                            Some(&StartAtDocument {
+                                                document: document.clone(),
+                                                document_type: self.document_type,
+                                                included,
+                                            }),
+                                            left_to_right,
+                                        ),
+                                    );
                                 }
                                 cursor => {
                                     if matches!(cursor, Some((_, false))) {
@@ -640,21 +783,39 @@ impl<'a> DriveDocumentQuery<'a> {
                                 }
                             }
                         } else {
+                            let cursor =
+                                starts_at_document.map(|(document, included)| StartAtDocument {
+                                    document,
+                                    document_type: self.document_type,
+                                    included,
+                                });
                             Self::recursive_insert_on_query_ordered_with_cursor(
                                 &mut query,
                                 left_over_index_properties.as_slice(),
                                 index.unique,
-                                starts_at_document
-                                    .map(|(document, included)| StartAtDocument {
-                                        document,
-                                        document_type: self.document_type,
-                                        included,
-                                    })
-                                    .as_ref(),
+                                cursor.as_ref(),
                                 left_to_right,
                                 &self.order_by,
                                 platform_version,
                             )?;
+                            if left_over_index_properties.is_empty() && !index.unique {
+                                if let Some(cursor) = cursor.as_ref() {
+                                    // Only the cursor's terminal key needs an
+                                    // id bound; later keys retain all ids. This
+                                    // makes the included cursor the first row
+                                    // before padded startAfter removes it.
+                                    Self::recursive_conditional_insert_on_query_ordered(
+                                        &mut query,
+                                        cursor_outer_key,
+                                        left_over_index_properties.as_slice(),
+                                        index.unique,
+                                        cursor,
+                                        left_to_right,
+                                        &self.order_by,
+                                        platform_version,
+                                    )?;
+                                }
+                            }
                         }
                     }
                     Some(subquery_where_clause) => {
@@ -666,7 +827,7 @@ impl<'a> DriveDocumentQuery<'a> {
                             )))?;
                         let mut subquery = subquery_where_clause.to_path_query(
                             self.document_type,
-                            &starts_at_document,
+                            &None,
                             order_clause.ascending,
                             platform_version,
                         )?;
@@ -674,20 +835,59 @@ impl<'a> DriveDocumentQuery<'a> {
                             &mut subquery,
                             left_over_index_properties.as_slice(),
                             index.unique,
-                            starts_at_document
-                                .map(|(document, included)| StartAtDocument {
-                                    document,
-                                    document_type: self.document_type,
-                                    included,
-                                })
-                                .as_ref(),
-                            left_to_right,
+                            None,
+                            order_clause.ascending,
                             &self.order_by,
                             platform_version,
                         )?;
                         let subindex = subquery_where_clause.field.as_bytes().to_vec();
-                        query.set_subquery_key(subindex);
+                        query.set_subquery_key(subindex.clone());
                         query.set_subquery(subquery);
+
+                        if let (Some((document, included)), true) =
+                            (starts_at_document, cursor_branch_live)
+                        {
+                            // The default subquery above keeps the original
+                            // predicate on every later sibling. Intersect it
+                            // with the cursor only on the cursor's outer key
+                            // (see `inner_included` above for what the
+                            // cursor's own range keeps).
+                            let mut cursor_subquery = subquery_where_clause.to_path_query(
+                                self.document_type,
+                                &Some((document.clone(), inner_included)),
+                                order_clause.ascending,
+                                platform_version,
+                            )?;
+                            Self::recursive_insert_on_query_ordered_with_cursor(
+                                &mut cursor_subquery,
+                                left_over_index_properties.as_slice(),
+                                index.unique,
+                                None,
+                                order_clause.ascending,
+                                &self.order_by,
+                                platform_version,
+                            )?;
+                            let outer_key = cursor_outer_key.clone().unwrap_or_default();
+                            Self::recursive_conditional_insert_on_query_ordered(
+                                &mut cursor_subquery,
+                                cursor_inner_key,
+                                left_over_index_properties.as_slice(),
+                                index.unique,
+                                &StartAtDocument {
+                                    document,
+                                    document_type: self.document_type,
+                                    included,
+                                },
+                                order_clause.ascending,
+                                &self.order_by,
+                                platform_version,
+                            )?;
+                            query.add_conditional_subquery(
+                                QueryItem::Key(outer_key),
+                                Some(vec![subindex]),
+                                Some(cursor_subquery),
+                            );
+                        }
                     }
                 };
 
@@ -742,7 +942,7 @@ impl<'a> DriveDocumentQuery<'a> {
 #[cfg(any(feature = "server", feature = "verify"))]
 fn query_covers_index_prefix_contiguously(
     index_properties: &[IndexProperty],
-    is_equality_field: &dyn Fn(&str) -> bool,
+    is_equality_field: impl Fn(&str) -> bool,
     last_clause: Option<&WhereClause>,
     subquery_clause: Option<&WhereClause>,
     equality_prefix_len: usize,
@@ -798,7 +998,7 @@ mod tests {
         let terminal = clause("b", WhereOperator::Equal);
         assert!(query_covers_index_prefix_contiguously(
             &index_properties,
-            &is_equality,
+            is_equality,
             Some(&terminal),
             None,
             1,
@@ -808,7 +1008,7 @@ mod tests {
         let range = clause("c", WhereOperator::GreaterThan);
         assert!(query_covers_index_prefix_contiguously(
             &index_properties,
-            &is_equality,
+            is_equality,
             Some(&range),
             None,
             2,
@@ -818,7 +1018,7 @@ mod tests {
         let in_clause = clause("b", WhereOperator::In);
         assert!(query_covers_index_prefix_contiguously(
             &index_properties,
-            &|field| field == "a",
+            |field: &str| field == "a",
             Some(&in_clause),
             Some(&range),
             1,
@@ -827,7 +1027,7 @@ mod tests {
         // No clauses at all (order-by-only use of the index).
         assert!(query_covers_index_prefix_contiguously(
             &index_properties,
-            &|_| false,
+            |_: &str| false,
             None,
             None,
             0,
@@ -843,7 +1043,7 @@ mod tests {
         let terminal = clause("c", WhereOperator::Equal);
         assert!(!query_covers_index_prefix_contiguously(
             &index_properties,
-            &|field| field == "a" || field == "c",
+            |field: &str| field == "a" || field == "c",
             Some(&terminal),
             None,
             1,
@@ -854,7 +1054,7 @@ mod tests {
         let range = clause("c", WhereOperator::GreaterThan);
         assert!(!query_covers_index_prefix_contiguously(
             &index_properties,
-            &|field| field == "a",
+            |field: &str| field == "a",
             Some(&range),
             None,
             1,
@@ -864,7 +1064,7 @@ mod tests {
         let terminal = clause("b", WhereOperator::Equal);
         assert!(!query_covers_index_prefix_contiguously(
             &index_properties,
-            &|field| field == "b",
+            |field: &str| field == "b",
             Some(&terminal),
             None,
             0,

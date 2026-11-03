@@ -108,3 +108,14 @@ pub(super) fn action_status_to_string(
         }
     }
 }
+
+/// Credits in JSON: a number while it is exact in JavaScript, a decimal string past
+/// `Number.MAX_SAFE_INTEGER`, where a number would silently round.
+pub(super) fn json_safe_credits(credits: u64) -> JsValue {
+    const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
+    if credits <= MAX_SAFE_INTEGER {
+        JsValue::from_f64(credits as f64)
+    } else {
+        JsValue::from_str(&credits.to_string())
+    }
+}

@@ -206,9 +206,12 @@ EOF
 
 # Create contract module
 cat > dist/contract.js << 'EOF'
+// wasm-bindgen exports the camelCase js_name of each verifier; alias to the
+// snake_case names the wrappers below call.
 import init, {
-  verify_contract,
-  verify_contract_history
+  verifyContract as verify_contract,
+  verifyContractHistory as verify_contract_history,
+  verifyContractsByRange as verify_contracts_by_range
 } from '../pkg/wasm_drive_verify.js';
 
 let initialized = false;
@@ -228,6 +231,11 @@ export async function verifyContract(proof, contractId, platformVersion) {
 export async function verifyContractHistory(proof, contractId, limit, offset, startAtMs, platformVersion) {
   await ensureInitialized();
   return verify_contract_history(proof, contractId, limit, offset, startAtMs, platformVersion);
+}
+
+export async function verifyContractsByRange(proof, startAfter, startAt, limit, idsOnly, platformVersion) {
+  await ensureInitialized();
+  return verify_contracts_by_range(proof, startAfter, startAt, limit, idsOnly, platformVersion);
 }
 EOF
 

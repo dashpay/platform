@@ -1,0 +1,75 @@
+name: Validate NPM runner image
+on:
+  pull_request:
+    paths:
+      - '.github/runner-requirements.json'
+      - '.github/scripts/runner-image.py'
+      - '.github/scripts/tests/**'
+      - '.github/actions/npm-release-build/**'
+      - '.github/actions/rust/**'
+      - '.github/actions/nodejs/**'
+      - '.github/workflows/npm-runner-validation.yml'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/release-npm-build.yml'
+      - '.github/workflows/release-kotlin-sdk.yml'
+      - 'packages/dapi-grpc/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  runner-contract-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test runner selection and release caller restrictions
+        run: python3 -m unittest discover -s .github/scripts/tests -v
+  select-runner:
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository
+      || github.event.pull_request.head.repo.owner.login == 'thepastaclaw'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 135
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: read
+      actions: read
+    outputs:
+      labels: ${{ steps.select.outputs.labels }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/runner-image.py select --kind npm
+  build:
+    name: NPM release build validation
+    needs: select-runner
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.labels) }}
+    timeout-minutes: 120
+    steps:
+      - name: Empty the previous job workspace
+        run: find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run the release build and pack without publishing
+        uses: ./.github/actions/npm-release-build
+        with:
+          cache-name: npm-validation-target
+      - name: Test the generated clients
+        run: yarn workspace @dashevo/dapi-grpc test:unit
+      - name: Verify the DAPI archive contains generated clients
+        run: python3 packages/dapi-grpc/scripts/check-packed-clients.py npm-packages
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-validation-${{ github.sha }}
+          path: npm-packages/*.tgz
+          if-no-files-found: error
+          retention-days: 3

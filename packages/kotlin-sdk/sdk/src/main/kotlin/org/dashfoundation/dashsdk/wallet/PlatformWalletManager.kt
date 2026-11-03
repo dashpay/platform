@@ -208,6 +208,16 @@ class PlatformWalletManager(
         // once, loudly, at manager construction. Best-effort — the probe
         // touches KeyguardManager/AndroidKeyStore, which may be absent in
         // JVM test fixtures.
+        //
+        // The OTHER degradation — MO-972's lock-gate drop, where DEVICE_BOUND
+        // keys lose setUnlockedDeviceRequired on a device with the
+        // false-locked defect on record — is deliberately NOT reported here:
+        // effectiveKeySecurityPolicy() cannot express it (see KeySecurityPolicy,
+        // "Lock-gate degradation") and the record is a suspending DataStore
+        // read with no scope available yet. It is logged loudly at the moment
+        // it is recorded (WalletStorage.healFalseLockedMnemonicStore /
+        // recordLockBindingDefectFromDeniedRead), and hosts can read it any
+        // time via WalletStorage.isMasterKeyLockBindingDefectObserved().
         runCatching {
             val requested = walletStorage.keySecurityPolicy
             val effective = walletStorage.effectiveKeySecurityPolicy()
@@ -767,10 +777,14 @@ class PlatformWalletManager(
      *   encrypt, and thrown BEFORE the native create, so nothing was
      *   created and nothing needs rolling back — or if the Keystore denies
      *   the mnemonic store as device-locked after the false-locked bounded
-     *   retry in [WalletStorage.storeMnemonic] is exhausted (that path runs
-     *   the full rollback below first). A locked device whose master key is
-     *   NOT lock-bound (generated before a PIN was enrolled) proceeds
-     *   normally.
+     *   retry in [WalletStorage.storeMnemonic] is exhausted AND its
+     *   last-rung degradation (re-encrypting under the never-lock-bound
+     *   master alias) also failed (that path runs the full rollback below
+     *   first). A locked device whose master key is NOT lock-bound
+     *   (generated before a PIN was enrolled) proceeds normally, as does a
+     *   device whose false-locked Keystore defect is already on record
+     *   (mnemonic writes target the never-lock-bound alias, which no lock
+     *   state can deny).
      */
     suspend fun createWallet(
         mnemonic: String,
@@ -1633,6 +1647,92 @@ class PlatformWalletManager(
     }
 
     /**
+     * Shield from a Platform IDENTITY's balance (Type 21). Sibling of
+     * [shieldedShield] with the identity, rather than the transparent
+     * Platform-Payment addresses, as the funding side: [amount] credits move
+     * straight out of [identityId]'s balance into this wallet's own bound
+     * shielded pool ([shieldedAccount]), and the identity is debited [amount]
+     * plus the metered fee plus the shielded compute fee
+     * ([ShieldedProver.FeeKind.ShieldFromIdentity]). The identity must be
+     * managed by this wallet. Signed by the Keystore identity signer
+     * ([signerHandle]) with the identity's TRANSFER key, the same handle
+     * [org.dashfoundation.dashsdk.credits.IdentityCredits.transferToAddresses]
+     * threads through. Swift counterpart:
+     * `PlatformWalletManager.shieldedShieldFromIdentity` in
+     * packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PlatformWalletManagerShieldedSync.swift. Self-shield only (Rust always targets this wallet's own
+     * default Orchard address, so there is no recipient parameter). Blocks for
+     * the ~30s Halo 2 proof; the note arrives on the next shielded sync pass.
+     *
+     * @param walletId the 32-byte wallet id.
+     * @param identityId the 32-byte funding identity id.
+     * @param amount credits to shield (1 DASH = 1e11).
+     * @return the identity's proven post-debit credit balance; the wallet only
+     *   confirms on the identity's own balance proof, any other result throws
+     *   the shielded-spend-unconfirmed error (do not resubmit).
+     */
+    suspend fun shieldedShieldFromIdentity(
+        walletId: ByteArray,
+        identityId: ByteArray,
+        amount: Long,
+        shieldedAccount: Int = 0,
+    ): Long = teardownGate.op {
+        require(identityId.size == 32) {
+            "identityId must be exactly 32 bytes, got ${identityId.size}"
+        }
+        require(amount > 0) { "amount must be positive, got $amount" }
+        require(shieldedAccount >= 0) {
+            "shieldedAccount must be non-negative, got $shieldedAccount"
+        }
+        mapNativeErrors {
+            FundingNative.shieldedShieldFromIdentity(
+                managerHandle,
+                walletId,
+                shieldedAccount,
+                identityId,
+                amount,
+                signerHandle,
+            )
+        }
+    }
+
+    /** List active and archived durable identity-funded shields for this manager's wallet. */
+    suspend fun shieldedIdentityDebitRecoveryRecords(
+        walletId: ByteArray,
+    ): List<ShieldedIdentityDebitRecoveryRecord> = teardownGate.op {
+        require(walletId.size == 32) { "walletId must be exactly 32 bytes, got ${walletId.size}" }
+        mapNativeErrors {
+            FundingNative.shieldedIdentityDebitRecoveryRecords(managerHandle, walletId)
+                .map { ShieldedIdentityDebitRecoveryRecord.fromNative(it) }
+        }
+    }
+
+    /**
+     * Stop automatic retry of exactly `(walletId, accountIndex, activityId)`.
+     * Archives the complete signed record for later scan confirmation and audit,
+     * preserves an Unknown outcome, and permits a new identity debit after saving.
+     *
+     * This does not cancel an already relayed or in-flight payment. A new payment
+     * may cause an additional debit even if the old nonce is still usable. Obtain
+     * the user's informed acknowledgement before passing true. Acknowledgement
+     * is mandatory, has no default, and false is rejected by the wallet.
+     */
+    suspend fun abandonShieldedIdentityDebit(
+        walletId: ByteArray,
+        accountIndex: UInt,
+        activityId: ByteArray,
+        acknowledgePossibleExecution: Boolean,
+    ) = teardownGate.op {
+        require(walletId.size == 32) { "walletId must be exactly 32 bytes, got ${walletId.size}" }
+        require(activityId.size == 32) { "activityId must be exactly 32 bytes, got ${activityId.size}" }
+        mapNativeErrors {
+            FundingNative.abandonShieldedIdentityDebit(
+                managerHandle, walletId, accountIndex.toInt(), activityId,
+                acknowledgePossibleExecution,
+            )
+        }
+    }
+
+    /**
      * Create an identity funded from the shielded pool (Type 20) — port of
      * Swift's `shieldedIdentityCreateFromPool`. Spends a note of the fixed
      * exit [denomination] (credits — a member of the ACTIVE protocol
@@ -1840,6 +1940,46 @@ class PlatformWalletManager(
                 mnemonicResolver.nativeHandle,
                 account,
                 toPlatformAddress,
+                amount,
+            )
+        }
+    }
+
+    /**
+     * Shielded to existing-identity top-up (Type 22), a port of Swift's
+     * `PlatformWalletManager.shieldedIdentityTopUpFromPool`
+     * (`PlatformWalletManagerShieldedSync.swift`). Spends notes from
+     * [account] on [walletId] and credits [identityId]'s Platform balance.
+     *
+     * The identity only has to exist on Platform; it does not have to be
+     * one this wallet manages. The flat pool-paid fee
+     * ([ShieldedProver.FeeKind.IdentityTopUpFromPool], i.e.
+     * [estimateShieldedFee] kind 4) is spent from the notes on top of
+     * [amount].
+     *
+     * @param walletId the 32-byte wallet id.
+     * @param identityId the 32-byte id of the identity being topped up.
+     * @param amount credits the identity receives (1 DASH = 1e11 credits).
+     * @param account the ZIP-32 shielded account to spend from (usually 0).
+     */
+    suspend fun shieldedIdentityTopUpFromPool(
+        walletId: ByteArray,
+        identityId: ByteArray,
+        amount: Long,
+        account: Int = 0,
+    ): Unit = teardownGate.op {
+        require(amount > 0) { "amount must be positive, got $amount" }
+        require(account >= 0) { "account must be non-negative, got $account" }
+        require(identityId.size == 32) {
+            "identityId must be exactly 32 bytes, got ${identityId.size}"
+        }
+        mapNativeErrors {
+            FundingNative.shieldedIdentityTopUpFromPool(
+                managerHandle,
+                walletId,
+                mnemonicResolver.nativeHandle,
+                account,
+                identityId,
                 amount,
             )
         }
@@ -2337,6 +2477,98 @@ class PlatformWalletManager(
                     next
                 }
                 delay(POLL_INTERVAL_MS)
+            }
+        }
+    }
+
+    // ── Ordered wallet bring-up ───────────────────────────────────────
+
+    /**
+     * Bring one wallet's DashPay state up in dependency order — identity →
+     * contacts → contact-account drain — then return so the caller can
+     * start Core SPV. Port of Swift's `startWalletSubsystems`
+     * (`PlatformWalletManagerStartup.swift`); the ordering, the retry
+     * policy and the budget all live Rust-side
+     * (`platform_wallet::manager::startup`) — this is a thin bridge.
+     *
+     * A contact's DIP-15 payment addresses are derived from its contact
+     * account, and an address the wallet is not watching when the
+     * compact-filter scan passes its funding height produces no
+     * transaction at all. Call this once per wallet load, immediately
+     * before [startSpv], so the first filter set already covers them —
+     * a restored wallet then needs no receival-payment rescan at all.
+     *
+     * Budget expiry is reported in the outcome, never thrown: Core sync is
+     * the wallet's primary function and must not be held hostage to
+     * Platform being slow. Start SPV regardless of the returned status;
+     * inspect [WalletStartupOutcome.contactAccountsPending] for
+     * diagnostics.
+     *
+     * Key material follows the drain's per-call contract: the mnemonic
+     * resolver and identity signer are built for this call and closed when
+     * it returns — Rust borrows and never retains them. An auth-gated
+     * signing failure (identity keys are biometric-gated on Android)
+     * leaves the affected entries queued; the recurring sweep self-heals.
+     *
+     * Throws only for a malformed request (bad wallet id, negative
+     * arguments, unknown wallet, torn-down manager).
+     *
+     * @param walletId the 32-byte wallet id.
+     * @param budgetSecs ceiling for the whole sequence in seconds; 0 = SDK
+     *   default (20s). Never unbounded — this call gates Core SPV.
+     * @param gapLimit identity-discovery gap limit; 0 = SDK default.
+     */
+    suspend fun startWalletSubsystems(
+        walletId: ByteArray,
+        budgetSecs: Long = 0,
+        gapLimit: Int = 0,
+    ): WalletStartupOutcome = teardownGate.op {
+        require(walletId.size == 32) { "walletId must be 32 bytes, got ${walletId.size}" }
+        require(budgetSecs >= 0) { "budgetSecs must be non-negative, got $budgetSecs" }
+        require(gapLimit >= 0) { "gapLimit must be non-negative, got $gapLimit" }
+        withContext(Dispatchers.IO) {
+            // Each handle is guarded from the moment it exists: the signer's
+            // constructor can throw (Keystore unlock, DAO access), and a single
+            // try covering both would leak the resolver's native handle when it
+            // does. Closed in reverse construction order.
+            val startupResolver = MnemonicResolverAndPersister(walletStorage)
+            try {
+                val startupSigner =
+                    KeystoreSigner(
+                        walletStorage,
+                        network,
+                        biometricGate,
+                        database.platformAddressDao(),
+                    )
+                try {
+                    val blob = mapNativeErrors {
+                        WalletManagerNative.startWalletSubsystems(
+                            managerHandle,
+                            walletId,
+                            startupResolver.nativeHandle,
+                            startupSigner.nativeHandle,
+                            budgetSecs,
+                            gapLimit,
+                        )
+                    }
+                    val rawStatus = blob.firstOrNull()?.toInt()?.and(0xFF)
+                    if (rawStatus != null && !WalletStartupStatus.isKnownRaw(rawStatus)) {
+                        // Append-only ABI: a newer native library reported a status
+                        // this build predates. decode() maps it to PARTIAL_NO_IDENTITY
+                        // (Swift parity); say so once so the mismatch is visible.
+                        android.util.Log.w(
+                            "PlatformWalletManager",
+                            "startWalletSubsystems: unknown WalletStartupStatus discriminant " +
+                                "$rawStatus from the native library; treating as PARTIAL_NO_IDENTITY " +
+                                "(update the Kotlin SDK to match the native build)",
+                        )
+                    }
+                    WalletStartupOutcome.decode(blob)
+                } finally {
+                    runCatching { startupSigner.close() }
+                }
+            } finally {
+                runCatching { startupResolver.close() }
             }
         }
     }

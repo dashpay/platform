@@ -12,6 +12,15 @@ use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
 
 /// Operations on Address Funds
+///
+/// A batch must write each address at most once. `AddBalanceToAddress` computes the new
+/// balance from the one committed before its batch, `SetBalanceToAddress` overwrites it, and
+/// GroveDB keeps only the last write of a key, so a second write to one address would replace
+/// the first. Every batch writes each address once today: an address may not be both an input
+/// and an output of a transition (`OutputAddressAlsoInputError`), inputs and outputs are maps,
+/// and the fee of a transition paid from its inputs is applied in a batch of its own.
+/// `DriveOperation::merge_balance_writes` does not merge these; a batch that needs two writes
+/// to one address must fold them into one.
 #[derive(Clone, Debug)]
 pub enum AddressFundsOperationType {
     /// Sets a balance for a given address in the AddressBalances tree.

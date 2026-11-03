@@ -9,6 +9,12 @@
 //! [`unregister_identity`](Self::unregister_identity),
 //! [`update_watched_tokens`](Self::update_watched_tokens)).
 //!
+//! The watch list is required, not an optimization: Platform's token
+//! balance and info queries take explicit token ids
+//! (`GetIdentityTokenBalancesRequestV0.token_ids`), and no query lists the
+//! tokens an identity holds. The manager can only sync tokens a caller
+//! registered through `update_watched_tokens`.
+//!
 //! Each pass walks every registered identity, snapshots its watched
 //! token list, then sequentially:
 //!
@@ -19,9 +25,7 @@
 //!    batches or identities) — see crate-level note on SDK `!Send`
 //!    futures.
 //! 2. Builds a [`TokenBalanceChangeSet`] from the batch result and
-//!    forwards it to the persister. The wallet-side write path
-//!    (`TokenWallet::sync` mutating `PlatformWalletInfo.token_balances`
-//!    directly) is unrelated and untouched.
+//!    forwards it to the persister.
 //! 3. Updates the manager's own per-identity cache row in lockstep,
 //!    so callers reading [`state_for_identity`](Self::state_for_identity)
 //!    after [`sync_now`](Self::sync_now) returns see fresh values.
@@ -617,8 +621,7 @@ where
             // Type-annotate the call site explicitly: `fetch_many`
             // is generic over the response type, and the inference
             // chain through `RetrievedObjects` doesn't pick a unique
-            // implementor without a hint. Same pattern used by
-            // `TokenWallet::sync`.
+            // implementor without a hint.
             let fetched: Result<IdentityTokenBalances, _> =
                 TokenAmount::fetch_many(self.sdk.as_ref(), query).await;
             match fetched {

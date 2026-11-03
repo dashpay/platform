@@ -248,13 +248,12 @@ impl PlatformWallet {
                      (tx {}), falling back to ChainLock proof",
                     out_point.txid
                 );
-                let chain_proof = self
+                // Persists the rebuilt proof before resuming, so a later
+                // resume of this lock does not fall back into the
+                // record-only proof wait that just timed out.
+                let (chain_proof, path) = self
                     .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, cl_wait)
-                    .await?;
-                let (_, path) = self
-                    .asset_locks
-                    .resume_asset_lock(&out_point, cl_wait)
+                    .resolve_chain_proof_after_is_timeout(&out_point, cl_wait)
                     .await?;
                 ResolvedFunding {
                     proof: chain_proof,
@@ -434,6 +433,16 @@ impl PlatformWallet {
             }
             Err(e) => (Err(e), proof.clone()),
         };
+
+        // Whichever proof was submitted, a persisted Chain proof Platform
+        // places the transaction outside of must come off the row — including
+        // one this resume loaded rather than built, which would otherwise be
+        // replayed on every later attempt.
+        if let Err(e) = &submit_result {
+            self.asset_locks
+                .invalidate_rejected_chain_proof(&proof_out_point, &effective_proof, e)
+                .await;
+        }
 
         let landed_actions: Vec<dpp::shielded::SerializedAction> = self
             .asset_locks

@@ -39,6 +39,7 @@ impl DocumentPurchaseTransitionActionV0 {
                 base,
                 get_data_contract,
                 |document_type| document_type.document_purchase_token_cost(),
+                |action_fees| action_fees.document_purchase_action_fee(),
                 "purchase",
             )?;
 
@@ -93,6 +94,7 @@ impl DocumentPurchaseTransitionActionV0 {
                     document: modified_document,
                     original_owner_id,
                     price: *price,
+                    property_constraint_aggregates: Default::default(),
                 }
                 .into(),
             ))

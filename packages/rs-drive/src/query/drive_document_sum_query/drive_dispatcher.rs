@@ -14,6 +14,7 @@ use crate::config::DriveConfig;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::drive_document_count_query::drive_dispatcher as count_dispatcher;
 use crate::query::drive_document_sum_query::{
     DocumentSumMode, DocumentSumRequest, DocumentSumResponse, RangeSumOptions, RangeSumWalkMode,
     SumMode,
@@ -300,10 +301,7 @@ pub fn where_clauses_from_value(
     value: &Value,
     platform_version: &PlatformVersion,
 ) -> Result<Vec<WhereClause>, Error> {
-    crate::query::drive_document_count_query::drive_dispatcher::where_clauses_from_value(
-        value,
-        platform_version,
-    )
+    count_dispatcher::where_clauses_from_value(value, platform_version)
 }
 
 /// Parse the wire-CBOR `Value::Array` shape into structured

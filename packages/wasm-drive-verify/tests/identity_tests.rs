@@ -1,5 +1,6 @@
 //! Tests for identity verification functions
 
+use dpp::version::PlatformVersion;
 use js_sys::Uint8Array;
 use wasm_bindgen_test::*;
 use wasm_drive_verify::identity_verification::*;
@@ -103,4 +104,96 @@ fn test_verify_identity_nonce_invalid_identity_id() {
         &result.map(|_| ()),
         "Invalid identity_id length. Expected 32 bytes",
     );
+}
+
+/// A bincode-encoded GroveDB proof envelope discriminant with no payload.
+/// The latest protocol version requires at least version 1.
+fn envelope_only_proof(version: u32) -> Uint8Array {
+    let bytes = bincode::encode_to_vec(version, bincode::config::standard().with_big_endian())
+        .expect("encode envelope version");
+    Uint8Array::from(&bytes[..])
+}
+
+#[wasm_bindgen_test]
+fn test_verify_identity_rejects_legacy_v0_envelope() {
+    let proof = envelope_only_proof(0);
+    let identity_id = Uint8Array::from(&mock_identifier()[..]);
+    let platform_version = PlatformVersion::latest().protocol_version;
+
+    let result = verify_full_identity_by_identity_id(&proof, false, &identity_id, platform_version);
+    assert_error_contains(
+        &result.map(|_| ()),
+        "unsupported GroveDB proof envelope version 0 in the proof",
+    );
+}
+
+#[wasm_bindgen_test]
+fn test_verify_identity_by_non_unique_public_key_hash_rejects_v0_inner_proof() {
+    let inner_proof = envelope_only_proof(0);
+    let outer_proof = envelope_only_proof(1);
+    let public_key_hash = Uint8Array::from(&[0u8; 20][..]);
+    let platform_version = PlatformVersion::latest().protocol_version;
+
+    let result = verify_full_identity_by_non_unique_public_key_hash(
+        Some(inner_proof),
+        &outer_proof,
+        &public_key_hash,
+        None,
+        platform_version,
+    );
+    assert_error_contains(
+        &result.map(|_| ()),
+        "unsupported GroveDB proof envelope version 0 in the proof",
+    );
+}
+
+#[wasm_bindgen_test]
+fn test_verify_identity_by_non_unique_public_key_hash_rejects_v0_outer_proof() {
+    let outer_proof = envelope_only_proof(0);
+    let public_key_hash = Uint8Array::from(&[0u8; 20][..]);
+    let platform_version = PlatformVersion::latest().protocol_version;
+
+    let result = verify_full_identity_by_non_unique_public_key_hash(
+        None,
+        &outer_proof,
+        &public_key_hash,
+        None,
+        platform_version,
+    );
+    assert_error_contains(
+        &result.map(|_| ()),
+        "unsupported GroveDB proof envelope version 0 in the proof",
+    );
+}
+
+/// A recorded V1 identity-balance proof from the `drive-proof-verifier`
+/// regression corpus, verified through the exported WASM entry point so a
+/// valid V1 envelope is known to survive the `Uint8Array` copy and the
+/// envelope gate.
+#[wasm_bindgen_test]
+fn test_verify_identity_balance_accepts_recorded_v1_proof() {
+    const PROOF_HEX: &str =
+        include_str!("../../rs-drive-proof-verifier/tests/vectors/identity-balance/proof.hex");
+    const EXPECTED_ROOT_HASH_HEX: &str =
+        "dad905d8fddd7a31089ed57521ff006ec5946b5648d48056bce493357675ab72";
+    const RECORDED_PLATFORM_VERSION: u32 = 12;
+
+    let proof_bytes = hex::decode(PROOF_HEX.trim()).expect("decode recorded proof");
+    assert_eq!(proof_bytes[0], 1, "corpus fixture must be a V1 envelope");
+    let proof = Uint8Array::from(&proof_bytes[..]);
+    let identity_id = Uint8Array::from(&[0x77u8; 32][..]);
+
+    let result = verify_identity_balance_for_identity_id(
+        &proof,
+        &identity_id,
+        false,
+        RECORDED_PLATFORM_VERSION,
+    )
+    .expect("recorded V1 proof must verify");
+
+    assert_eq!(
+        hex::encode(result.root_hash().to_vec()),
+        EXPECTED_ROOT_HASH_HEX
+    );
+    assert_eq!(result.balance(), Some(5_000_000_000));
 }

@@ -18,9 +18,18 @@ use dpp::data_contract::TokenConfiguration;
     feature = "token-history-contract",
     feature = "keywords-contract",
     feature = "document-history-contract",
+    feature = "app-connect-contract",
+    feature = "moderation-charters-contract",
     feature = "all-system-contracts"
 ))]
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+#[cfg(any(feature = "app-connect-contract", feature = "all-system-contracts"))]
+use dpp::version::feature_initial_protocol_versions::APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION;
+#[cfg(any(
+    feature = "moderation-charters-contract",
+    feature = "all-system-contracts"
+))]
+use dpp::version::feature_initial_protocol_versions::MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION;
 use dpp::version::PlatformVersion;
 
 use lru::LruCache;
@@ -304,13 +313,15 @@ impl TrustedHttpContextProvider {
         }
     }
 
-    /// Update the quorum caches by fetching current and previous quorums
+    /// Update the quorum caches by fetching current and previous quorums.
+    ///
+    /// The two requests are issued concurrently: each is a full round trip to
+    /// the quorum service and neither depends on the other, so awaiting them
+    /// back to back only added a round trip to every SDK boot. The first
+    /// failure wins and the other request is dropped.
     pub async fn update_quorum_caches(&self) -> Result<(), TrustedContextProviderError> {
-        // Fetch current quorums
-        let current = self.fetch_current_quorums().await?;
-
-        // Fetch previous quorums
-        let previous = self.fetch_previous_quorums().await?;
+        let (current, previous) =
+            futures::try_join!(self.fetch_current_quorums(), self.fetch_previous_quorums())?;
 
         // The caches are already updated by the fetch methods
         debug!(
@@ -324,11 +335,14 @@ impl TrustedHttpContextProvider {
 
     /// Refresh current and previous quorum caches independently.
     ///
-    /// Both endpoints are attempted so a failure from one does not prevent
-    /// usable data from the other from reaching the caches.
+    /// Both endpoints are requested concurrently and both are awaited, so a
+    /// failure from one does not prevent usable data from the other from
+    /// reaching the caches.
     pub async fn refresh_quorum_caches(&self) -> Result<(), TrustedContextProviderError> {
-        let current_error = self.fetch_current_quorums().await.err();
-        let previous_error = self.fetch_previous_quorums().await.err();
+        let (current, previous) =
+            futures::join!(self.fetch_current_quorums(), self.fetch_previous_quorums());
+        let current_error = current.err();
+        let previous_error = previous.err();
 
         match (current_error, previous_error) {
             (None, None) => Ok(()),
@@ -776,6 +790,8 @@ impl ContextProvider for TrustedHttpContextProvider {
             feature = "token-history-contract",
             feature = "keywords-contract",
             feature = "document-history-contract",
+            feature = "app-connect-contract",
+            feature = "moderation-charters-contract",
             feature = "all-system-contracts"
         ))]
         {
@@ -877,6 +893,45 @@ impl ContextProvider for TrustedHttpContextProvider {
                 .map_err(|e| {
                     ContextProviderError::Generic(format!(
                         "Failed to load DocumentHistory contract: {}",
+                        e
+                    ))
+                });
+            }
+
+            #[cfg(any(feature = "app-connect-contract", feature = "all-system-contracts"))]
+            // Below protocol version 14 the app-connect contract is
+            // absent, so the lookup falls through to the fallback provider (or `None`).
+            if *id == SystemDataContract::AppConnect.id()
+                && platform_version.protocol_version
+                    >= APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION
+            {
+                return load_system_data_contract(SystemDataContract::AppConnect, platform_version)
+                    .map(|contract| Some(Arc::new(contract)))
+                    .map_err(|e| {
+                        ContextProviderError::Generic(format!(
+                            "Failed to load AppConnect contract: {}",
+                            e
+                        ))
+                    });
+            }
+
+            #[cfg(any(
+                feature = "moderation-charters-contract",
+                feature = "all-system-contracts"
+            ))]
+            // Below protocol version 14 the moderation charters contract is absent too.
+            if *id == SystemDataContract::ModerationCharters.id()
+                && platform_version.protocol_version
+                    >= MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION
+            {
+                return load_system_data_contract(
+                    SystemDataContract::ModerationCharters,
+                    platform_version,
+                )
+                .map(|contract| Some(Arc::new(contract)))
+                .map_err(|e| {
+                    ContextProviderError::Generic(format!(
+                        "Failed to load ModerationCharters contract: {}",
                         e
                     ))
                 });
@@ -999,62 +1054,109 @@ mod tests {
         .to_string()
     }
 
+    /// Serve one response per entry, matched by request path rather than by
+    /// arrival order: the current and previous quorum fetches run
+    /// concurrently, so the order in which their connections land is not
+    /// fixed. A request for a path with no pending entry fails the server
+    /// thread, and `join()` on the returned handle surfaces that.
     fn spawn_http_responses(
         responses: Vec<(&str, u16, String)>,
+    ) -> (String, thread::JoinHandle<()>) {
+        spawn_http_server(responses, false)
+    }
+
+    /// Like `spawn_http_responses`, but accepts every expected connection
+    /// before answering any of them. A client that issues the requests one
+    /// after another never opens the second connection while the first is
+    /// unanswered, so the accept deadline fires and the server thread panics,
+    /// which drops the held connection and fails the client. Passing proves
+    /// the requests were in flight at the same time.
+    fn spawn_concurrent_http_responses(
+        responses: Vec<(&str, u16, String)>,
+    ) -> (String, thread::JoinHandle<()>) {
+        spawn_http_server(responses, true)
+    }
+
+    fn spawn_http_server(
+        responses: Vec<(&str, u16, String)>,
+        accept_all_before_responding: bool,
     ) -> (String, thread::JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock quorum endpoint");
         listener
             .set_nonblocking(true)
             .expect("make mock endpoint bounded");
         let address = listener.local_addr().expect("read mock endpoint address");
-        let responses = responses
+        let mut pending = responses
             .into_iter()
             .map(|(path, status, body)| (path.to_string(), status, body))
             .collect::<Vec<_>>();
 
         let handle = thread::spawn(move || {
-            for (expected_path, status, body) in responses {
+            let mut held = Vec::new();
+            while !pending.is_empty() {
                 let mut stream = accept_before(&listener, Instant::now() + Duration::from_secs(5));
-                let mut reader =
-                    BufReader::new(stream.try_clone().expect("clone quorum request stream"));
-                let mut request_line = String::new();
-                reader
-                    .read_line(&mut request_line)
-                    .expect("read quorum request line");
-                assert_eq!(
-                    request_line.split_whitespace().nth(1),
-                    Some(expected_path.as_str())
-                );
-
-                loop {
-                    let mut header = String::new();
-                    reader
-                        .read_line(&mut header)
-                        .expect("read quorum request header");
-                    if header == "\r\n" || header.is_empty() {
-                        break;
-                    }
-                }
-
-                let reason = if status == 200 {
-                    "OK"
+                let path = read_request_path(&stream);
+                let index = pending
+                    .iter()
+                    .position(|(expected_path, _, _)| *expected_path == path)
+                    .unwrap_or_else(|| panic!("unexpected quorum request path {path}"));
+                let (_, status, body) = pending.remove(index);
+                if accept_all_before_responding {
+                    held.push((stream, status, body));
                 } else {
-                    "Internal Server Error"
-                };
-                write!(
-                    stream,
-                    "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                    status,
-                    reason,
-                    body.len(),
-                    body
-                )
-                .expect("write quorum response");
-                stream.flush().expect("flush quorum response");
+                    write_response(&mut stream, status, &body);
+                }
+            }
+            for (mut stream, status, body) in held {
+                write_response(&mut stream, status, &body);
             }
         });
 
         (format!("http://{}", address), handle)
+    }
+
+    /// Read the request line and headers, returning the requested path.
+    fn read_request_path(stream: &TcpStream) -> String {
+        let mut reader = BufReader::new(stream.try_clone().expect("clone quorum request stream"));
+        let mut request_line = String::new();
+        reader
+            .read_line(&mut request_line)
+            .expect("read quorum request line");
+        let path = request_line
+            .split_whitespace()
+            .nth(1)
+            .expect("quorum request line must carry a path")
+            .to_string();
+
+        loop {
+            let mut header = String::new();
+            reader
+                .read_line(&mut header)
+                .expect("read quorum request header");
+            if header == "\r\n" || header.is_empty() {
+                break;
+            }
+        }
+
+        path
+    }
+
+    fn write_response(stream: &mut TcpStream, status: u16, body: &str) {
+        let reason = if status == 200 {
+            "OK"
+        } else {
+            "Internal Server Error"
+        };
+        write!(
+            stream,
+            "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            status,
+            reason,
+            body.len(),
+            body
+        )
+        .expect("write quorum response");
+        stream.flush().expect("flush quorum response");
     }
 
     fn provider_for(base_url: String) -> TrustedHttpContextProvider {
@@ -1097,6 +1199,51 @@ mod tests {
                 .expect("previous quorum must be cached"),
             [0x42; 48]
         );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    #[tokio::test]
+    async fn update_quorum_caches_fetches_current_and_previous_concurrently() {
+        let (base_url, server) = spawn_concurrent_http_responses(vec![
+            ("/quorums", 200, current_response(0x51, 0x61)),
+            ("/previous", 200, previous_response(0x52, 0x62)),
+        ]);
+        let provider = provider_for(base_url);
+
+        provider
+            .update_quorum_caches()
+            .await
+            .expect("both quorum endpoints must be fetched");
+
+        assert_eq!(
+            provider
+                .get_quorum_public_key(1, [0x51; 32], 1)
+                .expect("current quorum must be cached"),
+            [0x61; 48]
+        );
+        assert_eq!(
+            provider
+                .get_quorum_public_key(1, [0x52; 32], 1)
+                .expect("previous quorum must be cached"),
+            [0x62; 48]
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    #[tokio::test]
+    async fn refresh_quorum_caches_fetches_current_and_previous_concurrently() {
+        let (base_url, server) = spawn_concurrent_http_responses(vec![
+            ("/quorums", 200, current_response(0x53, 0x63)),
+            ("/previous", 200, previous_response(0x54, 0x64)),
+        ]);
+        let provider = provider_for(base_url);
+
+        provider
+            .refresh_quorum_caches()
+            .await
+            .expect("both quorum endpoints must refresh");
+
+        assert_eq!(provider.get_cached_quorum_count(), 2);
         server.join().expect("mock quorum server must finish");
     }
 
@@ -1453,6 +1600,68 @@ mod tests {
 
         // Test that we can use the builder pattern to add known contracts
         // The builder pattern is more appropriate since contracts are only added during initialization
+    }
+
+    /// The app-connect system contract is served only from its activation version on,
+    /// matching Drive's `SystemDataContracts::find_by_id`: below it the contract does not
+    /// exist in state, and its schema would not even parse under the older meta-schema.
+    #[cfg(any(feature = "app-connect-contract", feature = "all-system-contracts"))]
+    #[test]
+    fn should_serve_app_connect_only_from_protocol_14() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::version::PlatformVersion;
+
+        // A numeric loopback URL avoids DNS; contract lookups make no HTTP requests.
+        let provider = TrustedHttpContextProvider::new_with_url(
+            Network::Testnet,
+            "https://127.0.0.1".to_string(),
+            NonZeroUsize::new(100).unwrap(),
+        )
+        .unwrap();
+        let id = SystemDataContract::AppConnect.id();
+
+        assert!(provider
+            .get_data_contract(&id, PlatformVersion::get(13).unwrap())
+            .expect("a pre-activation lookup must not error")
+            .is_none());
+
+        let contract = provider
+            .get_data_contract(&id, PlatformVersion::latest())
+            .expect("the lookup must succeed at protocol version 14")
+            .expect("the app-connect contract must be served at protocol version 14");
+        assert_eq!(contract.id(), id);
+    }
+
+    /// The moderation charters system contract is served only from its activation version
+    /// on, like the app-connect contract.
+    #[cfg(any(
+        feature = "moderation-charters-contract",
+        feature = "all-system-contracts"
+    ))]
+    #[test]
+    fn should_serve_moderation_charters_only_from_protocol_14() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::version::PlatformVersion;
+
+        // A numeric loopback URL avoids DNS; contract lookups make no HTTP requests.
+        let provider = TrustedHttpContextProvider::new_with_url(
+            Network::Testnet,
+            "https://127.0.0.1".to_string(),
+            NonZeroUsize::new(100).unwrap(),
+        )
+        .unwrap();
+        let id = SystemDataContract::ModerationCharters.id();
+
+        assert!(provider
+            .get_data_contract(&id, PlatformVersion::get(13).unwrap())
+            .expect("a pre-activation lookup must not error")
+            .is_none());
+
+        let contract = provider
+            .get_data_contract(&id, PlatformVersion::latest())
+            .expect("the lookup must succeed at protocol version 14")
+            .expect("the moderation charters contract must be served at protocol version 14");
+        assert_eq!(contract.id(), id);
     }
 
     #[test]

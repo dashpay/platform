@@ -219,11 +219,16 @@ internal object IdentityNative {
     /**
      * Register a DPNS name for [identityId] (32 bytes), signed via
      * [signerHandle]. Returns the full domain name (e.g. `"alice.dash"`).
+     *
+     * @param maxContestFund the most, in credits, the identity pays into
+     *   the contest a contested name joins; `0` states the current fund to
+     *   join, read just before signing. Must be non-negative.
      */
     external fun registerDpnsName(
         walletHandle: Long,
         identityId: ByteArray,
         label: String,
+        maxContestFund: Long,
         signerHandle: Long,
     ): String
 

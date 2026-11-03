@@ -5,6 +5,7 @@ pub(in crate::state_transition::state_transitions::document::batch_transition) m
     pub const ACTION: &str = "$action";
     pub const IDENTITY_CONTRACT_NONCE: &str = "$identityContractNonce";
     pub const TOKEN_PAYMENT_INFO: &str = "$tokenPaymentInfo";
+    pub const ACTION_FEE_AGREEMENT: &str = "$actionFeeAgreement";
 }
 
 pub const IDENTIFIER_FIELDS: [&str; 2] = [property_names::ID, property_names::DATA_CONTRACT_ID];

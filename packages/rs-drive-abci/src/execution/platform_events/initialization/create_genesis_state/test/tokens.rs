@@ -386,7 +386,9 @@ impl<C> Platform<C> {
 
         let mut token_configuration_2 = token_configuration.clone();
         let TokenConfiguration::V0(ref mut cfg) = token_configuration_2;
-        let TokenDistributionRules::V0(ref mut rules) = cfg.distribution_rules;
+        let TokenDistributionRules::V0(ref mut rules) = cfg.distribution_rules else {
+            panic!("expected version 0 distribution rules");
+        };
         rules.pre_programmed_distribution = Some(TokenPreProgrammedDistribution::V0(
             TokenPreProgrammedDistributionV0 {
                 distributions: BTreeMap::from([

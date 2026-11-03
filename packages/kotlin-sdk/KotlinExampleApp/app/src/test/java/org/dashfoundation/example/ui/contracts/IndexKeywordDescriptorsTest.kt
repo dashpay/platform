@@ -1,6 +1,8 @@
 package org.dashfoundation.example.ui.contracts
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
@@ -92,5 +94,10 @@ class IndexKeywordDescriptorsTest {
         val declared = buildJsonObject { put("terminal", "postId") }
         assertEquals("postId", indexTerminal(declared, indexOnly = true))
         assertEquals("postId", indexTerminal(declared, indexOnly = false))
+
+        val composite = buildJsonObject {
+            put("terminal", buildJsonArray { add("postId"); add("\$ownerId") })
+        }
+        assertEquals("postId ‖ \$ownerId", indexTerminal(composite, indexOnly = true))
     }
 }

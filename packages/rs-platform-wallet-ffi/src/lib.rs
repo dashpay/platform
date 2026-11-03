@@ -38,6 +38,7 @@ pub mod event_handler;
 pub mod handle;
 pub mod identity_derive_and_persist;
 pub mod identity_discovery;
+pub mod identity_key_limits;
 pub mod identity_key_preview;
 pub mod identity_keys_from_mnemonic;
 pub mod identity_loading;

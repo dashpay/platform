@@ -4,6 +4,7 @@ use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 #[cfg(feature = "state-transition-signing")]
 use crate::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+use crate::data_contract::document_type::action_fees::agreement::DocumentActionFeeAgreement;
 #[cfg(feature = "state-transition-signing")]
 use crate::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "state-transition-signing")]
@@ -20,7 +21,11 @@ use crate::identity::IdentityPublicKey;
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
+use crate::state_transition::batch_transition::batched_transition::document_transition::{
+    DocumentTransition, DocumentTransitionV0Methods,
+};
 use crate::state_transition::batch_transition::batched_transition::BatchedTransition;
+use crate::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use crate::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
 use crate::state_transition::batch_transition::BatchTransition;
@@ -41,7 +46,6 @@ use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
 use platform_value::Identifier;
 use platform_version::version::FeatureVersion;
-#[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 
 pub mod v0;
@@ -54,6 +58,78 @@ pub struct StateTransitionCreationOptions {
     pub batch_feature_version: Option<FeatureVersion>,
     pub method_feature_version: Option<FeatureVersion>,
     pub base_feature_version: Option<FeatureVersion>,
+    /// The action fees the document transition agrees to pay. Required when the document type
+    /// charges a fee for the action (protocol version 14).
+    pub action_fee_agreement: Option<DocumentActionFeeAgreement>,
+    /// The most a contested document create is willing to pay into the contest it joins. From
+    /// protocol version 14 it pays the fund to join, which doubles as the contest grows past
+    /// 250 contenders, and is refused when that is more than this: it pays the transition's
+    /// fees, but nothing into the contest. The identity must hold what it states, because the
+    /// balance check made before the contest is counted is against it. `None` keeps the fund
+    /// the create is built with, the contest's fund, what joining a contest holding fewer than
+    /// 250 contenders costs. A create that joins no contest ignores it.
+    pub contest_fund: Option<Credits>,
+}
+
+impl StateTransitionCreationOptions {
+    /// Fails when the options name an action fee agreement and the document base they select
+    /// under `platform_version` is too old to carry it, which the builders would only find out
+    /// after their caller has spent an identity contract nonce on the transition. A caller that
+    /// reserves the nonce first asks this before it does.
+    pub fn validate_base_carries_action_fee_agreement(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError> {
+        if self.action_fee_agreement.is_none() {
+            return Ok(());
+        }
+        let base_version = self.base_feature_version.unwrap_or(
+            platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .document_base_state_transition
+                .default_current_version,
+        );
+        if base_version < 2 {
+            return Err(ProtocolError::UnknownVersionMismatch {
+                method:
+                    "StateTransitionCreationOptions::validate_base_carries_action_fee_agreement"
+                        .to_string(),
+                known_versions: vec![2],
+                received: base_version,
+            });
+        }
+        Ok(())
+    }
+
+    /// `transition` carrying the options' action fee agreement, if they name one. A base too
+    /// old to carry it is an error: the transition must not go out without what its signer
+    /// agreed to.
+    pub fn apply_action_fee_agreement(
+        &self,
+        transition: impl Into<DocumentTransition>,
+    ) -> Result<DocumentTransition, ProtocolError> {
+        let mut transition = transition.into();
+        if let Some(action_fee_agreement) = self.action_fee_agreement {
+            transition
+                .base_mut()
+                .try_set_action_fee_agreement(action_fee_agreement)?;
+        }
+        Ok(transition)
+    }
+
+    /// `transition` stating the options' contest fund as the most it pays into its contest, if
+    /// they name one and it is a contested create.
+    pub fn apply_contest_fund(&self, mut transition: DocumentTransition) -> DocumentTransition {
+        if let (Some(contest_fund), DocumentTransition::Create(create)) =
+            (self.contest_fund, &mut transition)
+        {
+            if let Some((_, stated)) = create.prefunded_voting_balances_mut() {
+                *stated = contest_fund;
+            }
+        }
+        transition
+    }
 }
 
 impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
@@ -1090,5 +1166,106 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                 received: version,
             }),
         }
+    }
+}
+
+#[cfg(test)]
+mod action_fee_agreement_option_tests {
+    use super::*;
+    use crate::data_contract::document_type::action_fees::agreement::AgreedFeeMultiplier;
+    use crate::data_contract::document_type::action_fees::{ActionFeePricing, DocumentActionFee};
+
+    fn agreeing() -> StateTransitionCreationOptions {
+        StateTransitionCreationOptions {
+            action_fee_agreement: Some(DocumentActionFeeAgreement::for_declared_fee(
+                ActionFeePricing::Fixed,
+                DocumentActionFee {
+                    owner: 1,
+                    moderators: 2,
+                },
+                AgreedFeeMultiplier {
+                    known_permille: 1000,
+                    increase_tolerance_percent: 0,
+                },
+            )),
+            ..Default::default()
+        }
+    }
+
+    // What a caller asks before it reserves an identity contract nonce: protocol version 13
+    // builds a version 1 base, which cannot carry an agreement.
+    #[test]
+    fn should_refuse_an_agreement_the_selected_base_cannot_carry() {
+        let version_13 = PlatformVersion::get(13).expect("expected protocol version 13");
+        assert!(matches!(
+            agreeing().validate_base_carries_action_fee_agreement(version_13),
+            Err(ProtocolError::UnknownVersionMismatch { received: 1, .. })
+        ));
+        let forced_old_base = StateTransitionCreationOptions {
+            base_feature_version: Some(1),
+            ..agreeing()
+        };
+        assert!(forced_old_base
+            .validate_base_carries_action_fee_agreement(PlatformVersion::latest())
+            .is_err());
+    }
+
+    #[test]
+    fn should_accept_an_agreement_on_a_base_that_carries_it_and_options_without_one() {
+        let version_13 = PlatformVersion::get(13).expect("expected protocol version 13");
+        assert!(agreeing()
+            .validate_base_carries_action_fee_agreement(PlatformVersion::latest())
+            .is_ok());
+        assert!(StateTransitionCreationOptions::default()
+            .validate_base_carries_action_fee_agreement(version_13)
+            .is_ok());
+    }
+}
+
+#[cfg(test)]
+mod contest_fund_option_tests {
+    use super::*;
+    use crate::state_transition::batch_transition::document_create_transition::DocumentCreateTransition;
+
+    fn create(prefunded_voting_balance: Option<(String, Credits)>) -> DocumentTransition {
+        let mut create = DocumentCreateTransition::default();
+        *create.prefunded_voting_balances_mut() = prefunded_voting_balance;
+        DocumentTransition::Create(create)
+    }
+
+    fn stated(transition: &DocumentTransition) -> Option<Credits> {
+        let DocumentTransition::Create(create) = transition else {
+            panic!("expected a document create");
+        };
+        create
+            .prefunded_voting_balance()
+            .as_ref()
+            .map(|(_, credits)| *credits)
+    }
+
+    /// A contested create states the options' contest fund as the most it pays, in place of
+    /// the contest's fund it was built with
+    #[test]
+    fn should_state_the_contest_fund_of_the_options_on_a_contested_create() {
+        let options = StateTransitionCreationOptions {
+            contest_fund: Some(7),
+            ..Default::default()
+        };
+        let contested = create(Some(("parentNameAndLabel".to_string(), 1)));
+
+        assert_eq!(
+            stated(&options.apply_contest_fund(contested.clone())),
+            Some(7)
+        );
+        assert_eq!(
+            stated(&StateTransitionCreationOptions::default().apply_contest_fund(contested)),
+            Some(1),
+            "options without a contest fund keep the one the create was built with"
+        );
+        assert_eq!(
+            stated(&options.apply_contest_fund(create(None))),
+            None,
+            "a create that joins no contest ignores it"
+        );
     }
 }

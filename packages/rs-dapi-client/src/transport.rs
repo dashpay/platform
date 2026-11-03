@@ -153,6 +153,24 @@ pub trait TransportClient: Send + Sized {
         settings: &AppliedRequestSettings,
         pool: &ConnectionPool,
     ) -> Result<Self, TransportError>;
+
+    /// Build client using node's url and [AppliedRequestSettings], together
+    /// with the pool generation of the connection it took (see
+    /// [ConnectionPool::generation]). When an attempt misses its deadline,
+    /// the executor evicts the node's connections up to that generation.
+    ///
+    /// The default reads the pool's generation after building the client, so
+    /// it can also cover a connection another thread pooled in between.
+    /// Clients that take their connection from `pool` override it with the
+    /// generation [ConnectionPool::get_or_create_with_generation] returns.
+    fn with_uri_and_settings_and_generation(
+        uri: Uri,
+        settings: &AppliedRequestSettings,
+        pool: &ConnectionPool,
+    ) -> Result<(Self, u64), TransportError> {
+        let client = Self::with_uri_and_settings(uri, settings, pool)?;
+        Ok((client, pool.generation()))
+    }
 }
 
 #[cfg(test)]

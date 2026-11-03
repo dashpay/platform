@@ -68,6 +68,31 @@ pub trait DocumentInfoV0Methods {
     fn get_document_id_as_slice(&self) -> Option<&[u8]>;
 }
 
+impl DocumentInfo<'_> {
+    /// The same document without storage flags: how the document of a type declaring a
+    /// `ttl` is written, since such a document refunds nothing. A worst-case size passes
+    /// through unchanged.
+    pub fn without_storage_flags(self) -> Self {
+        match self {
+            DocumentInfo::DocumentOwnedInfo((document, _)) => {
+                DocumentInfo::DocumentOwnedInfo((document, None))
+            }
+            DocumentInfo::DocumentRefInfo((document, _)) => {
+                DocumentInfo::DocumentRefInfo((document, None))
+            }
+            DocumentInfo::DocumentRefAndSerialization((document, serialization, _)) => {
+                DocumentInfo::DocumentRefAndSerialization((document, serialization, None))
+            }
+            DocumentInfo::DocumentAndSerialization((document, serialization, _)) => {
+                DocumentInfo::DocumentAndSerialization((document, serialization, None))
+            }
+            DocumentInfo::DocumentEstimatedAverageSize(size) => {
+                DocumentInfo::DocumentEstimatedAverageSize(size)
+            }
+        }
+    }
+}
+
 impl DocumentInfoV0Methods for DocumentInfo<'_> {
     /// Returns true if self is a document with serialization.
     fn is_document_and_serialization(&self) -> bool {

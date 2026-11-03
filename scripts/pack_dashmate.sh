@@ -46,6 +46,11 @@ cd $ROOT_PATH/packages/dashmate/package || exit 1
 cp $ROOT_PATH/yarn.lock ./yarn.lock
 mkdir .yarn
 echo "nodeLinker: node-modules"  > .yarnrc.yml
+# CI signs the finished installer in a separate job with access to the Apple
+# keychain. Keep the normal local signing behavior unless explicitly disabled.
+if [ "$COMMAND" = macos ] && [ "${DASHMATE_UNSIGNED:-false}" = true ]; then
+  node -e 'const fs = require("fs"); const p = JSON.parse(fs.readFileSync("package.json", "utf8")); delete p.oclif.macos.sign; fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");'
+fi
 yarn install --no-immutable
 yarn oclif manifest
 yarn oclif pack $COMMAND $FLAGS

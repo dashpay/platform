@@ -282,7 +282,7 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
         if index.name.as_str() != self.index_name.as_str() {
             return Err(Error::Query(QuerySyntaxError::UnknownIndex(format!(
                 "index with name {} is not the contested index on the document type {}, {} is the name of the only contested index (contested resources query)",
-                self.index_name.as_str(), self.document_type_name.as_str(),  &index.name
+                self.index_name.as_str(), self.document_type_name.as_str(), index.name
             ))));
         }
         Ok(index)

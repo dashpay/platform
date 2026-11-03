@@ -73,6 +73,15 @@ pub enum TokenOperationType {
         /// The last release time, block or epoch
         release_time: TimestampMillis,
     },
+    /// Records a once-per-identity distribution claim so the claimant can not claim again
+    TokenMarkOncePerIdentityReleaseAsDistributed {
+        /// The token id
+        token_id: Identifier,
+        /// The identity that claimed, the one making the claim state transition
+        recipient_id: Identifier,
+        /// The block time of the claim
+        claimed_at_ms: TimestampMillis,
+    },
     /// Performs a token transfer
     TokenTransfer {
         /// The token id
@@ -294,6 +303,22 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                         block_info,
                         estimated_costs_only_with_layer_info,
                         transaction,
+                        platform_version,
+                    )?;
+                Ok(batch_operations)
+            }
+            TokenOperationType::TokenMarkOncePerIdentityReleaseAsDistributed {
+                token_id,
+                recipient_id,
+                claimed_at_ms,
+            } => {
+                let batch_operations = drive
+                    .mark_once_per_identity_release_as_distributed_operations(
+                        token_id.to_buffer(),
+                        recipient_id.to_buffer(),
+                        claimed_at_ms,
+                        block_info,
+                        estimated_costs_only_with_layer_info,
                         platform_version,
                     )?;
                 Ok(batch_operations)

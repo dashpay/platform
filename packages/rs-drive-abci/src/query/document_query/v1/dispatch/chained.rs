@@ -229,12 +229,19 @@ impl<C> Platform<C> {
             let inner_documents =
                 serialize_all(&outcome.result.inner_documents, chained_query.document_type)?;
             let outer_documents = serialize_all(&outcome.result.outer_documents, outer_type)?;
+            let missing_outer_ids = outcome
+                .result
+                .missing_outer_ids
+                .iter()
+                .map(|id| id.to_vec())
+                .collect();
 
             GetDocumentsResponseV1 {
                 result: Some(get_documents_response_v1::Result::Data(ResultData {
                     variant: Some(result_data::Variant::Chained(ChainedDocuments {
                         inner_documents,
                         outer_documents,
+                        missing_outer_ids,
                     })),
                 })),
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
@@ -264,6 +271,10 @@ mod tests {
 
     const YAPPR_CONTRACT_PATH: &str =
         "../rs-drive/tests/supporting_files/contract/yappr-likes/yappr-likes-contract.json";
+    /// The same contract with `post` deletable and `like.postId` a
+    /// `refersTo: deletableDocument` reference.
+    const YAPPR_DELETABLE_POSTS_CONTRACT_PATH: &str =
+        "../rs-drive/tests/supporting_files/contract/yappr-likes/yappr-likes-deletable-posts-contract.json";
     const POST_A: [u8; 32] = [0xA1; 32];
     const POST_B: [u8; 32] = [0xB2; 32];
     const OWNER_1: [u8; 32] = [0x11; 32];
@@ -274,8 +285,19 @@ mod tests {
         &'static PlatformVersion,
         dpp::prelude::DataContract,
     ) {
+        setup_yappr_state_at(YAPPR_CONTRACT_PATH)
+    }
+
+    fn setup_yappr_state_at(
+        contract_path: &str,
+    ) -> (
+        crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        std::sync::Arc<PlatformState>,
+        &'static PlatformVersion,
+        dpp::prelude::DataContract,
+    ) {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-        let contract = json_document_to_contract(YAPPR_CONTRACT_PATH, false, version)
+        let contract = json_document_to_contract(contract_path, false, version)
             .expect("expected to parse the yappr-likes contract");
         store_data_contract(&platform.platform, &contract, version);
 
@@ -448,6 +470,103 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![POST_A, POST_B]
         );
+    }
+
+    /// A `deletableDocument` join reports a deleted post instead of
+    /// failing the page, on both wire modes: the unproven response
+    /// carries the missing id, and the proven one verifies to the same
+    /// list.
+    #[test]
+    fn should_report_a_deleted_post_of_a_deletable_document_join() {
+        let (platform, state, version, contract) =
+            setup_yappr_state_at(YAPPR_DELETABLE_POSTS_CONTRACT_PATH);
+        platform
+            .drive
+            .delete_document_for_contract(
+                Identifier::from(POST_B),
+                &contract,
+                "post",
+                dpp::block::block_info::BlockInfo::default(),
+                true,
+                None,
+                version,
+                None,
+            )
+            .expect("expected to delete the post");
+
+        let result = platform
+            .platform
+            .query_documents_v1(
+                chained_request(false, contract.id().to_vec()),
+                &state,
+                version,
+            )
+            .expect("query executes");
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        let Some(ResponseResult::Data(data)) = result.data.expect("response data").result else {
+            panic!("expected a data result");
+        };
+        let Some(result_data::Variant::Chained(chained)) = data.variant else {
+            panic!("expected the chained variant");
+        };
+        assert_eq!(chained.inner_documents.len(), 2);
+        assert_eq!(chained.outer_documents.len(), 1);
+        assert_eq!(chained.missing_outer_ids, vec![POST_B.to_vec()]);
+
+        let result = platform
+            .platform
+            .query_documents_v1(
+                chained_request(true, contract.id().to_vec()),
+                &state,
+                version,
+            )
+            .expect("query executes");
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        let Some(ResponseResult::Proof(proof)) = result.data.expect("response data").result else {
+            panic!("expected a proof result");
+        };
+        let like_type = contract
+            .document_type_for_name("like")
+            .expect("like doctype");
+        let inner = DriveDocumentQuery {
+            contract: &contract,
+            document_type: like_type,
+            internal_clauses: drive::query::InternalClauses::extract_from_clauses(
+                vec![drive::query::WhereClause {
+                    field: "$ownerId".to_string(),
+                    operator: drive::query::WhereOperator::Equal,
+                    value: Value::Identifier(OWNER_1),
+                }],
+                version,
+            )
+            .expect("clauses extract"),
+            offset: None,
+            limit: Some(10),
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: true,
+            block_time_ms: None,
+            resolved_time_ranges: vec![],
+            sub_queries: vec![],
+        };
+        let chained = inner.with_by_id_join(
+            "postId",
+            contract
+                .document_type_for_name("post")
+                .expect("post doctype"),
+        );
+        let (_root_hash, verified) = chained
+            .verify_chained_documents_proof(proof.grovedb_proof.as_slice(), version)
+            .expect("the proof verifies with the deleted post proven absent");
+        assert_eq!(
+            verified
+                .outer_documents
+                .iter()
+                .map(|p| p.id().to_buffer())
+                .collect::<Vec<_>>(),
+            vec![POST_A]
+        );
+        assert_eq!(verified.missing_outer_ids, vec![Identifier::from(POST_B)]);
     }
 
     #[test]

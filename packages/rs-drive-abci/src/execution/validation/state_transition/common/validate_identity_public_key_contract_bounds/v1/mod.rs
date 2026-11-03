@@ -91,6 +91,13 @@ fn validate_identity_public_key_contract_bounds_v1(
     let contract_id = match contract_bounds {
         ContractBounds::SingleContract { id } => *id,
         ContractBounds::SingleContractDocumentType { id, .. } => *id,
+        ContractBounds::ContractGroup { .. } => {
+            // Contract group bounds exist from protocol version 14, where v2 handles them
+            // before delegating here; under these rules they are never allowed.
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                InvalidKeyPurposeForContractBoundsError::new(purpose, vec![]).into(),
+            ));
+        }
     };
     let outcome = drive.get_system_or_user_contract_with_fee(
         contract_id.to_buffer(),
@@ -206,6 +213,11 @@ fn validate_identity_public_key_contract_bounds_v1(
                 execution_context,
                 platform_version,
             )
+        }
+        ContractBounds::ContractGroup { .. } => {
+            Ok(SimpleConsensusValidationResult::new_with_error(
+                InvalidKeyPurposeForContractBoundsError::new(purpose, vec![]).into(),
+            ))
         }
     }
 }

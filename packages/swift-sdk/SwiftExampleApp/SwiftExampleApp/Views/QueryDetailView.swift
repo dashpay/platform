@@ -201,6 +201,8 @@ struct QueryDetailView: View {
                         self.error = "Not Implemented: \(message)"
                     case .internalError(let message):
                         self.error = "Internal Error: \(message)"
+                    case .consensusRejection(let consensus, let message):
+                        self.error = "Rejected by Platform (code \(consensus.code)): \(message)"
                     case .unknown(let message):
                         self.error = "Unknown Error: \(message)"
                     }
@@ -333,6 +335,14 @@ struct QueryDetailView: View {
         case "getDataContracts":
             let ids = (queryInputs["ids"] ?? "").split(separator: ",").map { String($0.trimmingCharacters(in: .whitespaces)) }
             return try await sdk.dataContractGetMultiple(ids: ids)
+
+        case "getDataContractsByRange":
+            let limitStr = queryInputs["limit"] ?? ""
+            let limit = limitStr.isEmpty ? nil : UInt32(limitStr)
+            let startAfter = (queryInputs["startAfter"] ?? "").isEmpty ? nil : queryInputs["startAfter"]
+            let startAt = (queryInputs["startAt"] ?? "").isEmpty ? nil : queryInputs["startAt"]
+            let idsOnly = Bool(queryInputs["idsOnly"] ?? "") ?? false
+            return try await sdk.getDataContractsByRange(limit: limit, startAfter: startAfter, startAt: startAt, idsOnly: idsOnly)
 
         // Document Queries
         case "getDocuments":
@@ -867,6 +877,14 @@ struct QueryDetailView: View {
 
         case "getDataContracts":
             return [QueryInput(name: "ids", label: "Data Contract IDs (comma-separated)", required: true)]
+
+        case "getDataContractsByRange":
+            return [
+                QueryInput(name: "limit", label: "Limit", required: false, placeholder: "100"),
+                QueryInput(name: "startAfter", label: "Start After (Contract ID)", required: false, placeholder: "Last id of the previous page"),
+                QueryInput(name: "startAt", label: "Start At (Contract ID)", required: false, placeholder: "Inclusive start"),
+                QueryInput(name: "idsOnly", label: "IDs Only", required: false, placeholder: "true/false")
+            ]
 
         // Document Queries
         case "getDocuments":

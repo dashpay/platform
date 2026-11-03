@@ -5,7 +5,7 @@ use crate::error::Error;
 
 use crate::verify::RootHash;
 
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::tokens::info::IdentityTokenInfo;
 use grovedb::GroveDb;
 use platform_version::version::PlatformVersion;
@@ -48,7 +48,8 @@ impl Drive {
                         None => Ok((key.into(), None)),
                         Some(element) => {
                             let info_bytes = element.as_item_bytes().map_err(Error::from)?;
-                            let info = IdentityTokenInfo::deserialize_from_bytes(info_bytes)?;
+                            let info =
+                                IdentityTokenInfo::deserialize_from_bytes_untrusted(info_bytes)?;
                             Ok((key.into(), Some(info)))
                         }
                     }

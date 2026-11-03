@@ -139,21 +139,23 @@ pub fn parse_compact_xpub(bytes: &[u8]) -> Result<CompactXpub, CryptoError> {
 mod tests {
     use super::*;
     use crate::ecdh::derive_shared_key_ecdh;
-    use secp256k1::rand::{thread_rng, RngCore};
+    use secp256k1::rand::rngs::StdRng;
+    use secp256k1::rand::{RngCore, SeedableRng};
     use secp256k1::Secp256k1;
 
     #[test]
     fn test_extended_public_key_encryption() {
+        let mut rng = StdRng::seed_from_u64(3);
         let secp = Secp256k1::new();
-        let (secret1, _public1) = secp.generate_keypair(&mut thread_rng());
-        let (_secret2, public2) = secp.generate_keypair(&mut thread_rng());
+        let (secret1, _public1) = secp.generate_keypair(&mut rng);
+        let (_secret2, public2) = secp.generate_keypair(&mut rng);
 
         // Derive shared key
         let shared_key = derive_shared_key_ecdh(&secret1, &public2);
 
         // Generate random IV
         let mut iv = [0u8; 16];
-        thread_rng().fill_bytes(&mut iv);
+        rng.fill_bytes(&mut iv);
 
         // DIP-15 compact xpub plaintext (69 bytes). 69 → PKCS7 → 80, + 16-byte
         // IV = exactly 96 bytes, matching the contract's minItems/maxItems: 96.

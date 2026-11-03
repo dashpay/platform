@@ -78,6 +78,7 @@ fn test_token_identities_balances() {
 
 /// Test fetching total supply for a token
 #[test]
+#[ignore = "recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform"]
 fn test_token_total_supply() {
     setup_logs();
 

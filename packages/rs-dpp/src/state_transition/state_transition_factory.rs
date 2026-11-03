@@ -1,7 +1,7 @@
 use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use crate::serialization::PlatformDeserializable;
+use crate::serialization::PlatformDeserializableUntrusted;
 use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 
@@ -10,7 +10,7 @@ pub struct StateTransitionFactory;
 
 impl StateTransitionFactory {
     pub fn create_from_buffer(&self, buffer: &[u8]) -> Result<StateTransition, ProtocolError> {
-        StateTransition::deserialize_from_bytes(buffer).map_err(|e| {
+        StateTransition::deserialize_from_bytes_untrusted(buffer).map_err(|e| {
             ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
                 SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
             ))

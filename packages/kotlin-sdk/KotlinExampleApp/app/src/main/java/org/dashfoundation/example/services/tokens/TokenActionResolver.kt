@@ -6,6 +6,7 @@ import kotlinx.serialization.json.jsonObject
 import org.dashfoundation.dashsdk.persistence.entities.DataContractEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
+import org.dashfoundation.dashsdk.tokens.TokenDistributionType
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.LenientJson
 
@@ -224,10 +225,16 @@ object TokenActionEvaluator {
  */
 object TokenActionResolver {
 
+    /**
+     * [oncePerIdentityClaimed] is what the device knows about [identity]'s
+     * single once-per-identity claim on [token]
+     * ([OncePerIdentityClaimStore]); Platform has no query for it yet.
+     */
     fun resolve(
         token: TokenEntity,
         identity: IdentityEntity,
         contract: DataContractEntity?,
+        oncePerIdentityClaimed: Boolean = false,
     ): List<ResolvedTokenAction> {
         val rows = ArrayList<ResolvedTokenAction>(TokenActionKind.entries.size)
 
@@ -346,7 +353,10 @@ object TokenActionResolver {
         }
 
         // Claim.
-        rows += ResolvedTokenAction(TokenActionKind.CLAIM, resolveClaim(token, identity))
+        rows += ResolvedTokenAction(
+            TokenActionKind.CLAIM,
+            resolveClaim(token, identity, oncePerIdentityClaimed),
+        )
 
         // Direct purchase — allowed whenever pricing rules exist and the
         // token isn't paused. `PurchaseForm` fetches the configured price on
@@ -423,14 +433,22 @@ object TokenActionResolver {
     private fun resolveClaim(
         token: TokenEntity,
         identity: IdentityEntity,
+        oncePerIdentityClaimed: Boolean,
     ): TokenActionPermission {
         val hasPerpetual = token.perpetualDistribution != null
         val hasPreProgrammed = token.preProgrammedDistribution != null
-        if (!hasPerpetual && !hasPreProgrammed) {
+        val hasOncePerIdentity = token.oncePerIdentityDistribution != null
+        if (!hasPerpetual && !hasPreProgrammed && !hasOncePerIdentity) {
             return TokenActionPermission.Denied("Token has no distribution schedule")
         }
+        // Once per identity: every identity may claim the fixed amount once.
+        // An identity this device does not know about is still rejected
+        // on-chain at submit time if it already claimed.
+        if (hasOncePerIdentity && !oncePerIdentityClaimed) {
+            return TokenActionPermission.Allowed
+        }
 
-        if (token.newTokensDestinationIdentity?.contentEquals(identity.identityId) == true) {
+        if (isDesignatedRecipient(token, identity)) {
             return TokenActionPermission.Allowed
         }
         // Pre-programmed releases name their recipients in the contract;
@@ -439,6 +457,13 @@ object TokenActionResolver {
             return TokenActionPermission.Allowed
         }
 
+        // The single claim is spent and no other kind makes this identity
+        // eligible: say so instead of a recipient mismatch.
+        if (hasOncePerIdentity) {
+            return TokenActionPermission.Denied(
+                "Already claimed the once-per-identity distribution",
+            )
+        }
         if (!hasPerpetual) {
             return TokenActionPermission.Denied("Not a recipient of any pre-programmed release")
         }
@@ -447,6 +472,47 @@ object TokenActionResolver {
         }
         return TokenActionPermission.Denied("Distribution eligibility not yet evaluated")
     }
+
+    /**
+     * The distribution kinds [identity] can claim under [resolveClaim]'s
+     * rules, in the order the claim form shows them. A kind the token merely
+     * declares is not enough: perpetual is listed only for the identity it
+     * pays, pre-programmed only for a listed recipient, and once-per-identity
+     * only while the identity's single claim is not known to be spent.
+     * Offering anything else enables a claim Drive rejects for a fee.
+     */
+    fun claimableDistributions(
+        token: TokenEntity,
+        identity: IdentityEntity,
+        oncePerIdentityClaimed: Boolean,
+    ): List<TokenDistributionType> = buildList {
+        if (token.perpetualDistribution != null && isDesignatedRecipient(token, identity)) {
+            add(TokenDistributionType.PERPETUAL)
+        }
+        if (token.preProgrammedDistribution != null && isPreProgrammedRecipient(token, identity)) {
+            add(TokenDistributionType.PRE_PROGRAMMED)
+        }
+        if (token.oncePerIdentityDistribution != null && !oncePerIdentityClaimed) {
+            add(TokenDistributionType.ONCE_PER_IDENTITY)
+        }
+    }
+
+    /**
+     * The kind the claim form preselects: the first the identity is eligible
+     * for, or null when there is none. The Claim row opens for every identity
+     * once a token has a once-per-identity distribution, so defaulting to a
+     * kind the token only declares would steer an identity that is not its
+     * recipient into a paid wrong-claimant rejection.
+     */
+    fun preferredClaimDistribution(
+        token: TokenEntity,
+        identity: IdentityEntity,
+        oncePerIdentityClaimed: Boolean,
+    ): TokenDistributionType? =
+        claimableDistributions(token, identity, oncePerIdentityClaimed).firstOrNull()
+
+    private fun isDesignatedRecipient(token: TokenEntity, identity: IdentityEntity): Boolean =
+        token.newTokensDestinationIdentity?.contentEquals(identity.identityId) == true
 
     /**
      * True when [identity] is named as a recipient in ANY release of the

@@ -1,4 +1,4 @@
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
 
@@ -26,6 +26,7 @@ use std::convert::TryFrom;
     Decode,
     Default,
     strum::EnumIter,
+    DecodeUntrusted,
 )]
 pub enum SecurityLevel {
     MASTER = 0,

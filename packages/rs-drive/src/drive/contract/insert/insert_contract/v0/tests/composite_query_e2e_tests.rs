@@ -32,6 +32,10 @@ use dpp::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 const FEED_CONTRACT: &str = "tests/supporting_files/contract/yappr-feed/yappr-feed-contract.json";
+/// The feed contract with `post` deletable and every reference to it a
+/// `refersTo: deletableDocument` one.
+const DELETABLE_POSTS_FEED_CONTRACT: &str =
+    "tests/supporting_files/contract/yappr-feed/yappr-feed-deletable-posts-contract.json";
 const DASHPAY_CONTRACT: &str = "tests/supporting_files/contract/dashpay/dashpay-contract.json";
 
 const POST_A: [u8; 32] = [0xA1; 32];
@@ -50,10 +54,14 @@ fn platform_version() -> &'static PlatformVersion {
 /// A drive with the feed contract and the dashpay contract (whose
 /// `profile` type, keyed by `$ownerId`, plays the cross-contract lookup).
 fn setup() -> (crate::drive::Drive, DataContract, DataContract) {
+    setup_with_feed(FEED_CONTRACT)
+}
+
+fn setup_with_feed(feed_contract: &str) -> (crate::drive::Drive, DataContract, DataContract) {
     let drive = setup_drive_with_initial_state_structure(None);
     let pv = platform_version();
     let mut contracts = Vec::new();
-    for path in [FEED_CONTRACT, DASHPAY_CONTRACT] {
+    for path in [feed_contract, DASHPAY_CONTRACT] {
         let contract =
             json_document_to_contract(path, false, pv).expect("expected to parse the contract");
         drive
@@ -124,6 +132,9 @@ fn insert_post(
     doc.set_properties(props);
     doc.set_id(Identifier::from(id));
     doc.set_owner_id(Identifier::from(owner));
+    // Posts carry a creation time in seed order, so the
+    // `byHashtagCreated` timeline reads newest-first as C, B, A.
+    doc.set_created_at(Some(seed * 1_000));
     insert(drive, contract, "post", &doc);
 }
 
@@ -230,6 +241,48 @@ fn page_by_hashtag<'a>(
         resolved_time_ranges: vec![],
         sub_queries: vec![],
     }
+}
+
+/// The feed's timeline page (issue #4728's shape): `hashtag == <tag>`
+/// and `$createdAt > 0` on the `byHashtagCreated` index, ordered by the
+/// index's properties with the newest post first.
+fn timeline_page<'a>(
+    contract: &'a DataContract,
+    hashtag: &str,
+    limit: u16,
+) -> DriveDocumentQuery<'a> {
+    let mut page = page_by_hashtag(contract, hashtag, Some(limit));
+    page.internal_clauses = InternalClauses::extract_from_clauses(
+        vec![
+            WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text(hashtag.to_string()),
+            },
+            WhereClause {
+                field: "$createdAt".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::U64(0),
+            },
+        ],
+        platform_version(),
+    )
+    .expect("timeline page");
+    page.order_by.insert(
+        "hashtag".to_string(),
+        OrderClause {
+            field: "hashtag".to_string(),
+            ascending: true,
+        },
+    );
+    page.order_by.insert(
+        "$createdAt".to_string(),
+        OrderClause {
+            field: "$createdAt".to_string(),
+            ascending: false,
+        },
+    );
+    page
 }
 
 fn bound<'a>(
@@ -767,6 +820,9 @@ fn should_answer_the_feed_composition_with_proof_parity() {
         );
     }
     assert_eq!(verified.sub_results, materialized.sub_results);
+    for result in [&materialized, &verified] {
+        assert!(result.sub_result_missing_ids.iter().all(Vec::is_empty));
+    }
 }
 
 /// The viewer's own likes ride the same proof as an indexOnly lookup
@@ -1619,4 +1675,517 @@ fn should_reject_two_limited_lookups_on_one_index_path() {
         .expect_err("two limited lookups on one index path are refused");
     assert!(refused.to_string().contains("carries a limit"), "{refused}");
     drop(drive);
+}
+
+/// A feed page selected from the `[hashtag, $createdAt]` timeline index
+/// with an explicit range and a descending order, plus a like count
+/// bound to it, is ONE merged proof (issue #4728: on dev.9 the merged
+/// proof of this shape failed to verify with "more data than limit"
+/// whenever the timeline held more keys than the page's limit).
+#[test]
+fn should_prove_an_ordered_timeline_page_with_a_bound_count() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let like_counts = || {
+        bound(
+            &feed,
+            "like",
+            SubQueryKind::Count,
+            BindingSource::Page,
+            "$id",
+            "postId",
+            None,
+        )
+    };
+    let round_trip = |query: &DriveDocumentQuery, expected: Vec<[u8; 32]>, what: &str| {
+        let materialized = drive
+            .query_composite_documents(query, None, None, pv)
+            .unwrap_or_else(|e| panic!("{what} materializes: {e}"))
+            .result;
+        assert_eq!(ids(&materialized.page_documents), expected, "{what}");
+        let (proof, _) = drive
+            .query_composite_documents_with_proof(query, pv)
+            .unwrap_or_else(|e| panic!("{what} proves: {e}"));
+        let (_, verified) = query
+            .verify_composite_documents_proof(&proof, pv)
+            .unwrap_or_else(|e| panic!("{what} verifies: {e}"));
+        assert_eq!(verified.page_documents, materialized.page_documents);
+        assert_eq!(verified.sub_results, materialized.sub_results);
+        materialized
+    };
+
+    // A limit the page does not fill: the whole timeline comes back.
+    let full = timeline_page(&feed, "dash", 20).with_sub_queries(vec![like_counts()]);
+    let result = round_trip(
+        &full,
+        vec![POST_C, POST_B, POST_A],
+        "the unfilled timeline page",
+    );
+    assert_eq!(
+        counts(&result.sub_results[0]),
+        BTreeMap::from([(POST_A, 2), (POST_B, 1)])
+    );
+
+    // A limit the page fills: the newest two, and only their counts.
+    let cut = timeline_page(&feed, "dash", 2).with_sub_queries(vec![like_counts()]);
+    let result = round_trip(&cut, vec![POST_C, POST_B], "the filled timeline page");
+    assert_eq!(
+        counts(&result.sub_results[0]),
+        BTreeMap::from([(POST_B, 1)])
+    );
+}
+
+/// A timeline page whose only bound sub-query derives nothing is a proof
+/// of the page alone; it is built and read in the same lifted-limit form
+/// as a merged one, so the page's proof shape does not depend on what
+/// its sub-queries derived.
+#[test]
+fn should_prove_a_timeline_page_alone_in_the_merged_limit_form() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    // Two more `btc` posts quoting nothing: the timeline holds three
+    // keys, the page takes the newest two, and the quoted-post join
+    // derives no value.
+    const POST_E: [u8; 32] = [0xF6; 32];
+    const POST_F: [u8; 32] = [0xF7; 32];
+    insert_post(&drive, &feed, POST_E, OWNER_1, "btc", None, 5);
+    insert_post(&drive, &feed, POST_F, OWNER_2, "btc", None, 6);
+    let query = timeline_page(&feed, "btc", 2).with_sub_queries(vec![bound(
+        &feed,
+        "post",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "quotedPostId",
+        "$id",
+        None,
+    )]);
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("materializes")
+        .result;
+    assert_eq!(ids(&materialized.page_documents), vec![POST_F, POST_E]);
+    assert!(materialized.sub_results[0].documents().is_empty());
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("proves");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("verifies");
+    assert_eq!(verified.page_documents, materialized.page_documents);
+    assert_eq!(verified.sub_results, materialized.sub_results);
+}
+
+/// A limited lookup that feeds a later binding is itself bootstrapped
+/// out of the merged proof. Its index level holds one key per bound
+/// value, more than its limit, so it too must be read under the cap the
+/// merge lifted its limit into.
+#[test]
+fn should_bootstrap_a_limited_lookup_that_feeds_a_later_binding() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let query = timeline_page(&feed, "dash", 20).with_sub_queries(vec![
+        // One repost across the page's three posts (A and B have some).
+        bound(
+            &feed,
+            "repost",
+            SubQueryKind::Documents,
+            BindingSource::Page,
+            "$id",
+            "postId",
+            Some(1),
+        ),
+        // The likes of whichever post that repost points at.
+        bound(
+            &feed,
+            "like",
+            SubQueryKind::Count,
+            BindingSource::SubQuery(0),
+            "postId",
+            "postId",
+            None,
+        ),
+    ]);
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("materializes")
+        .result;
+    assert_eq!(
+        ids(&materialized.page_documents),
+        vec![POST_C, POST_B, POST_A]
+    );
+    let reposted = post_ids_of(&materialized.sub_results[0], "postId");
+    assert_eq!(reposted.len(), 1, "the lookup's limit holds");
+    let expected_likes = if reposted[0] == POST_A { 2 } else { 1 };
+    assert_eq!(
+        counts(&materialized.sub_results[1]),
+        BTreeMap::from([(reposted[0], expected_likes)])
+    );
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("proves");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("verifies");
+    assert_eq!(verified.page_documents, materialized.page_documents);
+    assert_eq!(verified.sub_results, materialized.sub_results);
+}
+
+/// An empty index branch on the page's walk. The fixture preallocates
+/// `like.byHashtagPost` buckets when a post is inserted, so post C,
+/// which nobody liked, holds an empty bucket the newest-first walk
+/// visits before B's and A's. Grovedb charges that bucket against a
+/// global limit but not against the per-instance cap the proof carries,
+/// so a page materialized through the plain lowering would stop one row
+/// short of the proven page, and the counts derived from it would leave
+/// the proof missing a branch. Materialization runs the proof's own
+/// query, so both sides agree.
+#[test]
+fn should_materialize_the_page_under_the_proofs_budget_past_an_empty_index_branch() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let mut page = DriveDocumentQuery {
+        contract: &feed,
+        document_type: feed.document_type_for_name("like").expect("like"),
+        internal_clauses: InternalClauses::extract_from_clauses(
+            vec![WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("dash".to_string()),
+            }],
+            pv,
+        )
+        .expect("clauses extract"),
+        offset: None,
+        limit: Some(2),
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
+    };
+    page.order_by.insert(
+        "postId".to_string(),
+        OrderClause {
+            field: "postId".to_string(),
+            ascending: false,
+        },
+    );
+    let query = page.with_sub_queries(vec![bound(
+        &feed,
+        "repost",
+        SubQueryKind::Count,
+        BindingSource::Page,
+        "postId",
+        "postId",
+        None,
+    )]);
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("materializes")
+        .result;
+    // Past C's empty bucket: B's one like, then the first of A's two.
+    let liked: Vec<[u8; 32]> = materialized
+        .page_documents
+        .iter()
+        .map(|d| {
+            d.properties()
+                .get("postId")
+                .expect("postId present")
+                .to_identifier()
+                .expect("identifier")
+                .to_buffer()
+        })
+        .collect();
+    assert_eq!(liked, vec![POST_B, POST_A]);
+    assert_eq!(
+        counts(&materialized.sub_results[0]),
+        BTreeMap::from([(POST_A, 1), (POST_B, 2)])
+    );
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("proves");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("verifies");
+    assert_eq!(verified.page_documents, materialized.page_documents);
+    assert_eq!(verified.sub_results, materialized.sub_results);
+}
+
+/// Five quoted posts in key order (tagged "btc", so they stay off the
+/// "dash" page) and the five page posts quoting them.
+const QUOTED: [[u8; 32]; 5] = [[0x10; 32], [0x20; 32], [0x30; 32], [0x40; 32], [0x50; 32]];
+const QUOTING: [[u8; 32]; 5] = [[0x91; 32], [0x92; 32], [0x93; 32], [0x94; 32], [0x95; 32]];
+
+/// Inserts every quoted post except `missing`, and every quoting post.
+fn setup_quoting_page(missing: &[[u8; 32]]) -> (crate::drive::Drive, DataContract) {
+    let (drive, feed, _dashpay) = setup();
+    for (i, quoted) in QUOTED.iter().enumerate() {
+        if !missing.contains(quoted) {
+            insert_post(&drive, &feed, *quoted, OWNER_2, "btc", None, 1 + i as u64);
+        }
+        insert_post(
+            &drive,
+            &feed,
+            QUOTING[i],
+            OWNER_1,
+            "dash",
+            Some(*quoted),
+            10 + i as u64,
+        );
+    }
+    (drive, feed)
+}
+
+fn quoted_posts_join(feed: &DataContract) -> DriveDocumentQuery<'_> {
+    page_by_hashtag(feed, "dash", Some(10)).with_sub_queries(vec![bound(
+        feed,
+        "post",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "quotedPostId",
+        "$id",
+        None,
+    )])
+}
+
+/// The by-id join's counterpart of the chained soundness pair, half
+/// one: with a quoted post NOT in state, the honest merged proof still
+/// satisfies grovedb's verification of the full derived query, so the
+/// absence is proven and only the assembly refuses the result today.
+#[test]
+fn should_prove_the_absence_of_a_missing_joined_document() {
+    let pv = platform_version();
+    let mut cases: Vec<Vec<[u8; 32]>> = QUOTED.iter().map(|post| vec![*post]).collect();
+    cases.push(vec![QUOTED[1], QUOTED[2]]);
+    cases.push(QUOTED.to_vec());
+
+    for missing in cases {
+        let (drive, feed) = setup_quoting_page(&missing);
+        let query = quoted_posts_join(&feed);
+        let (proof, page_documents) = drive
+            .query_composite_documents_with_proof(&query, pv)
+            .expect("the proof generates whether or not the quoted posts exist");
+        let derived = query
+            .derive_all(&page_documents, |_| None)
+            .expect("derived values");
+        assert_eq!(derived[0].len(), QUOTED.len());
+
+        let (page, sub_path_queries) = query
+            .proof_path_queries(&derived, pv)
+            .expect("path queries");
+        let merged = DriveDocumentQuery::merged_path_query(&page, &sub_path_queries, pv)
+            .expect("merged query");
+        let (_root, trios) =
+            grovedb::GroveDb::verify_query(&proof, &merged, &pv.drive.grove_version)
+                .expect("grovedb verifies the merged query with the missing ids in it");
+        let proved_quoted: Vec<([u8; 32], bool)> = trios
+            .into_iter()
+            .filter_map(|(_, key, element)| {
+                let id: [u8; 32] = key.as_slice().try_into().ok()?;
+                QUOTED.contains(&id).then_some((id, element.is_some()))
+            })
+            .collect();
+        let present: Vec<[u8; 32]> = proved_quoted
+            .iter()
+            .filter(|(_, is_present)| *is_present)
+            .map(|(id, _)| *id)
+            .collect();
+        let expected: Vec<[u8; 32]> = QUOTED
+            .iter()
+            .filter(|post| !missing.contains(post))
+            .copied()
+            .collect();
+        assert_eq!(present, expected, "missing {missing:?}");
+
+        let refused = query.verify_composite_documents_proof(&proof, pv);
+        assert!(
+            matches!(refused, Err(Error::Proof(_))),
+            "the assembly is what refuses a dangling join today, got {refused:?}"
+        );
+    }
+}
+
+/// Half two: withholding an EXISTING quoted post's id from the join
+/// component leaves the proof without coverage for a key the verifier's
+/// re-derived query demands; grovedb refuses it before any assembly
+/// rule.
+#[test]
+fn should_reject_a_proof_withholding_an_existing_joined_document() {
+    let pv = platform_version();
+    let (drive, feed) = setup_quoting_page(&[]);
+    let query = quoted_posts_join(&feed);
+    let (_honest_proof, page_documents) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("the honest proof generates");
+    let honest = query
+        .derive_all(&page_documents, |_| None)
+        .expect("derived values");
+
+    let mut cases: Vec<Vec<[u8; 32]>> = QUOTED.iter().map(|post| vec![*post]).collect();
+    cases.push(vec![QUOTED[1], QUOTED[2]]);
+    cases.push(vec![QUOTED[0], QUOTED[4]]);
+
+    for withheld in cases {
+        let mut served = honest.clone();
+        served[0].retain(|id| !withheld.contains(&id.to_buffer()));
+        let (page, sub_path_queries) = query.proof_path_queries(&served, pv).expect("path queries");
+        let merged = DriveDocumentQuery::merged_path_query(&page, &sub_path_queries, pv)
+            .expect("merged query");
+        let dishonest_proof = drive
+            .grove
+            .prove_query(&merged, None, &pv.drive.grove_version)
+            .unwrap()
+            .expect("the dishonest proof generates");
+
+        let refused = query.verify_composite_documents_proof(&dishonest_proof, pv);
+        assert!(
+            matches!(refused, Err(Error::GroveDB(_))),
+            "withholding {:?} must be refused by grovedb, got {refused:?}",
+            withheld.iter().map(|id| id[0]).collect::<Vec<_>>()
+        );
+    }
+}
+
+fn delete_post(drive: &crate::drive::Drive, contract: &DataContract, id: [u8; 32]) {
+    drive
+        .delete_document_for_contract(
+            Identifier::from(id),
+            contract,
+            "post",
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version(),
+            None,
+        )
+        .expect("expected to delete the post");
+}
+
+/// A by-id join off a `deletableDocument` property leaves a deleted
+/// quoted post out instead of failing the composition, and a later
+/// binding derives from the quoted posts that are still there. The same
+/// state under a `permanentDocument` join is refused
+/// (`should_refuse_a_dangling_reference`).
+#[test]
+fn should_leave_out_a_deleted_document_of_a_deletable_document_join() {
+    let (drive, feed, dashpay) = setup_with_feed(DELETABLE_POSTS_FEED_CONTRACT);
+    seed_feed(&drive, &feed, &dashpay);
+    // A fourth `dash` post quoting A, so the join derives [D, A].
+    insert_post(&drive, &feed, [0xF6; 32], OWNER_2, "dash", Some(POST_A), 5);
+    delete_post(&drive, &feed, POST_D);
+    let pv = platform_version();
+    let query = feed_query(&feed, &dashpay, None);
+
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("a deleted quoted post does not fail a deletableDocument join")
+        .result;
+    let (proof, _page) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("composite proves");
+    let (_root, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("the proof verifies with the deleted quoted post proven absent");
+
+    assert_eq!(
+        ids(&materialized.page_documents),
+        vec![POST_A, POST_B, POST_C, [0xF6; 32]]
+    );
+    assert_eq!(
+        ids(materialized.sub_results[QUOTED_POSTS].documents()),
+        vec![POST_A],
+        "D was deleted, A is still there"
+    );
+    assert_eq!(
+        owner_ids(materialized.sub_results[QUOTED_AUTHOR_PROFILES].documents()),
+        vec![OWNER_1],
+        "derived from the quoted posts that are still in state"
+    );
+    let mut expected_missing = vec![Vec::new(); query.sub_queries.len()];
+    expected_missing[QUOTED_POSTS] = vec![Identifier::from(POST_D)];
+    assert_eq!(
+        materialized.sub_result_missing_ids, expected_missing,
+        "only the by-id join reports, and it reports the deleted post"
+    );
+    assert_eq!(verified.page_documents, materialized.page_documents);
+    assert_eq!(verified.sub_results, materialized.sub_results);
+    assert_eq!(
+        verified.sub_result_missing_ids,
+        materialized.sub_result_missing_ids
+    );
+}
+
+/// What makes leaving a deleted document out safe, on the composite
+/// surface: a prover still cannot pass an EXISTING quoted post off as
+/// deleted. No assembly rule stands behind this one, only grovedb.
+#[test]
+fn should_reject_a_proof_withholding_an_existing_document_of_a_deletable_document_join() {
+    let pv = platform_version();
+    let (drive, feed, _dashpay) = setup_with_feed(DELETABLE_POSTS_FEED_CONTRACT);
+    for (i, quoted) in QUOTED.iter().enumerate() {
+        insert_post(&drive, &feed, *quoted, OWNER_2, "btc", None, 1 + i as u64);
+        insert_post(
+            &drive,
+            &feed,
+            QUOTING[i],
+            OWNER_1,
+            "dash",
+            Some(*quoted),
+            10 + i as u64,
+        );
+    }
+    // One quoted post really is deleted, so honest holes and withheld
+    // posts mix.
+    delete_post(&drive, &feed, QUOTED[3]);
+    let query = quoted_posts_join(&feed);
+    let (honest_proof, page_documents) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("the honest proof generates");
+    let honest = query
+        .derive_all(&page_documents, |_| None)
+        .expect("derived values");
+    assert_eq!(honest[0].len(), QUOTED.len());
+
+    let existing: Vec<[u8; 32]> = QUOTED
+        .iter()
+        .filter(|post| **post != QUOTED[3])
+        .copied()
+        .collect();
+    let mut cases: Vec<Vec<[u8; 32]>> = existing.iter().map(|post| vec![*post]).collect();
+    cases.push(vec![QUOTED[2], QUOTED[4]]);
+
+    for withheld in cases {
+        let mut served = honest.clone();
+        served[0].retain(|id| !withheld.contains(&id.to_buffer()));
+        let (page, sub_path_queries) = query.proof_path_queries(&served, pv).expect("path queries");
+        let merged = DriveDocumentQuery::merged_path_query(&page, &sub_path_queries, pv)
+            .expect("merged query");
+        let dishonest_proof = drive
+            .grove
+            .prove_query(&merged, None, &pv.drive.grove_version)
+            .unwrap()
+            .expect("the dishonest proof generates");
+
+        let refused = query.verify_composite_documents_proof(&dishonest_proof, pv);
+        assert!(
+            matches!(refused, Err(Error::GroveDB(_))),
+            "withholding {:?} must be refused by grovedb, got {refused:?}",
+            withheld.iter().map(|id| id[0]).collect::<Vec<_>>()
+        );
+    }
+
+    // The honest proof of the same state verifies, one quoted post short.
+    let (_root, verified) = query
+        .verify_composite_documents_proof(&honest_proof, pv)
+        .expect("the honest proof verifies");
+    assert_eq!(ids(verified.sub_results[0].documents()), existing);
+    assert_eq!(
+        verified.sub_result_missing_ids,
+        vec![vec![Identifier::from(QUOTED[3])]]
+    );
 }

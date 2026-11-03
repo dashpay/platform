@@ -1,6 +1,6 @@
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
-use bincode::{BorrowDecode, Decode, Encode};
+use bincode::{BorrowDecode, Encode};
 use std::collections::BTreeMap;
 
 impl Encode for DistributionFunction {
@@ -151,155 +151,163 @@ impl Encode for DistributionFunction {
     }
 }
 
-impl<C> Decode<C> for DistributionFunction {
-    fn decode<D: bincode::de::Decoder<Context = C>>(
-        decoder: &mut D,
-    ) -> Result<Self, bincode::error::DecodeError> {
-        let variant = u8::decode(decoder)?;
-        match variant {
-            0 => {
-                let n = TokenAmount::decode(decoder)?;
-                Ok(Self::FixedAmount { amount: n })
+// Share the wire schema and domain checks across both decoding APIs.
+macro_rules! impl_distribution_function_decode {
+    ($decode:ident, $decoder:ident, $method:ident, $untrusted:expr) => {
+        impl<C> bincode::$decode<C> for DistributionFunction {
+            fn $method<D: bincode::de::$decoder<Context = C>>(
+                decoder: &mut D,
+            ) -> Result<Self, bincode::error::DecodeError> {
+                let variant = u8::$method(decoder)?;
+                match variant {
+                    0 => {
+                        let n = TokenAmount::$method(decoder)?;
+                        Ok(Self::FixedAmount { amount: n })
+                    }
+                    1 => {
+                        let min = TokenAmount::$method(decoder)?;
+                        let max = TokenAmount::$method(decoder)?;
+                        Ok(Self::Random { min, max })
+                    }
+                    2 => {
+                        let step_count = u32::$method(decoder)?;
+                        let decrease_per_interval_numerator = u16::$method(decoder)?;
+                        let decrease_per_interval_denominator = u16::$method(decoder)?;
+                        let s = Option::<u64>::$method(decoder)?;
+                        let max_interval_count = Option::<u16>::$method(decoder)?;
+                        let n = TokenAmount::$method(decoder)?;
+                        let trailing_distribution_interval_amount = TokenAmount::$method(decoder)?;
+                        let min_value = Option::<u64>::$method(decoder)?;
+                        Ok(Self::StepDecreasingAmount {
+                            start_decreasing_offset: s,
+                            decrease_per_interval_numerator,
+                            decrease_per_interval_denominator,
+                            step_count,
+                            distribution_start_amount: n,
+                            max_interval_count,
+                            min_value,
+                            trailing_distribution_interval_amount,
+                        })
+                    }
+                    3 => {
+                        let steps = BTreeMap::<u64, TokenAmount>::$method(decoder)?;
+                        Ok(Self::Stepwise(steps))
+                    }
+                    4 => {
+                        let a = i64::$method(decoder)?;
+                        let d = u64::$method(decoder)?;
+                        let s = Option::<u64>::$method(decoder)?;
+                        let b = TokenAmount::$method(decoder)?;
+                        let min_value = Option::<u64>::$method(decoder)?;
+                        let max_value = Option::<u64>::$method(decoder)?;
+                        Ok(Self::Linear {
+                            a,
+                            d,
+                            start_step: s,
+                            starting_amount: b,
+                            min_value,
+                            max_value,
+                        })
+                    }
+                    5 => {
+                        let a = i64::$method(decoder)?;
+                        let d = u64::$method(decoder)?;
+                        let m = i64::$method(decoder)?;
+                        let n = u64::$method(decoder)?;
+                        let o = i64::$method(decoder)?;
+                        let s = Option::<u64>::$method(decoder)?;
+                        let b = TokenAmount::$method(decoder)?;
+                        let min_value = Option::<u64>::$method(decoder)?;
+                        let max_value = Option::<u64>::$method(decoder)?;
+                        Ok(Self::Polynomial {
+                            a,
+                            d,
+                            m,
+                            n,
+                            o,
+                            start_moment: s,
+                            b,
+                            min_value,
+                            max_value,
+                        })
+                    }
+                    6 => {
+                        let a = u64::$method(decoder)?;
+                        let d = u64::$method(decoder)?;
+                        let m = i64::$method(decoder)?;
+                        let n = u64::$method(decoder)?;
+                        let o = i64::$method(decoder)?;
+                        let start_moment = Option::<u64>::$method(decoder)?;
+                        let b = TokenAmount::$method(decoder)?;
+                        let min_value = Option::<u64>::$method(decoder)?;
+                        let max_value = Option::<u64>::$method(decoder)?;
+                        Ok(Self::Exponential {
+                            a,
+                            d,
+                            m,
+                            n,
+                            o,
+                            start_moment,
+                            b,
+                            min_value,
+                            max_value,
+                        })
+                    }
+                    7 => {
+                        let a = i64::$method(decoder)?;
+                        let d = u64::$method(decoder)?;
+                        let m = u64::$method(decoder)?;
+                        let n = u64::$method(decoder)?;
+                        let o = i64::$method(decoder)?;
+                        let s = Option::<u64>::$method(decoder)?;
+                        let b = TokenAmount::$method(decoder)?;
+                        let min_value = Option::<u64>::$method(decoder)?;
+                        let max_value = Option::<u64>::$method(decoder)?;
+                        Ok(Self::Logarithmic {
+                            a,
+                            d,
+                            m,
+                            n,
+                            o,
+                            start_moment: s,
+                            b,
+                            min_value,
+                            max_value,
+                        })
+                    }
+                    8 => {
+                        let a = i64::$method(decoder)?;
+                        let d = u64::$method(decoder)?;
+                        let m = u64::$method(decoder)?;
+                        let n = u64::$method(decoder)?;
+                        let o = i64::$method(decoder)?;
+                        let s = Option::<u64>::$method(decoder)?;
+                        let b = TokenAmount::$method(decoder)?;
+                        let min_value = Option::<u64>::$method(decoder)?;
+                        let max_value = Option::<u64>::$method(decoder)?;
+                        Ok(Self::InvertedLogarithmic {
+                            a,
+                            d,
+                            m,
+                            n,
+                            o,
+                            start_moment: s,
+                            b,
+                            min_value,
+                            max_value,
+                        })
+                    }
+                    _ => Err(bincode::error::DecodeError::OtherString(
+                        "Invalid variant".into(),
+                    )),
+                }
             }
-            1 => {
-                let min = TokenAmount::decode(decoder)?;
-                let max = TokenAmount::decode(decoder)?;
-                Ok(Self::Random { min, max })
-            }
-            2 => {
-                let step_count = u32::decode(decoder)?;
-                let decrease_per_interval_numerator = u16::decode(decoder)?;
-                let decrease_per_interval_denominator = u16::decode(decoder)?;
-                let s = Option::<u64>::decode(decoder)?;
-                let max_interval_count = Option::<u16>::decode(decoder)?;
-                let n = TokenAmount::decode(decoder)?;
-                let trailing_distribution_interval_amount = TokenAmount::decode(decoder)?;
-                let min_value = Option::<u64>::decode(decoder)?;
-                Ok(Self::StepDecreasingAmount {
-                    start_decreasing_offset: s,
-                    decrease_per_interval_numerator,
-                    decrease_per_interval_denominator,
-                    step_count,
-                    distribution_start_amount: n,
-                    max_interval_count,
-                    min_value,
-                    trailing_distribution_interval_amount,
-                })
-            }
-            3 => {
-                let steps = BTreeMap::<u64, TokenAmount>::decode(decoder)?;
-                Ok(Self::Stepwise(steps))
-            }
-            4 => {
-                let a = i64::decode(decoder)?;
-                let d = u64::decode(decoder)?;
-                let s = Option::<u64>::decode(decoder)?;
-                let b = TokenAmount::decode(decoder)?;
-                let min_value = Option::<u64>::decode(decoder)?;
-                let max_value = Option::<u64>::decode(decoder)?;
-                Ok(Self::Linear {
-                    a,
-                    d,
-                    start_step: s,
-                    starting_amount: b,
-                    min_value,
-                    max_value,
-                })
-            }
-            5 => {
-                let a = i64::decode(decoder)?;
-                let d = u64::decode(decoder)?;
-                let m = i64::decode(decoder)?;
-                let n = u64::decode(decoder)?;
-                let o = i64::decode(decoder)?;
-                let s = Option::<u64>::decode(decoder)?;
-                let b = TokenAmount::decode(decoder)?;
-                let min_value = Option::<u64>::decode(decoder)?;
-                let max_value = Option::<u64>::decode(decoder)?;
-                Ok(Self::Polynomial {
-                    a,
-                    d,
-                    m,
-                    n,
-                    o,
-                    start_moment: s,
-                    b,
-                    min_value,
-                    max_value,
-                })
-            }
-            6 => {
-                let a = u64::decode(decoder)?;
-                let d = u64::decode(decoder)?;
-                let m = i64::decode(decoder)?;
-                let n = u64::decode(decoder)?;
-                let o = i64::decode(decoder)?;
-                let start_moment = Option::<u64>::decode(decoder)?;
-                let b = TokenAmount::decode(decoder)?;
-                let min_value = Option::<u64>::decode(decoder)?;
-                let max_value = Option::<u64>::decode(decoder)?;
-                Ok(Self::Exponential {
-                    a,
-                    d,
-                    m,
-                    n,
-                    o,
-                    start_moment,
-                    b,
-                    min_value,
-                    max_value,
-                })
-            }
-            7 => {
-                let a = i64::decode(decoder)?;
-                let d = u64::decode(decoder)?;
-                let m = u64::decode(decoder)?;
-                let n = u64::decode(decoder)?;
-                let o = i64::decode(decoder)?;
-                let s = Option::<u64>::decode(decoder)?;
-                let b = TokenAmount::decode(decoder)?;
-                let min_value = Option::<u64>::decode(decoder)?;
-                let max_value = Option::<u64>::decode(decoder)?;
-                Ok(Self::Logarithmic {
-                    a,
-                    d,
-                    m,
-                    n,
-                    o,
-                    start_moment: s,
-                    b,
-                    min_value,
-                    max_value,
-                })
-            }
-            8 => {
-                let a = i64::decode(decoder)?;
-                let d = u64::decode(decoder)?;
-                let m = u64::decode(decoder)?;
-                let n = u64::decode(decoder)?;
-                let o = i64::decode(decoder)?;
-                let s = Option::<u64>::decode(decoder)?;
-                let b = TokenAmount::decode(decoder)?;
-                let min_value = Option::<u64>::decode(decoder)?;
-                let max_value = Option::<u64>::decode(decoder)?;
-                Ok(Self::InvertedLogarithmic {
-                    a,
-                    d,
-                    m,
-                    n,
-                    o,
-                    start_moment: s,
-                    b,
-                    min_value,
-                    max_value,
-                })
-            }
-            _ => Err(bincode::error::DecodeError::OtherString(
-                "Invalid variant".into(),
-            )),
         }
-    }
+    };
 }
+impl_distribution_function_decode!(Decode, Decoder, decode, false);
+impl_distribution_function_decode!(DecodeUntrusted, UntrustedDecoder, decode_untrusted, true);
+bincode::impl_borrow_decode_untrusted!(DistributionFunction);
 
 impl<'de, C> BorrowDecode<'de, C> for DistributionFunction {
     fn borrow_decode<D: bincode::de::BorrowDecoder<'de, Context = C>>(

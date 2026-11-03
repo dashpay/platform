@@ -155,7 +155,7 @@ mod tests {
     use dpp::identity::contract_bounds::ContractBounds;
     use dpp::identity::{Identity, KeyID, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::{Identifier, IdentityPublicKey};
-    use dpp::serialization::PlatformDeserializable;
+    use dpp::serialization::PlatformDeserializableUntrusted;
     use drive::util::test_helpers::test_utils::identities::create_test_identity_with_rng;
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
@@ -831,9 +831,11 @@ mod tests {
                     .filter(|key| key.purpose == purpose as i32)
                     .fold(vec![], |mut acc, keys| {
                         let keys = keys.keys_bytes.iter().map(|key_bytes| {
-                            IdentityPublicKey::deserialize_from_bytes(key_bytes.as_slice())
-                                .unwrap()
-                                .id()
+                            IdentityPublicKey::deserialize_from_bytes_untrusted(
+                                key_bytes.as_slice(),
+                            )
+                            .unwrap()
+                            .id()
                         });
                         acc.extend(keys);
                         acc
@@ -1136,9 +1138,11 @@ mod tests {
                     .filter(|key| key.purpose == purpose as i32)
                     .fold(vec![], |mut acc, keys| {
                         let keys = keys.keys_bytes.iter().map(|key_bytes| {
-                            IdentityPublicKey::deserialize_from_bytes(key_bytes.as_slice())
-                                .unwrap()
-                                .id()
+                            IdentityPublicKey::deserialize_from_bytes_untrusted(
+                                key_bytes.as_slice(),
+                            )
+                            .unwrap()
+                            .id()
                         });
                         acc.extend(keys);
                         acc

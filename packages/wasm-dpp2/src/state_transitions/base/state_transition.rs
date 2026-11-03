@@ -15,16 +15,19 @@ use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::{Encoding, decode, encode};
 use dpp::prelude::Identifier;
 use dpp::prelude::{IdentityNonce, UserFeeIncrease};
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
+use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable, Signable};
 use dpp::state_transition::StateTransition::{
-    Batch, DataContractCreate, DataContractUpdate, IdentityCreditTransfer,
-    IdentityCreditWithdrawal, IdentityUpdate, MasternodeVote,
+    Batch, ContractFeeClaim, ContractUserModeration, DataContractCreate, DataContractUpdate,
+    IdentityCreditTransfer, IdentityCreditWithdrawal, IdentityKeyLimitsUpdate, IdentityUpdate,
+    MasternodeVote, ShieldFromIdentity,
 };
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dpp::state_transition::contract_fee_claim_transition::accessors::ContractFeeClaimTransitionAccessorsV0;
+use dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
@@ -32,11 +35,13 @@ use dpp::state_transition::data_contract_update_transition::accessors::DataContr
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
+use dpp::state_transition::identity_key_limits_update_transition::accessors::IdentityKeyLimitsUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_from_addresses_transition::accessors::IdentityTopUpFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
+use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
 use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionSigningOptions,
 };
@@ -193,6 +198,39 @@ impl StateTransitionWasm {
 
                 st.verify_public_key_is_enabled(&public_key.clone().into())?;
             }
+            IdentityKeyLimitsUpdate(st) => {
+                st.verify_public_key_level_and_purpose(
+                    &public_key.clone().into(),
+                    StateTransitionSigningOptions {
+                        allow_signing_with_any_security_level,
+                        allow_signing_with_any_purpose,
+                    },
+                )?;
+
+                st.verify_public_key_is_enabled(&public_key.clone().into())?;
+            }
+            ContractUserModeration(st) => {
+                st.verify_public_key_level_and_purpose(
+                    &public_key.clone().into(),
+                    StateTransitionSigningOptions {
+                        allow_signing_with_any_security_level,
+                        allow_signing_with_any_purpose,
+                    },
+                )?;
+
+                st.verify_public_key_is_enabled(&public_key.clone().into())?;
+            }
+            ContractFeeClaim(st) => {
+                st.verify_public_key_level_and_purpose(
+                    &public_key.clone().into(),
+                    StateTransitionSigningOptions {
+                        allow_signing_with_any_security_level,
+                        allow_signing_with_any_purpose,
+                    },
+                )?;
+
+                st.verify_public_key_is_enabled(&public_key.clone().into())?;
+            }
             IdentityCreditTransfer(st) => {
                 st.verify_public_key_level_and_purpose(
                     &public_key.clone().into(),
@@ -205,6 +243,17 @@ impl StateTransitionWasm {
                 st.verify_public_key_is_enabled(&public_key.clone().into())?;
             }
             MasternodeVote(st) => {
+                st.verify_public_key_level_and_purpose(
+                    &public_key.clone().into(),
+                    StateTransitionSigningOptions {
+                        allow_signing_with_any_security_level,
+                        allow_signing_with_any_purpose,
+                    },
+                )?;
+
+                st.verify_public_key_is_enabled(&public_key.clone().into())?;
+            }
+            ShieldFromIdentity(st) => {
                 st.verify_public_key_level_and_purpose(
                     &public_key.clone().into(),
                     StateTransitionSigningOptions {
@@ -240,7 +289,7 @@ impl StateTransitionWasm {
 
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<StateTransitionWasm> {
-        let st = StateTransition::deserialize_from_bytes(bytes.as_slice())?;
+        let st = StateTransition::deserialize_from_bytes_untrusted(bytes.as_slice())?;
 
         Ok(st.into())
     }
@@ -250,7 +299,7 @@ impl StateTransitionWasm {
         let bytes =
             decode(&hex, Encoding::Hex).map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
-        let st = StateTransition::deserialize_from_bytes(bytes.as_slice())?;
+        let st = StateTransition::deserialize_from_bytes_untrusted(bytes.as_slice())?;
 
         Ok(st.into())
     }
@@ -260,7 +309,7 @@ impl StateTransitionWasm {
         let bytes = decode(&base64, Encoding::Base64)
             .map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
-        let st = StateTransition::deserialize_from_bytes(bytes.as_slice())?;
+        let st = StateTransition::deserialize_from_bytes_untrusted(bytes.as_slice())?;
 
         Ok(st.into())
     }
@@ -314,6 +363,11 @@ impl StateTransitionWasm {
             ShieldFromAssetLock(_) => 18,
             ShieldedWithdrawal(_) => 19,
             IdentityCreateFromShieldedPool(_) => 20,
+            ShieldFromIdentity(_) => 21,
+            IdentityTopUpFromShieldedPool(_) => 22,
+            IdentityKeyLimitsUpdate(_) => 23,
+            ContractUserModeration(_) => 24,
+            ContractFeeClaim(_) => 25,
         }
     }
 
@@ -375,6 +429,8 @@ impl StateTransitionWasm {
         match &self.0 {
             DataContractCreate(_) => None,
             DataContractUpdate(contract_update) => Some(contract_update.identity_contract_nonce()),
+            ContractUserModeration(st) => Some(st.identity_contract_nonce()),
+            ContractFeeClaim(st) => Some(st.identity_contract_nonce()),
             Batch(batch) => match batch {
                 BatchTransition::V0(v0) => Some(v0.transitions.first()?.identity_contract_nonce()),
                 BatchTransition::V1(v1) => match v1.transitions.first()? {
@@ -390,9 +446,11 @@ impl StateTransitionWasm {
             IdentityTopUp(_) => None,
             IdentityCreditWithdrawal(_) => None,
             IdentityUpdate(_) => None,
+            IdentityKeyLimitsUpdate(_) => None,
             IdentityCreditTransfer(_) => None,
             MasternodeVote(_) => None,
             IdentityCreditTransferToAddresses(_)
+            | ShieldFromIdentity(_)
             | IdentityCreateFromAddresses(_)
             | IdentityTopUpFromAddresses(_)
             | AddressFundsTransfer(_)
@@ -403,7 +461,8 @@ impl StateTransitionWasm {
             | Unshield(_)
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_)
-            | IdentityCreateFromShieldedPool(_) => None,
+            | IdentityCreateFromShieldedPool(_)
+            | IdentityTopUpFromShieldedPool(_) => None,
         }
     }
 
@@ -418,9 +477,13 @@ impl StateTransitionWasm {
             IdentityTopUp(_) => None,
             IdentityCreditWithdrawal(withdrawal) => Some(withdrawal.nonce()),
             IdentityUpdate(identity_update) => Some(identity_update.nonce()),
+            IdentityKeyLimitsUpdate(st) => Some(st.nonce()),
+            ContractUserModeration(_) => None,
+            ContractFeeClaim(_) => None,
             IdentityCreditTransfer(credit_transfer) => Some(credit_transfer.nonce()),
             MasternodeVote(mn_vote) => Some(mn_vote.nonce()),
             IdentityCreditTransferToAddresses(ct) => Some(ct.nonce()),
+            ShieldFromIdentity(st) => Some(st.nonce()),
             IdentityCreateFromAddresses(_) => None,
             IdentityTopUpFromAddresses(_) => None,
             AddressFundsTransfer(_)
@@ -431,7 +494,8 @@ impl StateTransitionWasm {
             | Unshield(_)
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_)
-            | IdentityCreateFromShieldedPool(_) => None,
+            | IdentityCreateFromShieldedPool(_)
+            | IdentityTopUpFromShieldedPool(_) => None,
         }
     }
 
@@ -537,6 +601,21 @@ impl StateTransitionWasm {
 
                 self.0 = IdentityUpdate(identity_update);
             }
+            IdentityKeyLimitsUpdate(mut st) => {
+                st.set_identity_id(owner_id);
+
+                self.0 = IdentityKeyLimitsUpdate(st);
+            }
+            ContractUserModeration(mut st) => {
+                st.set_owner_id(owner_id);
+
+                self.0 = ContractUserModeration(st);
+            }
+            ContractFeeClaim(mut st) => {
+                st.set_owner_id(owner_id);
+
+                self.0 = ContractFeeClaim(st);
+            }
             IdentityCreditTransfer(mut credit_transfer) => {
                 credit_transfer.set_identity_id(owner_id);
 
@@ -551,6 +630,10 @@ impl StateTransitionWasm {
             IdentityCreditTransferToAddresses(mut ct) => {
                 ct.set_identity_id(owner_id);
                 self.0 = IdentityCreditTransferToAddresses(ct);
+            }
+            ShieldFromIdentity(mut st) => {
+                st.set_identity_id(owner_id);
+                self.0 = ShieldFromIdentity(st);
             }
             IdentityCreateFromAddresses(_) => {
                 return Err(WasmDppError::invalid_argument(
@@ -574,7 +657,8 @@ impl StateTransitionWasm {
             | Unshield(_)
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_)
-            | IdentityCreateFromShieldedPool(_) => {
+            | IdentityCreateFromShieldedPool(_)
+            | IdentityTopUpFromShieldedPool(_) => {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set owner for shielded transition",
                 ));
@@ -607,6 +691,16 @@ impl StateTransitionWasm {
 
                 batch.into()
             }
+            ContractUserModeration(mut st) => {
+                st.set_identity_contract_nonce(nonce);
+
+                st.into()
+            }
+            ContractFeeClaim(mut st) => {
+                st.set_identity_contract_nonce(nonce);
+
+                st.into()
+            }
             StateTransition::IdentityCreate(_) => {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set identity contract nonce for Identity Create",
@@ -627,6 +721,11 @@ impl StateTransitionWasm {
                     "Cannot set identity contract nonce for Identity Update",
                 ));
             }
+            IdentityKeyLimitsUpdate(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity contract nonce for Identity Key Limits Update",
+                ));
+            }
             IdentityCreditTransfer(_) => {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set identity contract nonce for Identity Credit Transfer",
@@ -638,6 +737,7 @@ impl StateTransitionWasm {
                 ));
             }
             IdentityCreditTransferToAddresses(_)
+            | ShieldFromIdentity(_)
             | IdentityCreateFromAddresses(_)
             | IdentityTopUpFromAddresses(_)
             | AddressFundsTransfer(_)
@@ -652,7 +752,8 @@ impl StateTransitionWasm {
             | Unshield(_)
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_)
-            | IdentityCreateFromShieldedPool(_) => {
+            | IdentityCreateFromShieldedPool(_)
+            | IdentityTopUpFromShieldedPool(_) => {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set identity contract nonce for shielded transition",
                 ));
@@ -673,6 +774,10 @@ impl StateTransitionWasm {
                     DataContractCreateTransition::V0(mut v0) => {
                         v0.identity_nonce = nonce;
                         v0.into()
+                    }
+                    DataContractCreateTransition::V1(mut v1) => {
+                        v1.identity_nonce = nonce;
+                        v1.into()
                     }
                 };
 
@@ -708,6 +813,21 @@ impl StateTransitionWasm {
 
                 identity_update.into()
             }
+            IdentityKeyLimitsUpdate(mut st) => {
+                st.set_nonce(nonce);
+
+                st.into()
+            }
+            ContractUserModeration(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity nonce for Contract User Moderation",
+                ));
+            }
+            ContractFeeClaim(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity nonce for Contract Fee Claim",
+                ));
+            }
             IdentityCreditTransfer(mut credit_transfer) => {
                 credit_transfer.set_nonce(nonce);
 
@@ -727,6 +847,10 @@ impl StateTransitionWasm {
             IdentityCreditTransferToAddresses(mut transfer) => {
                 transfer.set_nonce(nonce);
                 transfer.into()
+            }
+            ShieldFromIdentity(mut st) => {
+                st.set_nonce(nonce);
+                st.into()
             }
             IdentityCreateFromAddresses(_) => {
                 return Err(WasmDppError::invalid_argument(
@@ -750,7 +874,8 @@ impl StateTransitionWasm {
             | Unshield(_)
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_)
-            | IdentityCreateFromShieldedPool(_) => {
+            | IdentityCreateFromShieldedPool(_)
+            | IdentityTopUpFromShieldedPool(_) => {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set identity nonce for shielded transition",
                 ));

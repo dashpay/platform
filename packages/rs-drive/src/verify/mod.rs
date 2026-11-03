@@ -35,6 +35,10 @@ pub mod system;
 
 /// Address funds proof verification module
 pub mod address_funds;
+/// Contract group proof verification
+pub mod contract_groups;
+/// Contract moderation proofs: one identity's status and pages of a contract's lists.
+pub mod contract_moderation;
 /// Group proof verification module
 pub mod group;
 /// Shielded pool proof verification module

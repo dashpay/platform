@@ -175,6 +175,15 @@ trait SpvChannel: Send + Sync {
     /// peer — the two conditions whose absence makes `broadcast_and_wait`
     /// fail before any send.
     async fn wait_until_ready(&self, timeout: Duration) -> bool;
+
+    /// What the SPV header store holds at `height`. A channel with no header
+    /// store answers `NoSource`.
+    async fn header_hash_at(
+        &self,
+        _height: u32,
+    ) -> crate::wallet::asset_lock::sync::locate::HeaderLookup {
+        crate::wallet::asset_lock::sync::locate::HeaderLookup::NoSource
+    }
 }
 
 #[async_trait]
@@ -190,6 +199,13 @@ impl SpvChannel for SpvRuntime {
 
     async fn wait_until_ready(&self, timeout: Duration) -> bool {
         SpvRuntime::wait_until_ready(self, timeout).await
+    }
+
+    async fn header_hash_at(
+        &self,
+        height: u32,
+    ) -> crate::wallet::asset_lock::sync::locate::HeaderLookup {
+        SpvRuntime::header_hash_at(self, height).await
     }
 }
 
@@ -249,6 +265,16 @@ impl TransactionBroadcaster for SpvBroadcaster {
 
     async fn wait_until_ready(&self, timeout: Duration) -> bool {
         self.spv.wait_until_ready(timeout).await
+    }
+}
+
+#[async_trait]
+impl crate::wallet::asset_lock::sync::locate::BlockHeaderSource for SpvBroadcaster {
+    async fn header_hash_at(
+        &self,
+        height: u32,
+    ) -> crate::wallet::asset_lock::sync::locate::HeaderLookup {
+        self.spv.header_hash_at(height).await
     }
 }
 

@@ -62,6 +62,38 @@ await sdk.identities.creditTransfer({
 });
 ```
 
+### Register a key with a budget or an expiry
+
+A key added with `totalBudget` or `expiresAt` is registered with those limits (protocol version 14): an application key that can spend at most so many credits, or that stops signing at a block time. Only AUTHENTICATION keys below MASTER may carry them. `identityUpdate` assigns the key id; the signer holds the identity's MASTER key and the new key's private key, since a new key signs its own registration.
+
+```typescript
+const appKey = new IdentityPublicKeyInCreation({
+  keyId: 0,                      // reassigned to the next free id
+  purpose: 'AUTHENTICATION',
+  securityLevel: 'CRITICAL',
+  keyType: 'ECDSA_SECP256K1',
+  data: appKeyPublicKeyBytes,
+  totalBudget: 500000000n,       // credits this key may take from the identity over its lifetime
+  expiresAt: 1800000000000n,     // optional: block time in milliseconds from which it stops signing
+});
+
+await sdk.identities.update({ identity, addPublicKeys: [appKey], signer });
+```
+
+### Raise a key's limits
+
+A key registered with a budget or an expiry can be topped up, or have its expiry moved later, without being replaced. The signer holds a MASTER key, or a CRITICAL authentication key without limits and without contract bounds; the budget is added to the total the passed identity's key shows.
+
+```typescript
+const key = await sdk.identities.updateKeyLimits({
+  identity,
+  keyId: 5,
+  addBudget: 100000000n,        // credits added to the budget and to what is left of it
+  expiresAt: 1800000000000n,    // optional: a later expiry in milliseconds
+  signer,
+});
+```
+
 ## Document operations
 
 ### Create a document

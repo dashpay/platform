@@ -489,3 +489,7 @@ mod json_convertible_tests_instantassetlockproof {
         assert_eq!(original, recovered);
     }
 }
+
+// This graph decodes raw proof fields through Serde before validating the
+// consensus bytes. The untrusted adapter suppresses allocation hints.
+impl<'de> bincode::serde::DeserializeUntrusted<'de> for InstantAssetLockProof {}

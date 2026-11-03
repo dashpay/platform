@@ -1,8 +1,9 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::supported_grovedb_proof;
 use crate::utils::serialization::identifier_to_base58;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 use dpp::version::PlatformVersion;
 use dpp::voting::votes::resource_vote::ResourceVote;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
@@ -95,7 +96,11 @@ pub fn verify_identity_votes_given_proof_vec(
     let contract_lookup_fn = create_contract_lookup_fn(contract_lookup, platform_version)?;
 
     let (root_hash, votes_vec): (RootHash, Vec<(Identifier, ResourceVote)>) = query
-        .verify_identity_votes_given_proof(&proof_vec, &*contract_lookup_fn, platform_version)
+        .verify_identity_votes_given_proof(
+            supported_grovedb_proof(&proof_vec, platform_version)?,
+            &*contract_lookup_fn,
+            platform_version,
+        )
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert to JS array of tuples
@@ -144,7 +149,11 @@ pub fn verify_identity_votes_given_proof_map(
     let contract_lookup_fn = create_contract_lookup_fn(contract_lookup, platform_version)?;
 
     let (root_hash, votes_map): (RootHash, BTreeMap<Identifier, ResourceVote>) = query
-        .verify_identity_votes_given_proof(&proof_vec, &*contract_lookup_fn, platform_version)
+        .verify_identity_votes_given_proof(
+            supported_grovedb_proof(&proof_vec, platform_version)?,
+            &*contract_lookup_fn,
+            platform_version,
+        )
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert to JS object with base58 keys
@@ -198,8 +207,11 @@ fn create_contract_lookup_fn<'a>(
         let contract_bytes = contract_uint8.to_vec();
 
         // Deserialize the contract
-        let contract = DataContract::versioned_deserialize(&contract_bytes, true, platform_version)
-            .map_err(|e| JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e)))?;
+        let contract =
+            DataContract::versioned_deserialize_untrusted(&contract_bytes, true, platform_version)
+                .map_err(|e| {
+                    JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e))
+                })?;
 
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         let identifier = contract.id();

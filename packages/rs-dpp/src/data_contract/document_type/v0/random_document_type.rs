@@ -31,7 +31,7 @@
 //!
 //!
 //!
-#[derive(Clone, Copy, Debug, PartialEq, Encode, Decode)]
+#[derive(Clone, Copy, Debug, PartialEq, Encode, Decode, DecodeUntrusted)]
 pub struct FieldTypeWeights {
     pub string_weight: u16,
     pub float_weight: u16,
@@ -41,7 +41,7 @@ pub struct FieldTypeWeights {
     pub byte_array_weight: u16,
 }
 
-#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, Encode, Decode, DecodeUntrusted)]
 pub struct FieldMinMaxBounds {
     pub string_min_len: Range<u16>,
     pub string_has_min_len_chance: f64,
@@ -63,7 +63,7 @@ pub struct FieldMinMaxBounds {
     pub byte_array_has_max_len_chance: f64,
 }
 
-#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, Encode, Decode, DecodeUntrusted)]
 pub struct RandomDocumentTypeParameters {
     pub new_fields_optional_count_range: Range<u16>,
     pub new_fields_required_count_range: Range<u16>,
@@ -112,7 +112,7 @@ use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use platform_value::{platform_value, Identifier};
@@ -156,6 +156,7 @@ impl DocumentTypeV0 {
                 DocumentPropertyType::String(StringPropertySizes {
                     min_length,
                     max_length,
+                    max_bytes: None,
                 })
             } else if random_weight < field_weights.string_weight + field_weights.integer_weight {
                 DocumentPropertyType::I64
@@ -198,6 +199,9 @@ impl DocumentTypeV0 {
                 required,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
+                generated_from: None,
             }
         };
 
@@ -282,7 +286,7 @@ impl DocumentTypeV0 {
                     }
                     serde_json::Value::Object(schema)
                 },
-                DocumentPropertyType::U128 | DocumentPropertyType::U64 | DocumentPropertyType::U32 | DocumentPropertyType::U16 | DocumentPropertyType::U8 |
+                DocumentPropertyType::U128 | DocumentPropertyType::U64 | DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) | DocumentPropertyType::U16 | DocumentPropertyType::U8 |
                     DocumentPropertyType::I128 | DocumentPropertyType::I64 | DocumentPropertyType::I32 | DocumentPropertyType::I16 | DocumentPropertyType::I8   => {
                     let mut schema = serde_json::Map::new();
                     schema.insert("type".to_string(), serde_json::Value::String("integer".to_owned()));
@@ -367,6 +371,68 @@ impl DocumentTypeV0 {
                         "items": items_schema,
                         "byteArray": true,
                     })
+                },
+                DocumentPropertyType::TypedArray(typed_array) => {
+                    // Bounds are only written when declared: a `null` bound is no schema
+                    fn with_bounds(mut schema: serde_json::Value, bounds: [(&str, Option<usize>); 2]) -> serde_json::Value {
+                        if let serde_json::Value::Object(ref mut map) = schema {
+                            for (keyword, bound) in bounds {
+                                if let Some(bound) = bound {
+                                    map.insert(keyword.to_string(), json!(bound));
+                                }
+                            }
+                        }
+                        schema
+                    }
+                    // The element schema that parses back to the element type
+                    let integer = |minimum: Option<i128>, maximum: Option<i128>| {
+                        let mut schema = json!({"type": "integer"});
+                        if let serde_json::Value::Object(ref mut map) = schema {
+                            if let Some(minimum) = minimum {
+                                map.insert("minimum".to_string(), json!(minimum as i64));
+                            }
+                            if let Some(maximum) = maximum {
+                                map.insert("maximum".to_string(), json!(maximum as i64));
+                            }
+                        }
+                        schema
+                    };
+                    let bound = |size: Option<u16>| size.map(usize::from);
+                    let items_schema = match typed_array.item_type.as_ref() {
+                        DocumentPropertyType::U8 => integer(Some(0), Some(u8::MAX.into())),
+                        DocumentPropertyType::I8 => integer(Some(i8::MIN.into()), Some(i8::MAX.into())),
+                        DocumentPropertyType::U16 => integer(Some(0), Some(u16::MAX.into())),
+                        DocumentPropertyType::I16 => integer(Some(i16::MIN.into()), Some(i16::MAX.into())),
+                        DocumentPropertyType::U32 => integer(Some(0), Some(u32::MAX.into())),
+                        DocumentPropertyType::I32 => integer(Some(i32::MIN.into()), Some(i32::MAX.into())),
+                        DocumentPropertyType::U64 => integer(Some(0), None),
+                        DocumentPropertyType::I64 | DocumentPropertyType::U128 | DocumentPropertyType::I128 => integer(None, None),
+                        DocumentPropertyType::F64 | DocumentPropertyType::Date => json!({"type": "number"}),
+                        DocumentPropertyType::String(sizes) => with_bounds(json!({"type": "string"}), [("minLength", bound(sizes.min_length)), ("maxLength", bound(sizes.max_length))]),
+                        DocumentPropertyType::ByteArray(sizes) => with_bounds(json!({"type": "array", "byteArray": true}), [("minItems", bound(sizes.min_size)), ("maxItems", bound(sizes.max_size))]),
+                        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => json!({
+                            "type": "array",
+                            "byteArray": true,
+                            "minItems": 32,
+                            "maxItems": 32,
+                            "contentMediaType": "application/x.dash.dpp.identifier",
+                        }),
+                        DocumentPropertyType::Boolean => json!({"type": "boolean"}),
+                        // The parser admits no other element type
+                        _ => json!({}),
+                    };
+
+                    with_bounds(
+                        json!({
+                            "type": "array",
+                            "items": items_schema,
+                            "uniqueItems": typed_array.unique_items,
+                        }),
+                        [
+                            ("minItems", typed_array.min_items.map(usize::from)),
+                            ("maxItems", Some(usize::from(typed_array.max_items))),
+                        ],
+                    )
                 },
                 DocumentPropertyType::VariableTypeArray(types) => {
                     let types_schema = types.iter().map(|t| {
@@ -486,6 +552,7 @@ impl DocumentTypeV0 {
                 DocumentPropertyType::String(StringPropertySizes {
                     min_length,
                     max_length,
+                    max_bytes: None,
                 })
             } else if random_weight < field_weights.string_weight + field_weights.integer_weight {
                 DocumentPropertyType::I64
@@ -528,6 +595,9 @@ impl DocumentTypeV0 {
                 required,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
+                generated_from: None,
             }
         };
 

@@ -1,19 +1,34 @@
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::{TokenDistributionRecipient, TokenDistributionResolvedRecipient};
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, Encode, DecodeUntrusted};
+use platform_serialization_derive::{PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use crate::prelude::TimestampMillis;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 
 /// Represents the type of token distribution.
 ///
 /// - `PreProgrammed`: A scheduled distribution with predefined rules.
 /// - `Perpetual`: A continuous or recurring distribution.
 #[derive(
-    Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Default,
+    Serialize,
+    Deserialize,
+    Decode,
+    Encode,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Default,
+    DecodeUntrusted,
 )]
 pub enum TokenDistributionType {
     /// A pre-programmed distribution scheduled for a specific time.
@@ -22,13 +37,18 @@ pub enum TokenDistributionType {
 
     /// A perpetual distribution that occurs at regular intervals.
     Perpetual = 1,
+
+    /// A fixed amount every identity may claim exactly once (protocol version 14).
+    OncePerIdentity = 2,
 }
 
 /// Represents a token distribution with a resolved recipient.
 ///
 /// - `PreProgrammed(Identifier)`: A predefined recipient for a scheduled distribution.
 /// - `Perpetual(TokenDistributionResolvedRecipient)`: A resolved recipient for an ongoing distribution.
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[derive(
+    Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd, DecodeUntrusted,
+)]
 #[serde(
     into = "TokenDistributionTypeWithResolvedRecipientRepr",
     from = "TokenDistributionTypeWithResolvedRecipientRepr"
@@ -39,6 +59,9 @@ pub enum TokenDistributionTypeWithResolvedRecipient {
 
     /// A perpetual distribution with a resolved recipient.
     Perpetual(TokenDistributionResolvedRecipient),
+
+    /// A once-per-identity distribution claimed by the given identity.
+    OncePerIdentity(Identifier),
 }
 
 // Internal-`$type` serde shape with a uniform `value` payload (single-payload
@@ -52,6 +75,9 @@ enum TokenDistributionTypeWithResolvedRecipientRepr {
     Perpetual {
         value: TokenDistributionResolvedRecipient,
     },
+    OncePerIdentity {
+        value: Identifier,
+    },
 }
 
 impl From<TokenDistributionTypeWithResolvedRecipient>
@@ -64,6 +90,9 @@ impl From<TokenDistributionTypeWithResolvedRecipient>
             }
             TokenDistributionTypeWithResolvedRecipient::Perpetual(value) => {
                 Self::Perpetual { value }
+            }
+            TokenDistributionTypeWithResolvedRecipient::OncePerIdentity(value) => {
+                Self::OncePerIdentity { value }
             }
         }
     }
@@ -80,6 +109,9 @@ impl From<TokenDistributionTypeWithResolvedRecipientRepr>
             TokenDistributionTypeWithResolvedRecipientRepr::Perpetual { value } => {
                 Self::Perpetual(value)
             }
+            TokenDistributionTypeWithResolvedRecipientRepr::OncePerIdentity { value } => {
+                Self::OncePerIdentity(value)
+            }
         }
     }
 }
@@ -89,7 +121,9 @@ impl From<TokenDistributionTypeWithResolvedRecipientRepr>
 /// - `PreProgrammed(TimestampMillis, Identifier)`: A scheduled distribution with a timestamp and recipient.
 /// - `Perpetual(RewardDistributionMoment, RewardDistributionMoment, TokenDistributionResolvedRecipient)`:
 ///   A perpetual distribution with previous and next distribution moments, along with the resolved recipient.
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[derive(
+    Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd, DecodeUntrusted,
+)]
 #[serde(into = "TokenDistributionInfoRepr", from = "TokenDistributionInfoRepr")]
 pub enum TokenDistributionInfo {
     /// A pre-programmed token distribution set for a specific time.
@@ -100,6 +134,9 @@ pub enum TokenDistributionInfo {
     /// The moment is the beginning of the perpetual distribution cycle
     /// Includes the last and next distribution times and the resolved recipient.
     Perpetual(RewardDistributionMoment, TokenDistributionResolvedRecipient),
+
+    /// A once-per-identity claim: the block time of the claim and the claimant.
+    OncePerIdentity(TimestampMillis, Identifier),
 }
 
 // Internal-`$type` serde shape with named fields (multi-field variants).
@@ -121,6 +158,14 @@ enum TokenDistributionInfoRepr {
         moment: RewardDistributionMoment,
         recipient: TokenDistributionResolvedRecipient,
     },
+    OncePerIdentity {
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(with = "crate::serialization::json_safe_u64")
+        )]
+        timestamp: TimestampMillis,
+        identity: Identifier,
+    },
 }
 
 impl From<TokenDistributionInfo> for TokenDistributionInfoRepr {
@@ -133,6 +178,10 @@ impl From<TokenDistributionInfo> for TokenDistributionInfoRepr {
             TokenDistributionInfo::Perpetual(moment, recipient) => {
                 Self::Perpetual { moment, recipient }
             }
+            TokenDistributionInfo::OncePerIdentity(timestamp, identity) => Self::OncePerIdentity {
+                timestamp,
+                identity,
+            },
         }
     }
 }
@@ -147,6 +196,10 @@ impl From<TokenDistributionInfoRepr> for TokenDistributionInfo {
             TokenDistributionInfoRepr::Perpetual { moment, recipient } => {
                 Self::Perpetual(moment, recipient)
             }
+            TokenDistributionInfoRepr::OncePerIdentity {
+                timestamp,
+                identity,
+            } => Self::OncePerIdentity(timestamp, identity),
         }
     }
 }
@@ -159,6 +212,9 @@ impl From<TokenDistributionInfo> for TokenDistributionTypeWithResolvedRecipient 
             }
             TokenDistributionInfo::Perpetual(_, recipient) => {
                 TokenDistributionTypeWithResolvedRecipient::Perpetual(recipient)
+            }
+            TokenDistributionInfo::OncePerIdentity(_, recipient) => {
+                TokenDistributionTypeWithResolvedRecipient::OncePerIdentity(recipient)
             }
         }
     }
@@ -173,6 +229,9 @@ impl From<&TokenDistributionInfo> for TokenDistributionTypeWithResolvedRecipient
             TokenDistributionInfo::Perpetual(_, recipient) => {
                 TokenDistributionTypeWithResolvedRecipient::Perpetual(recipient.clone())
             }
+            TokenDistributionInfo::OncePerIdentity(_, recipient) => {
+                TokenDistributionTypeWithResolvedRecipient::OncePerIdentity(*recipient)
+            }
         }
     }
 }
@@ -182,6 +241,7 @@ impl fmt::Display for TokenDistributionType {
         match self {
             TokenDistributionType::PreProgrammed => write!(f, "PreProgrammed"),
             TokenDistributionType::Perpetual => write!(f, "Perpetual"),
+            TokenDistributionType::OncePerIdentity => write!(f, "OncePerIdentity"),
         }
     }
 }
@@ -192,11 +252,13 @@ impl fmt::Display for TokenDistributionType {
     Decode,
     Encode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     Debug,
     Clone,
     PartialEq,
     Eq,
+    DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 pub struct TokenDistributionKey {
@@ -207,28 +269,28 @@ pub struct TokenDistributionKey {
 
 // --- canonical conversion trait impls (unification pass 1) ---
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenDistributionTypeWithResolvedRecipient {}
+impl JsonConvertible for TokenDistributionTypeWithResolvedRecipient {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenDistributionTypeWithResolvedRecipient {}
+impl ValueConvertible for TokenDistributionTypeWithResolvedRecipient {}
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenDistributionInfo {}
+impl JsonConvertible for TokenDistributionInfo {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenDistributionInfo {}
+impl ValueConvertible for TokenDistributionInfo {}
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenDistributionType {}
+impl JsonConvertible for TokenDistributionType {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenDistributionType {}
+impl ValueConvertible for TokenDistributionType {}
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenDistributionKey {}
+impl JsonConvertible for TokenDistributionKey {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenDistributionKey {}
+impl ValueConvertible for TokenDistributionKey {}
 
 #[cfg(all(
     test,
@@ -249,6 +311,7 @@ mod json_convertible_tests_token_distribution_type_and_key {
         let cases = [
             (TokenDistributionType::PreProgrammed, "PreProgrammed"),
             (TokenDistributionType::Perpetual, "Perpetual"),
+            (TokenDistributionType::OncePerIdentity, "OncePerIdentity"),
         ];
         for (original, expected) in cases {
             let json_v = original.to_json().expect("to_json");
@@ -404,5 +467,42 @@ mod json_convertible_tests_token_distribution_info {
         assert_eq!(json["$type"], json!("perpetual"));
         let recovered = TokenDistributionInfo::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_once_per_identity_variant() {
+        use crate::serialization::JsonConvertible;
+        let original =
+            TokenDistributionInfo::OncePerIdentity(1_700_000_000_000, Identifier::new([0x42; 32]));
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({
+                "$type": "oncePerIdentity",
+                "timestamp": 1_700_000_000_000u64,
+                "identity": "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf",
+            })
+        );
+        let recovered = TokenDistributionInfo::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+
+        let resolved: TokenDistributionTypeWithResolvedRecipient = (&original).into();
+        assert_eq!(
+            resolved,
+            TokenDistributionTypeWithResolvedRecipient::OncePerIdentity(Identifier::new(
+                [0x42; 32]
+            ))
+        );
+        let resolved_json = resolved.to_json().expect("to_json");
+        assert_eq!(
+            resolved_json,
+            json!({
+                "$type": "oncePerIdentity",
+                "value": "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf",
+            })
+        );
+        let recovered = TokenDistributionTypeWithResolvedRecipient::from_json(resolved_json)
+            .expect("from_json");
+        assert_eq!(resolved, recovered);
     }
 }

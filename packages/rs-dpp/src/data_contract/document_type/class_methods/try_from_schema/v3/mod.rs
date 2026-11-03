@@ -1,7 +1,11 @@
 //! Document-type parser **generation 3** — protocol version 14 and later.
 //!
 //! Generation 3 is generation 2 plus the ranked index keywords
-//! (`rankedCountable` / `rankedSummable` / `rankedAverageable`).
+//! (`rankedCountable` / `rankedSummable` / `rankedAverageable`), the
+//! indexOnly grammar, the doctype-level `immutable` property list, the
+//! doctype-level `ownerRefersTo` and `creatorRefersTo` references on the
+//! writer and the creator, and the doctype-level `propertyConstraints` rules
+//! over the document's integer properties.
 //!
 //! It exists as its own generation — rather than as a version gate inside the
 //! shipped ones — because that is what keeps a historical block from ever
@@ -16,15 +20,25 @@
 
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
+use crate::data_contract::document_type::class_methods::{
+    consensus_or_protocol_data_contract_error, consensus_or_protocol_value_error,
+};
 // Only the ranked key-length rule below names `Index`, and it is validation-only.
+use crate::data_contract::document_type::action_fees::DocumentActionFees;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index::IndexGrammarAdmissions;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::property::DocumentPropertyType;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::property::{
+    is_transient, DocumentPropertyReferenceTarget, PropertyReference, ReferenceHolder,
+    ReferenceOperands,
+};
+use crate::data_contract::document_type::property_names;
+use crate::data_contract::document_type::reference_lookup::owner_can_change;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
-use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
 use crate::validation::operations::ProtocolValidationOperation;
@@ -34,9 +48,18 @@ use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
 #[cfg(feature = "validation")]
+use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
+#[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::InvalidIndexedPropertyConstraintError;
+#[cfg(feature = "validation")]
+use crate::consensus::ConsensusError;
 
 use super::common;
+use super::{
+    apply_property_constraints, parse_doctype_reference, validate_encrypted_for_declarations,
+    validate_generated_from_declarations, validate_list_element_sources,
+    validate_reference_lookup_sources,
+};
 
 mod ranked_prefix_overlap;
 use ranked_prefix_overlap::validate_no_ranked_prefix_overlap;
@@ -142,11 +165,23 @@ fn validate_ranked_index_property_key_length(
         return Ok(());
     };
 
+    // A typed array is no index key at all, and its byte bound measures the
+    // whole list: the property-type check right after this one rejects it
+    // with the error that explains the problem.
+    if matches!(property_type, DocumentPropertyType::TypedArray(_)) {
+        return Ok(());
+    }
+
     // `None` is only produced by the array and object types, which the
     // property-type check right after this one rejects outright with the
-    // error that actually explains the problem.
-    let Some(worst_case_key_length) = property_type.max_byte_size(platform_version)? else {
-        return Ok(());
+    // error that actually explains the problem. A string whose `maxLength`
+    // puts its worst case past `u16::MAX` bytes overflows the computation;
+    // it is past every ceiling, so it is refused like any key over the limit.
+    let worst_case_key_length = match property_type.max_byte_size(platform_version) {
+        Ok(Some(length)) => length,
+        Ok(None) => return Ok(()),
+        Err(ProtocolError::Overflow(_)) => u16::MAX,
+        Err(error) => return Err(error),
     };
 
     if worst_case_key_length <= limit {
@@ -221,6 +256,33 @@ const RANKED_INDEX_KEY_LENGTH_CHECK: common::RankedIndexKeyLengthCheck =
 const RANKED_INDEX_KEY_LENGTH_CHECK: common::RankedIndexKeyLengthCheck =
     common::no_ranked_index_key_length_check;
 
+/// Reports a contract this generation refuses as a consensus error.
+///
+/// Some stages report a broken rule as a bare `ProtocolError::DataContractError`,
+/// or a schema value of the wrong shape as a bare `ProtocolError::ValueError`:
+/// the core parse and the doctype-level aggregate stages, which generation 3
+/// shares with generations 1 and 2. A node takes a bare error for a failure of
+/// its own: the transition carrying the contract is refused without a fee or a
+/// nonce bump, and a block carrying it is rejected. As a consensus error it is
+/// a paid rejection instead, like a contract failing any other rule.
+///
+/// The shared stages keep the bare errors, because generations 1 and 2 still
+/// reach them at protocol versions up to 13. A node running this code at those
+/// versions must judge a block exactly as a node running the release that
+/// shipped them, and that release refuses such a transition unpaid.
+///
+/// The mapping is applied once, to everything the generation returns, so a
+/// stage added later cannot bring the bare errors back. Every other error
+/// passes through unchanged: `CorruptedCodeExecution`, a version mismatch or an
+/// arithmetic overflow is the node failing, not the contract.
+fn consensus_or_protocol_generation_3_error(error: ProtocolError) -> ProtocolError {
+    match error {
+        ProtocolError::DataContractError(error) => consensus_or_protocol_data_contract_error(error),
+        ProtocolError::ValueError(error) => consensus_or_protocol_value_error(error),
+        error => error,
+    }
+}
+
 /// Parses a document type schema through the generation-3 grammar: the
 /// generation-2 doctype-level aggregate keywords, plus the ranked index
 /// keywords and the tighter index-key ceilings they impose.
@@ -230,6 +292,40 @@ const RANKED_INDEX_KEY_LENGTH_CHECK: common::RankedIndexKeyLengthCheck =
 /// Full validation rejects keep-history document types that allow deletion.
 /// Stored contracts bypass this check so legacy contradictory schemas remain
 /// readable and can be repaired by setting `canBeDeleted: false` on update.
+///
+/// # Doctype-level keywords on contracts that predate them
+///
+/// Not every stored contract was validated against the keywords read here.
+/// The document meta-schema v0 admitted every contract created at protocol
+/// versions 1 to 11 and leaves unknown doctype-level keys open, so such a
+/// contract may carry a key named like one of these keywords, of any shape.
+/// Meta-schemas v1 and later refuse unknown doctype-level keys, and the
+/// property and index levels were closed from v0 on.
+///
+/// One rule covers every doctype-level keyword of this generation: it is read
+/// wherever it appears, and its shape is enforced on both the validating and
+/// the stored path. No keyword gets stored-path leniency.
+///
+/// * Nothing this parser receives records which meta-schema admitted the
+///   contract, so a well-formed stray cannot be told apart from a validated
+///   declaration. Leniency could therefore only ever cover the malformed
+///   case, which fails loudly, and never the well-formed one, which would
+///   silently change the meaning of a contract (for `indexOnly`, the storage
+///   layout of documents already written).
+/// * `full_validation: false` is not only the stored path. `check_tx` and
+///   client-side parsing take it too, so leniency there widens what an
+///   unvalidated schema may contain.
+/// * Refusing is the safe failure. It is deterministic across nodes, confined
+///   to the one contract (its transitions end as an internal error, which the
+///   proposer leaves out of the block, so the chain does not halt), and
+///   repairable in a later protocol version.
+///
+/// What makes the rule safe is evidence rather than code: a census of every
+/// contract admitted under meta-schema v0 on mainnet and testnet (2026-09-20)
+/// found none carrying any of these keywords, and that set closed for good
+/// when protocol version 12 activated. `meta_schema_v0_stray_keyword_tests`
+/// records the stray keys those contracts do carry, and fails if a document
+/// meta-schema ever declares one of them as a keyword.
 #[allow(clippy::too_many_arguments)]
 fn try_from_schema_generation_3(
     data_contract_id: Identifier,
@@ -244,10 +340,69 @@ fn try_from_schema_generation_3(
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentTypeV2, ProtocolError> {
-    // Read the aggregate and indexOnly keywords before the core parser
-    // consumes `schema`.
+    parse_generation_3(
+        data_contract_id,
+        data_contract_system_version,
+        contract_config_version,
+        name,
+        schema,
+        schema_defs,
+        token_configurations,
+        data_contact_config,
+        full_validation,
+        validation_operations,
+        platform_version,
+    )
+    .map_err(consensus_or_protocol_generation_3_error)
+}
+
+/// The body of [`try_from_schema_generation_3`], which maps its bare errors.
+#[allow(clippy::too_many_arguments)]
+fn parse_generation_3(
+    data_contract_id: Identifier,
+    data_contract_system_version: u16,
+    contract_config_version: u16,
+    name: &str,
+    schema: Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
+    data_contact_config: &DataContractConfig,
+    full_validation: bool,
+    validation_operations: &mut impl Extend<ProtocolValidationOperation>,
+    platform_version: &PlatformVersion,
+) -> Result<DocumentTypeV2, ProtocolError> {
+    // Generation 3 refuses `-` in a document type name, as meta-schema v3
+    // refuses it in a property name: the path syntax was written for word
+    // characters, and no contract on mainnet or testnet ever used one. A
+    // registration rule, checked under full validation like the shared
+    // name rule; earlier generations keep admitting it.
+    #[cfg(feature = "validation")]
+    if full_validation && name.contains('-') {
+        return Err(ProtocolError::ConsensusError(Box::new(
+            ConsensusError::from(InvalidDocumentTypeNameError::new(name.to_string())),
+        )));
+    }
+
+    // Read the doctype-level keywords before the core parser consumes
+    // `schema`. Each is read wherever it appears, and its shape is enforced on
+    // both paths: see "Doctype-level keywords on contracts that predate them"
+    // above.
     let aggregates = common::parse_doctype_aggregate_keywords(&schema, name)?;
     let index_only = common::parse_index_only_keyword(&schema)?;
+    let entry_payload =
+        common::parse_property_name_list_keyword(&schema, name, property_names::ENTRY_PAYLOAD)?;
+    let action_fees = DocumentActionFees::try_from_document_schema(&schema, name)?;
+    let can_be_deleted_by_moderators = common::parse_can_be_deleted_by_moderators_keyword(&schema)?;
+    let can_be_deleted_by_moderators_for =
+        common::parse_seconds_keyword(&schema, property_names::CAN_BE_DELETED_BY_MODERATORS_FOR)?;
+    let documents_ttl = common::parse_seconds_keyword(&schema, property_names::TTL)?;
+    let immutable_fields =
+        common::parse_property_name_list_keyword(&schema, name, property_names::IMMUTABLE)?;
+    let immutable_fields_allow_setting = common::parse_property_name_list_keyword(
+        &schema,
+        name,
+        property_names::IMMUTABLE_ALLOW_SETTING,
+    )?;
 
     let v1 = common::parse_document_type_core(
         data_contract_id,
@@ -299,16 +454,138 @@ fn try_from_schema_generation_3(
             // same shared mapping.
             admit_index_skip_if_absent: IndexGrammarAdmissions::for_schema_generation(3)
                 .skip_if_absent,
+            // RANGE COUNTABLE IMPLIES COUNTABLE: a generation-3 desugaring rule
+            // rather than a keyword, read from the same shared mapping so the
+            // registration-cost re-parse and the validator agree on it.
+            admit_range_countable_implies_countable: IndexGrammarAdmissions::for_schema_generation(
+                3,
+            )
+            .range_countable_implies_countable,
+            // NO LOCKING RESOLUTION: a contested index resolved without a Lock
+            // choice, a generation-3 value from the same shared mapping.
+            admit_index_no_locking_resolution: IndexGrammarAdmissions::for_schema_generation(3)
+                .no_locking_resolution,
         },
         platform_version,
     )?;
 
     let mut v2: DocumentTypeV2 = v1.into();
+    v2.action_fees = action_fees;
+    v2.entry_payload = entry_payload;
+    // Read from the stored schema once the core parse has run the meta-schema,
+    // so under full validation a malformed declaration is the meta-schema's to
+    // report, as a malformed `refersTo` on a property is
+    let owner_reference = parse_doctype_reference(
+        &v2.schema,
+        property_names::OWNER_REFERS_TO,
+        "the writer",
+        platform_version,
+    )
+    .map_err(consensus_or_protocol_data_contract_error)?;
+    let creator_reference = parse_doctype_reference(
+        &v2.schema,
+        property_names::CREATOR_REFERS_TO,
+        "the creator",
+        platform_version,
+    )
+    .map_err(consensus_or_protocol_data_contract_error)?;
+    // A document that can change owner, by a transfer or a purchase, would end
+    // up held by an owner the declaration never checked, since neither is a
+    // write: the owner's declaration is only admitted where the writer stays
+    // the owner. The creator's is only admitted where the creator is recorded,
+    // on a type that can change owner, since elsewhere the creator is the
+    // owner and `ownerRefersTo` says it. So a type takes at most one of them
+    if owner_reference.is_some() && owner_can_change(DocumentTypeRef::V2(&v2)) {
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{name}\" declares ownerRefersTo, but its documents can be \
+                 transferred or traded: a transfer or a purchase would hand a document to an \
+                 owner the declaration never checked; creatorRefersTo checks the creator, who \
+                 never changes",
+            )),
+        ));
+    }
+    if creator_reference.is_some()
+        && !DocumentTypeRef::V2(&v2).should_use_creator_id(
+            data_contract_system_version,
+            contract_config_version,
+            platform_version,
+        )?
+    {
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{name}\" declares creatorRefersTo, but it records no creator \
+                 ids: only a transferable or tradeable document type of a format-1 contract \
+                 does; ownerRefersTo checks the writer of a type whose documents stay with it",
+            )),
+        ));
+    }
+    v2.owner_reference = owner_reference;
+    v2.creator_reference = creator_reference;
     common::apply_doctype_aggregates(&mut v2, aggregates, name)?;
     // After the aggregates: `apply_index_only` rejects the doctype-level
     // aggregate flags (they describe the primary-key tree, which an
     // indexOnly type does not have), so it has to see them already applied.
-    common::apply_index_only(&mut v2, index_only, name)?;
+    common::apply_index_only(&mut v2, index_only, name, platform_version)?;
+    // After the core parse: the lints read the resolved `documentsMutable`
+    // flag (contract default applied) and the parsed top-level properties.
+    common::apply_immutable_fields(
+        &mut v2,
+        immutable_fields,
+        immutable_fields_allow_setting,
+        name,
+        full_validation,
+    )?;
+
+    // After the core parse: every property, its transient flag and its schema
+    // are known, so each `encryptedFor` declaration can be checked against the
+    // properties it names. Generation 3 is the only one admitting the keyword.
+    // A schema reached through a `$ref` is read from the contract's `$defs`, as
+    // the core parse read it.
+    validate_encrypted_for_declarations(&v2, schema_defs, name)
+        .map_err(consensus_or_protocol_data_contract_error)?;
+    // The same for the string property each `generatedFrom` declaration names.
+    validate_generated_from_declarations(&v2, name)
+        .map_err(consensus_or_protocol_data_contract_error)?;
+    // The same for the properties a `refersTo` lookup reads to assemble its key,
+    // the lookup of the `ownerRefersTo` declaration included.
+    validate_reference_lookup_sources(DocumentTypeRef::V2(&v2), name)
+        .map_err(consensus_or_protocol_data_contract_error)?;
+    // The `propertyConstraints` rules are parsed onto the type here, where the
+    // integer properties they read and their transient flags are known; their
+    // limits are checked under full validation only. The `enum`s their string
+    // constants are checked against are read through `$ref`s into the
+    // contract's `$defs` too.
+    apply_property_constraints(
+        &mut v2,
+        schema_defs,
+        name,
+        full_validation,
+        platform_version,
+    )
+    .map_err(consensus_or_protocol_data_contract_error)?;
+
+    // After `apply_index_only`: the flag is refused on an indexOnly type, so it
+    // has to see that one already applied.
+    common::apply_can_be_deleted_by_moderators(
+        &mut v2,
+        can_be_deleted_by_moderators,
+        data_contact_config,
+        name,
+    )?;
+    common::apply_can_be_deleted_by_moderators_for(
+        &mut v2,
+        can_be_deleted_by_moderators_for,
+        name,
+    )?;
+    // After `apply_index_only`: `ttl` is refused on an indexOnly type.
+    common::apply_documents_ttl(
+        &mut v2,
+        documents_ttl,
+        name,
+        full_validation,
+        platform_version,
+    )?;
 
     // The flags are read from the parsed result (not the raw schema) so
     // the check sees `canBeDeleted` resolved against the contract config
@@ -325,7 +602,452 @@ fn try_from_schema_generation_3(
         ));
     }
 
+    #[cfg(feature = "validation")]
+    if full_validation {
+        validate_typed_array_max_items(&v2, name, platform_version)?;
+        validate_reference_expressions(&v2, data_contract_id, name, platform_version)?;
+        validate_reference_count(&v2, name, platform_version)?;
+        validate_no_immutable_deletable_element_references(&v2, name)?;
+        validate_no_immutable_contract_owner_requirements(&v2, name)?;
+        validate_transient_fields(&v2, name)?;
+        validate_no_transient_index_properties(&v2, name)?;
+    }
+    // The property a `listElement` reads the list's document through; the list
+    // itself is checked where the referenced type is in hand. In every build,
+    // like the lookup sources above: without it a same-contract list check
+    // would silently skip a declaration whose property finds no document
+    if full_validation {
+        validate_list_element_sources(DocumentTypeRef::V2(&v2), name)
+            .map_err(consensus_or_protocol_data_contract_error)?;
+    }
+
     Ok(v2)
+}
+
+/// Every entry of the `transient` list names a top-level property of the
+/// document type. Drive drops transient values by top-level name before a
+/// document is stored, so an entry naming a nested path, a system property or
+/// nothing at all would mark a property transient in the parsed type and
+/// still leave its value stored: list the object around a nested property.
+///
+/// Full validation only: a contract registered before this version was never
+/// held to it, and a stored contract must stay readable. An update re-parses
+/// the whole contract under full validation, and neither the list nor an index
+/// can change on update, so a contract registered earlier with such a shape
+/// could no longer be updated; a census of every mainnet and testnet contract
+/// (2026-09-23) found none, as for the word-character names rule.
+#[cfg(feature = "validation")]
+fn validate_transient_fields(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    match document_type
+        .transient_fields
+        .iter()
+        .find(|field| !document_type.properties.contains_key(*field))
+    {
+        Some(field) => {
+            let hint = if field.contains('.') && !field.starts_with('$') {
+                ": transient values are dropped by top-level name, so list the object around \
+                 a nested property"
+            } else {
+                ""
+            };
+            Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "document type \"{name}\" lists \"{field}\" as transient, but it is not a \
+                     top-level property of the document type{hint}"
+                )),
+            ))
+        }
+        None => Ok(()),
+    }
+}
+
+/// No index reads a transient property or a property inside a transient
+/// object. Its value is never stored, so every document would sit in the
+/// index's null branch: a query by the value finds nothing, and a unique index
+/// enforces nothing, since a create is checked against stored entries, none
+/// of which holds the value.
+///
+/// Full validation only, like [`validate_transient_fields`].
+#[cfg(feature = "validation")]
+fn validate_no_transient_index_properties(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    for index in document_type.indices.values() {
+        if let Some(property) = index
+            .properties
+            .iter()
+            .find(|property| is_transient(DocumentTypeRef::V2(document_type), &property.name))
+        {
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "index \"{}\" of document type \"{name}\" reads \"{}\", which is transient \
+                     or inside a transient object: its value is never stored, so the index \
+                     would never hold it",
+                    index.name, property.name
+                )),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Every typed array property's `maxItems` (which the parse requires) is at
+/// most `SystemLimits::max_typed_array_items`, so its worst-case encoded
+/// size stays small. Read off the flattened properties, which reach a typed
+/// array nested in an object too.
+///
+/// Full validation only, like the other registration limits: a stored
+/// contract was checked when it was registered, and a later protocol version
+/// lowering the cap must not make it unreadable.
+#[cfg(feature = "validation")]
+fn validate_typed_array_max_items(
+    document_type: &DocumentTypeV2,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let limit = platform_version.system_limits.max_typed_array_items;
+    for (path, property) in document_type.flattened_properties() {
+        let DocumentPropertyType::TypedArray(typed_array) = &property.property_type else {
+            continue;
+        };
+        if typed_array.max_items > limit {
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "typed array property \"{}\" of document type \"{}\" declares maxItems \
+                     {}, above the maximum of {}",
+                    path, name, typed_array.max_items, limit,
+                )),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Every reference expression (`anyOf` / `allOf`), on an identifier property,
+/// on the elements of a typed array or in the type's `ownerRefersTo` or
+/// `creatorRefersTo`, stays inside the registration limits:
+/// at most `SystemLimits::max_reference_expression_depth` combinators on any
+/// path from the declaration to a leaf, and at most
+/// `SystemLimits::max_reference_operands` operands in any one list (the parse
+/// already requires two or more). No two operands of one list may be alike,
+/// which would bill the same reads twice for nothing, with a leaf naming the
+/// declaring contract (`contract_id`) explicitly taken as the same as one
+/// that omits it, which the parse, knowing no contract id, cannot see. Every
+/// leaf also counts against `max_references_per_document`, checked next.
+///
+/// Full validation only, like the typed array cap: a stored contract was
+/// checked when it was registered.
+#[cfg(feature = "validation")]
+fn validate_reference_expressions(
+    document_type: &DocumentTypeV2,
+    contract_id: Identifier,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let max_depth = platform_version
+        .system_limits
+        .max_reference_expression_depth;
+    let max_operands = platform_version.system_limits.max_reference_operands;
+    // The owner's or the creator's declaration too, named by its keyword
+    for (holder, reference) in DocumentTypeRef::V2(document_type).reference_declarations() {
+        let Some(target) = reference.target() else {
+            continue;
+        };
+        let subject = match holder {
+            ReferenceHolder::Property(path) => format!("property \"{path}\""),
+            ReferenceHolder::Owner | ReferenceHolder::Creator => holder.describe(),
+        };
+        let refuse = |reason: String| {
+            Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "{subject} of document type \"{name}\" declares a refersTo {reason}"
+                )),
+            ))
+        };
+        let depth = target.expression_depth();
+        if depth > usize::from(max_depth) {
+            return refuse(format!(
+                "expression nested {depth} deep, above the maximum of {max_depth}"
+            ));
+        }
+        for (list_path, operands) in operand_lists(target, String::new()) {
+            let count = operands.len();
+            if count > usize::from(max_operands) {
+                return refuse(format!(
+                    "{list_path} of {count} operands, above the maximum of {max_operands}"
+                ));
+            }
+            let normalized: Vec<DocumentPropertyReferenceTarget> = operands
+                .iter()
+                .map(|operand| with_own_contract_id_omitted(operand, contract_id))
+                .collect();
+            for (index, operand) in normalized.iter().enumerate() {
+                if normalized[..index].contains(operand) {
+                    return refuse(format!(
+                        "{list_path} whose operand {index} repeats an earlier one"
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Every operand list of a reference expression, with where it sits
+/// (`anyOf`, `anyOf[1].allOf`); none for a single target.
+#[cfg(feature = "validation")]
+fn operand_lists(
+    target: &DocumentPropertyReferenceTarget,
+    path: String,
+) -> Vec<(String, &[DocumentPropertyReferenceTarget])> {
+    let Some((combinator, operands)) = target.combinator() else {
+        return Vec::new();
+    };
+    let separator = if path.is_empty() { "" } else { "." };
+    let here = format!("{path}{separator}{}", combinator.wire_name());
+    let mut lists = vec![(here.clone(), operands.operands())];
+    for (index, operand) in operands.operands().iter().enumerate() {
+        lists.extend(operand_lists(operand, format!("{here}[{index}]")));
+    }
+    lists
+}
+
+/// `target` with every document leaf naming `contract_id` itself rewritten to
+/// omit it, which means the same, so two spellings of one target compare
+/// equal.
+#[cfg(feature = "validation")]
+fn with_own_contract_id_omitted(
+    target: &DocumentPropertyReferenceTarget,
+    contract_id: Identifier,
+) -> DocumentPropertyReferenceTarget {
+    let mut target = target.clone();
+    match &mut target {
+        DocumentPropertyReferenceTarget::PermanentDocument {
+            contract_id: referenced,
+            ..
+        }
+        | DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+            contract_id: referenced,
+            ..
+        }
+        | DocumentPropertyReferenceTarget::DeletableDocument {
+            contract_id: referenced,
+            ..
+        }
+        | DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+            contract_id: referenced,
+            ..
+        } => {
+            if *referenced == Some(contract_id) {
+                *referenced = None;
+            }
+        }
+        DocumentPropertyReferenceTarget::ListElement(reference) => {
+            if reference.contract_id == Some(contract_id) {
+                reference.contract_id = None;
+            }
+        }
+        DocumentPropertyReferenceTarget::AnyOf(operands)
+        | DocumentPropertyReferenceTarget::AllOf(operands) => {
+            *operands = ReferenceOperands::new(
+                operands
+                    .operands()
+                    .iter()
+                    .map(|operand| with_own_contract_id_omitted(operand, contract_id))
+                    .collect(),
+            );
+        }
+        DocumentPropertyReferenceTarget::Identity
+        | DocumentPropertyReferenceTarget::Contract { .. }
+        | DocumentPropertyReferenceTarget::Token
+        | DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => {}
+    }
+    target
+}
+
+/// The references one document of the type can carry, one for each
+/// property declaring `refersTo` (an identifier, or a key id with a key
+/// reference), `maxItems` for each typed array whose elements declare it and
+/// one for the type's `ownerRefersTo` or `creatorRefersTo`, each times the
+/// number of leaves when the declaration is a reference expression, are at
+/// most
+/// `SystemLimits::max_references_per_document`. Every reference is a billed
+/// state read when the document is created or replaced, so the sum bounds
+/// the reads one write can cause; `max_typed_array_items` alone would let a
+/// type declare many arrays of that many references each.
+///
+/// Full validation only, like the typed array cap: a stored contract was
+/// checked when it was registered.
+#[cfg(feature = "validation")]
+fn validate_reference_count(
+    document_type: &DocumentTypeV2,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let limit = platform_version.system_limits.max_references_per_document;
+    let references: u32 = DocumentTypeRef::V2(document_type)
+        .reference_declarations()
+        .map(|(_, reference)| reference.max_references())
+        .fold(0, u32::saturating_add);
+    if references > u32::from(limit) {
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{name}\" declares references for up to {references} values per \
+                 document (one per property with refersTo, maxItems per typed array of \
+                 referencing elements, one for ownerRefersTo or creatorRefersTo, each times the \
+                 leaves of a reference expression), above the maximum of {limit}",
+            )),
+        ));
+    }
+    Ok(())
+}
+
+/// An `immutable` property may not hold a `contract` reference whose
+/// `contractRequirements` carry an `owner` requirement when the document type's
+/// documents can be transferred or traded. The requirement relates the
+/// referenced contract's owner to the owner writing the document, and on such
+/// a type every replace re-checks it: after a transfer or a purchase an owner
+/// who does not meet it could not replace the document, and the immutable
+/// property could not be repointed at a contract it does meet. That holds
+/// wherever the reference sits under the immutable property (the property
+/// itself, inside an immutable object, the elements of a typed array) and for
+/// both `self` and `other`. On a type whose documents cannot change owner the
+/// requirement is never re-checked, so the pair is admitted there.
+#[cfg(feature = "validation")]
+fn validate_no_immutable_contract_owner_requirements(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    if !owner_can_change(DocumentTypeRef::V2(document_type)) {
+        return Ok(());
+    }
+    for (path, property) in document_type.flattened_properties() {
+        let Some(reference) = property.property_type.reference() else {
+            continue;
+        };
+        let Some(target) = reference.target() else {
+            continue;
+        };
+        let carries_owner_requirement = target.leaves().into_iter().any(|leaf| {
+            matches!(
+                leaf,
+                DocumentPropertyReferenceTarget::Contract {
+                    contract_requirements,
+                } if contract_requirements.owner.is_some()
+            )
+        });
+        if !carries_owner_requirement {
+            continue;
+        }
+        let top_level = path.split('.').next().unwrap_or(path);
+        if document_type.immutable_fields.contains(top_level) {
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "document type \"{name}\" lists \"{top_level}\" as immutable, but \"{path}\" is \
+                     a contract reference with an `owner` requirement and the type's documents can \
+                     be transferred or traded: every replace re-checks the requirement against the \
+                     owner writing it, so an owner who does not meet it could never replace the \
+                     document, nor repoint the reference. Leave the property mutable, or drop the \
+                     owner requirement",
+                )),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// An `immutable` property may not hold a `deletableDocument` reference the
+/// replace state validation could not clear: a typed array of them, at the
+/// top level or inside an immutable object, a single one inside an immutable
+/// object, or one declared with a lookup, alone or as an operand of an
+/// expression, anywhere. Every replace re-validates such a reference, so once a
+/// target is deleted the property would have to change, which an immutable
+/// property cannot: the document could never be replaced again. The one
+/// such reference that has a way out is a single one held by an immutable
+/// top-level property: a replace may remove it once its target is gone, an
+/// exception that reads the one identifier the removed top-level property
+/// held, which neither a list nor an object gives it.
+///
+/// That property may not also be listed under `immutableAllowSetting`. Once
+/// the reference is cleared the stored document has no value for it, so the
+/// allowance would let the next replace set it again, to another document,
+/// as a first-time set: the frozen reference would be repointed. The pair is
+/// refused here rather than by refusing the clear at write time, since
+/// without the clear a document whose target is deleted could never be
+/// replaced again. Every other `deletableDocument` form is refused on any
+/// immutable property, and an `immutableAllowSetting` entry is always
+/// immutable, so no deletableDocument reference can be set once.
+#[cfg(feature = "validation")]
+fn validate_no_immutable_deletable_element_references(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    for (path, property) in document_type.flattened_properties() {
+        let Some(reference) = property.property_type.reference() else {
+            continue;
+        };
+        let Some(target) = reference.target() else {
+            continue;
+        };
+        // A deletableDocument found through a lookup, alone or as an operand of
+        // an expression, is re-validated on every replace too, and the clearing
+        // exception reads a document id, which a lookup key is not
+        let deletable_lookup = target.leaves().into_iter().any(|leaf| {
+            matches!(
+                leaf,
+                DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. }
+            )
+        });
+        if !deletable_lookup
+            && !matches!(
+                target,
+                DocumentPropertyReferenceTarget::DeletableDocument { .. }
+            )
+        {
+            continue;
+        }
+        let top_level = path.split('.').next().unwrap_or(path);
+        let is_list = matches!(reference, PropertyReference::Elements { .. });
+        // A single reference by id that is itself the immutable property can be
+        // cleared once its target is gone, so it may not also be settable while
+        // absent: the clear makes it absent again
+        if !deletable_lookup && !is_list && top_level == path {
+            if document_type.immutable_fields_allow_setting.contains(path) {
+                return Err(consensus_or_protocol_data_contract_error(
+                    DataContractError::InvalidContractStructure(format!(
+                        "document type \"{name}\" lists \"{path}\" in `immutableAllowSetting`, \
+                         but it is a deletableDocument reference: a replace may clear it once \
+                         its target is deleted, and the next replace could then set it to \
+                         another document. Use a permanentDocument reference, or leave it out \
+                         of immutableAllowSetting",
+                    )),
+                ));
+            }
+            continue;
+        }
+        if document_type.immutable_fields.contains(top_level) {
+            let held_as = if deletable_lookup {
+                "a deletableDocument reference through a lookup"
+            } else if is_list {
+                "a typed array of deletableDocument references"
+            } else {
+                "a deletableDocument reference inside an object"
+            };
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "document type \"{name}\" lists \"{top_level}\" as immutable, but \"{path}\" is \
+                     {held_as}: every replace re-validates it, so once a target is deleted the \
+                     property would have to change and the document could never be replaced \
+                     again. Use permanentDocument references, or leave the property mutable",
+                )),
+            ));
+        }
+    }
+    Ok(())
 }
 
 impl DocumentType {
@@ -362,10 +1084,50 @@ impl DocumentType {
 }
 
 #[cfg(test)]
+mod documents_ttl_tests;
+#[cfg(all(test, feature = "validation"))]
+mod dotted_aggregate_name_tests;
+#[cfg(test)]
+mod immutable_tests;
+#[cfg(test)]
 mod index_only_tests;
 
+#[cfg(all(test, feature = "validation"))]
+mod generated_from_tests;
 #[cfg(test)]
 mod keep_history_tests;
+#[cfg(all(test, feature = "validation"))]
+mod list_element_reference_tests;
+#[cfg(all(test, feature = "validation"))]
+mod max_bytes_tests;
+#[cfg(test)]
+mod meta_schema_v0_stray_keyword_tests;
+#[cfg(test)]
+mod moderators_delete_tests;
+#[cfg(all(test, feature = "validation"))]
+mod name_rules_tests;
+#[cfg(all(test, feature = "validation"))]
+mod owner_reference_tests;
+#[cfg(all(test, feature = "validation"))]
+mod property_constraint_aggregates_tests;
+#[cfg(all(test, feature = "validation"))]
+mod property_constraints_tests;
+#[cfg(all(test, feature = "validation"))]
+mod reference_expression_tests;
+#[cfg(all(test, feature = "validation"))]
+mod reference_lookup_tests;
+#[cfg(all(test, feature = "validation"))]
+mod reference_test_helpers;
+#[cfg(all(test, feature = "validation"))]
+mod shared_stage_error_tests;
+#[cfg(all(test, feature = "validation"))]
+mod transient_tests;
+#[cfg(all(test, feature = "validation"))]
+mod typed_array_reference_tests;
+#[cfg(all(test, feature = "validation"))]
+mod typed_array_test_helpers;
+#[cfg(all(test, feature = "validation", feature = "random-documents"))]
+mod typed_array_tests;
 
 #[cfg(test)]
 mod tests {
@@ -441,11 +1203,11 @@ mod tests {
     }
 
     /// A `review` doctype with one index over `restaurantId`, averageable on
-    /// `grade`, optionally carrying ranked keywords. Written so the v3
-    /// meta-schema's prerequisite rules are satisfied: the ranked
-    /// `if`/`then` conditionals demand the literal range keys, and the
-    /// `dependentRequired` chain covers the rest
-    /// (`rangeAverageable` → `averageable`).
+    /// `grade`, optionally carrying ranked keywords. The `averageable` +
+    /// `rangeAverageable` sugar satisfies every prerequisite in the v3
+    /// meta-schema (its ranked `if`/`then` pairs accept `rangeAverageable` in
+    /// place of each axis's own range key) and in the structural parser
+    /// (which checks the resolved flags), so any ranked keyword may be added.
     ///
     /// `restaurantId` is capped at 32 characters — comfortably inside the
     /// ranked key bound on every axis, so these grammar tests exercise the
@@ -529,23 +1291,21 @@ mod tests {
         PlatformVersion::get(13).expect("protocol version 13 exists")
     }
 
-    /// Generation-specific tests must pin a protocol version that actually
-    /// selects their own generation: `pv14()` silently
-    /// retargets these tests onto a different parser generation and a
-    /// different document meta-schema whenever LATEST moves. PV14 is the
-    /// first protocol version whose `try_from_schema` selects generation 3.
-    fn pv14() -> &'static PlatformVersion {
-        PlatformVersion::get(14).expect("protocol version 14 exists")
+    /// Generation 3 is the latest parser generation, so its tests run at the latest protocol
+    /// version. When a later protocol version selects a new generation, pin these tests to the
+    /// last version that selects generation 3 (see the coding conventions).
+    fn latest() -> &'static PlatformVersion {
+        PlatformVersion::latest()
     }
 
-    /// PV14 accepts the ranked keywords and carries them onto the parsed index
+    /// The latest protocol version accepts the ranked keywords and carries them onto the parsed index
     /// — both when parsed through this generation directly and when reached
     /// the way production reaches it, through the dispatcher. The dispatcher
     /// half is what pins that `try_from_schema: 3` actually routes here.
     #[test]
-    fn ranked_keywords_accepted_at_pv14() {
+    fn ranked_keywords_accepted_at_latest() {
         let schema = ranked_review_schema(vec![("rankedAverageable", true)]);
-        let v2 = parse_with(schema.clone(), pv14(), true)
+        let v2 = parse_with(schema.clone(), latest(), true)
             .expect("meta-schema v3 must accept the ranked index keywords");
 
         let index = v2
@@ -558,8 +1318,8 @@ mod tests {
         assert!(index.range_countable && index.range_summable);
 
         // Same schema, same platform version, through the real dispatcher.
-        let dispatched = parse_dispatched(schema, pv14(), true)
-            .expect("the dispatcher must route PV14 to a generation that accepts the keywords");
+        let dispatched = parse_dispatched(schema, latest(), true)
+            .expect("the dispatcher must route the latest protocol version to a generation that accepts the keywords");
         let DocumentType::V2(dispatched) = dispatched else {
             panic!("generation 3 produces a V2-shaped document type");
         };
@@ -569,7 +1329,7 @@ mod tests {
                 .get("byRestaurant")
                 .expect("index parsed under its name")
                 .ranked_averageable,
-            "dispatching at PV14 must reach generation 3, not an earlier generation"
+            "dispatching at the latest protocol version must reach generation 3, not an earlier generation"
         );
     }
 
@@ -611,13 +1371,14 @@ mod tests {
         }
     }
 
-    /// Same schema, PV14, no full validation: accepted. Pins that the gate is
-    /// the parser *generation* and not the validation mode.
+    /// Same schema, latest protocol version, no full validation: accepted. Pins that the gate
+    /// is the parser *generation* and not the validation mode.
     #[test]
-    fn ranked_keywords_accepted_at_pv14_without_full_validation() {
+    fn ranked_keywords_accepted_at_latest_without_full_validation() {
         let schema = ranked_review_schema(vec![("rankedAverageable", true)]);
-        let v2 = parse_with(schema, pv14(), false)
-            .expect("PV14 structural parse must accept the ranked keywords");
+        let v2 = parse_with(schema, latest(), false).expect(
+            "the latest protocol version's structural parse must accept the ranked keywords",
+        );
         assert!(
             v2.indices
                 .get("byRestaurant")
@@ -627,22 +1388,24 @@ mod tests {
     }
 
     /// The meta-schema's ranked `if`/`then` conditionals are the declarative
-    /// half of the structural "ranking needs its range axis" rule:
-    /// `rankedCountable: true` without `rangeCountable` fails meta
-    /// validation at PV14.
+    /// half of the structural "ranking needs its range axis" rule, and they
+    /// are sugar-aware: `rankedCountable: true` with `rangeAverageable` and
+    /// no literal `rangeCountable` passes meta validation at PV14, because
+    /// `rangeAverageable` puts the count axis in effect.
+    ///
+    /// Up to `4.2.0-beta.1` this exact shape was refused with
+    /// `"rangeCountable" is a required property`; the rule was corrected in
+    /// place while v3 is still editable.
     #[test]
-    fn ranked_countable_without_range_countable_rejected_by_meta_schema() {
-        // `averageable` + `rangeAverageable` give the index its range axes in
-        // *effect*, but `rangeCountable` is not literally present, so the
-        // `if rankedCountable == true then require rangeCountable`
-        // conditional fails.
+    fn ranked_countable_satisfied_by_range_averageable_in_meta_schema() {
         let schema = ranked_review_schema(vec![("rankedCountable", true)]);
-        let result = parse_with(schema, pv14(), true);
-        assert!(
-            result.is_err(),
-            "meta-schema v3 must demand rangeCountable alongside a true \
-             rankedCountable"
-        );
+        let v2 = parse_with(schema, latest(), true)
+            .expect("rangeAverageable satisfies rankedCountable's range prerequisite");
+        let index = v2
+            .indices
+            .get("byRestaurant")
+            .expect("index parsed under its name");
+        assert!(index.ranked_countable && index.range_countable);
     }
 
     /// An index over `restaurantId` carrying exactly one ranked keyword and
@@ -704,9 +1467,10 @@ mod tests {
     #[test]
     fn ranked_flags_written_out_as_false_do_not_require_a_range_axis() {
         for key in ["rankedCountable", "rankedSummable", "rankedAverageable"] {
-            let v2 = parse_with(bare_ranked_index_schema(key, false), pv14(), true).unwrap_or_else(
-                |e| panic!("`{key}: false` is an opt-out and must pass full validation: {e:?}"),
-            );
+            let v2 = parse_with(bare_ranked_index_schema(key, false), latest(), true)
+                .unwrap_or_else(|e| {
+                    panic!("`{key}: false` is an opt-out and must pass full validation: {e:?}")
+                });
 
             let index = v2
                 .indices
@@ -730,7 +1494,7 @@ mod tests {
     #[test]
     fn ranked_flags_set_true_still_require_their_range_axis() {
         for key in ["rankedCountable", "rankedSummable", "rankedAverageable"] {
-            let result = parse_with(bare_ranked_index_schema(key, true), pv14(), true);
+            let result = parse_with(bare_ranked_index_schema(key, true), latest(), true);
             assert!(
                 result.is_err(),
                 "`{key}: true` with no range axis must be rejected under full validation"
@@ -760,7 +1524,7 @@ mod tests {
                 "rankedCountable": true,
             }],
         });
-        let result = parse_with(schema, pv14(), false);
+        let result = parse_with(schema, latest(), false);
         assert!(
             result.is_err(),
             "rankedCountable with no range-count layout must be rejected structurally"
@@ -902,7 +1666,7 @@ mod tests {
     }
 
     fn parse_bound(schema: Value) -> Result<DocumentTypeV2, ProtocolError> {
-        parse_with(schema, pv14(), true)
+        parse_with(schema, latest(), true)
     }
 
     /// Count-ranked and sum-ranked indexes share the 8-byte sort key, so both
@@ -923,6 +1687,26 @@ mod tests {
                 msg.contains("maxLength") && msg.contains("61") && msg.contains("247"),
                 "{axis}: the error must name maxLength, the 61-character bound and the \
                  247-byte key ceiling it derives from; got {msg}"
+            );
+        }
+    }
+
+    /// A `maxLength` whose worst case overflows `u16` bytes is refused with
+    /// the same consensus error as any other key over the ceiling, not as an
+    /// internal overflow.
+    #[test]
+    fn ranked_axes_refuse_a_string_too_long_to_size_as_a_consensus_error() {
+        for extras in [
+            count_ranked_extras(),
+            sum_ranked_extras(),
+            avg_ranked_extras(),
+        ] {
+            let error = parse_bound(ranked_bound_schema(string_property(16384), extras))
+                .expect_err("16384 * 4 bytes overflows u16 and must be rejected");
+            let msg = format!("{error:?}");
+            assert!(
+                msg.starts_with("ConsensusError(BasicError(InvalidIndexedPropertyConstraintError"),
+                "the ranked key ceiling's consensus error must be raised; got {msg}"
             );
         }
     }
@@ -1291,9 +2075,9 @@ mod tests {
     /// paths — and the ranked flags land on the index alongside the
     /// range axes they require.
     #[test]
-    fn compound_ranked_index_accepted_at_pv14() {
+    fn compound_ranked_index_accepted_at_latest() {
         for full_validation in [true, false] {
-            let v2 = parse_with(compound_ranked_schema(vec![]), pv14(), full_validation)
+            let v2 = parse_with(compound_ranked_schema(vec![]), latest(), full_validation)
                 .unwrap_or_else(|e| {
                     panic!(
                         "a compound ranked index must parse \
@@ -1326,7 +2110,7 @@ mod tests {
             vec![("countable", Value::Text("countable".to_string()))],
         )]);
         for full_validation in [true, false] {
-            let error = parse_with(schema.clone(), pv14(), full_validation).expect_err(
+            let error = parse_with(schema.clone(), latest(), full_validation).expect_err(
                 "an aggregating index on the ranked compound's full prefix must be rejected",
             );
             let message = format!("{error:?}");
@@ -1354,14 +2138,14 @@ mod tests {
             "restaurantId",
             vec![("countable", Value::Text("countable".to_string()))],
         )]);
-        parse_with(aggregating_elsewhere, pv14(), true)
+        parse_with(aggregating_elsewhere, latest(), true)
             .expect("an aggregating index off the prefix must not conflict");
 
         // A plain index on the prefix property: terminates at [region]
         // but carries no aggregates, so its value trees stay normal and
         // no wrapper shell is ever needed.
         let plain_prefix = compound_ranked_schema(vec![("byRegion", "region", vec![])]);
-        parse_with(plain_prefix, pv14(), true)
+        parse_with(plain_prefix, latest(), true)
             .expect("a non-aggregating index on the prefix must not conflict");
     }
 
@@ -1491,7 +2275,7 @@ mod tests {
     /// structural path, landing in `ranked_countable_at` with the boolean
     /// terminal axis off.
     #[test]
-    fn prefix_ranked_at_accepted_at_pv14() {
+    fn prefix_ranked_at_accepted_at_latest() {
         for full_validation in [true, false] {
             let schema = prefix_at_schema(
                 &["region", "restaurantId"],
@@ -1500,7 +2284,7 @@ mod tests {
                 32,
                 vec![],
             );
-            let v2 = parse_with(schema, pv14(), full_validation).unwrap_or_else(|e| {
+            let v2 = parse_with(schema, latest(), full_validation).unwrap_or_else(|e| {
                 panic!("the at form must parse (full_validation: {full_validation}): {e}")
             });
             let index = v2.indices.get("byMain").expect("index parsed");
@@ -1512,7 +2296,7 @@ mod tests {
     /// The array form naming both levels passes the meta-schema and
     /// parses into both flags — the both-rankings-on-one-index shape.
     #[test]
-    fn prefix_ranked_at_array_form_accepted_at_pv14() {
+    fn prefix_ranked_at_array_form_accepted_at_latest() {
         for full_validation in [true, false] {
             let schema = prefix_at_schema(
                 &["region", "restaurantId"],
@@ -1527,7 +2311,7 @@ mod tests {
                 32,
                 vec![],
             );
-            let v2 = parse_with(schema, pv14(), full_validation).unwrap_or_else(|e| {
+            let v2 = parse_with(schema, latest(), full_validation).unwrap_or_else(|e| {
                 panic!("the array form must parse (full_validation: {full_validation}): {e}")
             });
             let index = v2.indices.get("byMain").expect("index parsed");
@@ -1568,7 +2352,7 @@ mod tests {
             vec![],
         );
         assert!(
-            parse_with(schema, pv14(), true).is_err(),
+            parse_with(schema, latest(), true).is_err(),
             "meta-schema v3 must demand rangeCountable alongside the at form"
         );
     }
@@ -1595,7 +2379,7 @@ mod tests {
         ] {
             let schema = prefix_at_schema(&["region", "restaurantId"], value, true, 32, vec![]);
             assert!(
-                parse_with(schema, pv14(), true).is_err(),
+                parse_with(schema, latest(), true).is_err(),
                 "the meta-schema must reject the {label} object form"
             );
         }
@@ -1628,7 +2412,7 @@ mod tests {
                     32,
                     vec![(name, properties, flags.clone())],
                 );
-                let error = parse_with(schema, pv14(), full_validation)
+                let error = parse_with(schema, latest(), full_validation)
                     .expect_err("an index conflicting with the at level must be rejected");
                 let message = format!("{error:?}");
                 assert!(
@@ -1649,7 +2433,7 @@ mod tests {
                 32,
                 vec![("byRegionGrade", &["region", "grade"], vec![])],
             );
-            let v2 = parse_with(schema, pv14(), full_validation).unwrap_or_else(|e| {
+            let v2 = parse_with(schema, latest(), full_validation).unwrap_or_else(|e| {
                 panic!(
                     "a plain continuing sibling must be admitted \
                      (full_validation: {full_validation}): {e}"
@@ -1675,7 +2459,7 @@ mod tests {
             32,
             vec![("byGrade", &["grade"], vec![])],
         );
-        parse_with(schema, pv14(), true)
+        parse_with(schema, latest(), true)
             .expect("an index over a different leading property must not conflict");
     }
 
@@ -1700,7 +2484,7 @@ mod tests {
                     vec![("countable", Value::Text("countable".to_string()))],
                 )],
             );
-            let error = parse_with(schema, pv14(), full_validation)
+            let error = parse_with(schema, latest(), full_validation)
                 .expect_err("an aggregating index above the at level must be rejected");
             let message = format!("{error:?}");
             assert!(
@@ -1719,7 +2503,7 @@ mod tests {
             32,
             vec![("byRegion", &["region"], vec![])],
         );
-        parse_with(schema, pv14(), true)
+        parse_with(schema, latest(), true)
             .expect("a plain index on the prefix above the at level must not conflict");
     }
 
@@ -1735,7 +2519,7 @@ mod tests {
             61,
             vec![],
         );
-        parse_with(schema, pv14(), true).expect("61 characters fits the 247-byte ceiling");
+        parse_with(schema, latest(), true).expect("61 characters fits the 247-byte ceiling");
 
         // 62 * 4 = 248 > 247: rejected, naming the at property's bound.
         let schema = prefix_at_schema(
@@ -1745,13 +2529,418 @@ mod tests {
             62,
             vec![],
         );
-        let error = parse_with(schema, pv14(), true)
+        let error = parse_with(schema, latest(), true)
             .expect_err("62 characters exceeds the 247-byte ceiling");
         let msg = format!("{error:?}");
         assert!(
             msg.contains("maxLength") && msg.contains("61") && msg.contains("247"),
             "the error must name maxLength, the 61-character bound and the 247-byte \
              ceiling; got {msg}"
+        );
+    }
+
+    // ---- The `averageable` / `rangeAverageable` sugar and the meta-schema ----
+    //
+    // Meta-schema v3's prerequisite rules are sugar-aware, matching
+    // `Index::try_from_value_map`, which expands the sugar before it checks
+    // the same prerequisites on the resolved flags. `parse_with(.., true)`
+    // runs the meta-schema first in a `validation` build (which is how
+    // `cargo test -p dpp` builds, via the `all_features_without_client`
+    // dev-dependency) and the structural parser after it, so an acceptance
+    // below proves that *both* layers admit the spelling, and a rejection's
+    // message is checked for a word both layers use.
+
+    fn index_entry(pairs: Vec<(&str, Value)>) -> Vec<(Value, Value)> {
+        let mut entry = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("storeRating".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+        ];
+        entry.extend(
+            pairs
+                .into_iter()
+                .map(|(key, value)| (Value::Text(key.to_string()), value)),
+        );
+        entry
+    }
+
+    /// The shape rejected live on a `4.2.0-beta.1` devnet: the index declares
+    /// its aggregate layout with the sugar only, then asks for a Count ranking
+    /// on top of the Avg one.
+    fn sugar_multi_axis_index_entry() -> Vec<(Value, Value)> {
+        index_entry(vec![
+            ("averageable", Value::Text("grade".to_string())),
+            ("rangeAverageable", Value::Bool(true)),
+            ("rankedAverageable", Value::Bool(true)),
+            ("rankedCountable", Value::Bool(true)),
+        ])
+    }
+
+    fn schema_with_index_entry(entry: Vec<(Value, Value)>) -> Value {
+        schema_with_doctype_flags_and_index_entry(vec![], entry)
+    }
+
+    fn schema_with_doctype_flags_and_index_entry(
+        doctype_flags: Vec<(&str, Value)>,
+        entry: Vec<(Value, Value)>,
+    ) -> Value {
+        let mut schema = vec![
+            (
+                Value::Text("type".to_string()),
+                Value::Text("object".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                platform_value!({
+                    "restaurantId": {
+                        "type": "string",
+                        "maxLength": 32,
+                        "position": 0,
+                    },
+                    "grade": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100,
+                        "position": 1,
+                    },
+                }),
+            ),
+            (
+                Value::Text("required".to_string()),
+                Value::Array(vec![
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("grade".to_string()),
+                ]),
+            ),
+            (
+                Value::Text("additionalProperties".to_string()),
+                Value::Bool(false),
+            ),
+            (
+                Value::Text("indices".to_string()),
+                Value::Array(vec![Value::Map(entry)]),
+            ),
+        ];
+        schema.extend(
+            doctype_flags
+                .into_iter()
+                .map(|(key, value)| (Value::Text(key.to_string()), value)),
+        );
+        Value::Map(schema)
+    }
+
+    /// The sugar form of a two-axis index is the whole declaration: the
+    /// `rankedCountable` prerequisite is met by `rangeAverageable`, so no
+    /// literal `rangeCountable` (and therefore no literal `countable`) is
+    /// asked for by either layer.
+    #[test]
+    fn averageable_sugar_satisfies_ranked_countable_under_full_validation() {
+        let schema = schema_with_index_entry(sugar_multi_axis_index_entry());
+        let v2 = parse_with(schema, latest(), true)
+            .expect("the sugar form satisfies every prerequisite in both layers");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(index.ranked_countable && index.ranked_averageable);
+        assert!(index.range_countable && index.range_summable);
+    }
+
+    /// The same for the Sum axis: `rankedSummable` is met by `rangeAverageable`.
+    #[test]
+    fn averageable_sugar_satisfies_ranked_summable_under_full_validation() {
+        let schema = schema_with_index_entry(index_entry(vec![
+            ("averageable", Value::Text("grade".to_string())),
+            ("rangeAverageable", Value::Bool(true)),
+            ("rankedSummable", Value::Bool(true)),
+        ]));
+        let v2 = parse_with(schema, latest(), true)
+            .expect("rangeAverageable stands in for rangeSummable");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(index.ranked_summable);
+        assert!(index.range_countable && index.range_summable);
+    }
+
+    /// And the other way round: the explicit longhand satisfies
+    /// `rankedAverageable` without a literal `rangeAverageable`.
+    #[test]
+    fn explicit_longhand_satisfies_ranked_averageable_under_full_validation() {
+        let schema = schema_with_index_entry(index_entry(vec![
+            ("countable", Value::Text("countable".to_string())),
+            ("summable", Value::Text("grade".to_string())),
+            ("rangeCountable", Value::Bool(true)),
+            ("rangeSummable", Value::Bool(true)),
+            ("rankedAverageable", Value::Bool(true)),
+        ]));
+        let v2 = parse_with(schema, latest(), true)
+            .expect("rangeCountable + rangeSummable stand in for rangeAverageable");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(index.ranked_averageable);
+        assert!(index.range_countable && index.range_summable);
+    }
+
+    /// Sugar-aware is not rule-free: a ranking with no range axis in effect,
+    /// spelled either way, is still refused, and the error names the flag
+    /// that is missing (the meta-schema says `"rangeCountable" is a required
+    /// property`, the parser says `rankedCountable requires rangeCountable`).
+    #[test]
+    fn ranked_countable_with_no_range_axis_is_still_rejected() {
+        let schema = schema_with_index_entry(index_entry(vec![
+            ("averageable", Value::Text("grade".to_string())),
+            ("rankedCountable", Value::Bool(true)),
+        ]));
+        let error = parse_with(schema, latest(), true)
+            .expect_err("a Count ranking needs a range axis, however it is spelled");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("rangeCountable"),
+            "the error must name the missing range flag; got {msg}"
+        );
+    }
+
+    /// The ranked rules stay value-sensitive: a written-out
+    /// `"rankedCountable": false` is an opt-out and demands nothing.
+    #[test]
+    fn ranked_opt_out_demands_nothing() {
+        let schema = schema_with_index_entry(index_entry(vec![
+            ("averageable", Value::Text("grade".to_string())),
+            ("rankedCountable", Value::Bool(false)),
+        ]));
+        let v2 = parse_with(schema, latest(), true)
+            .expect("an explicit rankedCountable: false asks for no ranking axis");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(!index.ranked_countable && !index.range_countable);
+    }
+
+    /// `rangeCountable` implies `countable`, as it does at the doctype level:
+    /// a `rangeCountable: true` with no `countable` beside it is a complete
+    /// declaration in both layers (the meta-schema has no row for it, the
+    /// parser promotes the omitted `countable`).
+    #[test]
+    fn range_countable_alone_implies_countable_under_full_validation() {
+        let schema =
+            schema_with_index_entry(index_entry(vec![("rangeCountable", Value::Bool(true))]));
+        let v2 = parse_with(schema, latest(), true)
+            .expect("rangeCountable alone is a complete declaration");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(index.range_countable && index.countable.is_countable());
+    }
+
+    /// The other range rows keep their presence semantics: a `rangeSummable`
+    /// key with neither `summable` nor `averageable` beside it is refused,
+    /// and the error names `summable`.
+    #[test]
+    fn range_summable_without_summable_or_averageable_is_still_rejected() {
+        let schema =
+            schema_with_index_entry(index_entry(vec![("rangeSummable", Value::Bool(true))]));
+        let error =
+            parse_with(schema, latest(), true).expect_err("rangeSummable needs something to sum");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("summable"),
+            "the error must name the missing aggregate flag; got {msg}"
+        );
+    }
+
+    /// An explicit `"notCountable"` beside `rangeCountable: true` is the one
+    /// spelling the implication refuses, and the parser names it.
+    #[test]
+    fn range_countable_with_explicit_not_countable_is_rejected() {
+        let schema = schema_with_index_entry(index_entry(vec![
+            ("countable", Value::Text("notCountable".to_string())),
+            ("rangeCountable", Value::Bool(true)),
+        ]));
+        let error = parse_with(schema, latest(), true)
+            .expect_err("countable: notCountable contradicts rangeCountable: true");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("rangeCountable: true implies a countable index"),
+            "the parser's contradiction error must be the one raised; got {msg}"
+        );
+    }
+
+    /// Below protocol version 14 nothing moves: generation 2 keeps rejecting
+    /// `rangeCountable` without `countable`, in the structural parser (which
+    /// is all a `full_validation: false` parse runs) and in the frozen v2
+    /// meta-schema alike.
+    #[test]
+    fn range_countable_alone_is_still_rejected_at_protocol_version_13() {
+        let schema =
+            schema_with_index_entry(index_entry(vec![("rangeCountable", Value::Bool(true))]));
+        for full_validation in [false, true] {
+            let error = parse_dispatched(schema.clone(), pv13(), full_validation)
+                .expect_err("generation 2 demands an explicit countable");
+            let msg = format!("{error:?}");
+            assert!(
+                msg.contains("countable"),
+                "full_validation={full_validation}: the error must name countable; got {msg}"
+            );
+        }
+    }
+
+    /// With the sugar satisfying the presence rows, a contradictory
+    /// `"rangeCountable": false` under `rangeAverageable: true` reaches the
+    /// parser, whose message says what to remove. Before the meta-schema was
+    /// made sugar-aware the same index died one layer earlier with
+    /// `"countable" is a required property`, which pointed at the wrong key.
+    #[test]
+    fn explicit_range_countable_false_under_range_averageable_reaches_the_parser() {
+        let mut entry = sugar_multi_axis_index_entry();
+        entry.push((
+            Value::Text("rangeCountable".to_string()),
+            Value::Bool(false),
+        ));
+        let error = parse_with(schema_with_index_entry(entry), latest(), true)
+            .expect_err("rangeAverageable: true contradicts an explicit rangeCountable: false");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("rangeCountable: false"),
+            "the parser's contradiction error must name the flag to remove; got {msg}"
+        );
+    }
+
+    /// The doctype-level row has the same shape: `documentsAverageable` stands
+    /// in for `documentsSummable` under a doctype-level `rangeSummable`.
+    #[test]
+    fn documents_averageable_sugar_satisfies_doctype_range_summable() {
+        let schema = schema_with_doctype_flags_and_index_entry(
+            vec![
+                ("documentsAverageable", Value::Text("grade".to_string())),
+                ("rangeSummable", Value::Bool(true)),
+            ],
+            index_entry(vec![]),
+        );
+        parse_with(schema, latest(), true).expect(
+            "documentsAverageable implies documentsSummable, so rangeSummable is satisfied",
+        );
+
+        let schema = schema_with_doctype_flags_and_index_entry(
+            vec![("rangeSummable", Value::Bool(true))],
+            index_entry(vec![]),
+        );
+        let error = parse_with(schema, latest(), true)
+            .expect_err("a doctype-level rangeSummable with nothing to sum is refused");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("documentsSummable"),
+            "the error must name the missing doctype flag; got {msg}"
+        );
+    }
+
+    /// A contract already written to state is re-parsed with
+    /// `full_validation: false`; that path never ran either layer and must
+    /// keep reconstructing whatever consensus once admitted.
+    #[test]
+    fn sugar_form_parses_without_full_validation() {
+        let schema = schema_with_index_entry(sugar_multi_axis_index_entry());
+        let v2 = parse_with(schema, latest(), false)
+            .expect("the structural parser is sugar-aware and accepts the short form");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(index.ranked_countable && index.ranked_averageable);
+        assert!(index.range_countable && index.range_summable);
+    }
+
+    /// The SDK-facing entry point reaches the same verdict as consensus.
+    ///
+    /// `DataContract::from_json(.., full_validation = true, ..)` is what
+    /// `DataContractWasm::fromJSON` calls, and drive-abci's data contract
+    /// create validation deserializes the contract with `full_validation =
+    /// true` as well; both land in `DocumentType::try_from_schema`, so
+    /// pinning this entry point pins the pair.
+    #[cfg(feature = "json-conversion")]
+    #[test]
+    fn from_json_full_validation_accepts_the_sugar_short_form() {
+        use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
+        use crate::prelude::DataContract;
+        use serde_json::json;
+
+        fn contract_json(index: serde_json::Value) -> serde_json::Value {
+            json!({
+                "$formatVersion": "1",
+                "id": "BmKTJeLL3GfH8FxEx7SUbTog4eAKj8vJRDi97gYkxB9p",
+                "ownerId": "HtQNfXBZJu3WnvjvCFJKgbvfgWYJxWxaFWy23TKoFjg9",
+                "version": 1,
+                "config": {
+                    "$formatVersion": "0",
+                    "canBeDeleted": false,
+                    "readonly": false,
+                    "keepsHistory": false,
+                    "documentsKeepHistoryContractDefault": false,
+                    "documentsMutableContractDefault": true,
+                    "documentsCanBeDeletedContractDefault": false,
+                    "requiresIdentityEncryptionBoundedKey": null,
+                    "requiresIdentityDecryptionBoundedKey": null
+                },
+                "documentSchemas": {
+                    "review": {
+                        "type": "object",
+                        "properties": {
+                            "restaurantId": {"type": "string", "maxLength": 32, "position": 0},
+                            "grade": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 100,
+                                "position": 1
+                            }
+                        },
+                        "required": ["restaurantId", "grade"],
+                        "additionalProperties": false,
+                        "indices": [index]
+                    }
+                },
+                "groups": {},
+                "tokens": {},
+                "keywords": [],
+                "description": null
+            })
+        }
+
+        let short_form = json!({
+            "name": "storeRating",
+            "properties": [{"restaurantId": "asc"}],
+            "averageable": "grade",
+            "rangeAverageable": true,
+            "rankedAverageable": true,
+            "rankedCountable": true
+        });
+        DataContract::from_json(contract_json(short_form), true, latest())
+            .expect("the sugar short form registers, so the SDK must accept it too");
+
+        let no_range_axis = json!({
+            "name": "storeRating",
+            "properties": [{"restaurantId": "asc"}],
+            "averageable": "grade",
+            "rankedCountable": true
+        });
+        let error = DataContract::from_json(contract_json(no_range_axis), true, latest())
+            .expect_err("a ranking with no range axis is refused by both layers");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("rangeCountable"),
+            "the error must name the missing range flag; got {msg}"
         );
     }
 }

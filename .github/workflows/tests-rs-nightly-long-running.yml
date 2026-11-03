@@ -83,10 +83,10 @@ jobs:
           fi
           echo "All features verified"
 
-  upgrade-fork-tests:
-    name: Version upgrade tests
+  long-running-tests:
+    name: Long-running Rust tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     permissions:
       id-token: write
       contents: read
@@ -118,6 +118,38 @@ jobs:
             --all-features \
             --locked \
             -- --ignored "upgrade_fork_tests"
+        env:
+          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
+          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
+          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
+          SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
+          SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
+
+      # Unit tests too slow for the PR suite, each marked `#[ignore] //
+      # Long-running: runs in nightly CI only`. These libs also carry ignored
+      # benchmarks and known-gap guards that must stay off, so nightly-only
+      # tests are listed here by name rather than running every ignored
+      # test. Runs even when the upgrade fork tests above fail so both
+      # results land in the same run.
+      - name: Run nightly-only unit tests
+        if: ${{ !cancelled() }}
+        run: |
+          ulimit -c unlimited
+          RUST_MIN_STACK=4194304 cargo test \
+            --package drive \
+            --package drive-abci \
+            --package platform-wallet-storage \
+            --package platform-wallet-ffi \
+            --lib \
+            --all-features \
+            --locked \
+            -- --ignored \
+            "should_catch_up_after_a_burst_with_shared_deep_ttl_indexes" \
+            "document_distribution_many_votes_two_contests_same_time" \
+            "distribute_max_distribution_param_every_step" \
+            "polynomial_distribution_power_extreme_values" \
+            "prop_single_byte_flip_never_yields_plaintext_full" \
+            "a_broadcast_never_reaches_the_broadcaster_after_teardown_completed_full"
         env:
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"

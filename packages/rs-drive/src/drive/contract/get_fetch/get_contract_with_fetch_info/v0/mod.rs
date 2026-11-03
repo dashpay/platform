@@ -108,6 +108,11 @@ impl Drive {
     }
 
     /// Returns the contract with fetch info and operations with the given ID.
+    ///
+    /// `add_to_cache_if_pulled` is whether this call may write to the cache at all: storing a
+    /// contract it pulled from state, and storing the fee it calculated for a cached contract.
+    /// Validation modes that run off the consensus thread (`check_tx`) pass `false`, so that
+    /// only block execution ever writes the block cache.
     #[inline(always)]
     pub(super) fn get_contract_with_fetch_info_and_add_to_operations_v0(
         &self,
@@ -118,11 +123,23 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContractFetchInfo>>, Error> {
-        match self
-            .cache
-            .data_contracts
-            .get(contract_id, transaction.is_some())
-        {
+        let is_transactional = transaction.is_some();
+
+        // A read with no transaction is a committed-state read. Its snapshot is taken before
+        // anything is looked up so that, should a block commit while this call runs, whatever
+        // it read is not published to the global cache (see `CommittedGeneration`).
+        let observed_generation =
+            (!is_transactional).then(|| self.cache.data_contracts.committed_generation());
+
+        let cache_contract = |fetch_info: Arc<DataContractFetchInfo>| match observed_generation {
+            Some(observed) => self
+                .cache
+                .data_contracts
+                .insert_committed(fetch_info, observed),
+            None => self.cache.data_contracts.insert_block(fetch_info),
+        };
+
+        match self.cache.data_contracts.get(contract_id, is_transactional) {
             None => {
                 let maybe_contract_fetch_info = self.fetch_contract_and_add_operations(
                     contract_id,
@@ -135,9 +152,7 @@ impl Drive {
                 if add_to_cache_if_pulled {
                     // Store a contract in cache if present
                     if let Some(contract_fetch_info) = &maybe_contract_fetch_info {
-                        self.cache
-                            .data_contracts
-                            .insert(Arc::clone(contract_fetch_info), transaction.is_some());
+                        cache_contract(Arc::clone(contract_fetch_info));
                     };
                 }
                 Ok(maybe_contract_fetch_info)
@@ -159,16 +174,16 @@ impl Drive {
                             None,
                         )?;
 
-                        let updated_contract_fetch_info = Arc::new(DataContractFetchInfo {
-                            contract: contract_fetch_info.contract.clone(),
-                            storage_flags: contract_fetch_info.storage_flags.clone(),
-                            cost: contract_fetch_info.cost.clone(),
-                            fee: Some(fee.clone()),
-                        });
-                        // we override the cache for the contract as the fee is now calculated
-                        self.cache
-                            .data_contracts
-                            .insert(updated_contract_fetch_info, transaction.is_some());
+                        if add_to_cache_if_pulled {
+                            let updated_contract_fetch_info = Arc::new(DataContractFetchInfo {
+                                contract: contract_fetch_info.contract.clone(),
+                                storage_flags: contract_fetch_info.storage_flags.clone(),
+                                cost: contract_fetch_info.cost.clone(),
+                                fee: Some(fee.clone()),
+                            });
+                            // we override the cache for the contract as the fee is now calculated
+                            cache_contract(updated_contract_fetch_info);
+                        }
 
                         fee
                     };

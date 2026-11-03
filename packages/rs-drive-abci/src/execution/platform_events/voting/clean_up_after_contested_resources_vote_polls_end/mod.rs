@@ -11,6 +11,8 @@ use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_
 use drive::grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
+#[cfg(test)]
+mod tests;
 mod v0;
 mod v1;
 

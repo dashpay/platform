@@ -8,3 +8,4 @@ mod identity_by_unique_public_key_hash;
 mod identity_contract_nonce;
 mod identity_nonce;
 mod keys;
+mod keys_remaining_budgets;

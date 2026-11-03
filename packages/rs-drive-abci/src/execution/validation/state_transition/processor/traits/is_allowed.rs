@@ -1,12 +1,14 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform_types::platform::PlatformRef;
-use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::basic::state_transition::StateTransitionNotActiveError;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransition;
 use dpp::version::feature_initial_protocol_versions::{
-    ADDRESS_FUNDS_INITIAL_PROTOCOL_VERSION, SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+    ADDRESS_FUNDS_INITIAL_PROTOCOL_VERSION, CONTRACT_FEE_CLAIM_INITIAL_PROTOCOL_VERSION,
+    CONTRACT_USER_MODERATION_INITIAL_PROTOCOL_VERSION,
+    IDENTITY_KEY_LIMITS_UPDATE_INITIAL_PROTOCOL_VERSION,
+    IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+    SHIELDED_POOL_INITIAL_PROTOCOL_VERSION, SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION,
 };
 use dpp::version::PlatformVersion;
 
@@ -15,9 +17,8 @@ pub(crate) trait StateTransitionIsAllowedValidationV0 {
     /// This means we should validate is state transition is allowed
     fn has_is_allowed_validation(&self) -> Result<bool, Error>;
     /// Preliminary validation for a state transition
-    fn validate_is_allowed<C: CoreRPCLike>(
+    fn validate_is_allowed(
         &self,
-        platform: &PlatformRef<C>,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<()>, Error>;
 }
@@ -25,8 +26,7 @@ pub(crate) trait StateTransitionIsAllowedValidationV0 {
 impl StateTransitionIsAllowedValidationV0 for StateTransition {
     fn has_is_allowed_validation(&self) -> Result<bool, Error> {
         match self {
-            StateTransition::Batch(_)
-            | StateTransition::IdentityTopUpFromAddresses(_)
+            StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::IdentityCreateFromAddresses(_)
             | StateTransition::AddressFundsTransfer(_)
             | StateTransition::IdentityCreditTransferToAddresses(_)
@@ -34,11 +34,17 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
             | StateTransition::AddressCreditWithdrawal(_)
             | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
+            | StateTransition::IdentityTopUpFromShieldedPool(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_)
-            | StateTransition::IdentityCreateFromShieldedPool(_) => Ok(true),
-            StateTransition::DataContractCreate(_)
+            | StateTransition::IdentityCreateFromShieldedPool(_)
+            | StateTransition::ShieldFromIdentity(_)
+            | StateTransition::IdentityKeyLimitsUpdate(_)
+            | StateTransition::ContractUserModeration(_)
+            | StateTransition::ContractFeeClaim(_) => Ok(true),
+            StateTransition::Batch(_)
+            | StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
             | StateTransition::IdentityCreate(_)
             | StateTransition::IdentityTopUp(_)
@@ -49,13 +55,11 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
         }
     }
 
-    fn validate_is_allowed<C: CoreRPCLike>(
+    fn validate_is_allowed(
         &self,
-        platform: &PlatformRef<C>,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<()>, Error> {
         match self {
-            StateTransition::Batch(st) => st.validate_is_allowed(platform, platform_version),
             StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::IdentityCreateFromAddresses(_)
             | StateTransition::AddressFundsTransfer(_)
@@ -89,6 +93,85 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
                             self.state_transition_type().to_string(),
                             platform_version.protocol_version,
                             SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+                        )
+                        .into(),
+                    ]))
+                }
+            }
+            StateTransition::IdentityTopUpFromShieldedPool(_) => {
+                if platform_version.protocol_version
+                    >= IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION
+                {
+                    Ok(ConsensusValidationResult::new())
+                } else {
+                    Ok(ConsensusValidationResult::new_with_errors(vec![
+                        StateTransitionNotActiveError::new(
+                            self.state_transition_type().to_string(),
+                            platform_version.protocol_version,
+                            IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+                        )
+                        .into(),
+                    ]))
+                }
+            }
+            StateTransition::ShieldFromIdentity(_) => {
+                if platform_version.protocol_version
+                    >= SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION
+                {
+                    Ok(ConsensusValidationResult::new())
+                } else {
+                    Ok(ConsensusValidationResult::new_with_errors(vec![
+                        StateTransitionNotActiveError::new(
+                            self.state_transition_type().to_string(),
+                            platform_version.protocol_version,
+                            SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION,
+                        )
+                        .into(),
+                    ]))
+                }
+            }
+            StateTransition::IdentityKeyLimitsUpdate(_) => {
+                if platform_version.protocol_version
+                    >= IDENTITY_KEY_LIMITS_UPDATE_INITIAL_PROTOCOL_VERSION
+                {
+                    Ok(ConsensusValidationResult::new())
+                } else {
+                    Ok(ConsensusValidationResult::new_with_errors(vec![
+                        StateTransitionNotActiveError::new(
+                            self.state_transition_type().to_string(),
+                            platform_version.protocol_version,
+                            IDENTITY_KEY_LIMITS_UPDATE_INITIAL_PROTOCOL_VERSION,
+                        )
+                        .into(),
+                    ]))
+                }
+            }
+            StateTransition::ContractUserModeration(_) => {
+                if platform_version.protocol_version
+                    >= CONTRACT_USER_MODERATION_INITIAL_PROTOCOL_VERSION
+                {
+                    Ok(ConsensusValidationResult::new())
+                } else {
+                    Ok(ConsensusValidationResult::new_with_errors(vec![
+                        StateTransitionNotActiveError::new(
+                            self.state_transition_type().to_string(),
+                            platform_version.protocol_version,
+                            CONTRACT_USER_MODERATION_INITIAL_PROTOCOL_VERSION,
+                        )
+                        .into(),
+                    ]))
+                }
+            }
+            StateTransition::ContractFeeClaim(_) => {
+                if platform_version.protocol_version >= CONTRACT_FEE_CLAIM_INITIAL_PROTOCOL_VERSION
+                {
+                    Ok(ConsensusValidationResult::new())
+                } else {
+                    Ok(ConsensusValidationResult::new_with_errors(vec![
+                        StateTransitionNotActiveError::new(
+                            self.state_transition_type().to_string(),
+                            platform_version.protocol_version,
+                            CONTRACT_FEE_CLAIM_INITIAL_PROTOCOL_VERSION,
                         )
                         .into(),
                     ]))
@@ -258,7 +341,6 @@ mod tests {
     /// Returns all state transitions grouped by expected `has_is_allowed_validation` result.
     fn transitions_requiring_allowed_validation() -> Vec<StateTransition> {
         vec![
-            StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default())),
             StateTransition::IdentityTopUpFromAddresses(IdentityTopUpFromAddressesTransition::V0(
                 IdentityTopUpFromAddressesTransitionV0::default(),
             )),
@@ -294,6 +376,7 @@ mod tests {
 
     fn transitions_not_requiring_allowed_validation() -> Vec<StateTransition> {
         vec![
+            StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default())),
             make_data_contract_create_st(),
             make_data_contract_update_st(),
             StateTransition::IdentityCreate(IdentityCreateTransition::V0(

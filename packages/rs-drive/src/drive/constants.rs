@@ -45,6 +45,10 @@ pub const AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE: u8 = 1;
 /// The estimated average document type name size
 pub const ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE: u8 = 12;
 
+/// The estimated number of document types of a contract whose documents its moderators can
+/// delete: the size the layer of their removal record trees is estimated at.
+pub const ESTIMATED_DOCUMENT_TYPES_DELETABLE_BY_MODERATORS: u32 = 16;
+
 /// The estimated average index name size
 pub const ESTIMATED_AVERAGE_INDEX_NAME_SIZE: u8 = 16;
 

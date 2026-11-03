@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::drive::LowLevelDriveOperation;
@@ -45,9 +46,19 @@ impl Drive {
                 transaction,
                 drive_version,
             ),
+            1 => self.add_contract_to_storage_v1(
+                contract_element,
+                contract,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                insert_operations,
+                is_first_insert,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_contract_to_storage".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

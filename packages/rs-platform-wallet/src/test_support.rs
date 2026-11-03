@@ -178,7 +178,7 @@ impl ExtendedPubKeySigner for WalletSigner {
 /// rides on that one input, so a leaked reservation strands it. Returns
 /// the manager, the wallet id, the shared balance handle, and a soft
 /// signer over the wallet's seed.
-pub(crate) async fn funded_wallet_manager(
+pub async fn funded_wallet_manager(
     account_type: StandardAccountType,
 ) -> (
     Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
@@ -192,7 +192,7 @@ pub(crate) async fn funded_wallet_manager(
 /// Like [`funded_wallet_manager`] but with caller-chosen funding outputs —
 /// multiple outputs yield multiple spendable UTXOs, letting tests run
 /// concurrent asset-lock builds that each need their own input.
-pub(crate) async fn funded_wallet_manager_with_outputs(
+pub async fn funded_wallet_manager_with_outputs(
     account_type: StandardAccountType,
     outputs: &[u64],
 ) -> (

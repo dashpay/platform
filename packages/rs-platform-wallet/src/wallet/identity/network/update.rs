@@ -24,7 +24,7 @@ use crate::error::PlatformWalletError;
 use super::*;
 
 // Borrowed-signer adapter — see `dpns.rs` for the same pattern.
-struct SignerRef<'a, S: ?Sized>(&'a S);
+pub(super) struct SignerRef<'a, S: ?Sized>(pub(super) &'a S);
 
 impl<'a, S: ?Sized> std::fmt::Debug for SignerRef<'a, S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

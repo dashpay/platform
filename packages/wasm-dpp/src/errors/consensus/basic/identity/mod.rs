@@ -1,3 +1,4 @@
+mod contract_group_bound_key_not_allowed_in_shielded_identity_creation_error;
 mod duplicated_identity_public_key_error;
 mod duplicated_identity_public_key_id_error;
 mod identity_asset_lock_proof_locked_transaction_mismatch_error;
@@ -28,6 +29,7 @@ mod missing_master_public_key_error;
 mod missing_public_key_error;
 mod not_implemented_credit_withdrawal_transition_pooling_error;
 
+pub use contract_group_bound_key_not_allowed_in_shielded_identity_creation_error::*;
 pub use duplicated_identity_public_key_error::*;
 pub use duplicated_identity_public_key_id_error::*;
 pub use identity_asset_lock_proof_locked_transaction_mismatch_error::*;

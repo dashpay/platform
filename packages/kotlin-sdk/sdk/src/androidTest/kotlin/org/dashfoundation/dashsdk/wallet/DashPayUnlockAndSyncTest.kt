@@ -22,7 +22,7 @@ import org.junit.runner.RunWith
 
 /**
  * Instrumented coverage for the K2 seedless-unlock topology and the
- * DashPay sync-service lifecycle (KOTLIN_MIGRATION_SPEC.md §K2), through
+ * DashPay sync-service lifecycle, through
  * the real native lib:
  *
  * - The **happy-path unlock is the end-to-end proof of the out-buffer

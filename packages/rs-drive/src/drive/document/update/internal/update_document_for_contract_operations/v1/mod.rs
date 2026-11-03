@@ -1,7 +1,11 @@
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
+use crate::drive::document::expiration::pricing::{
+    document_expiration_cleanup_fee_for_bytes, document_remaining_lifetime_ms, document_ttl_pricing,
+};
 use crate::drive::document::index_level_tree_types::{
     index_level_tree_types_with_continuation_demotion, IndexLevelTreeTypes,
 };
+use crate::drive::document::time_range_ttl::{entry_key_bucket_start, live_time_range_entry_keys};
 use crate::drive::document::{
     make_document_reference, make_document_reference_with_sum_item, read_document_sum_contribution,
 };
@@ -23,11 +27,12 @@ use crate::util::object_size_info::{
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::fee::fee_result::FeeResult;
 
 use crate::drive::document::paths::{
     contract_document_type_path,
@@ -154,6 +159,11 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let drive_version = &platform_version.drive;
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
+        // A document whose type declares a `ttl` stays without storage flags when replaced,
+        // transferred, bought or repriced. Dropped before anything is sized, so the replaced
+        // elements' sizes agree with what is stored.
+        let document_and_contract_info =
+            document_and_contract_info.without_storage_flags_if_expiring();
         if !document_and_contract_info.document_type.requires_revision()
         // if it requires revision then there are reasons for us to be able to update in drive
         {
@@ -169,9 +179,8 @@ impl Drive {
             .is_document_size()
             || estimated_costs_only_with_layer_info.is_some()
         {
-            return self.add_document_for_contract_operations(
+            return self.estimate_document_change_as_insert_operations_v1(
                 document_and_contract_info,
-                true, // we say we should override as this skips an unnecessary check
                 block_info,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
@@ -256,6 +265,9 @@ impl Drive {
             platform_version,
         )?;
 
+        // The stored size of the document before the change, which a type with a `ttl` needs
+        // to prepay the deletion of the bytes the change adds.
+        let old_document_bytes: u64;
         let old_document_info = if let Some(old_document_element) = old_document_element {
             // Accept BOTH plain `Item` (non-summable doctypes) AND
             // `ItemWithSumItem` (summable doctypes — primary storage on
@@ -273,6 +285,7 @@ impl Drive {
                     )))
                 }
             };
+            old_document_bytes = old_serialized_document.len() as u64;
             let document = Document::from_bytes(
                 old_serialized_document.as_slice(),
                 document_type,
@@ -299,6 +312,7 @@ impl Drive {
         // beneath a `ProvableCount*` / `ProvableSum*` parent —
         // diverging from the insert path (consensus break).
         let index_structure = document_type.index_structure();
+
         // fourth we need to store a reference to the document for each index
         for index in document_type.indexes().values() {
             // at this point the contract path is to the contract documents
@@ -383,6 +397,22 @@ impl Drive {
             // transform is exactly the grid every index sharing this level
             // declared.)
             if let Some(transform) = current_index_level.time_range() {
+                // TTL'd (ephemeral) sub-levels ride their own op batch and carry
+                // no storage flags — same routing as the insert and delete
+                // walkers; see the ttl module's Billing section.
+                let index_is_ephemeral = transform.ttl_seconds.is_some();
+                let mut ephemeral_local_operations: Vec<LowLevelDriveOperation> = vec![];
+                let index_batch_operations: &mut Vec<LowLevelDriveOperation> = if index_is_ephemeral
+                {
+                    &mut ephemeral_local_operations
+                } else {
+                    &mut batch_operations
+                };
+                let index_storage_flags = if index_is_ephemeral {
+                    None
+                } else {
+                    storage_flags
+                };
                 self.update_time_range_index_for_contract_operations_v1(
                     index,
                     transform,
@@ -393,13 +423,21 @@ impl Drive {
                     &index_path,
                     current_index_level,
                     &index_document_reference,
-                    storage_flags,
+                    index_storage_flags,
                     &mut batch_insertion_cache,
                     previous_batch_operations,
-                    &mut batch_operations,
+                    index_batch_operations,
+                    block_info.time_ms,
                     transaction,
                     platform_version,
                 )?;
+                if index_is_ephemeral {
+                    batch_operations.extend(
+                        ephemeral_local_operations
+                            .into_iter()
+                            .map(LowLevelDriveOperation::retag_ephemeral),
+                    );
+                }
                 continue;
             }
 
@@ -872,6 +910,40 @@ impl Drive {
                 }
             }
         }
+
+        // A document whose type declares a `ttl` pays for the bytes a change adds by the
+        // lifetime it has left; its `$createdAt`, and so its expiry and its expirations tree
+        // entry, never change. Its creation prepaid its deletion; a change that grows it
+        // prepays the deletion of the bytes it adds.
+        if let Some(ttl_seconds) = document_type.documents_ttl_seconds() {
+            let pricing = document_ttl_pricing(
+                document_remaining_lifetime_ms(
+                    document.created_at(),
+                    ttl_seconds,
+                    block_info.time_ms,
+                )?,
+                self.config.epoch_time_length_s,
+                self.config.epochs_per_era,
+                &platform_version.fee_version,
+            )?;
+            batch_operations = batch_operations
+                .into_iter()
+                .map(|operation| operation.retag_document_ttl(pricing))
+                .collect();
+            let added_bytes = (document
+                .serialize(document_type, contract, platform_version)?
+                .len() as u64)
+                .saturating_sub(old_document_bytes);
+            if added_bytes > 0 {
+                batch_operations.push(LowLevelDriveOperation::PreCalculatedFeeResult(FeeResult {
+                    processing_fee: document_expiration_cleanup_fee_for_bytes(
+                        added_bytes,
+                        &platform_version.fee_version,
+                    )?,
+                    ..Default::default()
+                }));
+            }
+        }
         Ok(batch_operations)
     }
 
@@ -930,10 +1002,17 @@ impl Drive {
         batch_insertion_cache: &mut HashSet<Vec<Vec<u8>>>,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
+        block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let drive_version = &platform_version.drive;
+
+        // TTL drainage already ran: the caller sweeps every TTL'd level
+        // once (deduplicated) before the per-index loop, so the removable
+        // checks below see post-drain state and no direct drop can race a
+        // queued mutation. Do not drain here — several indexes may share
+        // this level.
 
         // New/old raw values for the bucketed source property → entry key
         // sets, mirroring the insert walker's fan-out (see the doc comment).
@@ -960,7 +1039,17 @@ impl Drive {
         // shared with the insert and delete walkers via
         // `TimeRangeTransform::entry_keys_for_raw` — one definition, so the
         // three walkers can never disagree.
-        let new_entry_keys = transform.entry_keys_for_raw(new_raw.as_deref().unwrap_or_default());
+        // TTL: writes never target expired buckets — an update of a document
+        // whose windows have all expired leaves it with no entries under
+        // this index, and never resurrects a dropped bucket. The old set is
+        // NOT filtered: its expired keys flow to the delete loop below,
+        // whose per-key removable check skips exactly the buckets the lazy
+        // drop already took.
+        let new_entry_keys = live_time_range_entry_keys(
+            transform,
+            transform.entry_keys_for_raw(new_raw.as_deref().unwrap_or_default()),
+            block_time_ms,
+        );
         let old_entry_keys = transform.entry_keys_for_raw(old_raw.as_deref().unwrap_or_default());
 
         // Terminator-layout inputs, tracked separately for the new and the old
@@ -1253,6 +1342,48 @@ impl Drive {
         for entry_key in &old_entry_keys {
             if new_set.contains(entry_key) && !suffix_changed {
                 continue; // unchanged entry — already refreshed by the insert loop above
+            }
+            // TTL: an expired bucket the drain already took entirely has no
+            // entry left to delete; one that still stands may be PARTIALLY
+            // drained (whole `[0]` and group value trees go before the
+            // bucket), so the entry is checked at full-path granularity
+            // below and skipped when its deeper trees are gone. A live
+            // bucket behaves exactly as before. This path is stateful-only
+            // (estimation redirects to the insert walker at the top of the
+            // v1 update), so the existence reads are always legal here.
+            let expired_entry = entry_key_bucket_start(entry_key)
+                .zip(transform.expiry_horizon_ms(block_time_ms))
+                .is_some_and(|(start, horizon)| start < horizon);
+            if expired_entry {
+                if !self.time_range_entry_is_removable(
+                    transform,
+                    entry_key,
+                    block_time_ms,
+                    base_index_path,
+                    transaction,
+                    platform_version,
+                )? {
+                    continue;
+                }
+                let mut entry_path_segments: Vec<Vec<u8>> = base_index_path.to_vec();
+                entry_path_segments.push(entry_key.clone());
+                for segment in &old_suffix {
+                    entry_path_segments.push(segment.clone());
+                }
+                if !old_terminator_is_unique {
+                    entry_path_segments.push(vec![0]);
+                }
+                // `base_index_path` — the document-type path plus the
+                // grid-qualified level key — exists for every registered
+                // contract, so the walk starts below it.
+                if !self.expired_entry_path_exists(
+                    &entry_path_segments,
+                    base_index_path.len(),
+                    transaction,
+                    platform_version,
+                )? {
+                    continue;
+                }
             }
             let mut key_info_path: Vec<KeyInfo> = base_index_path
                 .iter()

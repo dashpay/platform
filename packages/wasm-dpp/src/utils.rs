@@ -5,7 +5,7 @@ use anyhow::{anyhow, bail, Context};
 use dpp::{consensus::ConsensusError, ProtocolError};
 
 use dpp::platform_value::Value;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use js_sys::{Function, Uint8Array};
 use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
@@ -355,7 +355,7 @@ pub(crate) fn consensus_errors_from_buffers(
             .to_vec()
         })
         .map(|error_bytes| {
-            ConsensusError::deserialize_from_bytes(&error_bytes.to_vec()).with_js_error()
+            ConsensusError::deserialize_from_bytes_untrusted(&error_bytes.to_vec()).with_js_error()
         })
         .collect::<Result<Vec<ConsensusError>, JsValue>>()
 }

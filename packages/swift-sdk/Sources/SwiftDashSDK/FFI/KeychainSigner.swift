@@ -601,6 +601,18 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     /// Shared by the sign trampoline and tests: consult any scoped
     /// in-memory registry first, then the existing platform-address /
     /// breadcrumb / persisted-key paths.
+    ///
+    /// Keep the stored-scalar fallback (`lookupIdentityPrivateKey` +
+    /// `ffiSign`) until a per-device migration stamp, persisted at
+    /// runtime, records that every identity key row has a derivation path
+    /// and the old `identity_privkey.*` Keychain items are purged. A
+    /// release-time check is not enough: a user can skip the version that
+    /// ran the backfill, so the build that drops the fallback must still
+    /// run the Keychain-driven backfill on first launch (the Keychain
+    /// survives a SwiftData store rebuild). Wallets without a mnemonic
+    /// (watch-only or imported with a bare key) can only sign through the
+    /// fallback until a mnemonic is imported. Removing it early locks those
+    /// users out of identities that work today.
     func signOnDemand(
         publicKey: Data,
         keyType: UInt8,

@@ -16,6 +16,11 @@ and again when rechecking mempool contents. It performs a lighter validation:
 signature verification, basic structure, and balance checks. The goal is to filter out
 obvious garbage cheaply, without doing expensive state lookups.
 
+A `MasternodeVote` is the exception. A block refuses a failed vote without charging anyone,
+and the proposer drops it from the block without a trace, so check_tx runs the vote's advanced
+structure and state validation as well. A vote that a block would refuse, such as a Lock vote
+on a contest without locking, is refused when it is broadcast, with its error.
+
 This is implemented in
 `packages/rs-drive-abci/src/execution/validation/state_transition/check_tx_verification/mod.rs`:
 
@@ -53,7 +58,7 @@ permitted on the current network?
 
 ```rust
 if state_transition.has_is_allowed_validation()? {
-    let result = state_transition.validate_is_allowed(platform, platform_version)?;
+    let result = state_transition.validate_is_allowed(platform_version)?;
     if !result.is_valid() {
         return Ok(ConsensusValidationResult::new_with_errors(result.errors));
     }
@@ -66,17 +71,15 @@ The trait is defined in
 ```rust
 pub(crate) trait StateTransitionIsAllowedValidationV0 {
     fn has_is_allowed_validation(&self) -> Result<bool, Error>;
-    fn validate_is_allowed<C: CoreRPCLike>(
+    fn validate_is_allowed(
         &self,
-        platform: &PlatformRef<C>,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<()>, Error>;
 }
 ```
 
-Transitions like `DataContractCreate` and `IdentityCreate` skip this check entirely
-(they have always been allowed). The `Batch` transition has its own is_allowed logic
-because certain token operations may be gated.
+Transitions available since protocol version 1, like `DataContractCreate`,
+`IdentityCreate` and `Batch`, skip this check entirely.
 
 ## Stage 2: Identity Signature Verification
 
@@ -231,6 +234,12 @@ if state_transition.has_identity_minimum_balance_pre_check_validation() {
 }
 ```
 
+A `MasternodeVote` is paid by its vote poll's prefunded specialized balance, not by
+the voter, so its pre-check is on that pot: a vote on a poll whose pot does not exist,
+or holds less than the single vote cost, is refused unpaid with
+`PrefundedSpecializedBalanceNotFoundError` or
+`PrefundedSpecializedBalanceInsufficientError`.
+
 ## Stage 8: Advanced Structure Validation (without State)
 
 Some transitions need structural validation that goes beyond basic checks but does not
@@ -293,6 +302,13 @@ let action = if state_transition.has_advanced_structure_validation_with_state() 
 ```
 
 We will cover `transform_into_action` in detail in the next chapter.
+
+For `IdentityCreateFromAddresses` this stage also checks the proof of possession of each key
+the transition registers. The address witnesses cannot sign those signatures (both sign the
+same bytes), so the owners of the inputs never signed what this check judges. From protocol
+version 14 a failure is therefore refused without a fee, like a failed witness, instead of
+charging the inputs a penalty; check_tx runs this stage for the transition too, so such a
+transition does not reach a block.
 
 ## Stage 10: State Validation
 

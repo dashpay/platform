@@ -11,6 +11,7 @@ use drive::state_transition_action::StateTransitionAction;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::validation::state_transition::shielded_withdrawal::transform_into_action::v0::ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0;
+use crate::execution::validation::state_transition::shielded_withdrawal::transform_into_action::v1::ShieldedWithdrawalStateTransitionTransformIntoActionValidationV1;
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
@@ -43,9 +44,10 @@ impl StateTransitionShieldedWithdrawalTransitionActionTransformer for ShieldedWi
             .transform_into_action
         {
             0 => self.transform_into_action_v0(platform.drive, block_info, tx, platform_version),
+            1 => self.transform_into_action_v1(platform.drive, block_info, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "shielded withdrawal transition: transform_into_action".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

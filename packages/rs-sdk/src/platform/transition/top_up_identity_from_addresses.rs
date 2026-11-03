@@ -1,3 +1,4 @@
+use dapi_grpc::platform::v0::ResponseMetadata;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::address_inputs::fetch_inputs_with_nonce;
@@ -42,6 +43,28 @@ pub trait TopUpIdentityFromAddresses<S: Signer<PlatformAddress>>: Waitable {
     ) -> Result<(AddressInfos, Credits, u64), Error>;
 }
 
+/// Identity top-ups that preserve the full metadata of the balance proof.
+#[async_trait::async_trait]
+pub trait TopUpIdentityFromAddressesWithMetadata<S: Signer<PlatformAddress>>: Waitable {
+    /// Top up with automatically resolved address nonces and return proof metadata.
+    async fn top_up_from_addresses_with_metadata(
+        &self,
+        sdk: &Sdk,
+        inputs: BTreeMap<PlatformAddress, Credits>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<(AddressInfos, Credits, ResponseMetadata), Error>;
+
+    /// Top up with explicit address nonces and return proof metadata.
+    async fn top_up_from_addresses_with_nonce_with_metadata(
+        &self,
+        sdk: &Sdk,
+        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<(AddressInfos, Credits, ResponseMetadata), Error>;
+}
+
 #[async_trait::async_trait]
 impl<S: Signer<PlatformAddress>> TopUpIdentityFromAddresses<S> for Identity {
     async fn top_up_from_addresses(
@@ -51,9 +74,9 @@ impl<S: Signer<PlatformAddress>> TopUpIdentityFromAddresses<S> for Identity {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<(AddressInfos, Credits, u64), Error> {
-        let inputs_with_nonce = nonce_inc(fetch_inputs_with_nonce(sdk, &inputs).await?);
-        self.top_up_from_addresses_with_nonce(sdk, inputs_with_nonce, signer, settings)
+        self.top_up_from_addresses_with_metadata(sdk, inputs, signer, settings)
             .await
+            .map(|(infos, balance, metadata)| (infos, balance, metadata.height))
     }
 
     async fn top_up_from_addresses_with_nonce(
@@ -63,6 +86,38 @@ impl<S: Signer<PlatformAddress>> TopUpIdentityFromAddresses<S> for Identity {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<(AddressInfos, Credits, u64), Error> {
+        self.top_up_from_addresses_with_nonce_with_metadata(sdk, inputs, signer, settings)
+            .await
+            .map(|(infos, balance, metadata)| (infos, balance, metadata.height))
+    }
+}
+
+#[async_trait::async_trait]
+impl<S: Signer<PlatformAddress>> TopUpIdentityFromAddressesWithMetadata<S> for Identity {
+    async fn top_up_from_addresses_with_metadata(
+        &self,
+        sdk: &Sdk,
+        inputs: BTreeMap<PlatformAddress, Credits>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<(AddressInfos, Credits, ResponseMetadata), Error> {
+        let inputs_with_nonce = nonce_inc(fetch_inputs_with_nonce(sdk, &inputs).await?);
+        self.top_up_from_addresses_with_nonce_with_metadata(
+            sdk,
+            inputs_with_nonce,
+            signer,
+            settings,
+        )
+        .await
+    }
+
+    async fn top_up_from_addresses_with_nonce_with_metadata(
+        &self,
+        sdk: &Sdk,
+        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<(AddressInfos, Credits, ResponseMetadata), Error> {
         let user_fee_increase = settings
             .as_ref()
             .and_then(|settings| settings.user_fee_increase)
@@ -111,7 +166,7 @@ impl<S: Signer<PlatformAddress>> TopUpIdentityFromAddresses<S> for Identity {
                     )
                 })?;
 
-                Ok((address_infos, balance, metadata.height))
+                Ok((address_infos, balance, metadata))
             }
             other => Err(Error::InvalidProvedResponse(format!(
                 "identity proof was expected for {:?}, but received {:?}",

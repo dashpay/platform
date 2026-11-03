@@ -1,5 +1,5 @@
 use crate::error::MapGroveDbError;
-use crate::verify::verify_tenderdash_proof;
+use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
     get_token_total_supply_request, GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, Proof,
@@ -43,14 +43,14 @@ impl FromProof<GetTokenTotalSupplyRequest> for TotalSingleTokenBalance {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, result) = Drive::verify_token_total_supply_and_aggregated_identity_balance(
-            &proof.grovedb_proof,
+            supported_grovedb_proof_bytes(&proof, platform_version)?,
             token_id,
             false,
             platform_version,
         )
         .map_drive_error(&proof, &metadata)?;
 
-        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
 
         Ok((Some(result), metadata, proof))
     }

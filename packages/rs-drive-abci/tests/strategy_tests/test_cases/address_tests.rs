@@ -1372,14 +1372,12 @@ mod tests {
                                             (
                                                 address_balance_change::Operation::AddToBalance(expected_credits),
                                                 address_balance_change::Operation::AddToBalance(actual_credits),
-                                            ) => {
+                                            ) if *expected_credits == 0 || actual_credits <= expected_credits => {
                                                 // AddToBalance - verify the amount matches
                                                 // If expected is 0 (unknown from state transition), just verify type
                                                 // Otherwise, actual may be less due to fee deduction from outputs
-                                                if *expected_credits == 0 || actual_credits <= expected_credits {
-                                                    found = true;
-                                                    break;
-                                                }
+                                                found = true;
+                                                break;
                                             }
                                             _ => {
                                                 // Type mismatch

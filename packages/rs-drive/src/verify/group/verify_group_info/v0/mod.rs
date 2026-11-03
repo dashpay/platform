@@ -8,7 +8,7 @@ use crate::verify::RootHash;
 use dpp::data_contract::group::Group;
 use dpp::data_contract::GroupContractPosition;
 use dpp::identifier::Identifier;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use grovedb::GroveDb;
 use platform_version::version::PlatformVersion;
 
@@ -49,7 +49,7 @@ impl Drive {
         let group = element
             .map(|element| element.into_item_bytes().map_err(Error::from))
             .transpose()?
-            .map(|bytes| Group::deserialize_from_bytes(&bytes))
+            .map(|bytes| Group::deserialize_from_bytes_untrusted(&bytes))
             .transpose()?;
 
         Ok((root_hash, group))
