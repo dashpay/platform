@@ -56,4 +56,13 @@ describe('activateKnownCoreSporks', () => {
       expect(rpcClient.sporkupdate).to.have.been.calledWith(spork, 0);
     });
   });
+
+  it('should still try a spork Core does not list unless v24 removed it', async () => {
+    rpcClient.spork.withArgs('show').resolves({ result: readSporkShow('24.0.0-rc.6') });
+    rpcClient.sporkupdate.withArgs('SPORK_17_QUORUM_DKG_ENABLD')
+      .rejects(new Error('Invalid spork name'));
+
+    await expect(activateKnownCoreSporks(rpcClient, ['SPORK_17_QUORUM_DKG_ENABLD']))
+      .to.be.rejectedWith('Invalid spork name');
+  });
 });

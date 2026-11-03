@@ -1,10 +1,13 @@
 import activateCoreSpork from './activateCoreSpork.js';
 
+// Removed in Core v24, which rejects their names
+const REMOVED_SPORKS = [
+  'SPORK_3_INSTANTSEND_BLOCK_FILTERING',
+  'SPORK_9_SUPERBLOCKS_ENABLED',
+];
+
 /**
- * Activate the given sporks that this Core version still has
- *
- * Core v24 removed SPORK_3_INSTANTSEND_BLOCK_FILTERING and SPORK_9_SUPERBLOCKS_ENABLED
- * and rejects their names, so sporks missing from `spork show` are skipped.
+ * Activate the given sporks, skipping those Core v24 removed when this Core lacks them
  *
  * @typedef activateKnownCoreSporks
  * @param {RpcClient} rpcClient
@@ -14,7 +17,9 @@ import activateCoreSpork from './activateCoreSpork.js';
 export default async function activateKnownCoreSporks(rpcClient, sporks) {
   const { result: knownSporks } = await rpcClient.spork('show');
 
-  const activatedSporks = sporks.filter((spork) => Object.hasOwn(knownSporks, spork));
+  const activatedSporks = sporks.filter((spork) => (
+    Object.hasOwn(knownSporks, spork) || !REMOVED_SPORKS.includes(spork)
+  ));
 
   await Promise.all(
     activatedSporks.map((spork) => activateCoreSpork(rpcClient, spork)),
