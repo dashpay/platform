@@ -4,7 +4,8 @@ use crate::version::drive_versions::drive_identity_method_versions::{
     DriveIdentityMethodVersions,
 };
 
-/// V3 is protocol version 15's identity-method table. It differs from V2 only in
+/// V3 is the identity-method table protocol version 15 builds on (`DRIVE_VERSION_V10` also
+/// raises two cost estimators on top of it). It differs from V2 only in
 /// `keys.fetch.fetch_identity_hecate_signer_key_ids` `None -> Some(0)`: the identity update
 /// that adds a Hecate signer key reads the identity's signer index, which holds its enabled
 /// signer keys, to refuse a second one. No key has the `HECATE_SIGNER` purpose before protocol
