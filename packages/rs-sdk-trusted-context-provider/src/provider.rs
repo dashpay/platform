@@ -3,12 +3,13 @@ use crate::get_quorum_base_url;
 use crate::quorum_refresh::{
     contained, sleep, FetchedQuorums, QuorumRefreshes, QUORUM_LIST_REQUEST_TIMEOUT,
 };
-use crate::system_contracts::{platform_activation_height, system_data_contract};
+use crate::system_contracts::{
+    is_inactive_system_contract, platform_activation_height, system_data_contract,
+};
 use crate::types::{PreviousQuorumsResponse, QuorumData, QuorumsResponse};
 
 use arc_swap::ArcSwap;
 use dash_context_provider::{ContextProvider, ContextProviderError, QuorumKeyFuture};
-use data_contracts::SystemDataContract;
 use dpp::bls::PublicKey;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
@@ -16,7 +17,6 @@ use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 type QuorumHash = [u8; 32];
 use dpp::dashcore::Network;
 use dpp::data_contract::TokenConfiguration;
-use dpp::version::feature_initial_protocol_versions::TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION;
 use dpp::version::PlatformVersion;
 
 use futures::future::{BoxFuture, FutureExt};
@@ -1003,12 +1003,8 @@ impl ContextProvider for TrustedHttpContextProvider {
         id: &Identifier,
         platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-        // The token market contract exists only from its activation version: below it no
-        // contract is served under its id, including one preloaded into the known contracts,
-        // whichever contract features this build has.
-        if *id == SystemDataContract::TokenMarket.id()
-            && platform_version.protocol_version < TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION
-        {
+        // A system contract not active yet is served under its id from no source
+        if is_inactive_system_contract(id, platform_version) {
             return Ok(None);
         }
 
@@ -1067,6 +1063,7 @@ impl ContextProvider for TrustedHttpContextProvider {
 mod tests {
     use super::*;
     use crate::quorum_refresh::MIN_GAP;
+    use data_contracts::SystemDataContract;
     use dpp::bls::SecretKey;
     use std::io::{BufRead, BufReader, Write};
     use std::net::{TcpListener, TcpStream};

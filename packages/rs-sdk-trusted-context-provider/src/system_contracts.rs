@@ -31,8 +31,22 @@ use dpp::version::feature_initial_protocol_versions::DECISION_PROPOSALS_CONTRACT
     feature = "all-system-contracts"
 ))]
 use dpp::version::feature_initial_protocol_versions::MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION;
+use dpp::version::feature_initial_protocol_versions::TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION;
 use dpp::version::PlatformVersion;
 use std::sync::Arc;
+
+/// Whether `id` names a system data contract that does not exist yet at
+/// `platform_version`: the token market contract before protocol version 15. A
+/// provider serves no contract under such an id, neither one preloaded into its
+/// known contracts nor one its build loads, whichever contract features it has, so
+/// each provider asks this before its known contracts.
+pub(crate) fn is_inactive_system_contract(
+    id: &Identifier,
+    platform_version: &PlatformVersion,
+) -> bool {
+    *id == data_contracts::SystemDataContract::TokenMarket.id()
+        && platform_version.protocol_version < TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION
+}
 
 /// The system data contract with this id, if its cargo feature is enabled and
 /// it exists at `platform_version`; `Ok(None)` otherwise.
@@ -219,8 +233,11 @@ pub(crate) fn system_data_contract(
         }
 
         #[cfg(any(feature = "token-market-contract", feature = "all-system-contracts"))]
-        // Below protocol version 15 the provider refuses the id before the known contracts.
-        if *id == SystemDataContract::TokenMarket.id() {
+        // Below protocol version 15 the token market contract is absent
+        // (`is_inactive_system_contract`).
+        if *id == SystemDataContract::TokenMarket.id()
+            && !is_inactive_system_contract(id, platform_version)
+        {
             return load_system_data_contract(SystemDataContract::TokenMarket, platform_version)
                 .map(|contract| Some(Arc::new(contract)))
                 .map_err(|e| {
@@ -241,5 +258,41 @@ pub(crate) fn platform_activation_height(network: Network) -> CoreBlockHeight {
         Network::Mainnet => 2132092,             // Mainnet L1 locked height
         Network::Testnet => 1090319,             // Testnet L1 locked height
         Network::Devnet | Network::Regtest => 1, // Devnet/Regtest activation height
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The shared loader serves the token market contract only from protocol version 15,
+    /// whatever its caller checked: before, none, without an error.
+    #[cfg(any(feature = "token-market-contract", feature = "all-system-contracts"))]
+    #[test]
+    fn should_load_no_token_market_contract_before_protocol_15() {
+        let id = data_contracts::SystemDataContract::TokenMarket.id();
+        assert!(
+            system_data_contract(&id, PlatformVersion::get(14).expect("protocol version 14"))
+                .expect("a pre-activation load does not error")
+                .is_none()
+        );
+        assert!(
+            system_data_contract(&id, PlatformVersion::get(15).expect("protocol version 15"))
+                .expect("the load succeeds at protocol version 15")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn should_mark_only_the_token_market_inactive_before_protocol_15() {
+        let pv14 = PlatformVersion::get(14).expect("protocol version 14");
+        let pv15 = PlatformVersion::get(15).expect("protocol version 15");
+        let token_market = data_contracts::SystemDataContract::TokenMarket.id();
+        assert!(is_inactive_system_contract(&token_market, pv14));
+        assert!(!is_inactive_system_contract(&token_market, pv15));
+        assert!(!is_inactive_system_contract(
+            &data_contracts::SystemDataContract::DPNS.id(),
+            pv14
+        ));
     }
 }
