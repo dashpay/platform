@@ -28,13 +28,12 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::state_transition_action::shielded::ShieldedActionNote;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use dpp::balances::credits::TokenAmount;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
+use grovedb::{TransactionArg, TreeType};
 
 /// How a pool operation moves the pool's total balance.
 #[derive(Debug, Clone, Copy)]
@@ -79,9 +78,7 @@ impl Drive {
         balance_change: TokenPoolBalanceChange,
         nullifiers: &[[u8; 32]],
         notes: &[ShieldedActionNote],
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -192,6 +189,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::util::estimated_layers::EstimatedLayers;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::accessors::IdentityGettersV0;
@@ -665,7 +663,7 @@ mod tests {
         let (drive, identity_id) = setup(1_000);
         let platform_version = PlatformVersion::latest();
 
-        let mut layer_info = Some(HashMap::new());
+        let mut layer_info = Some(EstimatedLayers::new());
         let operations = drive
             .token_unshield_operations(
                 TOKEN_ID,
@@ -733,7 +731,7 @@ mod tests {
         // priced when the batch is applied, against the layer information when estimating and
         // against the trees when applying, so they are no part of what a read costs.
         let metered = |balance_change: TokenPoolBalanceChange, estimating: bool| {
-            let mut layer_info = estimating.then(HashMap::new);
+            let mut layer_info = estimating.then(EstimatedLayers::new);
             let costs: Vec<LowLevelDriveOperation> = drive
                 .token_shielded_pool_update_operations(
                     TOKEN_ID,

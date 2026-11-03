@@ -10,6 +10,10 @@ const BlockHeadersReader = require('./BlockHeadersReader');
  * @property {number} [targetBatchSize=100000] a target batch size per stream
  * @property {number} [fromBlockHeight=1] a target batch size per stream
  * @property {number} [maxRetries=10] max amount of retries per stream connection
+ * @property {number} [powTargetSpacing] devnets only: the -powtargetspacing the
+ *   devnet was started with
+ * @property {number} [minimumDifficultyBlocks] devnets only: the
+ *   -minimumdifficultyblocks the devnet was started with
  */
 const defaultOptions = {
   network: 'testnet',
@@ -49,7 +53,11 @@ class BlockHeadersProvider extends EventEmitter {
       ...options,
     };
 
-    this.spvChain = new SpvChain(this.options.network, 100);
+    const { powTargetSpacing, minimumDifficultyBlocks } = this.options;
+    const devnetOptions = powTargetSpacing !== undefined || minimumDifficultyBlocks !== undefined
+      ? { powTargetSpacing, minimumDifficultyBlocks }
+      : undefined;
+    this.spvChain = new SpvChain(this.options.network, 100, devnetOptions);
 
     this.state = STATES.IDLE;
 
@@ -177,13 +185,17 @@ class BlockHeadersProvider extends EventEmitter {
       return;
     }
 
-    if (this.state === STATES.HISTORICAL_SYNC) {
-      this.blockHeadersReader.stopReadingHistorical();
-    } else if (this.state === STATES.CONTINUOUS_SYNC) {
-      this.blockHeadersReader.unsubscribeFromNew();
-    }
+    // errorHandler() already destroyed the reader, whose streams stopped
+    // before it reported the error
+    if (this.blockHeadersReader) {
+      if (this.state === STATES.HISTORICAL_SYNC) {
+        this.blockHeadersReader.stopReadingHistorical();
+      } else if (this.state === STATES.CONTINUOUS_SYNC) {
+        this.blockHeadersReader.unsubscribeFromNew();
+      }
 
-    this.destroyReader();
+      this.destroyReader();
+    }
 
     this.state = STATES.IDLE;
 
@@ -191,6 +203,12 @@ class BlockHeadersProvider extends EventEmitter {
   }
 
   errorHandler(e) {
+    // The reader stops its streams before it reports an error, but an error
+    // handling the headers they deliver leaves them running
+    if (this.blockHeadersReader) {
+      this.blockHeadersReader.stopReadingHistorical();
+      this.blockHeadersReader.unsubscribeFromNew();
+    }
     this.destroyReader();
     this.emit(EVENTS.ERROR, e);
   }

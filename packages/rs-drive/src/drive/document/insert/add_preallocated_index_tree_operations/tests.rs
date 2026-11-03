@@ -41,7 +41,7 @@ fn should_estimate_composite_terminal_width_in_preallocated_member_layers() {
     let post = post_type
         .random_document(Some(1), platform_version)
         .expect("post");
-    let mut layers = Some(HashMap::new());
+    let mut layers = Some(EstimatedLayers::new());
     drive
         .add_preallocated_index_tree_operations_for_referring_types(
             &DocumentAndContractInfo {
@@ -103,7 +103,7 @@ fn should_size_an_agreement_bound_layer_as_the_referring_property() {
         .random_document(Some(1), platform_version)
         .expect("post");
     post.set_properties([("hashtag".to_string(), Value::Text("dash".to_string()))].into());
-    let mut layers = Some(HashMap::new());
+    let mut layers = Some(EstimatedLayers::new());
     drive
         .add_preallocated_index_tree_operations_for_referring_types(
             &DocumentAndContractInfo {

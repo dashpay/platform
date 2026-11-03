@@ -3,7 +3,9 @@ use crate::consensus::state::document::document_delete_constraint_violated_error
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
-use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use crate::data_contract::document_type::methods::{
+    state_generated_paths_left_out, DocumentTypeBasicMethods,
+};
 use crate::data_contract::document_type::property_constraints::{
     data_with_referenced_documents, data_with_stored_properties, DocumentSystemValues,
     PropertyConstraint, SystemChange,
@@ -983,7 +985,9 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     /// `propertyConstraints` is evaluated against `data` in name order, and the first one
     /// broken is reported ([`Self::first_broken_property_constraint`]); for a write changing
     /// only some fields of a stored document (`system.changed_fields`), only the rules
-    /// reading what it changes. A rule reading the stored version's properties is judged
+    /// reading what it changes; for a client (`system.consensus` false), not the rules
+    /// reading a property generated from state that `data` leaves out
+    /// ([`state_generated_paths_left_out`]). A rule reading the stored version's properties is judged
     /// with them under `$old` ([`DocumentSystemValues::judged_data`]). A type without rules
     /// costs nothing.
     fn validate_property_constraints_v0(
@@ -994,6 +998,14 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     where
         Self: DocumentTypeV2Getters,
     {
+        // A client does not know a property generated from state that the data leaves out,
+        // as the transition builders leave every one out: a rule reading one is not judged.
+        // Consensus generates them before it judges the write.
+        let unknown = if system.consensus {
+            Vec::new()
+        } else {
+            state_generated_paths_left_out(self.generated_from_fields(), data)
+        };
         // A rule reading a referenced document waits for the values, and no
         // total of it is read before
         let rules = self
@@ -1005,6 +1017,9 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                         .changed_fields
                         .as_ref()
                         .is_none_or(|fields| constraint.reads_changed_fields(fields))
+                    && !unknown
+                        .iter()
+                        .any(|(path, _)| constraint.reads_property_at(path))
             });
         self.first_broken_property_constraint(
             rules,

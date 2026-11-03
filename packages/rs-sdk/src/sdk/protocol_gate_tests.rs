@@ -20,6 +20,7 @@ use crate::platform::data_contracts_latest_versions::{
     DataContractLatestVersion, DataContractsLatestVersions, DataContractsLatestVersionsQuery,
 };
 use crate::platform::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
+use crate::platform::private_document_entries::PrivateDocumentEntries;
 use crate::platform::types::epoch::current_epoch_probe_query;
 use crate::platform::types::identity::{IdentityRequest, NonUniquePublicKeyHashQuery};
 use crate::platform::yes_no_vote_polls::{
@@ -55,9 +56,10 @@ use dapi_grpc::platform::v0::{
     GetDataContractsLatestVersionsRequest, GetDataContractsLatestVersionsResponse,
     GetDataContractsResponse, GetDocumentsRequest, GetEpochsInfoRequest, GetEpochsInfoResponse,
     GetIdentityKeysRemainingBudgetsRequest, GetMasternodeYesNoVoteRequest,
-    GetMostRecentShieldedAnchorRequest, GetShieldedAnchorsRequest,
-    GetShieldedEncryptedNotesRequest, GetShieldedNotesCountRequest, GetShieldedNullifiersRequest,
-    GetShieldedPoolStateRequest, GetYesNoVotePollStateRequest, ResponseMetadata,
+    GetMostRecentShieldedAnchorRequest, GetPrivateDocumentEntriesRequest,
+    GetShieldedAnchorsRequest, GetShieldedEncryptedNotesRequest, GetShieldedNotesCountRequest,
+    GetShieldedNullifiersRequest, GetShieldedPoolStateRequest, GetYesNoVotePollStateRequest,
+    ResponseMetadata,
 };
 use dapi_grpc::tonic::Status;
 use dapi_grpc::Message;
@@ -1347,7 +1349,8 @@ fn should_learn_nothing_from_metadata_it_did_not_verify() {
     }
 }
 
-/// Each method protocol 15 added (the yes/no vote poll queries), fetched proved and then
+/// Each method protocol 15 added (the yes/no vote poll queries and the entries of a private
+/// document type's store), fetched proved and then
 /// unproved from a node that answers UNIMPLEMENTED as a 5.0 node does; per method, both
 /// results and how many times the requests reached the node.
 async fn fetch_methods_protocol_15_added(
@@ -1383,6 +1386,21 @@ async fn fetch_methods_protocol_15_added(
             .await
             .map(drop),
     ];
+    let private_entries = GetPrivateDocumentEntriesRequest::default();
+    answer(
+        sdk,
+        &private_entries,
+        Err(Status::unimplemented("unknown method")),
+    )
+    .await;
+    let private_entries_results = [
+        PrivateDocumentEntries::fetch_with_settings(sdk, private_entries.clone(), once())
+            .await
+            .map(drop),
+        PrivateDocumentEntries::fetch_unproved_with_settings(sdk, private_entries.clone(), once())
+            .await
+            .map(drop),
+    ];
     vec![
         (
             poll_state.method_name(),
@@ -1393,6 +1411,11 @@ async fn fetch_methods_protocol_15_added(
             masternode_vote.method_name(),
             masternode_vote_results,
             sent(sdk, &masternode_vote).await,
+        ),
+        (
+            private_entries.method_name(),
+            private_entries_results,
+            sent(sdk, &private_entries).await,
         ),
     ]
 }
