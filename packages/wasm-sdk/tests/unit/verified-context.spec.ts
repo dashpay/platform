@@ -247,7 +247,7 @@ describe('WasmVerifiedContext', () => {
     it('should prove the same key at the same height again after resuming from the continuation', async () => {
       const first = sdk.WasmVerifiedContext.testnetWithCheckpoint(proof.checkpoint, [RELAY]);
       await first.fetchQuorumPublicKey(QUORUM_TYPE, QUORUM_HASH, proof.target.height);
-      // The key was served at the target; the checkpoint is the only state below it.
+      // No response was verified, so the checkpoint anchors; the target is kept above it.
       expect(first.continuation()).to.deep.equal({ anchor: proof.checkpoint, states: [proof.target] });
       const saved = JSON.parse(JSON.stringify(first.continuation()));
       first.free();

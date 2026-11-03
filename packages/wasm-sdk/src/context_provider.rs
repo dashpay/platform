@@ -141,6 +141,10 @@ impl ContextProvider for WasmTrustedContext {
     fn requires_proofs(&self) -> bool {
         self.inner.requires_proofs()
     }
+
+    fn core_height_verified(&self, core_chain_locked_height: u32) {
+        self.inner.core_height_verified(core_chain_locked_height)
+    }
 }
 
 // JS-exported async factory methods

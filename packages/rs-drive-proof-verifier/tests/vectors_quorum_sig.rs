@@ -11,7 +11,9 @@
 
 mod common;
 
-use common::{identifier, load_case, Case, ErrorClass, Expected, RequestSpec, NETWORK};
+use common::{
+    identifier, load_case, Case, ErrorClass, Expected, RequestSpec, VectorContextProvider, NETWORK,
+};
 use dapi_grpc::platform::v0::{
     self as platform, get_identity_balance_request, get_identity_balance_response,
 };
@@ -25,13 +27,12 @@ fn verify_balance(case: &Case) -> Result<Option<IdentityBalance>, Error> {
     verify_balance_with_metadata(case, case.metadata())
 }
 
-/// Like [`verify_balance`], but lets the caller substitute the response
-/// metadata that gets carried alongside the case's untouched proof envelope
-/// -- used to prove the metadata itself is inside the signed `StateId`.
+/// Like [`verify_balance_with_metadata`], with the caller's provider.
 #[allow(clippy::result_large_err)]
-fn verify_balance_with_metadata(
+fn verify_balance_with(
     case: &Case,
     metadata: platform::ResponseMetadata,
+    provider: &VectorContextProvider,
 ) -> Result<Option<IdentityBalance>, Error> {
     let RequestSpec::IdentityBalance { identity_id } = &case.manifest.request else {
         panic!("{}: expected an identity_balance request", case.name);
@@ -61,8 +62,19 @@ fn verify_balance_with_metadata(
         response,
         NETWORK,
         case.platform_version(),
-        &case.provider(),
+        provider,
     )
+}
+
+/// Like [`verify_balance`], but lets the caller substitute the response
+/// metadata that gets carried alongside the case's untouched proof envelope
+/// -- used to prove the metadata itself is inside the signed `StateId`.
+#[allow(clippy::result_large_err)]
+fn verify_balance_with_metadata(
+    case: &Case,
+    metadata: platform::ResponseMetadata,
+) -> Result<Option<IdentityBalance>, Error> {
+    verify_balance_with(case, metadata, &case.provider())
 }
 
 fn expect_invalid_signature(name: &str) {
@@ -145,4 +157,30 @@ fn tampered_time_ms_breaks_signature() {
 #[test]
 fn tampered_core_chain_locked_height_breaks_signature() {
     expect_metadata_tamper_breaks_signature(|metadata| metadata.core_chain_locked_height += 1);
+}
+
+/// A real response whose quorum signature verifies reports its Core height to
+/// the provider; the same response with the Core height altered, or checked
+/// against the wrong quorum key, reports nothing, so a forged response never
+/// counts as Platform progress.
+#[test]
+fn should_report_the_core_height_verified_only_for_a_verified_signature() {
+    let case = load_case("quorum-sig-valid");
+    let provider = case.provider();
+    verify_balance_with(&case, case.metadata(), &provider).expect("verifies");
+    assert_eq!(
+        provider.verified_core_heights(),
+        [case.metadata().core_chain_locked_height]
+    );
+
+    let provider = case.provider();
+    let mut forged = case.metadata();
+    forged.core_chain_locked_height += 1;
+    verify_balance_with(&case, forged, &provider).expect_err("altered height");
+    assert!(provider.verified_core_heights().is_empty());
+
+    let wrong_key = load_case("quorum-sig-wrong-quorum-key");
+    let provider = wrong_key.provider();
+    verify_balance_with(&wrong_key, wrong_key.metadata(), &provider).expect_err("wrong key");
+    assert!(provider.verified_core_heights().is_empty());
 }

@@ -158,6 +158,25 @@ pub trait ContextProvider: Send + Sync {
     fn requires_proofs(&self) -> bool {
         false
     }
+
+    /// Called by the proof verifier once the Tenderdash signature of a
+    /// response verified with a key from this provider, with the Core
+    /// ChainLocked height in that response's metadata.
+    ///
+    /// The quorum signed that height as part of the state it committed, so
+    /// it is a Core height Platform actually reached, unlike the heights
+    /// passed to [get_quorum_public_key](Self::get_quorum_public_key), which
+    /// come from responses not verified yet. Providers may use it to track
+    /// Platform's progress. It is not called for a response that fails
+    /// verification.
+    ///
+    /// A provider that combines others forwards the call only to the one
+    /// whose key the response verified with: another provider never vouched
+    /// for that height.
+    ///
+    /// Called on the verification path, so it must be cheap and must not
+    /// block. The default does nothing.
+    fn core_height_verified(&self, _core_chain_locked_height: u32) {}
 }
 
 impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
@@ -210,6 +229,10 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
 
     fn requires_proofs(&self) -> bool {
         self.as_ref().requires_proofs()
+    }
+
+    fn core_height_verified(&self, core_chain_locked_height: u32) {
+        self.as_ref().core_height_verified(core_chain_locked_height)
     }
 }
 
@@ -273,6 +296,11 @@ where
     fn requires_proofs(&self) -> bool {
         let lock = self.lock().expect("lock poisoned");
         lock.requires_proofs()
+    }
+
+    fn core_height_verified(&self, core_chain_locked_height: u32) {
+        let lock = self.lock().expect("lock poisoned");
+        lock.core_height_verified(core_chain_locked_height)
     }
 }
 
@@ -460,11 +488,13 @@ mod tests {
     use std::sync::Mutex;
 
     /// Provider whose `fetch_quorum_public_key` counts its calls and records
-    /// the quorum it was asked for.
+    /// the quorum it was asked for, and which records the heights reported
+    /// verified.
     #[derive(Default)]
     struct FetchingProvider {
         calls: AtomicUsize,
         asked: Mutex<Option<(u32, [u8; 32], u32)>>,
+        verified: Mutex<Vec<u32>>,
     }
 
     impl ContextProvider for FetchingProvider {
@@ -517,6 +547,10 @@ mod tests {
         fn requires_proofs(&self) -> bool {
             true
         }
+
+        fn core_height_verified(&self, core_chain_locked_height: u32) {
+            self.verified.lock().unwrap().push(core_chain_locked_height);
+        }
     }
 
     /// The SDK checks a provider's requirements through the same wrappers it
@@ -533,6 +567,22 @@ mod tests {
             assert_eq!(provider.network(), Some(Network::Testnet));
             assert!(provider.requires_proofs());
         }
+    }
+
+    /// The proof verifier reports verified heights through the same
+    /// wrappers; a wrapper that fell back to the no-op default would hide
+    /// Platform's progress from the provider.
+    #[test]
+    fn should_forward_verified_core_heights_through_every_wrapper() {
+        let inner = Arc::new(FetchingProvider::default());
+        let boxed: Arc<Box<dyn ContextProvider>> =
+            Arc::new(Box::new(Arc::clone(&inner)) as Box<dyn ContextProvider>);
+        let mutex = Mutex::new(Arc::clone(&inner));
+        let wrappers: [&dyn ContextProvider; 3] = [&inner, &boxed, &mutex];
+        for (height, provider) in (10..).zip(wrappers) {
+            provider.core_height_verified(height);
+        }
+        assert_eq!(*inner.verified.lock().unwrap(), [10, 11, 12]);
     }
 
     /// The SDK reaches its provider through `Arc`, `Box<dyn ContextProvider>`

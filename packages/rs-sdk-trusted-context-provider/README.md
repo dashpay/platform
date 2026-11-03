@@ -256,22 +256,23 @@ A long-lived application should persist `continuation()` and resume from it
 on the next start (`StartingPoint::Continuation`), so its proofs stay short.
 
 A continuation is an anchor and the verified states above it. The anchor is
-the newest verified state strictly below the lowest Core height the provider
-served a quorum key for, or the provider's own checkpoint when it served none
-or keeps no state below that height. A proof starts from a state strictly
-below the height it serves, and the next session needs heights at or above
-Platform's Core height, which only rises; so the lowest height served this
-session is at or below every height the next session needs, and the anchor
-is below it. Verified states above the served heights, such as the relay's
-tip or a target above the height asked for, never become the anchor. A node
-reporting a lower height than Platform's can only make the anchor older, and
-proofs longer. Every height a key is served for counts, including those of
-responses that then fail verification and those passed to
-`fetch_quorum_public_key` directly; a height above Platform's (at most one
-DKG interval above a verified target) can move the anchor above heights the
-next session needs while Platform lags Core, as after a halt, and those
-heights then wait until Platform passes the anchor. The anchor advances when
-a session serves heights above the states verified before it.
+the newest verified state strictly below the lowest Core height of a response
+the SDK verified with the provider's keys, or the provider's own checkpoint
+when none was verified or no state is kept below that height. The proof
+verifier reports that height through `ContextProvider::core_height_verified`
+only after the response's Tenderdash signature verified, so the height was
+signed by a Platform quorum as part of the state it committed: Platform
+reached it. A proof starts from a state strictly below the height it serves,
+and the next session needs heights at or above Platform's Core height, which
+only rises; so the lowest height verified this session is at or below every
+height the next session needs, and the anchor is below it. The heights keys
+are looked up or fetched for come from responses not verified yet and never
+count, so a forged response, or one that fails verification, cannot move the
+anchor. Verified states above the heights verified, such as the relay's tip
+or a target above the height asked for, never become the anchor. A node
+answering from an older block can only make the anchor older, and proofs
+longer. The anchor advances when the SDK verifies responses at heights above
+the states verified before them.
 Persisting `latest_verified_state()` as the next checkpoint instead would
 strand the next session: that state is often the relay's tip, above the
 Core height Platform reports, so no key at or below it could be proven until

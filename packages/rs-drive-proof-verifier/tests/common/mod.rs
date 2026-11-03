@@ -14,7 +14,7 @@
 #![allow(dead_code)]
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::dashcore::Network;
@@ -227,15 +227,29 @@ impl Case {
             quorum_type: self.manifest.proof_meta.quorum_type,
             quorum_hash: hex32(&self.manifest.proof_meta.quorum_hash_hex),
             quorum_pubkey: self.quorum_pubkey,
+            verified_core_heights: Mutex::new(Vec::new()),
         }
     }
 }
 
-/// [ContextProvider] backed by the per-case corpus quorum key material.
+/// [ContextProvider] backed by the per-case corpus quorum key material. It
+/// records the Core heights the verifier reports verified.
 pub struct VectorContextProvider {
     quorum_type: u32,
     quorum_hash: [u8; 32],
     quorum_pubkey: [u8; 48],
+    verified_core_heights: Mutex<Vec<u32>>,
+}
+
+impl VectorContextProvider {
+    /// The Core heights reported through
+    /// [ContextProvider::core_height_verified], in order.
+    pub fn verified_core_heights(&self) -> Vec<u32> {
+        self.verified_core_heights
+            .lock()
+            .expect("not poisoned")
+            .clone()
+    }
 }
 
 impl ContextProvider for VectorContextProvider {
@@ -278,5 +292,12 @@ impl ContextProvider for VectorContextProvider {
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         Ok(1)
+    }
+
+    fn core_height_verified(&self, core_chain_locked_height: u32) {
+        self.verified_core_heights
+            .lock()
+            .expect("not poisoned")
+            .push(core_chain_locked_height);
     }
 }

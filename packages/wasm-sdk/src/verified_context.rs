@@ -50,11 +50,13 @@ export interface QuorumProofState {
  * Where a `WasmVerifiedContext` got to, for the next session to start from:
  * what `WasmVerifiedContext.continuation()` returns and the
  * `*FromContinuation` factories take. `anchor` is the newest verified
- * state below the lowest Core height a key was served for (the context's
- * starting point if none was), so the next session can prove the heights
- * Platform reports from it; `states` are the newer verified states, lowest
- * first, so its proofs stay short. Every state is trust configuration, as a checkpoint is: only pass
- * back a continuation a context produced. Unknown fields are rejected.
+ * state below the lowest Core height of a response the SDK verified with
+ * this context's keys, a height a Platform quorum signed (the context's
+ * starting point if none was verified), so the next session can prove the
+ * heights Platform reports from it; `states` are the newer verified states,
+ * lowest first, so its proofs stay short. Every state is trust
+ * configuration, as a checkpoint is: only pass back a continuation a
+ * context produced. Unknown fields are rejected.
  */
 export interface QuorumProofContinuation {
   anchor: QuorumProofState;
@@ -192,9 +194,8 @@ impl WasmVerifiedContext {
     /// Prove a Platform quorum's public key for a Core ChainLocked height, as
     /// the SDK does before it verifies a response that quorum signed, and
     /// return the 48-byte BLS key. A key already proven for the height is
-    /// returned without a request. The height counts as one this context
-    /// served, which `continuation()` keeps its anchor below, so pass only
-    /// heights Platform reported.
+    /// returned without a request. The height is not a verified response's,
+    /// so it does not move `continuation()`'s anchor.
     ///
     /// `quorumHash` is hex in RPC display order, as Core's `quorum list`
     /// shows it.
