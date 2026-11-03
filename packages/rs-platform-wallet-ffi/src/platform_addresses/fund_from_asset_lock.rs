@@ -15,12 +15,14 @@
 //! resuming a tracked asset lock by outpoint (crash-recovery shape).
 
 use std::collections::BTreeMap;
+use std::os::raw::c_void;
 
 use dashcore::hashes::Hash;
 use dpp::address_funds::PlatformAddress;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
+use crate::asset_lock::{observer_ref, AssetLockBuiltCallback, AssetLockBuiltFn};
 use crate::check_ptr;
 use crate::core_wallet_types::OutPointFFI;
 use crate::error::*;
@@ -65,6 +67,10 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 ///   `*mut MnemonicResolverHandle` produced by
 ///   [`crate::dash_sdk_mnemonic_resolver_create`]. The caller retains
 ///   ownership.
+/// - `on_asset_lock_built`, when non-null, must be a valid C function
+///   pointer for the duration of the call; `on_asset_lock_built_context`
+///   is passed to it opaquely and must remain valid for the duration of the
+///   call (or be null). See [`AssetLockBuiltFn`] for its contract.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_signer(
@@ -79,6 +85,8 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_signer(
     signer_address_handle: *mut SignerHandle,
     core_signer_handle: *mut MnemonicResolverHandle,
     out_changeset: *mut PlatformAddressChangeSetFFI,
+    on_asset_lock_built: AssetLockBuiltFn,
+    on_asset_lock_built_context: *mut c_void,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_changeset);
     // Sentinel first: address decoding, the wallet lookup, and the async
@@ -98,6 +106,8 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_signer(
     // capture is `Send + 'static` (raw pointers are `!Send`).
     let signer_addr = signer_address_handle as usize;
     let core_signer_addr = core_signer_handle as usize;
+    let built_callback =
+        AssetLockBuiltCallback::new(on_asset_lock_built, on_asset_lock_built_context);
 
     let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
         let wallet_clone = wallet.clone();
@@ -117,6 +127,7 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_signer(
                     network,
                 )
             };
+            let on_built = built_callback.map(AssetLockBuiltCallback::into_observer);
             wallet_clone
                 .fund_from_asset_lock(
                     AssetLockFunding::FromWalletBalance {
@@ -132,6 +143,7 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_signer(
                     address_signer,
                     &asset_lock_signer,
                     None,
+                    observer_ref(&on_built),
                 )
                 .await
         })
@@ -241,6 +253,8 @@ pub unsafe extern "C" fn platform_address_wallet_resume_fund_from_asset_lock_sig
                     Vec::new(),
                     address_signer,
                     &asset_lock_signer,
+                    None,
+                    // A resume builds no new lock.
                     None,
                 )
                 .await
@@ -365,6 +379,10 @@ pub(super) unsafe fn decode_funding_addresses(
 /// - `handle` must be a live `PlatformAddressWallet` handle; a stale or
 ///   already-destroyed one is rejected by the handle table rather than
 ///   dereferenced.
+/// - `on_asset_lock_built`, when non-null, must be a valid C function
+///   pointer for the duration of the call; `on_asset_lock_built_context`
+///   is passed to it opaquely and must remain valid for the duration of the
+///   call (or be null). See [`AssetLockBuiltFn`] for its contract.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_external_signer(
@@ -379,6 +397,8 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_external_s
     signer_address_handle: *mut SignerHandle,
     core_signer_handle: *mut MnemonicResolverHandle,
     out_changeset: *mut PlatformAddressChangeSetFFI,
+    on_asset_lock_built: AssetLockBuiltFn,
+    on_asset_lock_built_context: *mut c_void,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_changeset);
     // Sentinel first — see `platform_address_wallet_fund_from_asset_lock_signer`.
@@ -394,6 +414,8 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_external_s
 
     let signer_addr = signer_address_handle as usize;
     let core_signer_addr = core_signer_handle as usize;
+    let built_callback =
+        AssetLockBuiltCallback::new(on_asset_lock_built, on_asset_lock_built_context);
 
     let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
         let wallet_clone = wallet.clone();
@@ -410,6 +432,7 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_external_s
                     network,
                 )
             };
+            let on_built = built_callback.map(AssetLockBuiltCallback::into_observer);
             wallet_clone
                 .fund_from_asset_lock_external(
                     AssetLockFunding::FromWalletBalance {
@@ -421,6 +444,7 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_external_s
                     address_signer,
                     &asset_lock_signer,
                     None,
+                    observer_ref(&on_built),
                 )
                 .await
         })
@@ -572,6 +596,8 @@ pub unsafe extern "C" fn platform_address_wallet_resume_fund_from_asset_lock_ext
                     address_map,
                     address_signer,
                     &asset_lock_signer,
+                    None,
+                    // A resume builds no new lock.
                     None,
                 )
                 .await

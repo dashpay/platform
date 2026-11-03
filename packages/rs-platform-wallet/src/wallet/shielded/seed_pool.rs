@@ -288,6 +288,7 @@ impl PlatformWallet {
                         // Bounded: a ChainLock timeout here is the deliberate
                         // unconfirmed-ancestor pacing signal this loop retries on.
                         Some(CL_FALLBACK_TIMEOUT),
+                        None,
                     )
                     .await
                 {

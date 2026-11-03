@@ -128,12 +128,17 @@ extension PlatformWalletManager {
     ///     `lock_value − pool_fee`), so `nil` is always valid; the
     ///     parameter is exposed for parity with the Rust builder and
     ///     forward-compatibility with multi-output bundles.
+    ///   - onAssetLockBuilt: Called at most once, with the new asset
+    ///     lock's outpoint (`AssetLockBuiltOutPoint`), before
+    ///     the lock's row is persisted or the lock is broadcast. See
+    ///     `AssetLockBuiltHandler`.
     public func shieldedFundFromAssetLock(
         walletId: Data,
         fundingAccountIndex: UInt32,
         amountDuffs: UInt64,
         recipients: [ShieldedFundFromAssetLockRecipient],
-        surplusOutput: Data? = nil
+        surplusOutput: Data? = nil,
+        onAssetLockBuilt: AssetLockBuiltHandler? = nil
     ) async throws {
         try shieldedFundFromAssetLockPreflight(
             walletId: walletId,
@@ -171,16 +176,20 @@ extension PlatformWalletManager {
                     }
                     try Self.withOptionalSurplusOutput(surplusOutput) { surplusPtr, surplusLen in
                         let result = withExtendedLifetime(coreSigner) {
-                            platform_wallet_manager_shielded_fund_from_asset_lock(
-                                handle,
-                                widPtr,
-                                fundingAccountIndex,
-                                amountDuffs,
-                                recipientPtr,
-                                surplusPtr,
-                                surplusLen,
-                                coreSigner.handle
-                            )
+                            withAssetLockBuiltCallback(onAssetLockBuilt) { builtFn, builtContext in
+                                platform_wallet_manager_shielded_fund_from_asset_lock(
+                                    handle,
+                                    widPtr,
+                                    fundingAccountIndex,
+                                    amountDuffs,
+                                    recipientPtr,
+                                    surplusPtr,
+                                    surplusLen,
+                                    coreSigner.handle,
+                                    builtFn,
+                                    builtContext
+                                )
+                            }
                         }
                         try result.check()
                     }
@@ -208,10 +217,15 @@ extension PlatformWalletManager {
     ///   - recipients: Destination Orchard address (exactly one entry, no
     ///     explicit credits — same single-recipient remainder contract as
     ///     `shieldedFundFromAssetLock`).
+    ///   - onAssetLockBuilt: Called at most once, with the new asset
+    ///     lock's outpoint (`AssetLockBuiltOutPoint`), before
+    ///     the lock's row is persisted or the lock is broadcast. See
+    ///     `AssetLockBuiltHandler`.
     public func shieldedFundFromCoinJoinDrain(
         walletId: Data,
         coinJoinAccountIndex: UInt32 = 0,
-        recipients: [ShieldedFundFromAssetLockRecipient]
+        recipients: [ShieldedFundFromAssetLockRecipient],
+        onAssetLockBuilt: AssetLockBuiltHandler? = nil
     ) async throws {
         try shieldedFundFromAssetLockPreflight(
             walletId: walletId,
@@ -244,13 +258,17 @@ extension PlatformWalletManager {
                         )
                     }
                     let result = withExtendedLifetime(coreSigner) {
-                        platform_wallet_manager_shielded_fund_from_asset_lock_coinjoin_drain(
-                            handle,
-                            widPtr,
-                            coinJoinAccountIndex,
-                            recipientPtr,
-                            coreSigner.handle
-                        )
+                        withAssetLockBuiltCallback(onAssetLockBuilt) { builtFn, builtContext in
+                            platform_wallet_manager_shielded_fund_from_asset_lock_coinjoin_drain(
+                                handle,
+                                widPtr,
+                                coinJoinAccountIndex,
+                                recipientPtr,
+                                coreSigner.handle,
+                                builtFn,
+                                builtContext
+                            )
+                        }
                     }
                     try result.check()
                 }

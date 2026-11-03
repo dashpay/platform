@@ -180,6 +180,7 @@ impl IdentityWallet {
                 AssetLockFundingType::IdentityRegistration,
                 identity_index,
                 asset_lock_signer,
+                None,
             )
             .await?
         {
@@ -417,6 +418,7 @@ impl IdentityWallet {
                 AssetLockFundingType::IdentityTopUp,
                 identity_index,
                 asset_lock_signer,
+                None,
             )
             .await?
         {
