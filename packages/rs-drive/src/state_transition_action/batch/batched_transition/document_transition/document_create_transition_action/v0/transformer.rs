@@ -381,6 +381,16 @@ mod tests {
         let unindexed = create_fee("looseCard");
         assert!(indexed.storage_fee > unindexed.storage_fee);
         assert!(indexed.processing_fee > unindexed.processing_fee);
+        // Pinned: the estimated cost of the `byRarity` entry a draw may create. A change to
+        // the estimate, the index layout or the fee schedule moves it.
+        assert_eq!(
+            indexed,
+            FeeResult {
+                storage_fee: 13_392_000,
+                processing_fee: 6_650_100,
+                ..Default::default()
+            }
+        );
     }
 
     #[test]
