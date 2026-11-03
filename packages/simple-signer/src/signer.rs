@@ -8,6 +8,7 @@ use dpp::bls;
 use dpp::dashcore::signer;
 use dpp::ed25519_dalek::Signer as BlsSigner;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::identity_public_key::redpallas_hecate::RedPallasHecateSecretKey;
 use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::platform_value::BinaryData;
@@ -162,6 +163,11 @@ impl Signer<IdentityPublicKey> for SimpleSigner {
             KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
                 InvalidIdentityPublicKeyTypeError::new(identity_public_key.key_type()),
             )),
+            // A Hecate signer key's private key is its 32-byte secret.
+            KeyType::REDPALLAS_HECATE => Ok(RedPallasHecateSecretKey::from_secret(private_key)?
+                .sign(data)
+                .to_vec()
+                .into()),
         }
     }
 
@@ -192,8 +198,8 @@ impl Signer<IdentityPublicKey> for SimpleSigner {
                     InvalidIdentityPublicKeyTypeError::new(key.key_type()),
                 ))
             }
-            KeyType::BLS12_381 => {
-                // BLS keys are not supported for address witnesses
+            KeyType::BLS12_381 | KeyType::REDPALLAS_HECATE => {
+                // BLS and RedPallas keys are not supported for address witnesses
                 Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
                     InvalidIdentityPublicKeyTypeError::new(key.key_type()),
                 ))

@@ -11,7 +11,9 @@ use crate::version::fee::hashing::{FeeHashingVersion, FeeHashingVersionBeforeVer
 use crate::version::fee::processing::{
     FeeProcessingVersion, FeeProcessingVersionFieldsBeforeVersion1Point4,
 };
-use crate::version::fee::signature::FeeSignatureVersion;
+use crate::version::fee::signature::{
+    FeeSignatureVersion, FeeSignatureVersionFieldsBeforeVersion4,
+};
 use crate::version::fee::state_transition_min_fees::{
     StateTransitionMinFees, StateTransitionMinFeesBeforeProtocolVersion11,
 };
@@ -138,7 +140,7 @@ pub struct FeeVersionFieldsBeforeVersion4 {
     // Permille means devise by 1000
     pub uses_version_fee_multiplier_permille: Option<u64>,
     pub storage: FeeStorageVersionFieldsBeforeVersion4,
-    pub signature: FeeSignatureVersion,
+    pub signature: FeeSignatureVersionFieldsBeforeVersion4,
     pub hashing: FeeHashingVersionBeforeVersion11,
     pub processing: FeeProcessingVersionFieldsBeforeVersion1Point4,
     pub data_contract: FeeDataContractValidationVersion,
@@ -152,7 +154,7 @@ impl From<FeeVersionFieldsBeforeVersion4> for FeeVersion {
             fee_version_number: 1,
             uses_version_fee_multiplier_permille: value.uses_version_fee_multiplier_permille,
             storage: value.storage.into(),
-            signature: value.signature,
+            signature: value.signature.into(),
             hashing: FEE_HASHING_VERSION1,
             processing: FeeProcessingVersion::from(value.processing),
             data_contract_validation: value.data_contract,

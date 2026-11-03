@@ -9,6 +9,7 @@ pub enum KeyTypeWasm {
     ECDSA_HASH160 = 2,
     BIP13_SCRIPT_HASH = 3,
     EDDSA_25519_HASH160 = 4,
+    REDPALLAS_HECATE = 5,
 }
 
 impl From<KeyType> for KeyTypeWasm {
@@ -19,6 +20,7 @@ impl From<KeyType> for KeyTypeWasm {
             KeyType::ECDSA_HASH160 => Self::ECDSA_HASH160,
             KeyType::BIP13_SCRIPT_HASH => Self::BIP13_SCRIPT_HASH,
             KeyType::EDDSA_25519_HASH160 => Self::EDDSA_25519_HASH160,
+            KeyType::REDPALLAS_HECATE => Self::REDPALLAS_HECATE,
         }
     }
 }

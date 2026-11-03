@@ -1,7 +1,9 @@
 use crate::consensus::signature::PublicKeyIsDisabledError;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::{IdentityPublicKey, KeyType};
-use crate::state_transition::errors::{PublicKeyMismatchError, StateTransitionIsNotSignedError};
+use crate::state_transition::errors::{
+    InvalidIdentityPublicKeyTypeError, PublicKeyMismatchError, StateTransitionIsNotSignedError,
+};
 use crate::state_transition::StateTransition;
 use crate::{BlsModule, ProtocolError};
 
@@ -62,6 +64,14 @@ impl StateTransition {
 
             // per https://github.com/dashevo/platform/pull/353, signing and verification is not supported
             KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => Ok(true),
+
+            // In place: no identity holds a REDPALLAS_HECATE key before protocol version 15
+            // (a transition adding one is inactive before it), so no earlier version reaches this
+            // arm. A Hecate signer key never signs a state transition: the node refuses its type
+            // and its purpose before it verifies a signature, and this refuses it too.
+            KeyType::REDPALLAS_HECATE => Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
+                InvalidIdentityPublicKeyTypeError::new(public_key.key_type()),
+            )),
         }
     }
 }

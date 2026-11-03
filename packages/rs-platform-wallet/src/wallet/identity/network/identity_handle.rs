@@ -622,6 +622,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     "BIP13_SCRIPT_HASH keys are not supported for signing".to_string(),
                 ));
             }
+            // A Hecate signer key's derivation path is not settled yet.
+            KeyType::REDPALLAS_HECATE => {
+                return Err(PlatformWalletError::InvalidIdentityData(
+                    "REDPALLAS_HECATE keys are not derived by the wallet yet".to_string(),
+                ));
+            }
         };
 
         let path = Self::identity_auth_derivation_path(

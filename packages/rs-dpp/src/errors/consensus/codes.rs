@@ -234,6 +234,8 @@ impl ErrorWithCode for BasicError {
             Self::InvalidIdentityPublicKeyBudgetError(_) => 10537,
             Self::IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError(_) => 10538,
             Self::IdentityKeyLimitsUpdateEmptyError(_) => 10539,
+            Self::InvalidIdentityPublicKeyTypeForPurposeError(_) => 10540,
+            Self::TooManyHecateSignerKeysError(_) => 10541,
 
             // State Transition Errors: 10600-10699
             Self::InvalidStateTransitionTypeError { .. } => 10600,
@@ -316,6 +318,7 @@ impl ErrorWithCode for SignatureError {
             Self::PublicKeyBudgetExhaustedError(_) => 20015,
             Self::PublicKeyExpiredError(_) => 20016,
             Self::PublicKeyWithLimitsCannotUpdateKeyLimitsError(_) => 20017,
+            Self::BasicRedPallasError(_) => 20018,
         }
     }
 }
@@ -419,6 +422,7 @@ impl ErrorWithCode for StateError {
             Self::IdentityPublicKeyLimitNotSetError(_) => 40220,
             Self::IdentityPublicKeyLimitNotRaisedError(_) => 40221,
             Self::GasSponsorInsufficientBalanceError(_) => 40222,
+            Self::IdentityAlreadyHasHecateSignerKeyError(_) => 40223,
 
             // Voting Errors: 40300-40399
             Self::MasternodeNotFoundError(_) => 40300,

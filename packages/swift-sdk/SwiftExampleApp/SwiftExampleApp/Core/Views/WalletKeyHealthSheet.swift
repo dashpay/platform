@@ -174,7 +174,7 @@ enum WalletKeyHealthChecker {
                             .computePublicKeyHashHex(preview.publicKeyData)
                         derivedComparableHex = hashHex.isEmpty ? nil : hashHex
                         derivedHex = hashHex
-                    case .bls12_381, .bip13ScriptHash, .eddsa25519Hash160:
+                    case .bls12_381, .bip13ScriptHash, .eddsa25519Hash160, .redpallasHecate:
                         derivedComparableHex = nil
                         derivedHex = preview.publicKeyHex
                     }

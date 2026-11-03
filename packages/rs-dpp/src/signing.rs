@@ -1,5 +1,10 @@
 #[cfg(feature = "bls-signatures")]
 use crate::bls::{self, Signature};
+#[cfg(any(
+    feature = "message-signing",
+    feature = "message-signature-verification"
+))]
+use crate::identity::identity_public_key::redpallas_hecate;
 use crate::identity::KeyType;
 use crate::serialization::PlatformMessageSignable;
 #[cfg(feature = "message-signature-verification")]
@@ -7,7 +12,8 @@ use crate::util::ecdsa;
 #[cfg(feature = "message-signature-verification")]
 use crate::{
     consensus::signature::{
-        BasicBLSError, BasicECDSAError, SignatureError, SignatureShouldNotBePresentError,
+        BasicBLSError, BasicECDSAError, BasicRedPallasError, SignatureError,
+        SignatureShouldNotBePresentError,
     },
     validation::SimpleConsensusValidationResult,
 };
@@ -117,6 +123,16 @@ impl PlatformMessageSignable for &[u8] {
                     SimpleConsensusValidationResult::default()
                 }
             }
+            KeyType::REDPALLAS_HECATE => {
+                match redpallas_hecate::verify_signature(public_key_data, signable_data, signature)
+                {
+                    Ok(()) => SimpleConsensusValidationResult::default(),
+                    Err(message) => SimpleConsensusValidationResult::new_with_error(
+                        SignatureError::BasicRedPallasError(BasicRedPallasError::new(message))
+                            .into(),
+                    ),
+                }
+            }
         }
     }
     #[cfg(feature = "message-signing")]
@@ -143,6 +159,22 @@ impl PlatformMessageSignable for &[u8] {
                     "key type {} can not sign",
                     key_type
                 )))
+            }
+
+            // The private key is the key's 32-byte secret, from which the RedPallas signing key
+            // derives.
+            KeyType::REDPALLAS_HECATE => {
+                let secret: [u8; 32] = private_key.try_into().map_err(|_| {
+                    ProtocolError::InvalidSigningKeyTypeError(format!(
+                        "a REDPALLAS_HECATE private key is 32 bytes, got {}",
+                        private_key.len()
+                    ))
+                })?;
+                Ok(
+                    redpallas_hecate::RedPallasHecateSecretKey::from_secret(&secret)?
+                        .sign(self)
+                        .to_vec(),
+                )
             }
         }
     }

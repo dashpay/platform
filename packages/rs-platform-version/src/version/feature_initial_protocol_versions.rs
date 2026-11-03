@@ -45,3 +45,7 @@ pub const YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 15;
 /// exist and lookups must report it absent. Creating one of its proposals opens a yes/no vote
 /// poll.
 pub const DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 15;
+/// Hecate signer keys (`KeyType::REDPALLAS_HECATE`, `Purpose::HECATE_SIGNER`) activate with
+/// protocol version 15: a transition adding one is not active before it, as software that
+/// predates the key type cannot decode one.
+pub const HECATE_SIGNER_KEY_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 15;

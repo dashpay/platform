@@ -8,7 +8,7 @@ const TS_TYPES: &str = r#"
 /**
  * Flexible input type for KeyType - accepts the enum, string name, or numeric value.
  */
-export type KeyTypeLike = KeyType | "ecdsa_secp256k1" | "bls12_381" | "ecdsa_hash160" | "bip13_script_hash" | "eddsa_25519_hash160" | 0 | 1 | 2 | 3 | 4;
+export type KeyTypeLike = KeyType | "ecdsa_secp256k1" | "bls12_381" | "ecdsa_hash160" | "bip13_script_hash" | "eddsa_25519_hash160" | "redpallas_hecate" | 0 | 1 | 2 | 3 | 4 | 5;
 "#;
 
 #[wasm_bindgen]
@@ -43,6 +43,7 @@ pub enum KeyTypeWasm {
     ECDSA_HASH160 = 2,
     BIP13_SCRIPT_HASH = 3,
     EDDSA_25519_HASH160 = 4,
+    REDPALLAS_HECATE = 5,
 }
 
 impl TryFrom<&JsValue> for KeyTypeWasm {
@@ -60,6 +61,7 @@ impl TryFrom<&JsValue> for KeyTypeWasm {
                     "ecdsa_hash160" => Ok(KeyTypeWasm::ECDSA_HASH160),
                     "bip13_script_hash" => Ok(KeyTypeWasm::BIP13_SCRIPT_HASH),
                     "eddsa_25519_hash160" => Ok(KeyTypeWasm::EDDSA_25519_HASH160),
+                    "redpallas_hecate" => Ok(KeyTypeWasm::REDPALLAS_HECATE),
                     _ => Err(WasmDppError::invalid_argument(format!(
                         "unsupported key type {}",
                         enum_val
@@ -77,6 +79,7 @@ impl TryFrom<&JsValue> for KeyTypeWasm {
                     2 => Ok(KeyTypeWasm::ECDSA_HASH160),
                     3 => Ok(KeyTypeWasm::BIP13_SCRIPT_HASH),
                     4 => Ok(KeyTypeWasm::EDDSA_25519_HASH160),
+                    5 => Ok(KeyTypeWasm::REDPALLAS_HECATE),
                     _ => Err(WasmDppError::invalid_argument(format!(
                         "unsupported key type ({})",
                         enum_val
@@ -103,6 +106,7 @@ impl From<KeyTypeWasm> for String {
             KeyTypeWasm::ECDSA_HASH160 => String::from("ECDSA_HASH160"),
             KeyTypeWasm::BIP13_SCRIPT_HASH => String::from("BIP13_SCRIPT_HASH"),
             KeyTypeWasm::EDDSA_25519_HASH160 => String::from("EDDSA_25519_HASH160"),
+            KeyTypeWasm::REDPALLAS_HECATE => String::from("REDPALLAS_HECATE"),
         }
     }
 }
@@ -115,6 +119,7 @@ impl From<KeyTypeWasm> for KeyType {
             KeyTypeWasm::ECDSA_HASH160 => KeyType::ECDSA_HASH160,
             KeyTypeWasm::BIP13_SCRIPT_HASH => KeyType::BIP13_SCRIPT_HASH,
             KeyTypeWasm::EDDSA_25519_HASH160 => KeyType::EDDSA_25519_HASH160,
+            KeyTypeWasm::REDPALLAS_HECATE => KeyType::REDPALLAS_HECATE,
         }
     }
 }
@@ -127,6 +132,7 @@ impl From<KeyType> for KeyTypeWasm {
             KeyType::ECDSA_HASH160 => KeyTypeWasm::ECDSA_HASH160,
             KeyType::BIP13_SCRIPT_HASH => KeyTypeWasm::BIP13_SCRIPT_HASH,
             KeyType::EDDSA_25519_HASH160 => KeyTypeWasm::EDDSA_25519_HASH160,
+            KeyType::REDPALLAS_HECATE => KeyTypeWasm::REDPALLAS_HECATE,
         }
     }
 }
@@ -139,6 +145,7 @@ impl From<KeyTypeWasm> for u8 {
             KeyTypeWasm::ECDSA_HASH160 => 2,
             KeyTypeWasm::BIP13_SCRIPT_HASH => 3,
             KeyTypeWasm::EDDSA_25519_HASH160 => 4,
+            KeyTypeWasm::REDPALLAS_HECATE => 5,
         }
     }
 }

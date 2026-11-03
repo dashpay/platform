@@ -41,3 +41,6 @@ pub use public_key_with_limits_cannot_update_key_limits_error::PublicKeyWithLimi
 
 mod public_key_expired_error;
 pub use public_key_expired_error::PublicKeyExpiredError;
+
+mod basic_red_pallas_error;
+pub use basic_red_pallas_error::BasicRedPallasError;

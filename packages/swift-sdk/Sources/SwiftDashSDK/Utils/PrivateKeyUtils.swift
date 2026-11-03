@@ -248,6 +248,8 @@ public enum KeySizeValidator {
             return 32  // 256 bits
         case .eddsa25519Hash160:
             return 32  // 256 bits
+        case .redpallasHecate:
+            return 32  // the 32-byte Hecate secret
         }
     }
 

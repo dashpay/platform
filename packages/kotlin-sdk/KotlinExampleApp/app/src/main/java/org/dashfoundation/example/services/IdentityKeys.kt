@@ -16,7 +16,7 @@ object IdentityKeys {
     /** DPP `Purpose` discriminants, in rawValue order. */
     private val PURPOSE_NAMES = listOf(
         "AUTHENTICATION", "ENCRYPTION", "DECRYPTION", "TRANSFER",
-        "SYSTEM", "VOTING", "OWNER",
+        "SYSTEM", "VOTING", "OWNER", "HECATE_SIGNER",
     )
 
     /** DPP `SecurityLevel` discriminants, in rawValue order. */
@@ -25,7 +25,7 @@ object IdentityKeys {
     /** DPP `KeyType` discriminants, in rawValue order. */
     private val KEY_TYPE_NAMES = listOf(
         "ECDSA_SECP256K1", "BLS12_381", "ECDSA_HASH160",
-        "BIP13_SCRIPT_HASH", "EDDSA_25519_HASH160",
+        "BIP13_SCRIPT_HASH", "EDDSA_25519_HASH160", "REDPALLAS_HECATE",
     )
 
     /** Canonical DPP purpose name for a raw Room value ("0" or "AUTHENTICATION"). */

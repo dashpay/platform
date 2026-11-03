@@ -23,6 +23,8 @@ public enum KeyValidation {
             ffiKeyType = 3
         case .eddsa25519Hash160:
             ffiKeyType = 4
+        case .redpallasHecate:
+            ffiKeyType = 5
         }
 
         let result = privateKeyHex.withCString { privateKeyCStr in

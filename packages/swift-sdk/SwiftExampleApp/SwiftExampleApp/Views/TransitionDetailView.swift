@@ -863,7 +863,7 @@ struct TransitionDetailView: View {
         switch keyType {
         case .ecdsaSecp256k1, .ecdsaHash160:
           break
-        case .bls12_381, .bip13ScriptHash, .eddsa25519Hash160:
+        case .bls12_381, .bip13ScriptHash, .eddsa25519Hash160, .redpallasHecate:
           throw SDKError.invalidParameter(
             "Key type \(keyTypeStr) is not supported by this flow; "
               + "use ECDSA_SECP256K1 or ECDSA_HASH160"
@@ -877,7 +877,7 @@ struct TransitionDetailView: View {
             "Purpose \(purposeStr) requires contract bounds, which this "
               + "generic builder can't supply; use AUTHENTICATION or TRANSFER"
           )
-        case .system, .voting, .owner:
+        case .system, .voting, .owner, .hecateSigner:
           throw SDKError.invalidParameter(
             "Purpose \(purposeStr) cannot be added to an identity here; "
               + "use AUTHENTICATION or TRANSFER"

@@ -417,7 +417,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     // The Rust signer FFI sends one of two payload shapes through the
     // trampoline, distinguished by the `key_type` discriminant byte:
     //
-    //   key_type 0…4   → `Signer<IdentityPublicKey>` flow.
+    //   key_type 0…5   → `Signer<IdentityPublicKey>` flow.
     //                    `pubkey_bytes` are the raw IdentityPublicKey
     //                    `data()` bytes (33-byte compressed secp256k1
     //                    for ECDSA, 20-byte hash for ECDSA_HASH160,
@@ -460,7 +460,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     /// and mid-registration (the keychain item exists but the row is
     /// inserted later by the Rust persister callback).
     ///
-    /// Used by the `key_type < 5` branch only. The platform-address
+    /// Used by the `key_type` 0…5 branch only. The platform-address
     /// branch (`key_type == 0xFF`) takes a different path — see
     /// [`signPlatformAddressOnDemand`] — because platform-address
     /// private keys are NEVER persisted; they're derived per call
@@ -866,7 +866,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         return resolved
     }
 
-    /// One-shot derive-and-sign for an identity key (`keyType < 5`), the
+    /// One-shot derive-and-sign for an identity key (`keyType` 0…5), the
     /// derive-sign-destroy counterpart of [`signPlatformAddressOnDemand`].
     /// Resolves the key's `(walletId, derivationPath)` breadcrumb and signs
     /// via the resolver, passing the on-chain key bytes as the binding so the

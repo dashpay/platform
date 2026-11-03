@@ -1,5 +1,5 @@
 use crate::identity::Purpose::{
-    AUTHENTICATION, DECRYPTION, ENCRYPTION, OWNER, SYSTEM, TRANSFER, VOTING,
+    AUTHENTICATION, DECRYPTION, ENCRYPTION, HECATE_SIGNER, OWNER, SYSTEM, TRANSFER, VOTING,
 };
 use anyhow::bail;
 use bincode::{Decode, DecodeUntrusted, Encode};
@@ -8,6 +8,7 @@ use ciborium::value::Value as CborValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::convert::TryFrom;
 
+#[allow(non_camel_case_types)]
 #[repr(u8)]
 #[derive(
     Debug,
@@ -43,6 +44,11 @@ pub enum Purpose {
     VOTING = 5,
     /// this key is used to prove ownership of a masternode or evonode
     OWNER = 6,
+    /// this key lets a zero-knowledge proof show that some identity sent a private entry
+    /// without saying which: a [`KeyType::REDPALLAS_HECATE`](crate::identity::KeyType::REDPALLAS_HECATE)
+    /// key, at most one enabled per identity, from protocol version 15. It cannot sign state
+    /// transitions or documents.
+    HECATE_SIGNER = 7,
 }
 
 impl From<Purpose> for [u8; 1] {
@@ -61,6 +67,7 @@ impl From<Purpose> for &'static [u8; 1] {
             SYSTEM => &[4],
             VOTING => &[5],
             OWNER => &[6],
+            HECATE_SIGNER => &[7],
         }
     }
 }
@@ -76,6 +83,7 @@ impl TryFrom<u8> for Purpose {
             4 => Ok(SYSTEM),
             5 => Ok(VOTING),
             6 => Ok(OWNER),
+            7 => Ok(HECATE_SIGNER),
             value => bail!("unrecognized purpose: {}", value),
         }
     }
@@ -92,6 +100,7 @@ impl TryFrom<i32> for Purpose {
             4 => Ok(SYSTEM),
             5 => Ok(VOTING),
             6 => Ok(OWNER),
+            7 => Ok(HECATE_SIGNER),
             value => bail!("unrecognized purpose: {}", value),
         }
     }
@@ -110,7 +119,9 @@ impl std::fmt::Display for Purpose {
 }
 
 impl Purpose {
-    /// The full range of purposes
+    /// The full range of purposes a document type's `keyRequirements` may name. It leaves out
+    /// SYSTEM and HECATE_SIGNER: a schema parsed at a protocol version before 15 must keep
+    /// refusing a purpose that did not exist there, and a signer key never signs a document.
     pub fn full_range() -> [Purpose; 6] {
         [
             AUTHENTICATION,
@@ -141,6 +152,7 @@ impl Purpose {
             SYSTEM => "system",
             VOTING => "voting",
             OWNER => "owner",
+            HECATE_SIGNER => "hecate_signer",
         }
     }
 
@@ -154,6 +166,7 @@ impl Purpose {
             "system" => Some(SYSTEM),
             "voting" => Some(VOTING),
             "owner" => Some(OWNER),
+            "hecate_signer" => Some(HECATE_SIGNER),
             _ => None,
         }
     }
@@ -178,7 +191,8 @@ mod tests {
     // -- TryFrom<u8> invalid --
     #[test]
     fn test_purpose_try_from_u8_invalid() {
-        assert!(Purpose::try_from(7u8).is_err());
+        assert_eq!(Purpose::try_from(7u8).unwrap(), HECATE_SIGNER);
+        assert!(Purpose::try_from(8u8).is_err());
         assert!(Purpose::try_from(255u8).is_err());
     }
 
@@ -197,7 +211,8 @@ mod tests {
     #[test]
     fn test_purpose_try_from_i32_invalid() {
         assert!(Purpose::try_from(-1i32).is_err());
-        assert!(Purpose::try_from(7i32).is_err());
+        assert_eq!(Purpose::try_from(7i32).unwrap(), HECATE_SIGNER);
+        assert!(Purpose::try_from(8i32).is_err());
         assert!(Purpose::try_from(1_000_000i32).is_err());
     }
 
@@ -281,7 +296,7 @@ mod tests {
     // -- round-trip: Purpose -> u8 -> Purpose --
     #[test]
     fn test_purpose_round_trip_u8() {
-        for val in 0u8..=6 {
+        for val in 0u8..=7 {
             let p = Purpose::try_from(val).unwrap();
             assert_eq!(p as u8, val);
         }
@@ -298,6 +313,7 @@ mod tests {
             SYSTEM,
             VOTING,
             OWNER,
+            HECATE_SIGNER,
         ] {
             let name = purpose.wire_name();
             assert_eq!(name, format!("{purpose:?}").to_lowercase());
