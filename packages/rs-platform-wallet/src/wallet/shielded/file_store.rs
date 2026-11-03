@@ -633,13 +633,15 @@ impl FileBackedShieldedStore {
     /// "what record already exists for it" a single atomic answer
     /// (#4313 review finding r3767229122).
     ///
-    /// A corrupt row reads as `None` with a warning, matching
-    /// [`rehydrate_pending_spends`]: a row that cannot be decoded cannot be
-    /// resumed either, and failing the whole claim on it would be worse than
-    /// rebuilding.
+    /// A row whose anchor or nullifier columns cannot be decoded is reported
+    /// as [`FileShieldedStoreError::RecoveryCorrupted`] and left in place,
+    /// never as `None`. "No record" sends the caller down the fresh-claim
+    /// path, and the row's `st_bytes` may hold the only copy of an executed
+    /// claim's padded identity id: a fresh scan would find the note spent and
+    /// end at a false "already claimed" (#4313 review). Failing the claim
+    /// keeps the record for a later repair or explicit abandonment.
     ///
     /// [`reserve_one_time_claim_key`]: ShieldedStore::reserve_one_time_claim_key
-    /// [`rehydrate_pending_spends`]: Self::rehydrate_pending_spends
     fn read_pending_row(
         conn: &Connection,
         id: SubwalletId,
@@ -698,13 +700,15 @@ impl FileBackedShieldedStore {
                  resuming from its stored transition"
             );
         }
+        let corrupted = |reason: &str| FileShieldedStoreError::RecoveryCorrupted {
+            account_index: Some(id.account_index),
+            reason: format!("one-time claim record: {reason}"),
+        };
         let Ok(anchor) = <[u8; 32]>::try_from(anchor.as_slice()) else {
-            tracing::warn!("ignoring corrupt shielded_pending_spends row (bad anchor width)");
-            return Ok(None);
+            return Err(corrupted("bad anchor width"));
         };
         if nullifiers.is_empty() || nullifiers.len() % 32 != 0 {
-            tracing::warn!("ignoring corrupt shielded_pending_spends row (bad nullifiers)");
-            return Ok(None);
+            return Err(corrupted("bad nullifiers"));
         }
         Ok(Some(PendingRedrive {
             activity_id: *activity_id,
@@ -3464,6 +3468,77 @@ mod tests {
         drop(conn);
         drop(store);
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// A claim record whose anchor or nullifier columns are damaged must fail
+    /// the reservation as `RecoveryCorrupted`, not read as "no record": that
+    /// would start a fresh claim over a row whose `st_bytes` may hold the only
+    /// copy of an executed claim's padded identity id (#4313 review). The row
+    /// stays, and no reservation is taken.
+    #[test]
+    fn a_claim_record_with_damaged_metadata_is_an_error_not_an_absence() {
+        for (tag, damage) in [
+            (
+                "anchor",
+                "UPDATE shielded_pending_spends SET anchor = x'0102'",
+            ),
+            (
+                "nullifiers",
+                "UPDATE shielded_pending_spends SET nullifiers = x'010203'",
+            ),
+        ] {
+            let path = temp_tree_path(&format!("claim_record_damaged_{tag}"));
+            let wallet_id: WalletId = [0x54; 32];
+            let id = SubwalletId::new(wallet_id, CLAIM_ACCOUNT);
+            let claim_key = [0x79; 32];
+            let mut store = FileBackedShieldedStore::open_path(&path, 8).expect("store");
+            store.arm_redrive(id, admission_record(0x79)).expect("arm");
+            store
+                .lock_pending_conn()
+                .expect("conn")
+                .execute(damage, [])
+                .expect("damage the row");
+
+            let reserved = store.reserve_one_time_claim_key(
+                id,
+                claim_key,
+                AdmissionToken::new(),
+                1_000,
+                60_000,
+            );
+            assert!(
+                matches!(
+                    reserved,
+                    Err(FileShieldedStoreError::RecoveryCorrupted {
+                        account_index: Some(CLAIM_ACCOUNT),
+                        ..
+                    })
+                ),
+                "damaged {tag} must be an error, got {reserved:?}"
+            );
+            let rows: i64 = store
+                .lock_pending_conn()
+                .expect("conn")
+                .query_row("SELECT COUNT(*) FROM shielded_pending_spends", [], |r| {
+                    r.get(0)
+                })
+                .expect("count");
+            assert_eq!(rows, 1, "the damaged {tag} record must be kept");
+            // The reservation rolled back with the transaction: a second
+            // claimant is not told the invitation is held.
+            assert!(matches!(
+                store.reserve_one_time_claim_key(
+                    id,
+                    claim_key,
+                    AdmissionToken::new(),
+                    1_000,
+                    60_000
+                ),
+                Err(FileShieldedStoreError::RecoveryCorrupted { .. })
+            ));
+            drop(store);
+            let _ = std::fs::remove_file(&path);
+        }
     }
 
     // ── Per-invitation claim-key reservation (#4313 cr-9d0e1a44) ───────
