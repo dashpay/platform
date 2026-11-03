@@ -256,23 +256,33 @@ A long-lived application should persist `continuation()` and resume from it
 on the next start (`StartingPoint::Continuation`), so its proofs stay short.
 
 A continuation is an anchor and the verified states above it. The anchor is
-the newest verified state strictly below the lowest Core height of a response
-the SDK verified with the provider's keys, or the provider's own checkpoint
-when none was verified or no state is kept below that height. The proof
-verifier reports that height through `ContextProvider::core_height_verified`
-only after the response's Tenderdash signature verified, so the height was
-signed by a Platform quorum as part of the state it committed: Platform
-reached it. A proof starts from a state strictly below the height it serves,
-and the next session needs heights at or above Platform's Core height, which
-only rises; so the lowest height verified this session is at or below every
-height the next session needs, and the anchor is below it. The heights keys
+the newest verified state strictly below one DKG interval (24 blocks) under
+the lowest Core height of a response the SDK verified with the provider's
+keys, or the provider's own checkpoint when none was verified or no state is
+kept below that height. The proof verifier reports that height, with the
+quorum that signed it, through `ContextProvider::core_height_verified` only
+after the response's Tenderdash signature verified, so the height was signed
+by a Platform quorum as part of the state it committed: Platform reached it.
+The provider counts it only when its own cache serves that quorum's key at
+that height, so it could have supplied the key; routing the height to the
+provider that did is the job of any provider combining others. The next
+session needs heights at or above Platform's Core height, which only rises,
+so the lowest height verified this session is at or below every height the
+next session needs. A key verified at a height `H`
+may rest on evidence up to one DKG interval below `H`: it is served up to
+24 blocks past the highest target that opened its quorum, for the block on
+which Drive still signs with a quorum Core has just retired, and that quorum
+is in no quorum root above its retirement. A proof starts from a state
+strictly below its target, so the continuation keeps a state below `H - 24`
+as its anchor, and every state above it, and the next session can prove such
+a key again by asking for a target at or above `H - 24`. The heights keys
 are looked up or fetched for come from responses not verified yet and never
 count, so a forged response, or one that fails verification, cannot move the
 anchor. Verified states above the heights verified, such as the relay's tip
 or a target above the height asked for, never become the anchor. A node
 answering from an older block can only make the anchor older, and proofs
-longer. The anchor advances when the SDK verifies responses at heights above
-the states verified before them.
+longer. The anchor advances when the SDK verifies responses at heights more
+than one DKG interval above the states verified before them.
 Persisting `latest_verified_state()` as the next checkpoint instead would
 strand the next session: that state is often the relay's tip, above the
 Core height Platform reports, so no key at or below it could be proven until

@@ -511,6 +511,15 @@ impl ProofFetches {
         }
     }
 
+    /// Whether the cache holds the quorum and serves it for `height`, as a
+    /// [`lookup`](Self::lookup) would. Leaves the cache order alone.
+    pub(crate) fn serves(&self, quorum_type: u32, quorum_hash: [u8; 32], height: u32) -> bool {
+        self.lock()
+            .keys
+            .peek(&(quorum_type, quorum_hash))
+            .is_some_and(|cached| cached.serves(height))
+    }
+
     /// Prove a quorum's key for `height`, or join the fetch already proving
     /// it, and return it. Every failure is
     /// [`ContextProviderError::QuorumSourceUnavailable`]; this never reports

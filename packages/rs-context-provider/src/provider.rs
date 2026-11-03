@@ -160,8 +160,11 @@ pub trait ContextProvider: Send + Sync {
     }
 
     /// Called by the proof verifier once the Tenderdash signature of a
-    /// response verified with a key from this provider, with the Core
-    /// ChainLocked height in that response's metadata.
+    /// response verified with a key from this provider, with the quorum that
+    /// signed it and the Core ChainLocked height in that response's metadata:
+    /// the same arguments, in the same order, as the
+    /// [get_quorum_public_key](Self::get_quorum_public_key) call that
+    /// returned the key.
     ///
     /// The quorum signed that height as part of the state it committed, so
     /// it is a Core height Platform actually reached, unlike the heights
@@ -170,13 +173,21 @@ pub trait ContextProvider: Send + Sync {
     /// Platform's progress. It is not called for a response that fails
     /// verification.
     ///
-    /// A provider that combines others forwards the call only to the one
-    /// whose key the response verified with: another provider never vouched
-    /// for that height.
+    /// A provider that combines others forwards the call only to the child
+    /// that supplied this quorum's key, found by the quorum type and hash:
+    /// another child never vouched for that height. Verifications run
+    /// concurrently, so the quorum identity, not the order of calls, says
+    /// which lookup succeeded.
     ///
     /// Called on the verification path, so it must be cheap and must not
     /// block. The default does nothing.
-    fn core_height_verified(&self, _core_chain_locked_height: u32) {}
+    fn core_height_verified(
+        &self,
+        _quorum_type: u32,
+        _quorum_hash: [u8; 32],
+        _core_chain_locked_height: u32,
+    ) {
+    }
 }
 
 impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
@@ -231,8 +242,14 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
         self.as_ref().requires_proofs()
     }
 
-    fn core_height_verified(&self, core_chain_locked_height: u32) {
-        self.as_ref().core_height_verified(core_chain_locked_height)
+    fn core_height_verified(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) {
+        self.as_ref()
+            .core_height_verified(quorum_type, quorum_hash, core_chain_locked_height)
     }
 }
 
@@ -298,9 +315,14 @@ where
         lock.requires_proofs()
     }
 
-    fn core_height_verified(&self, core_chain_locked_height: u32) {
+    fn core_height_verified(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) {
         let lock = self.lock().expect("lock poisoned");
-        lock.core_height_verified(core_chain_locked_height)
+        lock.core_height_verified(quorum_type, quorum_hash, core_chain_locked_height)
     }
 }
 
@@ -487,14 +509,21 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
 
+    /// A quorum type, quorum hash and Core height, as passed to
+    /// [ContextProvider::core_height_verified].
+    type Verified = (u32, [u8; 32], u32);
+
+    /// A quorum type and quorum hash.
+    type Quorum = (u32, [u8; 32]);
+
     /// Provider whose `fetch_quorum_public_key` counts its calls and records
-    /// the quorum it was asked for, and which records the heights reported
-    /// verified.
+    /// the quorum it was asked for, and which records the quorums and
+    /// heights reported verified.
     #[derive(Default)]
     struct FetchingProvider {
         calls: AtomicUsize,
         asked: Mutex<Option<(u32, [u8; 32], u32)>>,
-        verified: Mutex<Vec<u32>>,
+        verified: Mutex<Vec<Verified>>,
     }
 
     impl ContextProvider for FetchingProvider {
@@ -548,8 +577,17 @@ mod tests {
             true
         }
 
-        fn core_height_verified(&self, core_chain_locked_height: u32) {
-            self.verified.lock().unwrap().push(core_chain_locked_height);
+        fn core_height_verified(
+            &self,
+            quorum_type: u32,
+            quorum_hash: [u8; 32],
+            core_chain_locked_height: u32,
+        ) {
+            self.verified.lock().unwrap().push((
+                quorum_type,
+                quorum_hash,
+                core_chain_locked_height,
+            ));
         }
     }
 
@@ -580,9 +618,197 @@ mod tests {
         let mutex = Mutex::new(Arc::clone(&inner));
         let wrappers: [&dyn ContextProvider; 3] = [&inner, &boxed, &mutex];
         for (height, provider) in (10..).zip(wrappers) {
-            provider.core_height_verified(height);
+            provider.core_height_verified(6, [height as u8; 32], height);
         }
-        assert_eq!(*inner.verified.lock().unwrap(), [10, 11, 12]);
+        assert_eq!(
+            *inner.verified.lock().unwrap(),
+            [(6, [10; 32], 10), (6, [11; 32], 11), (6, [12; 32], 12)]
+        );
+    }
+
+    /// A child of [Combining]: serves the keys of the quorums it holds and
+    /// records the verified heights it is told about.
+    struct Child {
+        quorums: Vec<[u8; 32]>,
+        verified: Mutex<Vec<Verified>>,
+    }
+
+    impl Child {
+        fn holding(quorums: Vec<[u8; 32]>) -> Self {
+            Self {
+                quorums,
+                verified: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl ContextProvider for Child {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            if self.quorums.contains(&quorum_hash) {
+                Ok([quorum_hash[0]; 48])
+            } else {
+                Err(ContextProviderError::QuorumSourceUnavailable(
+                    "not held".to_string(),
+                ))
+            }
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
+
+        fn core_height_verified(
+            &self,
+            quorum_type: u32,
+            quorum_hash: [u8; 32],
+            core_chain_locked_height: u32,
+        ) {
+            self.verified.lock().unwrap().push((
+                quorum_type,
+                quorum_hash,
+                core_chain_locked_height,
+            ));
+        }
+    }
+
+    /// A provider that asks its children in turn for a quorum's key,
+    /// remembers which child supplied each quorum, and forwards a verified
+    /// height only to that child.
+    struct Combining {
+        children: Vec<Child>,
+        suppliers: Mutex<Vec<(Quorum, usize)>>,
+    }
+
+    impl ContextProvider for Combining {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            quorum_type: u32,
+            quorum_hash: [u8; 32],
+            core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            let mut last = None;
+            for (index, child) in self.children.iter().enumerate() {
+                match child.get_quorum_public_key(
+                    quorum_type,
+                    quorum_hash,
+                    core_chain_locked_height,
+                ) {
+                    Ok(key) => {
+                        let mut suppliers = self.suppliers.lock().unwrap();
+                        suppliers.retain(|(quorum, _)| *quorum != (quorum_type, quorum_hash));
+                        suppliers.push(((quorum_type, quorum_hash), index));
+                        return Ok(key);
+                    }
+                    Err(error) => last = Some(error),
+                }
+            }
+            Err(last.unwrap_or_else(|| ContextProviderError::Config("no child".to_string())))
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
+
+        fn core_height_verified(
+            &self,
+            quorum_type: u32,
+            quorum_hash: [u8; 32],
+            core_chain_locked_height: u32,
+        ) {
+            let supplier = self
+                .suppliers
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|(quorum, _)| *quorum == (quorum_type, quorum_hash))
+                .map(|(_, index)| *index);
+            if let Some(index) = supplier {
+                self.children[index].core_height_verified(
+                    quorum_type,
+                    quorum_hash,
+                    core_chain_locked_height,
+                );
+            }
+        }
+    }
+
+    /// Illustrates the contract with a stub combiner rather than testing
+    /// production code: the notification names the quorum, so a provider
+    /// combining others can route it to the child that supplied that
+    /// quorum's key, even when lookups and verifications of two quorums at
+    /// one height interleave, as concurrent requests do. That the verifier
+    /// passes the identity it looked the key up by is tested in
+    /// `drive-proof-verifier`.
+    #[test]
+    fn should_let_a_combining_provider_route_verified_heights_by_quorum() {
+        let (a, b) = ([0xaa; 32], [0xbb; 32]);
+        let combining = Combining {
+            children: vec![Child::holding(vec![a]), Child::holding(vec![b])],
+            suppliers: Mutex::new(Vec::new()),
+        };
+        let provider: &dyn ContextProvider = &combining;
+
+        assert_eq!(
+            provider.get_quorum_public_key(6, a, 100).unwrap(),
+            [0xaa; 48]
+        );
+        assert_eq!(
+            provider.get_quorum_public_key(6, b, 100).unwrap(),
+            [0xbb; 48]
+        );
+        provider.core_height_verified(6, b, 100);
+        provider.core_height_verified(6, a, 100);
+        assert_eq!(
+            provider.get_quorum_public_key(6, b, 101).unwrap(),
+            [0xbb; 48]
+        );
+        provider.core_height_verified(6, b, 101);
+        // A quorum no child supplied reaches no child.
+        provider.core_height_verified(6, [0xcc; 32], 100);
+
+        assert_eq!(
+            *combining.children[0].verified.lock().unwrap(),
+            [(6, a, 100)]
+        );
+        assert_eq!(
+            *combining.children[1].verified.lock().unwrap(),
+            [(6, b, 100), (6, b, 101)]
+        );
     }
 
     /// The SDK reaches its provider through `Arc`, `Box<dyn ContextProvider>`

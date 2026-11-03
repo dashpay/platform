@@ -233,18 +233,18 @@ impl Case {
 }
 
 /// [ContextProvider] backed by the per-case corpus quorum key material. It
-/// records the Core heights the verifier reports verified.
+/// records the quorums and Core heights the verifier reports verified.
 pub struct VectorContextProvider {
     quorum_type: u32,
     quorum_hash: [u8; 32],
     quorum_pubkey: [u8; 48],
-    verified_core_heights: Mutex<Vec<u32>>,
+    verified_core_heights: Mutex<Vec<(u32, [u8; 32], u32)>>,
 }
 
 impl VectorContextProvider {
-    /// The Core heights reported through
+    /// The quorum types, quorum hashes and Core heights reported through
     /// [ContextProvider::core_height_verified], in order.
-    pub fn verified_core_heights(&self) -> Vec<u32> {
+    pub fn verified_core_heights(&self) -> Vec<(u32, [u8; 32], u32)> {
         self.verified_core_heights
             .lock()
             .expect("not poisoned")
@@ -294,10 +294,15 @@ impl ContextProvider for VectorContextProvider {
         Ok(1)
     }
 
-    fn core_height_verified(&self, core_chain_locked_height: u32) {
+    fn core_height_verified(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) {
         self.verified_core_heights
             .lock()
             .expect("not poisoned")
-            .push(core_chain_locked_height);
+            .push((quorum_type, quorum_hash, core_chain_locked_height));
     }
 }

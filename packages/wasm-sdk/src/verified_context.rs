@@ -50,12 +50,14 @@ export interface QuorumProofState {
  * Where a `WasmVerifiedContext` got to, for the next session to start from:
  * what `WasmVerifiedContext.continuation()` returns and the
  * `*FromContinuation` factories take. `anchor` is the newest verified
- * state below the lowest Core height of a response the SDK verified with
- * this context's keys, a height a Platform quorum signed (the context's
- * starting point if none was verified), so the next session can prove the
- * heights Platform reports from it; `states` are the newer verified states,
- * lowest first, so its proofs stay short. Every state is trust
- * configuration, as a checkpoint is: only pass back a continuation a
+ * state more than one DKG interval (24 blocks) below the lowest Core height
+ * of a response the SDK verified with this context's keys, a height a
+ * Platform quorum signed (the context's starting point if none was
+ * verified), so the next session can prove the heights Platform reports
+ * from it, including a key verified from evidence up to that interval below
+ * its height, for a quorum that has just retired; `states` are the newer
+ * verified states, lowest first, so its proofs stay short. Every state is
+ * trust configuration, as a checkpoint is: only pass back a continuation a
  * context produced. Unknown fields are rejected.
  */
 export interface QuorumProofContinuation {

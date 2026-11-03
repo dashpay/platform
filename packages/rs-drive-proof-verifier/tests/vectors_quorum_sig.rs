@@ -159,18 +159,25 @@ fn tampered_core_chain_locked_height_breaks_signature() {
     expect_metadata_tamper_breaks_signature(|metadata| metadata.core_chain_locked_height += 1);
 }
 
-/// A real response whose quorum signature verifies reports its Core height to
-/// the provider; the same response with the Core height altered, or checked
-/// against the wrong quorum key, reports nothing, so a forged response never
-/// counts as Platform progress.
+/// A real response whose quorum signature verifies reports its signing quorum
+/// and Core height to the provider; the same response with the Core height
+/// altered, or checked against the wrong quorum key, reports nothing, so a
+/// forged response never counts as Platform progress.
 #[test]
 fn should_report_the_core_height_verified_only_for_a_verified_signature() {
     let case = load_case("quorum-sig-valid");
     let provider = case.provider();
     verify_balance_with(&case, case.metadata(), &provider).expect("verifies");
+    // With the quorum that signed it, as the key was looked up.
+    let signer = case.grpc_proof();
+    let signer_hash: [u8; 32] = signer.quorum_hash.try_into().expect("32 bytes");
     assert_eq!(
         provider.verified_core_heights(),
-        [case.metadata().core_chain_locked_height]
+        [(
+            signer.quorum_type,
+            signer_hash,
+            case.metadata().core_chain_locked_height
+        )]
     );
 
     let provider = case.provider();

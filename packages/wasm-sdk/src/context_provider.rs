@@ -142,8 +142,14 @@ impl ContextProvider for WasmTrustedContext {
         self.inner.requires_proofs()
     }
 
-    fn core_height_verified(&self, core_chain_locked_height: u32) {
-        self.inner.core_height_verified(core_chain_locked_height)
+    fn core_height_verified(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) {
+        self.inner
+            .core_height_verified(quorum_type, quorum_hash, core_chain_locked_height)
     }
 }
 

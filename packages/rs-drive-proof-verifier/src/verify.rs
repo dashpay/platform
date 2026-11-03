@@ -111,8 +111,8 @@ fn ensure_proof_signed_at_verifier_version(
 /// ## Returns
 ///
 /// Returns:
-/// * `Ok(())` when the proof is valid, after reporting the response's Core
-///   height to [ContextProvider::core_height_verified]
+/// * `Ok(())` when the proof is valid, after reporting the signing quorum
+///   and the response's Core height to [ContextProvider::core_height_verified]
 /// * `Err(Error)` when the proof is invalid
 ///
 pub(crate) fn verify_tenderdash_proof(
@@ -131,8 +131,9 @@ pub(crate) fn verify_tenderdash_proof(
 /// every nested GroveDB proof before calling this function.
 ///
 /// Once the signature verifies, and only then, the response's Core ChainLocked
-/// height is reported to [ContextProvider::core_height_verified]: the quorum
-/// signed it, so it is a height Platform committed.
+/// height is reported to [ContextProvider::core_height_verified], with the
+/// quorum type and hash its key was looked up by: the quorum signed it, so it
+/// is a height Platform committed.
 pub(crate) fn verify_tenderdash_signature(
     proof: &Proof,
     mtd: &ResponseMetadata,
@@ -225,7 +226,7 @@ pub(crate) fn verify_tenderdash_signature(
     match verify_signature_digest(&sign_digest, &signature, &pubkey)? {
         true => {
             // Only now is the Core height one the quorum signed.
-            provider.core_height_verified(core_locked_height);
+            provider.core_height_verified(quorum_type, quorum_hash, core_locked_height);
             Ok(())
         }
         false => Err(Error::InvalidSignature {
@@ -430,10 +431,10 @@ mod tests {
     /// A ContextProvider that returns a cryptographically valid public key
     /// so that tests can progress past the public-key parsing step and
     /// reach deeper code paths (e.g. signature verification). It records
-    /// the Core heights reported verified.
+    /// the quorums and Core heights reported verified.
     struct ValidKeyContextProvider {
         pubkey_bytes: [u8; 48],
-        verified: Mutex<Vec<u32>>,
+        verified: Mutex<Vec<(u32, [u8; 32], u32)>>,
     }
 
     impl ValidKeyContextProvider {
@@ -451,7 +452,7 @@ mod tests {
             }
         }
 
-        fn verified(&self) -> Vec<u32> {
+        fn verified(&self) -> Vec<(u32, [u8; 32], u32)> {
             self.verified.lock().expect("not poisoned").clone()
         }
     }
@@ -485,11 +486,17 @@ mod tests {
             Ok(1)
         }
 
-        fn core_height_verified(&self, core_chain_locked_height: u32) {
-            self.verified
-                .lock()
-                .expect("not poisoned")
-                .push(core_chain_locked_height);
+        fn core_height_verified(
+            &self,
+            quorum_type: u32,
+            quorum_hash: [u8; 32],
+            core_chain_locked_height: u32,
+        ) {
+            self.verified.lock().expect("not poisoned").push((
+                quorum_type,
+                quorum_hash,
+                core_chain_locked_height,
+            ));
         }
     }
 
@@ -839,7 +846,8 @@ mod tests {
 
         let provider = ValidKeyContextProvider::serving(&key);
         verify_tenderdash_proof(&proof, &metadata, &root, &provider).expect("verifies");
-        assert_eq!(provider.verified(), [4321]);
+        // With the quorum that signed it, as the key was looked up.
+        assert_eq!(provider.verified(), [(1, [2; 32], 4321)]);
 
         // The same signature, with the Core height one above the signed one.
         let provider = ValidKeyContextProvider::serving(&key);
