@@ -4,6 +4,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::storage_flags::StorageFlags;
 
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -12,9 +13,7 @@ use dpp::document::Document;
 
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Prepares the operations for deleting a document.
@@ -38,9 +37,7 @@ impl Drive {
         contract: &DataContract,
         document_type: DocumentTypeRef,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -75,9 +72,7 @@ impl Drive {
         contract: &DataContract,
         document_type: DocumentTypeRef,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -129,9 +124,7 @@ impl Drive {
         contract: &DataContract,
         document_type: DocumentTypeRef,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -175,9 +168,7 @@ impl Drive {
         contract: &DataContract,
         document_type: DocumentTypeRef,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -215,6 +206,7 @@ mod tests {
     use crate::error::drive::DriveError;
     use crate::error::Error;
     use crate::fees::op::LowLevelDriveOperation;
+    use crate::util::estimated_layers::EstimatedLayers;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
@@ -229,17 +221,12 @@ mod tests {
     use dpp::fee::fee_result::FeeResult;
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
     use dpp::version::PlatformVersion;
-    use grovedb::batch::KeyInfoPath;
-    use grovedb::EstimatedLayerInformation;
+
     use std::borrow::Cow;
-    use std::collections::HashMap;
 
     /// What a delete gives: its operations and, when it only estimates costs, the layer
     /// information it estimated
-    type DeleteOutcome = (
-        Vec<LowLevelDriveOperation>,
-        Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>,
-    );
+    type DeleteOutcome = (Vec<LowLevelDriveOperation>, Option<EstimatedLayers>);
 
     /// Deleting a stored `person` under `platform_version`: by its id, as the force delete
     /// does, and from the document and storage flags already read, each with a layer
@@ -292,7 +279,7 @@ mod tests {
             )
             .expect("expected to store the document");
 
-        let mut by_id_estimates = estimate.then(HashMap::new);
+        let mut by_id_estimates = estimate.then(EstimatedLayers::new);
         let by_id = drive
             .force_delete_document_for_contract_operations(
                 document.id(),
@@ -305,7 +292,7 @@ mod tests {
                 platform_version,
             )
             .expect("expected the force delete operations");
-        let mut from_read_estimates = estimate.then(HashMap::new);
+        let mut from_read_estimates = estimate.then(EstimatedLayers::new);
         let from_read = drive
             .force_delete_read_document_for_contract_operations(
                 document.clone(),
@@ -327,8 +314,8 @@ mod tests {
     }
 
     /// How many layers `estimates` describes
-    fn layer_count(estimates: &Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>) -> usize {
-        estimates.as_ref().map_or(0, HashMap::len)
+    fn layer_count(estimates: &Option<EstimatedLayers>) -> usize {
+        estimates.as_ref().map_or(0, EstimatedLayers::len)
     }
 
     /// The fee of `operations`, costs estimated from `estimates` when it is set, as an
@@ -336,7 +323,7 @@ mod tests {
     fn fee_of(
         drive: &Drive,
         operations: Vec<LowLevelDriveOperation>,
-        estimates: Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>,
+        estimates: Option<EstimatedLayers>,
         platform_version: &PlatformVersion,
     ) -> FeeResult {
         let mut drive_operations = vec![];
@@ -418,7 +405,7 @@ mod tests {
             &contract,
             document_type,
             None,
-            &mut estimate.then(HashMap::new),
+            &mut estimate.then(EstimatedLayers::new),
             0,
             None,
             platform_version,

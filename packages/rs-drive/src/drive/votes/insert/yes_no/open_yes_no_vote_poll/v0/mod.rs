@@ -7,6 +7,7 @@ use crate::drive::votes::YesNoAbstainVoteChoiceToKeyTrait;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::BatchInsertTreeApplyType;
 use crate::util::object_size_info::{DriveKeyInfo, PathKeyInfo};
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
@@ -23,7 +24,6 @@ use grovedb::EstimatedLayerCount::ApproximateElements;
 use grovedb::EstimatedLayerSizes::{AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::{AllSumTrees, NoSumTrees};
 use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
 
 /// What a yes/no poll's serialized stored info takes, about: the poll with its rule, and its
 /// status once it is finished, with two blocks.
@@ -64,9 +64,7 @@ impl Drive {
         vote_poll: &YesNoVotePoll,
         end_date: TimestampMillis,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
