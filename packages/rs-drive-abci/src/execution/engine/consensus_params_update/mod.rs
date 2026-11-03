@@ -37,8 +37,8 @@ pub(crate) fn consensus_params_update(
         2 => Ok(v2::consensus_params_update_v2(
             network,
             original_platform_version,
-            epoch_info,
             new_platform_version,
+            epoch_info,
         )),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
             method: "consensus_params_update".to_string(),

@@ -9,8 +9,8 @@ use tenderdash_abci::proto::types::{ConsensusParams, EvidenceParams, VersionPara
 pub(super) fn consensus_params_update_v2(
     network: Network,
     original_platform_version: &PlatformVersion,
-    epoch_info: &EpochInfo,
     new_platform_version: &PlatformVersion,
+    epoch_info: &EpochInfo,
 ) -> Option<ConsensusParams> {
     let evidence = if original_platform_version.consensus.evidence
         != new_platform_version.consensus.evidence
@@ -31,62 +31,37 @@ pub(super) fn consensus_params_update_v2(
     };
 
     // These are emergency consensus updates
-    match network {
-        Network::Mainnet => {
-            if epoch_info.is_first_block_of_epoch(3) {
-                return Some(ConsensusParams {
-                    block: None,
-                    evidence,
-                    validator: None,
-                    version: Some(VersionParams {
-                        app_version: new_platform_version.protocol_version as u64,
-                        consensus_version: 1,
-                    }),
-                    synchrony: None,
-                    timeout: None,
-                    abci: None,
-                });
-            }
-        }
-        Network::Testnet if epoch_info.is_first_block_of_epoch(1480) => {
-            return Some(ConsensusParams {
-                block: None,
-                evidence,
-                validator: None,
-                version: Some(VersionParams {
-                    app_version: new_platform_version.protocol_version as u64,
-                    consensus_version: 1,
-                }),
-                synchrony: None,
-                timeout: None,
-                abci: None,
-            });
-        }
-        _ => {}
-    }
-
-    // Update versions or the evidence policy when they change
-    if original_platform_version
-        .consensus
-        .tenderdash_consensus_version
-        == new_platform_version.consensus.tenderdash_consensus_version
-        && original_platform_version.protocol_version == new_platform_version.protocol_version
-        && evidence.is_none()
-    {
-        None
+    let emergency_update = match network {
+        Network::Mainnet => epoch_info.is_first_block_of_epoch(3),
+        Network::Testnet => epoch_info.is_first_block_of_epoch(1480),
+        _ => false,
+    };
+    let consensus_version = if emergency_update {
+        1
     } else {
-        Some(ConsensusParams {
-            block: None,
-            evidence,
-            validator: None,
-            version: Some(VersionParams {
-                app_version: new_platform_version.protocol_version as u64,
-                consensus_version: new_platform_version.consensus.tenderdash_consensus_version
-                    as i32,
-            }),
-            synchrony: None,
-            timeout: None,
-            abci: None,
-        })
-    }
+        // Update versions or the evidence policy when they change
+        if original_platform_version
+            .consensus
+            .tenderdash_consensus_version
+            == new_platform_version.consensus.tenderdash_consensus_version
+            && original_platform_version.protocol_version == new_platform_version.protocol_version
+            && evidence.is_none()
+        {
+            return None;
+        }
+        new_platform_version.consensus.tenderdash_consensus_version as i32
+    };
+
+    Some(ConsensusParams {
+        block: None,
+        evidence,
+        validator: None,
+        version: Some(VersionParams {
+            app_version: new_platform_version.protocol_version as u64,
+            consensus_version,
+        }),
+        synchrony: None,
+        timeout: None,
+        abci: None,
+    })
 }
