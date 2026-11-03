@@ -79,7 +79,8 @@ impl PlatformWallet {
     ///   from its manager, such as while the caller resolved the mnemonic.
     /// - [`PlatformWalletError::KeyDerivation`] if key derivation fails —
     ///   including passing `None` for a watch-only wallet that has no
-    ///   resident private keys.
+    ///   resident private keys — or the derived key does not control the
+    ///   address, such as for a resolved master of another wallet.
     pub fn derive_core_address_private_key(
         &self,
         address_str: &str,
@@ -111,7 +112,7 @@ impl PlatformWallet {
                 ))
             })?;
 
-        private_key_at(path, wallet, resolved_master, network)
+        private_key_at(path, &address, wallet, resolved_master, network)
     }
 
     /// Returns the derivation path of `address_str` among the first
@@ -136,8 +137,16 @@ impl PlatformWallet {
         &self,
         address_str: &str,
     ) -> Result<Option<DerivationPath>, PlatformWalletError> {
+        let address = parse_address(address_str, self.network())?;
+        self.scan_bip44_account(&address)
+    }
+
+    /// The scan of [`Self::find_bip44_address_path`] for a parsed address.
+    fn scan_bip44_account(
+        &self,
+        address: &Address,
+    ) -> Result<Option<DerivationPath>, PlatformWalletError> {
         let network = self.network();
-        let address = parse_address(address_str, network)?;
         let account = {
             let manager = self.wallet_manager().blocking_read();
             let wallet = manager.get_wallet(&self.wallet_id()).ok_or_else(|| {
@@ -158,13 +167,8 @@ impl PlatformWallet {
                 .map_err(key_derivation)?;
             for index in 0..BIP44_ADDRESS_SCAN_LIMIT {
                 let index = ChildNumber::from_normal_idx(index).map_err(key_derivation)?;
-                let public_key = PublicKey::new(
-                    chain_xpub
-                        .ckd_pub(index)
-                        .map_err(key_derivation)?
-                        .public_key,
-                );
-                if Address::p2pkh(&public_key, network) == address {
+                let public_key = chain_xpub.ckd_pub(index).map_err(key_derivation)?.to_pub();
+                if Address::p2pkh(&public_key, network) == *address {
                     return Ok(Some(account_path.extend([chain, index])));
                 }
             }
@@ -182,13 +186,16 @@ impl PlatformWallet {
     /// - [`PlatformWalletError::AddressNotFound`] if the scan does not
     ///   reach the address.
     /// - Any error of [`Self::find_bip44_address_path`], and
-    ///   [`PlatformWalletError::KeyDerivation`] if key derivation fails.
+    ///   [`PlatformWalletError::KeyDerivation`] if key derivation fails or
+    ///   the derived key does not control the address.
     pub fn bip44_address_private_key(
         &self,
         address_str: &str,
         resolved_master: Option<&ExtendedPrivKey>,
     ) -> Result<CoreAddressPrivateKey, PlatformWalletError> {
-        let path = self.find_bip44_address_path(address_str)?.ok_or_else(|| {
+        let network = self.network();
+        let address = parse_address(address_str, network)?;
+        let path = self.scan_bip44_account(&address)?.ok_or_else(|| {
             PlatformWalletError::AddressNotFound(format!(
                 "address '{address_str}' is not within the BIP-44 account 0 scan"
             ))
@@ -199,7 +206,7 @@ impl PlatformWallet {
         let wallet = manager
             .get_wallet(&self.wallet_id())
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id())))?;
-        private_key_at(path, wallet, resolved_master, self.network())
+        private_key_at(path, &address, wallet, resolved_master, network)
     }
 }
 
@@ -221,8 +228,13 @@ fn parse_address(address_str: &str, network: Network) -> Result<Address, Platfor
 
 /// Derives the private key at `path` from `resolved_master`, or from
 /// `wallet`'s resident keys when it is `None` (see the module docs).
+///
+/// The key must control `address`. A resolved master of another wallet
+/// derives a valid key at the same path, so the result is checked rather
+/// than trusted.
 fn private_key_at(
     path: DerivationPath,
+    address: &Address,
     wallet: &Wallet,
     resolved_master: Option<&ExtendedPrivKey>,
     network: Network,
@@ -259,6 +271,11 @@ fn private_key_at(
             "derived private key bytes were not a valid secp256k1 scalar: {e}"
         ))
     })?;
+    if Address::p2pkh(&PublicKey::new(secret_key.public_key()), network) != *address {
+        return Err(PlatformWalletError::KeyDerivation(format!(
+            "the key derived at {path} does not control address '{address}'"
+        )));
+    }
     let wif = DashPrivateKey {
         compressed: true,
         network,
@@ -348,6 +365,18 @@ mod tests {
                 *key.private_key,
                 *master.derive_priv(&path).unwrap().private_key.to_bytes()
             );
+        }
+
+        // A resolved master of another wallet derives a key that does not
+        // control the address, and both routes refuse it.
+        let foreign_seed = Mnemonic::from_phrase(FRENCH).unwrap().to_seed("");
+        let foreign_master = ExtendedPrivKey::new_master(Network::Testnet, &foreign_seed).unwrap();
+        let tracked_address = address_at(&tracked);
+        for result in [
+            wallet.derive_core_address_private_key(&tracked_address, Some(&foreign_master)),
+            wallet.bip44_address_private_key(&tracked_address, Some(&foreign_master)),
+        ] {
+            assert!(matches!(result, Err(PlatformWalletError::KeyDerivation(_))));
         }
 
         // Past the bound, other accounts and another wallet are not found.
