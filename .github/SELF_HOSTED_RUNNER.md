@@ -27,12 +27,16 @@ downloaded toolchains to exact URLs and SHA-256 hashes. It includes:
 
 | Toolchain | Contract |
 | --- | --- |
-| Native build | build-essential, clang/LLVM, Snappy, CMake, OpenSSL, pkg-config |
+| Native build | build-essential, clang/LLVM, GMP, Snappy, CMake, OpenSSL, pkg-config |
 | Rust | rustup plus the repository baseline; exact repo-selected toolchains may be installed user-locally |
 | Cargo helpers | llvm-cov **0.9.1**, nextest **0.9.144**, machete **0.9.2**, ndk **4.1.2** |
 | Protobuf / Java | protoc **32.0**, JDK **17** |
 | Android | API **35**, build-tools **35.0.0**, NDK **28.1.13356709**, pinned emulator/system image |
 | Other job tools | Git, GitHub CLI, jq, Python 3, gpg, zip/unzip |
+
+GMP remains in both image manifests because the pinned trusted publisher requires
+it. Rust no longer needs it after the legacy BLS crate removal; dropping it from
+the images requires updating the publisher contract first.
 
 The SDK is image-owned. The persistent Kotlin workflow uses the image's
 `ci-android-emulator` wrapper to create user-writable AVDs, boot with KVM, and stop

@@ -79,6 +79,7 @@
       "llvm",
       "libsnappy-dev",
       "cmake",
+      "libgmp-dev",
       "libssl-dev",
       "pkg-config",
       "openjdk-17-jdk-headless",
