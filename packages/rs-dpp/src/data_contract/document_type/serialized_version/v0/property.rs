@@ -254,7 +254,7 @@ impl TryFrom<StoredProperty> for DocumentProperty {
                 StoredDistinctFrom::Property(path) => DistinctFrom::Property(path),
             }),
             encrypted_for: encrypted_for.map(EncryptedFor::from),
-            generated_from: generated_from.map(GeneratedFrom::from),
+            generated_from: generated_from.map(GeneratedFrom::try_from).transpose()?,
             revealed_reference,
         })
     }
@@ -561,19 +561,33 @@ impl From<&GeneratedFrom> for StoredGeneratedFrom {
                     GenerationParam::Property(path) => path.clone(),
                 })
                 .collect(),
-            range: range.map(|range| (range.minimum, range.maximum)),
+            range: range.map(|range| (range.minimum(), range.maximum())),
         }
     }
 }
 
-impl From<StoredGeneratedFrom> for GeneratedFrom {
-    fn from(stored: StoredGeneratedFrom) -> Self {
+impl TryFrom<StoredGeneratedFrom> for GeneratedFrom {
+    type Error = ProtocolError;
+
+    /// Refuses a stored range [`RandomRange::new`] does not admit, which registration never
+    /// stores, rather than construct a range whose draw and size it does not hold.
+    fn try_from(stored: StoredGeneratedFrom) -> Result<Self, Self::Error> {
         let StoredGeneratedFrom {
             function,
             params,
             range,
         } = stored;
-        GeneratedFrom {
+        let range = range
+            .map(|(minimum, maximum)| {
+                RandomRange::new(minimum, maximum).ok_or_else(|| {
+                    stored_error(format!(
+                        "generatedFrom range {minimum} to {maximum} is upside down or holds \
+                         more than 2^64 values"
+                    ))
+                })
+            })
+            .transpose()?;
+        Ok(GeneratedFrom {
             function: match function {
                 StoredSystemFunction::StringTransformation(transformation) => {
                     SystemFunction::StringTransformation(match transformation {
@@ -596,7 +610,52 @@ impl From<StoredGeneratedFrom> for GeneratedFrom {
                 }),
             },
             params: params.into_iter().map(GenerationParam::Property).collect(),
-            range: range.map(|(minimum, maximum)| RandomRange { minimum, maximum }),
+            range,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stored_uniform(range: Option<(i128, i128)>) -> StoredGeneratedFrom {
+        StoredGeneratedFrom {
+            function: StoredSystemFunction::Random(StoredRandomFunction::Uniform),
+            params: vec![],
+            range,
+        }
+    }
+
+    #[test]
+    fn should_read_back_a_stored_random_range() {
+        let generated_from = GeneratedFrom {
+            function: SystemFunction::Random(RandomFunction::Uniform),
+            params: vec![],
+            range: RandomRange::new(-5, 5),
+        };
+        let stored = StoredGeneratedFrom::from(&generated_from);
+        assert_eq!(stored, stored_uniform(Some((-5, 5))));
+        assert_eq!(
+            GeneratedFrom::try_from(stored).expect("the range reads back"),
+            generated_from
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_stored_random_range_it_could_not_draw_from() {
+        for range in [
+            (10, 1),
+            (0, i128::from(u64::MAX) + 1),
+            (i128::MIN, i128::MAX),
+        ] {
+            assert!(
+                matches!(
+                    GeneratedFrom::try_from(stored_uniform(Some(range))),
+                    Err(ProtocolError::CorruptedSerialization(_))
+                ),
+                "{range:?} is refused"
+            );
         }
     }
 }

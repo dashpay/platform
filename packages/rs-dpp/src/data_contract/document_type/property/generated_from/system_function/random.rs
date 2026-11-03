@@ -33,19 +33,67 @@ impl RandomFunction {
 }
 
 /// The integers a `sys.random.uniform` property is drawn from: the property's `minimum` to its
-/// `maximum`, both included. Registration reads both from the property's schema, requires
-/// `minimum <= maximum`, and requires both to fit the property's integer type, at most 64 bits
-/// wide, so the range never holds more than 2^64 values.
+/// `maximum`, both included. Registration reads both from the property's schema and requires
+/// them to fit the property's integer type, at most 64 bits wide. [`Self::new`] holds every
+/// range to `minimum <= maximum` and at most 2^64 values, which a draw maps 128 random bits
+/// onto, and so does the deserialization of one: the fields are private, so no range breaks
+/// either.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", try_from = "UncheckedRandomRange")]
 pub struct RandomRange {
     /// The smallest value drawn, and the placeholder the document holds until the draw.
-    pub minimum: i128,
+    minimum: i128,
     /// The largest value drawn.
-    pub maximum: i128,
+    maximum: i128,
+}
+
+/// The fields of a [`RandomRange`] as sent, checked by its `TryFrom`.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct UncheckedRandomRange {
+    minimum: i128,
+    maximum: i128,
+}
+
+impl TryFrom<UncheckedRandomRange> for RandomRange {
+    type Error = String;
+
+    fn try_from(unchecked: UncheckedRandomRange) -> Result<Self, Self::Error> {
+        let UncheckedRandomRange { minimum, maximum } = unchecked;
+        RandomRange::new(minimum, maximum).ok_or_else(|| {
+            format!(
+                "a random range holds its minimum, {minimum}, to its maximum, {maximum}: the \
+                 minimum may not be above the maximum, and the range may hold at most 2^64 values"
+            )
+        })
+    }
 }
 
 impl RandomRange {
+    /// The most values a range holds, 2^64: a draw maps 128 random bits onto the range, which
+    /// favours no value of a range this size or smaller by more than 2^-64.
+    pub const MAX_SIZE: u128 = 1 << 64;
+
+    /// The range from `minimum` to `maximum`, both included; `None` when `minimum` is above
+    /// `maximum`, or the range would hold more than [`Self::MAX_SIZE`] values.
+    pub fn new(minimum: i128, maximum: i128) -> Option<Self> {
+        // The values past the minimum: not negative, and at most 2^64 - 1, so a u64 holds them
+        let span = maximum.checked_sub(minimum)?;
+        (0..=i128::from(u64::MAX))
+            .contains(&span)
+            .then_some(RandomRange { minimum, maximum })
+    }
+
+    /// The smallest value drawn, and the placeholder the document holds until the draw.
+    pub fn minimum(&self) -> i128 {
+        self.minimum
+    }
+
+    /// The largest value drawn.
+    pub fn maximum(&self) -> i128 {
+        self.maximum
+    }
+
     /// The value at `offset` from `minimum`, for an `offset` below [`Self::size`].
     pub fn value_at(&self, offset: u128) -> Option<i128> {
         let offset = i128::try_from(offset).ok()?;
@@ -53,9 +101,20 @@ impl RandomRange {
         (value <= self.maximum).then_some(value)
     }
 
-    /// How many values the range holds; at least one.
+    /// How many values the range holds: at least one and at most [`Self::MAX_SIZE`]. One more
+    /// than a u64, so the sum cannot overflow.
     pub fn size(&self) -> u128 {
-        self.maximum.abs_diff(self.minimum) + 1
+        u128::from(self.span()) + 1
+    }
+
+    /// How many values the range holds past its minimum.
+    fn span(&self) -> u64 {
+        // `new` admits only a `maximum` at most `u64::MAX` past `minimum`, so neither the
+        // difference nor the conversion fails
+        self.maximum
+            .checked_sub(self.minimum)
+            .and_then(|span| u64::try_from(span).ok())
+            .unwrap_or(u64::MAX)
     }
 }
 
@@ -97,21 +156,53 @@ mod tests {
 
     #[test]
     fn should_count_and_index_every_value_of_the_range() {
-        let range = RandomRange {
-            minimum: -2,
-            maximum: 2,
-        };
+        let range = RandomRange::new(-2, 2).expect("a range");
         assert_eq!(range.size(), 5);
         assert_eq!(range.value_at(0), Some(-2));
         assert_eq!(range.value_at(4), Some(2));
         assert_eq!(range.value_at(5), None);
 
-        let widest = RandomRange {
-            minimum: 0,
-            maximum: u64::MAX.into(),
-        };
-        assert_eq!(widest.size(), 1u128 << 64);
+        let single = RandomRange::new(7, 7).expect("a range of one value");
+        assert_eq!(single.size(), 1);
+        assert_eq!(single.value_at(0), Some(7));
+
+        let widest = RandomRange::new(0, u64::MAX.into()).expect("2^64 values");
+        assert_eq!(widest.size(), RandomRange::MAX_SIZE);
         assert_eq!(widest.value_at((1u128 << 64) - 1), Some(u64::MAX.into()));
+        let widest_signed =
+            RandomRange::new(i64::MIN.into(), i64::MAX.into()).expect("2^64 values");
+        assert_eq!(widest_signed.size(), RandomRange::MAX_SIZE);
+    }
+
+    #[test]
+    fn should_refuse_a_range_upside_down_or_of_more_than_2_pow_64_values() {
+        assert_eq!(RandomRange::new(10, 1), None);
+        assert_eq!(RandomRange::new(0, i128::from(u64::MAX) + 1), None);
+        assert_eq!(RandomRange::new(-1, u64::MAX.into()), None);
+        // The widest pair of bounds, whose difference does not even fit an i128
+        assert_eq!(RandomRange::new(i128::MIN, i128::MAX), None);
+    }
+
+    #[test]
+    fn should_deserialize_only_a_range_new_admits() {
+        let range: RandomRange =
+            serde_json::from_str(r#"{ "minimum": 1, "maximum": 100 }"#).expect("a range");
+        assert_eq!((range.minimum(), range.maximum()), (1, 100));
+        assert_eq!(
+            serde_json::to_value(range).expect("serializes"),
+            serde_json::json!({ "minimum": 1, "maximum": 100 })
+        );
+        assert!(
+            serde_json::from_str::<RandomRange>(r#"{ "minimum": 100, "maximum": 1 }"#).is_err()
+        );
+        assert!(serde_json::from_str::<RandomRange>(
+            r#"{ "minimum": -1, "maximum": 18446744073709551615 }"#
+        )
+        .is_err());
+        assert!(serde_json::from_str::<RandomRange>(
+            r#"{ "minimum": 1, "maximum": 100, "extra": 0 }"#
+        )
+        .is_err());
     }
 
     #[test]

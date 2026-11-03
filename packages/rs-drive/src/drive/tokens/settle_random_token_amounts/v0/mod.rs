@@ -268,14 +268,8 @@ fn draw_token_amount_v0(beacon: &[u8], request: &RandomTokenRequest) -> Option<T
     request_key.extend_from_slice(request.token_id.as_slice());
     request_key.extend_from_slice(request.owner_id.as_slice());
     request_key.extend_from_slice(&request.identity_contract_nonce.to_be_bytes());
-    let drawn = draw_from_beacon_v0(
-        beacon,
-        &request_key,
-        RandomRange {
-            minimum: i128::from(request.minimum),
-            maximum: i128::from(request.maximum),
-        },
-    )?;
+    let range = RandomRange::new(i128::from(request.minimum), i128::from(request.maximum))?;
+    let drawn = draw_from_beacon_v0(beacon, &request_key, range)?;
     TokenAmount::try_from(drawn).ok()
 }
 

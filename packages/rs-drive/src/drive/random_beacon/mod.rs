@@ -27,16 +27,14 @@ pub(crate) const TOKEN_AMOUNT_DRAW: u8 = 1;
 /// The value `beacon` draws for `request_key` from `range`: SHA-256 of the domain, the beacon
 /// (prefixed by its length) and the request key, whose first 16 bytes, big-endian, reduced
 /// modulo the range's size, offset the range's minimum. A range holds at most 2^64 values, so
-/// the reduction favours no value by more than 2^-64. `None` only for a beacon longer than a
-/// length prefix holds, or a range whose minimum is above its maximum, which no caller passes.
+/// the reduction favours no value by more than 2^-64 (`RandomRange` is checked when it is built,
+/// so its minimum is never above its maximum). `None` only for a beacon longer than a length
+/// prefix holds, which no caller passes.
 pub(crate) fn draw_from_beacon_v0(
     beacon: &[u8],
     request_key: &[u8],
     range: RandomRange,
 ) -> Option<i128> {
-    if range.minimum > range.maximum {
-        return None;
-    }
     let mut preimage = Vec::with_capacity(DRAW_DOMAIN.len() + 2 + beacon.len() + request_key.len());
     preimage.extend_from_slice(DRAW_DOMAIN);
     push_with_length(&mut preimage, beacon)?;
@@ -62,10 +60,7 @@ mod tests {
 
     #[test]
     fn should_seed_each_request_key_and_beacon_apart() {
-        let range = RandomRange {
-            minimum: 0,
-            maximum: u64::MAX.into(),
-        };
+        let range = RandomRange::new(0, u64::MAX.into()).expect("a range of 2^64 values");
         let beacon = [7u8; 96];
         assert_eq!(
             draw_from_beacon_v0(&beacon, &[1, 2, 3], range),
@@ -82,41 +77,17 @@ mod tests {
     }
 
     #[test]
-    fn should_draw_inside_the_range_and_refuse_an_inverted_one() {
+    fn should_draw_inside_the_range() {
         let beacon = [7u8; 96];
         for key in 0u8..32 {
-            let drawn = draw_from_beacon_v0(
-                &beacon,
-                &[key],
-                RandomRange {
-                    minimum: 10,
-                    maximum: 12,
-                },
-            )
-            .expect("draws");
+            let drawn =
+                draw_from_beacon_v0(&beacon, &[key], RandomRange::new(10, 12).expect("a range"))
+                    .expect("draws");
             assert!((10..=12).contains(&drawn));
         }
         assert_eq!(
-            draw_from_beacon_v0(
-                &beacon,
-                &[0],
-                RandomRange {
-                    minimum: 5,
-                    maximum: 5,
-                }
-            ),
+            draw_from_beacon_v0(&beacon, &[0], RandomRange::new(5, 5).expect("a range")),
             Some(5)
-        );
-        assert_eq!(
-            draw_from_beacon_v0(
-                &beacon,
-                &[0],
-                RandomRange {
-                    minimum: 6,
-                    maximum: 5,
-                }
-            ),
-            None
         );
     }
 }

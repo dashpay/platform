@@ -25,19 +25,19 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{
-    integer_type_bounds, is_path_listed, is_referenced_system_agreement_property,
-    is_referring_system_agreement_property, is_transient, property_at_path, property_names,
-    ChooseFirstOrder, ContractReferenceModeration, ContractReferenceOwner,
-    ContractReferenceRequirements, DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget,
-    DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentReferenceDeclaration,
-    DocumentReferenceKind, DocumentReferenceLookup, DocumentType, DocumentTypeRef, EncryptedFor,
-    EncryptedForRecipient, EncryptionScheme, GeneratedFrom, GenerationParam,
-    IdentityKeyReferenceRequirements, KeyIdReference, KeyReferenceIdentityProperty,
-    ListElementReference, LookupChooseFirst, LookupHashKey, LookupKeySource, PropertyReference,
-    RandomFunction, RandomRange, ReferenceCombinator, ReferenceOperands, SystemFunction,
-    TokenFunction, WhereBoundRead, WhereCondition, WhereContainsBound, WhereLiteral,
-    WhereLiteralKind, WhereNotEqualBound, WhereOrdering, WhereOrderingBound,
-    COMBINABLE_REFERENCE_TARGET_TYPES,
+    integer_type_bounds, is_drawn_at_random, is_path_listed,
+    is_referenced_system_agreement_property, is_referring_system_agreement_property, is_transient,
+    property_at_path, property_names, ChooseFirstOrder, ContractReferenceModeration,
+    ContractReferenceOwner, ContractReferenceRequirements, DistinctFrom, DocumentProperty,
+    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentPropertyTypeParsingOptions,
+    DocumentReferenceDeclaration, DocumentReferenceKind, DocumentReferenceLookup, DocumentType,
+    DocumentTypeRef, EncryptedFor, EncryptedForRecipient, EncryptionScheme, GeneratedFrom,
+    GenerationParam, IdentityKeyReferenceRequirements, KeyIdReference,
+    KeyReferenceIdentityProperty, ListElementReference, LookupChooseFirst, LookupHashKey,
+    LookupKeySource, PropertyReference, RandomFunction, RandomRange, ReferenceCombinator,
+    ReferenceOperands, SystemFunction, TokenFunction, WhereBoundRead, WhereCondition,
+    WhereContainsBound, WhereLiteral, WhereLiteralKind, WhereNotEqualBound, WhereOrdering,
+    WhereOrderingBound, COMBINABLE_REFERENCE_TARGET_TYPES,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -53,6 +53,8 @@ use platform_value::string_encoding::Encoding;
 use platform_value::{Identifier, Value, ValueMapHelper};
 use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
+
+use common::paths_read_by_references;
 
 mod common;
 #[cfg(feature = "validation")]
@@ -2975,7 +2977,7 @@ fn apply_generated_from(
     {
         None => Ok(None),
         Some(0) => apply_generated_from_v0(inner_properties, property_type),
-        Some(1) => apply_generated_from_v1(inner_properties, property_type),
+        Some(1) => apply_generated_from_v1(inner_properties, property_type, platform_version),
         Some(version) => Err(DataContractError::Unsupported(format!(
             "apply_generated_from version {version} is not supported"
         ))),
@@ -3118,10 +3120,12 @@ fn apply_generated_from_v0(
 ///
 /// A property may also be generated with `sys.random.uniform`, which takes no parameters
 /// (`params` may be left out) and draws an integer from the property's `minimum` to its
-/// `maximum`, read into [`GeneratedFrom::range`] ([`uniform_range`]).
+/// `maximum`, read into [`GeneratedFrom::range`] ([`uniform_range`]), where the platform
+/// version's `random_generated_from` admits it; `None`, in every table for now, refuses it.
 fn apply_generated_from_v1(
     inner_properties: &BTreeMap<String, &Value>,
     property_type: &DocumentPropertyType,
+    platform_version: &PlatformVersion,
 ) -> Result<Option<GeneratedFrom>, DataContractError> {
     if let DocumentPropertyType::TypedArray(_) = property_type {
         if inner_properties.contains_key(property_names::GENERATED_FROM)
@@ -3218,7 +3222,31 @@ fn apply_generated_from_v1(
             }
         }
         SystemFunction::Random(RandomFunction::Uniform) => {
-            range = Some(uniform_range(inner_properties, property_type, function)?);
+            match platform_version
+                .dpp
+                .contract_versions
+                .document_type_versions
+                .schema
+                .random_generated_from
+            {
+                // Nothing draws the values yet: block execution does not call
+                // `draw_random_document_properties` until Tenderdash delivers the block's
+                // random beacon, so a document would keep its placeholder for good
+                None => {
+                    return Err(DataContractError::InvalidContractStructure(format!(
+                        "generatedFrom function {function} is not active at this protocol \
+                         version: the platform does not draw random values yet"
+                    )));
+                }
+                Some(0) => {
+                    range = Some(uniform_range(inner_properties, property_type, function)?);
+                }
+                Some(version) => {
+                    return Err(DataContractError::Unsupported(format!(
+                        "random_generated_from version {version} is not supported"
+                    )));
+                }
+            }
         }
         SystemFunction::Hash(_) => {
             return Err(DataContractError::InvalidContractStructure(format!(
@@ -3334,7 +3362,12 @@ fn uniform_range(
              in between"
         )));
     }
-    Ok(RandomRange { minimum, maximum })
+    // Inside a type of at most 64 bits, so at most 2^64 values
+    RandomRange::new(minimum, maximum).ok_or_else(|| {
+        refusal(format!(
+            "its range, {minimum} to {maximum}, may hold at most 2^64 values"
+        ))
+    })
 }
 
 /// Whether the property schema `map` admits every token's decimals, 0 to 255: its `minimum`
@@ -3460,7 +3493,16 @@ fn refuse_state_generated_schema_path(schema: &Value, path: &str) -> Result<(), 
 /// indexOnly. The platform fills the value after every transition of the block is accepted,
 /// when nothing can be refused any more, so the property may not be in a unique index, where
 /// two drawn values could collide, and the type may not keep history, which would keep the
-/// placeholder.
+/// placeholder. Nor may the type have a contested index, anywhere: a contested create waits in
+/// its contest, outside the documents the draw rewrites, and the document a contest awards
+/// would keep the placeholder. The property may not be summed, by `documentsSummable` or as the
+/// `summable` (or averaged) property of an index: the total would take the drawn value when
+/// nothing can be refused any more, past `i64::MAX` included. And nothing a write is judged by
+/// may read it: not a reference declared on the type (the property holding it, a `where`
+/// value, a `findBy` source, a function's params, a key id), nor an `encryptedFor` key, which
+/// would name another key once drawn. The rules reading it are refused where their reads are
+/// checked ([`property_read_error`]), and a value of another type reading it through a
+/// reference is not fixed once written (`schema_property_is_fixed_once_written`).
 ///
 /// Owned by parser generation 3: the only generation that admits the keyword.
 pub(super) fn validate_generated_from_declarations(
@@ -3554,6 +3596,64 @@ pub(super) fn validate_generated_from_declarations(
                      refused any more, so the property may not be in unique index \"{}\", where \
                      two drawn values could collide",
                     generated_from.function, index.name
+                )));
+            }
+            // A contested create waits in its contest, outside the documents tree the draw
+            // rewrites, so the document a contest awards would keep the placeholder
+            if let Some(index) = document_type
+                .indices
+                .values()
+                .find(|index| index.contested_index.is_some())
+            {
+                return Err(structure_error(format!(
+                    "function {} draws a value into the documents a block stored, and the type \
+                     has contested index \"{}\": a contested document waits in its contest \
+                     until it is awarded, so it would keep the placeholder",
+                    generated_from.function, index.name
+                )));
+            }
+            // A total takes the drawn value once nothing can be refused any more, so it could
+            // not be held below i64::MAX
+            let summed_by = if document_type.documents_summable.as_deref() == Some(path.as_str()) {
+                Some("documentsSummable".to_string())
+            } else {
+                document_type
+                    .indices
+                    .values()
+                    .find(|index| index.summable.as_deref() == Some(path.as_str()))
+                    .map(|index| format!("index \"{}\"", index.name))
+            };
+            if let Some(summed_by) = summed_by {
+                return Err(structure_error(format!(
+                    "function {} draws a value once the block is accepted, when nothing can be \
+                     refused any more, so the property may not be summed or averaged, as \
+                     {summed_by} does: the total could not be held to its bounds",
+                    generated_from.function
+                )));
+            }
+            // A reference is judged when the document is written, before the draw
+            if paths_read_by_references(DocumentTypeRef::V2(document_type)).contains(path.as_str())
+            {
+                return Err(structure_error(format!(
+                    "function {} draws a value once the block is accepted, and a reference \
+                     declared on the type reads the property: it would be judged with the \
+                     placeholder written before the draw",
+                    generated_from.function
+                )));
+            }
+            if let Some((holder, _)) = flattened_properties.iter().find(|(_, property)| {
+                property
+                    .encrypted_for
+                    .as_ref()
+                    .is_some_and(|encrypted_for| {
+                        &encrypted_for.recipient_key == path || &encrypted_for.sender_key == path
+                    })
+            }) {
+                return Err(structure_error(format!(
+                    "function {} draws a value once the block is accepted, and the encryptedFor \
+                     of \"{holder}\" names the property as a key: the ciphertext was made for \
+                     the key the placeholder names",
+                    generated_from.function
                 )));
             }
             // A client leaves the value out, and its schema check reads a stand-in, as for a
@@ -4010,8 +4110,9 @@ fn stored_read_in_delete_rule(subject: &str, path: &str) -> String {
 
 /// Why `document_type` has no property at `lookup` a rule `subject` can read
 /// as `read`, the message naming it `path`; `None` when it has one: of the kind
-/// the read needs, neither transient nor inside a transient object. Shared by
-/// the reads of the type's own properties and those of a referenced document.
+/// the read needs, neither transient nor inside a transient object, nor drawn at
+/// random ([`is_drawn_at_random`]). Shared by the reads of the type's own
+/// properties and those of a referenced document.
 pub(super) fn property_read_error(
     document_type: DocumentTypeRef,
     subject: &str,
@@ -4280,6 +4381,17 @@ pub(super) fn property_read_error(
             "{subject} {reads} \"{path}\", which is transient or inside a \
              transient object: a transient value is never stored, so a stored document \
              could not be held to the rule"
+        ));
+    }
+    // A value drawn once the block's transitions are accepted is the placeholder while they
+    // are judged. In place, inert before protocol version 15: no type parsed earlier declares
+    // a `sys.random` function (`apply_generated_from` 0 refuses every function but a string
+    // transformation), and none does from it until `random_generated_from` admits one
+    if is_drawn_at_random(document_type, lookup) {
+        return Some(format!(
+            "{subject} {reads} \"{path}\", which the platform draws at random once the \
+             block's transitions are accepted: a write would be judged against the placeholder \
+             written before the draw"
         ));
     }
     None
@@ -5430,6 +5542,16 @@ fn validate_property_constraint_aggregates_with(
                                  \"{counted_name}\" (a nested one is named by its dotted path)"
                             )));
                         };
+                        // The documents a block created hold their placeholder while the block's
+                        // writes are judged. In place, inert before protocol version 15, where no
+                        // type declares a `sys.random` function
+                        if is_drawn_at_random(counted, key) {
+                            return Err(error(format!(
+                                "{totals} by \"{key}\", which \"{counted_name}\" draws at random \
+                                 once the block's transitions are accepted: the total would \
+                                 count the documents the block created under their placeholder"
+                            )));
+                        }
                         let Some(kind) = (grammar.kind_of)(&property.property_type) else {
                             return Err(error(format!(
                                 "{totals} by \"{key}\", which has type {}: {}",
