@@ -46,7 +46,7 @@ use crate::version::drive_versions::{
 ///   `stateless_delete_of_non_tree_for_costs` to 1, and
 ///   `platform_system.estimation_costs.for_total_system_credits_update` is 1, so a delete and a
 ///   system credits update describe their layers as they are. Applying a batch is unchanged.
-/// * **The Hecate signer index** (protocol v15 note 16): `DRIVE_IDENTITY_METHOD_VERSIONS_V3`
+/// * **The Hecate signer index** (protocol v15 note 17): `DRIVE_IDENTITY_METHOD_VERSIONS_V3`
 ///   sets `keys.fetch.fetch_identity_hecate_signer_key_ids` to `Some(0)` (`None` before): the
 ///   identity update adding a Hecate signer key reads the identity's enabled signer keys from
 ///   the index under its key references.
