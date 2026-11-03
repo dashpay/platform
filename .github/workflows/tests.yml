@@ -172,7 +172,13 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' }}
         run: |
           BASE_SHA="${{ github.event.pull_request.base.sha || github.event.before || 'HEAD~1' }}"
-          if git diff "$BASE_SHA"...HEAD -- Cargo.toml 2>/dev/null | grep -qE '^\+version\s*='; then
+          # Capture the diff first: inside a pipeline a git failure (such as a
+          # file version the blobless checkout cannot fetch) would read as
+          # "unchanged" and skip the version-gated jobs.
+          if ! DIFF=$(git diff "$BASE_SHA"...HEAD -- Cargo.toml); then
+            echo "version-changed=true" >> "$GITHUB_OUTPUT"
+            echo "Could not diff Cargo.toml against $BASE_SHA; assuming the platform version changed"
+          elif grep -qE '^\+version\s*=' <<< "$DIFF"; then
             echo "version-changed=true" >> "$GITHUB_OUTPUT"
             echo "Platform version changed — Docker builds and test suite will run"
           else
@@ -185,7 +191,11 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' }}
         run: |
           BASE_SHA="${{ github.event.pull_request.base.sha || github.event.before || 'HEAD~1' }}"
-          DIFF=$(git diff "$BASE_SHA"...HEAD -- '*.rs' 2>/dev/null || git diff HEAD~1 -- '*.rs')
+          if ! DIFF=$(git diff "$BASE_SHA"...HEAD -- '*.rs' 2>/dev/null || git diff HEAD~1 -- '*.rs'); then
+            echo "doctests-changed=true" >> "$GITHUB_OUTPUT"
+            echo "Could not diff the Rust sources; running doctests"
+            exit 0
+          fi
 
           # Look for added/removed lines in doc comments that contain code fences
           if echo "$DIFF" | grep -qE '^[+-].*///.*```|^[+-].*//!.*```'; then
