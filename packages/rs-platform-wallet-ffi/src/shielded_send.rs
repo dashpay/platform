@@ -40,7 +40,7 @@
 //! [`ShieldedWallet::shield`]: platform_wallet::wallet::shielded::ShieldedWallet::shield
 
 use std::ffi::CStr;
-use std::os::raw::c_char;
+use std::os::raw::{c_char, c_void};
 
 use dashcore::hashes::Hash;
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
@@ -62,6 +62,7 @@ use rs_sdk_ffi::{
     DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX,
 };
 
+use crate::asset_lock::{observer_ref, AssetLockBuiltCallback, AssetLockBuiltFn};
 use crate::check_ptr;
 use crate::core_wallet_types::OutPointFFI;
 use crate::error::*;
@@ -903,6 +904,12 @@ fn catch_one_time_claim_panic(
 ///   whichever entry point it came in through — both are caller-state errors
 ///   that no retry fixes, unlike the timeout and proof-wait failures below
 ///   that keep the contextual `ErrorWalletOperation`.
+/// - `TransactionBroadcast` -> `ErrorTransactionBroadcastRejected` (26) and
+///   `TransactionBroadcastUnconfirmed` -> `ErrorTransactionBroadcastUnconfirmed`
+///   (20), as the CoinJoin-drain sibling reports them, for both the fresh
+///   build and the resume entry point. A host that was handed the lock's
+///   outpoint by `on_asset_lock_built` tells from these whether the lock is
+///   gone (definite rejection) or kept and resumable.
 fn map_asset_lock_funding_result(
     result: Result<(), PlatformWalletError>,
     operation: &str,
@@ -919,6 +926,10 @@ fn map_asset_lock_funding_result(
             | PlatformWalletError::AssetLockInputContested { .. }),
         ) => e.into(),
         Err(e @ PlatformWalletError::AssetLockInsufficientFunds { .. }) => e.into(),
+        Err(
+            e @ (PlatformWalletError::TransactionBroadcast(_)
+            | PlatformWalletError::TransactionBroadcastUnconfirmed(_)),
+        ) => e.into(),
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("{operation} failed: {e}"),
@@ -1950,6 +1961,10 @@ unsafe fn shielded_shield_to_recipient_inner(
 ///   `*mut MnemonicResolverHandle` produced by
 ///   `dash_sdk_mnemonic_resolver_create`. The caller retains
 ///   ownership.
+/// - `on_asset_lock_built`, when non-null, must be a valid C function
+///   pointer for the duration of the call; `on_asset_lock_built_context`
+///   is passed to it opaquely and must remain valid for the duration of the
+///   call (or be null). See [`AssetLockBuiltFn`] for its contract.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
@@ -1961,6 +1976,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
     surplus_output_ptr: *const u8,
     surplus_output_len: usize,
     core_signer_handle: *mut MnemonicResolverHandle,
+    on_asset_lock_built: AssetLockBuiltFn,
+    on_asset_lock_built_context: *mut c_void,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(recipient_raw_43);
@@ -2002,6 +2019,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
     // Round-trip the resolver handle through `usize` so the worker
     // future's capture is `Send + 'static`.
     let core_signer_addr = core_signer_handle as usize;
+    let built_callback =
+        AssetLockBuiltCallback::new(on_asset_lock_built, on_asset_lock_built_context);
 
     // Run the proof on a worker thread (8 MB stack). Halo 2 circuit
     // synthesis recurses past the ~512 KB iOS dispatch-thread stack
@@ -2019,6 +2038,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
             )
         };
         let prover = CachedOrchardProver::new();
+        let on_built = built_callback.map(AssetLockBuiltCallback::into_observer);
         wallet
             .shielded_fund_from_asset_lock(
                 &coordinator,
@@ -2037,6 +2057,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
                 // User-facing funding: wait for the ChainLock indefinitely —
                 // a broadcast asset lock is pending finality, never failed.
                 None,
+                observer_ref(&on_built),
             )
             .await
     });
@@ -2072,6 +2093,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
 /// - `core_signer_handle` must be a valid, non-destroyed
 ///   `*mut MnemonicResolverHandle` produced by
 ///   `dash_sdk_mnemonic_resolver_create`. The caller retains ownership.
+/// - `on_asset_lock_built`, when non-null, must be a valid C function
+///   pointer for the duration of the call; `on_asset_lock_built_context`
+///   is passed to it opaquely and must remain valid for the duration of the
+///   call (or be null). See [`AssetLockBuiltFn`] for its contract.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock_coinjoin_drain(
     handle: Handle,
@@ -2079,6 +2104,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock_c
     account_index: u32,
     recipient_raw_43: *const u8,
     core_signer_handle: *mut MnemonicResolverHandle,
+    on_asset_lock_built: AssetLockBuiltFn,
+    on_asset_lock_built_context: *mut c_void,
 ) -> PlatformWalletFFIResult {
     // The whole body runs under `catch_unwind`: a panic (most concretely `block_on_worker`'s
     // `.expect` on a panicking funding/proving task) must NOT reach this `extern "C"` frame,
@@ -2095,6 +2122,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock_c
             account_index,
             recipient_raw_43,
             core_signer_handle,
+            on_asset_lock_built,
+            on_asset_lock_built_context,
         )
     })
 }
@@ -2111,6 +2140,8 @@ unsafe fn shielded_fund_from_asset_lock_coinjoin_drain_inner(
     account_index: u32,
     recipient_raw_43: *const u8,
     core_signer_handle: *mut MnemonicResolverHandle,
+    on_asset_lock_built: AssetLockBuiltFn,
+    on_asset_lock_built_context: *mut c_void,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(recipient_raw_43);
@@ -2143,6 +2174,8 @@ unsafe fn shielded_fund_from_asset_lock_coinjoin_drain_inner(
     // Round-trip the resolver handle through `usize` so the worker
     // future's capture is `Send + 'static`.
     let core_signer_addr = core_signer_handle as usize;
+    let built_callback =
+        AssetLockBuiltCallback::new(on_asset_lock_built, on_asset_lock_built_context);
 
     // Run the proof on a worker thread (8 MB stack) — see the sibling for
     // why the Halo 2 synthesis cannot run on the calling thread.
@@ -2157,6 +2190,7 @@ unsafe fn shielded_fund_from_asset_lock_coinjoin_drain_inner(
             )
         };
         let prover = CachedOrchardProver::new();
+        let on_built = built_callback.map(AssetLockBuiltCallback::into_observer);
         wallet
             .shielded_fund_from_asset_lock(
                 &coordinator,
@@ -2181,6 +2215,7 @@ unsafe fn shielded_fund_from_asset_lock_coinjoin_drain_inner(
                 // User-facing funding: wait for the ChainLock indefinitely —
                 // a broadcast asset lock is pending finality, never failed.
                 None,
+                observer_ref(&on_built),
             )
             .await
     });
@@ -2328,6 +2363,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
                 None,
                 // User-facing funding: wait for the ChainLock indefinitely —
                 // a broadcast asset lock is pending finality, never failed.
+                None,
+                // A resume builds no new lock.
                 None,
             )
             .await
@@ -3747,6 +3784,37 @@ mod tests {
         assert!(
             message_of(&contested).contains("provisional"),
             "the contested Display must say the verdict is provisional"
+        );
+
+        let rejected = map_asset_lock_funding_result(
+            Err(PlatformWalletError::TransactionBroadcast(
+                "bad-txns".to_owned(),
+            )),
+            "shielded fund-from-asset-lock",
+        );
+        assert_eq!(
+            rejected.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastRejected
+        );
+        let unconfirmed = map_asset_lock_funding_result(
+            Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
+                "timeout".to_owned(),
+            )),
+            "shielded fund-from-asset-lock",
+        );
+        assert_eq!(
+            unconfirmed.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+        );
+        let resume_unconfirmed = map_asset_lock_funding_result(
+            Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
+                "timeout".to_owned(),
+            )),
+            "shielded resume fund-from-asset-lock",
+        );
+        assert_eq!(
+            resume_unconfirmed.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
         );
 
         let unrelated = map_asset_lock_funding_result(

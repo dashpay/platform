@@ -344,7 +344,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorIdentityBalanceUnavailable = 58
     /// SPV startup or teardown panicked. Not retryable: restart the app.
     case errorSpvProcessRestartRequired = 59
-    /// A whole-wallet asset lock exceeds the input cap; nothing was broadcast.
+    /// An asset lock (a drain, or a fixed amount in many small coins) exceeds
+    /// the input cap; nothing was broadcast.
     case errorAssetLockTooManyInputs = 60
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
@@ -671,7 +672,10 @@ public enum PlatformWalletError: LocalizedError {
     /// The `available` / `required` duff figures are in the message. Kotlin
     /// parity: `DashSdkError.PlatformWallet.AssetLockInsufficientFunds`.
     case assetLockInsufficientFunds(String)
-    /// A drain cannot fit every eligible input in one transaction. No partial drain occurred.
+    /// An asset lock needs more inputs than one may carry: a drain of every
+    /// eligible input, or a fixed amount held only in many small coins. Nothing
+    /// was broadcast and no partial drain occurred; consolidating the coins lets
+    /// it fit.
     case assetLockTooManyInputs(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition

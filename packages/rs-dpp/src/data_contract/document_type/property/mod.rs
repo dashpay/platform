@@ -51,6 +51,7 @@ pub mod reference_where;
 pub use encrypted_for::{EncryptedFor, EncryptedForRecipient, EncryptionScheme};
 pub use generated_from::{
     GeneratedFrom, GenerationParam, HashFunction, StringTransformation, SystemFunction,
+    TokenFunction,
 };
 pub use list_element_reference::ListElementReference;
 pub use lookup_preimage::{
