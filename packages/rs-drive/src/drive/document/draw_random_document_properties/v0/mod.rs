@@ -93,7 +93,10 @@ impl Drive {
     /// are gathered as the insert gathers a document's index entries in a dry run, with the
     /// layers above the type estimated as for any document insert (the average layer
     /// information, as if the branches had to be created), and priced as the dry run's
-    /// operations are. Zero when `drawn_into` selects no index of the type.
+    /// operations are. As the insert, the dry run first completes the document with the values
+    /// of the derived index properties (`with_derived_index_values`), which a create's document
+    /// does not carry yet, estimated: nothing is read, and the reads are priced by their worst
+    /// case. Zero when `drawn_into` selects no index of the type.
     ///
     /// Shared by the prepayments of generation 0 of both draws: a `sys.random` document
     /// property's ([`Self::prepay_random_document_index_entries`]) and the amount a random
@@ -134,6 +137,13 @@ impl Drive {
         )?;
         let mut estimated_costs_only_with_layer_info = Some(estimated_layers);
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
+        let document_and_contract_info = self.with_derived_index_values(
+            document_and_contract_info,
+            true,
+            transaction,
+            &mut batch_operations,
+            platform_version,
+        )?;
         self.add_indices_for_top_index_level_for_contract_operations(
             &document_and_contract_info,
             &mut None,

@@ -674,7 +674,8 @@ fn token_balance_writes(operation: &DriveOperation) -> Vec<TokenBalanceKey> {
         | TokenOperationType::TokenMarkPerpetualReleaseAsDistributed { .. }
         | TokenOperationType::TokenMarkPreProgrammedReleaseAsDistributed { .. }
         | TokenOperationType::TokenMarkOncePerIdentityReleaseAsDistributed { .. }
-        | TokenOperationType::TokenHistory { .. } => vec![],
+        | TokenOperationType::TokenHistory { .. }
+        | TokenOperationType::TokenRandomAmountHistory { .. } => vec![],
     }
 }
 

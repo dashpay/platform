@@ -30,6 +30,33 @@ impl TokenBaseTransitionAccessors for TokenTransferTransition {
     }
 }
 
+impl TokenTransferTransition {
+    /// Sets the least the transfer moves when its amount is random, taking the format that
+    /// holds it: `Some` turns a version 0 transfer into a version 1 one, and `None` turns a
+    /// version 1 transfer back into version 0, the format every protocol version accepts. Only
+    /// the versioned transfer has the setter: a bare `TokenTransferTransitionV0` holds no random
+    /// amount, so a setter on it could only drop the value.
+    pub fn set_random_minimum_amount(&mut self, random_minimum_amount: Option<u64>) {
+        let current = std::mem::replace(
+            self,
+            TokenTransferTransition::V0(TokenTransferTransitionV0::default()),
+        );
+        *self = match (current, random_minimum_amount) {
+            (TokenTransferTransition::V0(v0), None) => TokenTransferTransition::V0(v0),
+            (TokenTransferTransition::V0(v0), Some(minimum)) => {
+                TokenTransferTransition::V1(TokenTransferTransitionV1::from_v0(v0, Some(minimum)))
+            }
+            (TokenTransferTransition::V1(mut v1), Some(minimum)) => {
+                v1.random_minimum_amount = Some(minimum);
+                TokenTransferTransition::V1(v1)
+            }
+            (TokenTransferTransition::V1(v1), None) => {
+                TokenTransferTransition::V0(v1.into_v0_and_random_minimum_amount().0)
+            }
+        };
+    }
+}
+
 impl TokenTransferTransitionV0Methods for TokenTransferTransition {
     fn amount(&self) -> u64 {
         match self {
@@ -50,26 +77,6 @@ impl TokenTransferTransitionV0Methods for TokenTransferTransition {
             TokenTransferTransition::V0(_) => None,
             TokenTransferTransition::V1(v1) => v1.random_minimum_amount,
         }
-    }
-
-    fn set_random_minimum_amount(&mut self, random_minimum_amount: Option<u64>) {
-        let current = std::mem::replace(
-            self,
-            TokenTransferTransition::V0(TokenTransferTransitionV0::default()),
-        );
-        *self = match (current, random_minimum_amount) {
-            (TokenTransferTransition::V0(v0), None) => TokenTransferTransition::V0(v0),
-            (TokenTransferTransition::V0(v0), Some(minimum)) => {
-                TokenTransferTransition::V1(TokenTransferTransitionV1::from_v0(v0, Some(minimum)))
-            }
-            (TokenTransferTransition::V1(mut v1), Some(minimum)) => {
-                v1.random_minimum_amount = Some(minimum);
-                TokenTransferTransition::V1(v1)
-            }
-            (TokenTransferTransition::V1(v1), None) => {
-                TokenTransferTransition::V0(v1.into_v0_and_random_minimum_amount().0)
-            }
-        };
     }
 
     fn recipient_id(&self) -> Identifier {

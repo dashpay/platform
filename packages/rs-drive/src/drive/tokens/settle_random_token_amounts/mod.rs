@@ -173,6 +173,8 @@ impl Drive {
     ///   history document.
     /// - `event`: the history event the transition records, a transfer or a mint of the range's
     ///   minimum.
+    /// - `random_range`: the least and the most the transition moves, which the history
+    ///   document's id hashes (`token_history_document_id`).
     /// - `block_info`: the block, whose epoch prices the entries.
     /// - `transaction`: the block's transaction.
     /// - `platform_version`: selects the method version; `None` before protocol version 15,
@@ -187,6 +189,7 @@ impl Drive {
         owner_id: Identifier,
         identity_contract_nonce: IdentityNonce,
         event: TokenEvent,
+        random_range: (TokenAmount, TokenAmount),
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -202,6 +205,7 @@ impl Drive {
                 owner_id,
                 identity_contract_nonce,
                 event,
+                random_range,
                 block_info,
                 transaction,
                 platform_version,

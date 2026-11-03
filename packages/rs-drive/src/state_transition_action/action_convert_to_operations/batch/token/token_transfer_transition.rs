@@ -78,21 +78,35 @@ impl DriveHighLevelBatchOperationConverter for TokenTransferTransitionAction {
                     }
                 };
 
+                let random_minimum_amount = self.random_minimum_amount();
                 let token_configuration = self.base().token_configuration()?;
                 if token_configuration.keeps_history().keeps_transfer_history() {
                     let (public_note, shared_encrypted_note, private_encrypted_note) =
                         self.notes_owned();
-                    ops.push(TokenOperation(TokenOperationType::TokenHistory {
-                        token_id,
-                        owner_id,
-                        nonce: identity_contract_nonce,
-                        event: TokenEvent::Transfer(
-                            recipient_id,
-                            public_note,
-                            shared_encrypted_note,
-                            private_encrypted_note,
-                            history_amount,
-                        ),
+                    let event = TokenEvent::Transfer(
+                        recipient_id,
+                        public_note,
+                        shared_encrypted_note,
+                        private_encrypted_note,
+                        history_amount,
+                    );
+                    // A random transfer's history document id also hashes its range, so a
+                    // proof of the document binds the range the amount was drawn from
+                    ops.push(TokenOperation(match random_minimum_amount {
+                        Some(minimum) => TokenOperationType::TokenRandomAmountHistory {
+                            token_id,
+                            owner_id,
+                            nonce: identity_contract_nonce,
+                            event,
+                            minimum,
+                            maximum: amount,
+                        },
+                        None => TokenOperationType::TokenHistory {
+                            token_id,
+                            owner_id,
+                            nonce: identity_contract_nonce,
+                            event,
+                        },
                     }));
                 }
 

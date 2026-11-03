@@ -114,15 +114,34 @@ impl DriveHighLevelBatchOperationConverter for TokenMintTransitionAction {
 
                     let token_configuration = self.base().token_configuration()?;
                     if token_configuration.keeps_history().keeps_minting_history() {
-                        ops.push(TokenOperation(TokenOperationType::TokenHistory {
-                            token_id: self.token_id(),
-                            owner_id,
-                            nonce: identity_contract_nonce,
-                            event: TokenEvent::Mint(
-                                history_amount,
-                                self.identity_balance_holder_id(),
-                                self.public_note_owned(),
-                            ),
+                        let token_id = self.token_id();
+                        let random_range = self
+                            .random_minimum_amount()
+                            .map(|minimum| (minimum, self.mint_amount()));
+                        let event = TokenEvent::Mint(
+                            history_amount,
+                            self.identity_balance_holder_id(),
+                            self.public_note_owned(),
+                        );
+                        // A random mint's history document id also hashes its range, so a
+                        // proof of the document binds the range the amount was drawn from
+                        ops.push(TokenOperation(match random_range {
+                            Some((minimum, maximum)) => {
+                                TokenOperationType::TokenRandomAmountHistory {
+                                    token_id,
+                                    owner_id,
+                                    nonce: identity_contract_nonce,
+                                    event,
+                                    minimum,
+                                    maximum,
+                                }
+                            }
+                            None => TokenOperationType::TokenHistory {
+                                token_id,
+                                owner_id,
+                                nonce: identity_contract_nonce,
+                                event,
+                            },
                         }));
                     }
                 }

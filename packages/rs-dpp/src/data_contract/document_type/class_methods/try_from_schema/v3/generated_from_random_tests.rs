@@ -468,6 +468,86 @@ fn should_refuse_summing_or_averaging_a_property_drawn_at_random() {
     }
 }
 
+/// [`card_schema`] with a property `name` of `schema`, required when `required`, and
+/// `indices`.
+fn card_schema_with_property_and_indices(
+    name: &str,
+    schema: Value,
+    required: bool,
+    indices: Value,
+) -> Value {
+    let mut card = card_schema_with("indices", indices);
+    card.get_mut("properties")
+        .expect("properties")
+        .expect("properties are present")
+        .insert(name.to_string(), schema)
+        .expect("properties are a map");
+    if required {
+        card.get_mut("required")
+            .expect("required")
+            .expect("required is present")
+            .push(Value::Text(name.to_string()))
+            .expect("required is an array");
+    }
+    card
+}
+
+#[test]
+fn should_refuse_an_index_holding_a_property_drawn_at_random_that_sums_or_windows_it() {
+    // The draw would move the document's amount into the total of another rarity
+    expect_refused(
+        card_schema_with_property_and_indices(
+            "amount",
+            platform_value!({ "type": "integer", "minimum": 0, "maximum": 1000, "position": 2 }),
+            true,
+            platform_value!([{
+                "name": "byRarity",
+                "properties": [{ "rarity": "asc" }],
+                "summable": "amount"
+            }]),
+        ),
+        "index \"byRarity\" holding the property may not sum or average \"amount\"",
+    );
+    // A drawn rarity sits in more windows than the placeholder at the bottom of the range
+    expect_refused(
+        card_schema_with(
+            "indices",
+            platform_value!([{
+                "name": "byRarityWindow",
+                "properties": [{ "rarity": "asc" }],
+                "integerRange": { "on": "rarity", "range": 20u64, "step": 10u64 }
+            }]),
+        ),
+        "integerRange index \"byRarityWindow\" files a value in every window holding it",
+    );
+}
+
+#[test]
+fn should_refuse_skipping_on_a_stored_property_beside_one_drawn_at_random_on_a_mutable_type() {
+    let schema = card_schema_with_property_and_indices(
+        "tag",
+        platform_value!({ "type": "string", "maxLength": 8, "position": 2 }),
+        false,
+        platform_value!([{
+            "name": "byRarityTag",
+            "properties": [{ "rarity": "asc" }, { "tag": "asc" }],
+            "skipIfAbsent": true
+        }]),
+    );
+    expect_refused(
+        schema.clone(),
+        "index \"byRarityTag\" skips a document without \"tag\"",
+    );
+
+    // A replace can not add the tag to an immutable card
+    let mut immutable = schema;
+    immutable
+        .insert("documentsMutable".to_string(), Value::Bool(false))
+        .expect("the schema is a map");
+    let document_type = parse(immutable);
+    assert!(document_type.as_ref().indexes().contains_key("byRarityTag"));
+}
+
 #[test]
 fn should_refuse_a_reference_of_the_type_reading_a_property_drawn_at_random() {
     let with_deck = |where_clause: Value| {
