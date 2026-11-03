@@ -36,9 +36,24 @@ use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 
 #[cfg(test)]
+use dash_sdk::SdkBuilder;
+#[cfg(test)]
+use tokio::sync::Notify;
+
+#[cfg(test)]
+use crate::broadcaster::SpvBroadcaster;
+#[cfg(test)]
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
+#[cfg(test)]
+use crate::changeset::{DurableCursors, PlatformWalletPersistence};
+#[cfg(test)]
+use crate::events::PlatformEventManager;
+#[cfg(test)]
+use crate::spv::SpvRuntime;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
+#[cfg(test)]
+use crate::wallet::platform_wallet::PlatformWallet;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
 /// Broadcaster whose first call fails with a definitive pre-send rejection
@@ -905,6 +920,40 @@ pub(crate) async fn mnemonic_wallet_manager(
         wallet_id,
         signer,
         receive_address,
+    )
+}
+
+/// A `PlatformWallet` over the wallet `wallet_id` that `wallet_manager` holds.
+#[cfg(test)]
+pub(crate) async fn platform_wallet_in(
+    wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: WalletId,
+) -> PlatformWallet {
+    let (network, generation) = {
+        let manager = wallet_manager.read().await;
+        let (wallet, info) = manager
+            .get_wallet_and_info(&wallet_id)
+            .expect("wallet present");
+        (wallet.network, Arc::clone(&info.generation))
+    };
+    let sdk = SdkBuilder::new_mock()
+        .with_network(network)
+        .build()
+        .expect("mock sdk");
+    let spv = Arc::new(SpvRuntime::new(
+        Arc::clone(&wallet_manager),
+        Arc::new(PlatformEventManager::new(Vec::new())),
+    ));
+    PlatformWallet::new(
+        Arc::new(sdk),
+        wallet_id,
+        wallet_manager,
+        generation,
+        Arc::new(Notify::new()),
+        Arc::new(NoopTestPersister) as Arc<dyn PlatformWalletPersistence>,
+        Arc::new(SpvBroadcaster::new(spv)),
+        Arc::new(AtomicBool::new(false)),
+        DurableCursors::default(),
     )
 }
 
