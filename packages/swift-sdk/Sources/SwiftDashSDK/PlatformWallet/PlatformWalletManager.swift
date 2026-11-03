@@ -2664,22 +2664,12 @@ public class PlatformWalletManager: ObservableObject {
 
         let identityIds = try persistenceHandler.identityIdsForWallet(walletId: walletId)
 
-        // Wipe Keychain BEFORE the SwiftData identity deletion runs.
-        // Order matters for retry-safety: if `deleteWalletData`
-        // commits identity rows and then throws partway, a retry
-        // would see `identityIdsForWallet == []` and the
-        // `deleteAllKeychainItems(forIdentityId:)` sweep below
-        // could no longer find the keys to purge. Doing the
-        // keychain side first leaves at worst stale SwiftData
-        // rows on a retry — repeating the wipe is harmless, and
-        // every keychain call here is idempotent (no-op on "not
-        // found"). Mnemonic / metadata stay in `WalletStorage`
-        // for now so a retry can still derive any missed key.
-        for identityId in identityIds {
-            try KeychainManager.shared.deleteAllKeychainItems(forIdentityId: identityId)
-        }
-        try KeychainManager.shared.deleteAllIdentityPrivateKeys(forWalletId: walletId)
-
+        // Native removal FIRST. It can refuse before changing anything (an
+        // unresolved shielded invitation claim, or a store error taking
+        // destructive admission), and a refused removal must leave the
+        // wallet fully usable — so no signing keys may be gone yet
+        // (dashpay/platform#4313 review). Removing an already-removed
+        // wallet succeeds, so a retry after a later failure gets past here.
         try walletId.withUnsafeBytes { raw in
             guard let base = raw.baseAddress?.assumingMemoryBound(to: FFIByteTuple32.self) else {
                 throw PlatformWalletError.nullPointer(
@@ -2699,6 +2689,22 @@ public class PlatformWalletManager: ObservableObject {
         // remove. Coarse on purpose — the cadence re-runs the others.
         coreTxoReconcileEpoch.bump()
         coreTxoReconcileLastRunAt.removeValue(forKey: walletId)
+
+        // Wipe Keychain AFTER the native removal succeeded and BEFORE the
+        // SwiftData identity deletion runs. The second half matters for
+        // retry-safety: if `deleteWalletData` commits identity rows and
+        // then throws partway, a retry would see
+        // `identityIdsForWallet == []` and the
+        // `deleteAllKeychainItems(forIdentityId:)` sweep below could no
+        // longer find the keys to purge. Doing the keychain side first
+        // leaves at worst stale SwiftData rows on a retry — repeating the
+        // wipe is harmless, and every keychain call here is idempotent
+        // (no-op on "not found"). Mnemonic / metadata stay in
+        // `WalletStorage` for now so a retry can still derive any missed key.
+        for identityId in identityIds {
+            try KeychainManager.shared.deleteAllKeychainItems(forIdentityId: identityId)
+        }
+        try KeychainManager.shared.deleteAllIdentityPrivateKeys(forWalletId: walletId)
 
         try persistenceHandler.deleteWalletData(walletId: walletId)
 
