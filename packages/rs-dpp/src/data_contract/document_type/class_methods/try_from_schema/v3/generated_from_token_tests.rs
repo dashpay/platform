@@ -527,13 +527,15 @@ fn referenced_decimals(beside: Vec<(&str, Value)>) -> (Value, BTreeMap<String, V
 }
 
 /// A token decimals property declared with a `$ref` is refused, plain or narrowed beside it:
-/// the keywords beside the `$ref` apply to a document too.
+/// the keywords beside the `$ref` apply to a document too, a `type` no integer meets
+/// included.
 #[test]
 fn should_refuse_sys_tokens_decimals_declared_with_a_ref() {
     let refused = "must be declared in place, and \"decimals\" is declared with a $ref";
     let (schema, defs) = referenced_decimals(vec![]);
     expect_refused_with_defs(schema, &defs, refused);
     for beside in [
+        ("type", platform_value!("string")),
         ("multipleOf", platform_value!(2)),
         ("minimum", platform_value!(1)),
         ("const", platform_value!(6)),
