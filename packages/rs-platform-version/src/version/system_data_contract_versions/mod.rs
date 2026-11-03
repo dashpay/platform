@@ -17,4 +17,5 @@ pub struct SystemDataContractVersions {
     pub document_history: FeatureVersion,
     pub app_connect: FeatureVersion,
     pub moderation_charters: FeatureVersion,
+    pub decision_proposals: FeatureVersion,
 }

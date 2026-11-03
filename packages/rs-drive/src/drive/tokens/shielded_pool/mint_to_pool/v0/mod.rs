@@ -3,11 +3,10 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::state_transition_action::shielded::ShieldedActionNote;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::balances::credits::TokenAmount;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Version 0: raise the total supply, then record the dummy nullifiers, append the notes
@@ -20,9 +19,7 @@ impl Drive {
         amount: TokenAmount,
         allow_first_mint: bool,
         notes: &[ShieldedActionNote],
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

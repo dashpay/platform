@@ -15,6 +15,8 @@ pub mod chained_document_query_sdk;
 pub mod contest_fund;
 pub mod document_query_sdk;
 mod fetch_bindings;
+pub mod page;
 pub mod transitions;
 
 pub use document_query_sdk::DocumentQuerySdk;
+pub use page::DocumentsPage;

@@ -23,6 +23,7 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_proof_keep_serialized: 0,
         verify_document_history: 0,
         verify_start_at_document_in_proof: 0,
+        verify_private_document_entries: None, // no private document type before protocol version 15
     },
     chained_document: DriveVerifyChainedDocumentMethodVersions {
         verify_chained_documents_proof: 0,

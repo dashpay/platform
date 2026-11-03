@@ -35,6 +35,7 @@ pub(crate) const DPNS_USERNAMES_MAX_PAGES: usize = 10;
 mod balance;
 mod contract;
 mod creation_keys;
+mod decision_proposal;
 mod discovery;
 mod document;
 mod dpns;

@@ -1,0 +1,24 @@
+{
+  "$formatVersion": "1",
+  "id": "5Kp1LuqoQ7KugvbaJy8cReoJhKSMj2oB7cqVuHLQtvJD",
+  "ownerId": "GfXXsAYXsRU2ese2wXpLdq1Q2T16EhHBuz6sTuhcLCrm",
+  "version": 1,
+  "documentSchemas": {
+    "secret": {
+      "type": "object",
+      "private": {
+        "entrySize": 512
+      },
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "properties": {
+        "note": {
+          "type": "string",
+          "maxLength": 63,
+          "position": 0
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

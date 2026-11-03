@@ -2736,8 +2736,10 @@ fn should_reject_a_nested_skip_property_on_a_stored_type() {
 #[test]
 fn should_keep_the_last_of_repeated_skip_if_absent_keys() {
     // A map may repeat a key; the meta-schema's JSON view keeps the last
-    // value, and so does the parse: the flag and the skip set are replaced
-    // together.
+    // value, and so does the parse of a stored contract: the flag and the
+    // skip set are replaced together. Registration refuses the repeat from
+    // protocol version 15, wherever in the schema it is (the repeated-key
+    // rule of `check_document_type_schema` 1).
     for (values, skips) in [
         (
             [platform_value!(["hashtag"]), platform_value!(false)],
@@ -2758,21 +2760,23 @@ fn should_keep_the_last_of_repeated_skip_if_absent_keys() {
             panic!("an index is a map");
         };
         index.push((Value::Text("skipIfAbsent".to_string()), values[1].clone()));
-        for full_validation in [false, true] {
-            let document_type =
-                parse_with(schema.clone(), PlatformVersion::latest(), full_validation)
-                    .unwrap_or_else(|error| panic!("{values:?}: {error}"));
-            let index = document_type
-                .indices
-                .get("byHashtagLanguageTime")
-                .expect("index present");
-            assert_eq!(index.skip_if_absent, skips, "{values:?}");
-            assert_eq!(
-                index.skip_if_absent_properties.is_empty(),
-                !skips,
-                "{values:?}: the skip set follows the flag"
-            );
-        }
+        let document_type = parse_with(schema.clone(), PlatformVersion::latest(), false)
+            .unwrap_or_else(|error| panic!("{values:?}: {error}"));
+        let index = document_type
+            .indices
+            .get("byHashtagLanguageTime")
+            .expect("index present");
+        assert_eq!(index.skip_if_absent, skips, "{values:?}");
+        assert_eq!(
+            index.skip_if_absent_properties.is_empty(),
+            !skips,
+            "{values:?}: the skip set follows the flag"
+        );
+
+        expect_structure_error(
+            parse_with(schema, PlatformVersion::latest(), true),
+            "declares `skipIfAbsent` more than once at `indices[0]`",
+        );
     }
 }
 

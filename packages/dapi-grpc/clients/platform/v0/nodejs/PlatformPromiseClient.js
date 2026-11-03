@@ -68,6 +68,8 @@ const {
             GetYesNoVotePollStateResponse: PBJSGetYesNoVotePollStateResponse,
             GetMasternodeYesNoVoteRequest: PBJSGetMasternodeYesNoVoteRequest,
             GetMasternodeYesNoVoteResponse: PBJSGetMasternodeYesNoVoteResponse,
+            GetPrivateDocumentEntriesRequest: PBJSGetPrivateDocumentEntriesRequest,
+            GetPrivateDocumentEntriesResponse: PBJSGetPrivateDocumentEntriesResponse,
           },
         },
       },
@@ -97,6 +99,7 @@ const {
   GetIdentityBalanceResponse: ProtocGetIdentityBalanceResponse,
   GetYesNoVotePollStateResponse: ProtocGetYesNoVotePollStateResponse,
   GetMasternodeYesNoVoteResponse: ProtocGetMasternodeYesNoVoteResponse,
+  GetPrivateDocumentEntriesResponse: ProtocGetPrivateDocumentEntriesResponse,
 } = require('./platform_protoc');
 
 const getPlatformDefinition = require('../../../../lib/getPlatformDefinition');
@@ -205,6 +208,10 @@ class PlatformPromiseClient {
 
     this.client.getMasternodeYesNoVote = promisify(
       this.client.getMasternodeYesNoVote.bind(this.client),
+    );
+
+    this.client.getPrivateDocumentEntries = promisify(
+      this.client.getPrivateDocumentEntries.bind(this.client),
     );
 
     this.protocolVersion = undefined;
@@ -878,6 +885,46 @@ class PlatformPromiseClient {
           ),
         ],
         ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {!GetPrivateDocumentEntriesRequest} getPrivateDocumentEntriesRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @return {Promise<!GetPrivateDocumentEntriesResponse>}
+   */
+  getPrivateDocumentEntries(
+    getPrivateDocumentEntriesRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    // A caller's interceptors run outside the conversion between protobuf messages and the
+    // plain objects the service sends, so they see the messages and the conversion still runs.
+    const { interceptors: callerInterceptors = [], ...callOptions } = options;
+
+    return this.client.getPrivateDocumentEntries(
+      getPrivateDocumentEntriesRequest,
+      convertObjectToMetadata(metadata),
+      {
+        ...callOptions,
+        interceptors: [
+          ...callerInterceptors,
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetPrivateDocumentEntriesResponse,
+              PBJSGetPrivateDocumentEntriesResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetPrivateDocumentEntriesRequest,
+            ),
+          ),
+        ],
       },
     );
   }

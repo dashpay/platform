@@ -3,4 +3,4 @@ mod resources;
 mod state;
 mod voters;
 mod votes;
-mod yes_no;
+pub(crate) mod yes_no;

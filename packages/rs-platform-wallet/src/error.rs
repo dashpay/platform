@@ -634,9 +634,10 @@ pub enum PlatformWalletError {
     )]
     AssetLockInsufficientFunds { available: u64, required: u64 },
 
-    /// A whole-balance asset lock needs more inputs than an asset lock may
-    /// carry (`max_asset_lock_transaction_inputs`, 100: Dash Core relay policy
-    /// and Platform consensus alike). Nothing was built for the wire.
+    /// An asset lock, whole-balance or of a fixed amount, needs more inputs
+    /// than an asset lock may carry (`max_asset_lock_transaction_inputs`, 100:
+    /// Dash Core relay policy and Platform consensus alike). Nothing was built
+    /// for the wire; consolidating the coins lets the lock fit.
     #[error("Asset lock requires {count} inputs, exceeding the limit of {max}")]
     AssetLockTooManyInputs { count: usize, max: usize },
 
@@ -650,6 +651,12 @@ pub enum PlatformWalletError {
     /// see [`Self::ContestedNameNotTradable`] for the pre-checked case).
     #[error("DPNS name not found: {name:?}")]
     DpnsNameNotFound { name: String },
+
+    /// No decision proposal with this id exists on Platform, so there is
+    /// nothing to edit. Distinct from [`Self::InvalidParameter`]: the id
+    /// was well-formed, the read came back empty.
+    #[error("decision proposal {proposal_id} not found")]
+    DecisionProposalNotFound { proposal_id: Identifier },
 
     /// The DPNS domain document carries no `$price` — it is not listed
     /// for sale. Raised by the wallet's pre-flight check and by the

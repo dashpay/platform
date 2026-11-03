@@ -34,6 +34,7 @@ pub mod storage;
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
 pub mod vote_resolution_fund_fees;
 
 pub type FeeVersionNumber = u32;
