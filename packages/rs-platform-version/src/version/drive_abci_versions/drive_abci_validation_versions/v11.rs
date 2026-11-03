@@ -15,6 +15,9 @@ use super::{
 /// - `create_domain_data_trigger` 2, which keeps only the parent domain checks of a DPNS domain
 ///   create: the DPNS contract v3 (`SYSTEM_DATA_CONTRACT_VERSIONS_V4`) checks the normalized
 ///   names, the preorder and the identity record with schema keywords.
+/// - the data trigger `bindings` 3, which refuse a document transition's replace or delete of a
+///   token market contract order (`ask` and `bid`): only the token marketplace transitions write
+///   them.
 /// - the batch `advanced_structure` 2: v1, then the structure checks of token actions protocol
 ///   v15 introduces, which read only the contract the action carries and so run in check_tx too.
 ///   A `TokenConfigUpdate` can make a token tradeable only if it is transferable.
@@ -63,6 +66,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                 document_reference_validation: 1, // a consumed commitment keeps what its lookup read
                 document_create_transition_structure_validation: 2, // a decision proposal states its fund, a rule within the limits and an end date one to four weeks away
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
+                    bindings: 3, // the token market contract's orders are written by the marketplace transitions only
                     triggers: DriveAbciValidationDataTriggerVersions {
                         create_domain_data_trigger: 2,
                         ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
@@ -71,10 +75,6 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                             .data_triggers
                             .triggers
                     },
-                    ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
-                        .state_transitions
-                        .batch_state_transition
-                        .data_triggers
                 },
                 ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
                     .state_transitions

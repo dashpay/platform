@@ -18,4 +18,7 @@ pub struct SystemDataContractVersions {
     pub app_connect: FeatureVersion,
     pub moderation_charters: FeatureVersion,
     pub decision_proposals: FeatureVersion,
+    /// The token market contract (protocol version 15): the open listings and offers of the
+    /// token marketplace. 0 before it exists.
+    pub token_market: FeatureVersion,
 }

@@ -17,6 +17,7 @@ default = [
   "keywords-contract",
   "moderation-charters-contract",
   "decision-proposals-contract",
+  "token-market-contract",
   "mocks",
 ]
 
@@ -60,6 +61,10 @@ moderation-charters-contract = [
 decision-proposals-contract = [
   "dash-sdk/decision-proposals-contract",
   "rs-sdk-trusted-context-provider/decision-proposals-contract",
+]
+token-market-contract = [
+  "dash-sdk/token-market-contract",
+  "rs-sdk-trusted-context-provider/token-market-contract",
 ]
 
 token_reward_explanations = ["dash-sdk/token_reward_explanations"]
