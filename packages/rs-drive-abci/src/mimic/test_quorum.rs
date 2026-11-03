@@ -125,6 +125,8 @@ fn random_socket_addr(rng: &mut StdRng) -> SocketAddr {
     SocketAddr::new(IpAddr::V4(random_ipv4_address(rng)), random_port(rng))
 }
 
+// TODO: replace this mock-only interpolation with dash-pkc secret-share recovery.
+// https://github.com/dashpay/base-sdk/issues/113
 fn recover_quorum_private_key(members: &[(ProTxHash, BlsPrivateKey)]) -> BlsPrivateKey {
     assert!(members.len() >= 2, "expected at least two quorum members");
     // Core reads the stored proTxHash bytes as a big-endian scalar, reduced modulo r.
