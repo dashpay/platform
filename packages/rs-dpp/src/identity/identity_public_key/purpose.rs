@@ -186,12 +186,12 @@ mod tests {
         assert_eq!(Purpose::try_from(4u8).unwrap(), SYSTEM);
         assert_eq!(Purpose::try_from(5u8).unwrap(), VOTING);
         assert_eq!(Purpose::try_from(6u8).unwrap(), OWNER);
+        assert_eq!(Purpose::try_from(7u8).unwrap(), HECATE_SIGNER);
     }
 
     // -- TryFrom<u8> invalid --
     #[test]
     fn test_purpose_try_from_u8_invalid() {
-        assert_eq!(Purpose::try_from(7u8).unwrap(), HECATE_SIGNER);
         assert!(Purpose::try_from(8u8).is_err());
         assert!(Purpose::try_from(255u8).is_err());
     }
@@ -206,12 +206,12 @@ mod tests {
         assert_eq!(Purpose::try_from(4i32).unwrap(), SYSTEM);
         assert_eq!(Purpose::try_from(5i32).unwrap(), VOTING);
         assert_eq!(Purpose::try_from(6i32).unwrap(), OWNER);
+        assert_eq!(Purpose::try_from(7i32).unwrap(), HECATE_SIGNER);
     }
 
     #[test]
     fn test_purpose_try_from_i32_invalid() {
         assert!(Purpose::try_from(-1i32).is_err());
-        assert_eq!(Purpose::try_from(7i32).unwrap(), HECATE_SIGNER);
         assert!(Purpose::try_from(8i32).is_err());
         assert!(Purpose::try_from(1_000_000i32).is_err());
     }
