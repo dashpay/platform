@@ -258,9 +258,7 @@ async fn main() {
         .expect("bind_shielded");
 
     // --- 5. Run one sync pass with cooldown bypassed. ---
-    let summary = coordinator
-        .sync(true, &tokio_util::sync::CancellationToken::new())
-        .await;
+    let summary = coordinator.sync(true).await;
     eprintln!("sync summary: {:?}", summary);
 
     // --- 6. Assert the pass ran cleanly and actually walked the

@@ -267,9 +267,7 @@ async fn run_wallet_sync_test(wallet: WalletIndex) {
     // --- 6. Run a single sync pass through the coordinator. `force = true`
     //        skips the cooldown gate so the example runs immediately after
     //        the chain comes up. ---
-    let summary = coordinator
-        .sync(true, &tokio_util::sync::CancellationToken::new())
-        .await;
+    let summary = coordinator.sync(true).await;
     eprintln!("{:?}: sync summary: {:?}", wallet, summary);
 
     // --- 7. Assert the pass completed cleanly for our wallet: a genuine

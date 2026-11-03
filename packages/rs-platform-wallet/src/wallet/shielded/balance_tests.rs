@@ -222,9 +222,7 @@ async fn local_balance_successful_empty_scan_marks_known_zero() {
         ready(&coordinator, wallet).await.accounts[&0].source,
         ShieldedBalanceSource::NoHistory
     );
-    let outcome = coordinator
-        .sync(true, &tokio_util::sync::CancellationToken::new())
-        .await;
+    let outcome = coordinator.sync(true).await;
     assert_eq!(
         outcome.success_count(),
         1,
@@ -251,9 +249,7 @@ async fn local_balance_successful_scan_covers_unhydrated_registration() {
         coordinator.local_balance_snapshot(wallet).await.unwrap(),
         ShieldedLocalBalanceState::RestoreIncomplete
     );
-    let outcome = coordinator
-        .sync(true, &tokio_util::sync::CancellationToken::new())
-        .await;
+    let outcome = coordinator.sync(true).await;
     assert_eq!(outcome.success_count(), 1, "{outcome:?}");
     let account = ready(&coordinator, wallet).await.accounts[&0];
     assert_eq!(account.spendable_credits, 0);
@@ -304,9 +300,7 @@ async fn local_balance_recovers_after_failed_clear_and_completed_scan() {
         coordinator.local_balance_snapshot(wallet).await.unwrap(),
         ShieldedLocalBalanceState::RestoreIncomplete
     );
-    let outcome = coordinator
-        .sync(true, &tokio_util::sync::CancellationToken::new())
-        .await;
+    let outcome = coordinator.sync(true).await;
     assert_eq!(outcome.success_count(), 1, "{outcome:?}");
     let account = ready(&coordinator, wallet).await.accounts[&0];
     assert_eq!(account.spendable_credits, 900);
