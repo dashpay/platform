@@ -3497,8 +3497,16 @@ fn refuse_state_generated_schema_path(schema: &Value, path: &str) -> Result<(), 
 /// its contest, outside the documents the draw rewrites, and the document a contest awards
 /// would keep the placeholder. The property may not be summed, by `documentsSummable` or as the
 /// `summable` (or averaged) property of an index: the total would take the drawn value when
-/// nothing can be refused any more, past `i64::MAX` included. And nothing a write is judged by
-/// may read it: not a reference declared on the type (the property holding it, a `where`
+/// nothing can be refused any more, past `i64::MAX` included. Nor may an index holding it sum
+/// another property, since the draw moves the document's contribution into the group of the
+/// drawn value, whose total could pass `i64::MAX` the same way. A create prepays the entries
+/// the draw may create in the indexes holding it, priced on the document it writes
+/// (`prepay_random_document_index_entries`), so the draw may not create more entries than the
+/// create wrote: such an index may not be an `integerRange` index on it, which files a value
+/// in every window holding it, more for a drawn value than for the placeholder; and on a type
+/// whose documents are mutable it may not skip documents on a stored property (`skipIfAbsent`,
+/// or a typed array), which a replace in the block of the create could add before the draw.
+/// And nothing a write is judged by may read it: not a reference declared on the type (the property holding it, a `where`
 /// value, a `findBy` source, a function's params, a key id), nor an `encryptedFor` key, which
 /// would name another key once drawn. The rules reading it are refused where their reads are
 /// checked ([`property_read_error`]), and a value of another type reading it through a
@@ -3630,6 +3638,55 @@ pub(super) fn validate_generated_from_declarations(
                      {summed_by} does: the total could not be held to its bounds",
                     generated_from.function
                 )));
+            }
+            for index in document_type.indices.values().filter(|index| {
+                index
+                    .properties
+                    .iter()
+                    .any(|property| &property.name == path)
+            }) {
+                if let Some(summed) = &index.summable {
+                    return Err(structure_error(format!(
+                        "function {} draws a value once the block is accepted, when nothing \
+                         can be refused any more, so index \"{}\" holding the property may \
+                         not sum or average \"{summed}\": the draw moves the document's \
+                         contribution into the group of the drawn value, whose total could not \
+                         be held to its bounds",
+                        generated_from.function, index.name
+                    )));
+                }
+                if index
+                    .integer_range
+                    .as_ref()
+                    .is_some_and(|transform| &transform.source == path)
+                {
+                    return Err(structure_error(format!(
+                        "function {} draws a value once the block is accepted, and integerRange \
+                         index \"{}\" files a value in every window holding it, so the draw \
+                         could create more entries than the create wrote and prepaid",
+                        generated_from.function, index.name
+                    )));
+                }
+                // A derived property is fixed once written, so only a stored one can be added
+                // by a replace
+                if document_type.documents_mutable {
+                    if let Some(skipped_on) =
+                        index.skip_if_absent_properties.iter().find(|skipped_on| {
+                            !document_type
+                                .derived_index_properties
+                                .contains_key(skipped_on.as_str())
+                        })
+                    {
+                        return Err(structure_error(format!(
+                            "function {} draws a value once the block is accepted, and index \
+                             \"{}\" skips a document without \"{skipped_on}\", which a replace \
+                             in the block of the create could add before the draw, creating \
+                             entries the create did not prepay: skip on it only on a type whose \
+                             documents are immutable",
+                            generated_from.function, index.name
+                        )));
+                    }
+                }
             }
             // A reference is judged when the document is written, before the draw
             if paths_read_by_references(DocumentTypeRef::V2(document_type)).contains(path.as_str())

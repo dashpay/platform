@@ -313,19 +313,90 @@ mod tests {
         schema
     }
 
+    /// A card of a `set`, filed by its drawn rarity and its set's name, which the card never
+    /// stores: a derived index property.
+    fn set_card_schema() -> Value {
+        let mut schema = card_schema(false);
+        schema
+            .insert(
+                "indices".to_string(),
+                platform_value!([{
+                    "name": "byRarityAndSetName",
+                    "properties": [{ "rarity": "asc" }, { "setId.name": "asc" }]
+                }]),
+            )
+            .expect("the schema is a map");
+        schema
+            .get_mut("properties")
+            .expect("the schema has properties")
+            .expect("the schema has properties")
+            .insert(
+                "setId".to_string(),
+                platform_value!({
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "refersTo": { "type": "permanentDocument", "documentType": "set" },
+                    "position": 2
+                }),
+            )
+            .expect("the properties are a map");
+        schema
+            .get_mut("required")
+            .expect("the schema has required")
+            .expect("the schema has required")
+            .push(Value::Text("setId".to_string()))
+            .expect("required is an array");
+        schema
+    }
+
     /// A contract with a `card` indexed by its drawn rarity and a `looseCard` that is not,
     /// registered at `platform_version`.
     fn contract(platform_version: &PlatformVersion) -> Arc<DataContractFetchInfo> {
+        contract_with(
+            platform_value!({
+                "card": card_schema(true),
+                "looseCard": card_schema(false)
+            }),
+            platform_version,
+        )
+    }
+
+    /// A contract with a `set` and a `setCard` indexed by its drawn rarity and its set's name,
+    /// registered at `platform_version`.
+    fn set_contract(platform_version: &PlatformVersion) -> Arc<DataContractFetchInfo> {
+        contract_with(
+            platform_value!({
+                "set": {
+                    "type": "object",
+                    "documentsMutable": false,
+                    "canBeDeleted": false,
+                    "properties": {
+                        "name": { "type": "string", "maxLength": 32, "position": 0 }
+                    },
+                    "required": ["name"],
+                    "additionalProperties": false
+                },
+                "setCard": set_card_schema()
+            }),
+            platform_version,
+        )
+    }
+
+    /// A contract of `document_schemas`, registered at `platform_version`.
+    fn contract_with(
+        document_schemas: Value,
+        platform_version: &PlatformVersion,
+    ) -> Arc<DataContractFetchInfo> {
         let contract = DataContract::from_value(
             platform_value!({
                 "$formatVersion": "1",
                 "id": Identifier::from(CONTRACT_ID),
                 "ownerId": Identifier::from(OWNER),
                 "version": 1u32,
-                "documentSchemas": {
-                    "card": card_schema(true),
-                    "looseCard": card_schema(false)
-                }
+                "documentSchemas": document_schemas
             }),
             true,
             platform_version,
@@ -341,6 +412,17 @@ mod tests {
 
     /// What building the action of a valid create of a `document_type_name` document bills.
     fn create_fee(document_type_name: &str) -> FeeResult {
+        create_fee_with(contract, document_type_name, BTreeMap::new())
+    }
+
+    /// [`create_fee`] of a document of a type of the contract `contract` builds, holding
+    /// `data` besides its name.
+    fn create_fee_with(
+        contract: fn(&PlatformVersion) -> Arc<DataContractFetchInfo>,
+        document_type_name: &str,
+        mut data: BTreeMap<String, Value>,
+    ) -> FeeResult {
+        data.insert("name".to_string(), Value::Text("Ace".to_string()));
         let platform_version = drawing_platform_version();
         let drive = setup_drive_with_initial_state_structure(Some(&platform_version));
         let contract = contract(&platform_version);
@@ -352,7 +434,7 @@ mod tests {
                 data_contract_id: Identifier::from(CONTRACT_ID),
             }),
             entropy: [2; 32],
-            data: BTreeMap::from([("name".to_string(), Value::Text("Ace".to_string()))]),
+            data,
             prefunded_voting_balance: None,
         };
         let (result, fee_result) =
@@ -391,6 +473,19 @@ mod tests {
                 ..Default::default()
             }
         );
+    }
+
+    #[test]
+    fn should_prepay_the_draw_into_an_index_holding_a_derived_index_property() {
+        // The create's document does not carry its set's name yet: the prepayment completes it
+        // as the insert does, estimated, rather than key an entry on a value it lacks
+        let fee = create_fee_with(
+            set_contract,
+            "setCard",
+            BTreeMap::from([("setId".to_string(), Value::Identifier([3; 32]))]),
+        );
+        assert!(fee.storage_fee > 0);
+        assert!(fee.processing_fee > 0);
     }
 
     #[test]
