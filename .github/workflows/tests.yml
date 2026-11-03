@@ -58,7 +58,16 @@ jobs:
       || !github.event.pull_request.draft
       || (github.event.pull_request.head.repo.full_name == github.repository
           && startsWith(github.head_ref, 'codex/freeze-swift-schema-v')) }}
-    runs-on: ubuntu-24.04
+    # Every Rust, JS and E2E job waits for this one. On the light pool it does
+    # not queue for a GitHub-hosted slot, which every repository in the
+    # organization shares. It runs the PR's own scripts, so fork PRs outside
+    # the trusted-fork policy stay on a GitHub-hosted runner. The light image
+    # provides PyYAML (Swift runner policy check) and yq (dispatch override).
+    runs-on: >-
+      ${{ (github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository
+      || github.event.pull_request.head.repo.owner.login == 'thepastaclaw')
+      && vars.DASH_LIGHT_RUNNER || 'ubuntu-24.04' }}
     outputs:
       js-packages: ${{ steps.override.outputs.js-packages || steps.prune-pr-matrix.outputs.js-packages || steps.filter-js.outputs.changes }}
       js-packages-direct: ${{ steps.override.outputs.js-packages-direct || steps.filter-js-direct.outputs.changes }}
