@@ -1,9 +1,9 @@
 //! Replay coverage across a fee-generation boundary.
 //!
 //! The doubled-storage mock protocol version (`TEST_PLATFORM_V4`) is the
-//! latest shipped tables with a fee generation that exists only under
-//! `mock-versions`, so upgrading to it changes nothing but the storage rate
-//! and the fee history entry the epoch-change hook records. Each simulation
+//! latest protocol version's tables with a fee generation that exists only
+//! under `mock-versions`, so upgrading to it changes nothing but the storage
+//! rate and the fee history entry the epoch-change hook records. Each simulation
 //! runs one workload twice: continuously, and stopped at the same block,
 //! reopened from the persisted state and continued. The two runs must agree
 //! on every root hash, every transition result, every identity balance and

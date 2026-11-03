@@ -1,6 +1,6 @@
 use crate::version::fee::storage::v1::FEE_STORAGE_VERSION1;
 use crate::version::fee::storage::FeeStorageVersion;
-use crate::version::fee::v3::FEE_VERSION3;
+use crate::version::fee::v4::FEE_VERSION4;
 use crate::version::fee::{FeeVersion, FeeVersionNumber};
 use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
 
@@ -26,12 +26,12 @@ pub const TEST_FEE_STORAGE_VERSION_DOUBLED: FeeStorageVersion = FeeStorageVersio
 /// No shipped schedule carries a `fee_version_number` other than 1, so the
 /// registry lookup, the epoch-change hook, the saved-state round trip and the
 /// history-driven refund path have no production input that exercises a
-/// second generation. This schedule is `FEE_VERSION3`, the latest shipped
-/// schedule, with a new generation number and a doubled storage disk usage
-/// rate: processing, hashing, signature and vote resolution rates are
-/// identical, so any fee difference across a boundary into this generation is
-/// storage, and a refund priced at the wrong generation is off by a factor of
-/// two.
+/// second generation. This schedule is `FEE_VERSION4`, the latest schedule
+/// (the one `TEST_PLATFORM_V4`'s base protocol version carries), with a new
+/// generation number and a doubled storage disk usage rate: processing,
+/// hashing, signature and vote resolution rates are identical, so any fee
+/// difference across a boundary into this generation is storage, and a refund
+/// priced at the wrong generation is off by a factor of two.
 ///
 /// It is unreachable in production builds: the constant is compiled only
 /// with `mock-versions`, and `FeeVersion::get` resolves the shifted number
@@ -39,7 +39,7 @@ pub const TEST_FEE_STORAGE_VERSION_DOUBLED: FeeStorageVersion = FeeStorageVersio
 pub const TEST_FEE_VERSION_DOUBLED_STORAGE: FeeVersion = FeeVersion {
     fee_version_number: TEST_FEE_VERSION_NUMBER_DOUBLED_STORAGE,
     storage: TEST_FEE_STORAGE_VERSION_DOUBLED,
-    ..FEE_VERSION3
+    ..FEE_VERSION4
 };
 
 /// The test fee generations, resolved by number through `FeeVersion::get`

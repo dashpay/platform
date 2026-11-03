@@ -1577,7 +1577,7 @@ mod storage_refund_clawback_tests {
 /// block loop (`process_raw_state_transitions` with the state's fee history).
 ///
 /// The doubled-storage test generation (`TEST_PLATFORM_V4`) differs from the
-/// latest shipped schedule only in its storage disk usage rate, so every
+/// latest schedule only in its storage disk usage rate, so every
 /// control run below is the same workload under `PlatformVersion::latest()`:
 /// storage fees must double, processing fees must not move, and a refund
 /// priced at the wrong generation is off by exactly a factor of two.
