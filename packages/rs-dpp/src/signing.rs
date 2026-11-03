@@ -163,17 +163,18 @@ impl PlatformMessageSignable for &[u8] {
 
             // The private key is the key's secret, from which the RedPallas signing key derives.
             // Its length comes from `KeyType::private_key_size`; `from_secret` takes `[u8; 32]`,
-            // so this arm stops compiling if the two ever disagree.
+            // so this arm stops compiling if the two ever disagree. The secret is borrowed, not
+            // copied: an owned copy here would outlive the call unwiped.
             KeyType::REDPALLAS_HECATE => {
                 const SECRET_SIZE: usize = KeyType::REDPALLAS_HECATE.private_key_size();
-                let secret: [u8; SECRET_SIZE] = private_key.try_into().map_err(|_| {
+                let secret: &[u8; SECRET_SIZE] = private_key.try_into().map_err(|_| {
                     ProtocolError::InvalidSigningKeyTypeError(format!(
                         "a REDPALLAS_HECATE private key is {SECRET_SIZE} bytes, got {}",
                         private_key.len()
                     ))
                 })?;
                 Ok(
-                    redpallas_hecate::RedPallasHecateSecretKey::from_secret(&secret)?
+                    redpallas_hecate::RedPallasHecateSecretKey::from_secret(secret)?
                         .sign(self)?
                         .to_vec(),
                 )

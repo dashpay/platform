@@ -95,9 +95,9 @@ impl RedPallasHecateSecretKey {
         Ok(data)
     }
 
-    /// The tag key `nk`, as the circuit takes it. The returned copy is the caller's to clear.
-    pub fn nk(&self) -> [u8; 32] {
-        self.tag_key().to_repr()
+    /// The tag key `nk`, as the circuit takes it, in a buffer wiped when it is dropped.
+    pub fn nk(&self) -> Zeroizing<[u8; 32]> {
+        Zeroizing::new(self.tag_key().to_repr())
     }
 
     /// A RedPallas signature by `ak` over `message`.
@@ -322,7 +322,7 @@ mod tests {
         assert_eq!(ask, branch.to_repr());
         assert_eq!(hex::encode(ask), vector.ask);
 
-        assert_eq!(hex::encode(key.nk()), vector.nk);
+        assert_eq!(hex::encode(*key.nk()), vector.nk);
         assert_eq!(
             hex::encode(key.public_key_data().expect("derivable data")),
             vector.public_key_data
@@ -412,13 +412,13 @@ mod tests {
     fn should_derive_the_same_key_from_the_same_secret() {
         assert_eq!(key_data(7), key_data(7));
         assert_ne!(key_data(7), key_data(8));
-        assert_eq!(key(7).nk(), key(7).nk());
+        assert_eq!(*key(7).nk(), *key(7).nk());
     }
 
     #[test]
     fn should_commit_to_nk_with_poseidon() {
         let key = key(9);
-        let nk = pallas::Base::from_repr(key.nk()).unwrap();
+        let nk = pallas::Base::from_repr(*key.nk()).unwrap();
         assert_eq!(
             &key.public_key_data().expect("derivable data")[32..],
             &PoseidonHash::<_, P128Pow5T3, ConstantLength<1>, 3, 2>::init()
