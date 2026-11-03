@@ -2040,9 +2040,19 @@ impl NetworkStrategy {
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
         let mut finalize_block_operations = vec![];
         let platform_state = platform.state.load();
-        let platform_version = platform_state
-            .current_platform_version()
-            .expect("expected platform version");
+        // Build the transitions for the version the block executes under, as
+        // run_block_proposal picks it: the first block of a new epoch runs on
+        // the version locked in for that epoch, so an upgrade activates there
+        // and that block's transitions (document ids, for one) must follow it.
+        let block_protocol_version = if platform_state.last_committed_block_info().is_some()
+            && block_info.epoch.index != platform_state.last_committed_block_epoch().index
+        {
+            platform_state.next_epoch_protocol_version()
+        } else {
+            platform_state.current_protocol_version_in_consensus()
+        };
+        let platform_version =
+            PlatformVersion::get(block_protocol_version).expect("expected platform version");
 
         let identity_state_transitions_result = self
             .identity_state_transitions_for_block(
