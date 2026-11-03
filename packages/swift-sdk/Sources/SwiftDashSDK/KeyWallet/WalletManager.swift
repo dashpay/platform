@@ -55,10 +55,12 @@ public class WalletManager {
 
     // MARK: - Wallet Management
 
-    /// Add a wallet from mnemonic
+    /// Add a wallet from mnemonic (empty BIP39 passphrase).
+    ///
+    /// For a passphrase wallet derive the seed with
+    /// `Mnemonic.toSeed(mnemonic:passphrase:)` and use `Wallet(seed:)`.
     /// - Parameters:
     ///   - mnemonic: The mnemonic phrase
-    ///   - passphrase: Optional BIP39 passphrase
     ///   - accountOptions: Account creation options
     /// - Returns: The wallet ID
     @discardableResult
@@ -582,10 +584,12 @@ public class WalletManager {
 
     // MARK: - Serialization
 
-    /// Add a wallet from mnemonic and return serialized wallet bytes
+    /// Add a wallet from mnemonic (empty BIP39 passphrase) and return
+    /// serialized wallet bytes. key-wallet's serialized mnemonic wallet
+    /// shape carries no passphrase (rust-dashcore #747), so there is no
+    /// passphrase parameter here.
     /// - Parameters:
     ///   - mnemonic: The mnemonic phrase
-    ///   - passphrase: Optional BIP39 passphrase
     ///   - birthHeight: Optional birth height for wallet
     ///   - accountOptions: Account creation options
     ///   - downgradeToPublicKeyWallet: If true, creates a watch-only or externally signable wallet
@@ -593,19 +597,11 @@ public class WalletManager {
     /// - Returns: Tuple containing (walletId: Data, serializedWallet: Data)
     public func addWalletAndSerialize(
         mnemonic: String,
-        passphrase: String? = nil,
         birthHeight: UInt32 = 0,
         accountOptions: AccountCreationOption = .default,
         downgradeToPublicKeyWallet: Bool = false,
         allowExternalSigning: Bool = false
     ) throws -> (walletId: Data, serializedWallet: Data) {
-        if let passphrase, !passphrase.isEmpty {
-            throw KeyWalletError.invalidInput(
-                "BIP-39 passphrase support was removed upstream " +
-                "(rust-dashcore #747); pass nil or an empty string"
-            )
-        }
-
         var error = FFIError()
         var walletBytesPtr: UnsafeMutablePointer<UInt8>?
         var walletBytesLen: size_t = 0

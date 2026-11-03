@@ -579,6 +579,7 @@ struct ContentView: View {
         var failures: [String] = []
         for entry in orphanEntries {
             do {
+                try storage.deletePassphrase(for: entry.walletId)
                 try storage.deleteMnemonic(for: entry.walletId)
             } catch {
                 failures.append("\(entry.displayName): \(error.localizedDescription)")
