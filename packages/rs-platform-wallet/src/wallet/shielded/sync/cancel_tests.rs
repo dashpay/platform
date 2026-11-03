@@ -267,13 +267,11 @@ async fn should_not_rewind_a_more_advanced_subwallet_when_cancelled() {
         12,
         "a partial prefix below a subwallet's watermark must not rewind it"
     );
-    assert_eq!(
-        result.changeset.synced_indices.get(&lagging).copied(),
-        Some(8)
-    );
     assert!(
-        !result.changeset.synced_indices.contains_key(&advanced),
-        "no rewound watermark may reach the host persister"
+        result.changeset.synced_indices.is_empty(),
+        "a cancelled pass sends no watermark to the host: neither the partial \
+         cursor (the host would restore it as completed coverage) nor a \
+         rewound one"
     );
 
     let _ = std::fs::remove_file(&path);
@@ -308,7 +306,7 @@ async fn should_leave_store_and_changeset_empty_when_cancelled_before_first_batc
     assert_eq!(result.total_scanned, 0);
     assert!(
         crate::changeset::merge::Merge::is_empty(&result.changeset),
-        "a pass that consumed nothing records nothing, not even its own watermark"
+        "a pass that consumed nothing records nothing"
     );
     let store = store.read().await;
     assert_eq!(store.tree_size().unwrap(), 0);

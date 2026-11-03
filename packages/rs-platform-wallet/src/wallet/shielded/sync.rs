@@ -777,28 +777,37 @@ where
     // always reaches the tip, which is at or past every watermark.
     // A cancelled pass leaves such a subwallet's row alone entirely:
     // its consumed prefix never covered that subwallet. Where it did
-    // advance a subwallet, only the RESUME cursor moves: the prefix is
-    // not a complete scan, so the scan coverage and balance source the
-    // completed-pass setter stamps (`ScannedThisSession`, which lets
-    // `local_balance_snapshot` report an unhydrated account as ready)
-    // stay untouched until a pass runs to the tip. The host still gets
-    // the cursor in the changeset so a restart resumes from it.
+    // advance a subwallet, only the in-memory RESUME cursor moves: the
+    // prefix is not a complete scan, so the scan coverage and balance
+    // source the completed-pass setter stamps (`ScannedThisSession`,
+    // which lets `local_balance_snapshot` report an unhydrated account
+    // as ready) stay untouched until a pass runs to the tip.
+    //
+    // The cursor is NOT sent to the host. The changeset's watermark is
+    // the one the host restores as completed-scan coverage (`Restored`
+    // provenance with `last_scanned_index` set), and the persistence
+    // contract has no separate resume field; emitting a partial cursor
+    // there would make a restart report an account as covered up to a
+    // position no pass ever completed. So a restart resumes from the
+    // last COMPLETED watermark and re-walks the prefix: cheap, since
+    // the appended leaves are gate-skipped by the tree size and the
+    // flushed notes are re-saved idempotently. The consumed notes and
+    // spent marks still reach the host below, so none of them is lost.
     let new_index = aligned_start + total_notes_scanned;
     for (id, _) in subwallets {
         let prior = watermarks.get(id).copied().unwrap_or(0);
         let advanced = prior.max(new_index);
         if cancelled {
-            if advanced == prior {
-                continue;
+            if advanced > prior {
+                store
+                    .set_resume_note_index(*id, advanced)
+                    .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
             }
-            store
-                .set_resume_note_index(*id, advanced)
-                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-        } else {
-            store
-                .set_last_synced_note_index(*id, advanced)
-                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+            continue;
         }
+        store
+            .set_last_synced_note_index(*id, advanced)
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
         changeset.record_synced_index(*id, advanced);
     }
     // Drop the write lock before returning so the caller's

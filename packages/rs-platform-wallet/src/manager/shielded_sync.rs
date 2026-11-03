@@ -541,6 +541,12 @@ impl ShieldedSyncManager {
         wallet_id: &WalletId,
         force: bool,
     ) -> Result<Option<ShieldedSyncSummary>, crate::error::PlatformWalletError> {
+        // Token first — before the coordinator read below as well as the
+        // slot CAS and the gate check (see `sync_now` for the ordering):
+        // a `stop()` that lands while this waits for the coordinator lock
+        // must still cancel this pass, not hand it a child of the rotated,
+        // uncancelled parent.
+        let pass_cancel = self.pass_token();
         let coordinator_snapshot: Option<Arc<NetworkShieldedCoordinator>> = {
             let slot = self.coordinator_slot.read().await;
             slot.as_ref().map(Arc::clone)
@@ -548,10 +554,6 @@ impl ShieldedSyncManager {
         let Some(coordinator) = coordinator_snapshot else {
             return Ok(None);
         };
-
-        // Token before the slot CAS and the gate check — see `sync_now`
-        // for the ordering.
-        let pass_cancel = self.pass_token();
         // Reuse the manager-wide `is_syncing` flag so a per-wallet
         // `sync_wallet()` can't race the periodic `sync_now()`
         // against the same store — both go through

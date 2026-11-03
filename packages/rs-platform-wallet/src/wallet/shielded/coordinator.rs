@@ -1593,17 +1593,18 @@ impl NetworkShieldedCoordinator {
         // Cooldown decision based on aggregate activity across
         // every subwallet — any new commitment scanned or
         // newly-spent nullifier anywhere on the network clears
-        // the stamp so the next pass runs immediately. A cancelled
-        // pass proves nothing about being caught up (it may have
-        // stopped before its first batch), so it leaves the stamp alone.
+        // the stamp so the next pass runs immediately — a cancelled pass
+        // included: what it consumed is real activity, and leaving a
+        // stamp from before it would park the next background pass
+        // behind the cooldown. Only a NEW stamp needs an uncancelled
+        // pass: a cancelled one proves nothing about being caught up (it
+        // may have stopped before its first batch).
         let any_activity = notes.total_scanned > 0 || newly_spent_per_sub.values().any(|&n| n > 0);
-        if !cancelled {
-            if let Ok(mut guard) = self.last_caught_up_at.lock() {
-                if any_activity {
-                    *guard = None;
-                } else {
-                    *guard = Some(Instant::now());
-                }
+        if let Ok(mut guard) = self.last_caught_up_at.lock() {
+            if any_activity {
+                *guard = None;
+            } else if !cancelled {
+                *guard = Some(Instant::now());
             }
         }
         tracing::debug!(
