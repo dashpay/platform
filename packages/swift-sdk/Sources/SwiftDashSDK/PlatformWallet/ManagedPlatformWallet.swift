@@ -1412,6 +1412,23 @@ extension ManagedPlatformWallet {
         return ok ? out : nil
     }
 
+    /// Whether the wallet derives identity keys of `keyType` at the
+    /// identity's authentication key slots. A key of a type it doesn't
+    /// derive has no slot key to check it against or re-derive it
+    /// from. Pure bridge to
+    /// `platform_wallet_identity_key_type_is_wallet_derived`; Rust's
+    /// `identity_key_derivation_type` decides.
+    ///
+    /// - Throws: `PlatformWalletError` when the FFI refuses the key type.
+    public static func derivesIdentityKeys(ofType keyType: KeyType) throws -> Bool {
+        var isDerived = false
+        try platform_wallet_identity_key_type_is_wallet_derived(
+            keyType.ffiValue,
+            &isDerived
+        ).check()
+        return isDerived
+    }
+
     /// Derive a single ECDSA identity-authentication keypair at an
     /// arbitrary `(identityIndex, keyId)` slot — the building block
     /// the "add key to existing identity" flow runs on.

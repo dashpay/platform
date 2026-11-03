@@ -79,6 +79,28 @@ pub(crate) fn identity_auth_derivation_path(
     )
 }
 
+/// The DIP-9 derivation the wallet derives an identity key of
+/// `key_type` with, at the identity's authentication key slots, or
+/// `None` for a key type the wallet does not derive. A key of such a
+/// type has no slot key to check it against or to re-derive it from.
+///
+/// [`IdentityWallet::derive_identity_key_bytes`] derives by this
+/// answer, and mobile key diagnostics ask it (through FFI) which keys
+/// they can check.
+pub fn identity_key_derivation_type(key_type: KeyType) -> Option<KeyDerivationType> {
+    match key_type {
+        KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => Some(KeyDerivationType::ECDSA),
+        KeyType::BLS12_381 => Some(KeyDerivationType::BLS),
+        // EdDSA uses the ECDSA derivation path; the raw bytes are
+        // reinterpreted as an Ed25519 seed.
+        KeyType::EDDSA_25519_HASH160 => Some(KeyDerivationType::ECDSA),
+        // A script hash has no private key to derive.
+        KeyType::BIP13_SCRIPT_HASH => None,
+        // A Hecate signer key's derivation path is not settled yet.
+        KeyType::REDPALLAS_HECATE => None,
+    }
+}
+
 /// Build the DIP-9 identity-authentication derivation path for the
 /// given `(key_derivation_type, identity_index, key_index)` on
 /// `network`. Generalizes the ECDSA-hardcoded
@@ -599,8 +621,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Derive the raw private key bytes for an identity authentication key.
     ///
     /// Determines the correct [`KeyDerivationType`] from the public key's
-    /// [`KeyType`], builds the DIP-9 derivation path, and derives the
-    /// private key from the wallet.
+    /// [`KeyType`] ([`identity_key_derivation_type`]), builds the DIP-9
+    /// derivation path, and derives the private key from the wallet.
+    /// Fails for a key type the wallet does not derive.
     ///
     /// Returns the bytes wrapped in [`Zeroizing`] so they are automatically
     /// wiped from memory when the value is dropped.
@@ -611,24 +634,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         identity_public_key: &IdentityPublicKey,
     ) -> Result<Zeroizing<[u8; 32]>, PlatformWalletError> {
         let key_id = identity_public_key.id();
-        let key_derivation_type = match identity_public_key.key_type() {
-            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => KeyDerivationType::ECDSA,
-            KeyType::BLS12_381 => KeyDerivationType::BLS,
-            // EdDSA uses the ECDSA derivation path; the raw bytes are
-            // reinterpreted as an Ed25519 seed.
-            KeyType::EDDSA_25519_HASH160 => KeyDerivationType::ECDSA,
-            KeyType::BIP13_SCRIPT_HASH => {
-                return Err(PlatformWalletError::InvalidIdentityData(
-                    "BIP13_SCRIPT_HASH keys are not supported for signing".to_string(),
-                ));
-            }
-            // A Hecate signer key's derivation path is not settled yet.
-            KeyType::REDPALLAS_HECATE => {
-                return Err(PlatformWalletError::InvalidIdentityData(
-                    "REDPALLAS_HECATE keys are not derived by the wallet yet".to_string(),
-                ));
-            }
-        };
+        let key_type = identity_public_key.key_type();
+        let key_derivation_type = identity_key_derivation_type(key_type).ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "{key_type} keys are not derived by the wallet"
+            ))
+        })?;
 
         let path = Self::identity_auth_derivation_path(
             network,
@@ -688,6 +699,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
     use dpp::util::hash::ripemd160_sha256;
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
@@ -1101,5 +1115,51 @@ mod tests {
                 "{err:?}"
             );
         }
+    }
+
+    #[test]
+    fn should_say_which_identity_key_types_the_wallet_derives() {
+        for (key_type, expected) in [
+            (KeyType::ECDSA_SECP256K1, Some(KeyDerivationType::ECDSA)),
+            (KeyType::BLS12_381, Some(KeyDerivationType::BLS)),
+            (KeyType::ECDSA_HASH160, Some(KeyDerivationType::ECDSA)),
+            (KeyType::BIP13_SCRIPT_HASH, None),
+            (KeyType::EDDSA_25519_HASH160, Some(KeyDerivationType::ECDSA)),
+            (KeyType::REDPALLAS_HECATE, None),
+        ] {
+            assert_eq!(
+                identity_key_derivation_type(key_type),
+                expected,
+                "{key_type}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_refuse_to_derive_a_hecate_signer_key() {
+        let wallet = mnemonic_wallet(Network::Testnet);
+        let hecate_signer_key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 3,
+            purpose: Purpose::HECATE_SIGNER,
+            security_level: SecurityLevel::MEDIUM,
+            contract_bounds: None,
+            key_type: KeyType::REDPALLAS_HECATE,
+            read_only: false,
+            data: BinaryData::new(vec![1; 64]),
+            disabled_at: None,
+        }
+        .into();
+
+        let err = IdentityWallet::<SpvBroadcaster>::derive_identity_key_bytes(
+            &wallet,
+            Network::Testnet,
+            0,
+            &hecate_signer_key,
+        )
+        .expect_err("the wallet does not derive Hecate signer keys");
+        assert!(
+            matches!(&err, PlatformWalletError::InvalidIdentityData(m) if m.contains("REDPALLAS_HECATE")),
+            "{err:?}"
+        );
     }
 }

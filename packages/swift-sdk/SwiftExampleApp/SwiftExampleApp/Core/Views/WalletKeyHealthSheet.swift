@@ -30,10 +30,10 @@ struct WalletKeyHealth: Identifiable {
         /// belongs to a different wallet (or a stale mnemonic).
         /// Repair is destructive — only delete-identity.
         case orphan(reason: String)
-        /// A key this check has no derivation to compare with, such
-        /// as a Hecate signer key, which isn't derived from the
-        /// identity's authentication key slots. Shown, but it leaves
-        /// the identity's severity alone and offers no repair.
+        /// A key of a type the wallet doesn't derive at the
+        /// identity's key slots (Rust decides which), so there is no
+        /// derivation to compare it with. Shown, but it leaves the
+        /// identity's severity alone and offers no repair.
         case unchecked(reason: String)
     }
 
@@ -151,12 +151,21 @@ enum WalletKeyHealthChecker {
                 let levelRaw = UInt8(row.securityLevel) ?? 0
                 let storedHex = row.publicKeyData.toHexString()
 
-                // A Hecate signer key isn't derived from the identity's
-                // authentication key slots, so there is nothing to
-                // compare it with. Report it unchecked rather than
-                // orphan: an orphan key would offer to delete the
-                // whole identity.
-                if row.keyTypeEnum == .redpallasHecate {
+                // Rust says which key types the wallet derives at the
+                // identity's key slots. A key of any other type has
+                // nothing to compare with, so it is reported unchecked
+                // rather than orphan: an orphan key would offer to
+                // delete the whole identity.
+                let keyType = row.keyTypeEnum ?? .ecdsaSecp256k1
+                let uncheckedReason: String?
+                do {
+                    uncheckedReason = try ManagedPlatformWallet.derivesIdentityKeys(ofType: keyType)
+                        ? nil
+                        : "the wallet doesn't derive \(keyType.name) keys from the identity's key slots"
+                } catch {
+                    uncheckedReason = "couldn't ask whether the wallet derives \(keyType.name) keys: \(error.localizedDescription)"
+                }
+                if let uncheckedReason {
                     keyHealths.append(
                         WalletKeyHealth(
                             id: row.keyId,
@@ -165,9 +174,7 @@ enum WalletKeyHealthChecker {
                             securityLevelRaw: levelRaw,
                             storedPublicKeyHex: storedHex,
                             derivedPublicKeyHex: "",
-                            status: .unchecked(
-                                reason: "Hecate signer keys aren't derived from the identity's authentication key slots"
-                            ),
+                            status: .unchecked(reason: uncheckedReason),
                             row: row
                         )
                     )
@@ -196,7 +203,7 @@ enum WalletKeyHealthChecker {
                     // diagnostic surfaces them instead of silently
                     // misclassifying them as orphans.)
                     let derivedComparableHex: String?
-                    switch row.keyTypeEnum ?? .ecdsaSecp256k1 {
+                    switch keyType {
                     case .ecdsaSecp256k1:
                         derivedComparableHex = preview.publicKeyHex
                         derivedHex = preview.publicKeyHex

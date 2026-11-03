@@ -107,8 +107,8 @@ pub use dpns_marketplace::{
 pub use identity_handle::{
     derive_connect_keypair_from_master, derive_ecdsa_identity_auth_keypair_from_master,
     derive_identity_auth_key_hash_from_master, derive_identity_auth_keypair,
-    identity_auth_derivation_path_for_type, ConnectKey, DerivedIdentityAuthKey, IdentityWallet,
-    IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
+    identity_auth_derivation_path_for_type, identity_key_derivation_type, ConnectKey,
+    DerivedIdentityAuthKey, IdentityWallet, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
 };
 pub use state_transition_summary::{
     check_document_type_name, decode_state_transition, summarize_state_transition,
