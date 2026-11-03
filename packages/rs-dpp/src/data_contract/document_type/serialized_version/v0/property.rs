@@ -655,18 +655,38 @@ mod tests {
     #[test]
     fn should_keep_the_bytes_of_a_declaration_drawing_nothing() {
         // Compiled contracts hold these bytes, so a declaration of any function but a random
-        // one encodes as it did before random functions existed
-        let generated_from = GeneratedFrom {
-            function: SystemFunction::StringTransformation(StringTransformation::Lowercase),
-            params: vec![GenerationParam::Property("label".to_string())],
-            range: None,
-        };
-        let bytes = bincode::encode_to_vec(
-            StoredGeneratedFrom::from(&generated_from),
-            PLATFORM_BINCODE_CONFIG,
-        )
-        .expect("encodes");
-        assert_eq!(bytes, [0, 3, 1, 5, b'l', b'a', b'b', b'e', b'l']);
+        // one encodes as it did before random functions existed: the function's variant and
+        // its own, then the params
+        let cases: [(SystemFunction, &str, &[u8]); 3] = [
+            (
+                SystemFunction::StringTransformation(StringTransformation::Lowercase),
+                "label",
+                &[0, 3, 1, 5, b'l', b'a', b'b', b'e', b'l'],
+            ),
+            (
+                SystemFunction::Hash(HashFunction::Sha256d),
+                "label",
+                &[1, 0, 1, 5, b'l', b'a', b'b', b'e', b'l'],
+            ),
+            (
+                SystemFunction::Token(TokenFunction::Decimals),
+                "tokenId",
+                &[2, 0, 1, 7, b't', b'o', b'k', b'e', b'n', b'I', b'd'],
+            ),
+        ];
+        for (function, param, expected) in cases {
+            let generated_from = GeneratedFrom {
+                function,
+                params: vec![GenerationParam::Property(param.to_string())],
+                range: None,
+            };
+            let bytes = bincode::encode_to_vec(
+                StoredGeneratedFrom::from(&generated_from),
+                PLATFORM_BINCODE_CONFIG,
+            )
+            .expect("encodes");
+            assert_eq!(bytes, expected, "the bytes of {function}");
+        }
     }
 
     #[test]

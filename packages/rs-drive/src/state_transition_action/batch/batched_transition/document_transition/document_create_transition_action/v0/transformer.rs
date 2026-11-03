@@ -484,8 +484,17 @@ mod tests {
             "setCard",
             BTreeMap::from([("setId".to_string(), Value::Identifier([3; 32]))]),
         );
-        assert!(fee.storage_fee > 0);
-        assert!(fee.processing_fee > 0);
+        // Pinned: the estimated cost of the `byRarityAndSetName` entry a draw may create, with
+        // the set's name at its typical size (nothing is read), and the worst-case read of the
+        // set. A change to the estimate, the index layout or the fee schedule moves it.
+        assert_eq!(
+            fee,
+            FeeResult {
+                storage_fee: 20_574_000,
+                processing_fee: 9_003_340,
+                ..Default::default()
+            }
+        );
     }
 
     #[test]
