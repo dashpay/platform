@@ -30,6 +30,11 @@ struct WalletKeyHealth: Identifiable {
         /// belongs to a different wallet (or a stale mnemonic).
         /// Repair is destructive — only delete-identity.
         case orphan(reason: String)
+        /// A key this check has no derivation to compare with, such
+        /// as a Hecate signer key, which isn't derived from the
+        /// identity's authentication key slots. Shown, but it leaves
+        /// the identity's severity alone and offers no repair.
+        case unchecked(reason: String)
     }
 
     var iconName: String {
@@ -37,6 +42,7 @@ struct WalletKeyHealth: Identifiable {
         case .healthy: return "checkmark.circle.fill"
         case .needsRederive: return "exclamationmark.triangle.fill"
         case .orphan: return "xmark.circle.fill"
+        case .unchecked: return "questionmark.circle.fill"
         }
     }
 
@@ -45,6 +51,7 @@ struct WalletKeyHealth: Identifiable {
         case .healthy: return .green
         case .needsRederive: return .orange
         case .orphan: return .red
+        case .unchecked: return .secondary
         }
     }
 
@@ -53,6 +60,7 @@ struct WalletKeyHealth: Identifiable {
         case .healthy: return "Healthy"
         case .needsRederive(let reason): return "Needs re-derive — \(reason)"
         case .orphan(let reason): return "Orphan — \(reason)"
+        case .unchecked(let reason): return "Not checked: \(reason)"
         }
     }
 
@@ -142,6 +150,29 @@ enum WalletKeyHealthChecker {
                 let purposeRaw = UInt8(row.purpose) ?? 0
                 let levelRaw = UInt8(row.securityLevel) ?? 0
                 let storedHex = row.publicKeyData.toHexString()
+
+                // A Hecate signer key isn't derived from the identity's
+                // authentication key slots, so there is nothing to
+                // compare it with. Report it unchecked rather than
+                // orphan: an orphan key would offer to delete the
+                // whole identity.
+                if row.keyTypeEnum == .redpallasHecate {
+                    keyHealths.append(
+                        WalletKeyHealth(
+                            id: row.keyId,
+                            keyId: kid,
+                            purposeRaw: purposeRaw,
+                            securityLevelRaw: levelRaw,
+                            storedPublicKeyHex: storedHex,
+                            derivedPublicKeyHex: "",
+                            status: .unchecked(
+                                reason: "Hecate signer keys aren't derived from the identity's authentication key slots"
+                            ),
+                            row: row
+                        )
+                    )
+                    continue
+                }
 
                 let status: WalletKeyHealth.Status
                 let derivedHex: String
