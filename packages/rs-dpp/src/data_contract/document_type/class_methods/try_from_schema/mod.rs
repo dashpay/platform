@@ -3302,11 +3302,15 @@ fn apply_generated_from_v1(
 /// indexOnly delete supplies its values again, which the platform could not
 /// check against a kept value), and the property may not be in a contested index
 /// (a client, which holds no state, leaves the property out and could not tell
-/// whether the document joins a contest).
+/// whether the document joins a contest) nor inside an object declaring `const` or
+/// `enum` (which compare the whole object, the value included, so a client could
+/// not tell whether its document matches; an object reached through a `$ref` is
+/// read from `schema_defs`, the contract's `$defs`).
 ///
 /// Owned by parser generation 3: the only generation that admits the keyword.
 pub(super) fn validate_generated_from_declarations(
     document_type: &DocumentTypeV2,
+    schema_defs: Option<&BTreeMap<String, Value>>,
     document_type_name: &str,
 ) -> Result<(), DataContractError> {
     let flattened_properties = &document_type.flattened_properties;
@@ -3352,21 +3356,54 @@ pub(super) fn validate_generated_from_declarations(
                     generated_from.function, index.name
                 )));
             }
+            // An object's `const` or `enum` compares the whole object, the generated value
+            // included, which a client leaving it out cannot know; the property's own
+            // `const` and `enum` are refused with its bounds (`apply_generated_from` 1)
+            let enclosing_objects =
+                std::iter::successors(path.rsplit_once('.').map(|(object, _)| object), |object| {
+                    object.rsplit_once('.').map(|(parent, _)| parent)
+                });
+            for object in enclosing_objects {
+                let Some(object_schema) =
+                    schema_at_path(&document_type.schema, schema_defs, object)?
+                else {
+                    continue;
+                };
+                if let Some(keyword) = [property_names::CONST, property_names::ENUM]
+                    .into_iter()
+                    .find(|keyword| object_schema.contains_key(*keyword))
+                {
+                    return Err(structure_error(format!(
+                        "function {} reads state, which a client cannot, so the property may not \
+                         sit inside an object declaring {keyword}, as \"{object}\" does: the \
+                         client could not tell whether its document matches. To allow some \
+                         tokens only, declare enum on the token property",
+                        generated_from.function
+                    )));
+                }
+            }
         }
 
+        // The kind of property a param names: the messages of the string functions are
+        // those protocol version 14 gives
+        let (param_kind, a_param_kind) = match generated_from.function {
+            SystemFunction::Token(_) => ("identifier", "an identifier"),
+            SystemFunction::StringTransformation(_) | SystemFunction::Hash(_) => {
+                ("string", "a string")
+            }
+        };
         for param in generated_from.property_params() {
             if param == path {
-                return Err(structure_error(
-                    "reads the property itself: name other string properties of the document \
-                     type"
-                        .to_string(),
-                ));
+                return Err(structure_error(format!(
+                    "reads the property itself: name other {param_kind} properties of the \
+                     document type"
+                )));
             }
             let Some(param_property) = flattened_properties.get(param) else {
                 if names_an_object(flattened_properties, param) {
                     return Err(structure_error(format!(
-                        "param \"{param}\" is an object, not a string property: name one of its \
-                         string members"
+                        "param \"{param}\" is an object, not {a_param_kind} property: name \
+                         one of its {param_kind} members"
                     )));
                 }
                 return Err(structure_error(format!(

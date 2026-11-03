@@ -523,10 +523,10 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
     /// must be absent too. A document that repeats a key on the way to the property or to
     /// a parameter is refused as well: the schema validation and the stored document keep
     /// the last of repeated keys, where the platform generated from the first. The first
-    /// property that does not pass is refused with `DocumentPropertyNotGeneratedError`. A
-    /// value that is not a string is not compared: the JSON schema validation that
-    /// `DataContract::validate_document_properties` runs alongside refuses it, and its
-    /// result is reported first.
+    /// property that does not pass is refused with `DocumentPropertyNotGeneratedError`. For
+    /// a string transformation, a value that is not a string is not compared: the JSON
+    /// schema validation that `DataContract::validate_document_properties` runs alongside
+    /// refuses it, and its result is reported first.
     ///
     /// A document that arrived at the platform has been through
     /// `fill_generated_properties`, so a left-out property whose parameters are present is
@@ -534,7 +534,11 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
     /// it) is refused for the missing property. A property whose function reads state
     /// (`sys.tokens`) is judged here only for its absence when a parameter is absent: the
     /// platform judged its value when it built the write
-    /// (`generate_state_read_properties`), and a client cannot.
+    /// (`generate_state_read_properties`), and a client cannot. That judgment comes earlier
+    /// in a write than this check and the schema validation, so on a create or replace its
+    /// refusal (`DocumentPropertyNotGeneratedError` for a value other than the token's, or
+    /// `ReferencedEntityNotFoundError` for a token that does not exist) is reported before
+    /// any schema error.
     ///
     /// Versioned on `validate_generated_from` in the document type method versions: `None`
     /// before protocol version 14 returns an empty result, which keeps the shipped document
@@ -733,8 +737,10 @@ pub(crate) fn state_generated_paths_left_out<'a>(
 /// ([`state_generated_paths_left_out`]) holds a value the property admits whatever the
 /// state, in place of the one the platform writes before checking it, which the client does
 /// not know. Registration admits `sys.tokens.decimals` only on an integer property holding
-/// every value from 0 to 255, so 0 stands in. A `required` list naming such a property, and
-/// its bounds, then pass, and every other check reads the data as it is. `properties` as it
+/// every value from 0 to 255, inside no object declaring `const` or `enum` (which would
+/// compare the value), so 0 stands in. A `required` list naming such a property, and its
+/// bounds, then pass, the keys of every object are those the platform's document has, and
+/// every other check reads the data as it is. `properties` as it
 /// is on a type without such a declaration, which covers every type parsed before protocol
 /// version 15.
 pub(crate) fn with_state_generated_stand_ins(

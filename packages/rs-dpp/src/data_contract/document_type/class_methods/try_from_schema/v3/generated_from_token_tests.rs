@@ -309,6 +309,93 @@ fn should_refuse_sys_tokens_decimals_in_a_contested_index() {
     expect_refused(schema, "may not be in contested index \"byLabel\"");
 }
 
+/// A `quote` object holding the token and its generated decimals, with `extra` keywords on
+/// the object.
+fn quote_schema(extra: Vec<(&str, Value)>) -> Value {
+    let mut quote = platform_value!({
+        "type": "object",
+        "properties": {
+            "tokenId": identifier_property(0),
+            "decimals": decimals_with_params(&["quote.tokenId"])
+        },
+        "required": ["tokenId"],
+        "additionalProperties": false,
+        "position": 0
+    });
+    for (keyword, value) in extra {
+        quote
+            .insert(keyword.to_string(), value)
+            .expect("the object schema is a map");
+    }
+    platform_value!({
+        "type": "object",
+        "properties": { "quote": quote },
+        "additionalProperties": false
+    })
+}
+
+/// An object's `const` or `enum` compares the whole object, the decimals included, which a
+/// client leaving them out cannot know: a `sys.tokens` property inside one is refused. The
+/// same object without them is admitted.
+#[test]
+fn should_refuse_sys_tokens_decimals_inside_an_object_declaring_const_or_enum() {
+    let fixed = platform_value!({ "tokenId": token(5), "decimals": 6 });
+    parse(quote_schema(vec![]));
+    expect_refused(
+        quote_schema(vec![("const", fixed.clone())]),
+        "may not sit inside an object declaring const, as \"quote\" does",
+    );
+    expect_refused(
+        quote_schema(vec![("enum", Value::Array(vec![fixed]))]),
+        "may not sit inside an object declaring enum, as \"quote\" does",
+    );
+}
+
+/// A token function's param errors name identifier properties, where a string
+/// transformation's name string ones.
+#[test]
+fn should_name_identifier_properties_in_a_token_function_param_error() {
+    let mut schema = quote_schema(vec![]);
+    schema
+        .get_mut("properties")
+        .expect("properties")
+        .expect("properties are present")
+        .insert(
+            "decimals".to_string(),
+            platform_value!({
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255,
+                "generatedFrom": { "function": DECIMALS, "params": ["quote"] },
+                "position": 1
+            }),
+        )
+        .expect("properties are a map");
+    expect_refused(
+        schema,
+        "param \"quote\" is an object, not an identifier property: name one of its identifier \
+         members",
+    );
+    expect_refused(
+        order_schema_with_decimals(decimals_with_params(&["decimals"])),
+        "reads the property itself: name other identifier properties of the document type",
+    );
+}
+
+fn decimals_with_params(params: &[&str]) -> Value {
+    let params: Vec<Value> = params
+        .iter()
+        .map(|param| Value::Text(param.to_string()))
+        .collect();
+    platform_value!({
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 255,
+        "generatedFrom": { "function": DECIMALS, "params": params },
+        "position": 1
+    })
+}
+
 // ================================================================
 //  Generation from state
 // ================================================================
