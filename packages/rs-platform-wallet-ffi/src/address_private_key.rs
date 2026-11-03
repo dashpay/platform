@@ -33,7 +33,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
 use key_wallet::bip32::ExtendedPrivKey;
-use platform_wallet::CoreAddressPrivateKey;
+use platform_wallet::{CoreAddressPrivateKey, PlatformWallet, PlatformWalletError};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::*;
@@ -100,6 +100,32 @@ pub unsafe extern "C" fn platform_wallet_address_private_key(
     address_cstr: *const c_char,
     out: *mut AddressPrivateKeyFFI,
 ) -> PlatformWalletFFIResult {
+    reveal_address_private_key(
+        wallet_handle,
+        mnemonic_resolver_handle,
+        address_cstr,
+        out,
+        PlatformWallet::derive_core_address_private_key,
+    )
+}
+
+/// Reveals the private key `derive` finds for `address_cstr` and writes it
+/// into `out`, resolving the master key through the mnemonic resolver when
+/// the wallet holds no resident keys.
+///
+/// # Safety
+/// As for [`platform_wallet_address_private_key`].
+unsafe fn reveal_address_private_key(
+    wallet_handle: Handle,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    address_cstr: *const c_char,
+    out: *mut AddressPrivateKeyFFI,
+    derive: fn(
+        &PlatformWallet,
+        &str,
+        Option<&ExtendedPrivKey>,
+    ) -> Result<CoreAddressPrivateKey, PlatformWalletError>,
+) -> PlatformWalletFFIResult {
     check_ptr!(out);
     unsafe { *out = AddressPrivateKeyFFI::empty() };
     check_ptr!(address_cstr);
@@ -153,7 +179,7 @@ pub unsafe extern "C" fn platform_wallet_address_private_key(
 
             // Phase 3 — library lookup + derive (re-acquires the guard
             // internally; the resolver, if any, has already run).
-            let result = wallet.derive_core_address_private_key(address_str, master_opt.as_ref());
+            let result = derive(wallet, address_str, master_opt.as_ref());
 
             // Wipe the resolved master's inner scalar — `ExtendedPrivKey`
             // has no `Drop` / `Zeroize`. No-op on the resident path.
