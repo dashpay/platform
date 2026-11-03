@@ -19,6 +19,7 @@ use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{self as platform_proto, Proof, ResponseMetadata};
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
+use dpp::version::PlatformVersion;
 use dpp::voting::votes::Vote;
 use dpp::{
     block::extended_epoch_info::ExtendedEpochInfo, document::Document, platform_value::Identifier,
@@ -178,15 +179,33 @@ where
         query: Q,
         request_settings: Option<RequestSettings>,
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
-        let settings = sdk.query_settings();
-        let owned_rich: <Self as Fetch>::Query = query.query(&settings)?;
+        let mut settings = sdk.query_settings();
+        let mut owned_rich: <Self as Fetch>::Query = query.query(&settings)?;
         // INTENTIONAL(#3711): For the common case `Self::Query = Self::Request`,
         // the blanket `Query<T> for T` impl turns the `query.query(settings)` step into a
         // pure clone of the same owned request. Real but micro-cost (~63 impls hit
         // this path). Specializing via a `fn encode_request_owned()` default method on
         // `Fetch` would eliminate the clone — deferred as future-perf work; trait shape
         // is intentionally uniform for now.
-        let owned_wire: <Self as Fetch>::Request = owned_rich.query(&settings)?;
+        let mut owned_wire: <Self as Fetch>::Request = owned_rich.query(&settings)?;
+        let required_protocol_version = owned_wire.needs_protocol_version();
+        if required_protocol_version.is_some() {
+            sdk.ensure_network_serves(
+                required_protocol_version,
+                owned_wire.method_name(),
+                request_settings,
+            )
+            .await?;
+            // Asking the network for its version may have raised the version requests are
+            // encoded with: encode the request again at it.
+            settings = sdk.query_settings();
+            owned_rich = query.query(&settings)?;
+            owned_wire = owned_rich.query(&settings)?;
+        }
+        check_before_sending::<<Self as Fetch>::Query, Self>(
+            &owned_rich,
+            settings.protocol_version,
+        )?;
         let rich = &owned_rich;
         let wire = &owned_wire;
 
@@ -211,6 +230,10 @@ where
                     wire.method_name(),
                 )
                 .await
+                .and_then(|parsed| {
+                    sdk.ensure_answer_serves(required_protocol_version, &parsed.1)?;
+                    Ok(parsed)
+                })
                 .map_err(|e| ExecutionError {
                     inner: e,
                     address: Some(address.clone()),
@@ -283,6 +306,23 @@ where
     {
         Self::fetch(sdk, id).await
     }
+}
+
+/// Refuse, before it is sent, a request that no node serves, or that `O` cannot be
+/// verified from ([`FromProof::check_request`]), at the `platform_version` it was encoded
+/// with.
+///
+/// The refusal is the caller's mistake, not a node's, so it is a non-retryable
+/// [`Error::InvalidRequest`] rather than the retried [`Error::Proof`] the verifier
+/// would return for the same request once a node had answered it.
+pub(super) fn check_before_sending<R, O: FromProof<R>>(
+    request: &O::Request,
+    platform_version: &PlatformVersion,
+) -> Result<(), Error> {
+    O::check_request(request, platform_version).map_err(|error| match error {
+        drive_proof_verifier::Error::RequestError { error } => Error::InvalidRequest(error),
+        error => Error::InvalidRequest(error.to_string()),
+    })
 }
 
 impl Fetch for Identity {
@@ -440,4 +480,58 @@ impl Fetch for drive_proof_verifier::types::ShieldedEncryptedNotes {
 impl Fetch for drive_proof_verifier::types::ShieldedNullifierStatuses {
     type Query = platform_proto::GetShieldedNullifiersRequest;
     type Request = platform_proto::GetShieldedNullifiersRequest;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_before_sending;
+    use crate::Error;
+    use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+    use dash_context_provider::ContextProvider;
+    use dpp::dashcore::Network;
+    use dpp::version::PlatformVersion;
+    use drive_proof_verifier::FromProof;
+
+    /// A result type whose check refuses every request with another verifier error than a
+    /// request error.
+    struct RefusesEveryRequest;
+
+    impl FromProof<()> for RefusesEveryRequest {
+        type Request = ();
+        type Response = ();
+
+        fn check_request(
+            _: &Self::Request,
+            _: &PlatformVersion,
+        ) -> Result<(), drive_proof_verifier::Error> {
+            Err(drive_proof_verifier::Error::ResultEncodingError {
+                error: "no answer encodes as this result".to_string(),
+            })
+        }
+
+        fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+            _: I,
+            _: O,
+            _: Network,
+            _: &PlatformVersion,
+            _: &'a dyn ContextProvider,
+        ) -> Result<(Option<Self>, ResponseMetadata, Proof), drive_proof_verifier::Error>
+        where
+            Self: Sized + 'a,
+        {
+            unreachable!("the request is refused before it is sent")
+        }
+    }
+
+    /// Whatever error a result type's check reports, the request is the caller's to change:
+    /// it is refused without being sent or retried.
+    #[test]
+    fn should_refuse_before_sending_whatever_error_the_check_reports() {
+        let error = check_before_sending::<(), RefusesEveryRequest>(&(), PlatformVersion::latest())
+            .expect_err("the check refuses");
+        assert!(
+            matches!(&error, Error::InvalidRequest(reason) if reason.contains("no answer encodes")),
+            "{error:?}"
+        );
+    }
 }

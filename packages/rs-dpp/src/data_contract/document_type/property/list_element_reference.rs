@@ -162,6 +162,14 @@ impl ListElementReference {
     pub fn referenced_side_error(&self, referenced: DocumentTypeRef) -> Option<String> {
         let referenced_name = referenced.name();
         let list = &self.in_list;
+        // A private type's entries are encrypted: no list in one can be read. Reached only from
+        // protocol version 15, the first to parse a private type
+        if referenced.is_private() {
+            return Some(format!(
+                "\"{referenced_name}\" is a private document type, whose entries the chain never \
+                 reads"
+            ));
+        }
         // Deleted by anyone: its owner, the moderators, or the platform when a `ttl` passes.
         if referenced.documents_can_disappear() {
             return Some(format!(

@@ -16,6 +16,8 @@ default = [
   "token-history-contract",
   "keywords-contract",
   "moderation-charters-contract",
+  "decision-proposals-contract",
+  "token-market-contract",
   "mocks",
 ]
 
@@ -56,10 +58,23 @@ moderation-charters-contract = [
   "dash-sdk/moderation-charters-contract",
   "rs-sdk-trusted-context-provider/moderation-charters-contract",
 ]
+decision-proposals-contract = [
+  "dash-sdk/decision-proposals-contract",
+  "rs-sdk-trusted-context-provider/decision-proposals-contract",
+]
+token-market-contract = [
+  "dash-sdk/token-market-contract",
+  "rs-sdk-trusted-context-provider/token-market-contract",
+]
 
 token_reward_explanations = ["dash-sdk/token_reward_explanations"]
 
 [dependencies]
+# Wallet key generation uses dpp's random key constructors; without this they
+# only compiled because `mocks` enabled them transitively.
+dpp = { path = "../rs-dpp", default-features = false, features = [
+  "random-public-keys",
+] }
 dash-sdk = { path = "../rs-sdk", features = [
   "serde",
   "core_key_wallet",

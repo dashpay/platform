@@ -47,6 +47,7 @@ mod sqlite_foreign_keys;
 mod sqlite_identity_hard_delete;
 mod sqlite_identity_index_concurrency;
 mod sqlite_identity_index_uniqueness;
+mod sqlite_identity_key_restore;
 mod sqlite_identity_keys_reader;
 mod sqlite_identity_scan_state;
 mod sqlite_legacy_state_migration;

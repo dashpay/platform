@@ -33,6 +33,34 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        let mut by_end_date: BTreeMap<TimestampMillis, BTreeSet<Identifier>> = BTreeMap::new();
+
+        for (vote_poll, end_date, _) in vote_polls {
+            by_end_date
+                .entry(**end_date)
+                .or_default()
+                .insert(vote_poll.unique_id()?);
+        }
+
+        self.remove_vote_poll_ids_from_end_dates_operations_v2(
+            by_end_date,
+            batch_operations,
+            transaction,
+            platform_version,
+        )
+    }
+
+    /// The body of version 2 once the vote polls are grouped into their unique ids by end date,
+    /// whatever their kind. Shipped with protocol version 14, so its operations must not change;
+    /// `remove_vote_poll_end_date_query_operations` v0 (protocol version 15) removes yes/no polls
+    /// from the shared end date index through it too.
+    pub(in crate::drive::votes) fn remove_vote_poll_ids_from_end_dates_operations_v2(
+        &self,
+        by_end_date: BTreeMap<TimestampMillis, BTreeSet<Identifier>>,
+        batch_operations: &mut Vec<LowLevelDriveOperation>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
         // This is a GroveDB Tree (Not Sub Tree Merk representation)
         //                         End Date queries
         //              /                                  \
@@ -43,15 +71,6 @@ impl Drive {
         let delete_apply_type = BatchDeleteApplyType::StatefulBatchDelete {
             is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
         };
-
-        let mut by_end_date: BTreeMap<TimestampMillis, BTreeSet<Identifier>> = BTreeMap::new();
-
-        for (vote_poll, end_date, _) in vote_polls {
-            by_end_date
-                .entry(**end_date)
-                .or_default()
-                .insert(vote_poll.unique_id()?);
-        }
 
         for (end_date, unique_ids) in by_end_date {
             let time_path =

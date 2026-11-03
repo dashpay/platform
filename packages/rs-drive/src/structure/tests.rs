@@ -299,6 +299,7 @@ mod fixtures {
     use crate::util::storage_flags::StorageFlags;
     use crate::util::test_helpers::setup::setup_document;
     use crate::util::test_helpers::setup_contract;
+    use crate::util::test_helpers::{open_yes_no_vote_poll_with_votes, test_yes_no_vote_poll};
     use dpp::address_funds::PlatformAddress;
     use dpp::block::block_info::BlockInfo;
     use crate::drive::credit_pools::epochs::paths::EpochProposers;
@@ -362,6 +363,7 @@ mod fixtures {
     use dpp::tokens::status::TokenStatus;
     use dpp::tokens::token_event::TokenEvent;
     use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
+    use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
     use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
@@ -1399,6 +1401,24 @@ mod fixtures {
         conformance_of(&drive, "contested_documents", run);
     }
 
+    /// A yes/no vote poll with one vote per choice, so every node of the decisions branch is
+    /// reached: the poll's stored info and vote trees, and the voters' index entries.
+    fn yes_no_vote_polls(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        open_yes_no_vote_poll_with_votes(
+            &drive,
+            &test_yes_no_vote_poll(),
+            &[
+                ([1; 32], 4, YesNoAbstainVoteChoice::Yes),
+                ([2; 32], 1, YesNoAbstainVoteChoice::No),
+                ([3; 32], 1, YesNoAbstainVoteChoice::Abstain),
+            ],
+            platform_version,
+        );
+        conformance_of(&drive, "yes_no_vote_polls", run);
+    }
+
     fn apply_operations(drive: &Drive, operations: Vec<LowLevelDriveOperation>) {
         drive
             .apply_batch_low_level_drive_operations(
@@ -1750,6 +1770,43 @@ mod fixtures {
             .expect("expected to commit the token anchor");
         conformance_of(&drive, "token_shielded_pool", run);
     }
+    /// The token marketplace escrow: two listings of one token holding tokens, and two offers
+    /// holding credits.
+    fn token_order_escrow(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let token_id = [7; 32];
+        for (order_id, amount) in [([1; 32], 500), ([2; 32], 30)] {
+            apply_operations(
+                &drive,
+                drive
+                    .add_to_token_order_escrow_operations(
+                        token_id,
+                        order_id,
+                        amount,
+                        &mut None,
+                        None,
+                        &mut None,
+                        platform_version,
+                    )
+                    .expect("expected the listing escrow operations"),
+            );
+        }
+        for (order_id, credits) in [([3; 32], 70_000), ([4; 32], 1_000)] {
+            apply_operations(
+                &drive,
+                drive
+                    .add_to_credit_order_escrow_operations(
+                        order_id,
+                        credits,
+                        &mut None,
+                        platform_version,
+                    )
+                    .expect("expected the offer escrow operations"),
+            );
+        }
+        conformance_of(&drive, "token_order_escrow", run);
+    }
     /// Documents of a type declaring a `ttl`: stored without storage flags, each with an entry
     /// in the documents expirations tree under the time it expires, and a lifetime storage fee
     /// pool. Two of them expire together, created in the same block.
@@ -1859,10 +1916,12 @@ mod fixtures {
         core_anchored_withdrawal_accounting(&mut run);
         current_then_paid_epoch(&mut run);
         contested_documents(&mut run);
+        yes_no_vote_polls(&mut run);
         token_distributions(&mut run);
         contract_groups_and_bound_keys(&mut run);
         spent_nullifiers(&mut run);
         token_shielded_pool(&mut run);
+        token_order_escrow(&mut run);
         run
     }
 

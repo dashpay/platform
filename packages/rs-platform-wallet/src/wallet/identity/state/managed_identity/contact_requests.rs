@@ -13,6 +13,7 @@ use crate::wallet::identity::crypto::contact_info::ContactInfoPrivateData;
 use crate::wallet::persister::WalletPersister;
 use crate::{ContactRequest, EstablishedContact};
 use dpp::prelude::Identifier;
+use platform_encryption::account_reference_version;
 
 impl ManagedIdentity {
     /// The masked `accountReference` of the most recent request WE sent
@@ -109,6 +110,11 @@ impl ManagedIdentity {
             self.dashpay
                 .established_contacts
                 .insert(recipient_id, updated);
+            // Our receiving account's scan checkpoint is derived from this
+            // outgoing request alone, so a new one invalidates its rescan
+            // guard. Incoming-side changes never touch the guard: the contact
+            // must not be able to force rescans of our receiving account.
+            self.dashpay.rescan_triggered.remove(&recipient_id);
             return Ok(());
         }
         // Already tracked as a pending sent request. Same outgoing
@@ -141,6 +147,7 @@ impl ManagedIdentity {
             self.dashpay
                 .sent_contact_requests
                 .insert(recipient_id, request);
+            self.dashpay.rescan_triggered.remove(&recipient_id);
             return Ok(());
         }
 
@@ -189,6 +196,7 @@ impl ManagedIdentity {
             self.dashpay
                 .established_contacts
                 .insert(recipient_id, contact);
+            self.dashpay.rescan_triggered.remove(&recipient_id);
         } else {
             // No matching incoming request, just add as sent
             cs.sent_requests.insert(
@@ -788,6 +796,46 @@ impl ManagedIdentity {
     pub fn advance_high_water_sent(&mut self, snapshot: Option<u64>, max_fetched: Option<u64>) {
         self.dashpay.high_water_sent_ms =
             advance_if_unchanged(self.dashpay.high_water_sent_ms, snapshot, max_fetched);
+    }
+
+    /// Record that a sync sweep fetched and ingested all of this identity's
+    /// sent requests, making the earliest-height map authoritative. Call only
+    /// when the sent fetch succeeded and every ingest reached disk.
+    pub(crate) fn mark_sent_sweep_completed(&mut self) {
+        self.dashpay.sent_sweep_completed = true;
+    }
+
+    /// Record the Platform-assigned `$createdAtCoreBlockHeight` of one of our
+    /// sent requests to `recipient`, as fetched by a sync sweep. Keeps the
+    /// minimum; see `DashPayState::earliest_sent_core_heights`.
+    ///
+    /// When the height predates the receiving checkpoint already applied (the
+    /// previously known earliest height, else a version-0 tracked request's
+    /// own height), the rescan guard is cleared so the next
+    /// `reconcile_dashpay_rescan` backfills the gap. A rotated tracked request
+    /// was checkpointed at wallet birth, which nothing predates.
+    pub(crate) fn note_sent_request_core_height(
+        &mut self,
+        recipient: Identifier,
+        core_height: u32,
+    ) {
+        let applied = self
+            .dashpay
+            .earliest_sent_core_height(&recipient)
+            .or_else(|| {
+                self.dashpay
+                    .outgoing_request(&recipient)
+                    .filter(|request| account_reference_version(request.account_reference) == 0)
+                    .map(|request| request.core_height_created_at)
+            });
+        if applied.is_some_and(|applied| core_height < applied) {
+            self.dashpay.rescan_triggered.remove(&recipient);
+        }
+        self.dashpay
+            .earliest_sent_core_heights
+            .entry(recipient)
+            .and_modify(|earliest| *earliest = (*earliest).min(core_height))
+            .or_insert(core_height);
     }
 }
 
@@ -1583,6 +1631,7 @@ mod tests {
             .unwrap();
         est.set_alias("Carol".to_string());
         assert_eq!(est.outgoing_request.account_reference, 100);
+        managed.dashpay.rescan_triggered.insert(contact_id);
 
         // Rotation #1: re-send with a bumped reference R1.
         let mut rotation1 = create_contact_request(our_id, contact_id, 3);
@@ -1600,6 +1649,10 @@ mod tests {
                 .account_reference,
             101,
             "rotation #1 must advance the tracked outgoing reference (not freeze at R0)"
+        );
+        assert!(
+            !managed.dashpay.rescan_triggered.contains(&contact_id),
+            "a new outgoing request must make the receiving account eligible for rescan"
         );
 
         // Rotation #2: re-send with another bumped reference R2.
@@ -1621,6 +1674,7 @@ mod tests {
         assert_eq!(est.alias, Some("Carol".to_string()));
         // Re-ingesting the SAME (newest) reference is a metadata-preserving
         // no-op (the same-reference guard).
+        managed.dashpay.rescan_triggered.insert(contact_id);
         let mut resend_same = create_contact_request(our_id, contact_id, 5);
         resend_same.account_reference = 102;
         managed
@@ -1633,6 +1687,10 @@ mod tests {
             .unwrap();
         assert_eq!(est.outgoing_request.account_reference, 102);
         assert_eq!(est.alias, Some("Carol".to_string()));
+        assert!(
+            managed.dashpay.rescan_triggered.contains(&contact_id),
+            "duplicate ingestion must preserve the completed-rescan guard"
+        );
     }
 
     /// Pending-branch rotation supersede: re-sending to a recipient who

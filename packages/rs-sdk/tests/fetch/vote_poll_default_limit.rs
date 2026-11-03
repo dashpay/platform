@@ -240,7 +240,7 @@ async fn should_verify_omitted_limit_identity_vote_page_when_more_than_default_v
         .map(|i| {
             let poll = fixture::poll(&contract, i);
             (
-                poll.unique_id().expect("poll id"),
+                poll.unique_id(sdk.version()).expect("poll id"),
                 Some(ResourceVoteWithCount {
                     resource_vote: ResourceVote::V0(ResourceVoteV0 {
                         vote_poll: poll,

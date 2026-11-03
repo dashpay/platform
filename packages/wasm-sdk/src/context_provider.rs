@@ -44,7 +44,7 @@ impl ContextProvider for WasmContext {
         _quorum_hash: [u8; 32],
         _core_chain_locked_height: u32,
     ) -> Result<[u8; 48], ContextProviderError> {
-        Err(ContextProviderError::Generic(
+        Err(ContextProviderError::Config(
             "Non-trusted mode is not supported in WASM. Please construct a WasmTrustedContext via prefetchMainnet/prefetchTestnet/prefetchDevnet/prefetchLocal and attach it with WasmSdkBuilder.withTrustedContext().".to_string()
         ))
     }

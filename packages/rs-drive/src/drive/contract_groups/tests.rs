@@ -10,6 +10,7 @@ use crate::drive::identity::key::fetch::{
 use crate::drive::{Drive, RootTree};
 use crate::error::identity::IdentityError;
 use crate::error::Error;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
 use dpp::block::block_info::BlockInfo;
@@ -28,7 +29,7 @@ use dpp::version::PlatformVersion;
 use grovedb_path::SubtreePath;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 fn identity(seed: u8) -> Identifier {
     Identifier::from([seed; 32])
@@ -401,7 +402,7 @@ fn should_build_the_same_operations_for_estimation_and_for_apply() {
         .insert_contract_group_operations(
             group_id,
             &info,
-            &mut Some(HashMap::new()),
+            &mut Some(EstimatedLayers::new()),
             None,
             platform_version,
         )
@@ -419,7 +420,7 @@ fn should_build_the_same_operations_for_estimation_and_for_apply() {
         .insert_contract_group_memberships_operations(
             contract_id,
             &memberships,
-            &mut Some(HashMap::new()),
+            &mut Some(EstimatedLayers::new()),
             None,
             platform_version,
         )

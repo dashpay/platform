@@ -13,6 +13,51 @@ use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
 use crate::wallet::identity::types::dashpay::payment::DashpayAddressMatch;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+use platform_encryption::account_reference_version;
+
+/// Return the last Core height already covered for our new receiving account.
+///
+/// Scanning resumes at `H + 1`, where `H` is the Platform-assigned
+/// `$createdAtCoreBlockHeight` of the earliest request that published our
+/// receiving xpub to `contact`: no payment to it can predate that document.
+/// Only OUR outgoing requests count, so the contact (who controls their own
+/// requests) can never lower this checkpoint.
+///
+/// Every request we send to one contact carries the same receiving xpub, so
+/// the earliest sent doc a sweep saw this process is used when known, whatever
+/// its version bits. Otherwise the tracked (newest) outgoing request is used,
+/// unless it is a rotation (non-zero `accountReference` version): the
+/// original request's height is then unknown.
+///
+/// Only Platform-assigned heights can establish coverage. Reconciliation
+/// lowers the cursor only when this checkpoint precedes it, preserving any
+/// deeper scan already in progress.
+///
+/// Falls back to the wallet birth floor when the owner is unknown, or no
+/// earliest height is known and the tracked request is missing or rotated.
+pub(super) fn receiving_scan_checkpoint(
+    info: &PlatformWalletInfo,
+    owner: &Identifier,
+    contact: &Identifier,
+) -> u32 {
+    let birth_checkpoint = info.core_wallet.birth_height().saturating_sub(1);
+    let Some(managed) = info.identity_manager.managed_identity(owner) else {
+        return birth_checkpoint;
+    };
+    let dashpay = managed.dashpay();
+    let tracked = dashpay.outgoing_request(contact);
+    let checkpoint = match (dashpay.earliest_sent_core_height(contact), tracked) {
+        (Some(earliest), tracked) => tracked.map_or(earliest, |request| {
+            earliest.min(request.core_height_created_at)
+        }),
+        (None, Some(request)) if account_reference_version(request.account_reference) == 0 => {
+            request.core_height_created_at
+        }
+        (None, _) => return birth_checkpoint,
+    };
+    checkpoint.max(birth_checkpoint)
+}
 
 /// Build the persistence round for a newly registered DashPay account
 /// (`DashpayReceivingFunds` / `DashpayExternalAccount`): the
@@ -151,7 +196,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// Creates a `DashpayReceivingFunds` managed account with address pools
     /// so the SPV adapter monitors incoming payments from this contact.
-    /// Call this when a contact is established (mutual requests exist).
+    /// A sent request already exposes this account, even before reciprocation.
     ///
     /// No-op if the account already exists for this contact relationship.
     pub async fn register_contact_account(

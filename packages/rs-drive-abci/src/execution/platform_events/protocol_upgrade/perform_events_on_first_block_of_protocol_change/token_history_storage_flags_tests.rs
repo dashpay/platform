@@ -349,118 +349,136 @@ fn insert_claim(platform: &TempPlatform<MockCoreRPCLike>) {
 
 #[test]
 fn should_preserve_token_history_flag_owners_and_allocation_epochs() {
-    let pv = PlatformVersion::latest();
-    for (flags, epoch) in [
-        (StorageFlags::new_single_epoch(3, Some([0; 32])), 3),
-        (StorageFlags::new_single_epoch(3, Some([99; 32])), 7),
-        (StorageFlags::new_single_epoch(3, None), 7),
-        (
-            StorageFlags::MultiEpochOwned(3, BTreeMap::from([(5, 50)]), [99; 32]),
-            7,
-        ),
-        (StorageFlags::MultiEpoch(3, BTreeMap::from([(5, 50)])), 7),
-        (
-            StorageFlags::MultiEpochOwned(3, BTreeMap::from([(7, 50)]), [99; 32]),
-            7,
-        ),
-        (StorageFlags::MultiEpoch(3, BTreeMap::from([(7, 50)])), 7),
+    // The version 14 activation re-stores TokenHistory in format version 1; a network jumping
+    // from 13 to 15 re-stores it compiled (format version 2), which grows it more
+    for (pv, growth, existing_allocation_bytes, new_allocation_bytes) in [
+        (PlatformVersion::get(14).expect("PV14"), 105, 156, 108),
+        (PlatformVersion::latest(), 7995, 8047, 8000),
     ] {
-        let platform = historical_platform();
-        insert_claim(&platform);
-        let documents = rekeyed_document_elements(&platform);
-        assert!(!documents.is_empty());
-        let Element::Item(bytes, _) = contract_element(&platform, None) else {
-            panic!("contract Item")
-        };
-        let old_len = bytes.len();
-        let tx = platform.drive.grove.start_transaction();
-        platform
-            .drive
-            .grove
-            .insert(
-                &contract_root_path(SystemDataContract::TokenHistory.id().as_bytes()),
-                &[0],
-                Element::Item(bytes, Some(flags.to_element_flags())),
-                None,
-                Some(&tx),
-                &pv.drive.grove_version,
-            )
-            .value
-            .expect("fixture flag metadata");
-        platform
-            .drive
-            .commit_transaction(tx, &pv.drive)
-            .expect("commit fixture flags");
-        let tx = platform.drive.grove.start_transaction();
-        platform
-            .perform_events_on_first_block_of_protocol_change(
-                &platform.state.load(),
-                &block(epoch),
-                &tx,
-                13,
-                pv,
-            )
-            .expect("flagged activation");
-        assert_eq!(
-            version_item(&platform, Some(&tx)),
-            Element::Item(2u32.to_be_bytes().to_vec(), Some(flags.to_element_flags()))
-        );
-        let Element::Item(bytes, Some(new_flags)) = contract_element(&platform, Some(&tx)) else {
-            panic!("flagged contract")
-        };
-        let new_flags = StorageFlags::from_element_flags_ref(&new_flags)
-            .expect("decode flags")
-            .expect("nonempty flags");
-        assert_eq!(bytes.len(), old_len + 105);
-        assert_eq!(new_flags.owner_id(), flags.owner_id());
-        assert_eq!(new_flags.base_epoch(), flags.base_epoch());
-        if let Some(old_allocations) = flags.epoch_index_map() {
-            for (allocation_epoch, bytes) in old_allocations {
-                if *allocation_epoch != epoch {
-                    assert_eq!(
-                        new_flags
-                            .epoch_index_map()
-                            .and_then(|map| map.get(allocation_epoch)),
-                        Some(bytes)
-                    );
+        for (flags, epoch) in [
+            (StorageFlags::new_single_epoch(3, Some([0; 32])), 3),
+            (StorageFlags::new_single_epoch(3, Some([99; 32])), 7),
+            (StorageFlags::new_single_epoch(3, None), 7),
+            (
+                StorageFlags::MultiEpochOwned(3, BTreeMap::from([(5, 50)]), [99; 32]),
+                7,
+            ),
+            (StorageFlags::MultiEpoch(3, BTreeMap::from([(5, 50)])), 7),
+            (
+                StorageFlags::MultiEpochOwned(3, BTreeMap::from([(7, 50)]), [99; 32]),
+                7,
+            ),
+            (StorageFlags::MultiEpoch(3, BTreeMap::from([(7, 50)])), 7),
+        ] {
+            let platform = historical_platform();
+            insert_claim(&platform);
+            let documents = rekeyed_document_elements(&platform);
+            assert!(!documents.is_empty());
+            let Element::Item(bytes, _) = contract_element(&platform, None) else {
+                panic!("contract Item")
+            };
+            let old_len = bytes.len();
+            let tx = platform.drive.grove.start_transaction();
+            platform
+                .drive
+                .grove
+                .insert(
+                    &contract_root_path(SystemDataContract::TokenHistory.id().as_bytes()),
+                    &[0],
+                    Element::Item(bytes, Some(flags.to_element_flags())),
+                    None,
+                    Some(&tx),
+                    &pv.drive.grove_version,
+                )
+                .value
+                .expect("fixture flag metadata");
+            platform
+                .drive
+                .commit_transaction(tx, &pv.drive)
+                .expect("commit fixture flags");
+            let tx = platform.drive.grove.start_transaction();
+            platform
+                .perform_events_on_first_block_of_protocol_change(
+                    &platform.state.load(),
+                    &block(epoch),
+                    &tx,
+                    13,
+                    pv,
+                )
+                .expect("flagged activation");
+            assert_eq!(
+                version_item(&platform, Some(&tx)),
+                Element::Item(2u32.to_be_bytes().to_vec(), Some(flags.to_element_flags()))
+            );
+            let Element::Item(bytes, Some(new_flags)) = contract_element(&platform, Some(&tx))
+            else {
+                panic!("flagged contract")
+            };
+            let new_flags = StorageFlags::from_element_flags_ref(&new_flags)
+                .expect("decode flags")
+                .expect("nonempty flags");
+            assert_eq!(
+                bytes.len(),
+                old_len + growth,
+                "protocol version {}",
+                pv.protocol_version
+            );
+            assert_eq!(new_flags.owner_id(), flags.owner_id());
+            assert_eq!(new_flags.base_epoch(), flags.base_epoch());
+            if let Some(old_allocations) = flags.epoch_index_map() {
+                for (allocation_epoch, bytes) in old_allocations {
+                    if *allocation_epoch != epoch {
+                        assert_eq!(
+                            new_flags
+                                .epoch_index_map()
+                                .and_then(|map| map.get(allocation_epoch)),
+                            Some(bytes)
+                        );
+                    }
                 }
             }
-        }
-        if epoch != *flags.base_epoch() {
-            let existing_allocation = flags
-                .epoch_index_map()
-                .is_some_and(|map| map.contains_key(&epoch));
+            if epoch != *flags.base_epoch() {
+                let existing_allocation = flags
+                    .epoch_index_map()
+                    .is_some_and(|map| map.contains_key(&epoch));
+                assert_eq!(
+                    new_flags.epoch_index_map().and_then(|map| map.get(&epoch)),
+                    Some(&if existing_allocation {
+                        existing_allocation_bytes
+                    } else {
+                        new_allocation_bytes
+                    }),
+                    "protocol version {}",
+                    pv.protocol_version
+                );
+                assert_eq!(
+                    new_flags.epoch_index_map().expect("allocation map").len(),
+                    flags.epoch_index_map().map_or(0, BTreeMap::len)
+                        + usize::from(!existing_allocation)
+                );
+            } else {
+                assert_eq!(new_flags, flags);
+            }
+            eprintln!("flags={flags:?} activation_epoch={epoch} before_bytes={old_len} after_bytes={} merged={new_flags:?}", bytes.len());
             assert_eq!(
-                new_flags.epoch_index_map().and_then(|map| map.get(&epoch)),
-                Some(&if existing_allocation { 156 } else { 108 })
+                document_elements(&platform, documents_path(), Some(&tx)),
+                documents
             );
+            assert!(platform
+                .drive
+                .grove
+                .verify_grovedb(Some(&tx), true, false, &pv.drive.grove_version)
+                .expect("native integrity")
+                .is_empty());
+            platform
+                .drive
+                .commit_transaction(tx, &pv.drive)
+                .expect("commit activation");
             assert_eq!(
-                new_flags.epoch_index_map().expect("allocation map").len(),
-                flags.epoch_index_map().map_or(0, BTreeMap::len)
-                    + usize::from(!existing_allocation)
+                document_elements(&platform, documents_path(), None),
+                documents
             );
-        } else {
-            assert_eq!(new_flags, flags);
         }
-        eprintln!("flags={flags:?} activation_epoch={epoch} before_bytes={old_len} after_bytes={} merged={new_flags:?}", bytes.len());
-        assert_eq!(
-            document_elements(&platform, documents_path(), Some(&tx)),
-            documents
-        );
-        assert!(platform
-            .drive
-            .grove
-            .verify_grovedb(Some(&tx), true, false, &pv.drive.grove_version)
-            .expect("native integrity")
-            .is_empty());
-        platform
-            .drive
-            .commit_transaction(tx, &pv.drive)
-            .expect("commit activation");
-        assert_eq!(
-            document_elements(&platform, documents_path(), None),
-            documents
-        );
     }
 }
 
