@@ -1,5 +1,13 @@
 //! Small crate-internal helpers shared across wallet modules.
 
+use dpp::balances::credits::CREDITS_PER_DUFF;
+use dpp::fee::Credits;
+
+/// The smallest whole-duff amount that pays `credits`.
+pub(crate) fn ceil_credits_to_duffs(credits: Credits) -> u64 {
+    credits / CREDITS_PER_DUFF + u64::from(!credits.is_multiple_of(CREDITS_PER_DUFF))
+}
+
 /// Current wall-clock time in milliseconds since the Unix epoch.
 ///
 /// Used only for display-only timestamps and cost rate-limiting (never as a

@@ -1080,7 +1080,7 @@ pub struct StateTransitionSigningOptions {
 /// The active range of a transition carrying `keys`: from protocol version 14 when one of them
 /// is bound to a contract group or is a version 1 key (the format that can carry a budget or an
 /// expiry), `otherwise` when none is.
-fn active_version_range_for_keys_in_creation(
+pub fn active_version_range_for_keys_in_creation(
     keys: &[IdentityPublicKeyInCreation],
     otherwise: RangeInclusive<ProtocolVersion>,
 ) -> RangeInclusive<ProtocolVersion> {

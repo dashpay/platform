@@ -310,6 +310,11 @@ pub unsafe extern "C" fn platform_wallet_claim_invitation(
         Ok(m) => m,
         Err(e) => return e,
     };
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        wallet.identity().identity_creation_keys(keys_map)
+    });
+    let result = unwrap_option_or_return!(option);
+    let keys = unwrap_result_or_return!(result);
 
     let signer_addr = signer_handle as usize;
 
@@ -320,7 +325,7 @@ pub unsafe extern "C" fn platform_wallet_claim_invitation(
             // `signer_handle` for the duration of this call.
             let identity_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
             identity_wallet
-                .claim_invitation(invitation, identity_index, keys_map, identity_signer, None)
+                .claim_invitation(invitation, identity_index, keys, identity_signer, None)
                 .await
         })
     });
@@ -682,6 +687,9 @@ pub unsafe extern "C" fn platform_wallet_parse_invitation(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_fixtures::{
+        assert_refused_for_two_master_keys, live_wallet_handle, rows_with_two_master_keys,
+    };
     use dashcore::{Network, PrivateKey};
     use dpp::secp256k1::SecretKey;
 
@@ -904,6 +912,34 @@ mod tests {
         assert_eq!(id, [0u8; 32]);
         assert_eq!(handle, NULL_HANDLE);
         unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    #[test]
+    fn should_refuse_a_claim_platform_would_refuse_before_any_network_work() {
+        let voucher = SecretKey::from_secret_bytes([0x11u8; 32]).expect("valid scalar");
+        let wif = PrivateKey::from_byte_array(&voucher.to_secret_bytes(), Network::Testnet)
+            .expect("valid voucher")
+            .to_wif();
+        let uri =
+            std::ffi::CString::new(format!("dashpay://invite?assetlocktx=aa&pk={wif}")).unwrap();
+        let (_manager, wallet) = live_wallet_handle();
+        let rows = rows_with_two_master_keys();
+        let dummy_signer = std::ptr::dangling_mut::<SignerHandle>();
+        let mut id = [0u8; 32];
+        let mut handle: Handle = 0;
+        assert_refused_for_two_master_keys(unsafe {
+            platform_wallet_claim_invitation(
+                wallet,
+                uri.as_ptr(),
+                0,
+                rows.as_ptr(),
+                rows.len(),
+                dummy_signer,
+                0,
+                &mut id,
+                &mut handle,
+            )
+        });
     }
 
     /// A null `uri` is rejected with `ErrorNullPointer` before any parsing.

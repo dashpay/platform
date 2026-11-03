@@ -121,6 +121,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .map(|lock| (lock.funding_type, lock.identity_index, lock.status.clone()))
     }
 
+    /// The persisted amount (duffs) of the lock tracked at `out_point`.
+    pub(crate) async fn tracked_amount_duffs(&self, out_point: &OutPoint) -> Option<u64> {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .and_then(|info| info.tracked_asset_locks.get(out_point))
+            .map(|lock| lock.amount)
+    }
+
     /// The wallet-drain operation a tracked lock belongs to, if any.
     #[cfg(any(feature = "shielded", test))]
     pub(crate) async fn tracked_operation_id(&self, out_point: &OutPoint) -> Option<[u8; 16]> {

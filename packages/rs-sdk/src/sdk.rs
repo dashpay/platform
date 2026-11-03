@@ -938,6 +938,20 @@ impl Sdk {
         PlatformVersion::get(v).unwrap_or_else(|_| PlatformVersion::latest())
     }
 
+    /// Clone this SDK with its current protocol version pinned for one operation.
+    ///
+    /// Use the clone for both preflight validation and submission so verified
+    /// responses cannot change the operation's rules between those steps. Transport,
+    /// nonce caches, freshness tracking and verified observations remain shared.
+    /// The source SDK and its ordinary clones continue tracking their own version.
+    pub fn clone_with_pinned_version(&self) -> Self {
+        let mut operation = self.clone();
+        operation.protocol_version =
+            Arc::new(atomic::AtomicU32::new(self.protocol_version_number()));
+        operation.version_pinned = true;
+        operation
+    }
+
     /// Return the raw protocol version number currently used by this SDK.
     pub fn protocol_version_number(&self) -> u32 {
         self.protocol_version.load(Ordering::Acquire)
@@ -1756,7 +1770,7 @@ pub(crate) mod test {
 
     use crate::SdkBuilder;
 
-    use super::{min_protocol_version, Network};
+    use super::{min_protocol_version, Network, PlatformVersion};
 
     #[test_matrix(["get_addresses_infos", "get_address_info"], [Some(1), Some(20)])]
     #[tokio::test]
@@ -2326,6 +2340,39 @@ pub(crate) mod test {
         assert!(info.newer_protocol_available);
         sdk.record_verified_protocol_version(version.protocol_version);
         assert_eq!(sdk.protocol_version_info(), info);
+    }
+
+    #[test]
+    fn should_pin_an_operation_version_while_the_source_sdk_ratchets() {
+        let sdk = mock_sdk_with_auto_detect(13);
+        let operation = sdk.clone_with_pinned_version();
+        let latest = PlatformVersion::latest().protocol_version;
+        sdk.learn_verified_protocol_version(latest);
+        operation.learn_verified_protocol_version(latest);
+        assert_eq!(sdk.protocol_version_number(), latest);
+        assert_eq!(operation.version().protocol_version, 13);
+        assert_eq!(operation.protocol_version_number(), 13);
+        assert_eq!(
+            operation.query_settings().protocol_version.protocol_version,
+            13
+        );
+        assert_eq!(
+            operation.protocol_version_info().verified_version,
+            Some(latest)
+        );
+        assert!(Arc::ptr_eq(&sdk.nonce_cache, &operation.nonce_cache));
+        assert!(Arc::ptr_eq(
+            &sdk.metadata_last_seen_height,
+            &operation.metadata_last_seen_height
+        ));
+        assert!(Arc::ptr_eq(
+            &sdk.verified_protocol_version,
+            &operation.verified_protocol_version
+        ));
+        assert!(!Arc::ptr_eq(
+            &sdk.protocol_version,
+            &operation.protocol_version
+        ));
     }
 
     #[test]
