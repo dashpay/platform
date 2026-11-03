@@ -7,6 +7,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use bincode::{Decode, DecodeUntrusted, Encode};
 
 pub use instant::*;
+use platform_serialization::PLATFORM_BINCODE_CONFIG;
 use platform_value::Value;
 #[cfg(feature = "validation")]
 use platform_version::version::PlatformVersion;
@@ -215,6 +216,19 @@ impl TryFrom<u64> for AssetLockProofType {
 
 // TODO: Versioning
 impl AssetLockProof {
+    /// The bytes this proof takes inside a serialized state transition: its
+    /// bincode encoding under [`PLATFORM_BINCODE_CONFIG`], the configuration
+    /// `#[platform_serialize]` uses for `StateTransition`. A transition encodes the
+    /// proof in place as one of its fields, so two transitions that differ
+    /// only in their proof differ in length by exactly the difference of these
+    /// values.
+    pub fn serialized_len_in_state_transition(&self) -> Result<usize, ProtocolError> {
+        let mut writer = bincode::enc::write::SizeWriter::default();
+        bincode::encode_into_writer(self, &mut writer, PLATFORM_BINCODE_CONFIG)
+            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+        Ok(writer.bytes_written)
+    }
+
     pub fn type_from_raw_value(value: &Value) -> Option<AssetLockProofType> {
         let proof_type_res = value.get_integer::<u8>("type");
 
@@ -309,6 +323,66 @@ mod tests {
     use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
     use dashcore::{OutPoint, Txid};
     use std::str::FromStr;
+
+    /// `serialized_len_in_state_transition` measures the proof as a serialized
+    /// transition carries it: two identity top-ups that differ only in their
+    /// proof differ in serialized length by exactly the difference of the two
+    /// measured lengths, for InstantSend and ChainLock proofs alike.
+    #[cfg(feature = "state-transitions")]
+    #[test]
+    fn should_measure_the_proof_as_a_serialized_transition_carries_it() {
+        use crate::serialization::PlatformSerializable;
+        use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+        use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
+        use crate::state_transition::StateTransition;
+        use dashcore::{InstantLock, ScriptBuf, TxIn};
+
+        let input: Vec<TxIn> = (0..5u8)
+            .map(|i| TxIn {
+                previous_output: OutPoint::from([i; 36]),
+                script_sig: ScriptBuf::from_bytes(vec![0u8; 107]),
+                sequence: u32::MAX,
+                witness: Default::default(),
+            })
+            .collect();
+        let instant = AssetLockProof::Instant(InstantAssetLockProof::new(
+            InstantLock {
+                inputs: input.iter().map(|i| i.previous_output).collect(),
+                ..InstantLock::default()
+            },
+            Transaction {
+                version: 3,
+                lock_time: 0,
+                input,
+                output: Vec::new(),
+                special_transaction_payload: None,
+            },
+            0,
+        ));
+        let chain = AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: u32::MAX,
+            out_point: OutPoint::from([7u8; 36]),
+        });
+        let transition_len = |proof: &AssetLockProof| {
+            StateTransition::IdentityTopUp(IdentityTopUpTransition::V0(IdentityTopUpTransitionV0 {
+                asset_lock_proof: proof.clone(),
+                identity_id: Identifier::default(),
+                user_fee_increase: 0,
+                signature: Default::default(),
+            }))
+            .serialize_to_bytes()
+            .expect("serialize")
+            .len()
+        };
+
+        let instant_len = instant.serialized_len_in_state_transition().unwrap();
+        let chain_len = chain.serialized_len_in_state_transition().unwrap();
+        assert!(instant_len > chain_len);
+        assert_eq!(
+            transition_len(&instant) - transition_len(&chain),
+            instant_len - chain_len
+        );
+    }
 
     /// JSON wire shape is internally tagged: `{type, ...flattened inner fields}`,
     /// no `data` wrapper. This guards against accidental reintroduction of the

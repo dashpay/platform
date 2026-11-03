@@ -145,7 +145,10 @@ mod json_convertible_tests_resource_vote {
         use crate::serialization::JsonConvertible;
         let yes_no_poll = json!({
             "$type": "yesNoVotePoll",
-            "resourcePath": ["Y2hhbGxlbmdl"],
+            "purpose": {
+                "$type": "decisionProposal",
+                "documentId": "EJQ2AcTXHzrRZoCKt8kR3YxGdwR4ay7cXqPXtKpZ3b2Y",
+            },
             "supermajorityNumerator": 2,
             "supermajorityDenominator": 3,
             "minimumVotingPower": { "$type": "absolute", "votingPower": 0 },

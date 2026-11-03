@@ -1,5 +1,5 @@
 use crate::platform::query::VoteQuery;
-use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+use crate::platform::transition::broadcast_request::checked_broadcast_request;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::transition::validation::ensure_valid_state_transition_structure;
 use crate::platform::Fetch;
@@ -89,7 +89,7 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
         )
         .await?;
         ensure_valid_state_transition_structure(&masternode_vote_transition, sdk.version())?;
-        let request = masternode_vote_transition.broadcast_request_for_state_transition()?;
+        let request = checked_broadcast_request(&masternode_vote_transition, sdk.version())?;
 
         request
             .execute(sdk, settings.request_settings)
@@ -128,7 +128,7 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
         )
         .await?;
         ensure_valid_state_transition_structure(&masternode_vote_transition, sdk.version())?;
-        let request = masternode_vote_transition.broadcast_request_for_state_transition()?;
+        let request = checked_broadcast_request(&masternode_vote_transition, sdk.version())?;
         // TODO: Implement retry logic
         let response_result = request
             .execute(sdk, settings.request_settings)

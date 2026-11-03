@@ -114,12 +114,16 @@
 @class GetIdentityTokenBalancesResponse;
 @class GetIdentityTokenInfosRequest;
 @class GetIdentityTokenInfosResponse;
+@class GetMasternodeYesNoVoteRequest;
+@class GetMasternodeYesNoVoteResponse;
 @class GetMostRecentShieldedAnchorRequest;
 @class GetMostRecentShieldedAnchorResponse;
 @class GetPathElementsRequest;
 @class GetPathElementsResponse;
 @class GetPrefundedSpecializedBalanceRequest;
 @class GetPrefundedSpecializedBalanceResponse;
+@class GetPrivateDocumentEntriesRequest;
+@class GetPrivateDocumentEntriesResponse;
 @class GetProtocolVersionUpgradeStateRequest;
 @class GetProtocolVersionUpgradeStateResponse;
 @class GetProtocolVersionUpgradeVoteStatusRequest;
@@ -156,6 +160,8 @@
 @class GetTotalCreditsInPlatformResponse;
 @class GetVotePollsByEndDateRequest;
 @class GetVotePollsByEndDateResponse;
+@class GetYesNoVotePollStateRequest;
+@class GetYesNoVotePollStateResponse;
 @class WaitForStateTransitionResultRequest;
 @class WaitForStateTransitionResultResponse;
 
@@ -377,6 +383,22 @@ NS_ASSUME_NONNULL_BEGIN
  */
 - (GRPCUnaryProtoCall *)getVotePollsByEndDateWithMessage:(GetVotePollsByEndDateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
+#pragma mark getYesNoVotePollState(GetYesNoVotePollStateRequest) returns (GetYesNoVotePollStateResponse)
+
+/**
+ * Where is a yes/no vote poll: open, or finished with what result, and its
+ * tallies (protocol version 15 and later)
+ */
+- (GRPCUnaryProtoCall *)getYesNoVotePollStateWithMessage:(GetYesNoVotePollStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getMasternodeYesNoVote(GetMasternodeYesNoVoteRequest) returns (GetMasternodeYesNoVoteResponse)
+
+/**
+ * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+ * later)
+ */
+- (GRPCUnaryProtoCall *)getMasternodeYesNoVoteWithMessage:(GetMasternodeYesNoVoteRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
 #pragma mark getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse)
 
 - (GRPCUnaryProtoCall *)getPrefundedSpecializedBalanceWithMessage:(GetPrefundedSpecializedBalanceRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
@@ -500,6 +522,10 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getShieldedNullifiers(GetShieldedNullifiersRequest) returns (GetShieldedNullifiersResponse)
 
 - (GRPCUnaryProtoCall *)getShieldedNullifiersWithMessage:(GetShieldedNullifiersRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getPrivateDocumentEntries(GetPrivateDocumentEntriesRequest) returns (GetPrivateDocumentEntriesResponse)
+
+- (GRPCUnaryProtoCall *)getPrivateDocumentEntriesWithMessage:(GetPrivateDocumentEntriesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 @end
 
@@ -873,6 +899,44 @@ NS_ASSUME_NONNULL_BEGIN
 - (GRPCProtoCall *)RPCTogetVotePollsByEndDateWithRequest:(GetVotePollsByEndDateRequest *)request handler:(void(^)(GetVotePollsByEndDateResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
+#pragma mark getYesNoVotePollState(GetYesNoVotePollStateRequest) returns (GetYesNoVotePollStateResponse)
+
+/**
+ * Where is a yes/no vote poll: open, or finished with what result, and its
+ * tallies (protocol version 15 and later)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getYesNoVotePollStateWithRequest:(GetYesNoVotePollStateRequest *)request handler:(void(^)(GetYesNoVotePollStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+/**
+ * Where is a yes/no vote poll: open, or finished with what result, and its
+ * tallies (protocol version 15 and later)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetYesNoVotePollStateWithRequest:(GetYesNoVotePollStateRequest *)request handler:(void(^)(GetYesNoVotePollStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getMasternodeYesNoVote(GetMasternodeYesNoVoteRequest) returns (GetMasternodeYesNoVoteResponse)
+
+/**
+ * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+ * later)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getMasternodeYesNoVoteWithRequest:(GetMasternodeYesNoVoteRequest *)request handler:(void(^)(GetMasternodeYesNoVoteResponse *_Nullable response, NSError *_Nullable error))handler;
+
+/**
+ * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+ * later)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetMasternodeYesNoVoteWithRequest:(GetMasternodeYesNoVoteRequest *)request handler:(void(^)(GetMasternodeYesNoVoteResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
 #pragma mark getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse)
 
 - (void)getPrefundedSpecializedBalanceWithRequest:(GetPrefundedSpecializedBalanceRequest *)request handler:(void(^)(GetPrefundedSpecializedBalanceResponse *_Nullable response, NSError *_Nullable error))handler;
@@ -1088,6 +1152,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getShieldedNullifiersWithRequest:(GetShieldedNullifiersRequest *)request handler:(void(^)(GetShieldedNullifiersResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetShieldedNullifiersWithRequest:(GetShieldedNullifiersRequest *)request handler:(void(^)(GetShieldedNullifiersResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getPrivateDocumentEntries(GetPrivateDocumentEntriesRequest) returns (GetPrivateDocumentEntriesResponse)
+
+- (void)getPrivateDocumentEntriesWithRequest:(GetPrivateDocumentEntriesRequest *)request handler:(void(^)(GetPrivateDocumentEntriesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetPrivateDocumentEntriesWithRequest:(GetPrivateDocumentEntriesRequest *)request handler:(void(^)(GetPrivateDocumentEntriesResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 @end

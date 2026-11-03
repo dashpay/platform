@@ -55,6 +55,9 @@ use crate::error::PlatformWalletError;
 /// here and there together if the chunk power ever changes.
 const CHUNK_SIZE: u64 = 2048;
 
+/// In-flight chunk fetches per note-sync stream; tests mock this many chunks.
+const MAX_CONCURRENT_CHUNK_FETCHES: usize = 16;
+
 /// Result of one note-sync pass.
 #[derive(Debug, Clone, Default)]
 pub struct SyncNotesResult {
@@ -231,7 +234,7 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
         // client-side lever; the pull-based stream still caps in-flight fetches
         // at this bound and keeps memory bounded.
         let mut sync_config = dash_sdk::platform::shielded::notes_sync::types::ShieldedSyncConfig {
-            max_concurrent: 16,
+            max_concurrent: MAX_CONCURRENT_CHUNK_FETCHES,
             ..Default::default()
         };
         if let Some(cb) = on_progress {
@@ -283,6 +286,23 @@ where
         return Ok(MultiSyncNotesResult::default());
     }
 
+    // Nothing has been touched yet, so a stop that landed before the scan
+    // costs nothing: skip the lock and the fetch entirely.
+    if cancel.is_cancelled() {
+        debug!("Shielded note sync cancelled before the scan started");
+        return Ok(MultiSyncNotesResult::default());
+    }
+
+    // Keep the snapshot and streamed consume under one write guard so another
+    // sync cannot append between them and leave this pass using stale gates.
+    // This is the only writer during a pass, so holding it across
+    // `stream.next().await` is safe: the stream's producer side is the
+    // SDK's network fetch loop, which never touches the store, so there
+    // is no lock-ordering deadlock. Backpressure is pull-based — a slow
+    // append simply polls the stream less often, capping in-flight
+    // network fetches at `max_concurrent`.
+    let mut store = store.write().await;
+
     // Snapshot each subwallet's watermark and the shared tree's
     // current leaf count. Two distinct quantities drive the rest
     // of this pass:
@@ -300,7 +320,6 @@ where
     // it already stored, while a lagging one still saves from its
     // own start.
     let (watermarks, already_have, tree_size) = {
-        let store = store.read().await;
         let mut watermarks: BTreeMap<SubwalletId, u64> = BTreeMap::new();
         let mut min_idx: Option<u64> = None;
         for (id, _) in subwallets {
@@ -346,22 +365,6 @@ where
     // The FIRST subwallet drives the stream (see `sync_notes_across`);
     // its hits arrive pre-decrypted in `batch.decrypted`.
     let (driver_id, _) = &subwallets[0];
-
-    // Nothing has been touched yet, so a stop that landed before the scan
-    // costs nothing: skip the lock and the fetch entirely.
-    if cancel.is_cancelled() {
-        debug!("Shielded note sync cancelled before the scan started");
-        return Ok(MultiSyncNotesResult::default());
-    }
-
-    // Acquire the store write lock for the whole interleaved consume.
-    // This is the only writer during a pass, so holding it across
-    // `stream.next().await` is safe: the stream's producer side is the
-    // SDK's network fetch loop, which never touches the store, so there
-    // is no lock-ordering deadlock. Backpressure is pull-based — a slow
-    // append simply polls the stream less often, capping in-flight
-    // network fetches at `max_concurrent`.
-    let mut store = store.write().await;
 
     // Route decryptions to the subwallet that owns the IVK, accumulated
     // across every batch.
@@ -1171,3 +1174,6 @@ mod memo_roundtrip_tests;
 /// a pre-scan cancel touches nothing, and a later pass resumes cleanly.
 #[cfg(test)]
 mod cancel_tests;
+
+#[cfg(test)]
+mod concurrent_sync_tests;

@@ -5,12 +5,11 @@ use crate::drive::contract::paths::{
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::object_size_info::DriveKeyInfo;
 use crate::util::storage_flags::StorageFlags;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Unconditional, like the list trees: only a contract's insertion creates them, and it
@@ -20,9 +19,7 @@ impl Drive {
         &self,
         contract_id: [u8; 32],
         storage_flags: Option<&StorageFlags>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         _transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,

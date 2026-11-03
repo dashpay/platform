@@ -2,7 +2,7 @@ pub mod v0;
 
 use crate::block::block_info::BlockInfo;
 use crate::voting::vote_info_storage::yes_no_vote_poll_stored_info::v0::YesNoVotePollStoredInfoV0;
-use crate::voting::vote_polls::yes_no_vote_poll::VotingPower;
+use crate::voting::vote_polls::yes_no_vote_poll::{VotingPower, YesNoVotePoll};
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
@@ -95,8 +95,9 @@ impl fmt::Display for YesNoVotePollStoredInfo {
 }
 
 impl YesNoVotePollStoredInfo {
-    /// The stored info of a poll that opens in `start_block`.
+    /// The stored info of `vote_poll`, opening in `start_block`.
     pub fn new(
+        vote_poll: YesNoVotePoll,
         start_block: BlockInfo,
         platform_version: &PlatformVersion,
     ) -> Result<YesNoVotePollStoredInfo, ProtocolError> {
@@ -105,7 +106,7 @@ impl YesNoVotePollStoredInfo {
             .voting_versions
             .yes_no_vote_poll_stored_info_version
         {
-            Some(0) => Ok(YesNoVotePollStoredInfoV0::new(start_block).into()),
+            Some(0) => Ok(YesNoVotePollStoredInfoV0::new(vote_poll, start_block).into()),
             Some(version) => Err(ProtocolError::UnknownVersionMismatch {
                 method: "YesNoVotePollStoredInfo::new".to_string(),
                 known_versions: vec![0],
@@ -140,6 +141,13 @@ impl YesNoVotePollStoredInfo {
         }
     }
 
+    /// The poll as it was opened, rule included.
+    pub fn vote_poll(&self) -> &YesNoVotePoll {
+        match self {
+            YesNoVotePollStoredInfo::V0(v0) => &v0.vote_poll,
+        }
+    }
+
     /// Where the poll is in its life.
     pub fn status(&self) -> &YesNoVotePollStatus {
         match self {
@@ -160,12 +168,27 @@ impl YesNoVotePollStoredInfo {
 mod tests {
     use super::*;
     use crate::serialization::{PlatformDeserializableTrusted, PlatformSerializable};
+    use crate::voting::vote_polls::yes_no_vote_poll::{
+        YesNoMinimumVotingPower, YesNoVotePollPurpose,
+    };
+    use platform_value::Identifier;
+
+    fn poll() -> YesNoVotePoll {
+        YesNoVotePoll {
+            purpose: YesNoVotePollPurpose::DecisionProposal {
+                document_id: Identifier::new([0xc1; 32]),
+            },
+            supermajority_numerator: 2,
+            supermajority_denominator: 3,
+            minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 400 },
+        }
+    }
 
     #[test]
     fn should_report_the_stored_info_not_active_before_protocol_version_15() {
         let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         assert!(matches!(
-            YesNoVotePollStoredInfo::new(BlockInfo::default(), platform_version),
+            YesNoVotePollStoredInfo::new(poll(), BlockInfo::default(), platform_version),
             Err(ProtocolError::UnknownVersionError(_))
         ));
     }
@@ -174,8 +197,9 @@ mod tests {
     fn should_finalize_a_started_poll_once() {
         let platform_version = PlatformVersion::latest();
         let start_block = BlockInfo::default_with_time(10);
-        let mut stored_info =
-            YesNoVotePollStoredInfo::new(start_block, platform_version).expect("stored info");
+        let mut stored_info = YesNoVotePollStoredInfo::new(poll(), start_block, platform_version)
+            .expect("stored info");
+        assert_eq!(stored_info.vote_poll(), &poll());
         assert_eq!(
             stored_info.status(),
             &YesNoVotePollStatus::Started(start_block)
@@ -209,9 +233,12 @@ mod tests {
     #[test]
     fn should_round_trip_through_platform_serialization() {
         let platform_version = PlatformVersion::latest();
-        let mut stored_info =
-            YesNoVotePollStoredInfo::new(BlockInfo::default_with_time(10), platform_version)
-                .expect("stored info");
+        let mut stored_info = YesNoVotePollStoredInfo::new(
+            poll(),
+            BlockInfo::default_with_time(10),
+            platform_version,
+        )
+        .expect("stored info");
         stored_info
             .finalize_vote_poll(5, 4, 3, 400, false, BlockInfo::default_with_time(20))
             .expect("finalize");

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::drive::identity::withdrawals::paths::{
     get_withdrawal_root_path_vec, get_withdrawal_transactions_broadcasted_path_vec,
@@ -18,8 +18,8 @@ use dpp::fee::{Credits, SignedCredits};
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
-use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, MaybeTree, TransactionArg};
 use grovedb::{Element, PathQuery, SizedQuery};
+use grovedb::{MaybeTree, TransactionArg};
 
 /// Operations for Withdrawals
 #[derive(Clone, Debug)]
@@ -62,9 +62,7 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
-        _estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        _estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,

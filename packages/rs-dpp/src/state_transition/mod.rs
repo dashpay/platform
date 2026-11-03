@@ -34,6 +34,8 @@ mod state_transition_types;
 pub mod state_transition_factory;
 
 pub mod errors;
+#[cfg(feature = "state-transition-validation")]
+use crate::util::ecdsa;
 #[cfg(feature = "state-transition-signing")]
 use crate::util::hash::ripemd160_sha256;
 use crate::util::hash::{hash_double_to_vec, hash_single};
@@ -47,6 +49,7 @@ mod verify_identity_signed_signature;
 
 // pub mod state_transition_fee;
 
+use crate::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
 #[cfg(feature = "state-transition-validation")]
 use crate::consensus::basic::UnsupportedFeatureError;
 #[cfg(feature = "state-transition-signing")]
@@ -548,6 +551,31 @@ macro_rules! call_errorable_method_identity_signed {
 /// Byte budget of a serialized [`StateTransition`], as the `limit` of its `platform_serialize`
 /// attribute below declares it; the attribute takes a literal, so the number is repeated here.
 pub const STATE_TRANSITION_MAX_ENCODED_BYTES: usize = 100_000;
+
+/// Checks the serialized length of a state transition against the protocol's
+/// `max_state_transition_size`: a transition of `size_bytes` is refused when
+/// it is larger (the limit itself passes), with the error Drive reports for
+/// one. Drive's decoders keep their own copy of this check; the drive-abci
+/// test `should_agree_with_the_client_size_check_at_every_protocol_version`
+/// keeps the two in step.
+///
+/// DAPI refuses an oversized transition before Drive sees it with an untyped
+/// `InvalidArgument`, so clients that need the typed error (an asset-lock
+/// flow switching from a growing InstantSend proof to a fixed-size ChainLock
+/// proof) check it with this before sending.
+pub fn validate_state_transition_size(
+    size_bytes: u64,
+    platform_version: &PlatformVersion,
+) -> Result<(), StateTransitionMaxSizeExceededError> {
+    let max_size_bytes = platform_version.system_limits.max_state_transition_size;
+    if size_bytes > max_size_bytes {
+        return Err(StateTransitionMaxSizeExceededError::new(
+            size_bytes,
+            max_size_bytes,
+        ));
+    }
+    Ok(())
+}
 
 #[derive(
     Debug,
@@ -2368,7 +2396,7 @@ impl StateTransition {
             ));
         }
         let data = self.signable_bytes()?;
-        signer::verify_data_signature(&data, signature.as_slice(), public_key).map_err(|e| {
+        ecdsa::verify_data_signature(&data, signature.as_slice(), public_key).map_err(|e| {
             // TODO: it shouldn't respond with consensus error
 
             ProtocolError::from(ConsensusError::SignatureError(
@@ -2497,6 +2525,23 @@ impl StateTransitionStructureValidation for StateTransition {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// At every protocol version the limit itself passes, and one byte more is refused with both
+    /// numbers reported as they are.
+    #[test]
+    fn should_refuse_only_a_transition_larger_than_the_limit() {
+        for protocol_version in 1..=LATEST_VERSION {
+            let platform_version = PlatformVersion::get(protocol_version).expect("known version");
+            let max_size = platform_version.system_limits.max_state_transition_size;
+
+            assert!(validate_state_transition_size(0, platform_version).is_ok());
+            assert!(validate_state_transition_size(max_size, platform_version).is_ok());
+            let error = validate_state_transition_size(max_size + 1, platform_version)
+                .expect_err("one byte over the limit is refused");
+            assert_eq!(error.actual_size_bytes(), max_size + 1);
+            assert_eq!(error.max_size_bytes(), max_size);
+        }
+    }
 
     // -----------------------------------------------------------------------
     // StateTransitionSigningOptions tests
@@ -2763,21 +2808,27 @@ mod tests {
         use crate::serialization::PlatformSerializable;
         use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
         use crate::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
-        use crate::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
+        use crate::voting::vote_polls::yes_no_vote_poll::{
+            YesNoMinimumVotingPower, YesNoVotePoll, YesNoVotePollPurpose,
+        };
         use crate::voting::votes::resource_vote::v0::ResourceVoteV0;
         use crate::voting::votes::resource_vote::ResourceVote;
         use crate::voting::votes::yes_no_vote::v0::YesNoVoteV0;
         use crate::voting::votes::yes_no_vote::YesNoVote;
 
         let vote_poll = YesNoVotePoll {
-            resource_path: vec![BinaryData::new(vec![7u8; 32])],
+            purpose: YesNoVotePollPurpose::DecisionProposal {
+                document_id: Identifier::from([7u8; 32]),
+            },
             supermajority_numerator: 2,
             supermajority_denominator: 3,
             minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 400 },
         };
         let votes = [
             Vote::YesNoVote(YesNoVote::V0(YesNoVoteV0 {
-                vote_poll: vote_poll.clone(),
+                vote_poll_id: vote_poll
+                    .unique_id(PlatformVersion::latest())
+                    .expect("poll id"),
                 vote_choice: YesNoAbstainVoteChoice::Yes,
             })),
             Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
@@ -3248,6 +3299,79 @@ mod tests {
             transition
                 .verify_identity_signed_signature(&key, &bls, last_without_the_check)
                 .expect("protocol version 13 replays as it ran");
+        }
+    }
+
+    // An ECDSA_SECP256K1 signature whose S is in the upper half of the curve order is refused at
+    // every protocol version, as every released Platform refuses it. Its low-S twin, the
+    // signature the key made, verifies.
+    #[cfg(feature = "state-transition-signing")]
+    #[test]
+    fn should_refuse_a_high_s_ecdsa_signature_at_every_protocol_version() {
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+
+        let bls = crate::bls::native_bls::NativeBlsModule;
+        let private_key = [1; 32];
+        let key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 11,
+            purpose: Purpose::TRANSFER,
+            security_level: SecurityLevel::CRITICAL,
+            key_type: KeyType::ECDSA_SECP256K1,
+            data: get_compressed_public_ec_key(&private_key)
+                .expect("a valid ECDSA private key")
+                .to_vec()
+                .into(),
+            ..Default::default()
+        }
+        .into();
+
+        let mut signed = sample_transfer_st();
+        signed
+            .sign(&key, &private_key, &bls)
+            .expect("the key signs the transfer");
+
+        // S replaced by `n - S` and the recovery parity flipped.
+        let mut high_s = signed
+            .signature()
+            .expect("a signed transfer")
+            .as_slice()
+            .to_vec();
+        let s: [u8; 32] = high_s[33..].try_into().expect("a 65-byte signature");
+        let negated = crate::secp256k1::SecretKey::from_secret_bytes(s)
+            .expect("S is a valid scalar")
+            .negate();
+        high_s[33..].copy_from_slice(&negated.to_secret_bytes());
+        high_s[0] = 27 + ((high_s[0] - 27) ^ 1);
+        // A real twin: `dashcore` alone verifies it like the signature the key made.
+        crate::dashcore::signer::verify_data_signature(
+            &signed.signable_bytes().expect("signable bytes"),
+            &high_s,
+            key.data().as_slice(),
+        )
+        .expect("the high-S twin verifies once S is normalized");
+        let mut malleated = signed.clone();
+        malleated.set_signature(BinaryData::new(high_s));
+
+        let platform_versions = [
+            PlatformVersion::get(13).expect("protocol version 13"),
+            PlatformVersion::get(14).expect("protocol version 14"),
+            PlatformVersion::latest(),
+        ];
+        for platform_version in platform_versions {
+            signed
+                .verify_identity_signed_signature(&key, &bls, platform_version)
+                .expect("the signature the key made verifies");
+            let error = malleated
+                .verify_identity_signed_signature(&key, &bls, platform_version)
+                .expect_err("its high-S twin is refused");
+            assert!(
+                matches!(&error, ProtocolError::ConsensusError(consensus_error)
+                if matches!(&**consensus_error, ConsensusError::SignatureError(
+                    SignatureError::InvalidStateTransitionSignatureError(e)
+                ) if e.message() == "signature verification failed")),
+                "protocol version {}: {error:?}",
+                platform_version.protocol_version
+            );
         }
     }
 

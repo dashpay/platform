@@ -33,4 +33,5 @@ pub const SYSTEM_DATA_CONTRACT_VERSIONS_V3: SystemDataContractVersions =
         document_history: 1,
         app_connect: 1,
         moderation_charters: 1,
+        decision_proposals: 0,
     };
