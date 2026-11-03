@@ -61,6 +61,8 @@ mod protocol_gate_tests;
 mod quorum_key;
 #[cfg(all(test, feature = "mocks"))]
 mod signed_version_tests;
+#[cfg(all(test, feature = "mocks"))]
+mod verified_provider_tests;
 
 /// A local view of the authenticated network observation and this SDK's version tables.
 /// This is informational: a newer network version does not disable operations.
