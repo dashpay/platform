@@ -695,6 +695,81 @@ mod update_identity_tests {
         assert!(stored.derivation_indices.is_some());
     }
 
+    /// A Hecate signer key generated outside the wallet: no private key
+    /// derives at its slot.
+    fn hecate_signer_key_4() -> IdentityPublicKey {
+        IdentityPublicKeyV0 {
+            id: 4,
+            purpose: Purpose::HECATE_SIGNER,
+            security_level: SecurityLevel::MEDIUM,
+            key_type: KeyType::REDPALLAS_HECATE,
+            data: vec![4; KeyType::REDPALLAS_HECATE.default_size()].into(),
+            ..Default::default()
+        }
+        .into()
+    }
+
+    /// The wallet does not derive Hecate signer keys, so a landed update
+    /// stores one without derivation coordinates: added, with the cache
+    /// behind the update or already at it, and disabled after a refresh
+    /// brought it into the cache. An ECDSA key added beside it keeps its own.
+    #[tokio::test]
+    async fn should_store_a_hecate_signer_key_without_derivation_coordinates() {
+        let identity_id = Identifier::default();
+        let coordinates = |store: &CapturingStore, key_id| {
+            let stored = store.stored_key(identity_id, key_id).expect("key stored");
+            (
+                stored.wallet_id,
+                stored
+                    .derivation_indices
+                    .map(|indices| (indices.identity_index, indices.key_index)),
+            )
+        };
+
+        for cached in [4, 5] {
+            let store = Arc::new(CapturingStore::default());
+            let wallet = wallet_at_revision_on(cached, store.clone()).await;
+            let wallet = wallet.identity();
+            wallet
+                .apply_landed_update(
+                    &identity_id,
+                    Some(0),
+                    5,
+                    vec![key_3(), hecate_signer_key_4()],
+                    vec![],
+                )
+                .await
+                .unwrap();
+            assert_eq!(coordinates(&store, 4), (None, None), "cached at {cached}");
+            assert_eq!(
+                coordinates(&store, 3),
+                (Some(wallet.wallet_id), Some((0, 3))),
+                "cached at {cached}"
+            );
+        }
+
+        let store = Arc::new(CapturingStore::default());
+        let wallet = wallet_at_revision_on(4, store.clone()).await;
+        let wallet = wallet.identity();
+        {
+            let mut wm = wallet.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet.wallet_id)
+                .unwrap()
+                .identity_manager
+                .managed_identity_mut(&identity_id)
+                .unwrap()
+                .identity
+                .add_public_key(hecate_signer_key_4());
+        }
+        wallet
+            .apply_landed_update(&identity_id, Some(0), 5, vec![], vec![4])
+            .await
+            .unwrap();
+        let stored = store.stored_key(identity_id, 4).expect("key 4 stored");
+        assert!(stored.public_key.disabled_at().is_some());
+        assert_eq!(coordinates(&store, 4), (None, None));
+    }
+
     /// A disable-only update at 5 whose confirmation finds the cache already
     /// at 5 with the disable (a concurrent fetch's fold whose store failed):
     /// the disabled key and the scalar snapshot are stored now, so a restart
