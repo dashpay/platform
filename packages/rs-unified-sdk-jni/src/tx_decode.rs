@@ -39,7 +39,6 @@
 //! ```
 
 use crate::support::{guard, net_from_ord, take_pwffi_error};
-use dash_network::ffi::FFINetwork;
 use jni::objects::{JByteArray, JClass};
 use jni::sys::{jbyteArray, jint};
 use jni::JNIEnv;
@@ -48,6 +47,7 @@ use platform_wallet_ffi::tx_decode::{
     platform_wallet_decoded_transaction_free, platform_wallet_transaction_decode,
     PlatformWalletDecodedTransactionFFI,
 };
+use rs_sdk_ffi::FFINetwork;
 use std::ffi::CStr;
 
 /// Append `u16 len + bytes` for an optional C string (null → len 0).
