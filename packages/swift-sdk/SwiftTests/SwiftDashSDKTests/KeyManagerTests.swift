@@ -153,11 +153,6 @@ final class KeyManagerTests: XCTestCase {
         }
     }
 
-    func testShouldReportAHecateSignerKeyAsNotDerivedByTheWallet() throws {
-        XCTAssertFalse(try ManagedPlatformWallet.derivesIdentityKeys(ofType: .redpallasHecate))
-        XCTAssertTrue(try ManagedPlatformWallet.derivesIdentityKeys(ofType: .ecdsaSecp256k1))
-    }
-
     func testIsValidSizeCorrect() {
         let key = Data(repeating: 0x00, count: 32)
         XCTAssertTrue(KeySizeValidator.isValidSize(key, for: .ecdsaSecp256k1))

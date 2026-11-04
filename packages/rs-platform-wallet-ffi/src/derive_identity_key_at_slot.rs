@@ -5,11 +5,8 @@ use std::os::raw::c_char;
 
 use crate::types::{FFINetwork, Network};
 use dashcore::PrivateKey as DashPrivateKey;
-use dpp::identity::KeyType;
 use key_wallet::bip32::ExtendedPrivKey;
-use platform_wallet::wallet::identity::network::{
-    derive_ecdsa_identity_auth_keypair_from_master, identity_key_derivation_type,
-};
+use platform_wallet::wallet::identity::network::derive_ecdsa_identity_auth_keypair_from_master;
 use zeroize::Zeroizing;
 
 use crate::error::*;
@@ -194,30 +191,6 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_key_at_slot_with_resolver(
     )
 }
 
-/// Whether the wallet derives identity keys of `key_type` (a DPP key
-/// type byte) at the identity's authentication key slots. A key of a
-/// type it does not derive has no slot key to check it against or to
-/// re-derive it from, so key diagnostics report it unchecked.
-/// `platform_wallet`'s `identity_key_derivation_type` decides.
-///
-/// # Safety
-/// `out_is_derived` must point to a writable `bool`.
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_identity_key_type_is_wallet_derived(
-    key_type: u8,
-    out_is_derived: *mut bool,
-) -> PlatformWalletFFIResult {
-    check_ptr!(out_is_derived);
-    let Ok(key_type) = KeyType::try_from(key_type) else {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            format!("unknown key type {key_type}"),
-        );
-    };
-    *out_is_derived = identity_key_derivation_type(key_type).is_some();
-    PlatformWalletFFIResult::ok()
-}
-
 /// Free a row populated by [`dash_sdk_derive_identity_key_at_slot`].
 ///
 /// Routes through the shared
@@ -303,43 +276,5 @@ mod tests {
 
         // Null outer pointer is a safe no-op.
         unsafe { dash_sdk_derive_identity_key_at_slot_free(std::ptr::null_mut()) };
-    }
-
-    fn is_wallet_derived(key_type: u8) -> Result<bool, PlatformWalletFFIResultCode> {
-        let mut is_derived = true;
-        // SAFETY: `is_derived` is a live, writable `bool`.
-        let result = unsafe {
-            platform_wallet_identity_key_type_is_wallet_derived(key_type, &mut is_derived)
-        };
-        match result.code {
-            PlatformWalletFFIResultCode::Success => Ok(is_derived),
-            code => Err(code),
-        }
-    }
-
-    #[test]
-    fn should_report_a_hecate_signer_key_as_not_wallet_derived() {
-        assert_eq!(
-            is_wallet_derived(KeyType::REDPALLAS_HECATE as u8),
-            Ok(false)
-        );
-        assert_eq!(
-            is_wallet_derived(KeyType::BIP13_SCRIPT_HASH as u8),
-            Ok(false)
-        );
-        assert_eq!(is_wallet_derived(KeyType::ECDSA_SECP256K1 as u8), Ok(true));
-        assert_eq!(is_wallet_derived(KeyType::ECDSA_HASH160 as u8), Ok(true));
-    }
-
-    #[test]
-    fn should_refuse_an_unknown_key_type() {
-        assert_eq!(
-            is_wallet_derived(u8::MAX),
-            Err(PlatformWalletFFIResultCode::ErrorInvalidParameter)
-        );
-        // SAFETY: a null out pointer is refused before it is written.
-        let result =
-            unsafe { platform_wallet_identity_key_type_is_wallet_derived(0, std::ptr::null_mut()) };
-        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
     }
 }

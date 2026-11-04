@@ -1412,21 +1412,111 @@ extension ManagedPlatformWallet {
         return ok ? out : nil
     }
 
-    /// Whether the wallet derives identity keys of `keyType` at the
-    /// identity's authentication key slots. A key of a type it doesn't
-    /// derive has no slot key to check it against or re-derive it
-    /// from. Pure bridge to
-    /// `platform_wallet_identity_key_type_is_wallet_derived`; Rust's
-    /// `identity_key_derivation_type` decides.
+    /// What `checkIdentityKey(...)` found for one identity key. Rust's
+    /// `check_identity_key_from_master` decides which.
+    public enum IdentityKeyWalletCheck: Sendable, Equatable {
+        /// The wallet doesn't derive keys of this type at identity key
+        /// slots, so there is nothing to compare the key with.
+        case notDerived
+        /// The wallet's key at the slot is this key. `privateKeyData` is
+        /// its 32-byte private key: hand it to the Keychain and drop this
+        /// value as soon as possible. `publicKeyHashHex` is the key's DPP
+        /// public key hash.
+        case matches(derivationPath: String, privateKeyData: Data, publicKeyHashHex: String)
+        /// The wallet derives a different key at the slot.
+        /// `derivedPublicKeyData` is that key in the key type's on-chain
+        /// form.
+        case mismatch(derivationPath: String, derivedPublicKeyData: Data)
+    }
+
+    /// Check one identity key against the key this wallet derives at
+    /// the key's slot `(identityIndex, keyId)` for the key's type. Pure
+    /// bridge to `platform_wallet_check_identity_key_with_resolver`;
+    /// Rust's `check_identity_key_from_master` decides, with the same
+    /// derivation signing uses. Rust pulls the mnemonic through the
+    /// `MnemonicResolver` for this call only.
     ///
-    /// - Throws: `PlatformWalletError` when the FFI refuses the key type.
-    public static func derivesIdentityKeys(ofType keyType: KeyType) throws -> Bool {
-        var isDerived = false
-        try platform_wallet_identity_key_type_is_wallet_derived(
-            keyType.ffiValue,
-            &isDerived
-        ).check()
-        return isDerived
+    /// - Parameters:
+    ///   - identityIndex: the identity's index in the HD tree.
+    ///   - keyId, keyType, purpose, securityLevel, publicKeyData: the
+    ///     identity key as registered (`publicKeyData` in its on-chain
+    ///     form; `purpose` and `securityLevel` are DPP discriminants).
+    ///   - network: the wallet's network (selects the coin type).
+    ///   - storage: defaults to a fresh `WalletStorage()`, overridable
+    ///     for tests. Used by the resolver vtable.
+    ///
+    /// - Throws: `PlatformWalletError` when the FFI refuses the key's
+    ///   fields or the mnemonic can't be read. An error says nothing
+    ///   about whether the key belongs to the wallet.
+    @MainActor
+    public func checkIdentityKey(
+        identityIndex: UInt32,
+        keyId: UInt32,
+        keyType: KeyType,
+        purpose: UInt8,
+        securityLevel: UInt8,
+        publicKeyData: Data,
+        network: Network,
+        storage: WalletStorage = WalletStorage()
+    ) throws -> IdentityKeyWalletCheck {
+        // Pinned to `self.walletId` for the same reason as
+        // `deriveIdentityAuthKeyAtSlot`.
+        guard self.walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be 32 bytes, got \(self.walletId.count)"
+            )
+        }
+        let resolver = MnemonicResolver(storage: storage)
+
+        var out = IdentityKeyWalletCheckFFI()
+        defer { platform_wallet_check_identity_key_free(&out) }
+
+        // `withExtendedLifetime` pins the resolver across the synchronous
+        // FFI call so ARC cannot deallocate its `passUnretained` ctx while
+        // Rust is still calling back into it.
+        let result = withExtendedLifetime(resolver) {
+            self.walletId.withUnsafeBytes { walletBytes -> PlatformWalletFFIResult in
+                publicKeyData.withUnsafeBytes { keyBytes -> PlatformWalletFFIResult in
+                    platform_wallet_check_identity_key_with_resolver(
+                        network.ffiValue,
+                        walletBytes.bindMemory(to: UInt8.self).baseAddress!,
+                        resolver.handle,
+                        identityIndex,
+                        keyId,
+                        keyType.ffiValue,
+                        purpose,
+                        securityLevel,
+                        keyBytes.bindMemory(to: UInt8.self).baseAddress,
+                        UInt(keyBytes.count),
+                        &out
+                    )
+                }
+            }
+        }
+        try result.check()
+
+        // Copy out before the deferred free wipes and releases the result.
+        let path = out.derivation_path.map { String(cString: $0) } ?? ""
+        switch out.outcome {
+        case IDENTITY_KEY_WALLET_CHECK_OUTCOME_FFI_NOT_DERIVED:
+            return .notDerived
+        case IDENTITY_KEY_WALLET_CHECK_OUTCOME_FFI_MATCHES:
+            return .matches(
+                derivationPath: path,
+                privateKeyData: Self.tupleData(out.private_key_bytes),
+                publicKeyHashHex: Self.tupleData(out.public_key_hash).toHexString()
+            )
+        case IDENTITY_KEY_WALLET_CHECK_OUTCOME_FFI_MISMATCH:
+            let derived: Data
+            if let data = out.derived_public_key_data, out.derived_public_key_data_len > 0 {
+                derived = Data(bytes: data, count: Int(out.derived_public_key_data_len))
+            } else {
+                derived = Data()
+            }
+            return .mismatch(derivationPath: path, derivedPublicKeyData: derived)
+        default:
+            throw PlatformWalletError.deserialization("Unknown identity key check outcome")
+        }
     }
 
     /// Derive a single ECDSA identity-authentication keypair at an

@@ -30,11 +30,12 @@ struct WalletKeyHealth: Identifiable {
         /// belongs to a different wallet (or a stale mnemonic).
         /// Repair is destructive — only delete-identity.
         case orphan(reason: String)
-        /// A key with no derivation to compare it with: a type the
-        /// wallet doesn't derive at the identity's key slots (Rust
-        /// decides which), or one this diagnostic can't compare (it
-        /// compares only ECDSA keys). Shown, but it leaves the
-        /// identity's severity alone and offers no repair.
+        /// A key with nothing to compare it with: a type the wallet
+        /// doesn't derive at the identity's key slots (Rust decides
+        /// which), a row whose key type the app can't read, or a check
+        /// that failed (a locked Keychain, say), which says nothing
+        /// about whose key it is. Shown, but it leaves the identity's
+        /// severity alone and offers no repair.
         case unchecked(reason: String)
     }
 
@@ -132,9 +133,11 @@ fileprivate func cleanupLegacyKeychainEntry(walletIdHex: String, derivationPath:
 /// background context.
 enum WalletKeyHealthChecker {
 
-    /// Derive each PersistentPublicKey's canonical key from the
-    /// wallet's mnemonic and classify against the stored row +
-    /// Keychain bytes. Pure read — does not mutate state.
+    /// Ask Rust (`checkIdentityKey`) whether each PersistentPublicKey
+    /// is the key the wallet derives at its slot, and for a key that
+    /// is, compare the Keychain entry with its private bytes. Rust
+    /// decides match, mismatch or not derived; this inspects the
+    /// Keychain and renders. Pure read: does not mutate state.
     @MainActor
     static func runCheck(
         wallet: ManagedPlatformWallet,
@@ -148,142 +151,22 @@ enum WalletKeyHealthChecker {
             var keyHealths: [WalletKeyHealth] = []
             for row in sortedKeys {
                 let kid = UInt32(bitPattern: row.keyId)
-                let purposeRaw = UInt8(row.purpose) ?? 0
-                let levelRaw = UInt8(row.securityLevel) ?? 0
                 let storedHex = row.publicKeyData.toHexString()
-
-                // Rust says which key types the wallet derives at the
-                // identity's key slots, and the preview below derives
-                // only ECDSA keys. A key that is not both has nothing
-                // to compare with, so it is reported unchecked rather
-                // than orphan: an orphan key would offer to delete the
-                // whole identity.
-                let keyType = row.keyTypeEnum ?? .ecdsaSecp256k1
-                var uncheckedReason: String?
-                do {
-                    uncheckedReason = try ManagedPlatformWallet.derivesIdentityKeys(ofType: keyType)
-                        ? nil
-                        : "the wallet doesn't derive \(keyType.name) keys from the identity's key slots"
-                } catch {
-                    uncheckedReason = "couldn't ask whether the wallet derives \(keyType.name) keys: \(error.localizedDescription)"
-                }
-                if uncheckedReason == nil {
-                    switch keyType {
-                    case .ecdsaSecp256k1, .ecdsaHash160:
-                        break
-                    case .bls12_381, .bip13ScriptHash, .eddsa25519Hash160, .redpallasHecate:
-                        uncheckedReason = "the diagnostic compares only ECDSA keys, not \(keyType.name) keys"
-                    }
-                }
-                if let uncheckedReason {
-                    keyHealths.append(
-                        WalletKeyHealth(
-                            id: row.keyId,
-                            keyId: kid,
-                            purposeRaw: purposeRaw,
-                            securityLevelRaw: levelRaw,
-                            storedPublicKeyHex: storedHex,
-                            derivedPublicKeyHex: "",
-                            status: .unchecked(reason: uncheckedReason),
-                            row: row
-                        )
-                    )
-                    continue
-                }
-
-                let status: WalletKeyHealth.Status
-                let derivedHex: String
-
-                do {
-                    let preview = try wallet.deriveIdentityAuthKeyAtSlot(
-                        identityIndex: identity.identityIndex,
-                        keyId: kid,
-                        network: network
-                    )
-
-                    // `row.publicKeyData` stores whatever shape was
-                    // registered on Platform — 33-byte compressed
-                    // pubkey for `.ecdsaSecp256k1`, 20-byte HASH160
-                    // for `.ecdsaHash160`. The Rust-derived preview
-                    // is always the raw 33-byte pubkey; hash it
-                    // ourselves before comparing for HASH160 rows.
-                    // Keys of other types were reported unchecked
-                    // above.
-                    let derivedComparableHex: String?
-                    switch keyType {
-                    case .ecdsaSecp256k1:
-                        derivedComparableHex = preview.publicKeyHex
-                        derivedHex = preview.publicKeyHex
-                    case .ecdsaHash160:
-                        let hashHex = SwiftDashSDK.KeychainManager
-                            .computePublicKeyHashHex(preview.publicKeyData)
-                        derivedComparableHex = hashHex.isEmpty ? nil : hashHex
-                        derivedHex = hashHex
-                    case .bls12_381, .bip13ScriptHash, .eddsa25519Hash160, .redpallasHecate:
-                        derivedComparableHex = nil
-                        derivedHex = ""
-                    }
-
-                    if let derivedComparableHex,
-                       derivedComparableHex.caseInsensitiveCompare(storedHex) == .orderedSame {
-                        // pubkey matches the wallet's mnemonic →
-                        // look up the keychain bytes at the expected
-                        // walletId-namespaced account.
-                        //
-                        // We intentionally DON'T fall back to the
-                        // metadata-scan lookup
-                        // (`retrieveIdentityPrivateKey(publicKeyHex:)`)
-                        // here — that path also finds legacy
-                        // (non-namespaced) entries, which would
-                        // mask migration debt. Reporting legacy-only
-                        // keys as "needsRederive" surfaces them in
-                        // the sheet so the user can migrate them
-                        // explicitly.
-                        let expectedAccount = namespacedKeychainAccount(
-                            walletIdHex: walletId.toHexString(),
-                            derivationPath: preview.derivationPath
-                        )
-                        if let kcBytes = KeychainManager.shared
-                            .retrieveKeyData(identifier: expectedAccount)
-                        {
-                            if kcBytes == preview.privateKeyData {
-                                status = .healthy
-                            } else {
-                                status = .needsRederive(
-                                    reason: "Keychain bytes at \(expectedAccount.suffix(40)) don't match the derived private key"
-                                )
-                            }
-                        } else {
-                            status = .needsRederive(
-                                reason: "No new-format Keychain entry (legacy-only entries don't count)"
-                            )
-                        }
-                    } else if derivedComparableHex == nil {
-                        // The derived key couldn't be put in the stored
-                        // key's form (a HASH160 that failed): nothing to
-                        // compare, so unchecked rather than orphan.
-                        let label = row.keyTypeEnum?.name ?? "type \(row.keyType)"
-                        status = .unchecked(
-                            reason: "couldn't put the wallet's derived key in \(label) form to compare it"
-                        )
-                    } else {
-                        status = .orphan(
-                            reason: "Stored \(storedHex.prefix(12))… doesn't match wallet's derivation \(derivedHex.prefix(12))…"
-                        )
-                    }
-                } catch {
-                    derivedHex = ""
-                    status = .orphan(
-                        reason: "Derivation failed: \(error.localizedDescription)"
-                    )
-                }
-
+                let (status, derivedHex) = checkKey(
+                    row: row,
+                    keyId: kid,
+                    identityIndex: identity.identityIndex,
+                    storedHex: storedHex,
+                    wallet: wallet,
+                    walletId: walletId,
+                    network: network
+                )
                 keyHealths.append(
                     WalletKeyHealth(
                         id: row.keyId,
                         keyId: kid,
-                        purposeRaw: purposeRaw,
-                        securityLevelRaw: levelRaw,
+                        purposeRaw: UInt8(row.purpose) ?? 0,
+                        securityLevelRaw: UInt8(row.securityLevel) ?? 0,
                         storedPublicKeyHex: storedHex,
                         derivedPublicKeyHex: derivedHex,
                         status: status,
@@ -302,6 +185,110 @@ enum WalletKeyHealthChecker {
             )
         }
         return reports
+    }
+
+    /// One key's status and the wallet's key at its slot in hex (empty
+    /// when there is none to show).
+    @MainActor
+    private static func checkKey(
+        row: PersistentPublicKey,
+        keyId: UInt32,
+        identityIndex: UInt32,
+        storedHex: String,
+        wallet: ManagedPlatformWallet,
+        walletId: Data,
+        network: Network
+    ) -> (WalletKeyHealth.Status, String) {
+        // A row the app can't read is not handed to Rust under a
+        // guessed type: there is nothing to check it as.
+        guard let keyType = row.keyTypeEnum,
+              let purpose = UInt8(row.purpose),
+              let securityLevel = UInt8(row.securityLevel)
+        else {
+            return (
+                .unchecked(
+                    reason: "the stored key type \(row.keyType), purpose \(row.purpose) or security level \(row.securityLevel) isn't one the app knows"
+                ),
+                ""
+            )
+        }
+
+        let check: ManagedPlatformWallet.IdentityKeyWalletCheck
+        do {
+            check = try wallet.checkIdentityKey(
+                identityIndex: identityIndex,
+                keyId: keyId,
+                keyType: keyType,
+                purpose: purpose,
+                securityLevel: securityLevel,
+                publicKeyData: row.publicKeyData,
+                network: network
+            )
+        } catch {
+            // An error (a locked Keychain, say) says nothing about whose
+            // key this is, so it must not offer to delete the identity.
+            return (.unchecked(reason: "couldn't check the key: \(error.localizedDescription)"), "")
+        }
+
+        switch check {
+        case .notDerived:
+            return (
+                .unchecked(
+                    reason: "the wallet doesn't derive \(keyType.name) keys from the identity's key slots"
+                ),
+                ""
+            )
+        case .mismatch(let derivationPath, let derivedPublicKeyData):
+            let derivedHex = derivedPublicKeyData.toHexString()
+            return (
+                .orphan(
+                    reason: "Stored \(storedHex.prefix(12))… doesn't match the wallet's key at \(derivationPath) (\(derivedHex.prefix(12))…)"
+                ),
+                derivedHex
+            )
+        case .matches(let derivationPath, let privateKeyData, _):
+            return (
+                keychainStatus(
+                    walletId: walletId,
+                    derivationPath: derivationPath,
+                    privateKeyData: privateKeyData
+                ),
+                storedHex
+            )
+        }
+    }
+
+    /// The Keychain side of a key that is the wallet's: whether the
+    /// walletId-namespaced entry at `derivationPath` holds
+    /// `privateKeyData`.
+    ///
+    /// We intentionally DON'T fall back to the metadata-scan lookup
+    /// (`retrieveIdentityPrivateKey(publicKeyHex:)`) here: that path
+    /// also finds legacy (non-namespaced) entries, which would mask
+    /// migration debt. Reporting legacy-only keys as "needsRederive"
+    /// surfaces them in the sheet so the user can migrate them
+    /// explicitly.
+    @MainActor
+    private static func keychainStatus(
+        walletId: Data,
+        derivationPath: String,
+        privateKeyData: Data
+    ) -> WalletKeyHealth.Status {
+        let expectedAccount = namespacedKeychainAccount(
+            walletIdHex: walletId.toHexString(),
+            derivationPath: derivationPath
+        )
+        guard let kcBytes = KeychainManager.shared.retrieveKeyData(identifier: expectedAccount) else {
+            return .needsRederive(
+                reason: "No new-format Keychain entry (legacy-only entries don't count)"
+            )
+        }
+        if kcBytes == privateKeyData {
+            return .healthy
+        }
+        return .needsRederive(
+            reason: "Keychain bytes at \(expectedAccount.suffix(40)) don't match the derived private key"
+        )
     }
 
     /// Per-key result of a rederive pass. `success` is the count of
@@ -340,37 +327,52 @@ enum WalletKeyHealthChecker {
         var failures: [(UInt32, String)] = []
         for key in report.keys {
             guard case .needsRederive = key.status else { continue }
-            let preview: ManagedPlatformWallet.IdentityRegistrationKeyPreview
+            // Ask again rather than hold private bytes in the report.
+            guard let keyType = key.row.keyTypeEnum else {
+                failures.append((key.keyId, "unknown key type \(key.row.keyType)"))
+                continue
+            }
+            let check: ManagedPlatformWallet.IdentityKeyWalletCheck
             do {
-                preview = try wallet.deriveIdentityAuthKeyAtSlot(
+                check = try wallet.checkIdentityKey(
                     identityIndex: report.identityIndex,
                     keyId: key.keyId,
+                    keyType: keyType,
+                    purpose: key.purposeRaw,
+                    securityLevel: key.securityLevelRaw,
+                    publicKeyData: key.row.publicKeyData,
                     network: network
                 )
             } catch {
-                failures.append((key.keyId, "derivation failed: \(error.localizedDescription)"))
+                failures.append((key.keyId, "couldn't check the key: \(error.localizedDescription)"))
                 continue
             }
-            let pubkeyHashHex = SwiftDashSDK.KeychainManager.computePublicKeyHashHex(preview.publicKeyData)
+            guard case let .matches(derivationPath, privateKeyData, publicKeyHashHex) = check else {
+                failures.append((key.keyId, "the wallet no longer derives this key at its slot"))
+                continue
+            }
             let metadata = IdentityPrivateKeyMetadata(
                 identityId: report.identityIdBase58,
                 keyId: key.keyId,
                 walletId: walletId.toHexString(),
                 identityIndex: report.identityIndex,
                 keyIndex: key.keyId,
-                derivationPath: preview.derivationPath,
-                publicKey: preview.publicKeyHex,
-                publicKeyHash: pubkeyHashHex,
-                keyType: UInt8(key.row.keyType) ?? 0,
+                derivationPath: derivationPath,
+                // The key's on-chain form, which `KeychainSigner` matches
+                // on (the 20-byte hash for an ECDSA_HASH160 key). On a
+                // match it is the wallet's key.
+                publicKey: key.row.publicKeyData.toHexString(),
+                publicKeyHash: publicKeyHashHex,
+                keyType: keyType.rawValue,
                 purpose: key.purposeRaw,
                 securityLevel: key.securityLevelRaw
             )
             guard let pkid = KeychainManager.shared.storeIdentityPrivateKey(
-                preview.privateKeyData,
-                derivationPath: preview.derivationPath,
+                privateKeyData,
+                derivationPath: derivationPath,
                 metadata: metadata
             ) else {
-                failures.append((key.keyId, "Keychain write at \(preview.derivationPath) returned nil"))
+                failures.append((key.keyId, "Keychain write at \(derivationPath) returned nil"))
                 continue
             }
             key.row.privateKeyKeychainIdentifier = pkid
@@ -383,7 +385,7 @@ enum WalletKeyHealthChecker {
             // account.
             cleanupLegacyKeychainEntry(
                 walletIdHex: walletId.toHexString(),
-                derivationPath: preview.derivationPath
+                derivationPath: derivationPath
             )
             fixed += 1
         }

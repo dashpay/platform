@@ -25,6 +25,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 
 use dashcore::crypto::ecdsa::EcdsaPublicKey as PublicKey;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::prelude::Identifier;
 use key_wallet::bip32::{
@@ -85,8 +86,8 @@ pub(crate) fn identity_auth_derivation_path(
 /// type has no slot key to check it against or to re-derive it from.
 ///
 /// [`IdentityWallet::derive_identity_key_bytes`] derives by this
-/// answer, and mobile key diagnostics ask it (through FFI) which keys
-/// they can check.
+/// answer and [`check_identity_key_from_master`] checks by it, both
+/// through [`identity_key_derivation_path`].
 pub fn identity_key_derivation_type(key_type: KeyType) -> Option<KeyDerivationType> {
     match key_type {
         KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => Some(KeyDerivationType::ECDSA),
@@ -138,6 +139,32 @@ pub fn identity_auth_derivation_path_for_type(
             PlatformWalletError::InvalidIdentityData(format!("Invalid key index: {}", e))
         })?,
     ]))
+}
+
+/// The DIP-9 path the wallet derives `identity_public_key` at: the
+/// identity's authentication key slot for the key's id, under the
+/// derivation of the key's type ([`identity_key_derivation_type`]).
+/// `None` for a key type the wallet does not derive.
+///
+/// Signing ([`IdentityWallet::derive_identity_key_bytes`]) and the key
+/// check ([`check_identity_key_from_master`]) both pick the slot here,
+/// so they cannot disagree on which key belongs to an identity key.
+pub fn identity_key_derivation_path(
+    network: Network,
+    identity_index: u32,
+    identity_public_key: &IdentityPublicKey,
+) -> Result<Option<DerivationPath>, PlatformWalletError> {
+    let Some(key_derivation_type) = identity_key_derivation_type(identity_public_key.key_type())
+    else {
+        return Ok(None);
+    };
+    identity_auth_derivation_path_for_type(
+        network,
+        key_derivation_type,
+        identity_index,
+        identity_public_key.id(),
+    )
+    .map(Some)
 }
 
 /// A DashPay Connect key: the DIP-13 application sub-features
@@ -495,6 +522,121 @@ pub fn derive_identity_auth_key_hash_from_master(
     Ok(key_hash_array)
 }
 
+/// Whether an identity key is the key the wallet derives at the key's
+/// slot, from [`check_identity_key_from_master`].
+pub enum IdentityKeyWalletCheck {
+    /// The wallet does not derive keys of this type at identity key
+    /// slots, so there is nothing to compare the key with.
+    NotDerived,
+    /// The wallet's key at the slot is this key.
+    Matches {
+        /// The slot's full DIP-9 path.
+        derivation_path: DerivationPath,
+        /// The key's 32-byte private key, wiped on drop.
+        private_key: Zeroizing<[u8; 32]>,
+        /// The key's public key hash (DPP `public_key_hash`).
+        public_key_hash: [u8; 20],
+    },
+    /// The wallet derives a different key at the slot.
+    Mismatch {
+        /// The slot's full DIP-9 path.
+        derivation_path: DerivationPath,
+        /// The wallet's key at the slot in the key type's on-chain form.
+        derived_public_key_data: Vec<u8>,
+    },
+}
+
+// Manual `Debug` so the private key never reaches a log.
+impl std::fmt::Debug for IdentityKeyWalletCheck {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IdentityKeyWalletCheck::NotDerived => f.write_str("NotDerived"),
+            IdentityKeyWalletCheck::Matches {
+                derivation_path,
+                public_key_hash,
+                ..
+            } => f
+                .debug_struct("Matches")
+                .field("derivation_path", derivation_path)
+                .field("public_key_hash", &hex::encode(public_key_hash))
+                .finish_non_exhaustive(),
+            IdentityKeyWalletCheck::Mismatch {
+                derivation_path,
+                derived_public_key_data,
+            } => f
+                .debug_struct("Mismatch")
+                .field("derivation_path", derivation_path)
+                .field(
+                    "derived_public_key_data",
+                    &hex::encode(derived_public_key_data),
+                )
+                .finish(),
+        }
+    }
+}
+
+/// Check `identity_public_key` against the key the wallet derives from
+/// `master` at the key's slot ([`identity_key_derivation_path`]): the
+/// same path and bytes [`IdentityWallet::derive_identity_key_bytes`]
+/// signs with, compared by DPP's `validate_private_key_bytes`. Pure,
+/// like [`derive_ecdsa_identity_auth_keypair_from_master`], so it works
+/// for wallets whose seed the FFI resolves on demand.
+pub fn check_identity_key_from_master(
+    master: &ExtendedPrivKey,
+    network: Network,
+    identity_index: u32,
+    identity_public_key: &IdentityPublicKey,
+) -> Result<IdentityKeyWalletCheck, PlatformWalletError> {
+    let Some(derivation_path) =
+        identity_key_derivation_path(network, identity_index, identity_public_key)?
+    else {
+        return Ok(IdentityKeyWalletCheck::NotDerived);
+    };
+    let key_id = identity_public_key.id();
+    // The derived scalar and its exported byte copy zeroize on drop.
+    let private_key = master
+        .derive_priv(&derivation_path)
+        .map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to derive private key for identity key {key_id}: {e}"
+            ))
+        })?
+        .private_key
+        .to_bytes();
+
+    let is_match = identity_public_key
+        .validate_private_key_bytes(&private_key, network)
+        .map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to compare identity key {key_id} with the wallet's key: {e}"
+            ))
+        })?;
+    if is_match {
+        let public_key_hash = identity_public_key.public_key_hash().map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to hash identity key {key_id}: {e}"
+            ))
+        })?;
+        return Ok(IdentityKeyWalletCheck::Matches {
+            derivation_path,
+            private_key,
+            public_key_hash,
+        });
+    }
+    let derived_public_key_data = identity_public_key
+        .key_type()
+        .public_key_data_from_private_key_data(&private_key, network)
+        .map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to put the wallet's key for identity key {key_id} in on-chain form: {e}"
+            ))
+        })?;
+    Ok(IdentityKeyWalletCheck::Mismatch {
+        derivation_path,
+        derived_public_key_data,
+    })
+}
+
 /// Identity + DashPay wallet facade.
 ///
 /// A view onto the shared `PlatformWalletInfo` state inside the wallet
@@ -620,10 +762,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 
     /// Derive the raw private key bytes for an identity authentication key.
     ///
-    /// Determines the correct [`KeyDerivationType`] from the public key's
-    /// [`KeyType`] ([`identity_key_derivation_type`]), builds the DIP-9
-    /// derivation path, and derives the private key from the wallet.
-    /// Fails for a key type the wallet does not derive.
+    /// Picks the DIP-9 path from the public key's [`KeyType`] and id
+    /// ([`identity_key_derivation_path`]) and derives the private key
+    /// from the wallet. Fails for a key type the wallet does not derive.
     ///
     /// Returns the bytes wrapped in [`Zeroizing`] so they are automatically
     /// wiped from memory when the value is dropped.
@@ -634,19 +775,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         identity_public_key: &IdentityPublicKey,
     ) -> Result<Zeroizing<[u8; 32]>, PlatformWalletError> {
         let key_id = identity_public_key.id();
-        let key_type = identity_public_key.key_type();
-        let key_derivation_type = identity_key_derivation_type(key_type).ok_or_else(|| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "{key_type} keys are not derived by the wallet"
-            ))
-        })?;
-
-        let path = Self::identity_auth_derivation_path(
-            network,
-            key_derivation_type,
-            identity_index,
-            key_id,
-        )?;
+        let path = identity_key_derivation_path(network, identity_index, identity_public_key)?
+            .ok_or_else(|| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "{} keys are not derived by the wallet",
+                    identity_public_key.key_type()
+                ))
+            })?;
 
         let secret_key = wallet.derive_private_key(&path).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!(
@@ -1161,5 +1296,307 @@ mod tests {
             matches!(&err, PlatformWalletError::InvalidIdentityData(m) if m.contains("REDPALLAS_HECATE")),
             "{err:?}"
         );
+    }
+
+    // ── Wallet key check ──────────────────────────────────────────────
+
+    fn identity_key(
+        id: u32,
+        key_type: KeyType,
+        purpose: Purpose,
+        data: Vec<u8>,
+    ) -> IdentityPublicKey {
+        IdentityPublicKeyV0 {
+            id,
+            purpose,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type,
+            read_only: false,
+            data: BinaryData::new(data),
+            disabled_at: None,
+        }
+        .into()
+    }
+
+    /// The wallet's 32 bytes at the `key_derivation_type` slot
+    /// `(identity_index, key_index)`.
+    fn slot_bytes(
+        master: &ExtendedPrivKey,
+        network: Network,
+        key_derivation_type: KeyDerivationType,
+        identity_index: u32,
+        key_index: u32,
+    ) -> (DerivationPath, [u8; 32]) {
+        let path = identity_auth_derivation_path_for_type(
+            network,
+            key_derivation_type,
+            identity_index,
+            key_index,
+        )
+        .expect("slot path");
+        let bytes = *master
+            .derive_priv(&path)
+            .expect("slot derive")
+            .private_key
+            .to_bytes();
+        (path, bytes)
+    }
+
+    fn check(key: &IdentityPublicKey, identity_index: u32) -> IdentityKeyWalletCheck {
+        check_identity_key_from_master(
+            &master_for(Network::Testnet),
+            Network::Testnet,
+            identity_index,
+            key,
+        )
+        .expect("check")
+    }
+
+    #[test]
+    fn should_not_check_a_key_of_a_type_the_wallet_does_not_derive() {
+        let hecate_signer_key = identity_key(
+            3,
+            KeyType::REDPALLAS_HECATE,
+            Purpose::HECATE_SIGNER,
+            vec![1; 64],
+        );
+        let script_hash_key = identity_key(
+            4,
+            KeyType::BIP13_SCRIPT_HASH,
+            Purpose::TRANSFER,
+            vec![2; 20],
+        );
+        for key in [hecate_signer_key, script_hash_key] {
+            assert!(
+                matches!(check(&key, 0), IdentityKeyWalletCheck::NotDerived),
+                "{key:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_match_an_ecdsa_key_the_wallet_derives_at_its_slot() {
+        let network = Network::Testnet;
+        let slot =
+            derive_ecdsa_identity_auth_keypair_from_master(&master_for(network), network, 2, 3)
+                .expect("slot keypair");
+        let key = identity_key(
+            3,
+            KeyType::ECDSA_SECP256K1,
+            Purpose::AUTHENTICATION,
+            slot.public_key.to_vec(),
+        );
+
+        match check(&key, 2) {
+            IdentityKeyWalletCheck::Matches {
+                derivation_path,
+                private_key,
+                public_key_hash,
+            } => {
+                assert_eq!(derivation_path, slot.derivation_path);
+                assert_eq!(*private_key, *slot.private_key);
+                assert_eq!(
+                    public_key_hash.as_slice(),
+                    ripemd160_sha256(&slot.public_key).as_slice()
+                );
+            }
+            other => panic!("expected Matches, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn should_match_an_ecdsa_hash160_key_the_wallet_derives_at_its_slot() {
+        let network = Network::Testnet;
+        let slot =
+            derive_ecdsa_identity_auth_keypair_from_master(&master_for(network), network, 1, 2)
+                .expect("slot keypair");
+        let pubkey_hash = ripemd160_sha256(&slot.public_key).to_vec();
+        let key = identity_key(
+            2,
+            KeyType::ECDSA_HASH160,
+            Purpose::TRANSFER,
+            pubkey_hash.clone(),
+        );
+
+        match check(&key, 1) {
+            IdentityKeyWalletCheck::Matches {
+                derivation_path,
+                private_key,
+                public_key_hash,
+            } => {
+                assert_eq!(derivation_path, slot.derivation_path);
+                assert_eq!(*private_key, *slot.private_key);
+                assert_eq!(public_key_hash.to_vec(), pubkey_hash);
+            }
+            other => panic!("expected Matches, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn should_report_a_mismatch_for_a_key_from_another_slot() {
+        let network = Network::Testnet;
+        let master = master_for(network);
+        let other_slot = derive_ecdsa_identity_auth_keypair_from_master(&master, network, 2, 3)
+            .expect("other slot keypair");
+        let own_slot = derive_ecdsa_identity_auth_keypair_from_master(&master, network, 2, 4)
+            .expect("own slot keypair");
+        // Key 4 carrying key 3's public key.
+        let key = identity_key(
+            4,
+            KeyType::ECDSA_SECP256K1,
+            Purpose::AUTHENTICATION,
+            other_slot.public_key.to_vec(),
+        );
+
+        match check(&key, 2) {
+            IdentityKeyWalletCheck::Mismatch {
+                derivation_path,
+                derived_public_key_data,
+            } => {
+                assert_eq!(derivation_path, own_slot.derivation_path);
+                assert_eq!(derived_public_key_data, own_slot.public_key.to_vec());
+            }
+            other => panic!("expected Mismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn should_match_a_bls_key_the_wallet_derives_at_its_bls_slot() {
+        let network = Network::Testnet;
+        let (path, bytes) = slot_bytes(&master_for(network), network, KeyDerivationType::BLS, 0, 2);
+        let data = KeyType::BLS12_381
+            .public_key_data_from_private_key_data(&bytes, network)
+            .expect("BLS public key");
+        let key = identity_key(2, KeyType::BLS12_381, Purpose::AUTHENTICATION, data.clone());
+
+        match check(&key, 0) {
+            IdentityKeyWalletCheck::Matches {
+                derivation_path,
+                private_key,
+                public_key_hash,
+            } => {
+                assert_eq!(derivation_path, path);
+                assert_eq!(*private_key, bytes);
+                assert_eq!(
+                    public_key_hash.as_slice(),
+                    ripemd160_sha256(&data).as_slice()
+                );
+            }
+            other => panic!("expected Matches, got {other:?}"),
+        }
+    }
+
+    /// A BLS key is compared with its own BLS slot, and the mismatch
+    /// reports that slot's BLS public key.
+    #[test]
+    fn should_report_a_mismatch_for_a_bls_key_holding_another_slots_bls_key() {
+        let network = Network::Testnet;
+        let master = master_for(network);
+        let (_, other_bytes) = slot_bytes(&master, network, KeyDerivationType::BLS, 0, 2);
+        let (own_path, own_bytes) = slot_bytes(&master, network, KeyDerivationType::BLS, 0, 3);
+        let bls_public_key = |bytes: &[u8; 32]| {
+            KeyType::BLS12_381
+                .public_key_data_from_private_key_data(bytes, network)
+                .expect("BLS public key")
+        };
+        let key = identity_key(
+            3,
+            KeyType::BLS12_381,
+            Purpose::AUTHENTICATION,
+            bls_public_key(&other_bytes),
+        );
+
+        match check(&key, 0) {
+            IdentityKeyWalletCheck::Mismatch {
+                derivation_path,
+                derived_public_key_data,
+            } => {
+                assert_eq!(derivation_path, own_path);
+                assert_eq!(derived_public_key_data, bls_public_key(&own_bytes));
+            }
+            other => panic!("expected Mismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn should_match_an_eddsa_key_the_wallet_derives_at_its_ecdsa_slot() {
+        let network = Network::Testnet;
+        let slot =
+            derive_ecdsa_identity_auth_keypair_from_master(&master_for(network), network, 0, 5)
+                .expect("slot keypair");
+        let data = KeyType::EDDSA_25519_HASH160
+            .public_key_data_from_private_key_data(&slot.private_key, network)
+            .expect("EdDSA public key hash");
+        let key = identity_key(5, KeyType::EDDSA_25519_HASH160, Purpose::TRANSFER, data);
+
+        match check(&key, 0) {
+            IdentityKeyWalletCheck::Matches {
+                derivation_path,
+                private_key,
+                ..
+            } => {
+                assert_eq!(derivation_path, slot.derivation_path);
+                assert_eq!(*private_key, *slot.private_key);
+            }
+            other => panic!("expected Matches, got {other:?}"),
+        }
+    }
+
+    /// Signing derives with `derive_identity_key_bytes` on a key-resident
+    /// wallet; the check derives from the master. Both must land on the
+    /// same key for every key type the wallet derives.
+    #[test]
+    fn should_sign_with_the_key_the_check_matches() {
+        let network = Network::Testnet;
+        let master = master_for(network);
+        let wallet = mnemonic_wallet(network);
+
+        let ecdsa = derive_ecdsa_identity_auth_keypair_from_master(&master, network, 0, 1)
+            .expect("slot keypair");
+        let (_, bls_bytes) = slot_bytes(&master, network, KeyDerivationType::BLS, 0, 1);
+        let keys = [
+            identity_key(
+                1,
+                KeyType::ECDSA_SECP256K1,
+                Purpose::AUTHENTICATION,
+                ecdsa.public_key.to_vec(),
+            ),
+            identity_key(
+                1,
+                KeyType::ECDSA_HASH160,
+                Purpose::TRANSFER,
+                ripemd160_sha256(&ecdsa.public_key).to_vec(),
+            ),
+            identity_key(
+                1,
+                KeyType::EDDSA_25519_HASH160,
+                Purpose::TRANSFER,
+                KeyType::EDDSA_25519_HASH160
+                    .public_key_data_from_private_key_data(&ecdsa.private_key, network)
+                    .expect("EdDSA public key hash"),
+            ),
+            identity_key(
+                1,
+                KeyType::BLS12_381,
+                Purpose::AUTHENTICATION,
+                KeyType::BLS12_381
+                    .public_key_data_from_private_key_data(&bls_bytes, network)
+                    .expect("BLS public key"),
+            ),
+        ];
+
+        for key in keys {
+            let signing_bytes = IdentityWallet::<SpvBroadcaster>::derive_identity_key_bytes(
+                &wallet, network, 0, &key,
+            )
+            .expect("resident derive");
+            match check(&key, 0) {
+                IdentityKeyWalletCheck::Matches { private_key, .. } => {
+                    assert_eq!(*private_key, *signing_bytes, "{key:?}")
+                }
+                other => panic!("expected Matches for {key:?}, got {other:?}"),
+            }
+        }
     }
 }

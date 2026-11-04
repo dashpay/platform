@@ -53,7 +53,7 @@ import org.dashfoundation.example.util.Base58
  * resolver-keyed derive FFI (`dash_sdk_derive_identity_key_at_slot`,
  * surfaced as `PlatformWalletManager.repairIdentityKey`) and re-encrypts it
  * into `WalletStorage` — the Android realization of the iOS re-derive path
- * in `WalletKeyHealthSheet.swift` (`deriveIdentityAuthKeyAtSlot`). A
+ * in `WalletKeyHealthSheet.swift` (`checkIdentityKey`). A
  * successful repair flips the row to Healthy on the next check pass.
  */
 @OptIn(ExperimentalMaterial3Api::class)
