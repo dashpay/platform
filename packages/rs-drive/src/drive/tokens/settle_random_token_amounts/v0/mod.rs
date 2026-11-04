@@ -881,6 +881,72 @@ mod tests {
     }
 
     #[test]
+    fn should_refuse_a_batch_reserving_two_random_amounts_of_one_token() {
+        // Two random transfers of the token with disjoint balances, in one batch: each would
+        // create the token's escrow tree, which it does not have yet, and GroveDB's consistency
+        // check refuses the creation queued twice, so the batch is refused before it writes
+        let drive = setup();
+        assert!(drive.config.batching_consistency_verification);
+        let other_sender = [9; 32];
+        drive
+            .token_mint(
+                TOKEN,
+                other_sender,
+                MAXIMUM,
+                false,
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                PlatformVersion::latest(),
+            )
+            .expect("expected to mint the other sender's balance");
+        let first = transfer();
+        let second = RandomTokenRequest {
+            owner_id: Identifier::from(other_sender),
+            kind: RandomTokenRequestKind::Transfer {
+                sender_id: Identifier::from(other_sender),
+                recipient_id: Identifier::from([10; 32]),
+            },
+            ..transfer()
+        };
+        assert_eq!(reserved(&drive, &first), None);
+
+        let operations = random_operations(&first, false)
+            .into_iter()
+            .chain(random_operations(&second, false))
+            .filter(|operation| matches!(operation, DriveOperation::TokenOperation(_)))
+            .collect();
+        let result = drive.apply_drive_operations(
+            operations,
+            true,
+            &BlockInfo::default(),
+            None,
+            PlatformVersion::latest(),
+            None,
+        );
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+            ),
+            "{result:?}"
+        );
+        assert_eq!(reserved(&drive, &first), None);
+        assert_eq!(reserved(&drive, &second), None);
+        assert_eq!(balance(&drive, SENDER), Some(BASE_SUPPLY));
+        assert_eq!(balance(&drive, other_sender), Some(MAXIMUM));
+        assert_tokens_balanced(&drive);
+
+        // Batch by batch, the first creates the escrow tree and the second finds it
+        reserve(&drive, &first, false);
+        reserve(&drive, &second, false);
+        assert_eq!(reserved(&drive, &first), Some(MAXIMUM));
+        assert_eq!(reserved(&drive, &second), Some(MAXIMUM));
+        assert_tokens_balanced(&drive);
+    }
+
+    #[test]
     fn should_settle_two_requests_crediting_one_balance() {
         let drive = setup();
         let first = transfer();
