@@ -107,7 +107,7 @@ pub use dpns_marketplace::{
     DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS,
 };
 pub use identity_handle::{
-    check_identity_key_from_master, check_identity_keys, check_identity_keys_from_master,
+    check_identity_key_from_master, check_identity_keys_from_master,
     derive_connect_keypair_from_master, derive_ecdsa_identity_auth_keypair_from_master,
     derive_identity_auth_key_hash_from_master, derive_identity_auth_keypair,
     identity_auth_derivation_path_for_type, identity_key_derivation_path,

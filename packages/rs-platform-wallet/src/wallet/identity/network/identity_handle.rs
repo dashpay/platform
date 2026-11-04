@@ -45,7 +45,7 @@ use zeroize::{Zeroize, Zeroizing};
 use crate::broadcaster::{SpvBroadcaster, TransactionBroadcaster};
 use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::manager::AssetLockManager;
-use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+use crate::wallet::platform_wallet::{PlatformWallet, PlatformWalletInfo, WalletId};
 
 /// Default gap limit for identity discovery scanning.
 ///
@@ -755,49 +755,6 @@ pub fn check_identity_keys_from_master(
     Ok(IdentityWalletCheck { keys, ownership })
 }
 
-/// [`check_identity_keys_from_master`] with the master key resolved on
-/// demand: `resolve_master` runs at most once, and only when a key needs
-/// comparing with the wallet's key at its slot. An identity with none
-/// needs no seed, so it is checked even when the seed cannot be read.
-/// The master is wiped after the check.
-pub fn check_identity_keys<E: From<PlatformWalletError>>(
-    network: Network,
-    identity_index: u32,
-    identity_public_keys: &[IdentityPublicKey],
-    unreadable_key_count: usize,
-    resolve_master: impl FnOnce() -> Result<ExtendedPrivKey, E>,
-) -> Result<IdentityWalletCheck, E> {
-    let comparisons = identity_public_keys
-        .iter()
-        .map(|key| key_comparison(network, identity_index, key))
-        .collect::<Result<Vec<_>, _>>()?;
-    if comparisons
-        .iter()
-        .all(|comparison| matches!(comparison, KeyComparison::Known(_)))
-    {
-        let keys: Vec<IdentityKeyWalletCheck> = comparisons
-            .into_iter()
-            .filter_map(|comparison| match comparison {
-                KeyComparison::Known(check) => Some(check),
-                KeyComparison::AtSlot(_) => None,
-            })
-            .collect();
-        let ownership =
-            identity_wallet_ownership(identity_public_keys, &keys, unreadable_key_count);
-        return Ok(IdentityWalletCheck { keys, ownership });
-    }
-    let mut master = resolve_master()?;
-    let check = check_identity_keys_from_master(
-        &master,
-        network,
-        identity_index,
-        identity_public_keys,
-        unreadable_key_count,
-    );
-    master.private_key.zeroize();
-    Ok(check?)
-}
-
 /// Identity + DashPay wallet facade.
 ///
 /// A view onto the shared `PlatformWalletInfo` state inside the wallet
@@ -989,6 +946,125 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// The wallet ID for this identity wallet's underlying key material.
     pub fn wallet_id(&self) -> &WalletId {
         &self.wallet_id
+    }
+
+    /// The network this wallet's keys are derived on.
+    async fn wallet_network(&self) -> Result<Network, PlatformWalletError> {
+        let guard = self.wallet_manager.read().await;
+        guard
+            .get_wallet(&self.wallet_id)
+            .map(|wallet| wallet.network)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))
+    }
+
+    /// Check every key of the identity at `identity_index`, enabled or
+    /// not, against this wallet's keys, and decide whether the identity is
+    /// this wallet's ([`check_identity_keys_from_master`]).
+    ///
+    /// `resolve_master` runs at most once, and only when a key needs
+    /// comparing; an identity with none is answered without the seed. It
+    /// is given the wallet's network to build the master key on. The
+    /// master it returns must be this wallet's (it derives the wallet's
+    /// account-0 xpub), or the check fails with
+    /// [`PlatformWalletError::SeedMismatch`], so another wallet's seed can
+    /// never make an identity look foreign. The master is wiped after the
+    /// check.
+    pub async fn check_identity_keys<E: From<PlatformWalletError>>(
+        &self,
+        identity_index: u32,
+        identity_public_keys: &[IdentityPublicKey],
+        unreadable_key_count: usize,
+        resolve_master: impl FnOnce(Network) -> Result<ExtendedPrivKey, E>,
+    ) -> Result<IdentityWalletCheck, E> {
+        let network = self.wallet_network().await?;
+        let comparisons = identity_public_keys
+            .iter()
+            .map(|key| key_comparison(network, identity_index, key))
+            .collect::<Result<Vec<_>, _>>()?;
+        if comparisons
+            .iter()
+            .all(|comparison| matches!(comparison, KeyComparison::Known(_)))
+        {
+            let keys: Vec<IdentityKeyWalletCheck> = comparisons
+                .into_iter()
+                .filter_map(|comparison| match comparison {
+                    KeyComparison::Known(check) => Some(check),
+                    KeyComparison::AtSlot(_) => None,
+                })
+                .collect();
+            let ownership =
+                identity_wallet_ownership(identity_public_keys, &keys, unreadable_key_count);
+            return Ok(IdentityWalletCheck { keys, ownership });
+        }
+
+        let mut master = resolve_master(network)?;
+        let check = match self.verify_master_binds(&master).await {
+            Ok(()) => check_identity_keys_from_master(
+                &master,
+                network,
+                identity_index,
+                identity_public_keys,
+                unreadable_key_count,
+            ),
+            Err(e) => Err(e),
+        };
+        master.private_key.zeroize();
+        Ok(check?)
+    }
+
+    /// [`Self::check_identity_keys`] for one key: whether it is the key
+    /// this wallet derives at its slot, from this wallet's seed only.
+    pub async fn check_identity_key<E: From<PlatformWalletError>>(
+        &self,
+        identity_index: u32,
+        identity_public_key: &IdentityPublicKey,
+        resolve_master: impl FnOnce(Network) -> Result<ExtendedPrivKey, E>,
+    ) -> Result<IdentityKeyWalletCheck, E> {
+        let check = self
+            .check_identity_keys(
+                identity_index,
+                std::slice::from_ref(identity_public_key),
+                0,
+                resolve_master,
+            )
+            .await?;
+        check.keys.into_iter().next().ok_or_else(|| {
+            E::from(PlatformWalletError::InvalidIdentityData(
+                "the key check returned no result".to_string(),
+            ))
+        })
+    }
+}
+
+impl PlatformWallet {
+    /// Wallet-level entry point for [`IdentityWallet::check_identity_keys`].
+    pub async fn check_identity_keys<E: From<PlatformWalletError>>(
+        &self,
+        identity_index: u32,
+        identity_public_keys: &[IdentityPublicKey],
+        unreadable_key_count: usize,
+        resolve_master: impl FnOnce(Network) -> Result<ExtendedPrivKey, E>,
+    ) -> Result<IdentityWalletCheck, E> {
+        self.identity()
+            .check_identity_keys(
+                identity_index,
+                identity_public_keys,
+                unreadable_key_count,
+                resolve_master,
+            )
+            .await
+    }
+
+    /// Wallet-level entry point for [`IdentityWallet::check_identity_key`].
+    pub async fn check_identity_key<E: From<PlatformWalletError>>(
+        &self,
+        identity_index: u32,
+        identity_public_key: &IdentityPublicKey,
+        resolve_master: impl FnOnce(Network) -> Result<ExtendedPrivKey, E>,
+    ) -> Result<IdentityKeyWalletCheck, E> {
+        self.identity()
+            .check_identity_key(identity_index, identity_public_key, resolve_master)
+            .await
     }
 }
 
@@ -2011,45 +2087,6 @@ mod tests {
         assert_eq!(check.ownership, IdentityWalletOwnership::Owned);
     }
 
-    #[test]
-    fn should_resolve_the_master_only_for_a_key_the_wallet_derives() {
-        let hecate_signer_key = identity_key(
-            3,
-            KeyType::REDPALLAS_HECATE,
-            Purpose::HECATE_SIGNER,
-            vec![1; 64],
-        );
-        let check = check_identity_keys(
-            Network::Testnet,
-            0,
-            std::slice::from_ref(&hecate_signer_key),
-            0,
-            || {
-                Err(PlatformWalletError::InvalidParameter(
-                    "the seed must not be read".to_string(),
-                ))
-            },
-        )
-        .expect("no seed needed");
-        assert!(matches!(
-            check.keys[..],
-            [IdentityKeyWalletCheck::NotDerived]
-        ));
-        assert_eq!(check.ownership, IdentityWalletOwnership::Undetermined);
-
-        let mut resolves = 0;
-        let keys = [
-            hecate_signer_key,
-            ecdsa_key(0, SecurityLevel::MASTER, slot_public_key(0, 0), None),
-        ];
-        let check = check_identity_keys(Network::Testnet, 0, &keys, 0, || {
-            resolves += 1;
-            Ok::<_, PlatformWalletError>(master_for(Network::Testnet))
-        })
-        .expect("check");
-        assert_eq!(resolves, 1);
-        assert_eq!(check.ownership, IdentityWalletOwnership::Owned);
-    }
     /// The uncompressed 65-byte encoding of the wallet's ECDSA key at
     /// `(identity_index, key_index)` on testnet.
     fn uncompressed_slot_public_key(identity_index: u32, key_index: u32) -> Vec<u8> {
@@ -2157,25 +2194,149 @@ mod tests {
         );
     }
 
-    /// A key the check doesn't compare needs no seed.
-    #[test]
-    fn should_not_read_the_seed_for_an_uncompressed_key() {
+    // ── Wallet-scoped check ───────────────────────────────────────────
+
+    /// A seed other than the test wallet's.
+    const OTHER_MNEMONIC: &str =
+        "legal winner thank year wave sausage worth useful legal winner thank yellow";
+
+    fn other_master() -> ExtendedPrivKey {
+        let seed = Mnemonic::from_phrase(OTHER_MNEMONIC)
+            .expect("valid other mnemonic")
+            .to_seed("");
+        ExtendedPrivKey::new_master(Network::Testnet, &seed).expect("other master")
+    }
+
+    /// The testnet wallet `test_platform_wallet_manager` creates from
+    /// [`TEST_MNEMONIC`], and its manager (keep it alive).
+    async fn test_wallet() -> (
+        Arc<crate::PlatformWalletManager<crate::test_support::NoopTestPersister>>,
+        Arc<PlatformWallet>,
+    ) {
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("test wallet");
+        (manager, wallet)
+    }
+
+    /// Checked with another wallet's seed, the wallet's own identity
+    /// would look foreign, so the wallet refuses that seed instead.
+    #[tokio::test]
+    async fn should_refuse_another_wallets_seed_instead_of_calling_the_identity_foreign() {
+        let (_manager, wallet) = test_wallet().await;
         let keys = [ecdsa_key(
             0,
             SecurityLevel::MASTER,
-            uncompressed_slot_public_key(0, 0),
+            slot_public_key(0, 0),
             None,
         )];
-        let check = check_identity_keys(Network::Testnet, 0, &keys, 0, || {
-            Err(PlatformWalletError::InvalidParameter(
-                "the seed must not be read".to_string(),
-            ))
-        })
-        .expect("no seed needed");
+        // What the comparator alone says with the other seed.
+        let unbound =
+            check_identity_keys_from_master(&other_master(), Network::Testnet, 0, &keys, 0)
+                .expect("comparator");
+        assert_eq!(unbound.ownership, IdentityWalletOwnership::NotOwned);
+
+        let err = wallet
+            .check_identity_keys(
+                0,
+                &keys,
+                0,
+                |_| Ok::<_, PlatformWalletError>(other_master()),
+            )
+            .await
+            .expect_err("another wallet's seed must be refused");
+        assert!(
+            matches!(err, PlatformWalletError::SeedMismatch { .. }),
+            "{err:?}"
+        );
+
+        let check = wallet
+            .check_identity_keys(0, &keys, 0, |_| {
+                Ok::<_, PlatformWalletError>(master_for(Network::Testnet))
+            })
+            .await
+            .expect("the wallet's own seed");
+        assert_eq!(check.ownership, IdentityWalletOwnership::Owned);
+    }
+
+    /// Keys that need no comparison (not derived, not compared) are
+    /// answered without resolving the seed at all.
+    #[tokio::test]
+    async fn should_answer_without_the_seed_when_no_key_needs_comparing() {
+        let (_manager, wallet) = test_wallet().await;
+        let keys = [
+            identity_key(
+                3,
+                KeyType::REDPALLAS_HECATE,
+                Purpose::HECATE_SIGNER,
+                vec![1; 64],
+            ),
+            ecdsa_key(
+                0,
+                SecurityLevel::MASTER,
+                uncompressed_slot_public_key(0, 0),
+                None,
+            ),
+        ];
+        let mut resolves = 0;
+
+        let check = wallet
+            .check_identity_keys(0, &keys, 0, |_| {
+                resolves += 1;
+                Ok::<_, PlatformWalletError>(other_master())
+            })
+            .await
+            .expect("no seed needed");
+
+        assert_eq!(resolves, 0);
         assert!(matches!(
             check.keys[..],
-            [IdentityKeyWalletCheck::NotCompared]
+            [
+                IdentityKeyWalletCheck::NotDerived,
+                IdentityKeyWalletCheck::NotCompared
+            ]
         ));
         assert_eq!(check.ownership, IdentityWalletOwnership::Undetermined);
+    }
+
+    #[tokio::test]
+    async fn should_check_one_key_with_the_wallets_seed_only() {
+        let (_manager, wallet) = test_wallet().await;
+        let key = ecdsa_key(1, SecurityLevel::HIGH, slot_public_key(0, 1), None);
+
+        let err = wallet
+            .check_identity_key(0, &key, |_| Ok::<_, PlatformWalletError>(other_master()))
+            .await
+            .expect_err("another wallet's seed must be refused");
+        assert!(
+            matches!(err, PlatformWalletError::SeedMismatch { .. }),
+            "{err:?}"
+        );
+        assert!(matches!(
+            wallet
+                .check_identity_key(0, &key, |_| {
+                    Ok::<_, PlatformWalletError>(master_for(Network::Testnet))
+                })
+                .await
+                .expect("the wallet's own seed"),
+            IdentityKeyWalletCheck::Matches { .. }
+        ));
+
+        let uncompressed = ecdsa_key(
+            1,
+            SecurityLevel::HIGH,
+            uncompressed_slot_public_key(0, 1),
+            None,
+        );
+        assert!(matches!(
+            wallet
+                .check_identity_key(0, &uncompressed, |_| {
+                    Err(PlatformWalletError::InvalidParameter(
+                        "the seed must not be read".to_string(),
+                    ))
+                })
+                .await
+                .expect("no seed needed"),
+            IdentityKeyWalletCheck::NotCompared
+        ));
     }
 }

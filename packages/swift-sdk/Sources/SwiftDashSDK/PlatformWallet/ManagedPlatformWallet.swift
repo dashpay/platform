@@ -1436,22 +1436,23 @@ extension ManagedPlatformWallet {
     /// Check one identity key against the key this wallet derives at
     /// the key's slot `(identityIndex, keyId)` for the key's type. Pure
     /// bridge to `platform_wallet_check_identity_key_with_resolver`;
-    /// Rust's `check_identity_key_from_master` decides, with the same
-    /// derivation signing uses. Rust pulls the mnemonic through the
-    /// `MnemonicResolver` for this call only.
+    /// Rust's `PlatformWallet::check_identity_key` decides, with the
+    /// derivation signing uses. Rust reads the mnemonic through the
+    /// `MnemonicResolver` only when the key needs comparing, and refuses
+    /// one that isn't this wallet's.
     ///
     /// - Parameters:
     ///   - identityIndex: the identity's index in the HD tree.
     ///   - keyId, keyType, purpose, securityLevel, publicKeyData: the
     ///     identity key as registered (`publicKeyData` in its on-chain
     ///     form; `purpose` and `securityLevel` are DPP discriminants).
-    ///   - network: the wallet's network (selects the coin type).
     ///   - storage: defaults to a fresh `WalletStorage()`, overridable
     ///     for tests. Used by the resolver vtable.
     ///
     /// - Throws: `PlatformWalletError` when the FFI refuses the key's
-    ///   fields or the mnemonic can't be read. An error says nothing
-    ///   about whether the key belongs to the wallet.
+    ///   fields, the mnemonic can't be read, or the stored mnemonic isn't
+    ///   this wallet's. An error says nothing about whether the key
+    ///   belongs to the wallet.
     @MainActor
     public func checkIdentityKey(
         identityIndex: UInt32,
@@ -1460,16 +1461,8 @@ extension ManagedPlatformWallet {
         purpose: UInt8,
         securityLevel: UInt8,
         publicKeyData: Data,
-        network: Network,
         storage: WalletStorage = WalletStorage()
     ) throws -> IdentityKeyWalletCheck {
-        // Pinned to `self.walletId` for the same reason as
-        // `deriveIdentityAuthKeyAtSlot`.
-        guard self.walletId.count == 32 else {
-            throw PlatformWalletError.invalidParameter(
-                "walletId must be 32 bytes, got \(self.walletId.count)"
-            )
-        }
         let resolver = MnemonicResolver(storage: storage)
 
         var out = IdentityKeyWalletCheckFFI()
@@ -1479,22 +1472,19 @@ extension ManagedPlatformWallet {
         // FFI call so ARC cannot deallocate its `passUnretained` ctx while
         // Rust is still calling back into it.
         let result = withExtendedLifetime(resolver) {
-            self.walletId.withUnsafeBytes { walletBytes -> PlatformWalletFFIResult in
-                publicKeyData.withUnsafeBytes { keyBytes -> PlatformWalletFFIResult in
-                    platform_wallet_check_identity_key_with_resolver(
-                        network.ffiValue,
-                        walletBytes.bindMemory(to: UInt8.self).baseAddress!,
-                        resolver.handle,
-                        identityIndex,
-                        keyId,
-                        keyType.ffiValue,
-                        purpose,
-                        securityLevel,
-                        keyBytes.bindMemory(to: UInt8.self).baseAddress,
-                        UInt(keyBytes.count),
-                        &out
-                    )
-                }
+            publicKeyData.withUnsafeBytes { keyBytes -> PlatformWalletFFIResult in
+                platform_wallet_check_identity_key_with_resolver(
+                    handle,
+                    resolver.handle,
+                    identityIndex,
+                    keyId,
+                    keyType.ffiValue,
+                    purpose,
+                    securityLevel,
+                    keyBytes.bindMemory(to: UInt8.self).baseAddress,
+                    UInt(keyBytes.count),
+                    &out
+                )
             }
         }
         try result.check()
@@ -1587,9 +1577,10 @@ extension ManagedPlatformWallet {
     /// keys this wallet derives at their slots, and whether the identity
     /// is this wallet's. Pure bridge to
     /// `platform_wallet_check_identity_keys_with_resolver`; Rust's
-    /// `check_identity_keys` decides both, and reads the mnemonic through
-    /// the `MnemonicResolver` only when a key is of a type the wallet
-    /// derives.
+    /// `PlatformWallet::check_identity_keys` decides both. Rust reads the
+    /// mnemonic through the `MnemonicResolver` only when a key needs
+    /// comparing, and refuses one that isn't this wallet's, so another
+    /// wallet's seed can't make an identity look foreign.
     ///
     /// - Parameters:
     ///   - identityIndex: the identity's index in the HD tree.
@@ -1598,31 +1589,23 @@ extension ManagedPlatformWallet {
     ///   - unreadableKeyCount: how many more keys the identity has that
     ///     the caller can't describe (enabled or not). Any of them could
     ///     be the wallet's, so they rule out `.notOwned`.
-    ///   - network: the wallet's network (selects the coin type).
     ///   - storage: defaults to a fresh `WalletStorage()`, overridable
     ///     for tests. Used by the resolver vtable.
     ///
     /// - Throws: `PlatformWalletError` when the FFI refuses a key's
-    ///   fields or the mnemonic can't be read. An error says nothing
-    ///   about whether the identity is the wallet's.
+    ///   fields, the mnemonic can't be read, or the stored mnemonic isn't
+    ///   this wallet's. An error says nothing about whether the identity
+    ///   is the wallet's.
     @MainActor
     public func checkIdentityKeys(
         identityIndex: UInt32,
         keys: [IdentityKeyCheckInput],
         unreadableKeyCount: Int,
-        network: Network,
         storage: WalletStorage = WalletStorage()
     ) throws -> IdentityWalletCheck {
         guard unreadableKeyCount >= 0 else {
             throw PlatformWalletError.invalidParameter(
                 "unreadableKeyCount must not be negative, got \(unreadableKeyCount)"
-            )
-        }
-        // Pinned to `self.walletId` for the same reason as
-        // `deriveIdentityAuthKeyAtSlot`.
-        guard self.walletId.count == 32 else {
-            throw PlatformWalletError.invalidParameter(
-                "walletId must be 32 bytes, got \(self.walletId.count)"
             )
         }
         let resolver = MnemonicResolver(storage: storage)
@@ -1661,19 +1644,16 @@ extension ManagedPlatformWallet {
         // FFI call so ARC cannot deallocate its `passUnretained` ctx while
         // Rust is still calling back into it.
         let result = withExtendedLifetime(resolver) {
-            self.walletId.withUnsafeBytes { walletBytes -> PlatformWalletFFIResult in
-                inputs.withUnsafeBufferPointer { inputBuffer -> PlatformWalletFFIResult in
-                    platform_wallet_check_identity_keys_with_resolver(
-                        network.ffiValue,
-                        walletBytes.bindMemory(to: UInt8.self).baseAddress!,
-                        resolver.handle,
-                        identityIndex,
-                        inputBuffer.baseAddress,
-                        UInt(inputBuffer.count),
-                        UInt(unreadableKeyCount),
-                        &out
-                    )
-                }
+            inputs.withUnsafeBufferPointer { inputBuffer -> PlatformWalletFFIResult in
+                platform_wallet_check_identity_keys_with_resolver(
+                    handle,
+                    resolver.handle,
+                    identityIndex,
+                    inputBuffer.baseAddress,
+                    UInt(inputBuffer.count),
+                    UInt(unreadableKeyCount),
+                    &out
+                )
             }
         }
         try result.check()

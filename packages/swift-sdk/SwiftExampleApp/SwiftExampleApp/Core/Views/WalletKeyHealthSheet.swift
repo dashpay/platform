@@ -140,17 +140,18 @@ enum WalletKeyHealthChecker {
     /// Ask Rust (`checkIdentityKeys`) which of each identity's keys are
     /// the wallet's keys at their slots and whether the identity is the
     /// wallet's, and for a key that is, compare the Keychain entry with
-    /// its private bytes. Rust decides; this inspects the Keychain and
-    /// renders. Pure read: does not mutate state.
+    /// its private bytes. Rust decides, and refuses a stored recovery
+    /// phrase that isn't this wallet's (every key then shows not
+    /// checked); this inspects the Keychain and renders. Pure read: does
+    /// not mutate state.
     @MainActor
     static func runCheck(
         wallet: ManagedPlatformWallet,
         walletId: Data,
-        identities: [PersistentIdentity],
-        network: Network
+        identities: [PersistentIdentity]
     ) -> [WalletIdentityKeyHealthReport] {
         identities.map { identity in
-            checkIdentity(identity, wallet: wallet, walletId: walletId, network: network)
+            checkIdentity(identity, wallet: wallet, walletId: walletId)
         }
     }
 
@@ -159,8 +160,7 @@ enum WalletKeyHealthChecker {
     private static func checkIdentity(
         _ identity: PersistentIdentity,
         wallet: ManagedPlatformWallet,
-        walletId: Data,
-        network: Network
+        walletId: Data
     ) -> WalletIdentityKeyHealthReport {
         let sortedKeys = identity.publicKeys.sorted { $0.keyId < $1.keyId }
 
@@ -196,16 +196,16 @@ enum WalletKeyHealthChecker {
             let result = try wallet.checkIdentityKeys(
                 identityIndex: identity.identityIndex,
                 keys: inputs,
-                unreadableKeyCount: unreadableKeyCount,
-                network: network
+                unreadableKeyCount: unreadableKeyCount
             )
             for (input, check) in zip(inputs, result.keys) {
                 checks[input.keyId] = check
             }
             ownership = result.ownership
         } catch {
-            // An error (a locked Keychain, say) says nothing about whose
-            // keys these are, so it must not offer to delete the identity.
+            // An error (a locked Keychain, or a recovery phrase that
+            // isn't this wallet's) says nothing about whose keys these
+            // are, so it must not offer to delete the identity.
             failure = "couldn't check the keys: \(error.localizedDescription)"
         }
 
@@ -360,7 +360,6 @@ enum WalletKeyHealthChecker {
         report: WalletIdentityKeyHealthReport,
         wallet: ManagedPlatformWallet,
         walletId: Data,
-        network: Network,
         modelContext: ModelContext
     ) throws -> RederiveOutcome {
         var fixed = 0
@@ -380,8 +379,7 @@ enum WalletKeyHealthChecker {
                     keyType: keyType,
                     purpose: key.purposeRaw,
                     securityLevel: key.securityLevelRaw,
-                    publicKeyData: key.row.publicKeyData,
-                    network: network
+                    publicKeyData: key.row.publicKeyData
                 )
             } catch {
                 failures.append((key.keyId, "couldn't check the key: \(error.localizedDescription)"))
@@ -528,11 +526,9 @@ struct WalletKeyHealthSheet: View {
     /// when opened, not what changes underneath. Re-fetch by closing
     /// and re-opening.
     let identities: [PersistentIdentity]
-    let network: Network
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var walletManager: PlatformWalletManager
 
     @State private var reports: [WalletIdentityKeyHealthReport] = []
     @State private var isRunning = false
@@ -552,12 +548,9 @@ struct WalletKeyHealthSheet: View {
                         }
                     }
                 } else if reports.isEmpty {
-                    // An error (keys not checked) is shown below instead.
-                    if errorMessage == nil {
-                        Section {
-                            Text("No identities to check.")
-                                .foregroundColor(.secondary)
-                        }
+                    Section {
+                        Text("No identities to check.")
+                            .foregroundColor(.secondary)
                     }
                 } else {
                     summarySection
@@ -720,44 +713,20 @@ struct WalletKeyHealthSheet: View {
         defer { isRunning = false }
         actionMessage = nil
         errorMessage = nil
-        // Every verdict below assumes the stored recovery phrase is this
-        // wallet's. Another wallet's phrase would report every key as
-        // not the wallet's and offer to delete identities the wallet
-        // owns, so check the binding first (Rust decides). A watch-only
-        // wallet passes and each key then reports unchecked.
-        do {
-            try walletManager.verifySeedBinding(wallet)
-        } catch {
-            reports = []
-            errorMessage = Self.seedBindingFailure("Keys weren't checked", error)
-            return
-        }
         reports = WalletKeyHealthChecker.runCheck(
             wallet: wallet,
             walletId: walletId,
-            identities: identities,
-            network: network
+            identities: identities
         )
     }
 
     private func rederive(_ report: WalletIdentityKeyHealthReport) {
         Task { @MainActor in
-            // A re-derive on another wallet's recovery phrase would write
-            // that wallet's keys, so nothing is written unless the stored
-            // phrase is this wallet's.
-            do {
-                try walletManager.verifySeedBinding(wallet)
-            } catch {
-                actionMessage = nil
-                errorMessage = Self.seedBindingFailure("Nothing was re-derived", error)
-                return
-            }
             do {
                 let outcome = try WalletKeyHealthChecker.rederive(
                     report: report,
                     wallet: wallet,
                     walletId: walletId,
-                    network: network,
                     modelContext: modelContext
                 )
                 let fixed = outcome.success
@@ -777,12 +746,6 @@ struct WalletKeyHealthSheet: View {
                 errorMessage = "Re-derive failed: \(error.localizedDescription)"
             }
         }
-    }
-
-    /// The message for a recovery phrase that doesn't bind to this
-    /// wallet (or couldn't be checked).
-    private static func seedBindingFailure(_ outcome: String, _ error: Error) -> String {
-        "\(outcome) because the recovery phrase stored for this wallet doesn't derive it: \(error.localizedDescription)"
     }
 
     private func deleteIdentity(_ report: WalletIdentityKeyHealthReport) {

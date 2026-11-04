@@ -1,31 +1,31 @@
-//! Check identity keys against the keys the wallet derives at their
-//! slots, one key or a whole identity.
+//! Check identity keys against the keys a wallet derives at their slots,
+//! one key or a whole identity, with that wallet's seed only.
 //!
-//! The FFI mirror of
-//! [`platform_wallet::wallet::identity::network::check_identity_key_from_master`]
-//! and [`platform_wallet::wallet::identity::network::check_identity_keys`],
-//! driven by the resolver-backed seed like
-//! [`crate::dash_sdk_derive_identity_key_at_slot_with_resolver`]: the
-//! mnemonic is pulled through the Swift/Kotlin-owned `MnemonicResolver`
-//! for the duration of the call only.
+//! The FFI mirror of platform-wallet's `PlatformWallet::check_identity_key`
+//! and `PlatformWallet::check_identity_keys`, driven by the resolver-backed
+//! seed like [`crate::dash_sdk_derive_identity_key_at_slot_with_resolver`]:
+//! the mnemonic is pulled through the Swift/Kotlin-owned `MnemonicResolver`
+//! for the duration of the call only, and the wallet refuses one that is
+//! not its own.
 
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
-use platform_wallet::wallet::identity::network::{
-    check_identity_key_from_master, check_identity_keys, identity_key_derivation_path,
-    IdentityKeyWalletCheck, IdentityWalletOwnership,
-};
+use key_wallet::bip32::ExtendedPrivKey;
+use platform_wallet::wallet::identity::network::{IdentityKeyWalletCheck, IdentityWalletOwnership};
+use platform_wallet::PlatformWalletError;
 use rs_sdk_ffi::MnemonicResolverHandle;
 use zeroize::Zeroize;
 
 use crate::error::*;
+use crate::handle::{Handle, PLATFORM_WALLET_STORAGE};
 use crate::identity_keys_from_mnemonic::resolve_master_from_resolver;
-use crate::types::{FFINetwork, Network};
-use crate::{check_ptr, unwrap_result_or_return};
+use crate::runtime::block_on_worker;
+use crate::types::Network;
+use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 
 /// The outcome of [`platform_wallet_check_identity_key_with_resolver`]
 /// (platform-wallet's `IdentityKeyWalletCheck`).
@@ -87,30 +87,26 @@ impl Default for IdentityKeyWalletCheckFFI {
 
 /// Check the identity key `(key_id, key_type, purpose, security_level,
 /// public_key_data)` of the identity at `identity_index` against the key
-/// the wallet derives at the key's slot, from the mnemonic the resolver
-/// returns for `wallet_id_bytes`. platform-wallet's
-/// `check_identity_key_from_master` decides; this marshals its outcome
-/// into `out_check`.
+/// the wallet behind `wallet_handle` derives at the key's slot.
+/// platform-wallet's `PlatformWallet::check_identity_key` decides: it
+/// reads the mnemonic through the resolver only when the key needs
+/// comparing, and refuses a mnemonic that is not this wallet's
+/// (`ErrorInvalidParameter`). This marshals its outcome into `out_check`.
 ///
 /// `key_type`, `purpose` and `security_level` are DPP discriminants; an
 /// unknown one is refused with `ErrorInvalidParameter` before the seed is
-/// resolved. The seed is resolved only for a key type the wallet
-/// derives, so a key it does not derive is `NotDerived` even without a
-/// readable mnemonic. `network` picks the coin type (`5'` mainnet, `1'`
-/// otherwise).
+/// resolved.
 ///
 /// # Safety
-/// - `wallet_id_bytes` must point to 32 readable bytes.
 /// - `mnemonic_resolver_handle` must be a live handle from
-///   `dash_sdk_mnemonic_resolver_create`.
+///   `dash_sdk_mnemonic_resolver_create`, pinned for the call.
 /// - `public_key_data` must point to `public_key_data_len` readable bytes.
 /// - `out_check` must be a valid, writable pointer; release it with
 ///   [`platform_wallet_check_identity_key_free`].
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_check_identity_key_with_resolver(
-    network: FFINetwork,
-    wallet_id_bytes: *const u8,
+    wallet_handle: Handle,
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     identity_index: u32,
     key_id: u32,
@@ -124,7 +120,6 @@ pub unsafe extern "C" fn platform_wallet_check_identity_key_with_resolver(
     check_ptr!(out_check);
     *out_check = IdentityKeyWalletCheckFFI::empty();
 
-    check_ptr!(wallet_id_bytes);
     check_ptr!(mnemonic_resolver_handle);
     check_ptr!(public_key_data);
 
@@ -137,33 +132,96 @@ pub unsafe extern "C" fn platform_wallet_check_identity_key_with_resolver(
         None,
     ));
 
-    let kw_network: Network = network.into();
-    // Read the seed only when there is a key to compare with: a key the
-    // wallet does not derive is NotDerived (the empty result) even when
-    // the mnemonic cannot be read.
-    let derivation_path = unwrap_result_or_return!(identity_key_derivation_path(
-        kw_network,
-        identity_index,
-        &identity_public_key,
-    ));
-    if derivation_path.is_none() {
-        return PlatformWalletFFIResult::ok();
-    }
-
-    let wallet_id: [u8; 32] = std::ptr::read(wallet_id_bytes.cast::<[u8; 32]>());
-    let mut master = unwrap_result_or_return!(resolve_master_from_resolver(
-        mnemonic_resolver_handle,
-        &wallet_id,
-        kw_network,
-    ));
-
-    let check =
-        check_identity_key_from_master(&master, kw_network, identity_index, &identity_public_key);
-    // Erase the master now so its scalar does not outlive the check.
-    master.private_key.zeroize();
-    let check = unwrap_result_or_return!(check);
+    let resolver_addr = mnemonic_resolver_handle as usize;
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let resolve_master = master_resolver(resolver_addr, wallet.wallet_id());
+        let wallet = wallet.clone();
+        block_on_worker(async move {
+            wallet
+                .check_identity_key(identity_index, &identity_public_key, resolve_master)
+                .await
+        })
+    });
+    let check = match unwrap_option_or_return!(option) {
+        Ok(check) => check,
+        Err(failure) => return failure.into_result(),
+    };
 
     write_check(check, &mut *out_check)
+}
+
+/// Why a wallet's key check failed, kept `Send` so it can leave the
+/// worker: what the host resolver returned, or the wallet's error.
+enum KeyCheckFailure {
+    Resolve {
+        code: PlatformWalletFFIResultCode,
+        message: String,
+    },
+    Wallet(PlatformWalletError),
+}
+
+impl From<PlatformWalletError> for KeyCheckFailure {
+    fn from(error: PlatformWalletError) -> Self {
+        KeyCheckFailure::Wallet(error)
+    }
+}
+
+impl KeyCheckFailure {
+    fn resolve(result: PlatformWalletFFIResult) -> Self {
+        let message = if result.message.is_null() {
+            String::new()
+        } else {
+            // SAFETY: a non-null message is a NUL-terminated string the
+            // result owns until it drops below.
+            unsafe { CStr::from_ptr(result.message) }
+                .to_string_lossy()
+                .into_owned()
+        };
+        KeyCheckFailure::Resolve {
+            code: result.code,
+            message,
+        }
+    }
+
+    fn into_result(self) -> PlatformWalletFFIResult {
+        match self {
+            KeyCheckFailure::Resolve { code, message } => {
+                PlatformWalletFFIResult::err(code, message)
+            }
+            // Another wallet's mnemonic is a caller mapping error, as in
+            // `platform_wallet_verify_seed_binds_to_wallet`.
+            KeyCheckFailure::Wallet(error @ PlatformWalletError::SeedMismatch { .. }) => {
+                PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                    error.to_string(),
+                )
+            }
+            KeyCheckFailure::Wallet(error) => error.into(),
+        }
+    }
+}
+
+/// The master-key resolver a wallet's key check calls, at most once: the
+/// mnemonic the host resolver returns for `wallet_id`, as a master key
+/// on the network the wallet gives. The resolver handle is carried as an
+/// address so the check can run on a worker; the caller pins the handle
+/// for the call.
+fn master_resolver(
+    resolver_addr: usize,
+    wallet_id: [u8; 32],
+) -> impl FnOnce(Network) -> Result<ExtendedPrivKey, KeyCheckFailure> + Send {
+    move |network| {
+        // SAFETY: the FFI caller pins the resolver handle for the duration
+        // of the call this resolver runs inside.
+        unsafe {
+            resolve_master_from_resolver(
+                resolver_addr as *mut MnemonicResolverHandle,
+                &wallet_id,
+                network,
+            )
+        }
+        .map_err(KeyCheckFailure::resolve)
+    }
 }
 
 /// The identity public key a caller describes by its fields. Fields the
@@ -342,10 +400,13 @@ impl Default for IdentityWalletCheckFFI {
 }
 
 /// Check every key of the identity at `identity_index` against the keys
-/// the wallet derives at their slots, and whether the identity is this
-/// wallet's. platform-wallet's `check_identity_keys` decides both,
-/// reading the seed through the resolver only when a key is of a type
-/// the wallet derives; this marshals the result into `out_check`.
+/// the wallet behind `wallet_handle` derives at their slots, and whether
+/// the identity is this wallet's. platform-wallet's
+/// `PlatformWallet::check_identity_keys` decides both: it reads the
+/// mnemonic through the resolver only when a key needs comparing, and
+/// refuses a mnemonic that is not this wallet's (`ErrorInvalidParameter`),
+/// so another wallet's seed can never make an identity look foreign. This
+/// marshals the result into `out_check`.
 ///
 /// Pass every key the identity has, disabled ones included. An identity
 /// with no keys is `keys` null with `keys_len` 0. A key the caller can't
@@ -355,9 +416,8 @@ impl Default for IdentityWalletCheckFFI {
 /// the seed is resolved.
 ///
 /// # Safety
-/// - `wallet_id_bytes` must point to 32 readable bytes.
 /// - `mnemonic_resolver_handle` must be a live handle from
-///   `dash_sdk_mnemonic_resolver_create`.
+///   `dash_sdk_mnemonic_resolver_create`, pinned for the call.
 /// - `keys` must point to `keys_len` readable inputs (or be null with
 ///   `keys_len` 0), each with `public_key_data` pointing to
 ///   `public_key_data_len` readable bytes.
@@ -365,8 +425,7 @@ impl Default for IdentityWalletCheckFFI {
 ///   [`platform_wallet_check_identity_keys_free`].
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_check_identity_keys_with_resolver(
-    network: FFINetwork,
-    wallet_id_bytes: *const u8,
+    wallet_handle: Handle,
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     identity_index: u32,
     keys: *const IdentityKeyCheckInputFFI,
@@ -377,7 +436,6 @@ pub unsafe extern "C" fn platform_wallet_check_identity_keys_with_resolver(
     check_ptr!(out_check);
     *out_check = IdentityWalletCheckFFI::empty();
 
-    check_ptr!(wallet_id_bytes);
     check_ptr!(mnemonic_resolver_handle);
     let inputs: &[IdentityKeyCheckInputFFI] = if keys_len == 0 {
         &[]
@@ -399,15 +457,25 @@ pub unsafe extern "C" fn platform_wallet_check_identity_keys_with_resolver(
         )));
     }
 
-    let kw_network: Network = network.into();
-    let wallet_id: [u8; 32] = std::ptr::read(wallet_id_bytes.cast::<[u8; 32]>());
-    let check = unwrap_result_or_return!(check_identity_keys(
-        kw_network,
-        identity_index,
-        &identity_public_keys,
-        unreadable_key_count,
-        || resolve_master_from_resolver(mnemonic_resolver_handle, &wallet_id, kw_network),
-    ));
+    let resolver_addr = mnemonic_resolver_handle as usize;
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let resolve_master = master_resolver(resolver_addr, wallet.wallet_id());
+        let wallet = wallet.clone();
+        block_on_worker(async move {
+            wallet
+                .check_identity_keys(
+                    identity_index,
+                    &identity_public_keys,
+                    unreadable_key_count,
+                    resolve_master,
+                )
+                .await
+        })
+    });
+    let check = match unwrap_option_or_return!(option) {
+        Ok(check) => check,
+        Err(failure) => return failure.into_result(),
+    };
 
     let mut results: Vec<IdentityKeyWalletCheckFFI> = Vec::with_capacity(check.keys.len());
     for key_check in check.keys {
@@ -463,6 +531,8 @@ pub unsafe extern "C" fn platform_wallet_check_identity_keys_free(
 mod tests {
     use super::*;
     use crate::identity_key_preview::IdentityKeyPreviewFFI;
+    use crate::runtime::runtime;
+    use crate::types::FFINetwork;
     use crate::{
         dash_sdk_derive_identity_key_at_slot_free,
         dash_sdk_derive_identity_key_at_slot_with_resolver,
@@ -471,13 +541,33 @@ mod tests {
         dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy,
         mnemonic_resolver_result,
     };
-    use std::ffi::{c_void, CStr};
+    use std::ffi::c_void;
+    use std::sync::Arc;
 
-    /// English BIP-39 test vector (all-zero entropy); the fixture the
-    /// platform-wallet derivation tests use.
+    /// English BIP-39 test vector (all-zero entropy): the seed of the
+    /// wallet `test_platform_wallet_manager` creates.
     const TEST_MNEMONIC: &str =
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
-    const WALLET_ID: [u8; 32] = [0x07; 32];
+    /// Another wallet's seed.
+    const OTHER_MNEMONIC: &str =
+        "legal winner thank year wave sausage worth useful legal winner thank yellow";
+    const DISABLED_AT: u64 = 1_700_000_000_000;
+
+    unsafe fn write_phrase(
+        phrase: &str,
+        out_buf: *mut c_char,
+        out_capacity: usize,
+        out_len: *mut usize,
+    ) -> i32 {
+        let phrase = phrase.as_bytes();
+        if phrase.len() + 1 > out_capacity {
+            return mnemonic_resolver_result::BUFFER_TOO_SMALL;
+        }
+        std::ptr::copy_nonoverlapping(phrase.as_ptr() as *const c_char, out_buf, phrase.len());
+        *out_buf.add(phrase.len()) = 0;
+        *out_len = phrase.len();
+        mnemonic_resolver_result::SUCCESS
+    }
 
     unsafe extern "C" fn test_resolve(
         _ctx: *const c_void,
@@ -486,14 +576,17 @@ mod tests {
         out_capacity: usize,
         out_len: *mut usize,
     ) -> i32 {
-        let phrase = TEST_MNEMONIC.as_bytes();
-        if phrase.len() + 1 > out_capacity {
-            return mnemonic_resolver_result::BUFFER_TOO_SMALL;
-        }
-        std::ptr::copy_nonoverlapping(phrase.as_ptr() as *const c_char, out_buf, phrase.len());
-        *out_buf.add(phrase.len()) = 0;
-        *out_len = phrase.len();
-        mnemonic_resolver_result::SUCCESS
+        write_phrase(TEST_MNEMONIC, out_buf, out_capacity, out_len)
+    }
+
+    unsafe extern "C" fn other_resolve(
+        _ctx: *const c_void,
+        _wallet_id_bytes: *const u8,
+        out_buf: *mut c_char,
+        out_capacity: usize,
+        out_len: *mut usize,
+    ) -> i32 {
+        write_phrase(OTHER_MNEMONIC, out_buf, out_capacity, out_len)
     }
 
     unsafe extern "C" fn not_found_resolve(
@@ -508,27 +601,65 @@ mod tests {
 
     unsafe extern "C" fn noop_destroy(_ctx: *mut c_void) {}
 
-    /// A resolver over [`TEST_MNEMONIC`]; destroy it with
-    /// `dash_sdk_mnemonic_resolver_destroy`.
-    fn test_resolver() -> *mut MnemonicResolverHandle {
-        unsafe {
-            dash_sdk_mnemonic_resolver_create(std::ptr::null_mut(), test_resolve, noop_destroy)
+    /// A resolver handle, destroyed on drop.
+    struct Resolver(*mut MnemonicResolverHandle);
+
+    impl Resolver {
+        fn new(resolve: rs_sdk_ffi::MnemonicResolveCallback) -> Self {
+            Resolver(unsafe {
+                dash_sdk_mnemonic_resolver_create(std::ptr::null_mut(), resolve, noop_destroy)
+            })
+        }
+    }
+
+    impl Drop for Resolver {
+        fn drop(&mut self) {
+            unsafe { dash_sdk_mnemonic_resolver_destroy(self.0) };
+        }
+    }
+
+    /// The testnet wallet of [`TEST_MNEMONIC`] registered as a handle,
+    /// removed on drop.
+    struct TestWallet {
+        _manager: Arc<
+            platform_wallet::PlatformWalletManager<
+                platform_wallet::test_support::NoopTestPersister,
+            >,
+        >,
+        handle: Handle,
+    }
+
+    impl TestWallet {
+        fn new() -> Self {
+            let (manager, wallet) = runtime().block_on(async {
+                let (manager, wallet_id) =
+                    platform_wallet::test_support::test_platform_wallet_manager().await;
+                let wallet = manager.get_wallet(&wallet_id).await.expect("test wallet");
+                (manager, wallet)
+            });
+            TestWallet {
+                _manager: manager,
+                handle: PLATFORM_WALLET_STORAGE.insert(wallet),
+            }
+        }
+    }
+
+    impl Drop for TestWallet {
+        fn drop(&mut self) {
+            PLATFORM_WALLET_STORAGE.remove(self.handle);
         }
     }
 
     /// The key the slot derivation gives at `(identity_index, key_index)`:
     /// `(derivation path, compressed public key, private key)`.
-    fn slot_key(
-        resolver: *mut MnemonicResolverHandle,
-        identity_index: u32,
-        key_index: u32,
-    ) -> (String, Vec<u8>, [u8; 32]) {
+    fn slot_key(identity_index: u32, key_index: u32) -> (String, Vec<u8>, [u8; 32]) {
+        let resolver = Resolver::new(test_resolve);
         let mut row = IdentityKeyPreviewFFI::empty();
         let result = unsafe {
             dash_sdk_derive_identity_key_at_slot_with_resolver(
                 FFINetwork::Testnet,
-                WALLET_ID.as_ptr(),
-                resolver,
+                [0x07; 32].as_ptr(),
+                resolver.0,
                 identity_index,
                 key_index,
                 &mut row,
@@ -549,22 +680,31 @@ mod tests {
         slot
     }
 
+    fn uncompressed(compressed: &[u8]) -> Vec<u8> {
+        dpp::secp256k1::PublicKey::from_slice(compressed)
+            .expect("compressed key")
+            .serialize_uncompressed()
+            .to_vec()
+    }
+
+    // ── One key ───────────────────────────────────────────────────────
+
     fn check(
-        resolver: *mut MnemonicResolverHandle,
+        wallet: &TestWallet,
+        resolver: &Resolver,
         identity_index: u32,
         key_id: u32,
-        key_type: u8,
+        key_type: KeyType,
         data: &[u8],
     ) -> (PlatformWalletFFIResult, IdentityKeyWalletCheckFFI) {
         let mut out = IdentityKeyWalletCheckFFI::empty();
         let result = unsafe {
             platform_wallet_check_identity_key_with_resolver(
-                FFINetwork::Testnet,
-                WALLET_ID.as_ptr(),
-                resolver,
+                wallet.handle,
+                resolver.0,
                 identity_index,
                 key_id,
-                key_type,
+                key_type as u8,
                 Purpose::AUTHENTICATION as u8,
                 SecurityLevel::HIGH as u8,
                 data.as_ptr(),
@@ -583,56 +723,73 @@ mod tests {
             .to_owned()
     }
 
-    #[test]
-    fn should_report_a_hecate_signer_key_as_not_derived() {
-        let resolver = test_resolver();
-        let (result, mut out) = check(resolver, 0, 3, KeyType::REDPALLAS_HECATE as u8, &[1; 64]);
-
-        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-        assert_eq!(out.outcome, IdentityKeyWalletCheckOutcomeFFI::NotDerived);
-        assert!(out.derivation_path.is_null());
-        assert!(out.derived_public_key_data.is_null());
-        assert_eq!(out.private_key_bytes, [0u8; 32]);
-
-        unsafe {
-            platform_wallet_check_identity_key_free(&mut out);
-            dash_sdk_mnemonic_resolver_destroy(resolver);
-        }
-    }
-
     /// A key the wallet does not derive needs no seed, so a missing
     /// mnemonic (or a locked Keychain) still answers NotDerived; a key it
     /// derives still needs the seed.
     #[test]
     fn should_report_not_derived_without_reading_the_mnemonic() {
-        let resolver = unsafe {
-            dash_sdk_mnemonic_resolver_create(std::ptr::null_mut(), not_found_resolve, noop_destroy)
-        };
+        let wallet = TestWallet::new();
+        let resolver = Resolver::new(not_found_resolve);
 
-        let (result, mut out) = check(resolver, 0, 3, KeyType::REDPALLAS_HECATE as u8, &[1; 64]);
+        let (result, mut out) = check(
+            &wallet,
+            &resolver,
+            0,
+            3,
+            KeyType::REDPALLAS_HECATE,
+            &[1; 64],
+        );
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
         assert_eq!(out.outcome, IdentityKeyWalletCheckOutcomeFFI::NotDerived);
         assert!(out.derivation_path.is_null());
         unsafe { platform_wallet_check_identity_key_free(&mut out) };
 
-        let (result, mut out) = check(resolver, 0, 0, KeyType::ECDSA_SECP256K1 as u8, &[2; 33]);
+        let (result, mut out) = check(&wallet, &resolver, 0, 0, KeyType::ECDSA_SECP256K1, &[2; 33]);
         assert_eq!(
             result.code,
             PlatformWalletFFIResultCode::ErrorWalletOperation
         );
         assert!(out.derivation_path.is_null());
-        unsafe {
-            platform_wallet_check_identity_key_free(&mut out);
-            dash_sdk_mnemonic_resolver_destroy(resolver);
-        }
+        unsafe { platform_wallet_check_identity_key_free(&mut out) };
+    }
+
+    /// The wallet decides an uncompressed key is NotCompared before it
+    /// reads the seed, so the one-key check needs no mnemonic for it.
+    #[test]
+    fn should_report_an_uncompressed_key_as_not_compared_without_reading_the_mnemonic() {
+        let wallet = TestWallet::new();
+        let resolver = Resolver::new(not_found_resolve);
+        let (_, public_key, _) = slot_key(0, 1);
+
+        let (result, mut out) = check(
+            &wallet,
+            &resolver,
+            0,
+            1,
+            KeyType::ECDSA_SECP256K1,
+            &uncompressed(&public_key),
+        );
+
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(out.outcome, IdentityKeyWalletCheckOutcomeFFI::NotCompared);
+        assert!(out.derivation_path.is_null());
+        unsafe { platform_wallet_check_identity_key_free(&mut out) };
     }
 
     #[test]
     fn should_match_an_ecdsa_key_at_its_slot() {
-        let resolver = test_resolver();
-        let (path, public_key, private_key) = slot_key(resolver, 1, 2);
+        let wallet = TestWallet::new();
+        let resolver = Resolver::new(test_resolve);
+        let (path, public_key, private_key) = slot_key(1, 2);
 
-        let (result, mut out) = check(resolver, 1, 2, KeyType::ECDSA_SECP256K1 as u8, &public_key);
+        let (result, mut out) = check(
+            &wallet,
+            &resolver,
+            1,
+            2,
+            KeyType::ECDSA_SECP256K1,
+            &public_key,
+        );
 
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
         assert_eq!(out.outcome, IdentityKeyWalletCheckOutcomeFFI::Matches);
@@ -651,23 +808,22 @@ mod tests {
         );
         assert!(out.derivation_path.is_null());
         // A second free is a no-op.
-        unsafe {
-            platform_wallet_check_identity_key_free(&mut out);
-            dash_sdk_mnemonic_resolver_destroy(resolver);
-        }
+        unsafe { platform_wallet_check_identity_key_free(&mut out) };
     }
 
     #[test]
     fn should_report_a_mismatch_for_a_key_from_another_slot() {
-        let resolver = test_resolver();
-        let (_, other_public_key, _) = slot_key(resolver, 1, 2);
-        let (own_path, own_public_key, _) = slot_key(resolver, 1, 3);
+        let wallet = TestWallet::new();
+        let resolver = Resolver::new(test_resolve);
+        let (_, other_public_key, _) = slot_key(1, 2);
+        let (own_path, own_public_key, _) = slot_key(1, 3);
 
         let (result, mut out) = check(
-            resolver,
+            &wallet,
+            &resolver,
             1,
             3,
-            KeyType::ECDSA_SECP256K1 as u8,
+            KeyType::ECDSA_SECP256K1,
             &other_public_key,
         );
 
@@ -689,12 +845,39 @@ mod tests {
         unsafe { platform_wallet_check_identity_key_free(&mut out) };
         assert!(out.derived_public_key_data.is_null());
         assert_eq!(out.derived_public_key_data_len, 0);
-        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
+    /// Re-derive writes Keychain keys from this check, so another
+    /// wallet's mnemonic is refused rather than compared.
+    #[test]
+    fn should_refuse_another_wallets_mnemonic_for_one_key() {
+        let wallet = TestWallet::new();
+        let resolver = Resolver::new(other_resolve);
+        let (_, public_key, _) = slot_key(1, 2);
+
+        let (result, mut out) = check(
+            &wallet,
+            &resolver,
+            1,
+            2,
+            KeyType::ECDSA_SECP256K1,
+            &public_key,
+        );
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(out.outcome, IdentityKeyWalletCheckOutcomeFFI::NotDerived);
+        assert!(out.derivation_path.is_null());
+        assert_eq!(out.private_key_bytes, [0u8; 32]);
+        unsafe { platform_wallet_check_identity_key_free(&mut out) };
     }
 
     #[test]
     fn should_refuse_an_unknown_key_type_purpose_or_security_level() {
-        let resolver = test_resolver();
+        let wallet = TestWallet::new();
+        let resolver = Resolver::new(test_resolve);
         let data = [2u8; 33];
         for (key_type, purpose, security_level) in
             [(u8::MAX, 0, 0), (0, u8::MAX, 0), (0, 0, u8::MAX)]
@@ -702,9 +885,8 @@ mod tests {
             let mut out = IdentityKeyWalletCheckFFI::empty();
             let result = unsafe {
                 platform_wallet_check_identity_key_with_resolver(
-                    FFINetwork::Testnet,
-                    WALLET_ID.as_ptr(),
-                    resolver,
+                    wallet.handle,
+                    resolver.0,
                     0,
                     0,
                     key_type,
@@ -722,20 +904,19 @@ mod tests {
             );
             unsafe { platform_wallet_check_identity_key_free(&mut out) };
         }
-        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
     }
 
     #[test]
-    fn should_refuse_null_pointers() {
-        let resolver = test_resolver();
+    fn should_refuse_null_pointers_and_an_unknown_wallet() {
+        let wallet = TestWallet::new();
+        let resolver = Resolver::new(test_resolve);
         let data = [2u8; 33];
-        let call = |wallet_id: *const u8,
+        let call = |wallet_handle: Handle,
                     resolver: *mut MnemonicResolverHandle,
                     data: *const u8,
                     out: *mut IdentityKeyWalletCheckFFI| unsafe {
             platform_wallet_check_identity_key_with_resolver(
-                FFINetwork::Testnet,
-                wallet_id,
+                wallet_handle,
                 resolver,
                 0,
                 0,
@@ -750,33 +931,29 @@ mod tests {
         };
         let mut out = IdentityKeyWalletCheckFFI::empty();
         for code in [
-            call(std::ptr::null(), resolver, data.as_ptr(), &mut out),
+            call(wallet.handle, std::ptr::null_mut(), data.as_ptr(), &mut out),
+            call(wallet.handle, resolver.0, std::ptr::null(), &mut out),
             call(
-                WALLET_ID.as_ptr(),
-                std::ptr::null_mut(),
-                data.as_ptr(),
-                &mut out,
-            ),
-            call(WALLET_ID.as_ptr(), resolver, std::ptr::null(), &mut out),
-            call(
-                WALLET_ID.as_ptr(),
-                resolver,
+                wallet.handle,
+                resolver.0,
                 data.as_ptr(),
                 std::ptr::null_mut(),
             ),
         ] {
             assert_eq!(code, PlatformWalletFFIResultCode::ErrorNullPointer);
         }
-        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+        assert_eq!(
+            call(Handle::MAX, resolver.0, data.as_ptr(), &mut out),
+            PlatformWalletFFIResultCode::NotFound
+        );
     }
 
     #[test]
     fn should_free_a_null_check() {
         unsafe { platform_wallet_check_identity_key_free(std::ptr::null_mut()) };
     }
-    // ── Identity-level check ──────────────────────────────────────────
 
-    const DISABLED_AT: u64 = 1_700_000_000_000;
+    // ── A whole identity ──────────────────────────────────────────────
 
     fn input(
         key_id: u32,
@@ -798,15 +975,8 @@ mod tests {
     }
 
     fn check_identity(
-        resolver: *mut MnemonicResolverHandle,
-        identity_index: u32,
-        inputs: &[IdentityKeyCheckInputFFI],
-    ) -> (PlatformWalletFFIResult, IdentityWalletCheckFFI) {
-        check_identity_with_unreadable(resolver, identity_index, inputs, 0)
-    }
-
-    fn check_identity_with_unreadable(
-        resolver: *mut MnemonicResolverHandle,
+        wallet: &TestWallet,
+        resolver: &Resolver,
         identity_index: u32,
         inputs: &[IdentityKeyCheckInputFFI],
         unreadable_key_count: usize,
@@ -814,9 +984,8 @@ mod tests {
         let mut out = IdentityWalletCheckFFI::empty();
         let result = unsafe {
             platform_wallet_check_identity_keys_with_resolver(
-                FFINetwork::Testnet,
-                WALLET_ID.as_ptr(),
-                resolver,
+                wallet.handle,
+                resolver.0,
                 identity_index,
                 inputs.as_ptr(),
                 inputs.len(),
@@ -837,13 +1006,45 @@ mod tests {
             .collect()
     }
 
+    /// The public-entry-point regression: the wallet's own identity,
+    /// checked with another wallet's mnemonic, is refused rather than
+    /// reported NotOwned; with its own mnemonic it is Owned.
+    #[test]
+    fn should_refuse_another_wallets_mnemonic_instead_of_calling_the_identity_foreign() {
+        let wallet = TestWallet::new();
+        let (_, master_key, _) = slot_key(1, 0);
+        let inputs = [input(
+            0,
+            KeyType::ECDSA_SECP256K1,
+            SecurityLevel::MASTER,
+            &master_key,
+            None,
+        )];
+
+        let (result, mut out) =
+            check_identity(&wallet, &Resolver::new(other_resolve), 1, &inputs, 0);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(out.ownership, IdentityWalletOwnershipFFI::Undetermined);
+        assert!(out.keys.is_null());
+        unsafe { platform_wallet_check_identity_keys_free(&mut out) };
+
+        let (result, mut out) =
+            check_identity(&wallet, &Resolver::new(test_resolve), 1, &inputs, 0);
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(out.ownership, IdentityWalletOwnershipFFI::Owned);
+        unsafe { platform_wallet_check_identity_keys_free(&mut out) };
+    }
+
     /// A master rotation leaves the former, foreign master disabled; the
     /// enabled master is the wallet's, so the identity is.
     #[test]
     fn should_own_an_identity_whose_enabled_master_replaced_a_foreign_one() {
-        let resolver = test_resolver();
-        let (_, former_master, _) = slot_key(resolver, 1, 9);
-        let (_, current_master, _) = slot_key(resolver, 1, 1);
+        let wallet = TestWallet::new();
+        let (_, former_master, _) = slot_key(1, 9);
+        let (_, current_master, _) = slot_key(1, 1);
         let inputs = [
             input(
                 0,
@@ -861,7 +1062,8 @@ mod tests {
             ),
         ];
 
-        let (result, mut out) = check_identity(resolver, 1, &inputs);
+        let (result, mut out) =
+            check_identity(&wallet, &Resolver::new(test_resolve), 1, &inputs, 0);
 
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
         assert_eq!(out.ownership, IdentityWalletOwnershipFFI::Owned);
@@ -872,17 +1074,14 @@ mod tests {
                 IdentityKeyWalletCheckOutcomeFFI::Matches
             ]
         );
-        unsafe {
-            platform_wallet_check_identity_keys_free(&mut out);
-            dash_sdk_mnemonic_resolver_destroy(resolver);
-        }
+        unsafe { platform_wallet_check_identity_keys_free(&mut out) };
     }
 
     #[test]
     fn should_own_an_identity_whose_master_matches_beside_a_foreign_key() {
-        let resolver = test_resolver();
-        let (_, master_key, _) = slot_key(resolver, 1, 0);
-        let (_, foreign_key, _) = slot_key(resolver, 1, 7);
+        let wallet = TestWallet::new();
+        let (_, master_key, _) = slot_key(1, 0);
+        let (_, foreign_key, _) = slot_key(1, 7);
         let inputs = [
             input(
                 0,
@@ -900,7 +1099,8 @@ mod tests {
             ),
         ];
 
-        let (result, mut out) = check_identity(resolver, 1, &inputs);
+        let (result, mut out) =
+            check_identity(&wallet, &Resolver::new(test_resolve), 1, &inputs, 0);
 
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
         assert_eq!(out.ownership, IdentityWalletOwnershipFFI::Owned);
@@ -911,16 +1111,16 @@ mod tests {
                 IdentityKeyWalletCheckOutcomeFFI::Mismatch
             ]
         );
-        unsafe {
-            platform_wallet_check_identity_keys_free(&mut out);
-            dash_sdk_mnemonic_resolver_destroy(resolver);
-        }
+        unsafe { platform_wallet_check_identity_keys_free(&mut out) };
     }
 
+    /// A foreign master is NotOwned, but not while a key the caller could
+    /// not describe could be the wallet's.
     #[test]
     fn should_not_own_an_identity_whose_only_enabled_master_is_foreign() {
-        let resolver = test_resolver();
-        let (_, foreign_master, _) = slot_key(resolver, 1, 5);
+        let wallet = TestWallet::new();
+        let resolver = Resolver::new(test_resolve);
+        let (_, foreign_master, _) = slot_key(1, 5);
         let inputs = [input(
             0,
             KeyType::ECDSA_SECP256K1,
@@ -929,24 +1129,59 @@ mod tests {
             None,
         )];
 
-        let (result, mut out) = check_identity(resolver, 1, &inputs);
+        for (unreadable_key_count, ownership) in [
+            (0, IdentityWalletOwnershipFFI::NotOwned),
+            (1, IdentityWalletOwnershipFFI::Undetermined),
+        ] {
+            let (result, mut out) =
+                check_identity(&wallet, &resolver, 1, &inputs, unreadable_key_count);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+            assert_eq!(
+                out.ownership, ownership,
+                "{unreadable_key_count} unreadable"
+            );
+            assert_eq!(outcomes(&out), [IdentityKeyWalletCheckOutcomeFFI::Mismatch]);
+            unsafe { platform_wallet_check_identity_keys_free(&mut out) };
+        }
+    }
+
+    /// The wallet's own master encoded uncompressed is not compared, so
+    /// it can't make the identity look foreign, and it needs no seed.
+    #[test]
+    fn should_not_compare_an_uncompressed_master() {
+        let wallet = TestWallet::new();
+        let (_, master_key, _) = slot_key(1, 0);
+        let uncompressed_master = uncompressed(&master_key);
+        let inputs = [input(
+            0,
+            KeyType::ECDSA_SECP256K1,
+            SecurityLevel::MASTER,
+            &uncompressed_master,
+            None,
+        )];
+
+        let (result, mut out) =
+            check_identity(&wallet, &Resolver::new(not_found_resolve), 1, &inputs, 0);
 
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-        assert_eq!(out.ownership, IdentityWalletOwnershipFFI::NotOwned);
-        assert_eq!(outcomes(&out), [IdentityKeyWalletCheckOutcomeFFI::Mismatch]);
-        unsafe {
-            platform_wallet_check_identity_keys_free(&mut out);
-            dash_sdk_mnemonic_resolver_destroy(resolver);
-        }
+        assert_eq!(out.ownership, IdentityWalletOwnershipFFI::Undetermined);
+        assert_eq!(
+            outcomes(&out),
+            [IdentityKeyWalletCheckOutcomeFFI::NotCompared]
+        );
+        let key = unsafe { &*out.keys };
+        assert!(key.derivation_path.is_null());
+        assert!(key.derived_public_key_data.is_null());
+        assert_eq!(key.private_key_bytes, [0u8; 32]);
+        unsafe { platform_wallet_check_identity_keys_free(&mut out) };
     }
 
     /// An identity whose keys the wallet derives none of needs no seed;
     /// one with a derived key still does.
     #[test]
     fn should_check_an_identity_without_derived_keys_without_reading_the_mnemonic() {
-        let resolver = unsafe {
-            dash_sdk_mnemonic_resolver_create(std::ptr::null_mut(), not_found_resolve, noop_destroy)
-        };
+        let wallet = TestWallet::new();
+        let resolver = Resolver::new(not_found_resolve);
         let hecate_data = [1u8; 64];
         let mut hecate = input(
             3,
@@ -957,7 +1192,7 @@ mod tests {
         );
         hecate.purpose = Purpose::HECATE_SIGNER as u8;
 
-        let (result, mut out) = check_identity(resolver, 0, &[hecate]);
+        let (result, mut out) = check_identity(&wallet, &resolver, 0, &[hecate], 0);
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
         assert_eq!(out.ownership, IdentityWalletOwnershipFFI::Undetermined);
         assert_eq!(
@@ -974,21 +1209,18 @@ mod tests {
             &ecdsa_data,
             None,
         );
-        let (result, mut out) = check_identity(resolver, 0, &[hecate, ecdsa]);
+        let (result, mut out) = check_identity(&wallet, &resolver, 0, &[hecate, ecdsa], 0);
         assert_eq!(
             result.code,
             PlatformWalletFFIResultCode::ErrorWalletOperation
         );
         assert!(out.keys.is_null());
-        unsafe {
-            platform_wallet_check_identity_keys_free(&mut out);
-            dash_sdk_mnemonic_resolver_destroy(resolver);
-        }
+        unsafe { platform_wallet_check_identity_keys_free(&mut out) };
     }
 
     #[test]
     fn should_refuse_an_identity_key_with_an_unknown_discriminant() {
-        let resolver = test_resolver();
+        let wallet = TestWallet::new();
         let data = [2u8; 33];
         let mut unknown = input(
             1,
@@ -1009,22 +1241,21 @@ mod tests {
             unknown,
         ];
 
-        let (result, mut out) = check_identity(resolver, 0, &inputs);
+        let (result, mut out) =
+            check_identity(&wallet, &Resolver::new(test_resolve), 0, &inputs, 0);
 
         assert_eq!(
             result.code,
             PlatformWalletFFIResultCode::ErrorInvalidParameter
         );
         assert!(out.keys.is_null());
-        unsafe {
-            platform_wallet_check_identity_keys_free(&mut out);
-            dash_sdk_mnemonic_resolver_destroy(resolver);
-        }
+        unsafe { platform_wallet_check_identity_keys_free(&mut out) };
     }
 
     #[test]
-    fn should_refuse_null_identity_check_pointers() {
-        let resolver = test_resolver();
+    fn should_refuse_null_identity_check_pointers_and_an_unknown_wallet() {
+        let wallet = TestWallet::new();
+        let resolver = Resolver::new(test_resolve);
         let data = [2u8; 33];
         let valid = [input(
             0,
@@ -1041,14 +1272,13 @@ mod tests {
             None,
         );
         no_data.public_key_data = std::ptr::null();
-        let call = |wallet_id: *const u8,
+        let call = |wallet_handle: Handle,
                     resolver: *mut MnemonicResolverHandle,
                     keys: *const IdentityKeyCheckInputFFI,
                     keys_len: usize,
                     out: *mut IdentityWalletCheckFFI| unsafe {
             platform_wallet_check_identity_keys_with_resolver(
-                FFINetwork::Testnet,
-                wallet_id,
+                wallet_handle,
                 resolver,
                 0,
                 keys,
@@ -1060,19 +1290,18 @@ mod tests {
         };
         let mut out = IdentityWalletCheckFFI::empty();
         for code in [
-            call(std::ptr::null(), resolver, valid.as_ptr(), 1, &mut out),
             call(
-                WALLET_ID.as_ptr(),
+                wallet.handle,
                 std::ptr::null_mut(),
                 valid.as_ptr(),
                 1,
                 &mut out,
             ),
-            call(WALLET_ID.as_ptr(), resolver, std::ptr::null(), 1, &mut out),
-            call(WALLET_ID.as_ptr(), resolver, &no_data, 1, &mut out),
+            call(wallet.handle, resolver.0, std::ptr::null(), 1, &mut out),
+            call(wallet.handle, resolver.0, &no_data, 1, &mut out),
             call(
-                WALLET_ID.as_ptr(),
-                resolver,
+                wallet.handle,
+                resolver.0,
                 valid.as_ptr(),
                 1,
                 std::ptr::null_mut(),
@@ -1080,22 +1309,25 @@ mod tests {
         ] {
             assert_eq!(code, PlatformWalletFFIResultCode::ErrorNullPointer);
         }
+        assert_eq!(
+            call(Handle::MAX, resolver.0, valid.as_ptr(), 1, &mut out),
+            PlatformWalletFFIResultCode::NotFound
+        );
 
         // No keys is a null array with length 0, and says nothing about
         // whose identity it is.
         assert_eq!(
-            call(WALLET_ID.as_ptr(), resolver, std::ptr::null(), 0, &mut out),
+            call(wallet.handle, resolver.0, std::ptr::null(), 0, &mut out),
             PlatformWalletFFIResultCode::Success
         );
         assert_eq!(out.ownership, IdentityWalletOwnershipFFI::Undetermined);
         assert!(out.keys.is_null());
-        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
     }
 
     #[test]
     fn should_free_an_identity_check_twice_and_on_null() {
-        let resolver = test_resolver();
-        let (_, master_key, _) = slot_key(resolver, 0, 0);
+        let wallet = TestWallet::new();
+        let (_, master_key, _) = slot_key(0, 0);
         let inputs = [input(
             0,
             KeyType::ECDSA_SECP256K1,
@@ -1103,7 +1335,8 @@ mod tests {
             &master_key,
             None,
         )];
-        let (result, mut out) = check_identity(resolver, 0, &inputs);
+        let (result, mut out) =
+            check_identity(&wallet, &Resolver::new(test_resolve), 0, &inputs, 0);
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
         assert!(!out.keys.is_null());
 
@@ -1114,70 +1347,6 @@ mod tests {
         unsafe {
             platform_wallet_check_identity_keys_free(&mut out);
             platform_wallet_check_identity_keys_free(std::ptr::null_mut());
-            dash_sdk_mnemonic_resolver_destroy(resolver);
-        }
-    }
-    /// A key the caller could not describe rules out NotOwned.
-    #[test]
-    fn should_not_call_an_identity_foreign_beside_a_key_it_could_not_read() {
-        let resolver = test_resolver();
-        let (_, foreign_master, _) = slot_key(resolver, 1, 5);
-        let inputs = [input(
-            0,
-            KeyType::ECDSA_SECP256K1,
-            SecurityLevel::MASTER,
-            &foreign_master,
-            None,
-        )];
-
-        for (unreadable_key_count, ownership) in [
-            (1, IdentityWalletOwnershipFFI::Undetermined),
-            (0, IdentityWalletOwnershipFFI::NotOwned),
-        ] {
-            let (result, mut out) =
-                check_identity_with_unreadable(resolver, 1, &inputs, unreadable_key_count);
-            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-            assert_eq!(
-                out.ownership, ownership,
-                "{unreadable_key_count} unreadable"
-            );
-            unsafe { platform_wallet_check_identity_keys_free(&mut out) };
-        }
-        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
-    }
-
-    /// The wallet's own master encoded uncompressed is not compared, so
-    /// it can't make the identity look foreign.
-    #[test]
-    fn should_not_compare_an_uncompressed_master() {
-        let resolver = test_resolver();
-        let (_, master_key, _) = slot_key(resolver, 1, 0);
-        let uncompressed = dpp::secp256k1::PublicKey::from_slice(&master_key)
-            .expect("compressed slot key")
-            .serialize_uncompressed();
-        let inputs = [input(
-            0,
-            KeyType::ECDSA_SECP256K1,
-            SecurityLevel::MASTER,
-            &uncompressed,
-            None,
-        )];
-
-        let (result, mut out) = check_identity(resolver, 1, &inputs);
-
-        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-        assert_eq!(out.ownership, IdentityWalletOwnershipFFI::Undetermined);
-        assert_eq!(
-            outcomes(&out),
-            [IdentityKeyWalletCheckOutcomeFFI::NotCompared]
-        );
-        let key = unsafe { &*out.keys };
-        assert!(key.derivation_path.is_null());
-        assert!(key.derived_public_key_data.is_null());
-        assert_eq!(key.private_key_bytes, [0u8; 32]);
-        unsafe {
-            platform_wallet_check_identity_keys_free(&mut out);
-            dash_sdk_mnemonic_resolver_destroy(resolver);
         }
     }
 }
