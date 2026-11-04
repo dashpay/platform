@@ -3503,10 +3503,12 @@ fn refuse_state_generated_schema_path(schema: &Value, path: &str) -> Result<(), 
 /// the draw may create in the indexes holding it, priced on the document it writes
 /// (`prepay_random_document_index_entries`), so the draw may not create more entries than the
 /// create wrote: such an index may not be an `integerRange` index on it, which files a value
-/// in every window holding it, more for a drawn value than for the placeholder; and on a type
-/// whose documents are mutable it may not skip documents on a stored property (`skipIfAbsent`,
-/// or a typed array), which a replace in the block of the create could add before the draw,
-/// nor be an `integerRange` index at all, whose source a replace could move into more windows.
+/// in every window holding it, more for a drawn value than for the placeholder; nor may it
+/// skip documents on a stored property a replace could add before the draw (`skipIfAbsent`,
+/// or a typed array), nor be an `integerRange` index whose source a replace could move into
+/// more windows: a property is safe there only when it is fixed once written
+/// (`schema_property_is_fixed_once_written`: the type's documents are immutable, or it lists
+/// the property `immutable` and no moderator may change it).
 /// And nothing a write is judged by may read it: not a reference declared on the type (the property holding it, a `where`
 /// value, a `findBy` source, a function's params, a key id), nor an `encryptedFor` key, which
 /// would name another key once drawn. The rules reading it are refused where their reads are
@@ -3668,37 +3670,48 @@ pub(super) fn validate_generated_from_declarations(
                         generated_from.function, index.name
                     )));
                 }
-                // A replace in the block of the create may move the window source before the
-                // draw, into more windows than the create's
-                if document_type.documents_mutable && index.integer_range.is_some() {
+                // A replace in the block of the create may move a window source it can change
+                // before the draw, into more windows than the create's
+                if let Some(source) = index
+                    .integer_range
+                    .as_ref()
+                    .map(|transform| transform.source.as_str())
+                    .filter(|source| {
+                        !schema_property_is_fixed_once_written(
+                            DocumentTypeRef::V2(document_type),
+                            source,
+                        )
+                    })
+                {
                     return Err(structure_error(format!(
                         "function {} draws a value once the block is accepted, and integerRange \
-                         index \"{}\" files a document in every window its source falls in, \
-                         which a replace in the block of the create could change before the \
-                         draw, creating entries the create did not prepay: hold the property in \
-                         such an index only on a type whose documents are immutable",
+                         index \"{}\" files a document in every window its source \"{source}\" \
+                         falls in, which a replace in the block of the create could change \
+                         before the draw, creating entries the create did not prepay: window \
+                         such an index only on a property fixed once written",
                         generated_from.function, index.name
                     )));
                 }
-                // A derived property is fixed once written, so only a stored one can be added
-                // by a replace
-                if document_type.documents_mutable {
-                    if let Some(skipped_on) =
-                        index.skip_if_absent_properties.iter().find(|skipped_on| {
-                            !document_type
-                                .derived_index_properties
-                                .contains_key(skipped_on.as_str())
-                        })
-                    {
-                        return Err(structure_error(format!(
-                            "function {} draws a value once the block is accepted, and index \
-                             \"{}\" skips a document without \"{skipped_on}\", which a replace \
-                             in the block of the create could add before the draw, creating \
-                             entries the create did not prepay: skip on it only on a type whose \
-                             documents are immutable",
-                            generated_from.function, index.name
-                        )));
-                    }
+                // A derived property is fixed once written, so only a stored one a replace can
+                // change can be added
+                if let Some(skipped_on) =
+                    index.skip_if_absent_properties.iter().find(|skipped_on| {
+                        !document_type
+                            .derived_index_properties
+                            .contains_key(skipped_on.as_str())
+                            && !schema_property_is_fixed_once_written(
+                                DocumentTypeRef::V2(document_type),
+                                skipped_on,
+                            )
+                    })
+                {
+                    return Err(structure_error(format!(
+                        "function {} draws a value once the block is accepted, and index \
+                         \"{}\" skips a document without \"{skipped_on}\", which a replace in \
+                         the block of the create could add before the draw, creating entries the \
+                         create did not prepay: skip only on a property fixed once written",
+                        generated_from.function, index.name
+                    )));
                 }
             }
             // A reference is judged when the document is written, before the draw
