@@ -1053,11 +1053,10 @@ async fn should_accept_the_callers_recipient_for_a_legacy_row_without_one() {
         )
         .await
         .unwrap_err();
+    // The recipient check passed and funding resolution ran: this fixture's
+    // lock address is not in the funding account, which is where it fails.
     assert!(
-        !matches!(
-            error,
-            PlatformWalletError::AssetLockRecipientMismatch { .. }
-        ),
+        matches!(error, PlatformWalletError::AssetLockTransaction(_)),
         "a legacy row must not refuse the caller's recipient: {error}"
     );
 }

@@ -114,7 +114,7 @@ These are shipped ABI. Do not renumber.
 | 98 | `NotFound` | Sentinel — `Option` returned as an error |
 | 99 | `ErrorUnknown` | Sentinel — unmapped/flattened errors |
 
-**Next allocatable integer: 61** — 27–60 are all claimed (27, 29, 31, 34–42
+**Next allocatable integer: 62** — 27–61 are all claimed (27, 29, 31, 34–42
 and 46 merged; 43–45 proposed by active #4313 at head `0302b188ab`; 47 and
 48 proposed by active #4356 (47 renumbered from 42, 48 from 43 — see their
 rows below); 49–54 proposed by active #4586 (the persister
@@ -123,7 +123,8 @@ shield debits and durable recovery errors; 58 proposed by #4799 for an unavailab
 identity balance response; 59 proposed by #5322 for an SPV
 teardown that needs a process restart; 60 proposed by the pooled Core-to-shielded
 wallet drain for `ErrorAssetLockTooManyInputs` (Rust, Swift and Kotlin mirrors —
-renumbered from 59 when #5322 took that number on `v5.1-dev`); 28, 30,
+renumbered from 59 when #5322 took that number on `v5.1-dev`); 61 proposed by
+#5603 for `ErrorAssetLockRecipientMismatch`; 28, 30,
 32 and 33 reserved). **28, 30,
 32 and 33 are RESERVED, not free**: 28 and 30 were vacated when the
 reservation trio moved to 34–36; 32 and 33 lapsed when their in-repo owners
