@@ -541,14 +541,32 @@ mod tests {
 
     #[tokio::test]
     async fn should_report_a_quorum_type_it_never_proves_without_a_request() {
-        let context = WasmVerifiedContext::testnet(None).expect("builds");
+        // Nothing listens on the relay's port, so a request would fail as
+        // retriable rather than as the provider's refusal.
+        let port = TcpListener::bind("127.0.0.1:0")
+            .and_then(|listener| listener.local_addr())
+            .expect("a free port")
+            .port();
+        let context = with_checkpoint(
+            Network::Testnet,
+            &fixture_state("checkpoint"),
+            Some(vec![format!("http://127.0.0.1:{port}")]),
+        )
+        .expect("builds");
         // Type 1 is not testnet's Platform quorum type, so nothing is fetched.
         let error = context
-            .prove_quorum_public_key(1, [7; 32], 1_600_000)
+            .prove_quorum_public_key(1, [7; 32], fixture_state("target").height)
             .await
             .expect_err("never proven");
         assert_eq!(error.kind(), WasmSdkErrorKind::ContextProviderError);
-        assert!(error.message().contains("prove"), "{}", error.message());
+        assert!(!error.is_retriable(), "{}", error.message());
+        assert!(
+            error
+                .message()
+                .contains("is not a Platform quorum this provider verifies"),
+            "{}",
+            error.message()
+        );
     }
 
     /// A relay that cannot be reached is the SDK's retriable "source
