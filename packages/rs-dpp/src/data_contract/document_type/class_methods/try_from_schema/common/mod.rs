@@ -756,6 +756,50 @@ pub(super) fn refuse_a_repeated_doctype_key(
     }
 }
 
+/// A rule of full validation under `check_document_type_schema` 1 (protocol version 15): the
+/// contested `index` of the type `name` must be decided by its index values
+/// ([`Index::contest_is_decided_by_index_values`]), or a document outside the contest could
+/// take the values of a document in it and leave the contest's award no unique index entry to
+/// take. Version 0 refuses nothing, so a contract registered earlier keeps such a contest; the
+/// document create's state validation guards it from protocol version 15.
+#[cfg(feature = "validation")]
+fn refuse_a_contest_not_decided_by_index_values(
+    index: &Index,
+    flattened_document_properties: &IndexMap<String, DocumentProperty>,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .check_document_type_schema
+    {
+        0 => Ok(()),
+        1 => {
+            if index.contest_is_decided_by_index_values(flattened_document_properties) {
+                Ok(())
+            } else {
+                Err(consensus_or_protocol_data_contract_error(
+                    DataContractError::InvalidContractStructure(format!(
+                        "the contest of index \"{}\" on document type \"{name}\" must be decided \
+                         by the index values: every `fieldMatches` field must be a property of \
+                         the index, and a match on a string that may be empty must judge \"\" \
+                         and \"\\0\" alike, which share one index key",
+                        index.name
+                    )),
+                ))
+            }
+        }
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "DocumentType::check_document_type_schema".to_string(),
+            known_versions: vec![0, 1],
+            received: version,
+        }),
+    }
+}
+
 /// The schema check of full validation, versioned on `check_document_type_schema`: 0 checks
 /// the enriched schema against the document meta-schema through the `jsonschema` crate and
 /// compiles it; 1 (protocol version 15) checks it natively ([`native_schema`]), with the
@@ -1485,6 +1529,14 @@ fn parse_indices(
                             &index,
                             flags,
                             flattened_document_properties,
+                        )?;
+
+                        // A contest decided by more than its index values (protocol version 15)
+                        refuse_a_contest_not_decided_by_index_values(
+                            &index,
+                            flattened_document_properties,
+                            ctx.name,
+                            ctx.platform_version,
                         )?;
 
                         if ctx.generation.admit_indexed_arrays {
