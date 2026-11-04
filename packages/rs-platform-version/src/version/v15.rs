@@ -414,11 +414,33 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     values. The function is active: `CONTRACT_VERSIONS_V7`'s `random_generated_from` is
 ///     `Some(0)` (`None` in every earlier table, where registration refuses it with
 ///     `InvalidContractStructure`), since block execution draws the values from the beacon
-///     Tenderdash delivers (note 19). The call sites this
+///     Tenderdash delivers (note 20). The call sites this
 ///     extended in place (the document create and replace transformers, the parser's read
 ///     checks, the reference validation's referenced side) are inert at every earlier version,
 ///     where no type declares such a function.
-/// 19. **Same-block randomness**: `tenderdash_consensus_version` is 2, which consensus
+///
+/// 19. **Token amounts drawn at random**: format version 1 of the token transfer and
+///     the token mint (`TokenTransferTransitionV1`, `TokenMintTransitionV1`) carries
+///     `random_minimum_amount`: the amount that reaches the recipient is drawn from it to
+///     `amount`, both included, out of the block's random beacon once the block's transitions
+///     are accepted. Structure validation holds `1 <= minimum < amount`
+///     (`InvalidTokenAmountError`) and refuses a random mint that is a group action or names
+///     no recipient (`RandomTokenMintNotAllowedError`, 10462). Executing one reserves `amount`
+///     in the token marketplace escrow of the token (a transfer takes it off the sender, a mint
+///     adds it to the supply), writes the recipient's balance as it stands, and writes the
+///     history document holding the minimum under an id that also hashes the minimum and the
+///     maximum (`token_history_document_id`), so a proof binds the range; the transition
+///     prepays, at Drive's estimate without reading state, the history index entries the
+///     settlement rewrites. The settlement (`settle_random_token_amounts` 0,
+///     `DRIVE_TOKEN_METHOD_VERSIONS_V3`) removes the reservation, pays out the drawn amount,
+///     releases the rest and rewrites the history's amount, unbilled. The formats are active
+///     from this version, whose block execution settles them from the beacon Tenderdash
+///     delivers (note 20): `STATE_TRANSITION_SERIALIZATION_VERSIONS_V4`, selected by this
+///     version alone, sets `random_token_amount` to `Some(0)`, and V3, which 14 selects, keeps
+///     it `None`, so a batch carrying one is refused at decode there
+///     (`StateTransition::active_version_range`).
+///
+/// 20. **Same-block randomness**: `tenderdash_consensus_version` is 2, which consensus
 ///     parameter update 2 sends Tenderdash on the block that switches to this version, so
 ///     Tenderdash recovers a random beacon from each block's prevotes from the next height on,
 ///     hands it to Drive in `ApplyBlockRandomness` before the precommit (or before
@@ -447,10 +469,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     the hash of the header's state id with that app hash.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13), and draw_random_document_properties Some(0) draws the sys.random properties of a block's documents and prices what their create prepays (notes 18 and 19); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17)
+    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13), and draw_random_document_properties Some(0) draws the sys.random properties of a block's documents and prices what their create prepays (notes 18 and 20); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17); token method versions v3: settle_random_token_amounts Some(0) settles a block's random token transfers and mints and prices what they prepay (notes 19 and 20)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; consensus_params_update 2 installs the full evidence policy (note 16); block_end.apply_random_beacon Some(0) draws a block's random values from its beacon (note 19)
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; consensus_params_update 2 installs the full evidence policy (note 16); block_end.apply_random_beacon Some(0) draws a block's random values from its beacon (note 20)
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); data trigger bindings 3 refuse a replace or a delete of a token market order (note 17)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
@@ -476,7 +498,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     fee_version: FEE_VERSION4, // changed: decision proposals prefund their poll with 0.5 Dash (note 12)
     system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes, and the private document store limits size its store (note 13)
     consensus: ConsensusVersions {
-        tenderdash_consensus_version: 2, // changed: Tenderdash recovers each block's random beacon and calls ApplyBlockRandomness (note 19)
+        tenderdash_consensus_version: 2, // changed: Tenderdash recovers each block's random beacon and calls ApplyBlockRandomness (note 20)
         evidence: Some(ConsensusEvidenceParams {
             max_bytes: 0,
             max_age_num_blocks: 100_000,

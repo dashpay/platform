@@ -34,6 +34,8 @@ use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransition
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+use dpp::state_transition::batch_transition::token_mint_transition::validate_structure::TokenMintTransitionStructureValidation;
+use dpp::state_transition::batch_transition::token_transfer_transition::validate_structure::TokenTransferTransitionStructureValidation;
 use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
@@ -630,6 +632,45 @@ impl Drive {
                             token_transition.base().token_contract_position(),
                         )?;
                         let keeps_historical_document = token_config.keeps_history();
+
+                        // A random transfer or mint (protocol version 15) executes only where
+                        // its format is active and in the shape its structure validation
+                        // admits: a random group mint, say, is refused, while a fixed one of
+                        // the same owner, nonce, recipient and group action can stand in state
+                        // for its proof. Expecting one the platform never executes is refused
+                        // here, by the checks the platform refuses it with, before any branch
+                        // reads the proof.
+                        if token_transition.random_amount_range().is_some() {
+                            if platform_version
+                                .dpp
+                                .state_transition_serialization_versions
+                                .random_token_amount
+                                .is_none()
+                            {
+                                return Err(Error::Proof(ProofError::InvalidTransition(format!(
+                                    "protocol version {} does not execute a random token transfer or mint",
+                                    platform_version.protocol_version
+                                ))));
+                            }
+                            let structure = match token_transition {
+                                TokenTransition::Transfer(transfer) => {
+                                    Some(transfer.validate_structure(owner_id, platform_version)?)
+                                }
+                                TokenTransition::Mint(mint) => {
+                                    Some(mint.validate_structure(platform_version)?)
+                                }
+                                _ => None,
+                            };
+                            if let Some(error) = structure
+                                .as_ref()
+                                .and_then(|structure| structure.errors.first())
+                            {
+                                return Err(Error::Proof(ProofError::InvalidTransition(format!(
+                                    "the platform never executes this random token transition: {}",
+                                    error
+                                ))));
+                            }
+                        }
 
                         let historical_query = || {
                             // Resolved here rather than above because the kinds that write into a
