@@ -10,7 +10,10 @@ use common::{ensure_wallet_meta, fresh_persister, wid};
 use dashcore::hashes::Hash;
 use dashcore::{OutPoint, Transaction, Txid};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-use platform_wallet::changeset::{AssetLockChangeSet, AssetLockEntry, PlatformWalletPersistence};
+use platform_wallet::changeset::{
+    AssetLockChangeSet, AssetLockEntry, PlatformWalletPersistence, ShieldedRecipientRaw,
+    SHIELDED_RECIPIENT_SIZE,
+};
 use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
 use platform_wallet_storage::sqlite::error::WalletStorageError;
 use platform_wallet_storage::sqlite::schema::asset_locks;
@@ -348,7 +351,7 @@ fn should_preserve_shielded_recipient_when_later_snapshot_lacks_it_and_reject_a_
     let w = wid(0xA9);
     ensure_wallet_meta(&persister, &w);
     let outpoint = op(0x35);
-    let recipient = orchard_address(0x11);
+    let recipient = recipient_bytes(0x11);
     let store = |persister: &platform_wallet_storage::SqlitePersister, row: AssetLockEntry| {
         persister.store(
             w,
@@ -368,7 +371,7 @@ fn should_preserve_shielded_recipient_when_later_snapshot_lacks_it_and_reject_a_
     store(&persister, entry(outpoint, AssetLockStatus::Broadcast)).unwrap();
     // A snapshot naming another recipient is refused before any write.
     let mut redirected = entry(outpoint, AssetLockStatus::ChainLocked);
-    redirected.shielded_recipient = Some(orchard_address(0x12));
+    redirected.shielded_recipient = Some(recipient_bytes(0x12));
     assert!(store(&persister, redirected).is_err());
     drop(persister);
 
@@ -390,13 +393,13 @@ fn should_preserve_shielded_recipient_when_later_snapshot_lacks_it_and_reject_a_
     assert!(conn
         .execute(
             "UPDATE asset_locks SET shielded_recipient = ?1",
-            [orchard_address(0x13).to_raw_bytes().to_vec()]
+            [recipient_bytes(0x13).to_vec()]
         )
         .is_err());
 }
 
 #[test]
-fn should_fail_the_load_when_a_stored_shielded_recipient_is_not_an_orchard_address() {
+fn should_fail_the_load_when_a_stored_shielded_recipient_has_the_wrong_length() {
     let (persister, _tmp, _) = fresh_persister();
     let w = wid(0xAB);
     ensure_wallet_meta(&persister, &w);
@@ -416,22 +419,32 @@ fn should_fail_the_load_when_a_stored_shielded_recipient_is_not_an_orchard_addre
         )
         .unwrap();
     let conn = persister.lock_conn_for_test();
-    // 43 bytes whose pk_d is not a Pallas point: the CHECK and the
-    // immutability trigger (OLD is NULL) both let it in.
+    // The CHECK constraint stops this at the SQL layer; bypass it to prove
+    // the reader fails closed on its own rather than yielding a row with
+    // no recipient (which a resume would pay to whatever the caller names).
+    conn.execute_batch("PRAGMA ignore_check_constraints = ON")
+        .unwrap();
     conn.execute(
         "UPDATE asset_locks SET shielded_recipient = ?1",
-        [vec![0xff_u8; 43]],
+        [vec![0xff_u8; SHIELDED_RECIPIENT_SIZE - 1]],
     )
     .unwrap();
+    conn.execute_batch("PRAGMA ignore_check_constraints = OFF")
+        .unwrap();
     assert!(
         asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
             .is_err()
     );
 }
 
-fn orchard_address(seed_byte: u8) -> dpp::address_funds::OrchardAddress {
-    use dash_sdk::grovedb_commitment_tree::{FullViewingKey, Scope, SpendingKey};
-    let spending_key = SpendingKey::from_bytes([seed_byte; 32]).unwrap();
-    let full_viewing_key = FullViewingKey::from(&spending_key);
-    dpp::address_funds::OrchardAddress::from(full_viewing_key.address_at(0u32, Scope::External))
+#[test]
+fn sqlite_advertises_asset_lock_shielded_recipients() {
+    let (persister, _tmp, _) = fresh_persister();
+    assert!(persister.persistence_capabilities().contains(
+        platform_wallet::changeset::PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS
+    ));
+}
+
+fn recipient_bytes(seed_byte: u8) -> ShieldedRecipientRaw {
+    [seed_byte; SHIELDED_RECIPIENT_SIZE]
 }

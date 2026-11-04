@@ -9,11 +9,10 @@
 //! `funding_type` + `identity_index` via the key-wallet's `Wallet`.
 
 use dashcore::{OutPoint, Transaction};
-use dpp::address_funds::OrchardAddress;
 use dpp::prelude::AssetLockProof;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
-use crate::changeset::AssetLockEntry;
+use crate::changeset::{AssetLockEntry, ShieldedRecipientRaw};
 
 /// Asset lock status on Core chain.
 ///
@@ -152,7 +151,7 @@ pub struct TrackedAssetLock {
     /// than whatever the resuming call passes. `None` for every other
     /// funding type and for shielded locks tracked before the recipient was
     /// recorded (those keep accepting the resuming caller's recipient).
-    pub shielded_recipient: Option<OrchardAddress>,
+    pub shielded_recipient: Option<ShieldedRecipientRaw>,
 }
 
 impl From<&TrackedAssetLock> for AssetLockEntry {

@@ -3125,8 +3125,8 @@ mod tests {
         let recipient_mismatch = map_asset_lock_funding_result(
             Err(PlatformWalletError::AssetLockRecipientMismatch {
                 out_point,
-                recorded: crate::test_fixtures::orchard_address(1),
-                requested: crate::test_fixtures::orchard_address(2),
+                recorded: [1; 43],
+                requested: [2; 43],
             }),
             "shielded resume fund-from-asset-lock",
         );

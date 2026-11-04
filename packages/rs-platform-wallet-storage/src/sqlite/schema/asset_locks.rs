@@ -13,10 +13,9 @@
 use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 
-use dpp::address_funds::{OrchardAddress, ORCHARD_ADDRESS_SIZE};
 use dpp::prelude::AssetLockProof;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-use platform_wallet::changeset::AssetLockChangeSet;
+use platform_wallet::changeset::{AssetLockChangeSet, SHIELDED_RECIPIENT_SIZE};
 use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -189,9 +188,7 @@ pub fn apply(
                     ));
                 }
             }
-            let shielded_recipient = entry
-                .shielded_recipient
-                .map(|recipient| recipient.to_raw_bytes());
+            let shielded_recipient = entry.shielded_recipient;
             if let (Some(incoming), Some(stored)) = (
                 shielded_recipient.as_ref(),
                 existing
@@ -338,14 +335,9 @@ fn decode_row(
         .transpose()?;
     entry.shielded_recipient = shielded_recipient
         .map(|bytes| {
-            let raw: [u8; ORCHARD_ADDRESS_SIZE] = bytes.try_into().map_err(|_| {
+            <[u8; SHIELDED_RECIPIENT_SIZE]>::try_from(bytes).map_err(|_| {
                 WalletStorageError::blob_decode(
                     "asset_locks.shielded_recipient must contain 43 bytes",
-                )
-            })?;
-            OrchardAddress::from_raw_bytes(&raw).map_err(|_| {
-                WalletStorageError::blob_decode(
-                    "asset_locks.shielded_recipient is not a valid Orchard address",
                 )
             })
         })

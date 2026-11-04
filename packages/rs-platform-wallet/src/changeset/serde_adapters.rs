@@ -6,7 +6,6 @@
 //! `changeset/mod.rs`).
 
 use dash_sdk::platform::address_sync::AddressFunds;
-use dpp::address_funds::OrchardAddress;
 use dpp::balances::credits::Credits;
 use dpp::prelude::AddressNonce;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
@@ -210,57 +209,56 @@ mod optional_asset_lock_proof_tests {
     }
 }
 
-/// Adapter for `Option<OrchardAddress>` (upstream has no serde derive, and
-/// serde has no impl for `[u8; 43]`).
+/// Adapter for `Option<ShieldedRecipientRaw>` (serde has no impl for
+/// `[u8; 43]`).
 ///
 /// Encodes the raw 43-byte Orchard address as `Option<Vec<u8>>` — the same
 /// bytes `OrchardAddress::to_raw_bytes` gives and every FFI surface already
-/// carries (`recipient_raw_43`). Decoding re-validates the Pallas point
-/// through `from_raw_bytes`, so a corrupted blob fails loudly instead of
-/// yielding an address nothing can pay.
-pub mod optional_orchard_address {
+/// carries (`recipient_raw_43`). Decoding checks the length only: whether the
+/// bytes are a payable address is decided where the recipient is used, in
+/// shielded code, and a corrupted recipient never matches the one a resume
+/// names, so it refuses the resume rather than paying anyone.
+pub mod optional_shielded_recipient {
     use super::*;
-    use dpp::address_funds::ORCHARD_ADDRESS_SIZE;
+    use crate::changeset::{ShieldedRecipientRaw, SHIELDED_RECIPIENT_SIZE};
 
     pub fn serialize<S: Serializer>(
-        value: &Option<OrchardAddress>,
+        value: &Option<ShieldedRecipientRaw>,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
-        value
-            .map(|address| address.to_raw_bytes().to_vec())
-            .serialize(serializer)
+        value.map(|raw| raw.to_vec()).serialize(serializer)
     }
 
     pub fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
-    ) -> Result<Option<OrchardAddress>, D::Error> {
+    ) -> Result<Option<ShieldedRecipientRaw>, D::Error> {
         let bytes = Option::<Vec<u8>>::deserialize(deserializer)?;
         bytes
             .map(|bytes| {
-                let raw: [u8; ORCHARD_ADDRESS_SIZE] =
-                    bytes.as_slice().try_into().map_err(|_| {
-                        serde::de::Error::custom(format!(
-                            "shielded recipient must be {ORCHARD_ADDRESS_SIZE} bytes, got {}",
-                            bytes.len()
-                        ))
-                    })?;
-                OrchardAddress::from_raw_bytes(&raw).map_err(serde::de::Error::custom)
+                bytes.as_slice().try_into().map_err(|_| {
+                    serde::de::Error::custom(format!(
+                        "shielded recipient must be {SHIELDED_RECIPIENT_SIZE} bytes, got {}",
+                        bytes.len()
+                    ))
+                })
             })
             .transpose()
     }
 }
 
-#[cfg(all(test, feature = "shielded"))]
-mod optional_orchard_address_tests {
-    use dpp::address_funds::OrchardAddress;
+#[cfg(test)]
+mod optional_shielded_recipient_tests {
+    use crate::changeset::{ShieldedRecipientRaw, SHIELDED_RECIPIENT_SIZE};
 
     #[derive(serde::Serialize, serde::Deserialize)]
     struct Carrier {
-        #[serde(with = "super::optional_orchard_address")]
-        recipient: Option<OrchardAddress>,
+        #[serde(with = "super::optional_shielded_recipient")]
+        recipient: Option<ShieldedRecipientRaw>,
     }
 
-    fn roundtrip(recipient: Option<OrchardAddress>) -> Result<Option<OrchardAddress>, String> {
+    fn roundtrip(
+        recipient: Option<ShieldedRecipientRaw>,
+    ) -> Result<Option<ShieldedRecipientRaw>, String> {
         let bytes = dpp::bincode::serde::encode_to_vec(
             Carrier { recipient },
             dpp::bincode::config::standard(),
@@ -274,23 +272,26 @@ mod optional_orchard_address_tests {
 
     #[test]
     fn should_roundtrip_a_recipient_and_none() {
-        let recipient = crate::test_support::orchard_address_fixture(1);
+        let recipient = [0x5au8; SHIELDED_RECIPIENT_SIZE];
         assert_eq!(roundtrip(Some(recipient)).unwrap(), Some(recipient));
         assert_eq!(roundtrip(None).unwrap(), None);
     }
 
     #[test]
-    fn should_reject_a_wrong_length_or_invalid_recipient() {
-        let encode = |bytes: Vec<u8>| {
-            dpp::bincode::serde::encode_to_vec((Some(bytes),), dpp::bincode::config::standard())
-                .unwrap()
-        };
-        for bytes in [vec![0u8; 42], vec![0u8; 44], vec![0xffu8; 43]] {
-            let result: Result<(Carrier, usize), _> = dpp::bincode::serde::decode_from_slice(
-                &encode(bytes),
-                dpp::bincode::config::standard(),
-            );
-            assert!(result.is_err());
+    fn should_reject_a_recipient_of_the_wrong_length() {
+        #[derive(serde::Serialize)]
+        struct Raw {
+            recipient: Option<Vec<u8>>,
         }
+        let bytes = dpp::bincode::serde::encode_to_vec(
+            Raw {
+                recipient: Some(vec![1; SHIELDED_RECIPIENT_SIZE - 1]),
+            },
+            dpp::bincode::config::standard(),
+        )
+        .unwrap();
+        let decoded: Result<(Carrier, usize), _> =
+            dpp::bincode::serde::decode_from_slice(&bytes, dpp::bincode::config::standard());
+        assert!(decoded.is_err());
     }
 }

@@ -136,7 +136,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     pub(crate) async fn tracked_shielded_recipient(
         &self,
         out_point: &OutPoint,
-    ) -> Option<dpp::address_funds::OrchardAddress> {
+    ) -> Option<crate::changeset::ShieldedRecipientRaw> {
         let wm = self.wallet_manager.read().await;
         wm.get_wallet_info(&self.wallet_id)
             .and_then(|info| info.tracked_asset_locks.get(out_point))

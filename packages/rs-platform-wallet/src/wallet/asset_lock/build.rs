@@ -6,9 +6,9 @@
 use crate::broadcaster::TransactionBroadcaster;
 use std::time::Duration;
 
+use crate::changeset::ShieldedRecipientRaw;
 use dashcore::Address as DashAddress;
 use dashcore::{OutPoint, Transaction, TxOut};
-use dpp::address_funds::OrchardAddress;
 use key_wallet::account::AccountType;
 use key_wallet::bip32::DerivationPath;
 use key_wallet::managed_account::address_pool::AddressState;
@@ -945,7 +945,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         account_index: u32,
         funding_type: AssetLockFundingType,
         identity_index: u32,
-        shielded_recipient: Option<OrchardAddress>,
+        shielded_recipient: Option<ShieldedRecipientRaw>,
         signer: &S,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
@@ -999,7 +999,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         funding_account: AssetLockFundingAccount,
         funding_type: AssetLockFundingType,
         identity_index: u32,
-        shielded_recipient: Option<OrchardAddress>,
+        shielded_recipient: Option<ShieldedRecipientRaw>,
         signer: &S,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
@@ -1031,7 +1031,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         source_index: u32,
         funding_type: AssetLockFundingType,
         identity_index: u32,
-        shielded_recipient: Option<OrchardAddress>,
+        shielded_recipient: Option<ShieldedRecipientRaw>,
         signer: &S,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
@@ -1120,7 +1120,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         minimum_lock_duffs: Option<u64>,
         funding_type: AssetLockFundingType,
         identity_index: u32,
-        shielded_recipient: Option<OrchardAddress>,
+        shielded_recipient: Option<ShieldedRecipientRaw>,
         signer: &S,
         operation: &AssetLockOperationContext,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
@@ -1184,7 +1184,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         source_index: u32,
         funding_type: AssetLockFundingType,
         identity_index: u32,
-        shielded_recipient: Option<OrchardAddress>,
+        shielded_recipient: Option<ShieldedRecipientRaw>,
         signer: &S,
         operation: Option<&AssetLockOperationContext>,
         on_built: Option<&AssetLockBuiltObserver<'_>>,

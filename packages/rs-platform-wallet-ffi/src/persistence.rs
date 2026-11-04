@@ -10,7 +10,6 @@
 //! same integers on a different callback family.
 
 use bincode::config;
-use dpp::address_funds::{OrchardAddress, ORCHARD_ADDRESS_SIZE};
 use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType, StandardAccountType};
 use key_wallet::bip32::DerivationPath;
@@ -2777,7 +2776,6 @@ impl PlatformWalletPersistence for FFIPersister {
                         continue;
                     };
                     let out_point = outpoint_to_bytes(&entry.out_point);
-                    let recipient = recipient.to_raw_bytes();
                     let rc = unsafe {
                         cb(
                             self.callbacks.context,
@@ -6370,9 +6368,9 @@ fn load_asset_lock_operation_ids(
 }
 
 /// Rehydrate the shielded-recipient sidecar after decoding the frozen legacy
-/// rows. A failed read or a byte string that is not an Orchard address
-/// invalidates the whole load: a row that silently lost its recipient would
-/// let a resume pay whatever the caller names.
+/// rows. A failed read invalidates the whole load: a row that silently lost
+/// its recipient would let a resume pay whatever the caller names. The bytes
+/// are carried raw; whether they are a payable address is the wallet's call.
 fn load_asset_lock_shielded_recipients(
     callback: LoadAssetLockShieldedRecipientFn,
     context: *mut c_void,
@@ -6382,7 +6380,7 @@ fn load_asset_lock_shielded_recipients(
     for lock in locks.values_mut().flat_map(|locks| locks.values_mut()) {
         let out_point = outpoint_to_bytes(&lock.out_point);
         let mut found = false;
-        let mut raw = [0u8; ORCHARD_ADDRESS_SIZE];
+        let mut raw = [0u8; platform_wallet::changeset::SHIELDED_RECIPIENT_SIZE];
         let rc = unsafe {
             callback(
                 context,
@@ -6398,15 +6396,7 @@ fn load_asset_lock_shielded_recipients(
                 "Loading asset-lock shielded recipient failed",
             ));
         }
-        lock.shielded_recipient = if found {
-            Some(OrchardAddress::from_raw_bytes(&raw).map_err(|error| {
-                PersistenceError::backend(format!(
-                    "tracked asset locks: stored shielded recipient is not an Orchard address: {error}"
-                ))
-            })?)
-        } else {
-            None
-        };
+        lock.shielded_recipient = found.then_some(raw);
     }
     Ok(())
 }
@@ -10083,8 +10073,7 @@ mod tests {
         use dashcore::hashes::Hash;
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
-        let recipient = crate::test_fixtures::orchard_address(0x33);
-        let raw = recipient.to_raw_bytes();
+        let raw = [0x33u8; 43];
         unsafe extern "C" fn load_recipient(
             context: *mut c_void,
             _: *const u8,
@@ -10118,7 +10107,7 @@ mod tests {
             status: platform_wallet::AssetLockStatus::Broadcast,
             proof: None,
             operation_id: None,
-            shielded_recipient: Some(recipient),
+            shielded_recipient: Some(raw),
         };
         let (entries, _storage) = build_asset_lock_entries(&[&entry]);
         let wallet = WalletRestoreEntryFFI {
@@ -10139,19 +10128,8 @@ mod tests {
                 &mut restored,
             )
             .expect("valid recipient sidecar");
-            assert_eq!(
-                restored[&2][&entry.out_point].shielded_recipient,
-                stored.map(|_| recipient)
-            );
+            assert_eq!(restored[&2][&entry.out_point].shielded_recipient, stored);
         }
-        let garbage: Option<[u8; 43]> = Some([0xff; 43]);
-        assert!(load_asset_lock_shielded_recipients(
-            load_recipient,
-            (&garbage as *const Option<[u8; 43]>).cast_mut().cast(),
-            &[42; 32],
-            &mut restored,
-        )
-        .is_err());
 
         let changeset = PlatformWalletChangeSet {
             asset_locks: Some(platform_wallet::changeset::AssetLockChangeSet {

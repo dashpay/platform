@@ -887,7 +887,7 @@ mod tests {
     fn should_preserve_the_shielded_recipient_when_applying_stale_snapshots() {
         let mut wallet = build_test_wallet();
         let mut info = empty_info(&wallet);
-        let recipient = crate::test_support::orchard_address_fixture(0x81);
+        let recipient = [0x81u8; crate::changeset::SHIELDED_RECIPIENT_SIZE];
         let mut recorded = recovery_asset_lock(AssetLockStatus::Broadcast, None);
         recorded.shielded_recipient = Some(recipient);
         apply_recovery_asset_lock(&mut info, &mut wallet, recorded);
@@ -904,7 +904,7 @@ mod tests {
 
         // A snapshot naming another recipient is dropped whole.
         let mut redirected = recovery_asset_lock(AssetLockStatus::ChainLocked, None);
-        redirected.shielded_recipient = Some(crate::test_support::orchard_address_fixture(0x82));
+        redirected.shielded_recipient = Some([0x82; crate::changeset::SHIELDED_RECIPIENT_SIZE]);
         apply_recovery_asset_lock(&mut info, &mut wallet, redirected);
         let restored = &info.tracked_asset_locks[&OutPoint::default()];
         assert_eq!(restored.shielded_recipient, Some(recipient));

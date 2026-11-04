@@ -640,13 +640,13 @@ pub enum PlatformWalletError {
     /// before the recipient was recorded carry none and accept the caller's.
     #[error(
         "Asset lock {out_point} was built to pay shielded recipient {} and cannot be resumed to {}",
-        hex::encode(recorded.to_raw_bytes()),
-        hex::encode(requested.to_raw_bytes())
+        hex::encode(recorded),
+        hex::encode(requested)
     )]
     AssetLockRecipientMismatch {
         out_point: dashcore::OutPoint,
-        recorded: dpp::address_funds::OrchardAddress,
-        requested: dpp::address_funds::OrchardAddress,
+        recorded: crate::changeset::ShieldedRecipientRaw,
+        requested: crate::changeset::ShieldedRecipientRaw,
     },
 
     #[error("SDK error: {0}")]

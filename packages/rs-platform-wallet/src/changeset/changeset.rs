@@ -27,7 +27,6 @@ use dashcore::ephemerealdata::instant_lock::InstantLock;
 use dashcore::Txid;
 
 use dash_sdk::platform::address_sync::AddressFunds;
-use dpp::address_funds::OrchardAddress;
 use dpp::prelude::AssetLockProof;
 use key_wallet::account::AccountType;
 use key_wallet::bip32::ExtendedPubKey;
@@ -1494,6 +1493,18 @@ pub struct AssetLockChangeSet {
     pub removed: BTreeSet<OutPoint>,
 }
 
+/// Byte length of a raw Orchard payment address (`OrchardAddress::to_raw_bytes`).
+pub const SHIELDED_RECIPIENT_SIZE: usize = 43;
+
+/// The raw bytes of an Orchard payment address, as `OrchardAddress::to_raw_bytes`
+/// gives them and every FFI surface carries them (`recipient_raw_43`).
+///
+/// The changeset, the tracked locks and the persistence backends are built
+/// without the `shielded` feature, where `dpp::address_funds::OrchardAddress`
+/// does not exist, so they carry the recipient raw. Only shielded code
+/// converts it back into an address, and the resume check compares bytes.
+pub type ShieldedRecipientRaw = [u8; SHIELDED_RECIPIENT_SIZE];
+
 /// A single asset lock entry in the changeset.
 ///
 /// Contains all fields needed to fully reconstruct a
@@ -1535,10 +1546,10 @@ pub struct AssetLockEntry {
         feature = "serde",
         serde(
             default,
-            with = "crate::changeset::serde_adapters::optional_orchard_address"
+            with = "crate::changeset::serde_adapters::optional_shielded_recipient"
         )
     )]
-    pub shielded_recipient: Option<OrchardAddress>,
+    pub shielded_recipient: Option<ShieldedRecipientRaw>,
 }
 
 impl AssetLockEntry {
@@ -1551,7 +1562,7 @@ impl AssetLockEntry {
     pub(crate) fn preserve_recovery_metadata(
         &mut self,
         previous_operation_id: Option<[u8; 16]>,
-        previous_shielded_recipient: Option<OrchardAddress>,
+        previous_shielded_recipient: Option<ShieldedRecipientRaw>,
     ) -> bool {
         if let Some(previous_id) = previous_operation_id {
             if self
@@ -2838,7 +2849,7 @@ mod tests {
 
         // The recorded shielded recipient survives a later snapshot without
         // one (reconstruction, a status advance) and vetoes a conflicting one.
-        let recipient = crate::test_support::orchard_address_fixture(0x71);
+        let recipient = [0x71u8; SHIELDED_RECIPIENT_SIZE];
         let mut recorded = cs_with(AssetLockStatus::Broadcast);
         recorded
             .asset_locks
@@ -2859,7 +2870,7 @@ mod tests {
             .asset_locks
             .get_mut(&outpoint)
             .unwrap()
-            .shielded_recipient = Some(crate::test_support::orchard_address_fixture(0x72));
+            .shielded_recipient = Some([0x72; SHIELDED_RECIPIENT_SIZE]);
         let expected = recorded.clone();
         recorded.merge(redirected);
         assert_eq!(recorded.asset_locks, expected.asset_locks);

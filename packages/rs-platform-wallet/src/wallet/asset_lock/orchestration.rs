@@ -34,8 +34,8 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::changeset::ShieldedRecipientRaw;
 use dashcore::OutPoint;
-use dpp::address_funds::OrchardAddress;
 use dpp::prelude::AssetLockProof;
 use key_wallet::bip32::DerivationPath;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
@@ -513,7 +513,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         funding: AssetLockFunding,
         funding_type: AssetLockFundingType,
         destination_index: u32,
-        shielded_recipient: Option<OrchardAddress>,
+        shielded_recipient: Option<ShieldedRecipientRaw>,
         asset_lock_signer: &AS,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<FundingResolution, PlatformWalletError>

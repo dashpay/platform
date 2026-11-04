@@ -94,10 +94,7 @@ pub unsafe extern "C" fn asset_lock_manager_list_tracked_locks(
                     },
                     has_proof: lock.proof.is_some(),
                     has_shielded_recipient: lock.shielded_recipient.is_some(),
-                    shielded_recipient_raw_43: lock
-                        .shielded_recipient
-                        .map(|recipient| recipient.to_raw_bytes())
-                        .unwrap_or([0; 43]),
+                    shielded_recipient_raw_43: lock.shielded_recipient.unwrap_or([0; 43]),
                 }
             })
             .collect();

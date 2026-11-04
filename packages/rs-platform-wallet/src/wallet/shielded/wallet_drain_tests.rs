@@ -915,7 +915,7 @@ async fn should_refuse_a_generic_resume_to_a_recipient_other_than_the_recorded_o
     lock.operation_id = None;
     let recorded = crate::test_support::orchard_address_fixture(0x51);
     let other = crate::test_support::orchard_address_fixture(0x52);
-    lock.shielded_recipient = Some(recorded);
+    lock.shielded_recipient = Some(recorded.to_raw_bytes());
     let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
     let coordinator = Arc::new(coordinator);
     let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
@@ -946,7 +946,7 @@ async fn should_refuse_a_generic_resume_to_a_recipient_other_than_the_recorded_o
                 out_point,
                 recorded: r,
                 requested: q,
-            } if *out_point == lock.out_point && *r == recorded && *q == other
+            } if *out_point == lock.out_point && *r == recorded.to_raw_bytes() && *q == other.to_raw_bytes()
         ),
         "{error}"
     );
@@ -970,7 +970,7 @@ async fn should_refuse_a_repeated_uuid_drain_to_a_recipient_other_than_the_recor
     let (mut lock, keys) = drain_lock_fixture();
     let recorded = crate::test_support::orchard_address_fixture(0x53);
     let other = crate::test_support::orchard_address_fixture(0x54);
-    lock.shielded_recipient = Some(recorded);
+    lock.shielded_recipient = Some(recorded.to_raw_bytes());
     let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
     let coordinator = Arc::new(coordinator);
     let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
@@ -1115,7 +1115,11 @@ async fn should_record_the_recipient_with_the_lock_before_dispatch() {
             .cloned()
             .or_else(|| persistence.staged.lock().unwrap().get(&seen[0]).cloned())
             .expect("the built lock's row reached the persister before the broadcast");
-        assert_eq!(stored.shielded_recipient, Some(recipient), "drain={drain}");
+        assert_eq!(
+            stored.shielded_recipient,
+            Some(recipient.to_raw_bytes()),
+            "drain={drain}"
+        );
         assert_eq!(stored.operation_id, drain.then_some([0x57; 16]));
     }
 }

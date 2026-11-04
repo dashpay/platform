@@ -2257,8 +2257,8 @@ mod tests {
             PlatformWalletFFIResultCode::ErrorAssetLockRecipientMismatch as i32,
             61
         );
-        let recorded = crate::test_fixtures::orchard_address(1);
-        let requested = crate::test_fixtures::orchard_address(2);
+        let recorded = [1u8; 43];
+        let requested = [2u8; 43];
         let result: PlatformWalletFFIResult = PlatformWalletError::AssetLockRecipientMismatch {
             out_point: dashcore::OutPoint::null(),
             recorded,
@@ -2274,7 +2274,7 @@ mod tests {
             message.contains("cannot be resumed to"),
             "the typed Display must survive the conversion: {message}"
         );
-        assert!(message.contains(&hex::encode(recorded.to_raw_bytes())));
+        assert!(message.contains(&hex::encode(recorded)));
     }
 
     #[test]

@@ -33,7 +33,9 @@
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dashcore::OutPoint;
-use dpp::address_funds::{OrchardAddress, PlatformAddress};
+use dpp::address_funds::{OrchardAddress, PlatformAddress, ORCHARD_ADDRESS_SIZE};
+
+use crate::changeset::{ShieldedRecipientRaw, SHIELDED_RECIPIENT_SIZE};
 use dpp::asset_lock::StoredAssetLockInfo;
 use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::fee::Credits;
@@ -395,7 +397,7 @@ impl PlatformWallet {
                 funding,
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 /* destination_index */ 0,
-                Some(recipient),
+                Some(recipient.to_raw_bytes()),
                 asset_lock_signer,
                 on_asset_lock_built,
             )
@@ -971,18 +973,23 @@ where
 /// recorded — the one the resuming caller passes. A caller that names a
 /// different recipient than the recorded one is refused with
 /// [`PlatformWalletError::AssetLockRecipientMismatch`]; nothing is paid.
+///
+/// The row carries the recipient raw; the comparison is on bytes, so a
+/// corrupted recorded recipient matches nothing and the resume is refused
+/// rather than paid to an address nobody holds.
 pub(super) fn resume_recipient(
     out_point: OutPoint,
-    recorded: Option<OrchardAddress>,
+    recorded: Option<ShieldedRecipientRaw>,
     requested: OrchardAddress,
 ) -> Result<OrchardAddress, PlatformWalletError> {
+    const _: () = assert!(SHIELDED_RECIPIENT_SIZE == ORCHARD_ADDRESS_SIZE);
     match recorded {
         None => Ok(requested),
-        Some(recorded) if recorded == requested => Ok(recorded),
+        Some(recorded) if recorded == requested.to_raw_bytes() => Ok(requested),
         Some(recorded) => Err(PlatformWalletError::AssetLockRecipientMismatch {
             out_point,
             recorded,
-            requested,
+            requested: requested.to_raw_bytes(),
         }),
     }
 }
@@ -1099,17 +1106,22 @@ mod tests {
         let recorded = crate::test_support::orchard_address_fixture(0x61);
         let other = crate::test_support::orchard_address_fixture(0x62);
         assert_eq!(
-            resume_recipient(out_point, Some(recorded), recorded).unwrap(),
+            resume_recipient(out_point, Some(recorded.to_raw_bytes()), recorded).unwrap(),
             recorded
         );
         assert_eq!(resume_recipient(out_point, None, other).unwrap(), other);
         assert!(matches!(
-            resume_recipient(out_point, Some(recorded), other),
+            resume_recipient(out_point, Some(recorded.to_raw_bytes()), other),
             Err(PlatformWalletError::AssetLockRecipientMismatch {
                 out_point: o,
                 recorded: r,
                 requested: q,
-            }) if o == out_point && r == recorded && q == other
+            }) if o == out_point && r == recorded.to_raw_bytes() && q == other.to_raw_bytes()
+        ));
+        // Bytes that are not an address match nothing: refused, not paid.
+        assert!(matches!(
+            resume_recipient(out_point, Some([0xff; SHIELDED_RECIPIENT_SIZE]), other),
+            Err(PlatformWalletError::AssetLockRecipientMismatch { .. })
         ));
     }
 
