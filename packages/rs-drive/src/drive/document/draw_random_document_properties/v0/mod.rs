@@ -627,8 +627,9 @@ mod tests {
 
     #[test]
     fn should_prepay_the_draw_once_with_the_insert_of_the_document() {
-        // The insert of a card is charged the prepayment on top of what it costs at a version
-        // whose draw method version is unset, which prepays nothing
+        // The insert of a card, and of one that expires in an hour, is charged the prepayment
+        // on top of what it costs at a version whose draw method version is unset, which
+        // prepays nothing
         let platform_version = PlatformVersion::latest().clone();
         let mut without_draw = platform_version.clone();
         without_draw
@@ -636,55 +637,67 @@ mod tests {
             .methods
             .document
             .draw_random_document_properties = None;
-        let insert_fee = |platform_version: &PlatformVersion| {
-            let (drive, contract) = setup(platform_version);
-            let document = card(1);
-            drive
-                .add_document_for_contract(
-                    DocumentAndContractInfo {
-                        owned_document_info: OwnedDocumentInfo {
-                            document_info: DocumentRefInfo((
-                                &document,
-                                Some(Cow::Owned(StorageFlags::new_single_epoch(0, Some(OWNER)))),
-                            )),
-                            owner_id: Some(OWNER),
+        let mut fleeting_card = card(2);
+        fleeting_card.set_created_at(Some(0));
+        for (document_type_name, document) in [("card", card(1)), ("fleetingCard", fleeting_card)] {
+            let insert_fee = |platform_version: &PlatformVersion| {
+                let (drive, contract) = setup(platform_version);
+                drive
+                    .add_document_for_contract(
+                        DocumentAndContractInfo {
+                            owned_document_info: OwnedDocumentInfo {
+                                document_info: DocumentRefInfo((
+                                    &document,
+                                    Some(Cow::Owned(StorageFlags::new_single_epoch(
+                                        0,
+                                        Some(OWNER),
+                                    ))),
+                                )),
+                                owner_id: Some(OWNER),
+                            },
+                            contract: &contract,
+                            document_type: contract
+                                .document_type_for_name(document_type_name)
+                                .expect("the type"),
                         },
-                        contract: &contract,
-                        document_type: contract.document_type_for_name("card").expect("card"),
-                    },
-                    false,
-                    BlockInfo::default(),
-                    true,
+                        false,
+                        BlockInfo::default(),
+                        true,
+                        None,
+                        platform_version,
+                        None,
+                    )
+                    .expect("the document inserts")
+            };
+            let (drive, contract) = setup(&platform_version);
+            let prepayment = drive
+                .prepay_random_document_index_entries(
+                    &document,
+                    Identifier::from(OWNER),
+                    &contract,
+                    contract
+                        .document_type_for_name(document_type_name)
+                        .expect("the type"),
+                    &BlockInfo::default(),
                     None,
-                    platform_version,
-                    None,
+                    &platform_version,
                 )
-                .expect("the card inserts")
-        };
-        let (drive, contract) = setup(&platform_version);
-        let prepayment = drive
-            .prepay_random_document_index_entries(
-                &card(1),
-                Identifier::from(OWNER),
-                &contract,
-                contract.document_type_for_name("card").expect("card"),
-                &BlockInfo::default(),
-                None,
-                &platform_version,
-            )
-            .expect("the prepayment is priced");
-        assert_ne!(prepayment, FeeResult::default());
+                .expect("the prepayment is priced");
+            assert_ne!(prepayment, FeeResult::default(), "{document_type_name}");
 
-        let with = insert_fee(&platform_version);
-        let without = insert_fee(&without_draw);
-        assert_eq!(
-            with.storage_fee,
-            without.storage_fee + prepayment.storage_fee
-        );
-        assert_eq!(
-            with.processing_fee,
-            without.processing_fee + prepayment.processing_fee
-        );
+            let with = insert_fee(&platform_version);
+            let without = insert_fee(&without_draw);
+            assert_eq!(
+                with.storage_fee,
+                without.storage_fee + prepayment.storage_fee,
+                "{document_type_name}"
+            );
+            assert_eq!(
+                with.processing_fee,
+                without.processing_fee + prepayment.processing_fee,
+                "{document_type_name}"
+            );
+        }
     }
 
     #[test]
