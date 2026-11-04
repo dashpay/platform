@@ -75,7 +75,8 @@ use super::schema_at_path;
 use super::{
     apply_property_constraints, parse_doctype_reference, validate_encrypted_for_declarations,
     validate_generated_from_declarations, validate_list_element_sources,
-    validate_reference_lookup_sources, validate_referencing_rules, validate_stored_version_reads,
+    validate_random_declarations_after_moderation, validate_reference_lookup_sources,
+    validate_referencing_rules, validate_stored_version_reads,
 };
 
 mod ranked_prefix_overlap;
@@ -770,6 +771,11 @@ fn parse_generation_3(
     // immutable list and the fields only moderators write decide, on a type storing its
     // documents.
     apply_derived_index_properties(&mut v2, data_contract_id, name, full_validation)?;
+    // After `apply_moderator_abilities` and `apply_derived_index_properties`: an index holding a
+    // `sys.random` property may only key what neither a replace nor a moderator's change can
+    // add or move before the draw, and a moderator's restore may not bring back a placeholder.
+    validate_random_declarations_after_moderation(&v2, name)
+        .map_err(consensus_or_protocol_data_contract_error)?;
 
     // The flags are read from the parsed result (not the raw schema) so
     // the check sees `canBeDeleted` resolved against the contract config
