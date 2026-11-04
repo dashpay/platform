@@ -2087,6 +2087,8 @@ mod choose_first_tests;
 #[cfg(all(test, feature = "validation"))]
 mod commit_reveal_lookup_tests;
 #[cfg(all(test, feature = "validation"))]
+mod contest_decided_by_index_values_tests;
+#[cfg(all(test, feature = "validation"))]
 mod contested_summed_value_bounds_tests;
 #[cfg(all(test, feature = "validation"))]
 mod delete_constraints_tests;

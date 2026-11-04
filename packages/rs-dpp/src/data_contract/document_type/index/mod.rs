@@ -31,6 +31,7 @@ use std::sync::OnceLock;
 use std::{collections::BTreeMap, convert::TryFrom};
 
 mod bucketing;
+mod contest_decided_by_values;
 mod derived_index_property;
 mod extract_contested_values;
 pub mod integer_range;
