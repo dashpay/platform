@@ -165,13 +165,18 @@ enum WalletKeyHealthChecker {
         let sortedKeys = identity.publicKeys.sorted { $0.keyId < $1.keyId }
 
         // A row the app can't read is not handed to Rust under a guessed
-        // type: there is nothing to check it as.
+        // type, only counted: Rust can't call the identity foreign while
+        // a key it wasn't shown could be the wallet's.
         var inputs: [ManagedPlatformWallet.IdentityKeyCheckInput] = []
+        var unreadableKeyCount = 0
         for row in sortedKeys {
             guard let keyType = row.keyTypeEnum,
                   let purpose = UInt8(row.purpose),
                   let securityLevel = UInt8(row.securityLevel)
-            else { continue }
+            else {
+                unreadableKeyCount += 1
+                continue
+            }
             inputs.append(
                 ManagedPlatformWallet.IdentityKeyCheckInput(
                     keyId: UInt32(bitPattern: row.keyId),
@@ -191,6 +196,7 @@ enum WalletKeyHealthChecker {
             let result = try wallet.checkIdentityKeys(
                 identityIndex: identity.identityIndex,
                 keys: inputs,
+                unreadableKeyCount: unreadableKeyCount,
                 network: network
             )
             for (input, check) in zip(inputs, result.keys) {
@@ -262,6 +268,13 @@ enum WalletKeyHealthChecker {
             return (
                 .unchecked(
                     reason: "the wallet doesn't derive \(typeName) keys from the identity's key slots"
+                ),
+                ""
+            )
+        case .notCompared:
+            return (
+                .unchecked(
+                    reason: "the check compares ECDSA keys only in their 33-byte compressed form"
                 ),
                 ""
             )

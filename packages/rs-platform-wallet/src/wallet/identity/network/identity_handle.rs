@@ -528,6 +528,10 @@ pub enum IdentityKeyWalletCheck {
     /// The wallet does not derive keys of this type at identity key
     /// slots, so there is nothing to compare the key with.
     NotDerived,
+    /// The key is in an encoding the check does not compare (an
+    /// ECDSA_SECP256K1 key that is not 33 bytes), so it can't say
+    /// whether the key is the wallet's.
+    NotCompared,
     /// The wallet's key at the slot is this key.
     Matches {
         /// The slot's full DIP-9 path.
@@ -551,6 +555,7 @@ impl std::fmt::Debug for IdentityKeyWalletCheck {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             IdentityKeyWalletCheck::NotDerived => f.write_str("NotDerived"),
+            IdentityKeyWalletCheck::NotCompared => f.write_str("NotCompared"),
             IdentityKeyWalletCheck::Matches {
                 derivation_path,
                 public_key_hash,
@@ -575,6 +580,35 @@ impl std::fmt::Debug for IdentityKeyWalletCheck {
     }
 }
 
+/// What checking a key needs: nothing, when the outcome is known
+/// without the seed, or the wallet's key at a slot.
+enum KeyComparison {
+    Known(IdentityKeyWalletCheck),
+    AtSlot(DerivationPath),
+}
+
+fn key_comparison(
+    network: Network,
+    identity_index: u32,
+    identity_public_key: &IdentityPublicKey,
+) -> Result<KeyComparison, PlatformWalletError> {
+    let Some(derivation_path) =
+        identity_key_derivation_path(network, identity_index, identity_public_key)?
+    else {
+        return Ok(KeyComparison::Known(IdentityKeyWalletCheck::NotDerived));
+    };
+    // DPP compares an ECDSA_SECP256K1 key with the derived key's
+    // compressed 33-byte form only, and discovery and signing treat any
+    // other encoding as not wallet-derived, so the check can't say
+    // whether such a key is the wallet's.
+    if identity_public_key.key_type() == KeyType::ECDSA_SECP256K1
+        && identity_public_key.data().len() != KeyType::ECDSA_SECP256K1.default_size()
+    {
+        return Ok(KeyComparison::Known(IdentityKeyWalletCheck::NotCompared));
+    }
+    Ok(KeyComparison::AtSlot(derivation_path))
+}
+
 /// Check `identity_public_key` against the key the wallet derives from
 /// `master` at the key's slot ([`identity_key_derivation_path`]): the
 /// same path and bytes [`IdentityWallet::derive_identity_key_bytes`]
@@ -587,10 +621,9 @@ pub fn check_identity_key_from_master(
     identity_index: u32,
     identity_public_key: &IdentityPublicKey,
 ) -> Result<IdentityKeyWalletCheck, PlatformWalletError> {
-    let Some(derivation_path) =
-        identity_key_derivation_path(network, identity_index, identity_public_key)?
-    else {
-        return Ok(IdentityKeyWalletCheck::NotDerived);
+    let derivation_path = match key_comparison(network, identity_index, identity_public_key)? {
+        KeyComparison::Known(check) => return Ok(check),
+        KeyComparison::AtSlot(derivation_path) => derivation_path,
     };
     let key_id = identity_public_key.id();
     // The derived scalar and its exported byte copy zeroize on drop.
@@ -645,13 +678,14 @@ pub enum IdentityWalletOwnership {
     Owned,
     /// The identity has an enabled master key, every enabled master key
     /// is another key than the wallet's at its slot, and no enabled key
-    /// is the wallet's. The identity is not this wallet's, so a client
-    /// may offer to remove it.
+    /// is or could be the wallet's. The identity is not this wallet's,
+    /// so a client may offer to remove it.
     NotOwned,
-    /// Neither: no enabled master key, an enabled master key of a type
-    /// the wallet does not derive, or a foreign master key next to an
-    /// enabled key that is the wallet's. Not a reason to remove the
-    /// identity.
+    /// Neither: no enabled master key, an enabled master key the check
+    /// can't compare, or a foreign master key next to a key that is or
+    /// could be the wallet's (an enabled match, a key the check doesn't
+    /// compare, or a key the caller could not describe). Not a reason
+    /// to remove the identity.
     Undetermined,
 }
 
@@ -664,14 +698,18 @@ pub struct IdentityWalletCheck {
     pub ownership: IdentityWalletOwnership,
 }
 
-/// The ownership `checks` (one per key in `keys`, in order) give.
+/// The ownership `checks` (one per key in `keys`, in order) give, when
+/// `unreadable_key_count` more keys of the identity could not be
+/// described to the check.
 fn identity_wallet_ownership(
     keys: &[IdentityPublicKey],
     checks: &[IdentityKeyWalletCheck],
+    unreadable_key_count: usize,
 ) -> IdentityWalletOwnership {
     let mut has_master = false;
     let mut every_master_mismatches = true;
-    let mut any_match = false;
+    // A key the caller could not describe could be the wallet's.
+    let mut could_be_wallets = unreadable_key_count > 0;
     for (key, check) in keys.iter().zip(checks) {
         if key.is_disabled() {
             continue;
@@ -686,9 +724,9 @@ fn identity_wallet_ownership(
                 every_master_mismatches = false;
             }
         }
-        any_match |= matches;
+        could_be_wallets |= matches || matches!(check, IdentityKeyWalletCheck::NotCompared);
     }
-    if has_master && every_master_mismatches && !any_match {
+    if has_master && every_master_mismatches && !could_be_wallets {
         IdentityWalletOwnership::NotOwned
     } else {
         IdentityWalletOwnership::Undetermined
@@ -698,49 +736,64 @@ fn identity_wallet_ownership(
 /// Check every key of the identity at `identity_index`, enabled or not,
 /// with [`check_identity_key_from_master`], and decide from them whether
 /// the identity is this wallet's ([`IdentityWalletOwnership`]).
+///
+/// `unreadable_key_count` is how many more keys the identity has that
+/// the caller could not describe (enabled or not). Any of them could be
+/// the wallet's, so they rule out `NotOwned`.
 pub fn check_identity_keys_from_master(
     master: &ExtendedPrivKey,
     network: Network,
     identity_index: u32,
     identity_public_keys: &[IdentityPublicKey],
+    unreadable_key_count: usize,
 ) -> Result<IdentityWalletCheck, PlatformWalletError> {
     let keys = identity_public_keys
         .iter()
         .map(|key| check_identity_key_from_master(master, network, identity_index, key))
         .collect::<Result<Vec<_>, _>>()?;
-    let ownership = identity_wallet_ownership(identity_public_keys, &keys);
+    let ownership = identity_wallet_ownership(identity_public_keys, &keys, unreadable_key_count);
     Ok(IdentityWalletCheck { keys, ownership })
 }
 
 /// [`check_identity_keys_from_master`] with the master key resolved on
-/// demand: `resolve_master` runs at most once, and only when a key is of
-/// a type the wallet derives. An identity with none needs no seed, so it
-/// is checked even when the seed cannot be read. The master is wiped
-/// after the check.
+/// demand: `resolve_master` runs at most once, and only when a key needs
+/// comparing with the wallet's key at its slot. An identity with none
+/// needs no seed, so it is checked even when the seed cannot be read.
+/// The master is wiped after the check.
 pub fn check_identity_keys<E: From<PlatformWalletError>>(
     network: Network,
     identity_index: u32,
     identity_public_keys: &[IdentityPublicKey],
+    unreadable_key_count: usize,
     resolve_master: impl FnOnce() -> Result<ExtendedPrivKey, E>,
 ) -> Result<IdentityWalletCheck, E> {
-    let mut needs_seed = false;
-    for key in identity_public_keys {
-        if identity_key_derivation_path(network, identity_index, key)?.is_some() {
-            needs_seed = true;
-            break;
-        }
-    }
-    if !needs_seed {
-        let keys: Vec<IdentityKeyWalletCheck> = identity_public_keys
-            .iter()
-            .map(|_| IdentityKeyWalletCheck::NotDerived)
+    let comparisons = identity_public_keys
+        .iter()
+        .map(|key| key_comparison(network, identity_index, key))
+        .collect::<Result<Vec<_>, _>>()?;
+    if comparisons
+        .iter()
+        .all(|comparison| matches!(comparison, KeyComparison::Known(_)))
+    {
+        let keys: Vec<IdentityKeyWalletCheck> = comparisons
+            .into_iter()
+            .filter_map(|comparison| match comparison {
+                KeyComparison::Known(check) => Some(check),
+                KeyComparison::AtSlot(_) => None,
+            })
             .collect();
-        let ownership = identity_wallet_ownership(identity_public_keys, &keys);
+        let ownership =
+            identity_wallet_ownership(identity_public_keys, &keys, unreadable_key_count);
         return Ok(IdentityWalletCheck { keys, ownership });
     }
     let mut master = resolve_master()?;
-    let check =
-        check_identity_keys_from_master(&master, network, identity_index, identity_public_keys);
+    let check = check_identity_keys_from_master(
+        &master,
+        network,
+        identity_index,
+        identity_public_keys,
+        unreadable_key_count,
+    );
     master.private_key.zeroize();
     Ok(check?)
 }
@@ -1750,6 +1803,7 @@ mod tests {
             Network::Testnet,
             identity_index,
             keys,
+            0,
         )
         .expect("check")
     }
@@ -1854,11 +1908,15 @@ mod tests {
             rule_key(1, SecurityLevel::HIGH, false),
         ];
         assert_eq!(
-            identity_wallet_ownership(&keys, &[a_mismatch(), a_mismatch()]),
+            identity_wallet_ownership(&keys, &[a_mismatch(), a_mismatch()], 0),
             IdentityWalletOwnership::NotOwned
         );
         assert_eq!(
-            identity_wallet_ownership(&keys, &[a_mismatch(), IdentityKeyWalletCheck::NotDerived]),
+            identity_wallet_ownership(
+                &keys,
+                &[a_mismatch(), IdentityKeyWalletCheck::NotDerived],
+                0
+            ),
             IdentityWalletOwnership::NotOwned
         );
     }
@@ -1870,7 +1928,7 @@ mod tests {
             rule_key(1, SecurityLevel::HIGH, false),
         ];
         assert_eq!(
-            identity_wallet_ownership(&keys, &[a_mismatch(), a_match()]),
+            identity_wallet_ownership(&keys, &[a_mismatch(), a_match()], 0),
             IdentityWalletOwnership::Undetermined
         );
     }
@@ -1879,11 +1937,11 @@ mod tests {
     fn should_leave_ownership_undetermined_without_an_enabled_master() {
         let keys = [rule_key(0, SecurityLevel::MASTER, true)];
         assert_eq!(
-            identity_wallet_ownership(&keys, &[a_mismatch()]),
+            identity_wallet_ownership(&keys, &[a_mismatch()], 0),
             IdentityWalletOwnership::Undetermined
         );
         assert_eq!(
-            identity_wallet_ownership(&[], &[]),
+            identity_wallet_ownership(&[], &[], 0),
             IdentityWalletOwnership::Undetermined
         );
     }
@@ -1892,7 +1950,7 @@ mod tests {
     fn should_leave_ownership_undetermined_for_a_master_the_wallet_does_not_derive() {
         let keys = [rule_key(0, SecurityLevel::MASTER, false)];
         assert_eq!(
-            identity_wallet_ownership(&keys, &[IdentityKeyWalletCheck::NotDerived]),
+            identity_wallet_ownership(&keys, &[IdentityKeyWalletCheck::NotDerived], 0),
             IdentityWalletOwnership::Undetermined
         );
     }
@@ -1904,7 +1962,7 @@ mod tests {
             rule_key(1, SecurityLevel::HIGH, true),
         ];
         assert_eq!(
-            identity_wallet_ownership(&keys, &[a_mismatch(), a_match()]),
+            identity_wallet_ownership(&keys, &[a_mismatch(), a_match()], 0),
             IdentityWalletOwnership::NotOwned
         );
     }
@@ -1965,6 +2023,7 @@ mod tests {
             Network::Testnet,
             0,
             std::slice::from_ref(&hecate_signer_key),
+            0,
             || {
                 Err(PlatformWalletError::InvalidParameter(
                     "the seed must not be read".to_string(),
@@ -1983,12 +2042,140 @@ mod tests {
             hecate_signer_key,
             ecdsa_key(0, SecurityLevel::MASTER, slot_public_key(0, 0), None),
         ];
-        let check = check_identity_keys(Network::Testnet, 0, &keys, || {
+        let check = check_identity_keys(Network::Testnet, 0, &keys, 0, || {
             resolves += 1;
             Ok::<_, PlatformWalletError>(master_for(Network::Testnet))
         })
         .expect("check");
         assert_eq!(resolves, 1);
         assert_eq!(check.ownership, IdentityWalletOwnership::Owned);
+    }
+    /// The uncompressed 65-byte encoding of the wallet's ECDSA key at
+    /// `(identity_index, key_index)` on testnet.
+    fn uncompressed_slot_public_key(identity_index: u32, key_index: u32) -> Vec<u8> {
+        dpp::secp256k1::PublicKey::from_slice(&slot_public_key(identity_index, key_index))
+            .expect("compressed slot key")
+            .serialize_uncompressed()
+            .to_vec()
+    }
+
+    /// A key the caller could not describe could be the one that is the
+    /// wallet's, so it rules out NotOwned; it never undoes Owned.
+    #[test]
+    fn should_not_call_an_identity_foreign_beside_a_key_it_could_not_read() {
+        let foreign_master = [rule_key(0, SecurityLevel::MASTER, false)];
+        assert_eq!(
+            identity_wallet_ownership(&foreign_master, &[a_mismatch()], 1),
+            IdentityWalletOwnership::Undetermined
+        );
+        assert_eq!(
+            identity_wallet_ownership(&foreign_master, &[a_mismatch()], 0),
+            IdentityWalletOwnership::NotOwned
+        );
+        assert_eq!(
+            identity_wallet_ownership(&foreign_master, &[a_match()], 1),
+            IdentityWalletOwnership::Owned
+        );
+
+        let keys = [ecdsa_key(
+            0,
+            SecurityLevel::MASTER,
+            slot_public_key(1, 5),
+            None,
+        )];
+        let check = |unreadable_key_count| {
+            check_identity_keys_from_master(
+                &master_for(Network::Testnet),
+                Network::Testnet,
+                1,
+                &keys,
+                unreadable_key_count,
+            )
+            .expect("check")
+            .ownership
+        };
+        assert_eq!(check(1), IdentityWalletOwnership::Undetermined);
+        assert_eq!(check(0), IdentityWalletOwnership::NotOwned);
+    }
+
+    /// DPP compares an ECDSA key in its compressed form only, so the
+    /// wallet's own master encoded uncompressed is not compared, and it
+    /// can't make the identity look foreign.
+    #[test]
+    fn should_not_compare_an_uncompressed_ecdsa_master() {
+        let uncompressed_master = ecdsa_key(
+            0,
+            SecurityLevel::MASTER,
+            uncompressed_slot_public_key(1, 0),
+            None,
+        );
+
+        assert!(matches!(
+            check(&uncompressed_master, 1),
+            IdentityKeyWalletCheck::NotCompared
+        ));
+        let check = check_all(std::slice::from_ref(&uncompressed_master), 1);
+        assert!(matches!(
+            check.keys[..],
+            [IdentityKeyWalletCheck::NotCompared]
+        ));
+        assert_eq!(check.ownership, IdentityWalletOwnership::Undetermined);
+    }
+
+    #[test]
+    fn should_not_call_an_identity_foreign_beside_an_uncompressed_key() {
+        let keys = [
+            ecdsa_key(0, SecurityLevel::MASTER, slot_public_key(1, 5), None),
+            ecdsa_key(
+                1,
+                SecurityLevel::HIGH,
+                uncompressed_slot_public_key(1, 1),
+                None,
+            ),
+        ];
+
+        let check = check_all(&keys, 1);
+
+        assert!(matches!(
+            check.keys[..],
+            [
+                IdentityKeyWalletCheck::Mismatch { .. },
+                IdentityKeyWalletCheck::NotCompared
+            ]
+        ));
+        assert_eq!(check.ownership, IdentityWalletOwnership::Undetermined);
+        assert_eq!(
+            identity_wallet_ownership(
+                &[
+                    rule_key(0, SecurityLevel::MASTER, false),
+                    rule_key(1, SecurityLevel::HIGH, false)
+                ],
+                &[a_mismatch(), IdentityKeyWalletCheck::NotCompared],
+                0
+            ),
+            IdentityWalletOwnership::Undetermined
+        );
+    }
+
+    /// A key the check doesn't compare needs no seed.
+    #[test]
+    fn should_not_read_the_seed_for_an_uncompressed_key() {
+        let keys = [ecdsa_key(
+            0,
+            SecurityLevel::MASTER,
+            uncompressed_slot_public_key(0, 0),
+            None,
+        )];
+        let check = check_identity_keys(Network::Testnet, 0, &keys, 0, || {
+            Err(PlatformWalletError::InvalidParameter(
+                "the seed must not be read".to_string(),
+            ))
+        })
+        .expect("no seed needed");
+        assert!(matches!(
+            check.keys[..],
+            [IdentityKeyWalletCheck::NotCompared]
+        ));
+        assert_eq!(check.ownership, IdentityWalletOwnership::Undetermined);
     }
 }

@@ -244,6 +244,8 @@ mod tests {
         assert_eq!(r, &[5u8]);
         let r: &'static [u8; 1] = OWNER.into();
         assert_eq!(r, &[6u8]);
+        let r: &'static [u8; 1] = HECATE_SIGNER.into();
+        assert_eq!(r, &[7u8]);
     }
 
     // -- Display (via Debug) --
@@ -256,6 +258,7 @@ mod tests {
         assert_eq!(format!("{}", SYSTEM), "SYSTEM");
         assert_eq!(format!("{}", VOTING), "VOTING");
         assert_eq!(format!("{}", OWNER), "OWNER");
+        assert_eq!(format!("{}", HECATE_SIGNER), "HECATE_SIGNER");
     }
 
     // -- Default --
@@ -267,7 +270,7 @@ mod tests {
     // -- Range helpers --
     #[test]
     fn test_purpose_full_range_contents() {
-        // NOTE: full_range() intentionally excludes SYSTEM.
+        // NOTE: full_range() intentionally excludes SYSTEM and HECATE_SIGNER.
         let full = Purpose::full_range();
         assert_eq!(full.len(), 6);
         assert!(full.contains(&AUTHENTICATION));
@@ -277,6 +280,7 @@ mod tests {
         assert!(full.contains(&VOTING));
         assert!(full.contains(&OWNER));
         assert!(!full.contains(&SYSTEM));
+        assert!(!full.contains(&HECATE_SIGNER));
     }
 
     #[test]
@@ -332,5 +336,6 @@ mod tests {
         assert!(TRANSFER < SYSTEM);
         assert!(SYSTEM < VOTING);
         assert!(VOTING < OWNER);
+        assert!(OWNER < HECATE_SIGNER);
     }
 }

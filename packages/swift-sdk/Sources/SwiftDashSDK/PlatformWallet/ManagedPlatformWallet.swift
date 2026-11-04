@@ -1418,6 +1418,10 @@ extension ManagedPlatformWallet {
         /// The wallet doesn't derive keys of this type at identity key
         /// slots, so there is nothing to compare the key with.
         case notDerived
+        /// The key is in an encoding the check doesn't compare (an ECDSA
+        /// secp256k1 key that isn't 33 bytes), so it can't say whether
+        /// the key is the wallet's.
+        case notCompared
         /// The wallet's key at the slot is this key. `privateKeyData` is
         /// its 32-byte private key: hand it to the Keychain and drop this
         /// value as soon as possible. `publicKeyHashHex` is the key's DPP
@@ -1507,6 +1511,8 @@ extension ManagedPlatformWallet {
         switch out.outcome {
         case IDENTITY_KEY_WALLET_CHECK_OUTCOME_FFI_NOT_DERIVED:
             return .notDerived
+        case IDENTITY_KEY_WALLET_CHECK_OUTCOME_FFI_NOT_COMPARED:
+            return .notCompared
         case IDENTITY_KEY_WALLET_CHECK_OUTCOME_FFI_MATCHES:
             return .matches(
                 derivationPath: path,
@@ -1563,8 +1569,8 @@ extension ManagedPlatformWallet {
     public enum IdentityWalletOwnership: Sendable, Equatable {
         /// An enabled master key is the wallet's key at its slot.
         case owned
-        /// Every enabled master key is foreign and no enabled key is the
-        /// wallet's: the identity is not this wallet's.
+        /// Every enabled master key is foreign and no key is or could be
+        /// the wallet's: the identity is not this wallet's.
         case notOwned
         /// Neither; not a reason to remove the identity.
         case undetermined
@@ -1587,7 +1593,11 @@ extension ManagedPlatformWallet {
     ///
     /// - Parameters:
     ///   - identityIndex: the identity's index in the HD tree.
-    ///   - keys: every key the identity has, disabled ones included.
+    ///   - keys: every key the identity has that the caller can
+    ///     describe, disabled ones included.
+    ///   - unreadableKeyCount: how many more keys the identity has that
+    ///     the caller can't describe (enabled or not). Any of them could
+    ///     be the wallet's, so they rule out `.notOwned`.
     ///   - network: the wallet's network (selects the coin type).
     ///   - storage: defaults to a fresh `WalletStorage()`, overridable
     ///     for tests. Used by the resolver vtable.
@@ -1599,9 +1609,15 @@ extension ManagedPlatformWallet {
     public func checkIdentityKeys(
         identityIndex: UInt32,
         keys: [IdentityKeyCheckInput],
+        unreadableKeyCount: Int,
         network: Network,
         storage: WalletStorage = WalletStorage()
     ) throws -> IdentityWalletCheck {
+        guard unreadableKeyCount >= 0 else {
+            throw PlatformWalletError.invalidParameter(
+                "unreadableKeyCount must not be negative, got \(unreadableKeyCount)"
+            )
+        }
         // Pinned to `self.walletId` for the same reason as
         // `deriveIdentityAuthKeyAtSlot`.
         guard self.walletId.count == 32 else {
@@ -1654,6 +1670,7 @@ extension ManagedPlatformWallet {
                         identityIndex,
                         inputBuffer.baseAddress,
                         UInt(inputBuffer.count),
+                        UInt(unreadableKeyCount),
                         &out
                     )
                 }

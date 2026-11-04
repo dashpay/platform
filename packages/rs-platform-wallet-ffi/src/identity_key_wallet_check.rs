@@ -40,6 +40,10 @@ pub enum IdentityKeyWalletCheckOutcomeFFI {
     Matches = 1,
     /// The wallet derives a different key at the slot.
     Mismatch = 2,
+    /// The key is in an encoding the check does not compare (an
+    /// ECDSA_SECP256K1 key that is not 33 bytes), so it can't say
+    /// whether the key is the wallet's.
+    NotCompared = 3,
 }
 
 /// The result of [`platform_wallet_check_identity_key_with_resolver`].
@@ -202,6 +206,9 @@ fn write_check(
 ) -> PlatformWalletFFIResult {
     match check {
         IdentityKeyWalletCheck::NotDerived => {}
+        IdentityKeyWalletCheck::NotCompared => {
+            out.outcome = IdentityKeyWalletCheckOutcomeFFI::NotCompared;
+        }
         IdentityKeyWalletCheck::Matches {
             derivation_path,
             private_key,
@@ -341,9 +348,11 @@ impl Default for IdentityWalletCheckFFI {
 /// the wallet derives; this marshals the result into `out_check`.
 ///
 /// Pass every key the identity has, disabled ones included. An identity
-/// with no keys is `keys` null with `keys_len` 0. Unknown key type,
-/// purpose or security level discriminants are refused with
-/// `ErrorInvalidParameter` before the seed is resolved.
+/// with no keys is `keys` null with `keys_len` 0. A key the caller can't
+/// describe is not passed but counted in `unreadable_key_count`; any
+/// such key rules out `NotOwned`. Unknown key type, purpose or security
+/// level discriminants are refused with `ErrorInvalidParameter` before
+/// the seed is resolved.
 ///
 /// # Safety
 /// - `wallet_id_bytes` must point to 32 readable bytes.
@@ -362,6 +371,7 @@ pub unsafe extern "C" fn platform_wallet_check_identity_keys_with_resolver(
     identity_index: u32,
     keys: *const IdentityKeyCheckInputFFI,
     keys_len: usize,
+    unreadable_key_count: usize,
     out_check: *mut IdentityWalletCheckFFI,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_check);
@@ -395,6 +405,7 @@ pub unsafe extern "C" fn platform_wallet_check_identity_keys_with_resolver(
         kw_network,
         identity_index,
         &identity_public_keys,
+        unreadable_key_count,
         || resolve_master_from_resolver(mnemonic_resolver_handle, &wallet_id, kw_network),
     ));
 
@@ -791,6 +802,15 @@ mod tests {
         identity_index: u32,
         inputs: &[IdentityKeyCheckInputFFI],
     ) -> (PlatformWalletFFIResult, IdentityWalletCheckFFI) {
+        check_identity_with_unreadable(resolver, identity_index, inputs, 0)
+    }
+
+    fn check_identity_with_unreadable(
+        resolver: *mut MnemonicResolverHandle,
+        identity_index: u32,
+        inputs: &[IdentityKeyCheckInputFFI],
+        unreadable_key_count: usize,
+    ) -> (PlatformWalletFFIResult, IdentityWalletCheckFFI) {
         let mut out = IdentityWalletCheckFFI::empty();
         let result = unsafe {
             platform_wallet_check_identity_keys_with_resolver(
@@ -800,6 +820,7 @@ mod tests {
                 identity_index,
                 inputs.as_ptr(),
                 inputs.len(),
+                unreadable_key_count,
                 &mut out,
             )
         };
@@ -1032,6 +1053,7 @@ mod tests {
                 0,
                 keys,
                 keys_len,
+                0,
                 out,
             )
             .code
@@ -1092,6 +1114,69 @@ mod tests {
         unsafe {
             platform_wallet_check_identity_keys_free(&mut out);
             platform_wallet_check_identity_keys_free(std::ptr::null_mut());
+            dash_sdk_mnemonic_resolver_destroy(resolver);
+        }
+    }
+    /// A key the caller could not describe rules out NotOwned.
+    #[test]
+    fn should_not_call_an_identity_foreign_beside_a_key_it_could_not_read() {
+        let resolver = test_resolver();
+        let (_, foreign_master, _) = slot_key(resolver, 1, 5);
+        let inputs = [input(
+            0,
+            KeyType::ECDSA_SECP256K1,
+            SecurityLevel::MASTER,
+            &foreign_master,
+            None,
+        )];
+
+        for (unreadable_key_count, ownership) in [
+            (1, IdentityWalletOwnershipFFI::Undetermined),
+            (0, IdentityWalletOwnershipFFI::NotOwned),
+        ] {
+            let (result, mut out) =
+                check_identity_with_unreadable(resolver, 1, &inputs, unreadable_key_count);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+            assert_eq!(
+                out.ownership, ownership,
+                "{unreadable_key_count} unreadable"
+            );
+            unsafe { platform_wallet_check_identity_keys_free(&mut out) };
+        }
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
+    /// The wallet's own master encoded uncompressed is not compared, so
+    /// it can't make the identity look foreign.
+    #[test]
+    fn should_not_compare_an_uncompressed_master() {
+        let resolver = test_resolver();
+        let (_, master_key, _) = slot_key(resolver, 1, 0);
+        let uncompressed = dpp::secp256k1::PublicKey::from_slice(&master_key)
+            .expect("compressed slot key")
+            .serialize_uncompressed();
+        let inputs = [input(
+            0,
+            KeyType::ECDSA_SECP256K1,
+            SecurityLevel::MASTER,
+            &uncompressed,
+            None,
+        )];
+
+        let (result, mut out) = check_identity(resolver, 1, &inputs);
+
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(out.ownership, IdentityWalletOwnershipFFI::Undetermined);
+        assert_eq!(
+            outcomes(&out),
+            [IdentityKeyWalletCheckOutcomeFFI::NotCompared]
+        );
+        let key = unsafe { &*out.keys };
+        assert!(key.derivation_path.is_null());
+        assert!(key.derived_public_key_data.is_null());
+        assert_eq!(key.private_key_bytes, [0u8; 32]);
+        unsafe {
+            platform_wallet_check_identity_keys_free(&mut out);
             dash_sdk_mnemonic_resolver_destroy(resolver);
         }
     }

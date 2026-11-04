@@ -140,6 +140,7 @@ final class IdentityKeyWalletCheckTests: XCTestCase {
                     disabledAt: 1_700_000_000_000),
                 ecdsaInput(keyId: 1, securityLevel: .master, publicKeyData: current.publicKeyData),
             ],
+            unreadableKeyCount: 0,
             network: .testnet, storage: storage)
 
         XCTAssertEqual(check.ownership, .owned)
@@ -164,6 +165,7 @@ final class IdentityKeyWalletCheckTests: XCTestCase {
                 ecdsaInput(keyId: 0, securityLevel: .master, publicKeyData: master.publicKeyData),
                 ecdsaInput(keyId: 1, securityLevel: .high, publicKeyData: foreign.publicKeyData),
             ],
+            unreadableKeyCount: 0,
             network: .testnet, storage: storage)
 
         XCTAssertEqual(check.ownership, .owned)
@@ -180,9 +182,53 @@ final class IdentityKeyWalletCheckTests: XCTestCase {
         let check = try wallet.checkIdentityKeys(
             identityIndex: 1,
             keys: [ecdsaInput(keyId: 0, securityLevel: .master, publicKeyData: foreign.publicKeyData)],
+            unreadableKeyCount: 0,
             network: .testnet, storage: storage)
 
         XCTAssertEqual(check.ownership, .notOwned)
+    }
+
+    /// A key the caller couldn't describe could be the wallet's, so the
+    /// identity isn't called foreign. SwiftExampleApp has no test target,
+    /// so the sheet's case is pinned here at the bridge.
+    func testShouldNotCallAnIdentityForeignBesideAKeyItCouldNotRead() throws {
+        let (wallet, storage) = try makeWallet()
+        let foreign = try wallet.deriveIdentityAuthKeyAtSlot(
+            identityIndex: 1, keyId: 5, network: .testnet, storage: storage)
+
+        let check = try wallet.checkIdentityKeys(
+            identityIndex: 1,
+            keys: [ecdsaInput(keyId: 0, securityLevel: .master, publicKeyData: foreign.publicKeyData)],
+            unreadableKeyCount: 1,
+            network: .testnet, storage: storage)
+
+        XCTAssertNotEqual(check.ownership, .notOwned)
+        XCTAssertEqual(check.ownership, .undetermined)
+    }
+
+    /// The wallet's own master (identity 1, key 0) encoded uncompressed.
+    /// The check compares ECDSA keys only in their compressed form, so it
+    /// doesn't compare this one, and the identity isn't called foreign.
+    func testShouldNotCompareAnUncompressedMaster() throws {
+        let (wallet, storage) = try makeWallet()
+        let master = try wallet.deriveIdentityAuthKeyAtSlot(
+            identityIndex: 1, keyId: 0, network: .testnet, storage: storage)
+        let uncompressedHex =
+            "0412aa9ac813f9751da6747c4ac7798a9c5f778545788204785eafbfe287544144"
+            + "27ac78c58ecb3fa36681c136831f6ae9adb4fc619cc80dbd5e7977c2690122a1"
+        // The pinned encoding is the slot key: same x, and an odd y for
+        // the 0x03 prefix.
+        XCTAssertEqual(master.publicKeyHex, "03" + uncompressedHex.dropFirst(2).prefix(64))
+        let uncompressed = try XCTUnwrap(Data(hexString: uncompressedHex))
+
+        let check = try wallet.checkIdentityKeys(
+            identityIndex: 1,
+            keys: [ecdsaInput(keyId: 0, securityLevel: .master, publicKeyData: uncompressed)],
+            unreadableKeyCount: 0,
+            network: .testnet, storage: storage)
+
+        XCTAssertEqual(check.keys, [.notCompared])
+        XCTAssertEqual(check.ownership, .undetermined)
     }
 
     func testShouldThrowWithoutAMnemonic() throws {
