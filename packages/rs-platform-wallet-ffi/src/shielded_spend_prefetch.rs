@@ -10,7 +10,7 @@
 
 use crate::error::*;
 use crate::handle::*;
-use crate::runtime::runtime;
+use crate::runtime::{run_on_big_stack_thread, runtime};
 
 /// Prefetch Platform's recorded shielded-anchor set for the next spend on
 /// `handle`'s network, in the background.
@@ -20,7 +20,8 @@ use crate::runtime::runtime;
 /// grows the commitment tree, reuses the prefetched set and skips that round
 /// trip; otherwise the send fetches for itself exactly as without this call.
 /// Cheap to call repeatedly (a no-op while a usable set is cached), and a
-/// failed fetch is only logged — it never affects a later send.
+/// failed fetch is only logged — it never affects a later send. Safe to call
+/// from any thread, including from inside an event callback.
 ///
 /// Returns `ErrorInvalidHandle` for an unknown `handle` and
 /// `ErrorWalletOperation` when shielded support isn't configured on the
@@ -30,7 +31,15 @@ pub extern "C" fn platform_wallet_manager_shielded_prefetch_spend_anchors(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     let lookup = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.shielded_coordinator())
+        let resolve = || runtime().block_on(manager.shielded_coordinator());
+        // Event callbacks fire inside a runtime context (the sync loop
+        // drives its passes with `Handle::block_on`), where a nested
+        // `block_on` panics; resolve on a thread outside it instead.
+        if tokio::runtime::Handle::try_current().is_ok() {
+            run_on_big_stack_thread(resolve)
+        } else {
+            Ok(resolve())
+        }
     });
     let coordinator = match lookup {
         None => {
@@ -39,13 +48,19 @@ pub extern "C" fn platform_wallet_manager_shielded_prefetch_spend_anchors(
                 format!("invalid manager handle: {handle}"),
             );
         }
-        Some(None) => {
+        Some(Err(e)) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                format!("could not start the shielded spend-anchor prefetch: {e}"),
+            );
+        }
+        Some(Ok(None)) => {
             return PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorWalletOperation,
                 "shielded support not configured — call platform_wallet_manager_configure_shielded first",
             );
         }
-        Some(Some(coordinator)) => coordinator,
+        Some(Ok(Some(coordinator))) => coordinator,
     };
     runtime().spawn(async move {
         if let Err(e) = coordinator.prefetch_recorded_anchors().await {
@@ -69,8 +84,8 @@ mod tests {
         unsafe { crate::platform_wallet_ffi_result_free(&mut result) };
     }
 
-    #[test]
-    fn should_reject_a_manager_without_shielded_support() {
+    /// Runs `f` against a live manager that has no shielded support.
+    fn with_manager_without_shielded_support(f: impl FnOnce(Handle)) {
         use crate::event_handler::EventHandlerCallbacks;
         use crate::manager::{platform_wallet_manager_create, platform_wallet_manager_destroy};
         use crate::persistence::PersistenceCallbacks;
@@ -108,15 +123,34 @@ mod tests {
         };
         assert_eq!(created.code, PlatformWalletFFIResultCode::Success);
 
+        f(handle);
+
+        assert_eq!(
+            unsafe { platform_wallet_manager_destroy(handle) }.code,
+            PlatformWalletFFIResultCode::Success
+        );
+    }
+
+    fn assert_rejected_as_unconfigured(handle: Handle) {
         let mut result = platform_wallet_manager_shielded_prefetch_spend_anchors(handle);
         assert_eq!(
             result.code,
             PlatformWalletFFIResultCode::ErrorWalletOperation
         );
         unsafe { crate::platform_wallet_ffi_result_free(&mut result) };
-        assert_eq!(
-            unsafe { platform_wallet_manager_destroy(handle) }.code,
-            PlatformWalletFFIResultCode::Success
-        );
+    }
+
+    #[test]
+    fn should_reject_a_manager_without_shielded_support() {
+        with_manager_without_shielded_support(assert_rejected_as_unconfigured);
+    }
+
+    /// A host may call this from an event callback, which runs inside a
+    /// runtime context; the lookup must not nest `block_on` there.
+    #[test]
+    fn should_resolve_the_coordinator_from_inside_a_runtime_context() {
+        with_manager_without_shielded_support(|handle| {
+            runtime().block_on(async { assert_rejected_as_unconfigured(handle) });
+        });
     }
 }
