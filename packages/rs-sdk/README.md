@@ -158,7 +158,9 @@ Checklist:
 in `packages/rs-dapi-client/src/transport/grpc.rs`. If nodes of an earlier release do not know the method or a new
 request field, declare the first protocol version that every node serves it from with `needs_protocol_version:`, and
 add it to `ADDITIONS` in `packages/rs-dapi-client/tests/request_inventory.rs`. The SDK refuses the request until the
-network has proven that version (see `book/src/sdk/protocol-version-gate.md`).
+network has proven that version (see `book/src/sdk/protocol-versions.md`). A new `getDocuments` field or operator
+gets a feature slot in the version tables instead, read by `DocumentQuery::required_protocol_version`
+(see `book/src/sdk/protocol-version-gate.md`).
 4. [ ] If needed, implement new type in `packages/rs-drive-proof-verifier/src/types.rs` to hide complexity of data structures
    used internally.
 
