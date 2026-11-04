@@ -325,21 +325,6 @@ const PROTOCOL_VERSION_OF_5_0: u32 = 14;
 /// or newer, and serves the methods and request fields 5.1 added.
 const PROTOCOL_VERSION_OF_5_1: u32 = 15;
 
-/// A 4.x node drops a composite query's `sub_queries` and a chained query's `chained`, and
-/// proves the plain page or the inner query instead.
-fn documents_request_needs_protocol_version(
-    request: &platform_proto::GetDocumentsRequest,
-) -> Option<u32> {
-    match &request.version {
-        Some(platform_proto::get_documents_request::Version::V1(v1))
-            if v1.chained.is_some() || !v1.sub_queries.is_empty() =>
-        {
-            Some(PROTOCOL_VERSION_OF_5_0)
-        }
-        _ => None,
-    }
-}
-
 /// A shielded pool request names a token's pool with `token_id`; a 4.x node drops it and
 /// answers for the credit pool instead.
 fn token_pool(token_id: &Option<Vec<u8>>) -> Option<u32> {
@@ -366,8 +351,10 @@ impl_transport_request_grpc!(
     get_identity
 );
 
+// Which networks serve a document request depends on the query it was encoded from, so the
+// SDK decides it before encoding (`DocumentQuery::required_protocol_version` in
+// `dash-platform-queries`), and the wire request declares nothing.
 impl_transport_request_grpc!(
-    needs_protocol_version: documents_request_needs_protocol_version;
     platform_proto::GetDocumentsRequest,
     platform_proto::GetDocumentsResponse,
     PlatformGrpcClient,
