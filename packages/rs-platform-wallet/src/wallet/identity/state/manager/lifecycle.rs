@@ -34,7 +34,50 @@ impl IdentityManager {
     /// bucket.
     ///
     /// Persists the resulting changeset via `persister` and returns `()`.
+    ///
+    /// A persistence failure is logged and SWALLOWED here — the in-memory
+    /// insert stands and the next sync heals the host's row. Callers for whom
+    /// the persistence outcome is load-bearing must use
+    /// [`add_identity_persisted`](Self::add_identity_persisted) instead.
     pub fn add_identity(
+        &mut self,
+        identity: Identity,
+        identity_index: u32,
+        wallet_id: WalletId,
+        persister: &WalletPersister,
+    ) -> Result<(), PlatformWalletError> {
+        if let Err(e) = self.add_identity_persisted(identity, identity_index, wallet_id, persister)
+        {
+            // Distinguish the two failure modes: a rejected insert is a real
+            // error for this caller too, whereas a persistence failure after a
+            // successful insert is the historical swallow.
+            match e {
+                PlatformWalletError::Persistence(_) => {
+                    tracing::error!("Failed to persist changeset: {}", e);
+                }
+                other => return Err(other),
+            }
+        }
+        Ok(())
+    }
+
+    /// [`add_identity`](Self::add_identity), but the persister's failure is
+    /// PROPAGATED as [`PlatformWalletError::Persistence`] rather than logged
+    /// and dropped.
+    ///
+    /// The distinction matters wherever the host's durable acknowledgement is
+    /// what releases some other recovery state. The shielded one-time-key claim
+    /// is exactly that case: it retains the durable record holding the claim's
+    /// padded identity id until this registration is durable, and a swallowed
+    /// `persister.store` error would release it while the host had never
+    /// recorded the identity — after which no retry can reconstruct the id
+    /// (#4313 review finding 325ce9fa8f84).
+    ///
+    /// On a persistence error the in-memory insert still STANDS: it is not
+    /// rolled back, so the manager and the location index remain consistent and
+    /// the next sync can heal the host's row. The error reports only that the
+    /// host has not durably acknowledged the identity yet.
+    pub fn add_identity_persisted(
         &mut self,
         identity: Identity,
         identity_index: u32,
@@ -43,6 +86,48 @@ impl IdentityManager {
     ) -> Result<(), PlatformWalletError> {
         let identity_id = identity.id();
         self.add_identity_unstored(identity, identity_index, wallet_id)?;
+        self.store_identity_changeset(identity_id, persister)
+    }
+
+    /// [`add_identity_persisted`](Self::add_identity_persisted), made
+    /// idempotent for a registration that already happened in memory at
+    /// exactly this wallet and slot: instead of refusing it with
+    /// [`PlatformWalletError::IdentityAlreadyExists`], the identity's
+    /// changeset is handed to the persister again.
+    ///
+    /// For the shielded one-time-key claim, whose recovery record is released
+    /// only once the identity is durably registered. If the persister rejected
+    /// the first attempt's changeset, the in-memory insert still stood; a
+    /// same-session retry then hit `IdentityAlreadyExists`, never retried
+    /// persistence, and could never release the record (#4313 review). An
+    /// identity found at any OTHER location still errors — that is a real
+    /// conflict, not a repeat of this registration.
+    pub fn add_or_repersist_identity(
+        &mut self,
+        identity: Identity,
+        identity_index: u32,
+        wallet_id: WalletId,
+        persister: &WalletPersister,
+    ) -> Result<(), PlatformWalletError> {
+        let identity_id = identity.id();
+        match self.location_index().get(&identity_id).copied() {
+            None => self.add_identity_unstored(identity, identity_index, wallet_id)?,
+            Some(IdentityLocation::InWallet {
+                wallet_id: located_wallet,
+                registration_index,
+            }) if located_wallet == wallet_id && registration_index == identity_index => {}
+            Some(_) => return Err(PlatformWalletError::IdentityAlreadyExists(identity_id)),
+        }
+        self.store_identity_changeset(identity_id, persister)
+    }
+
+    /// Hand `identity_id`'s current identity + keys changeset to `persister`,
+    /// propagating its failure as [`PlatformWalletError::Persistence`].
+    fn store_identity_changeset(
+        &mut self,
+        identity_id: Identifier,
+        persister: &WalletPersister,
+    ) -> Result<(), PlatformWalletError> {
         let managed_identity = self
             .managed_identity_mut(&identity_id)
             .ok_or(PlatformWalletError::IdentityNotFound(identity_id))?;
@@ -66,11 +151,12 @@ impl IdentityManager {
             ..Default::default()
         };
 
-        if let Err(e) = persister.store(cs) {
-            tracing::error!("Failed to persist changeset: {}", e);
-        }
-
-        Ok(())
+        persister.store(cs).map_err(|e| {
+            PlatformWalletError::Persistence(format!(
+                "identity {identity_id} was inserted into the local manager but the host persister \
+                 rejected its changeset: {e}"
+            ))
+        })
     }
 
     /// [`Self::add_identity`] in memory only: the caller stores the identity
