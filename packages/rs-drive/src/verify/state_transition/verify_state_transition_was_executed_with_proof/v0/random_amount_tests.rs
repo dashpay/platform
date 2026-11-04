@@ -19,6 +19,7 @@ use dpp::data_contract::associated_token::token_keeps_history_rules::v0::TokenKe
 use dpp::data_contract::config::v0::DataContractConfigV0;
 use dpp::data_contract::v1::DataContractV1;
 use dpp::data_contract::DataContract;
+use dpp::group::GroupStateTransitionInfo;
 use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::Identity;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
@@ -56,6 +57,29 @@ enum Kind {
     Mint,
 }
 
+/// What the block did with the fixture's transition.
+#[derive(Clone, Copy)]
+enum Execution {
+    /// Executed the random transition and settled it from `BEACON`
+    Settled,
+    /// Executed the random transition with its history document holding `amount`, and settled
+    /// nothing: a history whose amount the proof's range check judges
+    HistoryHolding(TokenAmount),
+    /// Executed a transition of exactly `MINIMUM` (format version 0) in its place
+    Fixed,
+}
+
+/// The latest platform version with random token amounts active, which no protocol version
+/// is until block execution settles them.
+fn random_platform_version() -> PlatformVersion {
+    let mut platform_version = PlatformVersion::latest().clone();
+    platform_version
+        .dpp
+        .state_transition_serialization_versions
+        .random_token_amount = Some(0);
+    platform_version
+}
+
 struct Fixture {
     drive: Drive,
     contract: DataContract,
@@ -68,13 +92,13 @@ impl Fixture {
     /// from `MINIMUM` to `MAXIMUM`, sent by `OWNER` to `RECIPIENT` with `NOTE`, and settled it
     /// from `BEACON`: the history document holds the drawn amount.
     fn new(kind: Kind) -> Self {
-        Self::executing(kind, true)
+        Self::executing(kind, Execution::Settled)
     }
 
-    /// [`Self::new`], or, when not `random`, a drive after a block executed a `kind` of exactly
-    /// `MINIMUM`, sent by `OWNER` to `RECIPIENT` with `NOTE` and the same nonce
-    /// ([`Self::fixed_transition`]).
-    fn executing(kind: Kind, random: bool) -> Self {
+    /// [`Self::new`], with the block doing `execution`: for [`Execution::Fixed`], a drive after
+    /// a block executed a `kind` of exactly `MINIMUM`, sent by `OWNER` to `RECIPIENT` with
+    /// `NOTE` and the same nonce ([`Self::fixed_transition`]).
+    fn executing(kind: Kind, execution: Execution) -> Self {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let mut token = TokenConfigurationV0::default_most_restrictive().with_base_supply(0);
@@ -152,7 +176,7 @@ impl Fixture {
             )
             .expect("expected to mint the base supply to the sender");
 
-        if !random {
+        if let Execution::Fixed = execution {
             let (operation, event) = match kind {
                 Kind::Transfer => (
                     TokenOperationType::TokenTransfer {
@@ -207,7 +231,11 @@ impl Fixture {
         }
 
         // What the block's execution of the transition writes: the reservation, and the
-        // history document holding the range's minimum
+        // history document holding the range's minimum (or the amount the fixture asks for)
+        let history_amount = match execution {
+            Execution::HistoryHolding(amount) => amount,
+            _ => MINIMUM,
+        };
         let (reservation, event, request_kind) = match kind {
             Kind::Transfer => (
                 TokenOperationType::TokenReserveRandomTransfer {
@@ -222,7 +250,7 @@ impl Fixture {
                     Some(NOTE.to_string()),
                     None,
                     None,
-                    MINIMUM,
+                    history_amount,
                 ),
                 RandomTokenRequestKind::Transfer {
                     sender_id: OWNER.into(),
@@ -238,7 +266,7 @@ impl Fixture {
                     maximum: MAXIMUM,
                     allow_first_mint: false,
                 },
-                TokenEvent::Mint(MINIMUM, RECIPIENT.into(), Some(NOTE.to_string())),
+                TokenEvent::Mint(history_amount, RECIPIENT.into(), Some(NOTE.to_string())),
                 RandomTokenRequestKind::Mint {
                     recipient_id: RECIPIENT.into(),
                 },
@@ -266,22 +294,24 @@ impl Fixture {
             .expect("expected the block to execute the random transition");
 
         // The settlement draws the amount and rewrites the history document to hold it
-        drive
-            .settle_random_token_amounts(
-                &BEACON,
-                &[RandomTokenRequest {
-                    token_id,
-                    owner_id: OWNER.into(),
-                    identity_contract_nonce: NONCE,
-                    minimum: MINIMUM,
-                    maximum: MAXIMUM,
-                    kind: request_kind,
-                }],
-                &BlockInfo::default(),
-                None,
-                platform_version,
-            )
-            .expect("expected the settlement to run");
+        if let Execution::Settled = execution {
+            drive
+                .settle_random_token_amounts(
+                    &BEACON,
+                    &[RandomTokenRequest {
+                        token_id,
+                        owner_id: OWNER.into(),
+                        identity_contract_nonce: NONCE,
+                        minimum: MINIMUM,
+                        maximum: MAXIMUM,
+                        kind: request_kind,
+                    }],
+                    &BlockInfo::default(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected the settlement to run");
+        }
 
         Self {
             drive,
@@ -393,19 +423,60 @@ impl Fixture {
     }
 
     /// Verifies `proof` as the execution of `transition`, with the Merkle verifier a client
-    /// runs.
+    /// runs, at a version with random token amounts active.
     fn verify(
         &self,
         proof: &[u8],
         transition: &StateTransition,
+    ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
+        self.verify_at(proof, transition, &random_platform_version())
+    }
+
+    /// [`Self::verify`] at `platform_version`.
+    fn verify_at(
+        &self,
+        proof: &[u8],
+        transition: &StateTransition,
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
         Drive::verify_state_transition_was_executed_with_proof(
             transition,
             &BlockInfo::default(),
             proof,
             &|_| Ok(Some(Arc::new(self.contract.clone()))),
-            PlatformVersion::latest(),
+            platform_version,
         )
+    }
+
+    /// The genuine random mint, asked for as the proposal of a group action, which a random
+    /// mint may not be.
+    fn random_group_mint_transition(&self) -> StateTransition {
+        let base = TokenBaseTransition::V0(TokenBaseTransitionV0 {
+            identity_contract_nonce: NONCE,
+            token_contract_position: 0,
+            data_contract_id: CONTRACT.into(),
+            token_id: self.token_id,
+            using_group_info: Some(GroupStateTransitionInfo {
+                group_contract_position: 0,
+                action_id: [9; 32].into(),
+                action_is_proposer: true,
+            }),
+        });
+        StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+            owner_id: OWNER.into(),
+            transitions: vec![BatchedTransition::Token(TokenTransition::Mint(
+                TokenMintTransition::V1(TokenMintTransitionV1 {
+                    base,
+                    issued_to_identity_id: Some(RECIPIENT.into()),
+                    amount: MAXIMUM,
+                    public_note: Some(NOTE.to_string()),
+                    random_minimum_amount: Some(MINIMUM),
+                }),
+            ))],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }))
     }
 
     /// The amount the proved history document holds, read through the verification of the
@@ -429,6 +500,19 @@ impl Fixture {
                 .expect("expected the history document to hold an amount"),
             other => panic!("expected the history document, got {other:?}"),
         }
+    }
+}
+
+fn assert_invalid_transition(
+    result: Result<(RootHash, StateTransitionProofOutcome), Error>,
+    expectation: &str,
+) {
+    match result {
+        Err(Error::Proof(ProofError::InvalidTransition(_))) => {}
+        Err(error) => {
+            panic!("expected {expectation} to be refused as an invalid transition, got {error:?}")
+        }
+        Ok(_) => panic!("expected {expectation} to be refused, but it verified"),
     }
 }
 
@@ -476,11 +560,34 @@ fn assert_bound_to_its_range(kind: Kind) {
     }
 }
 
+/// The amount the history document of the requested range holds is checked against that
+/// range: a history holding an amount just below its minimum or just above its maximum fails,
+/// and one holding either end verifies with that amount.
+fn assert_amount_checked_against_the_range(kind: Kind) {
+    for (amount, inside) in [
+        (MINIMUM - 1, false),
+        (MINIMUM, true),
+        (MAXIMUM, true),
+        (MAXIMUM + 1, false),
+    ] {
+        let fixture = Fixture::executing(kind, Execution::HistoryHolding(amount));
+        let proof = fixture.proof();
+        if inside {
+            assert_eq!(fixture.proved_amount(&proof), amount);
+        } else {
+            assert_unexpected_result(
+                fixture.verify(&proof, &fixture.genuine_transition()),
+                "a proved amount outside the requested range",
+            );
+        }
+    }
+}
+
 /// The proof of a transition of a fixed amount inside the range, sent with the same nonce,
 /// recipient and note, verifies as that transition and not as the random one: its history
 /// document's id hashes no range, so the random transition names another document.
 fn assert_fixed_amount_not_taken_for_a_random_one(kind: Kind) {
-    let fixture = Fixture::executing(kind, false);
+    let fixture = Fixture::executing(kind, Execution::Fixed);
     let proof = fixture.proof_of(&fixture.fixed_transition());
     fixture
         .verify(&proof, &fixture.fixed_transition())
@@ -526,6 +633,46 @@ fn should_verify_a_random_transfer_only_against_the_range_it_was_sent_with() {
 #[test]
 fn should_verify_a_random_mint_only_against_the_range_it_was_sent_with() {
     assert_bound_to_its_range(Kind::Mint);
+}
+
+#[test]
+fn should_check_the_proved_amount_of_a_random_transfer_against_its_range() {
+    assert_amount_checked_against_the_range(Kind::Transfer);
+}
+
+#[test]
+fn should_check_the_proved_amount_of_a_random_mint_against_its_range() {
+    assert_amount_checked_against_the_range(Kind::Mint);
+}
+
+#[test]
+fn should_refuse_a_random_group_mint_before_reading_the_proof() {
+    // The platform refuses a random group mint, so no proof can show one executed: a fixed
+    // group mint of the same owner, nonce, recipient and action would otherwise stand for it.
+    // The refusal comes before any proof is read, so the proof here is any proof.
+    let fixture = Fixture::new(Kind::Mint);
+    let proof = fixture.proof();
+    assert_invalid_transition(
+        fixture.verify(&proof, &fixture.random_group_mint_transition()),
+        "a random group mint",
+    );
+}
+
+#[test]
+fn should_refuse_a_random_transfer_or_mint_where_random_amounts_are_inactive() {
+    let mut inactive = PlatformVersion::latest().clone();
+    inactive
+        .dpp
+        .state_transition_serialization_versions
+        .random_token_amount = None;
+    for kind in [Kind::Transfer, Kind::Mint] {
+        let fixture = Fixture::new(kind);
+        let proof = fixture.proof();
+        assert_invalid_transition(
+            fixture.verify_at(&proof, &fixture.genuine_transition(), &inactive),
+            "a random transition where random amounts are inactive",
+        );
+    }
 }
 
 #[test]
