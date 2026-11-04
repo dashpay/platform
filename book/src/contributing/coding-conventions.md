@@ -442,7 +442,7 @@ and the [WASM](../wasm/binding-patterns.md) chapters.
 
 ### FFI and mobile SDKs hold no business logic
 
-The FFI crates (`rs-sdk-ffi`, `rs-platform-wallet-ffi`, `key-wallet-ffi`) and
+The FFI crates (`rs-sdk-ffi`, `rs-platform-wallet-ffi`) and
 the Swift and Kotlin SDKs do three things: persist Rust-emitted state, load it
 for views, and call a function that already exists in a Rust library. If the
 wrapper is deciding anything (an index, a derivation path, which key, how
