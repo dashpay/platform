@@ -1,3 +1,5 @@
+/// Core fork activations module
+pub mod core_fork_activations;
 mod estimation_costs;
 mod fetch_elements;
 /// Genesis time module

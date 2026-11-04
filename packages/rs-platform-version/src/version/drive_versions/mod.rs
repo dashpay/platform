@@ -15,6 +15,7 @@ use drive_token_method_versions::DriveTokenMethodVersions;
 use drive_verify_method_versions::DriveVerifyMethodVersions;
 use drive_vote_method_versions::DriveVoteMethodVersions;
 use grovedb_version::version::GroveVersion;
+use versioned_feature_core::OptionalFeatureVersion;
 
 pub mod drive_address_funds_method_versions;
 pub mod drive_contract_group_method_versions;
@@ -166,6 +167,12 @@ pub struct DriveFeesMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DrivePlatformSystemMethodVersions {
     pub estimation_costs: DriveSystemEstimationCostsMethodVersions,
+    /// Reads the chain locked Core height at which Platform first saw a Core fork active.
+    /// `None` (not active) before protocol version 15.
+    pub fetch_core_fork_activation_height: OptionalFeatureVersion,
+    /// Records the chain locked Core height at which Platform first saw a Core fork active.
+    /// `None` (not active) before protocol version 15.
+    pub store_core_fork_activation_height: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
