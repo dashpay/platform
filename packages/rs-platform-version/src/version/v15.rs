@@ -162,7 +162,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    (`InvalidContractStructure`; a stored contract with one, which no JSON
 ///    could have written, must drop it to be updated),
 ///    refuses a contested index whose contest its index values do not decide
-///    (`InvalidContractStructure`, note 19),
+///    (`InvalidContractStructure`, note 19) or that is keyed by a property path or a
+///    system property (`InvalidContractStructure`, note 21),
 ///    and refuses a document type the typed validation schema does not represent
 ///    (`InvalidContractStructure`), so every type registered from this version
 ///    has its documents checked natively (note 6). The parser is generation 3
@@ -446,6 +447,16 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     the chain locked height to one where V24 is active, withdrawals stay version 1, which
 ///     Core always accepts. Protocol v14 and earlier keep
 ///     `build_untied_withdrawal_transactions_from_documents` 0, which emits version 1.
+/// 21. **A contest is keyed by top-level properties**: a contested create keys its vote poll
+///     by looking each index property up by name among the document's top-level properties
+///     (`Index::extract_values`), where a property path (`records.identity`) or a system
+///     property (`$ownerId`) is never found, so the poll holds a null value and Drive fails
+///     every contested create of the type without storing it: the contest can never start.
+///     Registration under `check_document_type_schema` 1 (note 7) refuses a contested index
+///     holding one (`Index::contest_is_keyed_by_top_level_properties`,
+///     `InvalidContractStructure`). A contract registered earlier with one keeps it, but an
+///     update is refused like a registration. Protocol v14 and earlier keep
+///     `check_document_type_schema` 0.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17); fetch_core_fork_activation_height and store_core_fork_activation_height Some(0) keep the Core fork activations (note 18)
