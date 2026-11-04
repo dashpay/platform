@@ -116,7 +116,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    its `domain` Replace and Delete rejects are never reached, as
 ///    `documentsMutable` and `canBeDeleted` false refuse both first (10404).
 ///    (The bindings move to 3 for the token market contract, note 17, and
-///    DashPay, note 19, not for DPNS.)
+///    DashPay, note 20, not for DPNS.)
 ///
 /// 4. **`countOf` and `sumOf` match byte array keys**: `CONTRACT_VERSIONS_V7`
 ///    selects `parse_property_constraints` 1, whose grammar binds a filter key
@@ -162,6 +162,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    first entry the parser may read where every check reads the last
 ///    (`InvalidContractStructure`; a stored contract with one, which no JSON
 ///    could have written, must drop it to be updated),
+///    refuses a contested index whose contest its index values do not decide
+///    (`InvalidContractStructure`, note 19),
 ///    and refuses a document type the typed validation schema does not represent
 ///    (`InvalidContractStructure`), so every type registered from this version
 ///    has its documents checked natively (note 6). The parser is generation 3
@@ -408,8 +410,27 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     error or a coinbase without a payload fails the block, as other Core errors in
 ///     `update_core_info` do. Protocol v14 and earlier keep `update_core_info` 0, which
 ///     neither asks nor records.
+/// 19. **A contest is decided by its index values**: a document joins its type's contest
+///     when every `fieldMatches` entry matches it, and two documents with the same index
+///     values share one unique index entry. A `fieldMatches` field outside the index, or a
+///     match telling `""` from `"\0"` (which share an index key) on a string that may be
+///     empty, lets a document outside the contest take the index values of one in it, and
+///     the award at the end of the contest then finds the entry taken. Registration under
+///     `check_document_type_schema` 1 (note 7) refuses such a contest
+///     (`Index::contest_is_decided_by_index_values`, `InvalidContractStructure`),
+///     and document create state validation 3 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`)
+///     refuses a create outside the contest of a type registered earlier with one while a
+///     contest for the same index keys is live (`DuplicateUniqueIndexError`), reading the
+///     poll at its path, which encodes the values as index keys, so a create of `"\0"` finds
+///     the contest of `""`. Only such a type pays that lookup, and not for a document
+///     with an empty index key (a missing value, or an empty byte array), whose unique index
+///     entry Drive keeps per document (`unique_index_entry_is_shared`), nor for an index
+///     holding a system property (`$ownerId`), whose poll no create can address. A contract
+///     registered earlier with such a contest keeps it, but an update, which carries the
+///     whole contract, is refused like a registration. Protocol v14 and earlier keep
+///     `check_document_type_schema` 0 and document create state validation 2.
 ///
-/// 19. **DashPay v3 states what its data triggers checked, and its ciphertexts' shape**:
+/// 20. **DashPay v3 states what its data triggers checked, and its ciphertexts' shape**:
 ///     `SYSTEM_DATA_CONTRACT_VERSIONS_V4` selects DashPay contract v3, loaded at
 ///     genesis and re-stored by `transition_to_version_15` (`apply_contract`, as the
 ///     upgrade to v2 did). A `contactRequest`'s `toUserId` refers to an identity
@@ -437,7 +458,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; consensus_params_update 2 installs the full evidence policy (note 16); update_core_info 1 records the chain locked height at which Core's V24 is first seen active (note 18)
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); data trigger bindings 3 refuse a replace or a delete of a token market order (note 17) and drop the DashPay bindings (note 19)
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); data trigger bindings 3 refuse a replace or a delete of a token market order (note 17) and drop the DashPay bindings (note 20); document create state_validation 3 keeps a create outside a contest off the values of a live one its index values do not decide (note 19)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -458,7 +479,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         methods: DPP_METHOD_VERSIONS_V3,
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
-    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12); the token market contract is selected (note 17); DashPay v3 states what its data triggers checked (note 19)
+    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12); the token market contract is selected (note 17); DashPay v3 states what its data triggers checked (note 20)
     fee_version: FEE_VERSION4, // changed: decision proposals prefund their poll with 0.5 Dash (note 12)
     system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes, and the private document store limits size its store (note 13)
     consensus: ConsensusVersions {
