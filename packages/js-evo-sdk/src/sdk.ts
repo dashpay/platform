@@ -314,14 +314,13 @@ export class EvoSDK {
    *
    * @example
    * ```typescript
-   * const key = 'dash-continuation.testnet'; // one key per network
+   * // Save under one key per network:
    * const continuation = sdk.verifiedContinuation();
-   * if (continuation) localStorage.setItem(key, JSON.stringify(continuation));
-   * // next start; `connect()` throws an `InvalidArgument` error for a refused
-   * // continuation, so drop it then and start from the built-in checkpoint:
-   * const saved = localStorage.getItem(key);
-   * const sdk = EvoSDK.testnetVerified({ continuation: saved ? JSON.parse(saved) : undefined });
+   * if (continuation) localStorage.setItem('dash-continuation.testnet', JSON.stringify(continuation));
    * ```
+   * On the next start pass it back as `continuation`. If `connect()` then
+   * throws but succeeds without it, drop the saved one: the README's
+   * "Verified quorum keys" section shows the pattern.
    */
   verifiedContinuation(): wasm.QuorumProofContinuation | undefined {
     return this.verifiedContext?.continuation();

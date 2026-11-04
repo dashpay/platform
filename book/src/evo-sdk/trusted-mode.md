@@ -45,15 +45,15 @@ await sdk.connect(); // fetches no quorum keys up front
 ```
 
 Nothing is fetched at `connect()`. A key is proven the first time the SDK
-verifies a response signed by its quorum, so the first query after a quorum
-rotation takes a little longer. In the browser, proof verification yields to
+verifies a response signed by its quorum, so the first query of a session, and
+the first after a quorum rotation, take a little longer. In the browser, proof verification yields to
 the event loop between links, so the page stays responsive.
 
 Proofs grow with the age of the state they start from. A long-lived app should
 save `sdk.verifiedContinuation()` (for example on page hide) under a key per
 network and pass it back as `continuation` on the next start. If `connect()`
 refuses a saved continuation, drop it and start from the built-in checkpoint.
-The [Evo SDK README](https://github.com/dashpay/platform/tree/master/packages/js-evo-sdk#verified-quorum-keys)
+The [Evo SDK README](https://github.com/dashpay/platform/blob/v5.1-dev/packages/js-evo-sdk/README.md#verified-quorum-keys)
 shows the full pattern.
 
 Verified mode needs relays that serve proofs. The public mainnet quorum service
@@ -69,11 +69,11 @@ mode is not available on local networks or devnets, and it requires proofs
 | Browser app on mainnet | Verified with your own `quorumRelays`, or trusted | The public mainnet service does not serve proofs yet |
 | Node.js script | Verified or trusted | Trusted is the simplest setup |
 | Server with Core RPC | Optional | Can fetch quorum keys from your own node |
-| Local Docker setup or devnet | Trusted | Use `EvoSDK.localTrusted()`; verified mode needs mainnet or testnet |
+| Local Docker setup or devnet | Trusted | Use `EvoSDK.localTrusted()`, or `EvoSDK.devnetTrusted(name)` for a devnet; verified mode needs mainnet or testnet |
 
-Trusted mode stays the default. If you use neither, the SDK still works but
-cannot verify proofs: queries return data, but you are trusting the responding
-DAPI node.
+Neither mode is on by default. Without one, proved queries fail, because the
+SDK has no quorum keys; only the `Unproved` variants work, and they trust the
+responding DAPI node.
 
 ## Proofs in responses
 

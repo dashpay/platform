@@ -96,14 +96,14 @@ const client = sdk.WasmSdkBuilder.testnet().withVerifiedContext(context).build()
 // One key per network: a continuation only resumes a context of the network that saved it.
 localStorage.setItem('dash-continuation.testnet', JSON.stringify(context.continuation()));
 // ...and resume from it next time (a `QuorumProofContinuation`: `{ anchor, states }`).
+const relays = undefined; // or ['https://relay.example']
 const saved = localStorage.getItem('dash-continuation.testnet');
-let next = sdk.WasmVerifiedContext.testnet();
+let next = sdk.WasmVerifiedContext.testnet(relays); // invalid relays throw here
 if (saved) {
   try {
-    next = sdk.WasmVerifiedContext.testnetFromContinuation(JSON.parse(saved) /* , ['https://relay.example'] */);
-  } catch (error) {
-    // A refused continuation would fail every later load too: drop it.
-    if (error?.name !== 'InvalidArgument') throw error;
+    next = sdk.WasmVerifiedContext.testnetFromContinuation(JSON.parse(saved), relays);
+  } catch {
+    // Refused or unreadable, so it would fail every later load too: drop it.
     localStorage.removeItem('dash-continuation.testnet');
   }
 }

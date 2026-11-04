@@ -87,22 +87,24 @@ await local.connect();
 
 ### Verified quorum keys
 
-`trusted: true` takes quorum public keys from the network's quorum service on trust. On mainnet and testnet, `verified: true` proves each key instead, from a checkpoint built into the SDK, with Dash Core's DIP 175 quorum proofs; the quorum service only relays them, and a relay that lies can delay requests but cannot make the SDK accept a forged key. Nothing is prefetched at `connect()`: a key is proven the first time a response signed by its quorum is verified. The trusted provider stays the default.
+`trusted: true` takes quorum public keys from the network's quorum service on trust. On mainnet and testnet, `verified: true` proves each key instead, from a checkpoint built into the SDK, with Dash Core's DIP 175 quorum proofs; the quorum service only relays them, and a relay that lies can delay requests but cannot make the SDK accept a forged key. Nothing is prefetched at `connect()`: a key is proven the first time a response signed by its quorum is verified. Neither `trusted` nor `verified` is on by default.
 
 ```typescript
 // One key per network: a continuation only resumes an SDK of the network that saved it.
 const key = 'dash-continuation.testnet';
+const options = {}; // or { quorumRelays: ['https://relay.example'] }
 const saved = localStorage.getItem(key);
-let sdk = EvoSDK.testnetVerified({ continuation: saved ? JSON.parse(saved) : undefined });
+let sdk: EvoSDK;
 try {
+  sdk = EvoSDK.testnetVerified({ ...options, continuation: saved ? JSON.parse(saved) : undefined });
   await sdk.connect();
 } catch (error) {
-  // A continuation the SDK refuses would fail every later load too: drop it and
-  // start again from the built-in checkpoint.
-  if (!saved || (error as { name?: string }).name !== 'InvalidArgument') throw error;
-  localStorage.removeItem(key);
-  sdk = EvoSDK.testnetVerified();
+  if (!saved) throw error;
+  // Start again from the built-in checkpoint. If that works, the saved continuation was
+  // the problem, and it would fail every later load too: drop it.
+  sdk = EvoSDK.testnetVerified(options);
   await sdk.connect();
+  localStorage.removeItem(key);
 }
 
 // ... later: proofs grow with the age of the state they start from, so save where they got to.
