@@ -1,6 +1,10 @@
 use crate::error::*;
+use crate::types::FFINetwork;
 use crate::{check_ptr, unwrap_result_or_return};
+use dashcore::Address;
+use std::ffi::CStr;
 use std::os::raw::{c_char, c_uchar};
+use std::str::FromStr;
 
 /// RAII guard that scrubs a `secp256k1::SecretKey`'s scalar on drop. `from_secret_bytes`
 /// allocates a 32-byte scalar copy of the caller's private key, and `SecretKey`
@@ -223,9 +227,31 @@ pub unsafe extern "C" fn platform_wallet_pubkey_hash_from_private_key(
     0
 }
 
+/// Checks that `address` is a valid Core address for `network`.
+///
+/// Returns `Success` for a valid address and `ErrorInvalidParameter` when the
+/// address does not parse or belongs to another network.
+///
+/// # Safety
+/// `address` must point to a valid null-terminated C string.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_address_validate(
+    address: *const c_char,
+    network: FFINetwork,
+) -> PlatformWalletFFIResult {
+    check_ptr!(address);
+    let address = unwrap_result_or_return!(CStr::from_ptr(address).to_str());
+    let parsed = unwrap_result_or_return!(Address::from_str(address));
+    unwrap_result_or_return!(parsed.require_network(network.into()));
+    PlatformWalletFFIResult::ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::Network;
+    use std::ffi::CString;
+    use std::ptr;
 
     #[test]
     fn test_hash160_matches_known_vector() {
@@ -367,5 +393,43 @@ mod tests {
 
             crate::platform_wallet_string_free(hex);
         }
+    }
+
+    #[test]
+    fn should_validate_addresses() {
+        let validate = |address: &str, network: FFINetwork| {
+            let address = CString::new(address).unwrap();
+            unsafe { platform_wallet_address_validate(address.as_ptr(), network) }.code
+        };
+        let testnet = Address::dummy(Network::Testnet, 1).to_string();
+        let mainnet = Address::dummy(Network::Mainnet, 1).to_string();
+
+        assert_eq!(
+            validate(&testnet, FFINetwork::Testnet),
+            PlatformWalletFFIResultCode::Success
+        );
+        assert_eq!(
+            validate(&testnet, FFINetwork::Regtest),
+            PlatformWalletFFIResultCode::Success
+        );
+        assert_eq!(
+            validate(&mainnet, FFINetwork::Mainnet),
+            PlatformWalletFFIResultCode::Success
+        );
+        assert_eq!(
+            validate(&testnet, FFINetwork::Mainnet),
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(
+            validate(&mainnet, FFINetwork::Testnet),
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(
+            validate("invalid_address", FFINetwork::Testnet),
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+
+        let null = unsafe { platform_wallet_address_validate(ptr::null(), FFINetwork::Testnet) };
+        assert_eq!(null.code, PlatformWalletFFIResultCode::ErrorNullPointer);
     }
 }

@@ -21,6 +21,7 @@ long a probe of the network's version holds, and the errors.
 | `getIdentityKeysRemainingBudgets`, `getDataContractsLatestVersions`, `getDataContractsByRange`, `getContractGroupInfo`, `getContractGroupMembers`, `getContractGroupsForContract`, `getContractModerationStatus`, `getContractModerationEntries`, `getContractDocumentRemovals`, `getContractTeamActions`, `getContractTeamActionSigners`, `getContractModerationActionCounts`, `getContractFeePots` | always |
 | `getDocuments` | the query uses any of: a composite query (sub-queries), a chained query, `contains` or `containsAny`, a time-range or integer-range selection, an aggregate ordered by the selected aggregate (ranked), a `having` clause, several `in` clauses in a documents query, or a start cursor on a document type whose documents are summed (`documentsSummable`) |
 | `getShieldedPoolState`, `getShieldedNotesCount`, `getShieldedAnchors`, `getMostRecentShieldedAnchor`, `getShieldedEncryptedNotes`, `getShieldedNullifiers` | a token's pool is asked for (`token_id`); requests for the credit pool are the ones 4.1 SDKs send, and are always sent |
+| `getIdentityByNonUniquePublicKeyHash` | request version 1, which every node before protocol 14 refuses with `UNKNOWN`; `NonUniquePublicKeyHashQuery` selects it only once protocol 14 is verified, and the declaration also holds back a version 1 request built by hand |
 
 The non-unique key lookup's request version 1 is selected only once protocol 14 is verified,
 and is otherwise sent as version 0, which every node serves.
