@@ -445,12 +445,13 @@ enum WalletKeyHealthChecker {
         let keychainError: Error?
     }
 
-    /// Cascade-delete an orphan identity from SwiftData AND wipe its
-    /// associated Keychain entries.
+    /// Cascade-delete an orphan identity from SwiftData AND wipe this
+    /// wallet's Keychain entries for it.
     ///
     /// Ordering:
     ///  1. Wipe Keychain first (`identity_privkey.*` rows whose
-    ///     metadata matches this identity). Idempotent on retry.
+    ///     metadata names this identity and `walletId`; keys another
+    ///     wallet holds for the identity stay). Idempotent on retry.
     ///  2. Pre-delete the identity's cascade children that have
     ///     non-Optional inverses back to it — DPNS names, DashPay
     ///     profile, contact requests — and save. SwiftData fatals
@@ -470,6 +471,7 @@ enum WalletKeyHealthChecker {
     @MainActor
     static func deleteOrphan(
         identity: PersistentIdentity,
+        walletId: Data,
         modelContext: ModelContext
     ) throws -> OrphanDeleteOutcome {
         // Snapshot the base58 id BEFORE the delete — once the row
@@ -478,7 +480,8 @@ enum WalletKeyHealthChecker {
         var keychainError: Error?
         do {
             try KeychainManager.shared.deleteAllIdentityPrivateKeys(
-                forIdentityIdBase58: identityIdBase58
+                forIdentityIdBase58: identityIdBase58,
+                walletId: walletId
             )
         } catch {
             keychainError = error
@@ -748,10 +751,46 @@ struct WalletKeyHealthSheet: View {
         }
     }
 
+    /// Delete an identity Rust says isn't this wallet's, but only after
+    /// Rust has re-fetched it from Platform and checked it again: the
+    /// stored key rows can be stale (another device may have rotated the
+    /// master key). Anything but `.notOwned` from that check, or an
+    /// error, deletes nothing.
     private func deleteIdentity(_ report: WalletIdentityKeyHealthReport) {
+        Task { @MainActor in
+            let identityLabel = "identity \(report.identityIdBase58.prefix(12))…"
+            actionMessage = "Checking \(identityLabel) on Platform before deleting it…"
+            errorMessage = nil
+            let refreshed: ManagedPlatformWallet.IdentityWalletCheck
+            do {
+                refreshed = try await wallet.checkIdentityKeysOnPlatform(
+                    identityId: report.id,
+                    identityIndex: report.identityIndex
+                )
+            } catch {
+                actionMessage = nil
+                errorMessage = "Not deleted: couldn't check \(identityLabel) on Platform: \(error.localizedDescription)"
+                return
+            }
+            guard refreshed.ownership == .notOwned else {
+                // The refresh stored the identity's current key rows:
+                // check again so the sheet shows them, then say why
+                // nothing was deleted.
+                await runCheck()
+                errorMessage = refreshed.ownership == .owned
+                    ? "Not deleted: on Platform, \(identityLabel) has this wallet's master key."
+                    : "Not deleted: on Platform, \(identityLabel) can't be shown to belong to another wallet."
+                return
+            }
+            deleteOrphan(report)
+        }
+    }
+
+    private func deleteOrphan(_ report: WalletIdentityKeyHealthReport) {
         do {
             let outcome = try WalletKeyHealthChecker.deleteOrphan(
                 identity: report.identityRow,
+                walletId: walletId,
                 modelContext: modelContext
             )
             // SwiftData side succeeded → drop the now-deleted row

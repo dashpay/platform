@@ -1,8 +1,9 @@
 //! Check identity keys against the keys a wallet derives at their slots,
 //! one key or a whole identity, with that wallet's seed only.
 //!
-//! The FFI mirror of platform-wallet's `PlatformWallet::check_identity_key`
-//! and `PlatformWallet::check_identity_keys`, driven by the resolver-backed
+//! The FFI mirror of platform-wallet's `PlatformWallet::check_identity_key`,
+//! `PlatformWallet::check_identity_keys` and
+//! `PlatformWallet::check_identity_keys_on_platform`, driven by the resolver-backed
 //! seed like [`crate::dash_sdk_derive_identity_key_at_slot_with_resolver`]:
 //! the mnemonic is pulled through the Swift/Kotlin-owned `MnemonicResolver`
 //! for the duration of the call only, and the wallet refuses one that is
@@ -16,7 +17,9 @@ use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
 use key_wallet::bip32::ExtendedPrivKey;
-use platform_wallet::wallet::identity::network::{IdentityKeyWalletCheck, IdentityWalletOwnership};
+use platform_wallet::wallet::identity::network::{
+    IdentityKeyWalletCheck, IdentityWalletCheck, IdentityWalletOwnership,
+};
 use platform_wallet::{PlatformWallet, PlatformWalletError};
 use rs_sdk_ffi::MnemonicResolverHandle;
 use zeroize::Zeroize;
@@ -25,7 +28,7 @@ use crate::error::*;
 use crate::handle::{Handle, PLATFORM_WALLET_STORAGE};
 use crate::identity_keys_from_mnemonic::resolve_master_from_resolver;
 use crate::runtime::block_on_worker;
-use crate::types::Network;
+use crate::types::{read_identifier, Network};
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 
 /// The outcome of [`platform_wallet_check_identity_key_with_resolver`]
@@ -194,6 +197,14 @@ impl KeyCheckFailure {
             KeyCheckFailure::Wallet(error @ PlatformWalletError::SeedMismatch { .. }) => {
                 PlatformWalletFFIResult::err(
                     PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                    error.to_string(),
+                )
+            }
+            // An identity the wallet does not hold can't be checked on
+            // Platform; the host gets its own code for it.
+            KeyCheckFailure::Wallet(error @ PlatformWalletError::IdentityNotFound(_)) => {
+                PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorIdentityNotFound,
                     error.to_string(),
                 )
             }
@@ -482,23 +493,86 @@ pub unsafe extern "C" fn platform_wallet_check_identity_keys_with_resolver(
         Err(failure) => return failure.into_result(),
     };
 
+    write_identity_check(check, &mut *out_check)
+}
+
+/// Re-fetch the identity `identity_id` from Platform and check every key
+/// it holds afterwards against the keys the wallet behind `wallet_handle`
+/// derives, and whether the identity is this wallet's. platform-wallet's
+/// `PlatformWallet::check_identity_keys_on_platform` decides: it refreshes
+/// the identity (storing its key rows through the persister), then runs
+/// the same check as [`platform_wallet_check_identity_keys_with_resolver`]
+/// on the refreshed keys, in key id order. Ask this before removing an
+/// identity, since the stored key rows can be stale.
+///
+/// An identity the wallet does not hold is refused with
+/// `ErrorIdentityNotFound`, and one Platform does not return with an
+/// error too, before the seed is read: never `NotOwned`. Otherwise this
+/// fails like the batch check. The result has one key per refreshed key;
+/// release it with [`platform_wallet_check_identity_keys_free`].
+///
+/// # Safety
+/// - `mnemonic_resolver_handle` must be a live handle from
+///   `dash_sdk_mnemonic_resolver_create`, pinned for the call.
+/// - `identity_id` must point to 32 readable bytes.
+/// - `out_check` must be a valid, writable pointer; release it with
+///   [`platform_wallet_check_identity_keys_free`].
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_check_identity_keys_on_platform_with_resolver(
+    wallet_handle: Handle,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    identity_id: *const u8,
+    identity_index: u32,
+    out_check: *mut IdentityWalletCheckFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_check);
+    *out_check = IdentityWalletCheckFFI::empty();
+
+    check_ptr!(mnemonic_resolver_handle);
+    check_ptr!(identity_id);
+    let identity_id = unwrap_result_or_return!(read_identifier(identity_id));
+
+    // As in the other checks, the registry's guard is dropped before the
+    // host resolver runs.
+    let wallet = unwrap_option_or_return!(registered_wallet(wallet_handle));
+    let resolve_master = master_resolver(mnemonic_resolver_handle as usize, wallet.wallet_id());
+    let check = match block_on_worker(async move {
+        wallet
+            .check_identity_keys_on_platform(&identity_id, identity_index, resolve_master)
+            .await
+    }) {
+        Ok(check) => check,
+        Err(failure) => return failure.into_result(),
+    };
+
+    write_identity_check(check, &mut *out_check)
+}
+
+/// Marshal `check` into `out` (already reset to empty). On a failure the
+/// key results written so far are released.
+fn write_identity_check(
+    check: IdentityWalletCheck,
+    out: &mut IdentityWalletCheckFFI,
+) -> PlatformWalletFFIResult {
     let mut results: Vec<IdentityKeyWalletCheckFFI> = Vec::with_capacity(check.keys.len());
     for key_check in check.keys {
         let mut result = IdentityKeyWalletCheckFFI::empty();
         let written = write_check(key_check, &mut result);
         if written.code != PlatformWalletFFIResultCode::Success {
             for mut written_result in results {
-                platform_wallet_check_identity_key_free(&mut written_result);
+                // SAFETY: each result was written by `write_check` above
+                // and is released exactly once here.
+                unsafe { platform_wallet_check_identity_key_free(&mut written_result) };
             }
             return written;
         }
         results.push(result);
     }
-    (*out_check).ownership = check.ownership.into();
+    out.ownership = check.ownership.into();
     if !results.is_empty() {
         let results: Box<[IdentityKeyWalletCheckFFI]> = results.into_boxed_slice();
-        (*out_check).keys_len = results.len();
-        (*out_check).keys = Box::into_raw(results).cast::<IdentityKeyWalletCheckFFI>();
+        out.keys_len = results.len();
+        out.keys = Box::into_raw(results).cast::<IdentityKeyWalletCheckFFI>();
     }
     PlatformWalletFFIResult::ok()
 }
@@ -1428,5 +1502,79 @@ mod tests {
                 IdentityWalletOwnershipFFI::Owned
             )
         );
+    }
+    // ── A whole identity, refreshed from Platform ─────────────────────
+
+    /// An identity the test wallet's manager does not hold.
+    const UNHELD_IDENTITY: [u8; 32] = [0x11; 32];
+
+    fn check_on_platform(
+        wallet_handle: Handle,
+        resolver: *mut MnemonicResolverHandle,
+        identity_id: *const u8,
+        out: *mut IdentityWalletCheckFFI,
+    ) -> PlatformWalletFFIResultCode {
+        unsafe {
+            platform_wallet_check_identity_keys_on_platform_with_resolver(
+                wallet_handle,
+                resolver,
+                identity_id,
+                1,
+                out,
+            )
+        }
+        .code
+    }
+
+    /// An identity the wallet does not hold can't be refreshed, so it is
+    /// refused before the mnemonic is read (a NOT_FOUND resolver would
+    /// otherwise fail the call with `ErrorWalletOperation`), never called
+    /// foreign.
+    #[test]
+    fn should_refuse_an_identity_the_wallet_does_not_hold_without_the_mnemonic() {
+        let wallet = TestWallet::new();
+        let resolver = Resolver::new(not_found_resolve);
+        let mut out = IdentityWalletCheckFFI::empty();
+
+        let code = check_on_platform(
+            wallet.handle,
+            resolver.0,
+            UNHELD_IDENTITY.as_ptr(),
+            &mut out,
+        );
+
+        assert_eq!(code, PlatformWalletFFIResultCode::ErrorIdentityNotFound);
+        assert_eq!(out.ownership, IdentityWalletOwnershipFFI::Undetermined);
+        assert!(out.keys.is_null());
+        unsafe { platform_wallet_check_identity_keys_free(&mut out) };
+    }
+
+    #[test]
+    fn should_refuse_null_pointers_and_an_unknown_wallet_for_a_platform_check() {
+        let wallet = TestWallet::new();
+        let resolver = Resolver::new(test_resolve);
+        let mut out = IdentityWalletCheckFFI::empty();
+        for code in [
+            check_on_platform(
+                wallet.handle,
+                resolver.0,
+                UNHELD_IDENTITY.as_ptr(),
+                std::ptr::null_mut(),
+            ),
+            check_on_platform(
+                wallet.handle,
+                std::ptr::null_mut(),
+                UNHELD_IDENTITY.as_ptr(),
+                &mut out,
+            ),
+            check_on_platform(wallet.handle, resolver.0, std::ptr::null(), &mut out),
+        ] {
+            assert_eq!(code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        }
+        assert_eq!(
+            check_on_platform(Handle::MAX, resolver.0, UNHELD_IDENTITY.as_ptr(), &mut out),
+            PlatformWalletFFIResultCode::NotFound
+        );
+        assert!(out.keys.is_null());
     }
 }

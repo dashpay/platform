@@ -24,6 +24,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex as StdMutex};
 
 use dashcore::crypto::ecdsa::EcdsaPublicKey as PublicKey;
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::{IdentityPublicKey, KeyType, SecurityLevel};
@@ -1044,6 +1045,31 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     }
 }
 
+// `refresh_identity` is defined for the production broadcaster only.
+impl IdentityWallet {
+    /// Re-fetch the identity from Platform ([`Self::refresh_identity`],
+    /// which also stores the refreshed key rows) and check every key it
+    /// holds afterwards with [`Self::check_identity_keys`], in key id
+    /// order. Ask this before removing an identity: the stored key rows
+    /// can be stale (another device rotated the master key).
+    ///
+    /// An identity this wallet does not hold, or one Platform does not
+    /// return, fails the refresh, and the check fails with it: an error,
+    /// never `NotOwned`. The seed is resolved only after the refresh.
+    pub async fn check_identity_keys_on_platform<E: From<PlatformWalletError>>(
+        &self,
+        identity_id: &Identifier,
+        identity_index: u32,
+        resolve_master: impl FnOnce(Network) -> Result<ExtendedPrivKey, E>,
+    ) -> Result<IdentityWalletCheck, E> {
+        let identity = self.refresh_identity(identity_id).await?;
+        let identity_public_keys: Vec<IdentityPublicKey> =
+            identity.public_keys().values().cloned().collect();
+        self.check_identity_keys(identity_index, &identity_public_keys, 0, resolve_master)
+            .await
+    }
+}
+
 impl PlatformWallet {
     /// Wallet-level entry point for [`IdentityWallet::check_identity_keys`].
     pub async fn check_identity_keys<E: From<PlatformWalletError>>(
@@ -1060,6 +1086,19 @@ impl PlatformWallet {
                 unreadable_key_count,
                 resolve_master,
             )
+            .await
+    }
+
+    /// Wallet-level entry point for
+    /// [`IdentityWallet::check_identity_keys_on_platform`].
+    pub async fn check_identity_keys_on_platform<E: From<PlatformWalletError>>(
+        &self,
+        identity_id: &Identifier,
+        identity_index: u32,
+        resolve_master: impl FnOnce(Network) -> Result<ExtendedPrivKey, E>,
+    ) -> Result<IdentityWalletCheck, E> {
+        self.identity()
+            .check_identity_keys_on_platform(identity_id, identity_index, resolve_master)
             .await
     }
 
@@ -2387,5 +2426,161 @@ mod tests {
                 .expect("no seed needed"),
             IdentityKeyWalletCheck::NotCompared
         ));
+    }
+    // ── Check after a Platform refresh ────────────────────────────────
+
+    const PLATFORM_IDENTITY: [u8; 32] = [0x11; 32];
+
+    fn platform_identity(keys: Vec<IdentityPublicKey>, revision: u64) -> dpp::identity::Identity {
+        dpp::identity::Identity::V0(dpp::identity::v0::IdentityV0 {
+            id: Identifier::from(PLATFORM_IDENTITY),
+            public_keys: keys.into_iter().map(|key| (key.id(), key)).collect(),
+            balance: 0,
+            revision,
+        })
+    }
+
+    /// The testnet wallet of [`TEST_MNEMONIC`], holding `stored` at
+    /// identity index 1 when given, over a mock SDK that answers the
+    /// identity's fetch with `on_platform` when given.
+    async fn wallet_on_platform(
+        stored: Option<dpp::identity::Identity>,
+        on_platform: Option<Option<dpp::identity::Identity>>,
+    ) -> (
+        Arc<crate::PlatformWalletManager<crate::test_support::NoopTestPersister>>,
+        Arc<PlatformWallet>,
+    ) {
+        struct Events;
+        impl crate::events::EventHandler for Events {}
+        impl crate::events::PlatformEventHandler for Events {}
+
+        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        if let Some(answer) = on_platform {
+            sdk.mock()
+                .expect_fetch(Identifier::from(PLATFORM_IDENTITY), answer)
+                .await
+                .expect("identity fetch expectation");
+        }
+        let manager = Arc::new(crate::PlatformWalletManager::new(
+            Arc::new(sdk),
+            Arc::new(crate::test_support::NoopTestPersister),
+            Arc::new(Events),
+        ));
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
+            .expect("valid test mnemonic")
+            .to_seed("");
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("wallet creation");
+        if let Some(stored) = stored {
+            let mut wm = manager.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet.wallet_id())
+                .expect("wallet info")
+                .identity_manager
+                .add_identity(stored, 1, wallet.wallet_id(), &wallet.identity().persister)
+                .expect("store the identity");
+        }
+        (manager, wallet)
+    }
+
+    /// The stored rows still hold a foreign master that another device
+    /// has since replaced: they say NotOwned, but the identity Platform
+    /// returns has the wallet's master enabled, so the check after the
+    /// refresh says Owned.
+    #[tokio::test]
+    async fn should_check_the_identity_platform_returns_not_the_stale_rows() {
+        let stale_master = ecdsa_key(0, SecurityLevel::MASTER, slot_public_key(1, 9), None);
+        let stored = platform_identity(vec![stale_master.clone()], 0);
+        let on_platform = platform_identity(
+            vec![
+                ecdsa_key(
+                    0,
+                    SecurityLevel::MASTER,
+                    slot_public_key(1, 9),
+                    Some(DISABLED_AT),
+                ),
+                ecdsa_key(1, SecurityLevel::MASTER, slot_public_key(1, 1), None),
+            ],
+            1,
+        );
+        let (_manager, wallet) = wallet_on_platform(Some(stored), Some(Some(on_platform))).await;
+
+        let stale = wallet
+            .check_identity_keys(1, &[stale_master], 0, |network| {
+                Ok::<_, PlatformWalletError>(master_for(network))
+            })
+            .await
+            .expect("check the stored rows");
+        assert_eq!(stale.ownership, IdentityWalletOwnership::NotOwned);
+
+        let refreshed = wallet
+            .check_identity_keys_on_platform(&Identifier::from(PLATFORM_IDENTITY), 1, |network| {
+                Ok::<_, PlatformWalletError>(master_for(network))
+            })
+            .await
+            .expect("check after the refresh");
+        assert_eq!(refreshed.ownership, IdentityWalletOwnership::Owned);
+        assert!(matches!(
+            refreshed.keys[..],
+            [
+                IdentityKeyWalletCheck::Mismatch { .. },
+                IdentityKeyWalletCheck::Matches { .. }
+            ]
+        ));
+    }
+
+    /// An identity the wallet does not hold can't be refreshed, so the
+    /// check fails, before reading the seed, instead of saying NotOwned.
+    #[tokio::test]
+    async fn should_refuse_an_identity_the_wallet_does_not_hold_without_the_seed() {
+        let (_manager, wallet) = wallet_on_platform(None, None).await;
+
+        let err = wallet
+            .check_identity_keys_on_platform(&Identifier::from(PLATFORM_IDENTITY), 1, |_| {
+                Err(PlatformWalletError::InvalidParameter(
+                    "the seed must not be read".to_string(),
+                ))
+            })
+            .await
+            .expect_err("an identity the wallet does not hold");
+        assert!(
+            matches!(err, PlatformWalletError::IdentityNotFound(id) if id == Identifier::from(PLATFORM_IDENTITY)),
+            "{err:?}"
+        );
+    }
+
+    /// An identity Platform doesn't return fails the refresh, so the check
+    /// fails, before reading the seed, instead of saying NotOwned.
+    #[tokio::test]
+    async fn should_refuse_an_identity_platform_does_not_return() {
+        let stored = platform_identity(
+            vec![ecdsa_key(
+                0,
+                SecurityLevel::MASTER,
+                slot_public_key(1, 9),
+                None,
+            )],
+            0,
+        );
+        let (_manager, wallet) = wallet_on_platform(Some(stored), Some(None)).await;
+
+        let err = wallet
+            .check_identity_keys_on_platform(&Identifier::from(PLATFORM_IDENTITY), 1, |_| {
+                Err(PlatformWalletError::InvalidParameter(
+                    "the seed must not be read".to_string(),
+                ))
+            })
+            .await
+            .expect_err("an identity Platform does not return");
+        assert!(
+            matches!(&err, PlatformWalletError::InvalidIdentityData(message) if message.contains("not found on Platform")),
+            "{err:?}"
+        );
     }
 }

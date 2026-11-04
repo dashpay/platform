@@ -1715,9 +1715,9 @@ extension ManagedPlatformWallet {
     }
 
     /// Copy an identity check out of its FFI form, keys in the order
-    /// Rust returned them (the order they were given). Throws when it
-    /// holds a different number of results than `keyCount` keys were
-    /// sent, or an unknown value. Pure decoding, like
+    /// Rust returned them. Throws when it holds a different number of
+    /// results than `keyCount` (the keys sent, or the count Rust reported
+    /// when the caller sent none), or an unknown value. Pure decoding, like
     /// `identityKeyWalletCheck(from:)`; `internal` so tests can decode
     /// hand-built C values.
     static func identityWalletCheck(
@@ -1747,6 +1747,63 @@ extension ManagedPlatformWallet {
             throw PlatformWalletError.deserialization("Unknown identity ownership")
         }
         return IdentityWalletCheck(keys: checks, ownership: ownership)
+    }
+
+    /// Re-fetch an identity from Platform and check every key it holds
+    /// afterwards against the keys this wallet derives at their slots,
+    /// and whether the identity is this wallet's. Pure bridge to
+    /// `platform_wallet_check_identity_keys_on_platform_with_resolver`;
+    /// Rust's `PlatformWallet::check_identity_keys_on_platform` decides.
+    /// The refresh stores the identity's key rows through the persister,
+    /// so ask this before removing an identity: the stored rows can be
+    /// stale. The keys come back in the refreshed identity's key id
+    /// order.
+    ///
+    /// - Parameters:
+    ///   - identityId: the 32-byte identity id.
+    ///   - identityIndex: the identity's index in the HD tree.
+    ///   - storage: defaults to a fresh `WalletStorage()`, overridable
+    ///     for tests. Used by the resolver vtable.
+    ///
+    /// - Throws: `PlatformWalletError` when the wallet doesn't hold the
+    ///   identity, Platform doesn't return it, or the mnemonic can't be
+    ///   read or isn't this wallet's. An error says nothing about whether
+    ///   the identity is the wallet's.
+    public func checkIdentityKeysOnPlatform(
+        identityId: Identifier,
+        identityIndex: UInt32,
+        storage: WalletStorage = WalletStorage()
+    ) async throws -> IdentityWalletCheck {
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "identityId must be 32 bytes, got \(identityId.count)"
+            )
+        }
+        let resolver = MnemonicResolver(storage: storage)
+        // Off the main actor: the call fetches from Platform and stores
+        // through the persister. `withExtendedLifetime` keeps this wallet
+        // (its handle) and the resolver (its `passUnretained` ctx) alive
+        // for the synchronous FFI call.
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            try withExtendedLifetime((self, resolver)) {
+                var out = IdentityWalletCheckFFI()
+                defer { platform_wallet_check_identity_keys_free(&out) }
+                let result = identityId.withUnsafeBytes { idBytes -> PlatformWalletFFIResult in
+                    platform_wallet_check_identity_keys_on_platform_with_resolver(
+                        handle,
+                        resolver.handle,
+                        idBytes.bindMemory(to: UInt8.self).baseAddress!,
+                        identityIndex,
+                        &out
+                    )
+                }
+                try result.check()
+                // Copy out before the deferred free wipes and releases the
+                // result. No keys were sent, so the count Rust reported is
+                // the one to hold the result to.
+                return try Self.identityWalletCheck(from: out, keyCount: Int(out.keys_len))
+            }
+        }.value
     }
 
     /// Derive a single ECDSA identity-authentication keypair at an
