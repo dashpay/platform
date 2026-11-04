@@ -1038,6 +1038,21 @@ mod tests {
             let key = stored.public_keys().get(&1).expect("the signer key");
             assert_eq!(key.key_type(), KeyType::REDPALLAS_HECATE);
             assert_eq!(key.purpose(), Purpose::HECATE_SIGNER);
+            let sent = identity.public_keys().get(&1).expect("the sent signer key");
+            assert_eq!(key.data(), sent.data());
+
+            // Identity create writes the signer key's entry in the signer index.
+            let (_, signer_key_ids) = platform
+                .drive
+                .fetch_identity_hecate_signer_key_ids_with_fee(
+                    identity.id().to_buffer(),
+                    10,
+                    &BlockInfo::default().epoch,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to read the signer index");
+            assert_eq!(signer_key_ids, vec![1]);
         }
     }
 
