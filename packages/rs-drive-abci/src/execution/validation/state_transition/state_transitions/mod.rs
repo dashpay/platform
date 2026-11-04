@@ -5078,4 +5078,155 @@ pub(in crate::execution) mod tests {
             assert!(result.is_valid(), "{:?}", result.errors);
         }
     }
+
+    /// A contested index keyed by a property path or a system property. A contested create
+    /// keys its vote poll by reading each index value from the document's top-level
+    /// properties, where such a property is never found, so no contested create can open or
+    /// join the contest. From protocol version 15 registration, and an update, which carries
+    /// the whole contract, refuse such an index.
+    mod contest_keyed_by_top_level_properties {
+        use super::*;
+        use crate::config::PlatformConfig;
+        use dpp::consensus::basic::BasicError;
+        use dpp::dashcore::Network;
+        use dpp::data_contract::config::DataContractConfig;
+        use dpp::data_contract::errors::DataContractError;
+        use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
+        use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+        use dpp::ProtocolError;
+
+        /// DPNS's contested index with `records.identity` in place of the parent domain.
+        const NESTED_PROPERTY_CONTRACT: &str =
+            "tests/supporting_files/contract/dpns/dpns-contract-contested-keyed-by-nested-property.json";
+
+        /// DPNS's contested index with `$ownerId` in place of the parent domain.
+        const OWNER_ID_CONTRACT: &str =
+            "tests/supporting_files/contract/dpns/dpns-contract-contested-keyed-by-owner-id.json";
+
+        /// From protocol version 15 registration refuses both shapes.
+        #[test]
+        fn should_refuse_registering_a_contest_keyed_by_a_nested_or_system_property_at_the_latest_protocol_version(
+        ) {
+            for contract_path in [NESTED_PROPERTY_CONTRACT, OWNER_ID_CONTRACT] {
+                let error = json_document_to_contract_with_ids(
+                    contract_path,
+                    None,
+                    None,
+                    true,
+                    PlatformVersion::latest(),
+                )
+                .expect_err("registration must refuse the contest");
+                assert_matches!(
+                    error,
+                    ProtocolError::ConsensusError(consensus_error)
+                        if matches!(
+                            consensus_error.as_ref(),
+                            ConsensusError::BasicError(BasicError::ContractError(
+                                DataContractError::InvalidContractStructure(_)
+                            ))
+                        ),
+                    "{contract_path}"
+                );
+            }
+        }
+
+        /// Protocol version 14 keeps registering both shapes.
+        #[test]
+        fn should_register_a_contest_keyed_by_a_nested_or_system_property_at_protocol_version_14() {
+            let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+            for contract_path in [NESTED_PROPERTY_CONTRACT, OWNER_ID_CONTRACT] {
+                json_document_to_contract_with_ids(
+                    contract_path,
+                    None,
+                    None,
+                    true,
+                    platform_version,
+                )
+                .unwrap_or_else(|error| {
+                    panic!("protocol version 14 must register {contract_path}: {error:?}")
+                });
+            }
+        }
+
+        /// From protocol version 15 a contract registered earlier with such an index can no
+        /// longer be updated: an update carries the whole contract, which full validation
+        /// checks like a registration.
+        #[tokio::test]
+        async fn should_refuse_updating_a_contract_keeping_a_contest_keyed_by_a_property_path_at_the_latest_protocol_version(
+        ) {
+            let platform_config = PlatformConfig {
+                network: Network::Mainnet,
+                ..Default::default()
+            };
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .with_config(platform_config)
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+            let platform_version = PlatformVersion::latest();
+
+            let mut rng = StdRng::seed_from_u64(0x0F1E_1D10);
+            let (identity, signer, key) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(2.0));
+
+            // The fixture's config is version 0, which an update can no longer keep
+            let contract = setup_contract(
+                &platform.drive,
+                NESTED_PROPERTY_CONTRACT,
+                None,
+                Some(identity.id().to_buffer()),
+                Some(|contract: &mut DataContract| {
+                    contract.set_config(
+                        DataContractConfig::default_for_version(platform_version)
+                            .expect("expected the default config"),
+                    )
+                }),
+                None,
+                Some(platform_version),
+            );
+            let mut updated_contract = contract.clone();
+            updated_contract.set_version(2);
+
+            let transition = DataContractUpdateTransition::new_from_data_contract(
+                updated_contract,
+                &identity.into_partial_identity_info(),
+                key.id(),
+                1,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to create the update transition");
+            let serialized_transition = transition
+                .serialize_to_bytes()
+                .expect("expected to serialize the transition");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default_with_time(3000),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process the state transition");
+
+            assert_matches!(
+                processing_result.into_execution_results().remove(0),
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(BasicError::ContractError(
+                        DataContractError::InvalidContractStructure(message)
+                    )),
+                    ..
+                } if message.contains("must be keyed by top-level properties")
+            );
+        }
+    }
 }
