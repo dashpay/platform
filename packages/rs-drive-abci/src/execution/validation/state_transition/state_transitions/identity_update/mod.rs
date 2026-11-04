@@ -1467,7 +1467,7 @@ mod tests {
         // operations: one real fee per bound group, not a fixed stand-in.
         use dpp::block::epoch::Epoch;
         use drive::fees::op::LowLevelDriveOperation;
-        use std::collections::HashMap;
+        use drive::util::estimated_layers::EstimatedLayers;
         let lookup_fees = |operations: &[LowLevelDriveOperation]| -> Vec<u64> {
             operations
                 .iter()
@@ -1480,7 +1480,7 @@ mod tests {
         let key_ids: Vec<_> = keys.iter().map(|key| key.id()).collect();
         let revocation_operations = |estimate: bool| {
             platform.drive.cache.data_contracts.clear();
-            let mut layer_info = estimate.then(HashMap::new);
+            let mut layer_info = estimate.then(EstimatedLayers::new);
             platform
                 .drive
                 .disable_identity_keys_operations(

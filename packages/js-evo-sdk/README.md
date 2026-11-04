@@ -14,6 +14,7 @@ Evo SDK provides a high-level, strongly-typed interface for interacting with [Da
 - [Install](#install)
 - [Usage](#usage)
 - [Facades](#facades)
+- [Document queries that need protocol version 14](#document-queries-that-need-protocol-version-14)
 - [Ranked queries](#ranked-queries)
 - [Querying the elements of a list (`contains`, `containsAny`)](#querying-the-elements-of-a-list-contains-containsany)
 - [Document references (`refersTo`)](#document-references-refersto)
@@ -111,8 +112,24 @@ The SDK organises its API into domain-specific facades, each accessible as a pro
 | [`sdk.shielded`](src/shielded/facade.ts) | Query shielded pool state, encrypted notes, anchors, and nullifier status |
 | [`sdk.encryptedFor`](src/encrypted-for/facade.ts) | Encrypt and decrypt the byte properties a document type declares `encryptedFor`, for any contract |
 | [`sdk.moderationCharters`](src/moderation-charters/facade.ts) | Read a contract's seated charter, its team, proposals and join requests; build join and resignation requests |
+| [`sdk.decisionProposals`](src/decision-proposals/facade.ts) | Build, edit, list and read decision proposals; read their polls and vote on them as a masternode |
 
 A `wallet` namespace is also exported with utilities for BIP39 mnemonic generation and validation, BIP44/DIP9/DIP13 key derivation (path helpers included), extended-key conversion (`xprvToXpub`, `deriveChildPublicKey`), key-pair generation and import (`generateKeyPair`, `keyPairFromWif`, `keyPairFromHex`), public-key-to-address conversion, address validation, message signing, and Dashpay contact-key derivation. See [`src/wallet/functions.ts`](src/wallet/functions.ts) for the full list.
+
+## Document queries that need protocol version 14
+
+Ranked and `having` queries, `contains` and `containsAny`, `timeRange` and `integerRange` selections, chained and composite queries, several `in` clauses in one documents query, and a `startAt` / `startAfter` cursor on a document type whose documents are summed are served from protocol version 14. Until a verified answer shows the network running it, the SDK refuses such a query without sending it, with a `ProtocolVersionNotActive` error naming the feature, and no node is banned:
+
+```ts
+try {
+  return await sdk.documents.ranked(query);
+} catch (e) {
+  if (e.name !== 'ProtocolVersionNotActive' || e.isRetriable) throw e;
+  // The network does not serve ranked queries yet: hide the leaderboard.
+}
+```
+
+A fresh SDK asks the network for its version once before the first such query, so it does not have to be seeded at the network's version. An SDK pinned below 14 keeps refusing these queries after the network activates 14 (the message says it is pinned): raise the pin. A query that cannot be answered as asked, for example `groupBy` on `sdk.documents.query`, which returns the documents themselves, is refused before sending with an `InvalidArgument` error. See [Protocol Versions in the SDK](../../book/src/sdk/protocol-versions.md).
 
 ## Ranked queries
 
@@ -484,6 +501,49 @@ await sdk.documents.create({ document: resignation, identityKey, signer });
 
 The leader reads either with `sdk.encryptedFor.decrypt`.
 
+## Decision proposals
+
+From protocol version 15 any identity can put a yes/no question to the masternodes: a `proposal` document of the decision proposals system contract (`3iNyoNwjCTkb7XS3RHyWUtLx7pgC6AFAEQNNDHzxqngF`). Creating it opens the proposal's vote poll, and the owner pays the decision proposal fund, 0.5 Dash, on top of the fees. The result is signaling only. `sdk.decisionProposals` builds proposals for `sdk.documents`, reads them with proved queries, and reads and answers their polls by the proposal's id:
+
+```ts
+// A question that passes with more than 60% yes, if at least 10% of the network answers
+const draft = await sdk.decisionProposals.build({
+  ownerId: identity.id,
+  title: 'Raise the block size?',
+  description: 'Yes doubles it; no keeps it.',
+  url: 'https://forum.dash.org/t/block-size',
+  passPercent: 60,                                     // 50 to 80
+  minimumTurnoutPercent: 10,                           // 0 to 50
+  endDate: BigInt(Date.now() + 14 * 24 * 3600 * 1000), // 1 to 4 weeks after the creating block
+});
+const proposal = await sdk.documents.create({ document: draft, identityKey, signer });
+
+// The text can be edited for a day; the rule and the end date never change
+const edited = await sdk.decisionProposals.buildEdit(proposal, { title: 'Raise the block size to 4 MB?' });
+await sdk.documents.replace({ document: edited, identityKey, signer });
+
+// The open proposals, closing soonest first; an identity's; every proposal, newest first
+const open = await sdk.decisionProposals.byEndDate({ endDateFrom: BigInt(Date.now()), limit: 20 });
+const mine = await sdk.decisionProposals.byOwner({ ownerId: identity.id });
+const latest = await sdk.decisionProposals.byCreatedAt({ limit: 10 });
+
+// The poll: its tallies while it runs, its result once it closes
+const state = await sdk.decisionProposals.pollState(proposal.id);
+if (state?.status === 'finished') console.log(state.result.passed);
+
+// A masternode answers 'yes', 'no' or 'abstain' with its voting key
+await sdk.decisionProposals.vote({
+  masternodeProTxHash: proTxHash,
+  proposalId: proposal.id,
+  voteChoice: 'yes',
+  votingKey,
+  signer: votingSigner,
+});
+const answer = await sdk.decisionProposals.masternodeVote(proTxHash, proposal.id);
+```
+
+`sdk.voting.masternodeVote` also answers a yes/no poll as `sdk.voting.votePollsByEndDate` lists it, with `voteChoice: 'yes' | 'no' | 'abstain'`.
+
 ## Immutable properties (`immutable`)
 
 From protocol version 14 a mutable document type can freeze some of its top-level properties with the doctype-level `immutable` list, while the rest of the document stays replaceable. An entry naming a property freezes it at creation. An entry `{ property, when }` freezes it for any replace its condition holds for: the condition takes the grammar of a `propertyConstraints` rule, is judged on the document the replace writes (whose `$updatedAt` is the replace's block time), and reads the stored document through `$old.` paths.
@@ -571,7 +631,7 @@ try {
 }
 ```
 
-To find a broken rule before paying for a refused transition, a contract lists a document type's rules and checks a document against them with the code consensus runs. The check covers the rules alone, not the JSON schema. It reads the device clock for the times the write will record (`readsSystem` lists the ones a rule reads); a rule reading a block height the write records (every height on a create, the update's on a replace) is not checked, since the height is unknown until the block, and neither is a rule reading a `countOf` or `sumOf` total, which only the platform reads from state (`readsTotals` lists the ones a rule reads, each with its `kind`, `documentType`, the summed `property` of a `sumOf` and the `filter` keys), nor one reading a value of the document a reference points at, `{ referenced: [reference, field] }`, which the platform reads when it checks the reference (`readsReferenced` lists them, each with its `reference`, `path` and `kind`). The second argument says which write is checked. Given the stored document, a replace, `$ownerId`, `$revision` and the creation and transfer are what consensus judges, whatever the document holds: the stored document's owner, creation and transfer times and heights, and the revision after the stored one; a rule reading the stored version through `$old.` (`readsStored`) reads that document, its heights included. Given `null`, a create, `$ownerId` is the document's owner, `$revision` 1 and every time the device clock, and every `$old.` read is absent (a stored time, height or revision reads 0). Given `undefined`, the document's own owner, creation and transfer are read (the device clock for a time it lacks), and neither a rule reading `$old.` nor one reading `$revision`, which depends on the write, is judged:
+To find a broken rule before paying for a refused transition, a contract lists a document type's rules and checks a document against them with the code consensus runs. The check covers the rules alone, not the JSON schema. It reads the device clock for the times the write will record (`readsSystem` lists the ones a rule reads); a rule reading a block height the write records (every height on a create, the update's on a replace) is not checked, since the height is unknown until the block, and neither is a rule reading a `countOf` or `sumOf` total, which only the platform reads from state (`readsTotals` lists the ones a rule reads, each with its `kind`, `documentType`, the summed `property` of a `sumOf` and the `filter` keys), nor one reading a value of the document a reference points at, `{ referenced: [reference, field] }`, which the platform reads when it checks the reference (`readsReferenced` lists them, each with its `reference`, `path` and `kind`), nor one reading a property `generatedFrom` a `sys.tokens` function, which the transition builders leave out and the platform writes when the document arrives. The second argument says which write is checked. Given the stored document, a replace, `$ownerId`, `$revision` and the creation and transfer are what consensus judges, whatever the document holds: the stored document's owner, creation and transfer times and heights, and the revision after the stored one; a rule reading the stored version through `$old.` (`readsStored`) reads that document, its heights included. Given `null`, a create, `$ownerId` is the document's owner, `$revision` 1 and every time the device clock, and every `$old.` read is absent (a stored time, height or revision reads 0). Given `undefined`, the document's own owner, creation and transfer are read (the device clock for a time it lacks), and neither a rule reading `$old.` nor one reading `$revision`, which depends on the write, is judged:
 
 ```ts
 contract.documentTypePropertyConstraints('offer');

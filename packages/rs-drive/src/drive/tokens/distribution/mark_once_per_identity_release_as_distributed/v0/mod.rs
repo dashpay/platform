@@ -2,14 +2,13 @@ use crate::drive::tokens::paths::token_once_per_identity_distributions_path_vec;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::object_size_info::PathKeyElementInfo;
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation};
-use std::collections::HashMap;
+use grovedb::Element;
 
 impl Drive {
     /// Inserts the claim item: key is the claimant's identity id, value is the claim's block
@@ -20,9 +19,7 @@ impl Drive {
         recipient_id: [u8; 32],
         claimed_at_ms: TimestampMillis,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations = vec![];

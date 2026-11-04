@@ -1,4 +1,5 @@
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::drive::group::paths::{group_contract_path, group_path, group_root_path};
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
@@ -9,13 +10,13 @@ use grovedb::EstimatedLayerCount::EstimatedLevel;
 use grovedb::EstimatedLayerSizes::AllSubtrees;
 use grovedb::EstimatedSumTrees::{NoSumTrees, SomeSumTrees};
 use grovedb::{EstimatedLayerInformation, TreeType};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 impl Drive {
     pub(super) fn add_estimation_costs_for_add_groups_v0(
         contract_id: [u8; 32],
         groups: &BTreeMap<GroupContractPosition, Group>,
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         //                                                                                DataContract_Documents 64
         //                                 /                                                                                                       \

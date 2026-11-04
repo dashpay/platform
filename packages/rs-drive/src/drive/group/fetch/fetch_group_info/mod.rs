@@ -2,13 +2,12 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::data_contract::group::Group;
 use dpp::data_contract::GroupContractPosition;
 use dpp::identifier::Identifier;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
-use std::collections::HashMap;
 
 mod v0;
 
@@ -61,7 +60,7 @@ impl Drive {
     /// # Parameters
     /// - `contract_id`: The identifier of the contract that the action belongs to.
     /// - `group_contract_position`: The position of the group contract in the data structure.
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an optional `HashMap` containing
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an optional `EstimatedLayers` containing
     ///   layer information used for cost estimation.
     /// - `transaction`: The transaction argument used for the query.
     /// - `drive_operations`: A mutable reference to a vector that stores low-level drive operations.
@@ -79,9 +78,7 @@ impl Drive {
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,

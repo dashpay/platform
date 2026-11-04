@@ -325,21 +325,6 @@ const PROTOCOL_VERSION_OF_5_0: u32 = 14;
 /// or newer, and serves the methods and request fields 5.1 added.
 const PROTOCOL_VERSION_OF_5_1: u32 = 15;
 
-/// A 4.x node drops a composite query's `sub_queries` and a chained query's `chained`, and
-/// proves the plain page or the inner query instead.
-fn documents_request_needs_protocol_version(
-    request: &platform_proto::GetDocumentsRequest,
-) -> Option<u32> {
-    match &request.version {
-        Some(platform_proto::get_documents_request::Version::V1(v1))
-            if v1.chained.is_some() || !v1.sub_queries.is_empty() =>
-        {
-            Some(PROTOCOL_VERSION_OF_5_0)
-        }
-        _ => None,
-    }
-}
-
 /// A shielded pool request names a token's pool with `token_id`; a 4.x node drops it and
 /// answers for the credit pool instead.
 fn token_pool(token_id: &Option<Vec<u8>>) -> Option<u32> {
@@ -366,8 +351,10 @@ impl_transport_request_grpc!(
     get_identity
 );
 
+// Which networks serve a document request depends on the query it was encoded from, so the
+// SDK decides it before encoding (`DocumentQuery::required_protocol_version` in
+// `dash-platform-queries`), and the wire request declares nothing.
 impl_transport_request_grpc!(
-    needs_protocol_version: documents_request_needs_protocol_version;
     platform_proto::GetDocumentsRequest,
     platform_proto::GetDocumentsResponse,
     PlatformGrpcClient,
@@ -764,6 +751,22 @@ impl_transport_request_grpc!(
     get_masternode_yes_no_vote
 );
 
+// rpc getPrivateDocumentEntries(GetPrivateDocumentEntriesRequest) returns (GetPrivateDocumentEntriesResponse);
+impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
+    platform_proto::GetPrivateDocumentEntriesRequest,
+    platform_proto::GetPrivateDocumentEntriesResponse,
+    PlatformGrpcClient,
+    // A page reads at most a chunk of the store, about 512 KiB; its proof can carry the store's
+    // first chunk too, as the anchor of its chunks, so up to about 1 MiB.
+    RequestSettings {
+        timeout: Some(LARGE_RESPONSE_TIMEOUT),
+        ..RequestSettings::default()
+    },
+    get_private_document_entries
+);
+
 // rpc GetEvonodesProposedEpochBlocksByIdsRequest(GetEvonodesProposedEpochBlocksByIdsRequest) returns (GetEvonodesProposedEpochBlocksResponse);
 impl_transport_request_grpc!(
     names_nothing: |request| match &request.version {
@@ -977,6 +980,11 @@ impl_transport_request_grpc!(
 
 //   rpc getIdentityByNonUniquePublicKeyHash(GetIdentityByNonUniquePublicKeyHashRequest) returns (GetIdentityByNonUniquePublicKeyHashResponse);
 impl_transport_request_grpc!(
+    needs_protocol_version: |request| match &request.version {
+        // A node before protocol 14 refuses V1 with UNKNOWN, which gets it banned.
+        Some(platform_proto::get_identity_by_non_unique_public_key_hash_request::Version::V1(_)) => Some(PROTOCOL_VERSION_OF_5_0),
+        Some(platform_proto::get_identity_by_non_unique_public_key_hash_request::Version::V0(_)) | None => None,
+    };
     platform_proto::GetIdentityByNonUniquePublicKeyHashRequest,
     platform_proto::GetIdentityByNonUniquePublicKeyHashResponse,
     PlatformGrpcClient,

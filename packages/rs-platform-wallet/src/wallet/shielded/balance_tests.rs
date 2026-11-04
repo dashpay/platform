@@ -15,6 +15,7 @@ use crate::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
 use crate::error::PlatformWalletError;
 use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
 use drive_proof_verifier::types::{ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery};
+use tokio_util::sync::CancellationToken;
 
 fn tree_path() -> PathBuf {
     // Clock resolution alone does not distinguish parallel test invocations.
@@ -222,7 +223,7 @@ async fn local_balance_successful_empty_scan_marks_known_zero() {
         ready(&coordinator, wallet).await.accounts[&0].source,
         ShieldedBalanceSource::NoHistory
     );
-    let outcome = coordinator.sync(true).await;
+    let outcome = coordinator.sync(true, &CancellationToken::new()).await;
     assert_eq!(
         outcome.success_count(),
         1,
@@ -249,7 +250,7 @@ async fn local_balance_successful_scan_covers_unhydrated_registration() {
         coordinator.local_balance_snapshot(wallet).await.unwrap(),
         ShieldedLocalBalanceState::RestoreIncomplete
     );
-    let outcome = coordinator.sync(true).await;
+    let outcome = coordinator.sync(true, &CancellationToken::new()).await;
     assert_eq!(outcome.success_count(), 1, "{outcome:?}");
     let account = ready(&coordinator, wallet).await.accounts[&0];
     assert_eq!(account.spendable_credits, 0);
@@ -300,7 +301,7 @@ async fn local_balance_recovers_after_failed_clear_and_completed_scan() {
         coordinator.local_balance_snapshot(wallet).await.unwrap(),
         ShieldedLocalBalanceState::RestoreIncomplete
     );
-    let outcome = coordinator.sync(true).await;
+    let outcome = coordinator.sync(true, &CancellationToken::new()).await;
     assert_eq!(outcome.success_count(), 1, "{outcome:?}");
     let account = ready(&coordinator, wallet).await.accounts[&0];
     assert_eq!(account.spendable_credits, 900);
@@ -647,7 +648,13 @@ async fn empty_pool_coordinator() -> (Arc<NetworkShieldedCoordinator>, usize) {
     ));
     register(&coordinator, [0x30; 32], &[0]).await;
     let calls = hook_tree_progress(&coordinator, |_, _| async {});
-    assert_eq!(coordinator.sync(true).await.success_count(), 1);
+    assert_eq!(
+        coordinator
+            .sync(true, &CancellationToken::new())
+            .await
+            .success_count(),
+        1
+    );
     let batches_per_pass = calls.load(Ordering::SeqCst);
     assert!(batches_per_pass > 0);
     coordinator.unregister_wallet([0x30; 32]).await;
@@ -667,7 +674,7 @@ async fn should_retry_sync_superseded_by_wallet_removal_without_resurrecting_it(
         }
     });
 
-    let outcome = coordinator.sync(true).await;
+    let outcome = coordinator.sync(true, &CancellationToken::new()).await;
     assert_eq!(outcome.success_count(), 1, "{outcome:?}");
     assert!(outcome.wallet_results.contains_key(&kept));
     assert!(!outcome.wallet_results.contains_key(&removed));
@@ -708,7 +715,7 @@ async fn should_fail_sync_after_repeated_supersession() {
             .unwrap();
     });
 
-    let outcome = coordinator.sync(true).await;
+    let outcome = coordinator.sync(true, &CancellationToken::new()).await;
     assert_eq!(outcome.success_count(), 0, "{outcome:?}");
     assert!(
         matches!(&outcome.wallet_results[&wallet],
@@ -741,7 +748,7 @@ async fn should_not_supersede_sync_for_a_wallet_bound_mid_pass() {
         }
     });
 
-    let outcome = coordinator.sync(true).await;
+    let outcome = coordinator.sync(true, &CancellationToken::new()).await;
     assert_eq!(outcome.success_count(), 1, "{outcome:?}");
     assert!(outcome.wallet_results.contains_key(&scanning));
     assert_eq!(

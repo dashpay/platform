@@ -180,9 +180,9 @@ mod tests {
 
         let SignatureVerificationQuorumSet::V0(restored) = stored.into();
         assert_eq!(restored.config.quorum_type, QuorumType::Llmq400_60);
-        assert_eq!(restored.config.active_signers, 4);
+        assert_eq!(restored.config.active_signers.get(), 4);
         assert!(!restored.config.rotation);
-        assert_eq!(restored.config.window, 288);
+        assert_eq!(restored.config.window.get(), 288);
         assert_eq!(restored.current_quorums.len(), 2);
         assert_quorum(
             &restored.current_quorums,

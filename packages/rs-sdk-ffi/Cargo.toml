@@ -27,6 +27,7 @@ rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider",
     "app-connect-contract",
     "moderation-charters-contract",
     "decision-proposals-contract",
+    "token-market-contract",
 ] }
 simple-signer = { path = "../simple-signer" }
 async-trait = { version = "0.1.83" }
@@ -43,9 +44,9 @@ key-wallet = { workspace = true }
 # FFI. Single source of truth — reused, not re-implemented.
 platform-encryption = { path = "../rs-platform-encryption" }
 
-# Single source of truth for the Network enum and its `#[repr(C)]`
-# FFI variant, both used directly across this crate's FFI surface.
-dash-network = { workspace = true, features = ["ffi"] }
+# Single source of truth for the Network enum. `FFINetwork` in
+# `src/types.rs` is its `#[repr(C)]` mirror.
+dash-network = { workspace = true }
 
 # FFI and serialization
 serde = { version = "1.0", features = ["derive"] }

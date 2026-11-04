@@ -113,6 +113,8 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 estimation_costs: DriveSystemEstimationCostsMethodVersions {
                     for_total_system_credits_update: 0,
                 },
+                fetch_core_fork_activation_height: None,
+                store_core_fork_activation_height: None,
             },
             operations: DriveOperationsMethodVersion {
                 rollback_transaction: 0,
@@ -181,7 +183,14 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 max_version: 0,
                 default_current_version: 0,
             },
+            document_sub_queries: None,
+            chained_document_query: None,
             document_history: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
+            private_document_entries: FeatureVersionBounds {
                 min_version: 0,
                 max_version: 0,
                 default_current_version: 0,
@@ -597,6 +606,10 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_typed_array_items: 1024,
         max_index_property_name_bytes: 255,
         max_compiled_contract_size: None,
+        max_private_document_entry_size: None,
+        private_document_store_target_chunk_bytes: None,
+        private_document_store_min_chunk_power: None,
+        private_document_store_max_chunk_power: None,
         max_references_per_document: 256,
         max_reference_operands: 4,
         max_reference_expression_depth: 4,
@@ -665,5 +678,6 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
     },
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 0,
+        evidence: None,
     },
 };

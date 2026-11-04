@@ -179,6 +179,43 @@ impl fmt::Display for YesNoVotePollPurpose {
     }
 }
 
+impl YesNoVotePollPurpose {
+    /// The id of the poll with this purpose, derived as the platform version selects
+    /// (`dpp.voting_versions.yes_no_vote_poll_id`). Only the purpose names a poll, so the id is
+    /// known without the poll's rule: [`YesNoVotePoll::unique_id`] is this id.
+    ///
+    /// # Parameters
+    /// - `platform_version`: the platform version.
+    ///
+    /// # Returns
+    /// The id of the poll with this purpose.
+    pub fn unique_id(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Identifier, ProtocolError> {
+        match platform_version.dpp.voting_versions.yes_no_vote_poll_id {
+            Some(0) => self.unique_id_v0(),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "YesNoVotePollPurpose::unique_id".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+            None => Err(ProtocolError::UnknownVersionError(
+                "YesNoVotePollPurpose::unique_id is not active before protocol version 15"
+                    .to_string(),
+            )),
+        }
+    }
+
+    /// Version 0: the double SHA-256 of the yes/no poll id domain tag followed by the serialized
+    /// purpose.
+    fn unique_id_v0(&self) -> Result<Identifier, ProtocolError> {
+        let mut preimage = YES_NO_VOTE_POLL_ID_DOMAIN.to_vec();
+        preimage.extend(self.serialize_to_bytes()?);
+        Ok(Identifier::new(hash_double(preimage)))
+    }
+}
+
 /// A poll the masternodes answer with yes, no or abstain.
 ///
 /// The poll passes when the yes voting power is strictly more than
@@ -491,8 +528,11 @@ impl YesNoVotePoll {
     }
 
     /// The id the poll is stored and voted on under, which also keys its end date index entry
-    /// and names its prefunded balance, derived as the platform version selects
-    /// (`dpp.voting_versions.yes_no_vote_poll_id`).
+    /// and names its prefunded balance: the id of its purpose
+    /// ([`YesNoVotePollPurpose::unique_id`]). Version 0 is the double SHA-256 of the domain tag
+    /// followed by the serialized purpose. The rule is left out, so a vote naming the id answers
+    /// whatever rule the poll opened with, and a purpose opens one poll whatever rule it is
+    /// asked with.
     ///
     /// # Parameters
     /// - `platform_version`: the platform version.
@@ -503,17 +543,7 @@ impl YesNoVotePoll {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<Identifier, ProtocolError> {
-        match platform_version.dpp.voting_versions.yes_no_vote_poll_id {
-            Some(0) => self.unique_id_v0(),
-            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
-                method: "YesNoVotePoll::unique_id".to_string(),
-                known_versions: vec![0],
-                received: version,
-            }),
-            None => Err(ProtocolError::UnknownVersionError(
-                "YesNoVotePoll::unique_id is not active before protocol version 15".to_string(),
-            )),
-        }
+        self.purpose.unique_id(platform_version)
     }
 
     /// The prefunded balance the votes on this poll are paid from: the poll's unique id.
@@ -528,15 +558,6 @@ impl YesNoVotePoll {
         platform_version: &PlatformVersion,
     ) -> Result<Identifier, ProtocolError> {
         self.unique_id(platform_version)
-    }
-
-    /// Version 0: the double SHA-256 of the yes/no poll id domain tag followed by the serialized
-    /// purpose. The rule is left out, so a vote naming the id answers whatever rule the poll
-    /// opened with, and a purpose opens one poll whatever rule it is asked with.
-    fn unique_id_v0(&self) -> Result<Identifier, ProtocolError> {
-        let mut preimage = YES_NO_VOTE_POLL_ID_DOMAIN.to_vec();
-        preimage.extend(self.purpose.serialize_to_bytes()?);
-        Ok(Identifier::new(hash_double(preimage)))
     }
 }
 

@@ -64,7 +64,7 @@ class PlatformWalletPersistenceHandlerTest {
     /**
      * What the sweep pass "decodes" from a stored record's bytes, keyed by
      * txid. Every fixture records transactions with dummy bytes
-     * (`ByteArray(10) { 5 }`) that key-wallet-ffi could never decode, and
+     * (`ByteArray(10) { 5 }`) that the native decoder could never decode, and
      * the native decoder is not loadable under Robolectric anyway, so
      * [recordTransaction] registers each record's `inputOutpoints` here and
      * [storedInputs] hands them back. A txid never registered throws, as
@@ -2270,6 +2270,48 @@ class PlatformWalletPersistenceHandlerTest {
             "and the coin is not handed back as spendable",
             handler.onLoadWalletList().single().utxos.none { it.prevTxid.contentEquals(fundingTxid) && it.vout == 0 },
         )
+    }
+
+    @Test
+    fun shouldCarryTheCreatingTransactionsStoredContextOnARestoredCoin() = runTest {
+        // A coin row can lag its own transaction's row: the transaction was
+        // confirmed through a record that named none of its coins, so only
+        // the transaction row was rewritten. The restore row carries the
+        // transaction's stored context and height as-is; the Rust loader
+        // decides what they mean for the coin.
+        seedWalletWithAddress(walletId, "yLagAddr")
+        val txid = ByteArray(32) { 31 }
+        handler.onChangesetBegin(walletId)
+        recordTransaction(
+            handler,
+            walletId, txid, ByteArray(10) { 4 }, 0, 0, ByteArray(32),
+            0, 0, "Standard", 0, 40_000, 0, false, "", 1_700_000_000,
+            ByteArray(0), 0,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, txid, 1, 40_000, "yLagAddr", ByteArray(25) { 6 },
+            0, false, false, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val inMempool = handler.onLoadWalletList().single().utxos.single()
+        assertEquals(0, inMempool.parentContext)
+        assertEquals(0, inMempool.parentBlockHeight)
+
+        // The block reaches the transaction row only.
+        handler.onChangesetBegin(walletId)
+        recordTransaction(
+            handler,
+            walletId, txid, ByteArray(10) { 4 }, 2, 500, ByteArray(32) { 7 },
+            1_700_000_500, 0, "Standard", 0, 40_000, 0, false, "", 1_700_000_000,
+            ByteArray(0), 0,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val lagging = handler.onLoadWalletList().single().utxos.single()
+        assertFalse(lagging.isConfirmed)
+        assertEquals(2, lagging.parentContext)
+        assertEquals(500, lagging.parentBlockHeight)
     }
 
     @Test

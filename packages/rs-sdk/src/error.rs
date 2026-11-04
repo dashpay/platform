@@ -154,9 +154,10 @@ pub enum Error {
     ///
     /// Retrying another node cannot help. The same request succeeds once a verified answer
     /// shows the network runs `required`, and this SDK's own version is at least
-    /// `required`. See [`TransportRequest::needs_protocol_version`](rs_dapi_client::transport::TransportRequest::needs_protocol_version).
+    /// `required`. See [`Query::protocol_requirement`](crate::platform::Query::protocol_requirement).
     #[error(
-        "{method} needs Platform protocol version {required}; {}",
+        "{method} needs Platform protocol version {required}{}; {}",
+        describe_feature(*.feature),
         describe_proven_protocol_version(*.network, *.pinned, .cause.is_some())
     )]
     ProtocolVersionNotActive {
@@ -164,6 +165,9 @@ pub enum Error {
         method: &'static str,
         /// Protocol version from which every node serves the request.
         required: u32,
+        /// The feature of the request that needs `required`, when the method alone does not,
+        /// for example "time-range selections" of a `get_documents` request.
+        feature: Option<&'static str>,
         /// Protocol version the SDK could rely on: the lower of its own version and the
         /// newest version a verified answer was signed with; 0 before any verified answer.
         network: u32,
@@ -176,6 +180,13 @@ pub enum Error {
         #[source]
         cause: Option<Box<Error>>,
     },
+}
+
+/// The feature [`Error::ProtocolVersionNotActive`]'s message names, if any.
+fn describe_feature(feature: Option<&'static str>) -> String {
+    feature
+        .map(|feature| format!(" for {feature}"))
+        .unwrap_or_default()
 }
 
 /// The end of [`Error::ProtocolVersionNotActive`]'s message.
@@ -288,9 +299,10 @@ impl Error {
 }
 
 /// A trusted source outage is not the responding node's fault. Preserve that
-/// attribution and quorum context. A verified result no node can return as the
-/// requested type is the request's to change ([`Error::InvalidRequest`]); every
-/// other verifier failure stays `Proof`.
+/// attribution and quorum context; so is a data contract the client's context cannot
+/// give as the request needs it, which every node's answer fails on alike. A verified
+/// result no node can return as the requested type is the request's to change
+/// ([`Error::InvalidRequest`]); every other verifier failure stays `Proof`.
 impl From<drive_proof_verifier::Error> for Error {
     fn from(value: drive_proof_verifier::Error) -> Self {
         match value {
@@ -303,6 +315,9 @@ impl From<drive_proof_verifier::Error> for Error {
                 "quorum {quorum_type}:{} at Core chain-locked height {core_chain_locked_height}: {reason}",
                 hex::encode(quorum_hash)
             ))),
+            drive_proof_verifier::Error::ContextProviderError(
+                error @ ContextProviderError::DataContractFailure(_),
+            ) => Self::ContextProviderError(error),
             // Every honest node proves the same result, so it is the request's to change.
             drive_proof_verifier::Error::UnusableVerifiedResult { reason } => {
                 Self::InvalidRequest(reason)
@@ -661,6 +676,7 @@ mod tests {
         let refused = |network, pinned, cause: Option<Error>| Error::ProtocolVersionNotActive {
             method: "get_contract_fee_pots",
             required: 14,
+            feature: None,
             network,
             pinned,
             cause: cause.map(Box::new),
@@ -735,6 +751,7 @@ mod tests {
         let refused = |cause: Option<Error>| Error::ProtocolVersionNotActive {
             method: "get_contract_fee_pots",
             required: 14,
+            feature: None,
             network: 0,
             pinned: false,
             cause: cause.map(Box::new),

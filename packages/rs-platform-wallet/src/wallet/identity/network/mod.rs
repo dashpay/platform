@@ -34,6 +34,7 @@ pub(crate) const DPNS_USERNAMES_MAX_PAGES: usize = 10;
 // Core handle + identity-lifecycle operations.
 mod balance;
 mod contract;
+mod decision_proposal;
 mod discovery;
 mod document;
 mod dpns;
@@ -75,6 +76,8 @@ pub(crate) use payments::{record_incoming_dashpay_payments, sent_payment_status_
 mod prepared_payment;
 pub use prepared_payment::PreparedDashPayPayment;
 mod profile;
+mod public_keys;
+pub use public_keys::{fetch_identity_public_keys, FetchedIdentityPublicKeys};
 pub(crate) mod sdk_writer;
 mod seed_binding;
 mod signing_key;

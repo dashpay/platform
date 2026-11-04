@@ -55,6 +55,10 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use tokio_util::sync::CancellationToken;
+
+use crate::changeset::merge::Merge;
+
 /// Callback fired once per chunk during a coordinator sync pass —
 /// the **"downloaded"** progress signal.
 /// Arguments: `(cumulative_scanned, latest_block_height)`. Forwarded
@@ -1390,17 +1394,46 @@ impl NetworkShieldedCoordinator {
     /// per-[`WalletId`] and queued through each registered
     /// [`WalletPersister`].
     ///
+    /// Cancellation: `cancel` is checked before every network step and
+    /// between note batches. A scan cut short keeps the commitments it
+    /// appended to the local tree and publishes nothing else (see
+    /// [`sync_notes_across`]): the pass then returns the empty summary,
+    /// so the manager reports no completion and the host sees no
+    /// partial ledger. A stop that lands after the scan completed skips
+    /// the remaining network work (spend re-drives, stranded releases,
+    /// identity-shield re-drives) but still runs the store-only steps
+    /// and flushes the completed scan to the host persisters. The
+    /// caught-up cooldown is never stamped by a cancelled pass.
+    ///
     /// [`sync_notes_across`]: super::sync::sync_notes_across
     /// [`PlatformEventManager::on_shielded_sync_completed`]:
     ///     crate::events::PlatformEventManager::on_shielded_sync_completed
-    pub async fn sync(&self, force: bool) -> ShieldedSyncPassSummary {
+    pub async fn sync(&self, force: bool, cancel: &CancellationToken) -> ShieldedSyncPassSummary {
+        // A stop that landed before any work: nothing to finalize, so
+        // return the empty summary without touching Platform or the
+        // store (the manager then skips the completion event). Checked
+        // ahead of the cooldown gate, whose skip summary would otherwise
+        // report one caught-up wallet each for a pass that never ran.
+        if cancel.is_cancelled() {
+            tracing::debug!("Coordinator sync cancelled before it started");
+            return ShieldedSyncPassSummary::default();
+        }
         if self.within_cooldown(force) {
             return Self::cooldown_skip_summary(self).await;
         }
 
-        // One pass at a time — see the `sync_pass` field doc. Re-check the
-        // cooldown: the pass this one waited behind may have just caught up.
-        let _pass = self.sync_pass.lock().await;
+        // One pass at a time — see the `sync_pass` field doc. The wait
+        // observes the token: nothing has run yet, so a stop that lands
+        // while this pass is queued behind another (or behind Clear) just
+        // returns. Re-check the cooldown: the pass this one waited behind
+        // may have just caught up.
+        let Some(_pass) = cancel.run_until_cancelled(self.sync_pass.lock()).await else {
+            tracing::debug!("Coordinator sync cancelled while waiting for the pass in flight");
+            return ShieldedSyncPassSummary::default();
+        };
+        if cancel.is_cancelled() {
+            return ShieldedSyncPassSummary::default();
+        }
         if self.within_cooldown(force) {
             return Self::cooldown_skip_summary(self).await;
         }
@@ -1432,7 +1465,13 @@ impl NetworkShieldedCoordinator {
         // scan are deliberately absent from the snapshot — their anchors
         // may be newer than this set — and get checked next pass. Skips the
         // network call entirely when nothing is armed (the common case).
-        let stranded_release = self.prefetch_stranded_release(&subwallets).await;
+        // The prefetch is a read-only RPC, so a stop that lands while it is
+        // in flight simply drops it: the release pass is skipped on a
+        // cancelled pass anyway, and the scan below bails before locking.
+        let stranded_release = cancel
+            .run_until_cancelled(self.prefetch_stranded_release(&subwallets))
+            .await
+            .flatten();
 
         // ONE SDK call covers every registered IVK on the network.
         // Snapshot the optional progress handler installed by the
@@ -1453,10 +1492,25 @@ impl NetworkShieldedCoordinator {
                 &subwallets,
                 on_progress.as_ref(),
                 on_tree_progress.as_ref(),
+                cancel,
             )
             .await
             {
                 Ok(NoteSyncOutcome::Completed(r)) => break r,
+                // A scan cut short publishes nothing, whether the stop
+                // landed before the store lock or between batches: hand
+                // back the empty summary so the manager treats it as "no
+                // pass ran" — `build_per_wallet_summary` would otherwise
+                // mint an all-zero `Ok` for every registered wallet, and
+                // the host would see a completion event for no work. A
+                // stop during the prefetch or a superseded retry lands
+                // here too: the scan checks the token before it starts.
+                Ok(NoteSyncOutcome::Cancelled) => return self.cancelled_pass_summary(),
+                // A stop that lands after a supersession: don't retry, and
+                // don't report the exhausted-retries failure either.
+                Ok(NoteSyncOutcome::Superseded) if cancel.is_cancelled() => {
+                    return self.cancelled_pass_summary();
+                }
                 // A lifecycle change (wallet removed, accounts re-keyed,
                 // snapshot restored, Clear) landed mid-download and
                 // invalidated the scan's snapshot before it committed
@@ -1486,6 +1540,14 @@ impl NetworkShieldedCoordinator {
                 Err(e) => return self.fail_all_wallets(&subwallets, &e),
             }
         };
+        // Everything below that talks to the network is skipped once the
+        // pass is cancelled; the store-only steps and the host flush of a
+        // COMPLETED scan still run (see the method docs).
+        //
+        // Snapshotted here on purpose: the cooldown decision below is
+        // about whether the scan reached the tip. A stop that lands during
+        // the store-only steps after a complete scan does not change that.
+        let cancelled = cancel.is_cancelled();
         // Scan-based spend detection now happens INSIDE
         // `sync_notes_across`: every scanned action's nullifier is
         // replayed against each subwallet's store as part of the note
@@ -1509,8 +1571,9 @@ impl NetworkShieldedCoordinator {
         //    never execute).
         //
         // Runs before the balance read so freed notes are reflected in
-        // this pass's balances.
-        if let Some((snapshot, recorded)) = stranded_release {
+        // this pass's balances. Skipped on a cancelled pass: the re-drive
+        // broadcasts, and a skipped release simply waits for the next pass.
+        if let Some((snapshot, recorded)) = stranded_release.filter(|_| !cancelled) {
             // Snapshot the per-wallet persisters BEFORE the loop and drop
             // the read guard: `redrive_pending_spends` performs network
             // broadcasts, and holding the persisters lock across those
@@ -1524,6 +1587,12 @@ impl NetworkShieldedCoordinator {
                     .collect()
             };
             for (id, persister) in &subwallet_persisters {
+                // Network broadcasts: a stop that lands after the scan's
+                // snapshot above stops the loop here, and the helper
+                // checks the token before each request it starts.
+                if cancel.is_cancelled() {
+                    break;
+                }
                 super::operations::redrive_pending_spends(
                     &self.sdk,
                     &self.store,
@@ -1531,10 +1600,13 @@ impl NetworkShieldedCoordinator {
                     id.wallet_id,
                     *id,
                     &recorded,
+                    cancel,
                 )
                 .await;
             }
-            self.release_stranded_spends(snapshot, &recorded).await;
+            if !cancel.is_cancelled() {
+                self.release_stranded_spends(snapshot, &recorded).await;
+            }
         }
 
         let balances_per_sub = match super::sync::balances_across(&self.store, &subwallets).await {
@@ -1550,6 +1622,13 @@ impl NetworkShieldedCoordinator {
         // id a live entry already owns, and `save_activity` upserts by
         // id, so re-running is idempotent. Failures are logged and
         // swallowed: a derivation miss must never fail a sync pass.
+        //
+        // Only a completed scan reaches this point (a cut-short one
+        // returned above), which matters here: derived entries are
+        // immutable clusters keyed by the discovering chunk's proof
+        // height, so deriving over a consumed prefix would freeze a
+        // cluster that a later note at the same height could only
+        // confirm, never extend.
         let mut notes = notes;
         if let Err(e) = self
             .derive_activity_into_changeset(&subwallets, &mut notes.changeset)
@@ -1566,8 +1645,19 @@ impl NetworkShieldedCoordinator {
         // enumeration includes guards rehydrated from the durable store.
         let wallet_ids: HashSet<WalletId> = subwallets.iter().map(|(id, _)| id.wallet_id).collect();
         for wallet_id in wallet_ids {
-            super::operations::redrive_pending_identity_shields(&self.sdk, &self.store, wallet_id)
-                .await;
+            // Network requests: stop between wallets once cancelled; the
+            // helper also checks the token between records and before
+            // each request it starts.
+            if cancel.is_cancelled() {
+                break;
+            }
+            super::operations::redrive_pending_identity_shields(
+                &self.sdk,
+                &self.store,
+                wallet_id,
+                cancel,
+            )
+            .await;
         }
 
         self.queue_pass_changeset(&epoch, notes.changeset.clone())
@@ -1576,15 +1666,23 @@ impl NetworkShieldedCoordinator {
         // Cooldown decision based on aggregate activity across
         // every subwallet — any new commitment scanned or
         // newly-spent nullifier anywhere on the network clears
-        // the stamp so the next pass runs immediately.
+        // the stamp so the next pass runs immediately. Only a NEW stamp
+        // needs an uncancelled pass: a stop after a complete scan that
+        // found nothing proves nothing about staying caught up, so the
+        // next pass walks Platform again right away.
         let any_activity = notes.total_scanned > 0 || newly_spent_per_sub.values().any(|&n| n > 0);
         if let Ok(mut guard) = self.last_caught_up_at.lock() {
             if any_activity {
                 *guard = None;
-            } else {
+            } else if !cancelled {
                 *guard = Some(Instant::now());
             }
         }
+        tracing::debug!(
+            cancelled,
+            total_scanned = notes.total_scanned,
+            "Coordinator sync pass finished"
+        );
 
         // Demux multi-subwallet results into the per-wallet
         // `ShieldedSyncSummary` shape that
@@ -1624,16 +1722,22 @@ impl NetworkShieldedCoordinator {
     ) {
         let _fan_out = self.fan_out.lock().await;
         changeset.retain_subwallets(|id| epoch.state_kept(id));
-        if crate::changeset::merge::Merge::is_empty(&changeset) {
+        if Merge::is_empty(&changeset) {
             return;
         }
+        // A note this round already marks spent (the pass's own scan saw
+        // its spend) needs no correction.
         let delivered_unspent: Vec<(SubwalletId, [u8; 32])> = changeset
             .notes_saved
             .iter()
             .flat_map(|(id, notes)| {
+                let spent_here = changeset.nullifiers_spent.get(id);
                 notes
                     .iter()
-                    .filter(|note| !note.is_spent)
+                    .filter(move |note| {
+                        !note.is_spent
+                            && !spent_here.is_some_and(|nfs| nfs.contains(&note.nullifier))
+                    })
                     .map(|note| (*id, note.nullifier))
             })
             .collect();
@@ -1705,6 +1809,18 @@ impl NetworkShieldedCoordinator {
                 );
             }
         }
+    }
+
+    /// The empty summary of a pass whose scan was cut short. The scan may
+    /// have appended new leaves before the stop, so the chain has moved past
+    /// whatever the last completed pass saw: drop the caught-up stamp so the
+    /// next pass walks Platform at once instead of taking the cooldown skip.
+    fn cancelled_pass_summary(&self) -> ShieldedSyncPassSummary {
+        if let Ok(mut guard) = self.last_caught_up_at.lock() {
+            *guard = None;
+        }
+        tracing::debug!("Coordinator sync cancelled; the scan published nothing");
+        ShieldedSyncPassSummary::default()
     }
 
     /// Network-wide cooldown gate: whether a non-forced pass should skip
@@ -4331,7 +4447,7 @@ mod tests {
         let pass = coordinator.sync_pass.lock().await;
         let waiter = {
             let coordinator = Arc::clone(&coordinator);
-            tokio::spawn(async move { coordinator.sync(false).await })
+            tokio::spawn(async move { coordinator.sync(false, &CancellationToken::new()).await })
         };
         tokio::time::sleep(Duration::from_millis(200)).await;
         // The pass in flight caught up.
@@ -4457,6 +4573,53 @@ mod tests {
         assert_eq!(
             remaining[0].0, live_nf,
             "the still-recorded reservation must survive"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A token cancelled before the pass starts: no network call (the
+    /// mock SDK would otherwise fail every wallet), no store change and
+    /// no caught-up cooldown stamp (dashpay/platform#5200).
+    #[tokio::test]
+    async fn should_skip_network_and_cooldown_when_cancelled_before_scan() {
+        let dir = temp_dir("cancel_before_scan");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+
+        let summary = coordinator.sync(true, &cancel).await;
+
+        assert!(
+            summary.is_empty(),
+            "a pass cancelled before it started reports nothing"
+        );
+        assert!(
+            coordinator.last_caught_up_at.lock().unwrap().is_none(),
+            "a cancelled pass must not stamp the cooldown"
+        );
+        assert_eq!(coordinator.store().read().await.tree_size().unwrap(), 0);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Cancelled while inside the caught-up cooldown: the cooldown's
+    /// skip summary would report one caught-up wallet, which the
+    /// manager would stamp and announce as a completed pass. The
+    /// cancellation check runs first, so the pass reports nothing.
+    #[tokio::test]
+    async fn should_report_nothing_when_cancelled_inside_cooldown() {
+        let dir = temp_dir("cancel_inside_cooldown");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        *coordinator.last_caught_up_at.lock().unwrap() = Some(std::time::Instant::now());
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+
+        let summary = coordinator.sync(false, &cancel).await;
+
+        assert!(
+            summary.is_empty(),
+            "a cancelled pass must not borrow the cooldown's caught-up summary"
         );
 
         let _ = std::fs::remove_dir_all(&dir);

@@ -6,6 +6,7 @@ use drive_proof_verifier::types::{
     ShieldedEncryptedNote, ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery,
 };
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 
 use super::{sync_notes_across, NoteSyncOutcome, StoreEpoch, MAX_CONCURRENT_CHUNK_FETCHES};
 use crate::wallet::shielded::keys::{AccountViewingKeys, OrchardKeySet};
@@ -77,6 +78,7 @@ async fn assert_concurrent_sync_matches_sequential(initial_size: u8) {
     let sequential = seeded_store(initial_size, subwallets[0].0);
     let concurrent = seeded_store(initial_size, subwallets[0].0);
     let epoch = StoreEpoch::default();
+    let never = CancellationToken::new();
     let baseline_sdk = pool_sdk(4).await;
     let baseline = sync_notes_across(
         &baseline_sdk,
@@ -85,6 +87,7 @@ async fn assert_concurrent_sync_matches_sequential(initial_size: u8) {
         &subwallets,
         None,
         None,
+        &never,
     )
     .await
     .unwrap();
@@ -100,6 +103,7 @@ async fn assert_concurrent_sync_matches_sequential(initial_size: u8) {
         &subwallets,
         None,
         None,
+        &never,
     );
     let second = sync_notes_across(
         &second_sdk,
@@ -108,6 +112,7 @@ async fn assert_concurrent_sync_matches_sequential(initial_size: u8) {
         &subwallets,
         None,
         None,
+        &never,
     );
     futures::pin_mut!(first, second);
 
@@ -156,6 +161,7 @@ async fn assert_concurrent_sync_matches_sequential(initial_size: u8) {
         &subwallets,
         None,
         None,
+        &never,
     )
     .await
     .unwrap();

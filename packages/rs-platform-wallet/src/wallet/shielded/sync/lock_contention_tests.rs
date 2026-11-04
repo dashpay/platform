@@ -3,7 +3,7 @@
 //! and a pass whose snapshot a concurrent writer invalidated must abandon
 //! its commit rather than write over that change.
 //!
-//! Every test drives `sync_notes_from_source` with a hand-fed stream, so a
+//! Every test drives `sync_notes_from_stream` with a hand-fed stream, so a
 //! pass can be held "mid-download" for as long as the test needs.
 
 use std::collections::BTreeSet;
@@ -19,8 +19,9 @@ use rand::rngs::StdRng;
 use rand::{RngCore, SeedableRng};
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
-use super::{sync_notes_from_source, NoteSyncOutcome, StoreEpoch};
+use super::{sync_notes_from_stream, NoteSyncOutcome, StoreEpoch};
 use crate::error::PlatformWalletError;
 use crate::wallet::shielded::coordinator::ShieldedTreeProgressCallback;
 use crate::wallet::shielded::file_store::FileBackedShieldedStore;
@@ -138,6 +139,15 @@ fn start_pass(
     store: &Arc<RwLock<FileBackedShieldedStore>>,
     epoch: &Arc<StoreEpoch>,
 ) -> (BatchSender, mpsc::UnboundedReceiver<u64>, PassHandle) {
+    start_cancellable_pass(store, epoch, CancellationToken::new())
+}
+
+/// [`start_pass`] under a caller-held cancellation token.
+fn start_cancellable_pass(
+    store: &Arc<RwLock<FileBackedShieldedStore>>,
+    epoch: &Arc<StoreEpoch>,
+    cancel: CancellationToken,
+) -> (BatchSender, mpsc::UnboundedReceiver<u64>, PassHandle) {
     let views = OrchardKeySet::from_seed(&[0x42; 64], dashcore::Network::Testnet, 0)
         .unwrap()
         .viewing_keys();
@@ -151,7 +161,15 @@ fn start_pass(
     let epoch = Arc::clone(epoch);
     let pass = tokio::spawn(async move {
         let watch = epoch.watch();
-        sync_notes_from_source(&store, &watch, &subwallets, Some(&on_tree), move |_, _| rx).await
+        sync_notes_from_stream(
+            &store,
+            &watch,
+            &subwallets,
+            Some(&on_tree),
+            &cancel,
+            move |_, _| rx,
+        )
+        .await
     });
     (tx, progress_rx, pass)
 }
@@ -159,8 +177,15 @@ fn start_pass(
 fn expect_completed(outcome: NoteSyncOutcome) -> super::MultiSyncNotesResult {
     match outcome {
         NoteSyncOutcome::Completed(result) => result,
-        NoteSyncOutcome::Superseded => panic!("pass was unexpectedly superseded"),
+        other => panic!("pass should have completed, got {other:?}"),
     }
+}
+
+fn expect_cancelled(outcome: NoteSyncOutcome) {
+    assert!(
+        matches!(outcome, NoteSyncOutcome::Cancelled),
+        "pass should have been cancelled, got {outcome:?}"
+    );
 }
 
 fn expect_superseded(outcome: NoteSyncOutcome) {
@@ -664,5 +689,78 @@ async fn should_keep_a_spend_confirmed_mid_download_when_rescanning_its_note() {
             .iter()
             .all(|n| n.nullifier != nullifier || n.is_spent),
         "the changeset must not persist an unspent replacement"
+    );
+}
+
+/// A stop must not queue behind a writer holding the store: the pass returns
+/// while the guard is still held, leaving its appended leaves for the next
+/// completed pass to checkpoint.
+#[tokio::test]
+async fn should_return_promptly_when_cancelled_while_a_writer_holds_the_store() {
+    let (store, epoch, _tree) = open_store("cancel_held");
+    let cancel = CancellationToken::new();
+    let (tx, mut progress, pass) = start_cancellable_pass(&store, &epoch, cancel.clone());
+    tx.unbounded_send(Ok(batch(0, 2048))).unwrap();
+    assert_eq!(progress.next().await, Some(2048));
+
+    let held = mid_pass_write(&store).await;
+    tx.unbounded_send(Ok(batch(2048, 100))).unwrap();
+    tokio::task::yield_now().await;
+    cancel.cancel();
+    let outcome = tokio::time::timeout(MID_PASS_LOCK_BOUND, pass)
+        .await
+        .expect("a cancelled pass must not wait for the held store lock")
+        .unwrap()
+        .unwrap();
+    expect_cancelled(outcome);
+    drop(held);
+
+    {
+        let guard = store.read().await;
+        assert_eq!(guard.tree_size().unwrap(), 2048, "no append after the stop");
+        assert_eq!(guard.last_synced_note_index(subwallet()).unwrap(), 0);
+        assert!(
+            guard.witness_at_depth(0, 0).unwrap().is_none(),
+            "the busy store left the leaves uncheckpointed"
+        );
+    }
+
+    let (tx, _progress, pass) = start_pass(&store, &epoch);
+    tx.unbounded_send(Ok(batch(0, 2048))).unwrap();
+    tx.unbounded_send(Ok(batch(2048, 100))).unwrap();
+    drop(tx);
+    expect_completed(pass.await.unwrap().unwrap());
+    let guard = store.read().await;
+    assert_eq!(guard.tree_size().unwrap(), 2148, "no leaf duplicated");
+    assert!(
+        guard.witness_at_depth(0, 0).unwrap().is_some(),
+        "the next completed pass checkpoints the stopped pass's leaves"
+    );
+}
+
+/// A stop after a lifecycle change invalidated the snapshot reports
+/// `Cancelled` — the coordinator must not retry a stopped pass, nor report
+/// it failed once retries run out — and checkpoints nothing on the stale
+/// snapshot.
+#[tokio::test]
+async fn should_report_cancelled_when_stopped_after_a_supersession() {
+    let (store, epoch, _tree) = open_store("cancel_superseded");
+    let cancel = CancellationToken::new();
+    let (tx, mut progress, pass) = start_cancellable_pass(&store, &epoch, cancel.clone());
+    tx.unbounded_send(Ok(batch(0, 2048))).unwrap();
+    assert_eq!(progress.next().await, Some(2048));
+    {
+        let mut guard = mid_pass_write(&store).await;
+        epoch.bump_wallet(&mut guard, WALLET);
+    }
+    cancel.cancel();
+
+    expect_cancelled(pass.await.unwrap().unwrap());
+    drop(tx);
+    let guard = store.read().await;
+    assert_eq!(guard.last_synced_note_index(subwallet()).unwrap(), 0);
+    assert!(
+        guard.witness_at_depth(0, 0).unwrap().is_none(),
+        "a stale snapshot must not checkpoint"
     );
 }

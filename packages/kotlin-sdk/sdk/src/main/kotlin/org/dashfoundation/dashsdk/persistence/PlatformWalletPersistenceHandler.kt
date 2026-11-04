@@ -134,8 +134,8 @@ class PlatformWalletPersistenceHandler(
     /**
      * Where the sweep pass gets a stored loser's input outpoints (the
      * outpoint-keyed hold, see `applySweptTransactions`). The production
-     * default decodes the stored consensus bytes through key-wallet-ffi's
-     * `transaction_decode`; tests inject a fake keyed by txid, since the
+     * default decodes the stored consensus bytes through platform-wallet-ffi's
+     * `platform_wallet_transaction_decode`; tests inject a fake keyed by txid, since the
      * native library is not loadable under Robolectric.
      */
     private val storedTransactionInputs: StoredTransactionInputs =
@@ -3234,10 +3234,21 @@ class PlatformWalletPersistenceHandler(
      * except here the single row is skipped rather than failing the
      * whole load, matching this builder's per-row-skip convention.
      */
+    /** The txid of the transaction that created this coin: the row's own column, else the outpoint's txid half. */
+    private fun TxoEntity.creatingTxid(): ByteArray = txid ?: outpoint.copyOfRange(0, minOf(32, outpoint.size))
+
     private suspend fun buildUtxoRestoreData(walletId: ByteArray): Array<UtxoRestoreData> {
         val rows = database.txoDao().observeUnspentByWallet(walletId).first()
         if (rows.isEmpty()) return emptyArray()
         val out = ArrayList<UtxoRestoreData>(rows.size)
+        // The creating transactions' rows, read once for the whole batch:
+        // each coin carries its transaction's stored context so the Rust
+        // loader can raise a coin that lags its own transaction's
+        // confirmation.
+        val parentByTxid = chunkedFlatMap(
+            rows.map { it.creatingTxid() }.distinctBy { it.toHex() },
+        ) { database.transactionDao().getConfirmationsByTxids(it) }
+            .associateBy { it.txid.toHex() }
         // Per-call memo of address → account row (a wallet's UTXOs
         // cluster on few addresses/accounts; avoids N duplicate joins).
         val accountByAddress = HashMap<String, AccountEntity?>()
@@ -3285,11 +3296,12 @@ class PlatformWalletPersistenceHandler(
                 continue
             }
             val typeTag = account.accountType.toByte()
-            val prevTxid = txo.txid ?: txo.outpoint.copyOfRange(0, minOf(32, txo.outpoint.size))
+            val prevTxid = txo.creatingTxid()
             if (prevTxid.size != 32) {
                 Log.w(TAG, "load: skipping UTXO with ${prevTxid.size}-byte txid")
                 continue
             }
+            val parent = parentByTxid[prevTxid.toHex()]
             out.add(
                 UtxoRestoreData(
                     typeTag = typeTag,
@@ -3308,6 +3320,8 @@ class PlatformWalletPersistenceHandler(
                     isConfirmed = txo.isConfirmed,
                     isInstantLocked = txo.isInstantLocked,
                     isLocked = txo.isLocked,
+                    parentContext = parent?.context ?: 0,
+                    parentBlockHeight = parent?.blockHeight ?: 0,
                 ),
             )
         }
@@ -4269,8 +4283,8 @@ fun interface StoredTransactionInputs {
 }
 
 /**
- * Production [StoredTransactionInputs]: key-wallet-ffi's
- * `transaction_decode` through [org.dashfoundation.dashsdk.keywallet.TransactionDecoder].
+ * Production [StoredTransactionInputs]: platform-wallet-ffi's
+ * `platform_wallet_transaction_decode` through [org.dashfoundation.dashsdk.keywallet.TransactionDecoder].
  * The decoder is a stateless marshaler — it takes no wallet-manager lock —
  * so calling it from inside a persistence callback (which runs while Rust
  * holds that lock) cannot deadlock; the "no native calls under
