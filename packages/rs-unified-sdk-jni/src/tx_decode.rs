@@ -1,6 +1,6 @@
 //! JNI bridge for consensus transaction decoding — a thin marshaler over
-//! key-wallet-ffi's `transaction_decode` (single Rust FFI entry point, per
-//! the `packages/kotlin-sdk/CLAUDE.md` boundary rule).
+//! platform-wallet-ffi's `platform_wallet_transaction_decode` (single Rust
+//! FFI entry point, per the `packages/kotlin-sdk/CLAUDE.md` boundary rule).
 //!
 //! Kotlin counterpart: `org.dashfoundation.dashsdk.ffi.TxDecodeNative`,
 //! driven by `org.dashfoundation.dashsdk.keywallet.TransactionDecoder` —
@@ -9,16 +9,14 @@
 //!
 //! ## Result convention
 //!
-//! `DecodedTransactionFFI` is a pointer graph (per-input/per-output C
+//! `PlatformWalletDecodedTransactionFFI` is a pointer graph (per-input/per-output C
 //! strings and script buffers); rather than exposing a native handle plus
 //! N accessors across JNI, the whole decode result is copied ONCE into a
 //! packed byte blob (the same big-endian BLOB convention as
 //! `wallet_manager::walletAddressesWithBalances`) and every Rust
-//! allocation is freed via `decoded_transaction_free` before the export
-//! returns. Errors throw `DashSDKException` carrying the raw
-//! key-wallet-ffi `FFIErrorCode` (same namespace `MnemonicNative
-//! .generateMnemonic` already throws — `InvalidInput = 1` for malformed /
-//! empty / trailing-garbage bytes).
+//! allocation is freed via `platform_wallet_decoded_transaction_free` before
+//! the export returns. Errors throw through `take_pwffi_error`, the same
+//! `PlatformWalletFFIResultCode` mapping every platform-wallet-ffi call uses.
 //!
 //! ## BLOB layout (big-endian; keep in sync with `TransactionDecoder.parseBlob`)
 //!
@@ -40,14 +38,16 @@
 //!   u8[script_len] script_pubkey
 //! ```
 
-use crate::support::{guard, net_from_ord, throw_sdk_exception};
-use dash_network::ffi::FFINetwork;
+use crate::support::{guard, net_from_ord, take_pwffi_error};
 use jni::objects::{JByteArray, JClass};
 use jni::sys::{jbyteArray, jint};
 use jni::JNIEnv;
-use key_wallet_ffi::tx_decode::{
-    decoded_transaction_free, transaction_decode, DecodedTransactionFFI,
+use platform_wallet_ffi::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
+use platform_wallet_ffi::tx_decode::{
+    platform_wallet_decoded_transaction_free, platform_wallet_transaction_decode,
+    PlatformWalletDecodedTransactionFFI,
 };
+use rs_sdk_ffi::FFINetwork;
 use std::ffi::CStr;
 
 /// Append `u16 len + bytes` for an optional C string (null → len 0).
@@ -71,12 +71,12 @@ unsafe fn push_cstr_opt(blob: &mut Vec<u8>, ptr: *const std::os::raw::c_char) {
     blob.extend_from_slice(bytes);
 }
 
-/// Copy a `DecodedTransactionFFI` pointer graph into the packed blob.
+/// Copy a `PlatformWalletDecodedTransactionFFI` pointer graph into the packed blob.
 ///
 /// # Safety
-/// `decoded` must be a valid result of `transaction_decode` that has not
-/// been freed.
-unsafe fn encode_decoded_transaction(decoded: &DecodedTransactionFFI) -> Vec<u8> {
+/// `decoded` must be a valid result of `platform_wallet_transaction_decode`
+/// that has not been freed.
+unsafe fn encode_decoded_transaction(decoded: &PlatformWalletDecodedTransactionFFI) -> Vec<u8> {
     let mut blob = Vec::with_capacity(256);
     blob.extend_from_slice(&decoded.txid);
 
@@ -129,47 +129,33 @@ unsafe fn encode_decoded_transaction(decoded: &DecodedTransactionFFI) -> Vec<u8>
 
 /// JNI-free core: consensus-decode `tx_bytes` and marshal the result into
 /// the packed blob, freeing every Rust-side allocation before returning.
-/// `Err((code, message))` carries the key-wallet-ffi `FFIErrorCode`.
-fn decode_to_blob(tx_bytes: &[u8], network: FFINetwork) -> Result<Vec<u8>, (i32, String)> {
-    // Out-param error slot; the FFI writes code+message into it.
-    let mut error = key_wallet_ffi::FFIError {
-        code: key_wallet_ffi::FFIErrorCode::Success,
-        message: std::ptr::null_mut(),
+/// `Err` carries the failed platform-wallet-ffi result.
+fn decode_to_blob(
+    tx_bytes: &[u8],
+    network: FFINetwork,
+) -> Result<Vec<u8>, PlatformWalletFFIResult> {
+    let mut out: *mut PlatformWalletDecodedTransactionFFI = std::ptr::null_mut();
+    let result = unsafe {
+        platform_wallet_transaction_decode(tx_bytes.as_ptr(), tx_bytes.len(), network, &mut out)
     };
-    let mut out: *mut DecodedTransactionFFI = std::ptr::null_mut();
-    let ok = unsafe {
-        transaction_decode(
-            tx_bytes.as_ptr(),
-            tx_bytes.len(),
-            network,
-            &mut out,
-            &mut error,
-        )
-    };
-    if !ok || out.is_null() {
-        let message = if error.message.is_null() {
-            String::from("transaction decode failed")
-        } else {
-            unsafe { CStr::from_ptr(error.message) }
-                .to_string_lossy()
-                .into_owned()
-        };
-        // Capture the code BEFORE clean() — clean() resets it to Success
-        // while freeing the message (same hazard as MnemonicNative).
-        let code = error.code as i32;
-        unsafe { error.clean() };
-        return Err((code, message));
+    if result.code != PlatformWalletFFIResultCode::Success {
+        return Err(result);
+    }
+    if out.is_null() {
+        return Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorNullPointer,
+            "platform_wallet_transaction_decode returned a NULL result pointer",
+        ));
     }
     let blob = unsafe { encode_decoded_transaction(&*out) };
-    unsafe { decoded_transaction_free(out) };
+    unsafe { platform_wallet_decoded_transaction_free(out) };
     Ok(blob)
 }
 
 /// Consensus-decode raw transaction bytes into the packed BLOB documented
 /// in the module header. `networkOrd` is `Network.ffiValue`. Throws
-/// `DashSDKException` (key-wallet-ffi code namespace; `InvalidInput = 1`)
-/// on malformed bytes — including a valid transaction followed by trailing
-/// garbage.
+/// `DashSDKException` on malformed bytes — including a valid transaction
+/// followed by trailing garbage.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TxDecodeNative_decodeTransaction(
     mut env: JNIEnv,
@@ -182,7 +168,13 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TxDecodeNative_decode
             Ok(b) => b,
             Err(_) => {
                 let _ = env.exception_clear();
-                throw_sdk_exception(env, 1, "txBytes byte[] was null/invalid");
+                take_pwffi_error(
+                    env,
+                    PlatformWalletFFIResult::err(
+                        PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                        "txBytes byte[] was null/invalid",
+                    ),
+                );
                 return std::ptr::null_mut();
             }
         };
@@ -191,8 +183,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TxDecodeNative_decode
                 .byte_array_from_slice(&blob)
                 .map(|a| a.into_raw())
                 .unwrap_or(std::ptr::null_mut()),
-            Err((code, message)) => {
-                throw_sdk_exception(env, code, &message);
+            Err(result) => {
+                take_pwffi_error(env, result);
                 std::ptr::null_mut()
             }
         }
@@ -214,6 +206,7 @@ mod tests {
     use dashcore::{
         Address, Network, OutPoint, PublicKey, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness,
     };
+    use platform_wallet_ffi::tx_decode::PlatformWalletDecodedTxOutputFFI;
 
     /// Minimal big-endian blob reader mirroring the Kotlin parser.
     struct Reader<'a> {
@@ -251,9 +244,8 @@ mod tests {
         PublicKey::new(sk.public_key())
     }
 
-    /// The same deterministic fixture as key-wallet-ffi's
-    /// `p2pkh_spend_tx`: one P2PKH-shaped input spending 11..11:3, one
-    /// P2PKH output of 151_072 duffs, one OP_RETURN output.
+    /// One P2PKH-shaped input spending 11..11:3, one P2PKH output of 151_072
+    /// duffs and one OP_RETURN output.
     fn p2pkh_spend_tx(network: Network) -> (Transaction, Address) {
         let pubkey = test_pubkey();
         let addr = Address::p2pkh(&pubkey, network);
@@ -350,10 +342,10 @@ mod tests {
     }
 
     #[test]
-    fn garbage_bytes_error_with_invalid_input() {
+    fn should_report_garbage_bytes_as_a_deserialization_error() {
         let err = decode_to_blob(&[0xFFu8; 16], FFINetwork::Testnet).unwrap_err();
-        assert_eq!(err.0, key_wallet_ffi::FFIErrorCode::InvalidInput as i32);
-        assert!(!err.1.is_empty());
+        assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorDeserialization);
+        assert!(!err.message.is_null());
     }
 
     #[test]
@@ -362,30 +354,28 @@ mod tests {
         let mut bytes = serialize(&tx);
         bytes.extend_from_slice(&[0xDE, 0xAD]);
         let err = decode_to_blob(&bytes, FFINetwork::Testnet).unwrap_err();
-        assert_eq!(err.0, key_wallet_ffi::FFIErrorCode::InvalidInput as i32);
+        assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorDeserialization);
     }
 
     #[test]
-    fn empty_bytes_error_with_invalid_input() {
+    fn should_report_empty_bytes_as_an_invalid_parameter() {
         let err = decode_to_blob(&[], FFINetwork::Testnet).unwrap_err();
-        assert_eq!(err.0, key_wallet_ffi::FFIErrorCode::InvalidInput as i32);
+        assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
     }
 
     #[test]
     fn null_script_pointer_encodes_as_length_zero() {
-        use key_wallet_ffi::tx_decode::DecodedTxOutputFFI;
-
         // Hand-built pointer graph: one output whose script pointer is
         // null but whose length field LIES (nonzero). The encoder must
         // write length 0 — never a nonzero length without bytes — so the
         // fields after the script can't shift.
-        let mut output = DecodedTxOutputFFI {
+        let mut output = PlatformWalletDecodedTxOutputFFI {
             address: std::ptr::null_mut(),
             value_duffs: 42,
             script_pubkey: std::ptr::null_mut(),
             script_pubkey_len: 7,
         };
-        let decoded = DecodedTransactionFFI {
+        let decoded = PlatformWalletDecodedTransactionFFI {
             txid: [0xABu8; 32],
             inputs: std::ptr::null_mut(),
             inputs_count: 0,
@@ -393,7 +383,7 @@ mod tests {
             outputs_count: 1,
         };
         // SAFETY: stack-built graph; null pointers are the case under test
-        // and never dereferenced. Not passed to decoded_transaction_free.
+        // and never dereferenced. Not passed to platform_wallet_decoded_transaction_free.
         let blob = unsafe { encode_decoded_transaction(&decoded) };
 
         let mut r = Reader {
@@ -415,7 +405,7 @@ mod tests {
         // fields LIE (nonzero). The encoder must write count 0 — a nonzero
         // count with no records would desync everything parseBlob reads
         // after it.
-        let decoded = DecodedTransactionFFI {
+        let decoded = PlatformWalletDecodedTransactionFFI {
             txid: [0xCDu8; 32],
             inputs: std::ptr::null_mut(),
             inputs_count: 3,
@@ -423,7 +413,7 @@ mod tests {
             outputs_count: 2,
         };
         // SAFETY: stack-built graph; the null arrays are the case under test
-        // and never dereferenced. Not passed to decoded_transaction_free.
+        // and never dereferenced. Not passed to platform_wallet_decoded_transaction_free.
         let blob = unsafe { encode_decoded_transaction(&decoded) };
 
         let mut r = Reader {

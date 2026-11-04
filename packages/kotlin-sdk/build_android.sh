@@ -2,7 +2,7 @@
 # Build libdash_sdk_jni.so for Android — the analog of ../swift-sdk/build_ios.sh.
 #
 # Produces one cdylib per ABI containing the JNI exports of rs-unified-sdk-jni plus
-# the C ABI of rs-sdk-ffi / platform-wallet-ffi / key-wallet-ffi (linked in
+# the C ABI of rs-sdk-ffi / platform-wallet-ffi (linked in
 # as rlibs), and drops them into sdk/src/main/jniLibs/<abi>/ where AGP
 # packages them.
 #
