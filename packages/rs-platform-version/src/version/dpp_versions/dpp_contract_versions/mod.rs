@@ -133,6 +133,12 @@ pub struct DocumentTypeMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DocumentTypeSchemaVersions {
+    /// The contract grammar (document meta-schema generation). From generation 3 an index
+    /// can key the elements of a typed array and time and integer windows.
+    ///
+    /// The SDK reads it too, to know from which protocol version every node serves
+    /// `contains` / `containsAny` clauses and window selections
+    /// (`DocumentQuery::required_protocol_version` in `dash-platform-queries`).
     pub document_type_schema: FeatureVersion,
     /// How full validation checks a document type's schema at registration. 0: against the
     /// document meta-schema `document_type_schema` names, through the `jsonschema` crate,
