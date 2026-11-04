@@ -12,6 +12,7 @@
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
+use std::ptr;
 
 use key_wallet::bip32::ExtendedPrivKey;
 use platform_wallet::{
@@ -46,8 +47,8 @@ impl AddressPrivateKeyFFI {
     /// empty state instead of uninitialized memory.
     fn empty() -> Self {
         Self {
-            private_key_hex: std::ptr::null_mut(),
-            private_key_wif: std::ptr::null_mut(),
+            private_key_hex: ptr::null_mut(),
+            private_key_wif: ptr::null_mut(),
         }
     }
 }
@@ -220,7 +221,7 @@ pub unsafe extern "C" fn platform_wallet_find_bip44_address_path(
     out_path: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_path);
-    unsafe { *out_path = std::ptr::null_mut() };
+    unsafe { *out_path = ptr::null_mut() };
     check_ptr!(address_cstr);
 
     let address_str = unwrap_result_or_return!(unsafe { CStr::from_ptr(address_cstr) }.to_str());
@@ -251,7 +252,7 @@ pub unsafe extern "C" fn platform_wallet_bip44_account_xpub(
     out_xpub: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_xpub);
-    unsafe { *out_xpub = std::ptr::null_mut() };
+    unsafe { *out_xpub = ptr::null_mut() };
 
     let option =
         PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.bip44_account_xpub());
@@ -308,12 +309,12 @@ pub unsafe extern "C" fn platform_wallet_address_private_key_free(out: *mut Addr
     if !out.private_key_hex.is_null() {
         let mut bytes = unsafe { CString::from_raw(out.private_key_hex) }.into_bytes_with_nul();
         bytes.zeroize();
-        out.private_key_hex = std::ptr::null_mut();
+        out.private_key_hex = ptr::null_mut();
     }
     if !out.private_key_wif.is_null() {
         let mut bytes = unsafe { CString::from_raw(out.private_key_wif) }.into_bytes_with_nul();
         bytes.zeroize();
-        out.private_key_wif = std::ptr::null_mut();
+        out.private_key_wif = ptr::null_mut();
     }
 }
 
@@ -329,7 +330,6 @@ mod tests {
     use platform_wallet::test_support::{
         test_platform_wallet_manager, TEST_FRENCH_MNEMONIC as FRENCH, TEST_PLATFORM_WALLET_MNEMONIC,
     };
-    use std::ptr;
     use PlatformWalletFFIResultCode::{
         ErrorInvalidHandle, ErrorNullPointer, ErrorWalletOperation, NotFound,
     };
