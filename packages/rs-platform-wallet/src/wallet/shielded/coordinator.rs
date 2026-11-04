@@ -1731,13 +1731,15 @@ impl NetworkShieldedCoordinator {
             .notes_saved
             .iter()
             .flat_map(|(id, notes)| {
-                let spent_here = changeset.nullifiers_spent.get(id);
+                let spent_here: HashSet<&[u8; 32]> = changeset
+                    .nullifiers_spent
+                    .get(id)
+                    .into_iter()
+                    .flatten()
+                    .collect();
                 notes
                     .iter()
-                    .filter(move |note| {
-                        !note.is_spent
-                            && !spent_here.is_some_and(|nfs| nfs.contains(&note.nullifier))
-                    })
+                    .filter(move |note| !note.is_spent && !spent_here.contains(&note.nullifier))
                     .map(|note| (*id, note.nullifier))
             })
             .collect();
