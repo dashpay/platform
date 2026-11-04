@@ -43,12 +43,14 @@ jobs:
       - name: Install wasm-bindgen-cli
         run: cargo binstall wasm-bindgen-cli@0.2.108
 
-      # `--lib --tests`: the crate's examples are native-only. `--nocapture`
+      # `--lib --test '*'`: the library and integration tests only. The
+      # crate's examples are native-only, and `--tests` would also build
+      # `refresh_checkpoints`, whose tests run with the crate's. `--nocapture`
       # keeps the logged proof-verification times in the job output.
       - name: Test rs-sdk-trusted-context-provider on wasm32
         run: >-
           cargo test --locked -p rs-sdk-trusted-context-provider
-          --target wasm32-unknown-unknown --lib --tests -- --nocapture
+          --target wasm32-unknown-unknown --lib --test '*' -- --nocapture
 
       - name: Test wasm-sdk on wasm32
         run: cargo test --locked -p wasm-sdk --target wasm32-unknown-unknown --lib
