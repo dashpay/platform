@@ -30,9 +30,10 @@ struct WalletKeyHealth: Identifiable {
         /// belongs to a different wallet (or a stale mnemonic).
         /// Repair is destructive — only delete-identity.
         case orphan(reason: String)
-        /// A key of a type the wallet doesn't derive at the
-        /// identity's key slots (Rust decides which), so there is no
-        /// derivation to compare it with. Shown, but it leaves the
+        /// A key with no derivation to compare it with: a type the
+        /// wallet doesn't derive at the identity's key slots (Rust
+        /// decides which), or one this diagnostic can't compare (it
+        /// compares only ECDSA keys). Shown, but it leaves the
         /// identity's severity alone and offers no repair.
         case unchecked(reason: String)
     }
@@ -152,18 +153,27 @@ enum WalletKeyHealthChecker {
                 let storedHex = row.publicKeyData.toHexString()
 
                 // Rust says which key types the wallet derives at the
-                // identity's key slots. A key of any other type has
-                // nothing to compare with, so it is reported unchecked
-                // rather than orphan: an orphan key would offer to
-                // delete the whole identity.
+                // identity's key slots, and the preview below derives
+                // only ECDSA keys. A key that is not both has nothing
+                // to compare with, so it is reported unchecked rather
+                // than orphan: an orphan key would offer to delete the
+                // whole identity.
                 let keyType = row.keyTypeEnum ?? .ecdsaSecp256k1
-                let uncheckedReason: String?
+                var uncheckedReason: String?
                 do {
                     uncheckedReason = try ManagedPlatformWallet.derivesIdentityKeys(ofType: keyType)
                         ? nil
                         : "the wallet doesn't derive \(keyType.name) keys from the identity's key slots"
                 } catch {
                     uncheckedReason = "couldn't ask whether the wallet derives \(keyType.name) keys: \(error.localizedDescription)"
+                }
+                if uncheckedReason == nil {
+                    switch keyType {
+                    case .ecdsaSecp256k1, .ecdsaHash160:
+                        break
+                    case .bls12_381, .bip13ScriptHash, .eddsa25519Hash160, .redpallasHecate:
+                        uncheckedReason = "the diagnostic compares only ECDSA keys, not \(keyType.name) keys"
+                    }
                 }
                 if let uncheckedReason {
                     keyHealths.append(
@@ -197,11 +207,8 @@ enum WalletKeyHealthChecker {
                     // for `.ecdsaHash160`. The Rust-derived preview
                     // is always the raw 33-byte pubkey; hash it
                     // ourselves before comparing for HASH160 rows.
-                    // (Other variants — BLS, BIP13 script-hash,
-                    // EdDSA — aren't produced by this preview path
-                    // today; treat them as `notSupported` so the
-                    // diagnostic surfaces them instead of silently
-                    // misclassifying them as orphans.)
+                    // Keys of other types were reported unchecked
+                    // above.
                     let derivedComparableHex: String?
                     switch keyType {
                     case .ecdsaSecp256k1:
@@ -214,7 +221,7 @@ enum WalletKeyHealthChecker {
                         derivedHex = hashHex
                     case .bls12_381, .bip13ScriptHash, .eddsa25519Hash160, .redpallasHecate:
                         derivedComparableHex = nil
-                        derivedHex = preview.publicKeyHex
+                        derivedHex = ""
                     }
 
                     if let derivedComparableHex,
@@ -252,15 +259,12 @@ enum WalletKeyHealthChecker {
                             )
                         }
                     } else if derivedComparableHex == nil {
-                        // Key type isn't one the diagnostic knows
-                        // how to compare against a Rust-derived
-                        // pubkey today (BLS / BIP13 / EdDSA). Report
-                        // it as orphan with a clear reason so the
-                        // user knows we can't verify it, rather than
-                        // silently passing.
+                        // The derived key couldn't be put in the stored
+                        // key's form (a HASH160 that failed): nothing to
+                        // compare, so unchecked rather than orphan.
                         let label = row.keyTypeEnum?.name ?? "type \(row.keyType)"
-                        status = .orphan(
-                            reason: "Key type \(label) isn't supported by the diagnostic — can't verify against derived pubkey"
+                        status = .unchecked(
+                            reason: "couldn't put the wallet's derived key in \(label) form to compare it"
                         )
                     } else {
                         status = .orphan(
