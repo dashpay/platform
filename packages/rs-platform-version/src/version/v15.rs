@@ -164,7 +164,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    (`InvalidContractStructure`; a stored contract with one, which no JSON
 ///    could have written, must drop it to be updated),
 ///    refuses a contested index whose contest its index values do not decide
-///    (`InvalidContractStructure`, note 19),
+///    (`InvalidContractStructure`, note 19) or that is keyed by a property path or a
+///    system property (`InvalidContractStructure`, note 21),
 ///    and refuses a document type the typed validation schema does not represent
 ///    (`InvalidContractStructure`), so every type registered from this version
 ///    has its documents checked natively (note 6). The parser is generation 3
@@ -449,7 +450,18 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     Core always accepts. Protocol v14 and earlier keep
 ///     `build_untied_withdrawal_transactions_from_documents` 0, which emits version 1.
 ///
-/// 21. **Token listings**: three token transitions of a batch, `TokenPlaceAsk` (lists an amount
+/// 21. **A contest is keyed by top-level properties**: a contested create keys its vote poll
+///     by looking each index property up by name among the document's top-level properties
+///     (`Index::extract_values`), where a property path (`records.identity`) or a system
+///     property (`$ownerId`) is never found, so the poll holds a null value and Drive fails
+///     every contested create of the type without storing it: the contest can never start.
+///     Registration under `check_document_type_schema` 1 (note 7) refuses a contested index
+///     holding one (`Index::contest_is_keyed_by_top_level_properties`,
+///     `InvalidContractStructure`). A contract registered earlier with one keeps it, but an
+///     update is refused like a registration. Protocol v14 and earlier keep
+///     `check_document_type_schema` 0.
+///
+/// 22. **Token listings**: three token transitions of a batch, `TokenPlaceAsk` (lists an amount
 ///     of a tradeable token at a price in credits per whole token and moves it into escrow),
 ///     `TokenFillAsk` (buys part or all of a listing, paying the seller the change in the
 ///     listing's rounded-up running total) and `TokenCancelOrder` (returns what an order holds
