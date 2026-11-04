@@ -16,6 +16,7 @@ use super::typed_array_test_helpers::{
     expect_json_schema_error, expect_structure_error, parse_dispatched,
 };
 use super::*;
+use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::{
     GeneratedFrom, RandomFunction, RandomRange, SystemFunction,
@@ -89,6 +90,33 @@ fn expect_refused_at_registration(schema: Value, needle: &str) {
         parse_dispatched(schema, PlatformVersion::latest(), true),
         needle,
     );
+}
+
+/// `schema` registered as a `card` of a contract whose owner moderates it, so the type may
+/// declare `moderatorAbilities`.
+fn parse_moderated(schema: Value) -> Result<DocumentType, ProtocolError> {
+    let platform_version = PlatformVersion::latest();
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("default config available")
+        .with_moderation(Some(ContractModerationConfig {
+            banlist: false,
+            suspensions: false,
+            moderators: ContractModerators::ContractOwner,
+            warnings: false,
+        }));
+    DocumentType::try_from_schema(
+        Identifier::new(CONTRACT_ID),
+        1,
+        config.version(),
+        "card",
+        schema,
+        None,
+        &BTreeMap::new(),
+        &config,
+        true,
+        &mut vec![],
+        platform_version,
+    )
 }
 
 /// The document types of a contract holding `types`, registered.
@@ -583,6 +611,72 @@ fn should_refuse_skipping_on_a_stored_property_beside_one_drawn_at_random_on_a_m
         let document_type = parse(schema);
         assert!(document_type.as_ref().indexes().contains_key("byRarityTag"));
     }
+}
+
+#[test]
+fn should_refuse_skipping_beside_a_property_drawn_at_random_on_what_a_moderator_sets() {
+    // An immutable card whose moderators may set its tag: a change in the block of the create
+    // could add the tag before the draw. (A window source is required, which a field only
+    // moderators set can not be, so no moderator moves one.)
+    let moderated = |mut schema: Value, field: &str| {
+        schema
+            .insert("documentsMutable".to_string(), Value::Bool(false))
+            .expect("the schema is a map");
+        schema
+            .insert(
+                "moderatorAbilities".to_string(),
+                platform_value!({ "changeFields": [field] }),
+            )
+            .expect("the schema is a map");
+        schema
+            .get_mut("required")
+            .expect("required")
+            .expect("required is present")
+            .push(Value::Text("$updatedAt".to_string()))
+            .expect("required is an array");
+        schema
+    };
+    expect_structure_error(
+        parse_moderated(moderated(
+            card_schema_with_property_and_indices(
+                "tag",
+                platform_value!({ "type": "string", "maxLength": 8, "position": 2 }),
+                false,
+                platform_value!([{
+                    "name": "byRarityTag",
+                    "properties": [{ "rarity": "asc" }, { "tag": "asc" }],
+                    "skipIfAbsent": true
+                }]),
+            ),
+            "tag",
+        )),
+        "index \"byRarityTag\" skips a document without \"tag\"",
+    );
+}
+
+#[test]
+fn should_refuse_a_property_drawn_at_random_on_a_type_whose_moderators_keep_removal_records() {
+    // A restore would put back a card removed before the draw, placeholder included
+    let with_moderator_delete = |abilities: Value| {
+        let mut schema = card_schema_with(
+            "indices",
+            platform_value!([{ "name": "byRarity", "properties": [{ "rarity": "asc" }] }]),
+        );
+        schema
+            .insert("moderatorAbilities".to_string(), abilities)
+            .expect("the schema is a map");
+        schema
+    };
+    expect_structure_error(
+        parse_moderated(with_moderator_delete(platform_value!({ "delete": true }))),
+        "moderators delete its documents keeping a record of them",
+    );
+    // Without a record there is nothing to restore
+    let document_type = parse_moderated(with_moderator_delete(
+        platform_value!({ "delete": true, "deleteKeepsRecord": false }),
+    ))
+    .expect("the schema parses");
+    assert!(document_type.as_ref().indexes().contains_key("byRarity"));
 }
 
 #[test]

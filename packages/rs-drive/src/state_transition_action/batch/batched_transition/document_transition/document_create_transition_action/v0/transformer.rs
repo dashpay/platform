@@ -387,9 +387,8 @@ mod tests {
 
     /// Builds the action of a create of a `document_type_name` document of the contract
     /// `contract` builds, holding `data` (a name `Ace` unless `data` names one), and returns
-    /// what building it bills and, when its document is valid, what its state validation
-    /// prepays for the draw: `Drive::prepay_random_document_index_entries` of the document
-    /// the action writes.
+    /// what building it bills and, when its document is valid, what its insert prepays for the
+    /// draw: `Drive::prepay_random_document_index_entries` of the document the action writes.
     fn create(
         contract: fn(&PlatformVersion) -> Arc<DataContractFetchInfo>,
         document_type_name: &str,
@@ -459,8 +458,7 @@ mod tests {
     /// What a valid create of a `document_type_name` document of [`contract`] prepays.
     fn prepayment(document_type_name: &str) -> FeeResult {
         let (build_fee, prepayment) = create(contract, document_type_name, BTreeMap::new());
-        // Building the action bills no prepayment: state validation charges it, once the
-        // schema holds
+        // Building the action bills no prepayment: the insert of its document charges it
         assert_eq!(build_fee, FeeResult::default());
         prepayment
     }
