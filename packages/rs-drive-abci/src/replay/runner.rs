@@ -154,8 +154,13 @@ where
                 .as_ref()
                 .map(|info| info.basic_info().height);
         }
-        LoadedRequest::Info(request) => {
+        LoadedRequest::Info(mut request) => {
             tracing::debug!("executing info from {}", origin);
+            // The recorded ABCI version is that of the Tenderdash that wrote the log. The replay
+            // stands in for Tenderdash here, so it speaks this build's version, and a log
+            // recorded under an older one still replays; `info` still checks the state it
+            // reports
+            request.abci_version = tenderdash_abci::proto::ABCI_VERSION.to_string();
             let response = app
                 .info(request)
                 .map_err(|err| logged_error(format!("info failed for {}: {:?}", origin, err)))?;
@@ -989,5 +994,48 @@ mod tests {
         let reporter = ProgressReporter::new(None);
         let rate = reporter.rate_per_minute(Instant::now(), Duration::from_secs(60));
         assert!(rate.is_none());
+    }
+
+    // ---- execute_request ----
+
+    #[test]
+    fn should_replay_an_info_request_recorded_under_an_older_abci_version() {
+        use crate::abci::app::FullAbciApplication;
+        use crate::replay::log_ingest::LogRequestStream;
+        use crate::test::helpers::setup::TestPlatformBuilder;
+        use std::io::Write as _;
+
+        let dir = tempfile::tempdir().expect("expected a temporary directory");
+        let log_path = dir.path().join("abci.log");
+        {
+            let mut file = std::fs::File::create(&log_path).expect("expected to create the log");
+            writeln!(
+                file,
+                r#"{{"timestamp":"2026-01-01T00:00:00Z","fields":{{"message":"received ABCI request","request":"Request {{ value: Some(Info(RequestInfo {{ version: \"1.8.0\", block_version: 14, p2p_version: 10, abci_version: \"1.4.0\" }})) }}"}},"span":{{"endpoint":"info"}}}}"#
+            )
+            .expect("expected to write the log");
+        }
+        let mut stream = LogRequestStream::open(&log_path).expect("expected to open the log");
+        let item = stream
+            .next_item()
+            .expect("expected to read the log")
+            .expect("expected the info request");
+        let LoadedRequest::Info(recorded) = &item.request else {
+            panic!("expected an info request, got {}", item.describe());
+        };
+        assert_eq!(recorded.abci_version, "1.4.0");
+        assert!(
+            !tenderdash_abci::check_version(&recorded.abci_version),
+            "expected this build to refuse an ABCI 1.4 handshake from a live Tenderdash"
+        );
+
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+        let app = FullAbciApplication::new(&platform.platform);
+        assert_eq!(
+            execute_request(&app, item, None).expect("expected the recorded info to replay"),
+            None
+        );
     }
 }

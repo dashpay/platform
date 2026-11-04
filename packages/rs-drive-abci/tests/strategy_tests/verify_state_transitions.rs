@@ -776,7 +776,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     "we expect a token history document"
                                 );
 
-                                let expected_document = token_transition_action
+                                let mut expected_document = token_transition_action
                                     .build_historical_document(
                                         token_id,
                                         batch_transition.owner_id(),
@@ -790,21 +790,47 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                         platform_version,
                                     )
                                     .expect("expected to build historical document");
+                                let history_document_type = token_transition_action
+                                    .historical_document_type(&token_history)
+                                    .expect("expected document type");
+                                let serialized_document = serialized_document.unwrap();
+
+                                // A random transfer or mint (protocol version 15) writes its
+                                // history holding the range's minimum, and the block's
+                                // settlement rewrites the amount to the one drawn, which the
+                                // committed state proves: it must lie in the range
+                                if let Some((minimum, maximum)) =
+                                    token_transition_action.random_amount_range()
+                                {
+                                    let proved_document = Document::from_bytes(
+                                        &serialized_document,
+                                        history_document_type,
+                                        platform_version,
+                                    )
+                                    .expect("expected the history document to decode");
+                                    let amount = proved_document
+                                        .get("amount")
+                                        .cloned()
+                                        .expect("expected the history to hold an amount");
+                                    let drawn = amount
+                                        .to_integer::<u64>()
+                                        .expect("expected an integer amount");
+                                    assert!(
+                                        (minimum..=maximum).contains(&drawn),
+                                        "the settled amount {drawn} lies in {minimum}..={maximum}"
+                                    );
+                                    expected_document.set("amount", amount);
+                                }
 
                                 let serialized_expected_document = expected_document
                                     .serialize(
-                                        token_transition_action
-                                            .historical_document_type(&token_history)
-                                            .expect("expected document type"),
+                                        history_document_type,
                                         &token_history,
                                         platform_version,
                                     )
                                     .expect("expected to serialize");
 
-                                assert_eq!(
-                                    serialized_document.unwrap(),
-                                    serialized_expected_document
-                                );
+                                assert_eq!(serialized_document, serialized_expected_document);
                             } else {
                                 todo!();
                             }

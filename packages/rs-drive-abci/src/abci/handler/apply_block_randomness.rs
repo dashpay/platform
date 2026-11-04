@@ -203,6 +203,7 @@ pub(super) mod tests {
     use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+    use dpp::balances::credits::TokenAmount;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::DataContractFactory;
@@ -212,17 +213,28 @@ pub(super) mod tests {
     use dpp::version::PlatformVersion;
     use drive::drive::document::draw_random_document_properties::RandomDocumentRequest;
     use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
+    use drive::drive::tokens::settle_random_token_amounts::{
+        RandomTokenRequest, RandomTokenRequestKind,
+    };
     use drive::query::DriveDocumentQuery;
+    use drive::util::batch::drive_op_batch::TokenOperationType;
+    use drive::util::batch::DriveOperation;
     use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use drive::util::storage_flags::StorageFlags;
     use std::borrow::Cow;
     use std::collections::BTreeMap;
 
-    const OWNER: [u8; 32] = [42; 32];
+    pub(in crate::abci::handler) const OWNER: [u8; 32] = [42; 32];
     pub(in crate::abci::handler) const BEACON: [u8; 96] = [7; 96];
     const BLOCK_HASH: [u8; 32] = [0xAA; 32];
     const HEIGHT: u64 = 10;
+    /// The rarity the card draws from [`BEACON`], pinned so a skipped draw, which leaves the
+    /// placeholder 1, fails
+    const DRAWN_RARITY: i128 = 26;
+    const TOKEN: [u8; 32] = [5; 32];
+    pub(in crate::abci::handler) const RECIPIENT: [u8; 32] = [8; 32];
+    pub(in crate::abci::handler) const TOKEN_SUPPLY: TokenAmount = 10_000;
 
     /// A contract with an immutable `card` type, its `rarity` drawn from 1 to 100 and indexed.
     pub(in crate::abci::handler) fn card_contract() -> DataContract {
@@ -440,6 +452,124 @@ pub(super) mod tests {
         )
     }
 
+    /// Reserves, in `transaction`, a random transfer of 100 to 1,000 of `OWNER`'s tokens to
+    /// [`RECIPIENT`], as the execution of a random transfer does, and returns the request the
+    /// block records for it.
+    pub(in crate::abci::handler) fn reserve_random_transfer_in(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        transaction: &Transaction,
+    ) -> RandomTokenRequest {
+        let platform_version = PlatformVersion::latest();
+        let request = RandomTokenRequest {
+            token_id: Identifier::from(TOKEN),
+            owner_id: Identifier::from(OWNER),
+            identity_contract_nonce: 1,
+            minimum: 100,
+            maximum: 1_000,
+            kind: RandomTokenRequestKind::Transfer {
+                sender_id: Identifier::from(OWNER),
+                recipient_id: Identifier::from(RECIPIENT),
+            },
+        };
+        platform
+            .drive
+            .create_token_trees(
+                Identifier::from([4; 32]),
+                0,
+                TOKEN,
+                false,
+                false,
+                &BlockInfo::default(),
+                true,
+                Some(transaction),
+                platform_version,
+            )
+            .expect("expected to create the token trees");
+        platform
+            .drive
+            .token_mint(
+                TOKEN,
+                OWNER,
+                TOKEN_SUPPLY,
+                false,
+                false,
+                &BlockInfo::default(),
+                true,
+                Some(transaction),
+                platform_version,
+            )
+            .expect("expected to mint the supply");
+        platform
+            .drive
+            .apply_drive_operations(
+                vec![DriveOperation::TokenOperation(
+                    TokenOperationType::TokenReserveRandomTransfer {
+                        token_id: request.token_id,
+                        sender_id: request.owner_id,
+                        recipient_id: Identifier::from(RECIPIENT),
+                        identity_contract_nonce: request.identity_contract_nonce,
+                        maximum: request.maximum,
+                    },
+                )],
+                true,
+                &BlockInfo::default(),
+                Some(transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected the reservation to apply");
+        request
+    }
+
+    /// [`reserve_random_transfer_in`] the block's transaction, recording the request in the
+    /// block's context.
+    fn reserve_random_transfer(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        app: &FullAbciApplication<MockCoreRPCLike>,
+    ) -> RandomTokenRequest {
+        let request = {
+            let transaction_guard = app.transaction.read().unwrap();
+            reserve_random_transfer_in(
+                platform,
+                transaction_guard.as_ref().expect("expected a transaction"),
+            )
+        };
+        let mut context_guard = app.block_execution_context.write().unwrap();
+        let Some(BlockExecutionContext::V0(context)) = context_guard.as_mut() else {
+            panic!("expected the block's context");
+        };
+        context.random_requests.tokens.push(request.clone());
+        request
+    }
+
+    /// The token balance of `identity_id` and what the escrow holds under `request`'s
+    /// reservation, in the block's transaction.
+    fn token_state_in_block(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        app: &FullAbciApplication<MockCoreRPCLike>,
+        identity_id: [u8; 32],
+        request: &RandomTokenRequest,
+    ) -> (Option<TokenAmount>, Option<TokenAmount>) {
+        let platform_version = PlatformVersion::latest();
+        let transaction_guard = app.transaction.read().unwrap();
+        let transaction = transaction_guard.as_ref().expect("expected a transaction");
+        let balance = platform
+            .drive
+            .fetch_identity_token_balance(TOKEN, identity_id, Some(transaction), platform_version)
+            .expect("expected to fetch a token balance");
+        let reserved = platform
+            .drive
+            .fetch_token_order_escrow(
+                TOKEN,
+                request.reservation_id(),
+                Some(transaction),
+                &mut vec![],
+                platform_version,
+            )
+            .expect("expected to fetch the reservation");
+        (balance, reserved)
+    }
+
     /// A platform holding the card contract in committed state.
     fn setup() -> (TempPlatform<MockCoreRPCLike>, DataContract) {
         let platform = TestPlatformBuilder::new()
@@ -494,11 +624,8 @@ pub(super) mod tests {
 
         let root_after = transaction_root(&app);
         assert_eq!(response.app_hash, root_after.to_vec());
-        let drawn = rarity_in_block(&platform, &app, &contract);
-        assert!((1..=100).contains(&drawn));
-        if drawn != 1 {
-            assert_ne!(root_before, root_after, "the drawn value moved the root");
-        }
+        assert_eq!(rarity_in_block(&platform, &app, &contract), DRAWN_RARITY);
+        assert_ne!(root_before, root_after, "the drawn value moved the root");
         assert_eq!(
             app.block_execution_context
                 .read()
@@ -519,11 +646,26 @@ pub(super) mod tests {
         let latest = PlatformVersion::latest().protocol_version;
         let (platform, contract) = setup();
         let app = start_block(&platform, &contract, latest);
+        // A settlement removes its reservation, and a second one of the same request is
+        // refused, so a settlement run twice would fail the second answer
+        let transfer = reserve_random_transfer(&platform, &app);
+        assert_eq!(
+            token_state_in_block(&platform, &app, RECIPIENT, &transfer),
+            (Some(0), Some(transfer.maximum))
+        );
 
         let first =
             apply_block_randomness::<_, MockCoreRPCLike>(&app, request(0, BLOCK_HASH, &BEACON))
                 .expect("expected the randomness to apply");
         let drawn = rarity_in_block(&platform, &app, &contract);
+        let (paid, reserved) = token_state_in_block(&platform, &app, RECIPIENT, &transfer);
+        let paid = paid.expect("expected the recipient to hold the drawn amount");
+        assert!((transfer.minimum..=transfer.maximum).contains(&paid));
+        assert_eq!(reserved, None, "the settlement removed the reservation");
+        assert_eq!(
+            token_state_in_block(&platform, &app, OWNER, &transfer).0,
+            Some(TOKEN_SUPPLY - paid)
+        );
 
         let second =
             apply_block_randomness::<_, MockCoreRPCLike>(&app, request(0, BLOCK_HASH, &BEACON))
@@ -531,6 +673,10 @@ pub(super) mod tests {
         assert_eq!(first, second);
         assert_eq!(second.app_hash, transaction_root(&app).to_vec());
         assert_eq!(rarity_in_block(&platform, &app, &contract), drawn);
+        assert_eq!(
+            token_state_in_block(&platform, &app, RECIPIENT, &transfer),
+            (Some(paid), None)
+        );
 
         // A round's prevotes combine into one beacon: another one for the same round is refused
         let result =

@@ -375,7 +375,8 @@ mod tests {
     use super::*;
     use crate::abci::app::{FullAbciApplication, TransactionalApplication};
     use crate::abci::handler::apply_block_randomness::tests::{
-        apply_card_contract, insert_placeholder_card, stored_rarity, BEACON,
+        apply_card_contract, insert_placeholder_card, reserve_random_transfer_in, stored_rarity,
+        BEACON, OWNER, RECIPIENT, TOKEN_SUPPLY,
     };
     use crate::config::{CheckpointStep, PlatformConfig};
     use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
@@ -392,6 +393,7 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::prelude::DataContract;
     use dpp::version::PlatformVersion;
+    use drive::drive::tokens::settle_random_token_amounts::RandomTokenRequest;
     use drive::grovedb::Transaction;
     use std::sync::{Arc, Mutex, RwLock};
     use tenderdash_abci::proto::abci::CommitInfo;
@@ -1314,6 +1316,8 @@ mod tests {
         root_before: [u8; 32],
         /// The root the block's draws give
         drawn_root: [u8; 32],
+        /// The random token transfer the block reserved and the commit's beacon settles
+        transfer: RandomTokenRequest,
         /// What `finalize_block` returned
         result: Result<proto::ResponseFinalizeBlock, Error>,
     }
@@ -1346,7 +1350,8 @@ mod tests {
         .expect("expected to hash the state id")
     }
 
-    /// Finalizes a block that created one card holding the placeholder rarity, with a commit
+    /// Finalizes a block that created one card holding the placeholder rarity and reserved one
+    /// random token transfer, with a commit
     /// carrying the random beacon and the app hash `commit_app_hash` makes of the root the
     /// draws give, on a node that did not apply the beacon. The block id carries the state id
     /// of the app hash `block_id_app_hash` makes of that root, and the zero state id for `None`.
@@ -1370,7 +1375,7 @@ mod tests {
             .unwrap()
             .expect("expected a root hash");
 
-        let (drawn_root, result) = {
+        let (drawn_root, transfer, result) = {
             let app = FullAbciApplication::new(&platform.platform);
             app.start_transaction();
             let platform_state = (**platform.state.load()).clone();
@@ -1378,12 +1383,14 @@ mod tests {
             let block_time_ms = 1_700_000_000_000u64;
             let mut context = block_execution_context(platform_state, 1, block_time_ms, None);
 
-            let drawn_root = {
+            let (drawn_root, transfer) = {
                 let transaction_guard = app.transaction.read().unwrap();
                 let transaction = transaction_guard.as_ref().expect("expected a transaction");
                 let card = insert_placeholder_card(&platform, &contract, transaction);
+                let transfer = reserve_random_transfer_in(&platform, transaction);
                 let BlockExecutionContext::V0(context_v0) = &mut context;
                 context_v0.random_requests.documents.push(card);
+                context_v0.random_requests.tokens.push(transfer.clone());
 
                 // The root the commit signs, from draws this test rolls back, so the block
                 // reaches `finalize_block` holding the placeholder as on a node that did not vote
@@ -1399,7 +1406,7 @@ mod tests {
                 transaction
                     .rollback_to_savepoint()
                     .expect("expected to roll the draws back");
-                drawn_root
+                (drawn_root, transfer)
             };
 
             app.block_execution_context
@@ -1427,6 +1434,7 @@ mod tests {
 
             (
                 drawn_root,
+                transfer,
                 finalize_block::<_, MockCoreRPCLike>(&app, request),
             )
         };
@@ -1436,6 +1444,7 @@ mod tests {
             contract,
             root_before,
             drawn_root,
+            transfer,
             result,
         }
     }
@@ -1443,10 +1452,12 @@ mod tests {
     #[test]
     fn should_apply_the_commit_beacon_this_node_did_not_apply() {
         let grove_version = &PlatformVersion::latest().drive.grove_version;
+        let platform_version = PlatformVersion::latest();
         let FinalizedWithTheCommitBeacon {
             platform,
             contract,
             drawn_root,
+            transfer,
             result,
             ..
         } = finalize_with_the_commit_beacon(|drawn_root| drawn_root.to_vec(), Some);
@@ -1466,6 +1477,36 @@ mod tests {
         );
         let transaction = platform.drive.grove.start_transaction();
         assert!((1..=100).contains(&stored_rarity(&platform, &contract, &transaction)));
+
+        // The commit's beacon settled the transfer once: the reservation is gone, the recipient
+        // holds the drawn amount and the sender the rest of the supply
+        let balance = |identity_id: [u8; 32]| {
+            platform
+                .drive
+                .fetch_identity_token_balance(
+                    transfer.token_id.to_buffer(),
+                    identity_id,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch a token balance")
+        };
+        let paid = balance(RECIPIENT).expect("expected the recipient to hold the drawn amount");
+        assert!((transfer.minimum..=transfer.maximum).contains(&paid));
+        assert_eq!(balance(OWNER), Some(TOKEN_SUPPLY - paid));
+        assert_eq!(
+            platform
+                .drive
+                .fetch_token_order_escrow(
+                    transfer.token_id.to_buffer(),
+                    transfer.reservation_id(),
+                    None,
+                    &mut vec![],
+                    platform_version,
+                )
+                .expect("expected to fetch the reservation"),
+            None
+        );
 
         // The beacon alone is applied too
         let FinalizedWithTheCommitBeacon {
