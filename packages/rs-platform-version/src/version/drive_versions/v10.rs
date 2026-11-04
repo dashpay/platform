@@ -75,6 +75,9 @@ use crate::version::drive_versions::{
 ///   `stateless_delete_of_non_tree_for_costs` to 1, and
 ///   `platform_system.estimation_costs.for_total_system_credits_update` is 1, so a delete and a
 ///   system credits update describe their layers as they are. Applying a batch is unchanged.
+/// * **Core fork activations**: `platform_system.fetch_core_fork_activation_height` and
+///   `store_core_fork_activation_height` are `Some(0)` (`None` before): Drive keeps, in `Misc`,
+///   the chain locked Core height at which Platform first saw each tracked Core fork active.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
@@ -114,6 +117,8 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             estimation_costs: DriveSystemEstimationCostsMethodVersions {
                 for_total_system_credits_update: 1, // changed in v10: `Misc` described with its subtrees
             },
+            fetch_core_fork_activation_height: Some(0), // changed in v10: the Core fork activations
+            store_core_fork_activation_height: Some(0), // changed in v10: the Core fork activations
         },
         ..DRIVE_VERSION_V9.methods
     },

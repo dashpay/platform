@@ -9,6 +9,15 @@ on:
         description: Use validation-only ARM64 capacity before admission to the ordinary Rust pool
         type: boolean
         default: false
+      runner-image-changed:
+        # Computed by the `changes` job in tests.yml. Only a PR that edits
+        # .github/runner-requirements.json makes select-runner wait for a
+        # candidate image, which can outlast a light-pool job's time limit.
+        # Defaults to true so a caller that doesn't compute it keeps
+        # select-runner on a GitHub-hosted runner.
+        description: Whether the pull request changes the AMD64 runner requirements
+        type: boolean
+        default: true
       doctests-changed:
         description: Whether doc comments with code examples have changed
         type: boolean
@@ -40,7 +49,11 @@ jobs:
       github.event_name != 'pull_request'
       || github.event.pull_request.head.repo.full_name == github.repository
       || github.event.pull_request.head.repo.owner.login == 'thepastaclaw'
-    runs-on: ubuntu-24.04
+    # The Rust tests cannot start until this job finishes. On the light pool it
+    # does not queue for a GitHub-hosted slot, which every repository in the
+    # organization shares. Waiting for a candidate image stays on a hosted
+    # runner, since it can run longer than the light pool allows.
+    runs-on: ${{ !inputs.runner-image-changed && vars.DASH_LIGHT_RUNNER || 'ubuntu-24.04' }}
     # Allow the separate 90-minute build and publication/queue window to finish.
     timeout-minutes: 135
     permissions:
