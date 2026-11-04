@@ -104,6 +104,7 @@ mod tests {
     use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
     use dpp::platform_value::BinaryData;
     use dpp::version::PlatformVersion;
+    use grovedb::TransactionArg;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
 
@@ -169,12 +170,21 @@ mod tests {
     }
 
     fn signer_key_ids(drive: &Drive, identity_id: [u8; 32]) -> (FeeResult, Vec<KeyID>) {
+        signer_key_ids_at_most(drive, identity_id, 10, None)
+    }
+
+    fn signer_key_ids_at_most(
+        drive: &Drive,
+        identity_id: [u8; 32],
+        limit: u16,
+        transaction: TransactionArg,
+    ) -> (FeeResult, Vec<KeyID>) {
         drive
             .fetch_identity_hecate_signer_key_ids_with_fee(
                 identity_id,
-                10,
+                limit,
                 &BlockInfo::default().epoch,
-                None,
+                transaction,
                 PlatformVersion::latest(),
             )
             .expect("expected to read the signer index")
@@ -206,6 +216,31 @@ mod tests {
 
         add_keys(&drive, identity_id, vec![signer_key(4, 11)]);
         assert_eq!(signer_key_ids(&drive, identity_id).1, vec![4]);
+    }
+
+    #[test]
+    fn should_read_a_signer_key_added_in_the_transaction_it_reads_in() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let identity_id = stored_identity(&drive, 7);
+        let transaction = drive.grove.start_transaction();
+
+        drive
+            .add_new_unique_keys_to_identity(
+                identity_id,
+                vec![signer_key(3, 40)],
+                &BlockInfo::default(),
+                true,
+                Some(&transaction),
+                PlatformVersion::latest(),
+            )
+            .expect("expected to add the signer key in the transaction");
+
+        // Uncommitted: the transaction reads the key, committed state doesn't.
+        assert_eq!(
+            signer_key_ids_at_most(&drive, identity_id, 10, Some(&transaction)).1,
+            vec![3]
+        );
+        assert_eq!(signer_key_ids(&drive, identity_id).1, Vec::<KeyID>::new());
     }
 
     #[test]
@@ -353,6 +388,11 @@ mod tests {
             add_keys_fee(&drive, identity_id, &replacement, apply)
         });
         assert_eq!(signer_key_ids(&drive, identity_id).1, vec![3, 4]);
+        // The read stops at its limit, in key id order.
+        assert_eq!(
+            signer_key_ids_at_most(&drive, identity_id, 1, None).1,
+            vec![3]
+        );
         assert_estimate_covers_execution(&drive, "disabling the replaced signer key", |apply| {
             disable_keys_fee(&drive, identity_id, &[3], apply)
         });
