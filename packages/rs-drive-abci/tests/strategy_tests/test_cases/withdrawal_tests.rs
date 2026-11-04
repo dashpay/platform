@@ -4188,12 +4188,21 @@ mod tests {
         }
     }
 
-    /// Runs blocks 1 and 2, which create the identities that later withdraw. Returns the
-    /// outcome and the strategies of a block with one withdrawal and of an empty block.
+    /// What `run_identity_blocks` ran, and the strategies of the blocks after it.
+    struct IdentityBlocks<'a> {
+        /// The outcome of blocks 1 and 2.
+        outcome: ChainExecutionOutcome<'a>,
+        /// The strategy of a block with one withdrawal.
+        withdraw: NetworkStrategy,
+        /// The strategy of an empty block.
+        idle: NetworkStrategy,
+    }
+
+    /// Runs blocks 1 and 2, which create the identities that later withdraw.
     async fn run_identity_blocks<'a>(
         platform: &'a mut TempPlatform<MockCoreRPCLike>,
         config: &PlatformConfig,
-    ) -> (ChainExecutionOutcome<'a>, NetworkStrategy, NetworkStrategy) {
+    ) -> IdentityBlocks<'a> {
         let outcome = run_chain_for_strategy(
             platform,
             2,
@@ -4228,7 +4237,11 @@ mod tests {
         );
         let idle = v24_test_strategy(vec![], Some(outcome.signer.clone()));
 
-        (outcome, withdraw, idle)
+        IdentityBlocks {
+            outcome,
+            withdraw,
+            idle,
+        }
     }
 
     /// Runs block `block`, the one after `outcome`, with `strategy`, and checks that every state
@@ -4362,7 +4375,11 @@ mod tests {
         // V24 is active from the first core height.
         let core_state = V24CoreState::new(1);
         let mut platform = platform_with_v24_core(&config, &core_state);
-        let (outcome, withdraw, idle) = run_identity_blocks(&mut platform, &config).await;
+        let IdentityBlocks {
+            outcome,
+            withdraw,
+            idle,
+        } = run_identity_blocks(&mut platform, &config).await;
 
         // Block 3 pools a withdrawal at core height 1; block 4 signs it there.
         let outcome = next_block(outcome, 3, &withdraw, &config).await;
@@ -4438,7 +4455,11 @@ mod tests {
         let config = v24_test_config();
         let core_state = V24CoreState::new(V24_ACTIVATION_HEIGHT);
         let mut platform = platform_with_v24_core(&config, &core_state);
-        let (outcome, withdraw, idle) = run_identity_blocks(&mut platform, &config).await;
+        let IdentityBlocks {
+            outcome,
+            withdraw,
+            idle,
+        } = run_identity_blocks(&mut platform, &config).await;
 
         // Block 3 pools a withdrawal at core height 1, block 4 signs it.
         let outcome = next_block(outcome, 3, &withdraw, &config).await;
@@ -4545,7 +4566,11 @@ mod tests {
         for coinbase_down in [false, true] {
             let core_state = V24CoreState::new(V24_ACTIVATION_HEIGHT);
             let mut platform = platform_with_v24_core(&config, &core_state);
-            let (outcome, withdraw, idle) = run_identity_blocks(&mut platform, &config).await;
+            let IdentityBlocks {
+                outcome,
+                withdraw,
+                idle,
+            } = run_identity_blocks(&mut platform, &config).await;
 
             // Block 3 moves the chain locked height to the activation height and records V24.
             core_state.lock().unwrap().chain_locked_height = V24_ACTIVATION_HEIGHT;

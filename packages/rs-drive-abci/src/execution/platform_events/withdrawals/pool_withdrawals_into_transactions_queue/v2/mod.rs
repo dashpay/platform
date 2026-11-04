@@ -96,29 +96,28 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
+    /// What `pool` pooled and asked of Core.
+    struct PoolingOutcome {
+        /// How many of the two withdrawals were pooled.
+        pooled: usize,
+        /// How many credit pool balances were asked of Core.
+        credit_pool_balance_reads: usize,
+        /// How many coinbase payload versions were asked of Core.
+        coinbase_payload_version_reads: usize,
+        /// The asset unlock payload versions of the pooled transactions, in queue order.
+        payload_versions: Vec<u8>,
+    }
+
     /// Pools two queued withdrawals of `amount` credits each through the dispatcher, at
     /// `platform_version`, against a Core whose credit pool holds `pool_duffs` at every height
-    /// and where V24 is not active. Returns how many were pooled, how many credit pool balances
-    /// were asked of Core and how many coinbase payload versions.
+    /// and where V24 is not active, in a block transaction that holds V24's record when
+    /// `v24_recorded`, as it does once `update_core_info` has recorded V24 earlier in the block.
     fn pool(
         platform_version: &PlatformVersion,
         amount: u64,
         pool_duffs: u64,
-    ) -> (usize, usize, usize) {
-        let (pooled, balance_reads, coinbase_reads, _) =
-            pool_with_v24(platform_version, amount, pool_duffs, false);
-        (pooled, balance_reads, coinbase_reads)
-    }
-
-    /// `pool`, in a block transaction that holds V24's record when `v24_recorded`, as it does
-    /// once `update_core_info` has recorded V24 earlier in the block. Also returns the asset
-    /// unlock payload versions of the pooled transactions, in queue order.
-    fn pool_with_v24(
-        platform_version: &PlatformVersion,
-        amount: u64,
-        pool_duffs: u64,
         v24_recorded: bool,
-    ) -> (usize, usize, usize, Vec<u8>) {
+    ) -> PoolingOutcome {
         let mut platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(platform_version.protocol_version)
             .build_with_mock_rpc()
@@ -233,19 +232,19 @@ mod tests {
                     .version
             })
             .collect();
-        (
+        PoolingOutcome {
             pooled,
-            balance_reads.load(Ordering::SeqCst),
-            coinbase_reads.load(Ordering::SeqCst),
+            credit_pool_balance_reads: balance_reads.load(Ordering::SeqCst),
+            coinbase_payload_version_reads: coinbase_reads.load(Ordering::SeqCst),
             payload_versions,
-        )
+        }
     }
 
     #[test]
     fn should_pool_what_fits_both_the_daily_limit_and_cores_credit_pool() {
         // Plenty in Core's pool: both withdrawals pool.
         assert_eq!(
-            pool(PlatformVersion::latest(), 1000, 1_000_000_000_000).0,
+            pool(PlatformVersion::latest(), 1000, 1_000_000_000_000, false).pooled,
             2
         );
     }
@@ -254,8 +253,8 @@ mod tests {
     fn should_leave_queued_what_cores_credit_pool_could_not_give_up() {
         // A pool of 1 duff, 1,000 credits: it fits one 1,000 credit withdrawal, not two,
         // although the daily limit (2,000 Dash before any history) would allow both.
-        assert_eq!(pool(PlatformVersion::latest(), 1000, 1).0, 1);
-        assert_eq!(pool(PlatformVersion::latest(), 1000, 0).0, 0);
+        assert_eq!(pool(PlatformVersion::latest(), 1000, 1, false).pooled, 1);
+        assert_eq!(pool(PlatformVersion::latest(), 1000, 0, false).pooled, 0);
     }
 
     /// Through the dispatcher on both sides of the gate: version 1 (protocol version 13) pools
@@ -263,8 +262,11 @@ mod tests {
     #[test]
     fn should_hold_back_on_cores_credit_pool_only_from_protocol_version_14() {
         let version_13 = PlatformVersion::get(13).expect("expected protocol version 13");
-        assert_eq!(pool(version_13, 1000, 1), (2, 0, 0));
-        assert_eq!(pool(PlatformVersion::latest(), 1000, 1).0, 1);
+        let outcome = pool(version_13, 1000, 1, false);
+        assert_eq!(outcome.pooled, 2);
+        assert_eq!(outcome.credit_pool_balance_reads, 0);
+        assert_eq!(outcome.coinbase_payload_version_reads, 0);
+        assert_eq!(pool(PlatformVersion::latest(), 1000, 1, false).pooled, 1);
     }
 
     /// While the oldest queued withdrawal does not fit Platform's own limit nothing pools,
@@ -274,18 +276,20 @@ mod tests {
     #[test]
     fn should_pool_nothing_while_the_oldest_does_not_fit_the_daily_limit() {
         // 3,000 Dash each, over the flat 2,000 Dash before any history.
-        assert_eq!(
-            pool(
-                PlatformVersion::latest(),
-                dash_to_credits!(3000),
-                1_000_000_000_000
-            ),
-            (0, 50, 0)
+        let outcome = pool(
+            PlatformVersion::latest(),
+            dash_to_credits!(3000),
+            1_000_000_000_000,
+            false,
         );
-        assert_eq!(
-            pool(PlatformVersion::latest(), 1000, 1_000_000_000_000),
-            (2, 50, 0)
-        );
+        assert_eq!(outcome.pooled, 0);
+        assert_eq!(outcome.credit_pool_balance_reads, 50);
+        assert_eq!(outcome.coinbase_payload_version_reads, 0);
+
+        let outcome = pool(PlatformVersion::latest(), 1000, 1_000_000_000_000, false);
+        assert_eq!(outcome.pooled, 2);
+        assert_eq!(outcome.credit_pool_balance_reads, 50);
+        assert_eq!(outcome.coinbase_payload_version_reads, 0);
     }
 
     /// Pooling never asks Core whether V24 is active: from protocol version 15 the payload
@@ -294,12 +298,17 @@ mod tests {
     /// does not ask either.
     #[test]
     fn should_pool_without_asking_core_whether_v24_is_active() {
-        let coinbase_reads = |(_, _, coinbase_reads): (usize, usize, usize)| coinbase_reads;
         let version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
         let latest = PlatformVersion::latest();
 
-        assert_eq!(coinbase_reads(pool(version_14, 1000, 1_000_000_000_000)), 0);
-        assert_eq!(coinbase_reads(pool(latest, 1000, 1_000_000_000_000)), 0);
+        assert_eq!(
+            pool(version_14, 1000, 1_000_000_000_000, false).coinbase_payload_version_reads,
+            0
+        );
+        assert_eq!(
+            pool(latest, 1000, 1_000_000_000_000, false).coinbase_payload_version_reads,
+            0
+        );
     }
 
     /// Pooling reads the Core fork record in the block's transaction, where `update_core_info`
@@ -310,13 +319,13 @@ mod tests {
     fn should_pool_version_2_asset_unlocks_once_v24_is_recorded_in_the_block_transaction() {
         // 1 Dash each, above Core's dust threshold, which keeps a withdrawal at version 1.
         let payload_versions = |platform_version, v24_recorded| {
-            pool_with_v24(
+            pool(
                 platform_version,
                 dash_to_credits!(1),
                 1_000_000_000_000,
                 v24_recorded,
             )
-            .3
+            .payload_versions
         };
         let version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
         let latest = PlatformVersion::latest();

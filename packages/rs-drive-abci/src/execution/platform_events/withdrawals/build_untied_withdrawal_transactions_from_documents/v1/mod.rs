@@ -280,18 +280,23 @@ mod tests {
             .expect("expected to record V24");
     }
 
+    /// What `build_untied` built.
+    struct UntiedWithdrawals {
+        /// The untied transactions, with their withdrawal indices.
+        transactions: Vec<WithdrawalTransactionIndexAndBytes>,
+        /// The total amount of the transactions.
+        total_amount: Credits,
+        /// The documents, pooled.
+        pooled_documents: Vec<Document>,
+    }
+
     /// Pools `documents` through the dispatcher at `platform_version`, in a block transaction
-    /// holding V24's record at `v24_recorded_at`, or none. Returns the untied transactions,
-    /// their total amount and the pooled documents.
+    /// holding V24's record at `v24_recorded_at`, or none.
     fn build_untied(
         v24_recorded_at: Option<u32>,
         mut documents: Vec<Document>,
         platform_version: &PlatformVersion,
-    ) -> (
-        Vec<WithdrawalTransactionIndexAndBytes>,
-        Credits,
-        Vec<Document>,
-    ) {
+    ) -> UntiedWithdrawals {
         let platform = platform_without_core();
         let transaction = platform.drive.grove.start_transaction();
         if let Some(core_height) = v24_recorded_at {
@@ -306,7 +311,11 @@ mod tests {
                 platform_version,
             )
             .expect("expected to build the untied withdrawal transactions");
-        (transactions, total_amount, documents)
+        UntiedWithdrawals {
+            transactions,
+            total_amount,
+            pooled_documents: documents,
+        }
     }
 
     /// Decodes the untied transaction bytes the pooling step stores.
@@ -340,8 +349,11 @@ mod tests {
             (Some(CORE_HEIGHT), 2),
             (Some(CORE_HEIGHT - 1_000), 2),
         ] {
-            let (transactions, total_amount, pooled_documents) =
-                build_untied(v24_recorded_at, documents.clone(), platform_version);
+            let UntiedWithdrawals {
+                transactions,
+                total_amount,
+                pooled_documents,
+            } = build_untied(v24_recorded_at, documents.clone(), platform_version);
 
             assert_eq!(total_amount, expected_total_amount);
             assert_eq!(pooled_documents, expected_documents);
@@ -376,14 +388,14 @@ mod tests {
         let platform_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
         let documents = queued_withdrawals(&[1_000_000, 2_500_000], platform_version_14);
 
-        let (transactions, _, _) =
-            build_untied(Some(CORE_HEIGHT), documents.clone(), platform_version_14);
+        let transactions =
+            build_untied(Some(CORE_HEIGHT), documents.clone(), platform_version_14).transactions;
         assert!(transactions
             .iter()
             .all(|(_, bytes)| decode(bytes).base_payload.version == 1));
 
-        let (transactions, _, _) =
-            build_untied(Some(CORE_HEIGHT), documents, PlatformVersion::latest());
+        let transactions =
+            build_untied(Some(CORE_HEIGHT), documents, PlatformVersion::latest()).transactions;
         assert!(transactions
             .iter()
             .all(|(_, bytes)| decode(bytes).base_payload.version == 2));
@@ -465,8 +477,9 @@ mod tests {
                     None,
                     platform_version,
                 );
-                let (transactions, _, _) =
-                    build_untied(Some(CORE_HEIGHT), vec![document.clone()], platform_version);
+                let transactions =
+                    build_untied(Some(CORE_HEIGHT), vec![document.clone()], platform_version)
+                        .transactions;
                 let transaction = decode(&transactions[0].1);
                 let output = &transaction.output[0];
                 assert_eq!(output.value, output_duffs, "{amount_duffs} duffs");
@@ -581,7 +594,7 @@ mod tests {
             let dust = (threshold_duffs - 1) * CREDITS_PER_DUFF;
             let viable = threshold_duffs * CREDITS_PER_DUFF;
 
-            let (transactions, _, _) = build_untied(
+            let transactions = build_untied(
                 Some(CORE_HEIGHT),
                 [dust, viable]
                     .iter()
@@ -596,7 +609,8 @@ mod tests {
                     })
                     .collect(),
                 platform_version,
-            );
+            )
+            .transactions;
             let payload_versions = transactions
                 .iter()
                 .map(|(_, bytes)| decode(bytes).base_payload.version)
