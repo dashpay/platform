@@ -3505,7 +3505,8 @@ fn refuse_state_generated_schema_path(schema: &Value, path: &str) -> Result<(), 
 /// create wrote: such an index may not be an `integerRange` index on it, which files a value
 /// in every window holding it, more for a drawn value than for the placeholder; and on a type
 /// whose documents are mutable it may not skip documents on a stored property (`skipIfAbsent`,
-/// or a typed array), which a replace in the block of the create could add before the draw.
+/// or a typed array), which a replace in the block of the create could add before the draw,
+/// nor be an `integerRange` index at all, whose source a replace could move into more windows.
 /// And nothing a write is judged by may read it: not a reference declared on the type (the property holding it, a `where`
 /// value, a `findBy` source, a function's params, a key id), nor an `encryptedFor` key, which
 /// would name another key once drawn. The rules reading it are refused where their reads are
@@ -3664,6 +3665,18 @@ pub(super) fn validate_generated_from_declarations(
                         "function {} draws a value once the block is accepted, and integerRange \
                          index \"{}\" files a value in every window holding it, so the draw \
                          could create more entries than the create wrote and prepaid",
+                        generated_from.function, index.name
+                    )));
+                }
+                // A replace in the block of the create may move the window source before the
+                // draw, into more windows than the create's
+                if document_type.documents_mutable && index.integer_range.is_some() {
+                    return Err(structure_error(format!(
+                        "function {} draws a value once the block is accepted, and integerRange \
+                         index \"{}\" files a document in every window its source falls in, \
+                         which a replace in the block of the create could change before the \
+                         draw, creating entries the create did not prepay: hold the property in \
+                         such an index only on a type whose documents are immutable",
                         generated_from.function, index.name
                     )));
                 }

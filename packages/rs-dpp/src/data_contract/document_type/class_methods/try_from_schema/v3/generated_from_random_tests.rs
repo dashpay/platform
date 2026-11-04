@@ -523,6 +523,37 @@ fn should_refuse_an_index_holding_a_property_drawn_at_random_that_sums_or_window
 }
 
 #[test]
+fn should_refuse_a_window_index_holding_a_property_drawn_at_random_on_a_mutable_type() {
+    // A replace could move the price into more windows before the draw
+    let schema = card_schema_with_property_and_indices(
+        "price",
+        platform_value!({ "type": "integer", "minimum": 0, "maximum": 1000, "position": 2 }),
+        true,
+        platform_value!([{
+            "name": "byPriceWindowAndRarity",
+            "properties": [{ "price": "asc" }, { "rarity": "asc" }],
+            "integerRange": { "on": "price", "range": 240u64, "step": 10u64 }
+        }]),
+    );
+    expect_refused(
+        schema.clone(),
+        "integerRange index \"byPriceWindowAndRarity\" files a document in every window its \
+         source falls in",
+    );
+
+    // An immutable card keeps its price
+    let mut immutable = schema;
+    immutable
+        .insert("documentsMutable".to_string(), Value::Bool(false))
+        .expect("the schema is a map");
+    let document_type = parse(immutable);
+    assert!(document_type
+        .as_ref()
+        .indexes()
+        .contains_key("byPriceWindowAndRarity"));
+}
+
+#[test]
 fn should_refuse_skipping_on_a_stored_property_beside_one_drawn_at_random_on_a_mutable_type() {
     let schema = card_schema_with_property_and_indices(
         "tag",
