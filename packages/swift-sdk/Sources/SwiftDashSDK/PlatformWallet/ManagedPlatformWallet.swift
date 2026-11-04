@@ -1541,8 +1541,11 @@ extension ManagedPlatformWallet {
         return try Self.identityKeyWalletCheck(from: out)
     }
 
-    /// Copy one key check out of its FFI form.
-    private static func identityKeyWalletCheck(
+    /// Copy one key check out of its FFI form: every string and byte is
+    /// copied into Swift values, so the result stays valid after the
+    /// Rust free wipes and releases `out`. Pure decoding. `internal` so
+    /// tests can decode hand-built C values.
+    static func identityKeyWalletCheck(
         from out: IdentityKeyWalletCheckFFI
     ) throws -> IdentityKeyWalletCheck {
         let path = out.derivation_path.map { String(cString: $0) } ?? ""
@@ -1707,15 +1710,28 @@ extension ManagedPlatformWallet {
         try result.check()
 
         // Copy out before the deferred free wipes and releases the result.
+        return try Self.identityWalletCheck(from: out, keyCount: keys.count)
+    }
+
+    /// Copy an identity check out of its FFI form, keys in the order
+    /// Rust returned them (the order they were given). Throws when it
+    /// holds a different number of results than `keyCount` keys were
+    /// sent, or an unknown value. Pure decoding, like
+    /// `identityKeyWalletCheck(from:)`; `internal` so tests can decode
+    /// hand-built C values.
+    static func identityWalletCheck(
+        from out: IdentityWalletCheckFFI,
+        keyCount: Int
+    ) throws -> IdentityWalletCheck {
         var checks: [IdentityKeyWalletCheck] = []
         if let results = out.keys {
             for index in 0..<Int(out.keys_len) {
                 checks.append(try Self.identityKeyWalletCheck(from: results[index]))
             }
         }
-        guard checks.count == keys.count else {
+        guard checks.count == keyCount else {
             throw PlatformWalletError.deserialization(
-                "Identity key check returned \(checks.count) results for \(keys.count) keys"
+                "Identity key check returned \(checks.count) results for \(keyCount) keys"
             )
         }
         let ownership: IdentityWalletOwnership
