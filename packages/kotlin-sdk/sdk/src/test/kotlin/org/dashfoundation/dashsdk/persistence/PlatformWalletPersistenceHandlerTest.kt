@@ -64,7 +64,7 @@ class PlatformWalletPersistenceHandlerTest {
     /**
      * What the sweep pass "decodes" from a stored record's bytes, keyed by
      * txid. Every fixture records transactions with dummy bytes
-     * (`ByteArray(10) { 5 }`) that key-wallet-ffi could never decode, and
+     * (`ByteArray(10) { 5 }`) that the native decoder could never decode, and
      * the native decoder is not loadable under Robolectric anyway, so
      * [recordTransaction] registers each record's `inputOutpoints` here and
      * [storedInputs] hands them back. A txid never registered throws, as

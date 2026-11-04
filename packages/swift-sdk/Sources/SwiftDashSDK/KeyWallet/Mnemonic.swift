@@ -18,46 +18,54 @@ public class Mnemonic {
     /// - Returns: The generated mnemonic phrase
     public static func generate(wordCount: UInt32 = 24,
                                language: MnemonicLanguage = .english) throws -> String {
-        guard [12, 15, 18, 21, 24].contains(wordCount) else {
-            throw KeyWalletError.invalidInput("Word count must be 12, 15, 18, 21, or 24")
+        try KeyDerivation.ownedString(
+            "platform_wallet_mnemonic_generate", free: platform_wallet_mnemonic_free
+        ) { out in
+            try platform_wallet_mnemonic_generate(wordCount, language.rawValue, &out).check()
         }
-
-        var error = FFIError()
-        let mnemonicPtr = mnemonic_generate_with_language(wordCount, language.ffiValue, &error)
-
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
-            }
-        }
-
-        guard let ptr = mnemonicPtr else {
-            throw KeyWalletError(ffiError: error)
-        }
-
-        let mnemonic = String(cString: ptr)
-        mnemonic_free(ptr)
-
-        return mnemonic
     }
 
-    /// Validate a mnemonic phrase
+    /// Validate a mnemonic phrase in any supported BIP-39 language
     /// - Parameter mnemonic: The mnemonic phrase to validate
     /// - Returns: True if valid
     public static func validate(_ mnemonic: String) -> Bool {
-        var error = FFIError()
+        // An embedded NUL truncates the C string, so the FFI would judge only
+        // the prefix.
+        guard !mnemonic.utf8.contains(0) else { return false }
+        let result = mnemonic.withCString { platform_wallet_mnemonic_validate($0) }
+        return PlatformWalletResult(result).isSuccess
+    }
 
-        let isValid = mnemonic.withCString { mnemonicCStr in
-            mnemonic_validate(mnemonicCStr, &error)
-        }
-
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
+    /// The id the platform wallet manager gives the wallet of `mnemonic` on
+    /// `network`, computed without creating or registering a wallet.
+    ///
+    /// The id is network-scoped, so one phrase has a distinct id per network.
+    public static func walletId(for mnemonic: String, network: Network) throws -> Data {
+        try KeyDerivation.requireNoNUL(mnemonic, "Mnemonic")
+        var walletId = Data(count: 32)
+        try mnemonic.withCString { cMnemonic in
+            try walletId.withUnsafeMutableBytes { raw in
+                try platform_wallet_wallet_id_from_mnemonic(
+                    cMnemonic,
+                    network.ffiValue,
+                    raw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                ).check()
             }
         }
+        return walletId
+    }
 
-        return isValid
+    /// The first receive address of `mnemonic` on `network`: index 0 of the
+    /// external chain of BIP-44 account 0. Only the address crosses into Swift.
+    public static func firstReceiveAddress(for mnemonic: String, network: Network) throws -> String {
+        try KeyDerivation.requireNoNUL(mnemonic, "Mnemonic")
+        return try mnemonic.withCString { cMnemonic in
+            try KeyDerivation.ownedString("platform_wallet_first_receive_address_from_mnemonic") { out in
+                try platform_wallet_first_receive_address_from_mnemonic(
+                    cMnemonic, network.ffiValue, &out
+                ).check()
+            }
+        }
     }
 
     /// Convert mnemonic to seed
@@ -164,7 +172,7 @@ public class Mnemonic {
         // result — neither is reachable here (we pass &outPtr; BIP-39 words
         // contain no NUL). A failure would be a real bug, so trap rather than
         // mask it.
-        try! platform_wallet_mnemonic_word_list(language.ffiMnemonicValue, &outPtr).check()
+        try! platform_wallet_mnemonic_word_list(language.rawValue, &outPtr).check()
         guard let cStr = outPtr else { return [] }
         let joined = String(cString: cStr)
         platform_wallet_free_string(cStr)

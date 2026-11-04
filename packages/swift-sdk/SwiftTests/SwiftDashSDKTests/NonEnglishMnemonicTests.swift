@@ -184,11 +184,71 @@ final class NonEnglishMnemonicTests: XCTestCase {
         XCTAssertEqual(Array(chainCode), Array(hmac[32..<64]))
     }
 
+    func testWalletIdMatchesKeyWalletWalletId() throws {
+        // dashwallet-ios keys its wipe and recovery checks on these ids, so the
+        // platform computation must match `Wallet(mnemonic:network:).id` byte
+        // for byte on every network the app stores.
+        for phrase in [Self.frenchPhrase, Self.frenchPhraseNFC, Self.englishPhrase] {
+            for network in [Network.mainnet, .testnet, .devnet] {
+                XCTAssertEqual(
+                    try Mnemonic.walletId(for: phrase, network: network),
+                    try Wallet(mnemonic: phrase, network: network).id,
+                    "\(network)")
+            }
+        }
+    }
+
+    func testFirstReceiveAddressMatchesSeedDerivedAddress() throws {
+        // The address dashwallet-ios's phrase repairer derived before: the seed
+        // from `Mnemonic.toSeed` and the address from key-wallet-ffi at
+        // `m/44'/coin'/0'/0/0`.
+        for phrase in [Self.frenchPhrase, Self.englishPhrase] {
+            for network in [Network.mainnet, .testnet] {
+                let path = try KeyDerivation.getBIP44PaymentPath(
+                    network: network, accountIndex: 0, isChange: false, addressIndex: 0)
+                let seed = try Mnemonic.toSeed(mnemonic: phrase)
+                let expected: String? = seed.withUnsafeBytes { raw in
+                    path.withCString { cPath in
+                        guard let base = raw.bindMemory(to: UInt8.self).baseAddress,
+                              let cAddress = key_wallet_derive_address_from_seed(
+                                  base, network.ffiValue, cPath)
+                        else { return nil }
+                        defer { string_free(cAddress) }
+                        return String(cString: cAddress)
+                    }
+                }
+                XCTAssertEqual(
+                    try Mnemonic.firstReceiveAddress(for: phrase, network: network),
+                    try XCTUnwrap(expected),
+                    "\(network)")
+            }
+        }
+    }
+
     // MARK: - Invalid input still refused
 
     func testToSeedGibberishStillThrows() {
         XCTAssertThrowsError(
             try Mnemonic.toSeed(mnemonic: "definitely not a bip39 phrase at all zz"))
+    }
+
+    func testValidateRefusesGibberish() throws {
+        XCTAssertFalse(Mnemonic.validate("definitely not a bip39 phrase at all zz"))
+        XCTAssertFalse(Mnemonic.validate(Self.englishPhrase + "\u{0}"))
+        XCTAssertThrowsError(
+            try Mnemonic.walletId(for: "definitely not a bip39 phrase at all zz", network: .mainnet))
+
+        // The FFI reads a C string, so an unguarded helper would answer for
+        // the valid prefix before the NUL.
+        let nulPhrase = Self.englishPhrase + "\u{0}junk"
+        XCTAssertThrowsError(try Mnemonic.walletId(for: nulPhrase, network: .mainnet))
+        XCTAssertThrowsError(try Mnemonic.firstReceiveAddress(for: nulPhrase, network: .mainnet))
+        XCTAssertThrowsError(
+            try Mnemonic.firstReceiveAddress(
+                for: "definitely not a bip39 phrase at all zz", network: .mainnet))
+        let validAddress = try Mnemonic.firstReceiveAddress(for: Self.englishPhrase, network: .mainnet)
+        XCTAssertTrue(Address.validate(validAddress, network: .mainnet))
+        XCTAssertFalse(Address.validate(validAddress + "\u{0}junk", network: .mainnet))
     }
 
     func testWalletFromGibberishStillThrows() {

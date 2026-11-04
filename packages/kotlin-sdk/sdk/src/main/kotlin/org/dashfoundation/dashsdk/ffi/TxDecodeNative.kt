@@ -7,8 +7,8 @@ package org.dashfoundation.dashsdk.ffi
 internal object TxDecodeNative {
 
     /**
-     * Consensus-decode raw transaction bytes (key-wallet-ffi
-     * `transaction_decode`) into the packed big-endian BLOB documented in
+     * Consensus-decode raw transaction bytes (platform-wallet-ffi
+     * `platform_wallet_transaction_decode`) into the packed big-endian BLOB documented in
      * `tx_decode.rs` / parsed by
      * [org.dashfoundation.dashsdk.keywallet.TransactionDecoder.parseBlob].
      * [networkOrd] is [org.dashfoundation.dashsdk.Network.ffiValue].
