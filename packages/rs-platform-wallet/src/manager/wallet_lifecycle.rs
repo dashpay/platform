@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use dash_spv::chain::CheckpointManager;
-use key_wallet::mnemonic::Mnemonic;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
@@ -17,6 +16,7 @@ use crate::changeset::{
 };
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
+use crate::wallet::mnemonic::parse_mnemonic_any_language;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
@@ -31,17 +31,6 @@ fn already_registered(wallet_id: WalletId) -> PlatformWalletError {
     PlatformWalletError::WalletAlreadyExists(
         key_wallet_manager::WalletError::WalletExists(wallet_id).to_string(),
     )
-}
-
-/// Parse a BIP-39 mnemonic in any supported language.
-///
-/// Since rust-dashcore#981 `Mnemonic::from_phrase` IS the auto-detecting
-/// parse — one path, with English diagnostics kept when nothing matches —
-/// so there is no language list left for a caller to walk. What remains is
-/// the error narrowing: callers report a `&'static str`, and this is where
-/// upstream's richer error is reduced to one.
-fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
-    Mnemonic::from_phrase(phrase).map_err(|_| "phrase does not match any supported BIP-39 wordlist")
 }
 
 /// Test-only rendezvous fired inside [`PlatformWalletManager::remove_wallet_with_teardown`],

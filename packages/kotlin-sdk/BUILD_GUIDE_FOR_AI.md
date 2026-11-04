@@ -163,8 +163,8 @@ schema-hash crash at app start on devices with old data.
 
 ## Architecture Notes
 
-- One JNI library: `rs-unified-sdk-jni` links `rs-sdk-ffi`,
-  `platform-wallet-ffi`, and `key-wallet-ffi` as **rlibs** — FFI structs
+- One JNI library: `rs-unified-sdk-jni` links `rs-sdk-ffi` and
+  `platform-wallet-ffi` as **rlibs** — FFI structs
   never cross JNI by value. Errors become
   `org.dashfoundation.dashsdk.ffi.DashSDKException(code, message)`;
   every export is panic-guarded.
