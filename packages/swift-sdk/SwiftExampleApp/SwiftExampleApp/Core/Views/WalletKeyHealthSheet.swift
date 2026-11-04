@@ -4,8 +4,8 @@ import SwiftDashSDK
 
 // MARK: - Reports
 
-/// Per-key diagnosis. Status drives the row's icon + the parent
-/// identity's roll-up severity.
+/// Per-key diagnosis. Status drives the row's icon and, through
+/// re-derive, the parent identity's roll-up severity.
 struct WalletKeyHealth: Identifiable {
     let id: Int32  // keyId (stable per identity)
     let keyId: UInt32
@@ -25,18 +25,10 @@ struct WalletKeyHealth: Identifiable {
         /// entry is missing or holds different bytes — a re-derive
         /// will repair it.
         case needsRederive(reason: String)
-        /// The identity's master key doesn't match what this wallet
-        /// derives at its slot `(identityIndex, keyId)`. The master
-        /// key decides whose identity it is, so the identity row
-        /// belongs to a different wallet (or a stale mnemonic). Repair
-        /// is destructive: only delete-identity.
-        case orphan(reason: String)
-        /// A key other than a master key that isn't the one this wallet
-        /// derives at its slot (one added from elsewhere, say). The
-        /// identity is still the wallet's, because its master key
-        /// decides that, but the wallet can't sign with this key.
-        /// Shown, with no repair; it leaves the identity's severity
-        /// alone.
+        /// The key isn't the one this wallet derives at its slot
+        /// `(identityIndex, keyId)`, so the wallet can't sign with it.
+        /// Whose identity it is stays Rust's call (the report's
+        /// `ownership`); the key alone offers no repair.
         case notWalletKey(reason: String)
         /// A key with nothing to compare it with: a type the wallet
         /// doesn't derive at the identity's key slots (Rust decides
@@ -51,7 +43,6 @@ struct WalletKeyHealth: Identifiable {
         switch status {
         case .healthy: return "checkmark.circle.fill"
         case .needsRederive: return "exclamationmark.triangle.fill"
-        case .orphan: return "xmark.circle.fill"
         case .notWalletKey: return "xmark.circle"
         case .unchecked: return "questionmark.circle.fill"
         }
@@ -61,7 +52,6 @@ struct WalletKeyHealth: Identifiable {
         switch status {
         case .healthy: return .green
         case .needsRederive: return .orange
-        case .orphan: return .red
         case .notWalletKey: return .orange
         case .unchecked: return .secondary
         }
@@ -71,7 +61,6 @@ struct WalletKeyHealth: Identifiable {
         switch status {
         case .healthy: return "Healthy"
         case .needsRederive(let reason): return "Needs re-derive — \(reason)"
-        case .orphan(let reason): return "Orphan — \(reason)"
         case .notWalletKey(let reason): return "Not this wallet's key: \(reason)"
         case .unchecked(let reason): return "Not checked: \(reason)"
         }
@@ -86,23 +75,25 @@ struct WalletKeyHealth: Identifiable {
     }
 }
 
-/// Per-identity rollup. Severity is the highest-severity child key
-/// status; drives which repair action is offered (re-derive vs
-/// delete-identity). Only `.orphan` (a master key) and
-/// `.needsRederive` raise it; `.notWalletKey` and `.unchecked` keys
-/// leave it alone.
+/// Per-identity rollup; drives which repair action is offered
+/// (re-derive vs delete-identity). Whose identity it is comes from
+/// Rust (`ownership`, decided from the identity's enabled master key),
+/// and the sheet offers delete only when Rust says it isn't the
+/// wallet's.
 struct WalletIdentityKeyHealthReport: Identifiable {
     let id: Data  // identity id bytes
     let identityIdBase58: String
     let identityIndex: UInt32
     let keys: [WalletKeyHealth]
+    /// Rust's verdict on whose identity this is.
+    let ownership: ManagedPlatformWallet.IdentityWalletOwnership
     /// Held so the delete-identity action can cascade-remove the row.
     let identityRow: PersistentIdentity
 
     enum Severity { case healthy, needsRederive, orphan }
 
     var severity: Severity {
-        if keys.contains(where: { if case .orphan = $0.status { true } else { false } }) {
+        if ownership == .notOwned {
             return .orphan
         }
         if keys.contains(where: { if case .needsRederive = $0.status { true } else { false } }) {
@@ -146,11 +137,11 @@ fileprivate func cleanupLegacyKeychainEntry(walletIdHex: String, derivationPath:
 /// background context.
 enum WalletKeyHealthChecker {
 
-    /// Ask Rust (`checkIdentityKey`) whether each PersistentPublicKey
-    /// is the key the wallet derives at its slot, and for a key that
-    /// is, compare the Keychain entry with its private bytes. Rust
-    /// decides match, mismatch or not derived; this inspects the
-    /// Keychain and renders. Pure read: does not mutate state.
+    /// Ask Rust (`checkIdentityKeys`) which of each identity's keys are
+    /// the wallet's keys at their slots and whether the identity is the
+    /// wallet's, and for a key that is, compare the Keychain entry with
+    /// its private bytes. Rust decides; this inspects the Keychain and
+    /// renders. Pure read: does not mutate state.
     @MainActor
     static func runCheck(
         wallet: ManagedPlatformWallet,
@@ -158,66 +149,106 @@ enum WalletKeyHealthChecker {
         identities: [PersistentIdentity],
         network: Network
     ) -> [WalletIdentityKeyHealthReport] {
-        var reports: [WalletIdentityKeyHealthReport] = []
-        for identity in identities {
-            let sortedKeys = identity.publicKeys.sorted { $0.keyId < $1.keyId }
-            var keyHealths: [WalletKeyHealth] = []
-            for row in sortedKeys {
-                let kid = UInt32(bitPattern: row.keyId)
-                let storedHex = row.publicKeyData.toHexString()
-                let (status, derivedHex) = checkKey(
-                    row: row,
-                    keyId: kid,
-                    identityIndex: identity.identityIndex,
-                    storedHex: storedHex,
-                    wallet: wallet,
-                    walletId: walletId,
-                    network: network
-                )
-                keyHealths.append(
-                    WalletKeyHealth(
-                        id: row.keyId,
-                        keyId: kid,
-                        purposeRaw: UInt8(row.purpose) ?? 0,
-                        securityLevelRaw: UInt8(row.securityLevel) ?? 0,
-                        storedPublicKeyHex: storedHex,
-                        derivedPublicKeyHex: derivedHex,
-                        status: status,
-                        row: row
-                    )
-                )
-            }
-            reports.append(
-                WalletIdentityKeyHealthReport(
-                    id: identity.identityId,
-                    identityIdBase58: identity.identityIdBase58,
-                    identityIndex: identity.identityIndex,
-                    keys: keyHealths,
-                    identityRow: identity
-                )
-            )
+        identities.map { identity in
+            checkIdentity(identity, wallet: wallet, walletId: walletId, network: network)
         }
-        return reports
     }
 
-    /// One key's status and the wallet's key at its slot in hex (empty
-    /// when there is none to show).
+    /// One identity's report from a single Rust check of all its keys.
     @MainActor
-    private static func checkKey(
-        row: PersistentPublicKey,
-        keyId: UInt32,
-        identityIndex: UInt32,
-        storedHex: String,
+    private static func checkIdentity(
+        _ identity: PersistentIdentity,
         wallet: ManagedPlatformWallet,
         walletId: Data,
         network: Network
+    ) -> WalletIdentityKeyHealthReport {
+        let sortedKeys = identity.publicKeys.sorted { $0.keyId < $1.keyId }
+
+        // A row the app can't read is not handed to Rust under a guessed
+        // type: there is nothing to check it as.
+        var inputs: [ManagedPlatformWallet.IdentityKeyCheckInput] = []
+        for row in sortedKeys {
+            guard let keyType = row.keyTypeEnum,
+                  let purpose = UInt8(row.purpose),
+                  let securityLevel = UInt8(row.securityLevel)
+            else { continue }
+            inputs.append(
+                ManagedPlatformWallet.IdentityKeyCheckInput(
+                    keyId: UInt32(bitPattern: row.keyId),
+                    keyType: keyType,
+                    purpose: purpose,
+                    securityLevel: securityLevel,
+                    publicKeyData: row.publicKeyData,
+                    disabledAt: row.disabledAt.map { UInt64(clamping: $0) }
+                )
+            )
+        }
+
+        var checks: [UInt32: ManagedPlatformWallet.IdentityKeyWalletCheck] = [:]
+        var ownership = ManagedPlatformWallet.IdentityWalletOwnership.undetermined
+        var failure: String?
+        do {
+            let result = try wallet.checkIdentityKeys(
+                identityIndex: identity.identityIndex,
+                keys: inputs,
+                network: network
+            )
+            for (input, check) in zip(inputs, result.keys) {
+                checks[input.keyId] = check
+            }
+            ownership = result.ownership
+        } catch {
+            // An error (a locked Keychain, say) says nothing about whose
+            // keys these are, so it must not offer to delete the identity.
+            failure = "couldn't check the keys: \(error.localizedDescription)"
+        }
+
+        let keyHealths = sortedKeys.map { row in
+            let keyId = UInt32(bitPattern: row.keyId)
+            let storedHex = row.publicKeyData.toHexString()
+            let (status, derivedHex) = keyStatus(
+                row: row,
+                check: checks[keyId],
+                failure: failure,
+                storedHex: storedHex,
+                walletId: walletId
+            )
+            return WalletKeyHealth(
+                id: row.keyId,
+                keyId: keyId,
+                purposeRaw: UInt8(row.purpose) ?? 0,
+                securityLevelRaw: UInt8(row.securityLevel) ?? 0,
+                storedPublicKeyHex: storedHex,
+                derivedPublicKeyHex: derivedHex,
+                status: status,
+                row: row
+            )
+        }
+        return WalletIdentityKeyHealthReport(
+            id: identity.identityId,
+            identityIdBase58: identity.identityIdBase58,
+            identityIndex: identity.identityIndex,
+            keys: keyHealths,
+            ownership: ownership,
+            identityRow: identity
+        )
+    }
+
+    /// One key's status from Rust's check of it (`nil` when it wasn't
+    /// sent or the check failed), and the wallet's key at its slot in
+    /// hex (empty when there is none to show).
+    @MainActor
+    private static func keyStatus(
+        row: PersistentPublicKey,
+        check: ManagedPlatformWallet.IdentityKeyWalletCheck?,
+        failure: String?,
+        storedHex: String,
+        walletId: Data
     ) -> (WalletKeyHealth.Status, String) {
-        // A row the app can't read is not handed to Rust under a
-        // guessed type: there is nothing to check it as.
-        guard let keyType = row.keyTypeEnum,
-              let purpose = UInt8(row.purpose),
-              let securityLevel = UInt8(row.securityLevel)
-        else {
+        guard let check else {
+            if let failure {
+                return (.unchecked(reason: failure), "")
+            }
             return (
                 .unchecked(
                     reason: "the stored key type \(row.keyType), purpose \(row.purpose) or security level \(row.securityLevel) isn't one the app knows"
@@ -225,42 +256,23 @@ enum WalletKeyHealthChecker {
                 ""
             )
         }
-
-        let check: ManagedPlatformWallet.IdentityKeyWalletCheck
-        do {
-            check = try wallet.checkIdentityKey(
-                identityIndex: identityIndex,
-                keyId: keyId,
-                keyType: keyType,
-                purpose: purpose,
-                securityLevel: securityLevel,
-                publicKeyData: row.publicKeyData,
-                network: network
-            )
-        } catch {
-            // An error (a locked Keychain, say) says nothing about whose
-            // key this is, so it must not offer to delete the identity.
-            return (.unchecked(reason: "couldn't check the key: \(error.localizedDescription)"), "")
-        }
-
         switch check {
         case .notDerived:
+            let typeName = row.keyTypeEnum?.name ?? "type \(row.keyType)"
             return (
                 .unchecked(
-                    reason: "the wallet doesn't derive \(keyType.name) keys from the identity's key slots"
+                    reason: "the wallet doesn't derive \(typeName) keys from the identity's key slots"
                 ),
                 ""
             )
         case .mismatch(let derivationPath, let derivedPublicKeyData):
             let derivedHex = derivedPublicKeyData.toHexString()
-            let reason = "Stored \(storedHex.prefix(12))… doesn't match the wallet's key at \(derivationPath) (\(derivedHex.prefix(12))…)"
-            // Only the master key says whose identity it is. Another key
-            // that isn't the wallet's (added from elsewhere) must not
-            // offer to delete an identity the wallet owns.
-            if securityLevel == SecurityLevel.master.rawValue {
-                return (.orphan(reason: reason), derivedHex)
-            }
-            return (.notWalletKey(reason: reason), derivedHex)
+            return (
+                .notWalletKey(
+                    reason: "Stored \(storedHex.prefix(12))… doesn't match the wallet's key at \(derivationPath) (\(derivedHex.prefix(12))…)"
+                ),
+                derivedHex
+            )
         case .matches(let derivationPath, let privateKeyData, _):
             return (
                 keychainStatus(

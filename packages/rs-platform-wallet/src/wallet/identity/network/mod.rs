@@ -107,11 +107,13 @@ pub use dpns_marketplace::{
     DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS,
 };
 pub use identity_handle::{
-    check_identity_key_from_master, derive_connect_keypair_from_master,
-    derive_ecdsa_identity_auth_keypair_from_master, derive_identity_auth_key_hash_from_master,
-    derive_identity_auth_keypair, identity_auth_derivation_path_for_type,
-    identity_key_derivation_path, identity_key_derivation_type, ConnectKey, DerivedIdentityAuthKey,
-    IdentityKeyWalletCheck, IdentityWallet, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
+    check_identity_key_from_master, check_identity_keys, check_identity_keys_from_master,
+    derive_connect_keypair_from_master, derive_ecdsa_identity_auth_keypair_from_master,
+    derive_identity_auth_key_hash_from_master, derive_identity_auth_keypair,
+    identity_auth_derivation_path_for_type, identity_key_derivation_path,
+    identity_key_derivation_type, ConnectKey, DerivedIdentityAuthKey, IdentityKeyWalletCheck,
+    IdentityWallet, IdentityWalletCheck, IdentityWalletOwnership, IDENTITY_GAP_LIMIT,
+    MASTER_KEY_INDEX,
 };
 pub use state_transition_summary::{
     check_document_type_name, decode_state_transition, summarize_state_transition,

@@ -110,6 +110,81 @@ final class IdentityKeyWalletCheckTests: XCTestCase {
                 derivedPublicKeyData: ownSlot.publicKeyData))
     }
 
+    private func ecdsaInput(
+        keyId: UInt32,
+        securityLevel: SecurityLevel,
+        publicKeyData: Data,
+        disabledAt: UInt64? = nil
+    ) -> ManagedPlatformWallet.IdentityKeyCheckInput {
+        ManagedPlatformWallet.IdentityKeyCheckInput(
+            keyId: keyId, keyType: .ecdsaSecp256k1,
+            purpose: KeyPurpose.authentication.rawValue,
+            securityLevel: securityLevel.rawValue,
+            publicKeyData: publicKeyData, disabledAt: disabledAt)
+    }
+
+    /// A master rotation leaves the former, foreign master disabled; the
+    /// enabled master is the wallet's, so the identity is.
+    func testShouldOwnAnIdentityWhoseEnabledMasterReplacedAForeignOne() throws {
+        let (wallet, storage) = try makeWallet()
+        let foreign = try wallet.deriveIdentityAuthKeyAtSlot(
+            identityIndex: 1, keyId: 9, network: .testnet, storage: storage)
+        let current = try wallet.deriveIdentityAuthKeyAtSlot(
+            identityIndex: 1, keyId: 1, network: .testnet, storage: storage)
+
+        let check = try wallet.checkIdentityKeys(
+            identityIndex: 1,
+            keys: [
+                ecdsaInput(
+                    keyId: 0, securityLevel: .master, publicKeyData: foreign.publicKeyData,
+                    disabledAt: 1_700_000_000_000),
+                ecdsaInput(keyId: 1, securityLevel: .master, publicKeyData: current.publicKeyData),
+            ],
+            network: .testnet, storage: storage)
+
+        XCTAssertEqual(check.ownership, .owned)
+        XCTAssertEqual(check.keys.count, 2)
+        guard case .mismatch = check.keys[0], case .matches = check.keys[1] else {
+            return XCTFail("expected mismatch then matches, got \(check.keys)")
+        }
+    }
+
+    /// A key added from elsewhere doesn't make an identity whose master
+    /// is the wallet's look foreign.
+    func testShouldOwnAnIdentityWhoseMasterMatchesBesideAForeignKey() throws {
+        let (wallet, storage) = try makeWallet()
+        let master = try wallet.deriveIdentityAuthKeyAtSlot(
+            identityIndex: 1, keyId: 0, network: .testnet, storage: storage)
+        let foreign = try wallet.deriveIdentityAuthKeyAtSlot(
+            identityIndex: 1, keyId: 7, network: .testnet, storage: storage)
+
+        let check = try wallet.checkIdentityKeys(
+            identityIndex: 1,
+            keys: [
+                ecdsaInput(keyId: 0, securityLevel: .master, publicKeyData: master.publicKeyData),
+                ecdsaInput(keyId: 1, securityLevel: .high, publicKeyData: foreign.publicKeyData),
+            ],
+            network: .testnet, storage: storage)
+
+        XCTAssertEqual(check.ownership, .owned)
+        guard case .matches = check.keys[0], case .mismatch = check.keys[1] else {
+            return XCTFail("expected matches then mismatch, got \(check.keys)")
+        }
+    }
+
+    func testShouldNotOwnAnIdentityWhoseOnlyEnabledMasterIsForeign() throws {
+        let (wallet, storage) = try makeWallet()
+        let foreign = try wallet.deriveIdentityAuthKeyAtSlot(
+            identityIndex: 1, keyId: 5, network: .testnet, storage: storage)
+
+        let check = try wallet.checkIdentityKeys(
+            identityIndex: 1,
+            keys: [ecdsaInput(keyId: 0, securityLevel: .master, publicKeyData: foreign.publicKeyData)],
+            network: .testnet, storage: storage)
+
+        XCTAssertEqual(check.ownership, .notOwned)
+    }
+
     func testShouldThrowWithoutAMnemonic() throws {
         let wallet = ManagedPlatformWallet(handle: NULL_HANDLE, walletId: walletId)
 
