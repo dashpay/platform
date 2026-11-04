@@ -35,13 +35,19 @@ mod generated_from_random_tests {
 
     const BEACON: [u8; 96] = [7; 96];
 
-    /// A mutable `card` type: its `name`, a `rarity` drawn from 1 to 100 and indexed, and a
-    /// free `note`.
+    /// A mutable `card` type: its `name`, a `rarity` drawn from 1 to 100 and indexed alone and
+    /// with the name, and a free `note`.
     fn card_schema() -> Value {
         platform_value!({
             "type": "object",
             "documentsMutable": true,
-            "indices": [{ "name": "byRarity", "properties": [{ "rarity": "asc" }] }],
+            "indices": [
+                { "name": "byRarity", "properties": [{ "rarity": "asc" }] },
+                {
+                    "name": "byRarityAndName",
+                    "properties": [{ "rarity": "asc" }, { "name": "asc" }]
+                }
+            ],
             "properties": {
                 "name": { "type": "string", "maxLength": 32, "position": 0 },
                 "rarity": {
@@ -411,6 +417,44 @@ mod generated_from_random_tests {
             .await;
         assert_not_generated(fixture.process(&transition));
         assert!(fixture.stored_cards().is_empty());
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_wrong_typed_indexed_value_with_the_schema_and_bump_the_nonce() {
+        // The create prepays the entries the draw moves in `byRarityAndName`, which key its
+        // name: the prepayment is charged once the schema holds, so a name of the wrong type
+        // meets the schema's paid refusal, which bumps the nonce, not an internal error
+        let mut fixture = CardFixture::new();
+        let mut data = CardFixture::card_data(None, None);
+        data.insert("name".to_string(), Value::Bool(false));
+        let transition = fixture.create_transition(data, 4).await;
+
+        let result = fixture.process(&transition);
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::BasicError(BasicError::JsonSchemaError(_)),
+                ..
+            },
+            "{result:?}"
+        );
+        assert!(fixture.stored_cards().is_empty());
+        assert_eq!(
+            fixture
+                .platform
+                .drive
+                .fetch_identity_contract_nonce(
+                    fixture.identity.id().to_buffer(),
+                    fixture.contract.id().to_buffer(),
+                    true,
+                    None,
+                    PlatformVersion::latest(),
+                )
+                .expect("expected to fetch the nonce")
+                .map(|nonce| nonce & dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER),
+            Some(1),
+            "the refused create bumped the nonce"
+        );
     }
 
     #[tokio::test]
