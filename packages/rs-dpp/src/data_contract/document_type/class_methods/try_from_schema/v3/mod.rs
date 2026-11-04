@@ -2089,6 +2089,8 @@ mod commit_reveal_lookup_tests;
 #[cfg(all(test, feature = "validation"))]
 mod contest_decided_by_index_values_tests;
 #[cfg(all(test, feature = "validation"))]
+mod contest_keyed_by_top_level_properties_tests;
+#[cfg(all(test, feature = "validation"))]
 mod contested_summed_value_bounds_tests;
 #[cfg(all(test, feature = "validation"))]
 mod delete_constraints_tests;

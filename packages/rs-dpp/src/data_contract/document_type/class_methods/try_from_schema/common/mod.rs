@@ -800,6 +800,47 @@ fn refuse_a_contest_not_decided_by_index_values(
     }
 }
 
+/// A rule of full validation under `check_document_type_schema` 1 (protocol version 15): the
+/// contested `index` of the type `name` must be keyed by top-level properties of the document
+/// ([`Index::contest_is_keyed_by_top_level_properties`]), or no contested create could open or
+/// join its contest. Version 0 refuses nothing, so a contract registered earlier keeps such an
+/// index.
+#[cfg(feature = "validation")]
+fn refuse_a_contest_keyed_by_a_nested_or_system_property(
+    index: &Index,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .check_document_type_schema
+    {
+        0 => Ok(()),
+        1 => {
+            if index.contest_is_keyed_by_top_level_properties() {
+                Ok(())
+            } else {
+                Err(consensus_or_protocol_data_contract_error(
+                    DataContractError::InvalidContractStructure(format!(
+                        "the contest of index \"{}\" on document type \"{name}\" must be keyed \
+                         by top-level properties of the document: a property path or a system \
+                         property (starting with `$`) can not key a contest",
+                        index.name
+                    )),
+                ))
+            }
+        }
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "DocumentType::check_document_type_schema".to_string(),
+            known_versions: vec![0, 1],
+            received: version,
+        }),
+    }
+}
+
 /// The schema check of full validation, versioned on `check_document_type_schema`: 0 checks
 /// the enriched schema against the document meta-schema through the `jsonschema` crate and
 /// compiles it; 1 (protocol version 15) checks it natively ([`native_schema`]), with the
@@ -1535,6 +1576,13 @@ fn parse_indices(
                         refuse_a_contest_not_decided_by_index_values(
                             &index,
                             flattened_document_properties,
+                            ctx.name,
+                            ctx.platform_version,
+                        )?;
+
+                        // A contest keyed by a nested or system property (protocol version 15)
+                        refuse_a_contest_keyed_by_a_nested_or_system_property(
+                            &index,
                             ctx.name,
                             ctx.platform_version,
                         )?;
