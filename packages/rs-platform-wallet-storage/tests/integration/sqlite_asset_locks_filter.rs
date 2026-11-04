@@ -36,6 +36,7 @@ fn entry(op: OutPoint, status: AssetLockStatus) -> AssetLockEntry {
         funding_type: AssetLockFundingType::IdentityTopUp,
         identity_index: 0,
         operation_id: None,
+        shielded_recipient: None,
         amount_duffs: 1000,
         status,
         proof: None,
@@ -339,4 +340,98 @@ fn should_reject_conflicting_operation_id_before_mutating_any_stored_columns() {
             before
         );
     }
+}
+
+#[test]
+fn should_preserve_shielded_recipient_when_later_snapshot_lacks_it_and_reject_a_change() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xA9);
+    ensure_wallet_meta(&persister, &w);
+    let outpoint = op(0x35);
+    let recipient = orchard_address(0x11);
+    let store = |persister: &platform_wallet_storage::SqlitePersister, row: AssetLockEntry| {
+        persister.store(
+            w,
+            platform_wallet::changeset::PlatformWalletChangeSet {
+                asset_locks: Some(AssetLockChangeSet {
+                    asset_locks: [(outpoint, row)].into_iter().collect(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+    };
+    let mut recorded = entry(outpoint, AssetLockStatus::Built);
+    recorded.shielded_recipient = Some(recipient);
+    store(&persister, recorded).unwrap();
+    // A later snapshot without the recipient (a status advance) keeps it.
+    store(&persister, entry(outpoint, AssetLockStatus::Broadcast)).unwrap();
+    // A snapshot naming another recipient is refused before any write.
+    let mut redirected = entry(outpoint, AssetLockStatus::ChainLocked);
+    redirected.shielded_recipient = Some(orchard_address(0x12));
+    assert!(store(&persister, redirected).is_err());
+    drop(persister);
+
+    let persister = reopen(&path);
+    let conn = persister.lock_conn_for_test();
+    let locks =
+        asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+            .unwrap();
+    let restored = &locks[&0][&outpoint];
+    assert_eq!(restored.shielded_recipient, Some(recipient));
+    assert_eq!(restored.status, AssetLockStatus::Broadcast);
+    // The column refuses any length but 43 and never changes once set.
+    assert!(conn
+        .execute(
+            "UPDATE asset_locks SET shielded_recipient = ?1",
+            [vec![1_u8; 42]]
+        )
+        .is_err());
+    assert!(conn
+        .execute(
+            "UPDATE asset_locks SET shielded_recipient = ?1",
+            [orchard_address(0x13).to_raw_bytes().to_vec()]
+        )
+        .is_err());
+}
+
+#[test]
+fn should_fail_the_load_when_a_stored_shielded_recipient_is_not_an_orchard_address() {
+    let (persister, _tmp, _) = fresh_persister();
+    let w = wid(0xAB);
+    ensure_wallet_meta(&persister, &w);
+    let outpoint = op(0x36);
+    persister
+        .store(
+            w,
+            platform_wallet::changeset::PlatformWalletChangeSet {
+                asset_locks: Some(AssetLockChangeSet {
+                    asset_locks: [(outpoint, entry(outpoint, AssetLockStatus::Built))]
+                        .into_iter()
+                        .collect(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let conn = persister.lock_conn_for_test();
+    // 43 bytes whose pk_d is not a Pallas point: the CHECK and the
+    // immutability trigger (OLD is NULL) both let it in.
+    conn.execute(
+        "UPDATE asset_locks SET shielded_recipient = ?1",
+        [vec![0xff_u8; 43]],
+    )
+    .unwrap();
+    assert!(
+        asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+            .is_err()
+    );
+}
+
+fn orchard_address(seed_byte: u8) -> dpp::address_funds::OrchardAddress {
+    use dash_sdk::grovedb_commitment_tree::{FullViewingKey, Scope, SpendingKey};
+    let spending_key = SpendingKey::from_bytes([seed_byte; 32]).unwrap();
+    let full_viewing_key = FullViewingKey::from(&spending_key);
+    dpp::address_funds::OrchardAddress::from(full_viewing_key.address_at(0u32, Scope::External))
 }

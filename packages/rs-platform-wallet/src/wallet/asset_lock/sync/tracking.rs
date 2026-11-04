@@ -130,6 +130,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .and_then(|lock| lock.operation_id)
     }
 
+    /// The Orchard recipient a tracked shielded funding was built to pay, if
+    /// the row recorded one (see `TrackedAssetLock::shielded_recipient`).
+    #[cfg(any(feature = "shielded", test))]
+    pub(crate) async fn tracked_shielded_recipient(
+        &self,
+        out_point: &OutPoint,
+    ) -> Option<dpp::address_funds::OrchardAddress> {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .and_then(|info| info.tracked_asset_locks.get(out_point))
+            .and_then(|lock| lock.shielded_recipient)
+    }
+
     /// Track a new asset lock in memory, returning a changeset describing
     /// the inserted entry.
     ///

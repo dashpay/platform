@@ -270,6 +270,23 @@ impl PlatformWallet {
         // an unfundable asset-lock tx (or paying for an Orchard proof
         // build, ~30s, only to reject downstream).
         validate_shielded_recipients(&recipients)?;
+        let (requested_recipient, _) = *recipients.first().expect("preflight enforces len() == 1");
+
+        // A resume pays the recipient its lock was built for. The row recorded
+        // it before dispatch (`TrackedAssetLock::shielded_recipient`), so a
+        // host that lost its own marker between the Core broadcast and the
+        // Type 18 submit cannot redirect the funds by passing another address.
+        // Decided before any funding resolution: a refused resume touches no
+        // reservation, waits for no proof and reaches no transport. A row
+        // tracked before recipients were recorded carries none and accepts
+        // the caller's, as before.
+        let recipient = match &funding {
+            AssetLockFunding::FromExistingAssetLock { out_point, .. } => {
+                let recorded = self.asset_locks.tracked_shielded_recipient(out_point).await;
+                resume_recipient(*out_point, recorded, requested_recipient)?
+            }
+            _ => requested_recipient,
+        };
 
         // Pre-broadcast sizing guard for the `FromWalletBalance` path:
         // refuse to build an L1 asset-lock that can't even cover the
@@ -378,6 +395,7 @@ impl PlatformWallet {
                 funding,
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 /* destination_index */ 0,
+                Some(recipient),
                 asset_lock_signer,
                 on_asset_lock_built,
             )
@@ -469,8 +487,6 @@ impl PlatformWallet {
                 )));
             }
         }
-        let (recipient, _) = *recipients.first().expect("preflight enforces len() == 1");
-
         // Encrypt the output under this wallet's OVK so the shielded sync can
         // recover the funding (recipient, value, memo) from chain data alone.
         // Prefer the bound account whose IVK recognizes the recipient address
@@ -950,6 +966,27 @@ where
 /// Generic over `T` so unit tests can pass `(u8, Option<Credits>)`
 /// instead of constructing a curve-valid `OrchardAddress` for what
 /// is really a length / cardinality check.
+/// The recipient a resumed shielded funding pays: the one its tracked lock
+/// recorded when it was built, or — for a row tracked before recipients were
+/// recorded — the one the resuming caller passes. A caller that names a
+/// different recipient than the recorded one is refused with
+/// [`PlatformWalletError::AssetLockRecipientMismatch`]; nothing is paid.
+pub(super) fn resume_recipient(
+    out_point: OutPoint,
+    recorded: Option<OrchardAddress>,
+    requested: OrchardAddress,
+) -> Result<OrchardAddress, PlatformWalletError> {
+    match recorded {
+        None => Ok(requested),
+        Some(recorded) if recorded == requested => Ok(recorded),
+        Some(recorded) => Err(PlatformWalletError::AssetLockRecipientMismatch {
+            out_point,
+            recorded,
+            requested,
+        }),
+    }
+}
+
 pub(super) fn validate_shielded_recipients<T>(
     recipients: &[(T, Option<Credits>)],
 ) -> Result<(), PlatformWalletError> {
@@ -1053,6 +1090,26 @@ mod tests {
         ));
         assert!(!proof_attests_full_consumption(
             &StateTransitionProofResult::VerifiedShieldedNullifiers(Vec::new())
+        ));
+    }
+
+    #[test]
+    fn resume_recipient_pays_the_recorded_one_and_refuses_another() {
+        let out_point = OutPoint::null();
+        let recorded = crate::test_support::orchard_address_fixture(0x61);
+        let other = crate::test_support::orchard_address_fixture(0x62);
+        assert_eq!(
+            resume_recipient(out_point, Some(recorded), recorded).unwrap(),
+            recorded
+        );
+        assert_eq!(resume_recipient(out_point, None, other).unwrap(), other);
+        assert!(matches!(
+            resume_recipient(out_point, Some(recorded), other),
+            Err(PlatformWalletError::AssetLockRecipientMismatch {
+                out_point: o,
+                recorded: r,
+                requested: q,
+            }) if o == out_point && r == recorded && q == other
         ));
     }
 
@@ -1218,6 +1275,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,

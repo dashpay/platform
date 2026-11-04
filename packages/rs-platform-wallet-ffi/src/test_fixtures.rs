@@ -72,3 +72,14 @@ pub(crate) fn out_string(
     unsafe { platform_wallet_free_string(out) };
     Ok(Some(string))
 }
+
+/// A valid Orchard payment address, deterministic in `seed_byte`: the
+/// external address at diversifier index 0 of the spending key whose 32
+/// bytes all equal `seed_byte`. Two seed bytes give two different addresses.
+pub(crate) fn orchard_address(seed_byte: u8) -> dpp::address_funds::OrchardAddress {
+    use dash_sdk::grovedb_commitment_tree::{FullViewingKey, Scope, SpendingKey};
+    let spending_key =
+        SpendingKey::from_bytes([seed_byte; 32]).expect("a constant spending key is on the curve");
+    let full_viewing_key = FullViewingKey::from(&spending_key);
+    dpp::address_funds::OrchardAddress::from(full_viewing_key.address_at(0u32, Scope::External))
+}

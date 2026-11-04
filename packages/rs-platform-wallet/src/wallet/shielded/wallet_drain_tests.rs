@@ -77,6 +77,7 @@ fn drain_lock_fixture() -> (TrackedAssetLock, BTreeMap<u32, AccountViewingKeys>)
             amount: 10_000,
             status: AssetLockStatus::RecoveredFromChain,
             proof: Some(proof),
+            shielded_recipient: None,
         },
         BTreeMap::from([(0, keys)]),
     )
@@ -147,6 +148,7 @@ impl PlatformWalletPersistence for RecoveryPersistence {
                         amount: row.amount_duffs,
                         status: row.status.clone(),
                         proof: row.proof.clone(),
+                        shielded_recipient: row.shielded_recipient,
                     },
                 )
             })
@@ -698,6 +700,7 @@ async fn should_refuse_drain_on_a_buffered_persistence_backend() {
                 },
                 lock.funding_type,
                 0,
+                None,
                 &signer,
                 None,
             )
@@ -901,4 +904,218 @@ async fn should_report_a_wallet_drain_lock_to_the_caller() {
     let snapshot = operation.snapshot();
     assert_eq!(snapshot.state, AssetLockOperationState::NotSent);
     assert!(snapshot.out_point.is_none());
+}
+
+/// A generic outpoint resume that names a different recipient than the row
+/// recorded is refused before any funding resolution: no send, no staged
+/// write, the row unchanged.
+#[tokio::test]
+async fn should_refuse_a_generic_resume_to_a_recipient_other_than_the_recorded_one() {
+    let (mut lock, keys) = drain_lock_fixture();
+    lock.operation_id = None;
+    let recorded = crate::test_support::orchard_address_fixture(0x51);
+    let other = crate::test_support::orchard_address_fixture(0x52);
+    lock.shielded_recipient = Some(recorded);
+    let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
+    let coordinator = Arc::new(coordinator);
+    let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
+    let prover = super::prover::CachedOrchardProver::new();
+
+    let error = wallet
+        .shielded_fund_from_asset_lock(
+            &coordinator,
+            AssetLockFunding::FromExistingAssetLock {
+                out_point: lock.out_point,
+                consume_invitation_voucher: false,
+            },
+            vec![(other, None)],
+            &signer,
+            &prover,
+            None,
+            0,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            &error,
+            PlatformWalletError::AssetLockRecipientMismatch {
+                out_point,
+                recorded: r,
+                requested: q,
+            } if *out_point == lock.out_point && *r == recorded && *q == other
+        ),
+        "{error}"
+    );
+    assert!(persistence.staged.lock().unwrap().is_empty());
+    assert_eq!(
+        persistence.committed_status(&lock.out_point),
+        AssetLockStatus::RecoveredFromChain
+    );
+    assert_eq!(
+        live_status(&wallet, &lock.out_point).await,
+        AssetLockStatus::RecoveredFromChain
+    );
+}
+
+/// A repeated-UUID drain that names a different recipient is refused the
+/// same way, and the operation stays Pending with its outpoint: the lock
+/// exists and nothing was sent, so a later resume with the recorded
+/// recipient can still complete it.
+#[tokio::test]
+async fn should_refuse_a_repeated_uuid_drain_to_a_recipient_other_than_the_recorded_one() {
+    let (mut lock, keys) = drain_lock_fixture();
+    let recorded = crate::test_support::orchard_address_fixture(0x53);
+    let other = crate::test_support::orchard_address_fixture(0x54);
+    lock.shielded_recipient = Some(recorded);
+    let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
+    let coordinator = Arc::new(coordinator);
+    let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
+    let prover = super::prover::CachedOrchardProver::new();
+    let operation = Arc::new(AssetLockOperationContext::new(OPERATION_ID));
+
+    let error = wallet
+        .shielded_fund_from_asset_lock(
+            &coordinator,
+            AssetLockFunding::DrainWalletBalance {
+                account_index: 0,
+                minimum_lock_duffs: None,
+                operation: operation.clone(),
+            },
+            vec![(other, None)],
+            &signer,
+            &prover,
+            None,
+            0,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            PlatformWalletError::AssetLockRecipientMismatch { .. }
+        ),
+        "{error}"
+    );
+    let snapshot = operation.snapshot();
+    assert_eq!(snapshot.state, AssetLockOperationState::Pending);
+    assert_eq!(snapshot.out_point, Some(lock.out_point));
+    assert!(persistence.staged.lock().unwrap().is_empty());
+    assert_ne!(
+        persistence.committed_status(&lock.out_point),
+        AssetLockStatus::DrainCompleted
+    );
+    assert_eq!(
+        wallet
+            .shielded_wallet_drain_operation_status(OPERATION_ID)
+            .await
+            .unwrap()
+            .state,
+        AssetLockOperationState::Pending
+    );
+}
+
+/// A row tracked before recipients were recorded carries none and accepts
+/// the resuming caller's recipient: the resume gets past the recipient check
+/// (and fails later, at the network, in this fixture).
+#[tokio::test]
+async fn should_accept_the_callers_recipient_for_a_legacy_row_without_one() {
+    let (mut lock, keys) = drain_lock_fixture();
+    lock.operation_id = None;
+    assert_eq!(lock.shielded_recipient, None);
+    let recipient = crate::test_support::orchard_address_fixture(0x55);
+    let (wallet, _persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
+    let coordinator = Arc::new(coordinator);
+    let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
+    let prover = super::prover::CachedOrchardProver::new();
+
+    let error = wallet
+        .shielded_fund_from_asset_lock(
+            &coordinator,
+            AssetLockFunding::FromExistingAssetLock {
+                out_point: lock.out_point,
+                consume_invitation_voucher: false,
+            },
+            vec![(recipient, None)],
+            &signer,
+            &prover,
+            None,
+            0,
+            None,
+            Some(std::time::Duration::from_millis(10)),
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        !matches!(
+            error,
+            PlatformWalletError::AssetLockRecipientMismatch { .. }
+        ),
+        "a legacy row must not refuse the caller's recipient: {error}"
+    );
+}
+
+/// A fresh shielded funding records its recipient on the row before the
+/// lock is dispatched: the drain's durable checkpoint and the typed-amount
+/// path's queued row both carry it, even when the broadcast is then refused.
+#[tokio::test]
+async fn should_record_the_recipient_with_the_lock_before_dispatch() {
+    for drain in [false, true] {
+        let (mut lock, keys) = drain_lock_fixture();
+        lock.operation_id = None;
+        let recipient = crate::test_support::orchard_address_fixture(0x56);
+        let (wallet, persistence, coordinator, _dir, signer) =
+            signed_wallet_fixture(&lock, keys).await;
+        let coordinator = Arc::new(coordinator);
+        let prover = super::prover::CachedOrchardProver::new();
+        let operation = Arc::new(AssetLockOperationContext::new([0x57; 16]));
+        let seen = Mutex::new(Vec::new());
+        let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+        let funding = if drain {
+            AssetLockFunding::DrainWalletBalance {
+                account_index: 0,
+                minimum_lock_duffs: None,
+                operation: operation.clone(),
+            }
+        } else {
+            AssetLockFunding::FromWalletBalance {
+                amount_duffs: 5_000_000,
+                account_index: 0,
+            }
+        };
+        wallet
+            .shielded_fund_from_asset_lock(
+                &coordinator,
+                funding,
+                vec![(recipient, None)],
+                &signer,
+                &prover,
+                None,
+                0,
+                None,
+                None,
+                Some(&observer),
+            )
+            .await
+            .expect_err("a lock the SPV client refuses to send must fail the call");
+        let seen = seen.into_inner().unwrap();
+        assert_eq!(seen.len(), 1);
+        let stored = persistence
+            .committed
+            .lock()
+            .unwrap()
+            .get(&seen[0])
+            .cloned()
+            .or_else(|| persistence.staged.lock().unwrap().get(&seen[0]).cloned())
+            .expect("the built lock's row reached the persister before the broadcast");
+        assert_eq!(stored.shielded_recipient, Some(recipient), "drain={drain}");
+        assert_eq!(stored.operation_id, drain.then_some([0x57; 16]));
+    }
 }

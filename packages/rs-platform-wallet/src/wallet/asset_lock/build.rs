@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use dashcore::Address as DashAddress;
 use dashcore::{OutPoint, Transaction, TxOut};
+use dpp::address_funds::OrchardAddress;
 use key_wallet::account::AccountType;
 use key_wallet::bip32::DerivationPath;
 use key_wallet::managed_account::address_pool::AddressState;
@@ -928,6 +929,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             account_index,
             funding_type,
             identity_index,
+            None,
             signer,
             None,
         )
@@ -936,12 +938,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
     /// [`Self::create_funded_asset_lock_proof`] that reports the built lock's
     /// outpoint to `on_built` (see [`AssetLockBuiltObserver`]).
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn create_funded_asset_lock_proof_observed<S: ExtendedPubKeySigner>(
         &self,
         amount_duffs: u64,
         account_index: u32,
         funding_type: AssetLockFundingType,
         identity_index: u32,
+        shielded_recipient: Option<OrchardAddress>,
         signer: &S,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
@@ -951,6 +955,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             account_index,
             funding_type,
             identity_index,
+            shielded_recipient,
             signer,
             on_built,
         )
@@ -976,6 +981,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             funding_account,
             funding_type,
             identity_index,
+            None,
             signer,
             None,
         )
@@ -984,6 +990,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
     /// [`Self::create_funded_asset_lock_proof_with_funding`] that reports the
     /// built lock's outpoint to `on_built` (see [`AssetLockBuiltObserver`]).
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn create_funded_asset_lock_proof_with_funding_observed<
         S: ExtendedPubKeySigner,
     >(
@@ -992,6 +999,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         funding_account: AssetLockFundingAccount,
         funding_type: AssetLockFundingType,
         identity_index: u32,
+        shielded_recipient: Option<OrchardAddress>,
         signer: &S,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
@@ -1001,6 +1009,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             funding_account.account_index(),
             funding_type,
             identity_index,
+            shielded_recipient,
             signer,
             on_built,
         )
@@ -1022,17 +1031,20 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         source_index: u32,
         funding_type: AssetLockFundingType,
         identity_index: u32,
+        shielded_recipient: Option<OrchardAddress>,
         signer: &S,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         let (path, out_point) = self
-            .broadcast_funded_asset_lock_with_funding(
+            .broadcast_funded_asset_lock_tracked(
                 amount,
                 funding_sources,
                 source_index,
                 funding_type,
                 identity_index,
+                shielded_recipient,
                 signer,
+                None,
                 on_built,
             )
             .await?;
@@ -1108,18 +1120,20 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         minimum_lock_duffs: Option<u64>,
         funding_type: AssetLockFundingType,
         identity_index: u32,
+        shielded_recipient: Option<OrchardAddress>,
         signer: &S,
         operation: &AssetLockOperationContext,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         self.require_wallet_drain_persistence()?;
         let (path, out_point) = self
-            .broadcast_funded_asset_lock_with_operation(
+            .broadcast_funded_asset_lock_tracked(
                 AssetLockBuildAmount::DrainAll { minimum_lock_duffs },
                 &ASSET_LOCK_FUNDING_SOURCES,
                 account_index,
                 funding_type,
                 identity_index,
+                shielded_recipient,
                 signer,
                 Some(operation),
                 on_built,
@@ -1139,6 +1153,38 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         source_index: u32,
         funding_type: AssetLockFundingType,
         identity_index: u32,
+        signer: &S,
+        operation: Option<&AssetLockOperationContext>,
+        on_built: Option<&AssetLockBuiltObserver<'_>>,
+    ) -> Result<(DerivationPath, OutPoint), PlatformWalletError> {
+        self.broadcast_funded_asset_lock_tracked(
+            amount,
+            funding_sources,
+            source_index,
+            funding_type,
+            identity_index,
+            None,
+            signer,
+            operation,
+            on_built,
+        )
+        .await
+    }
+
+    /// The build → persist → track → broadcast pipeline every funded lock
+    /// goes through. `shielded_recipient` is the Orchard address a shielded
+    /// funding (Type 18) will pay; it is recorded on the row created here,
+    /// so it is exactly as durable before dispatch as `operation_id`: flushed
+    /// before the broadcast for a drain, queued before it otherwise.
+    #[allow(clippy::too_many_arguments)]
+    async fn broadcast_funded_asset_lock_tracked<S: ExtendedPubKeySigner>(
+        &self,
+        amount: AssetLockBuildAmount,
+        funding_sources: &[AccountTypePreference],
+        source_index: u32,
+        funding_type: AssetLockFundingType,
+        identity_index: u32,
+        shielded_recipient: Option<OrchardAddress>,
         signer: &S,
         operation: Option<&AssetLockOperationContext>,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
@@ -1388,6 +1434,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             amount: locked_amount_duffs,
             status: AssetLockStatus::Built,
             proof: None,
+            shielded_recipient,
         };
         if let Some(operation) = operation {
             operation.retain_checkpoint(tracked.clone());
@@ -1998,6 +2045,7 @@ mod tests {
                                     amount: entry.amount_duffs,
                                     status: entry.status.clone(),
                                     proof: entry.proof.clone(),
+                                    shielded_recipient: entry.shielded_recipient,
                                 },
                             );
                     }
@@ -2423,6 +2471,7 @@ mod tests {
                 },
                 AssetLockFundingType::AssetLockAddressTopUp,
                 0,
+                None,
                 &signer,
                 Some(&observer),
             )
@@ -2452,6 +2501,7 @@ mod tests {
                 },
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 0,
+                None,
                 &signer,
                 Some(&observer),
             )
@@ -3393,6 +3443,7 @@ mod tests {
                 },
                 AssetLockFundingType::IdentityRegistration,
                 0,
+                None,
                 &signer,
                 None,
             )
@@ -3423,6 +3474,7 @@ mod tests {
                     },
                     reclaim_target,
                     0,
+                    None,
                     &signer,
                     None,
                 ),

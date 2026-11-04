@@ -265,6 +265,9 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// An asset lock (a drain, or a fixed amount in many small coins) exceeds
     /// the input cap; nothing was broadcast.
     case errorAssetLockTooManyInputs = 60
+    /// A shielded fund-from-asset-lock resume named a different Orchard
+    /// recipient than the one its tracked lock recorded; nothing was paid.
+    case errorAssetLockRecipientMismatch = 61
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -396,6 +399,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorSpvProcessRestartRequired
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_TOO_MANY_INPUTS:
             self = .errorAssetLockTooManyInputs
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_RECIPIENT_MISMATCH:
+            self = .errorAssetLockRecipientMismatch
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -585,6 +590,14 @@ public enum PlatformWalletError: LocalizedError {
     /// was broadcast and no partial drain occurred; consolidating the coins lets
     /// it fit.
     case assetLockTooManyInputs(String)
+    /// A shielded fund-from-asset-lock resume (generic outpoint resume or a
+    /// repeated-UUID wallet drain) named a different Orchard recipient than
+    /// the one the tracked lock recorded when it was built. Nothing was
+    /// submitted or paid; resume with the recorded recipient
+    /// (`PersistentAssetLock.shieldedRecipientRaw43` /
+    /// `TrackedAssetLock.shieldedRecipientRaw43`). Locks tracked before the
+    /// recipient was recorded carry none and accept the caller's.
+    case assetLockRecipientMismatch(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition
     /// (identity-create or a spend — unshield / transfer / withdrawal) was
@@ -809,7 +822,7 @@ public enum PlatformWalletError: LocalizedError {
              .coreInsufficientFunds(let m),
              .assetLockNotTracked(let m), .assetLockAlreadyConsumed(let m),
              .assetLockFundingMismatch(let m), .assetLockInsufficientFunds(let m),
-             .assetLockTooManyInputs(let m),
+             .assetLockTooManyInputs(let m), .assetLockRecipientMismatch(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
@@ -928,6 +941,7 @@ public enum PlatformWalletError: LocalizedError {
         case .errorAssetLockFundingMismatch: self = .assetLockFundingMismatch(detail)
         case .errorAssetLockInsufficientFunds: self = .assetLockInsufficientFunds(detail)
         case .errorAssetLockTooManyInputs: self = .assetLockTooManyInputs(detail)
+        case .errorAssetLockRecipientMismatch: self = .assetLockRecipientMismatch(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)

@@ -9,6 +9,7 @@
 //! `funding_type` + `identity_index` via the key-wallet's `Wallet`.
 
 use dashcore::{OutPoint, Transaction};
+use dpp::address_funds::OrchardAddress;
 use dpp::prelude::AssetLockProof;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
@@ -145,6 +146,13 @@ pub struct TrackedAssetLock {
     pub status: AssetLockStatus,
     /// The proof, available once IS-locked or ChainLocked.
     pub proof: Option<AssetLockProof>,
+    /// The Orchard recipient a shielded funding (Type 18) was built to pay,
+    /// recorded with the row before the lock is dispatched and immutable
+    /// afterwards, so a resume pays the recipient the user confirmed rather
+    /// than whatever the resuming call passes. `None` for every other
+    /// funding type and for shielded locks tracked before the recipient was
+    /// recorded (those keep accepting the resuming caller's recipient).
+    pub shielded_recipient: Option<OrchardAddress>,
 }
 
 impl From<&TrackedAssetLock> for AssetLockEntry {
@@ -159,6 +167,7 @@ impl From<&TrackedAssetLock> for AssetLockEntry {
             amount_duffs: lock.amount,
             status: lock.status.clone(),
             proof: lock.proof.clone(),
+            shielded_recipient: lock.shielded_recipient,
         }
     }
 }
