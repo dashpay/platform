@@ -58,13 +58,23 @@ jobs:
       || !github.event.pull_request.draft
       || (github.event.pull_request.head.repo.full_name == github.repository
           && startsWith(github.head_ref, 'codex/freeze-swift-schema-v')) }}
-    runs-on: ubuntu-24.04
+    # Every Rust, JS and E2E job waits for this one. On the light pool it does
+    # not queue for a GitHub-hosted slot, which every repository in the
+    # organization shares. It runs the PR's own scripts, so fork PRs outside
+    # the trusted-fork policy stay on a GitHub-hosted runner. The light image
+    # provides PyYAML (Swift runner policy check) and yq (dispatch override).
+    runs-on: >-
+      ${{ (github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository
+      || github.event.pull_request.head.repo.owner.login == 'thepastaclaw')
+      && vars.DASH_LIGHT_RUNNER || 'ubuntu-24.04' }}
     outputs:
       js-packages: ${{ steps.override.outputs.js-packages || steps.prune-pr-matrix.outputs.js-packages || steps.filter-js.outputs.changes }}
       js-packages-direct: ${{ steps.override.outputs.js-packages-direct || steps.filter-js-direct.outputs.changes }}
       rs-packages: ${{ steps.override.outputs.rs-packages || steps.filter-rs.outputs.changes }}
       rs-workflows-changed: ${{ steps.filter-rs-workflows.outputs.rs-workflows }}
       arm64-image-changed: ${{ steps.filter-rs-workflows.outputs.arm64-image }}
+      runner-image-changed: ${{ steps.filter-rs-workflows.outputs.runner-image }}
       rs-scope: ${{ steps.rs-scope.outputs.scope }}
       shielded-changed: ${{ steps.override.outputs.shielded-changed || steps.filter-shielded.outputs.shielded-changed }}
       doctests-changed: ${{ steps.override.outputs.doctests-changed || steps.filter-doctests.outputs.doctests-changed }}
@@ -75,7 +85,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          # The merge-base diffs below need full history but not every past
+          # version of every file. A blobless clone downloads only the checked
+          # out tree up front and fetches the blobs a diff reads on demand,
+          # which keeps this frequent job light on the shared runner hosts.
           fetch-depth: 0
+          filter: blob:none
 
       - name: Verify self-hosted Swift runner policy
         run: python3 .github/scripts/check-swift-self-hosted-runner.py
@@ -119,6 +134,8 @@ jobs:
               - .github/actions/rust/**
             arm64-image:
               - .github/runner-requirements.arm64.json
+            runner-image:
+              - .github/runner-requirements.json
 
       - uses: dorny/paths-filter@v4
         id: filter-e2e
@@ -158,7 +175,13 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' }}
         run: |
           BASE_SHA="${{ github.event.pull_request.base.sha || github.event.before || 'HEAD~1' }}"
-          if git diff "$BASE_SHA"...HEAD -- Cargo.toml 2>/dev/null | grep -qE '^\+version\s*='; then
+          # Capture the diff first: inside a pipeline a git failure (such as a
+          # file version the blobless checkout cannot fetch) would read as
+          # "unchanged" and skip the version-gated jobs.
+          if ! DIFF=$(git diff "$BASE_SHA"...HEAD -- Cargo.toml); then
+            echo "version-changed=true" >> "$GITHUB_OUTPUT"
+            echo "Could not diff Cargo.toml against $BASE_SHA; assuming the platform version changed"
+          elif grep -qE '^\+version\s*=' <<< "$DIFF"; then
             echo "version-changed=true" >> "$GITHUB_OUTPUT"
             echo "Platform version changed — Docker builds and test suite will run"
           else
@@ -171,7 +194,11 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' }}
         run: |
           BASE_SHA="${{ github.event.pull_request.base.sha || github.event.before || 'HEAD~1' }}"
-          DIFF=$(git diff "$BASE_SHA"...HEAD -- '*.rs' 2>/dev/null || git diff HEAD~1 -- '*.rs')
+          if ! DIFF=$(git diff "$BASE_SHA"...HEAD -- '*.rs' 2>/dev/null || git diff HEAD~1 -- '*.rs'); then
+            echo "doctests-changed=true" >> "$GITHUB_OUTPUT"
+            echo "Could not diff the Rust sources; running doctests"
+            exit 0
+          fi
 
           # Look for added/removed lines in doc comments that contain code fences
           if echo "$DIFF" | grep -qE '^[+-].*///.*```|^[+-].*//!.*```'; then
@@ -353,6 +380,7 @@ jobs:
               - packages/app-connect-contract/**
               - packages/moderation-charters-contract/**
               - packages/decision-proposals-contract/**
+              - packages/token-market-contract/**
               - packages/dapi-grpc/**
               - packages/dashpay-contract/**
               - packages/data-contracts/**
@@ -492,6 +520,9 @@ jobs:
       # Anything other than an explicit 'false' (including an empty output
       # from a skipped detector step) fails safe into running the suite.
       shielded-changed: ${{ needs.changes.outputs.shielded-changed != 'false' }}
+      # Same fail-safe: anything but an explicit 'false' keeps runner
+      # selection on a GitHub-hosted runner, where it may wait for a candidate.
+      runner-image-changed: ${{ needs.changes.outputs.runner-image-changed != 'false' }}
       # Code coverage runs nightly only. PR and push runs execute the same
       # test phases without instrumentation and upload nothing to Codecov.
       coverage: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.coverage == true) }}
@@ -509,6 +540,8 @@ jobs:
     with:
       runner-architecture: ARM64
       validate-arm64-image: true
+      # ARM64 selection never waits for a candidate image.
+      runner-image-changed: false
       doctests-changed: true
       shielded-changed: true
       coverage: false
@@ -525,6 +558,7 @@ jobs:
     uses: ./.github/workflows/tests-rs-wallet.yml
     with:
       doctests-changed: ${{ needs.changes.outputs.doctests-changed == 'true' }}
+      runner-image-changed: ${{ needs.changes.outputs.runner-image-changed != 'false' }}
 
   swift-sdk-build:
     name: Swift SDK build

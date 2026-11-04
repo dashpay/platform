@@ -3129,6 +3129,11 @@ mod tests {
             .core_rpc
             .expect_get_credit_pool_balance()
             .returning(|_| Ok(dash_to_duffs!(120)));
+        // V24 is not active.
+        platform
+            .core_rpc
+            .expect_get_coinbase_payload_version()
+            .returning(|_| Ok(Some(3)));
         platform
             .core_rpc
             .expect_send_raw_transaction()
