@@ -623,6 +623,51 @@ mod tests {
     }
 
     #[test]
+    fn should_skip_a_card_a_later_transition_of_the_block_deleted() {
+        // The card was stored with its placeholder, then deleted before the draw: the draw
+        // finds nothing to rewrite, and writes nothing back
+        let platform_version = drawing_platform_version();
+        let (drive, contract) = setup(&platform_version);
+        let id = insert_card(&drive, &contract, 1, &platform_version);
+        drive
+            .delete_document_for_contract(
+                id,
+                &contract,
+                "card",
+                BlockInfo::default(),
+                true,
+                None,
+                &platform_version,
+                None,
+            )
+            .expect("the card deletes");
+
+        let drawn = drive
+            .draw_random_document_properties(
+                &BEACON,
+                &[request(contract.id(), "card", id)],
+                &BlockInfo::default(),
+                None,
+                &platform_version,
+            )
+            .expect("the draw runs");
+        assert_eq!(drawn, 0);
+        let expected = draw_v0(
+            &BEACON,
+            &request(contract.id(), "card", id),
+            "rarity",
+            rarity_range(),
+        )
+        .expect("draws");
+        for rarity in [1, expected] {
+            assert!(
+                cards_with_rarity(&drive, &contract, rarity, &platform_version).is_empty(),
+                "no card is filed under rarity {rarity}"
+            );
+        }
+    }
+
+    #[test]
     fn should_not_draw_before_protocol_version_15() {
         let (drive, _contract) = setup(&drawing_platform_version());
         let result = drive.draw_random_document_properties(
