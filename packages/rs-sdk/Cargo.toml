@@ -30,7 +30,7 @@ platform-encryption = { path = "../rs-platform-encryption" }
 http = { version = "1.1" }
 ciborium = { version = "0.2.2" }
 thiserror = "2.0.17"
-tokio = { version = "1.40", features = ["macros", "time"] }
+tokio = { version = "1.40", features = ["macros", "sync", "time"] }
 tokio-util = { version = "0.7.12" }
 async-trait = { version = "0.1.83" }
 serde = { version = "1.0.219", default-features = false, features = [
