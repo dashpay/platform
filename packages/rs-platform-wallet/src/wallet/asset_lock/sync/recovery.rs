@@ -831,10 +831,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Before anything is released the lock is checked for having reached
     /// the chain anyway: a node older than the relay rule may have mined it.
     /// The evidence is what the resume already holds or can read from its
-    /// own wallet snapshot — no proof was found locally (the caller's
-    /// probe), the funding transaction's own record is not confirmed in a
-    /// block nor in the finalized set, and no confirmed sibling spends one
-    /// of its inputs (`input_spent`, from the double-spend screen). With
+    /// own wallet snapshot or its persister — no proof was found locally
+    /// (the caller's probe), the funding transaction's own record, in
+    /// memory or persisted, is not confirmed in a block nor in the
+    /// finalized set, and no confirmed sibling spends one of its inputs
+    /// (`input_spent`, from the double-spend screen). With
     /// any of those present the row and its inputs are left exactly as they
     /// are and only the error is returned: a mined oversized lock funds a
     /// credit output Platform refuses, which no release here could recover
@@ -856,7 +857,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         input_spent: bool,
         cap_error: PlatformWalletError,
     ) -> PlatformWalletError {
-        let mined = {
+        let mined_in_memory = {
             let wm = self.wallet_manager.read().await;
             wm.get_wallet_info(&self.wallet_id).is_some_and(|info| {
                 let accounts = &info.core_wallet.accounts;
@@ -864,6 +865,34 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     .is_some_and(|record| record.is_confirmed())
                     || funding_tx_is_finalized(accounts, account_index, &out_point.txid)
             })
+        };
+        // Restored history may hold no record for the funding transaction
+        // until the next scan re-warms it, so the persisted record is asked
+        // too — the same fallback the proof wait uses. A store that cannot
+        // answer leaves the question open, and an open question keeps the
+        // row: releasing on a read failure would free inputs a block may
+        // already hold.
+        let mined = match mined_in_memory {
+            true => Ok(true),
+            false => self
+                .persister
+                .get_core_tx_record(&out_point.txid)
+                .map(|record| record.is_some_and(|record| record.is_confirmed())),
+        };
+        let mined = match mined {
+            Ok(mined) => mined,
+            Err(error) => {
+                tracing::warn!(
+                    outpoint = %out_point,
+                    inputs = tx.input.len(),
+                    %error,
+                    "resume_asset_lock: the asset lock is over the input cap, but the \
+                     persisted funding record could not be read to rule out that it \
+                     was mined — not sending it, and leaving the row and its inputs \
+                     as they are"
+                );
+                return cap_error;
+            }
         };
         if mined || input_spent {
             tracing::warn!(
@@ -6492,6 +6521,83 @@ mod tests {
         assert_eq!(row.sends(), 0);
         assert_eq!(row.status().await, Some(AssetLockStatus::InstantSendLocked));
         assert!(!row.persisted_removal());
+    }
+
+    /// Persistence stub whose only record is `record`, for the funding
+    /// transaction — restored history holds no record for it until the next
+    /// scan, so only the persister can say that it was mined.
+    struct PersistedRecordOnly {
+        record: TransactionRecord,
+    }
+
+    impl PlatformWalletPersistence for PersistedRecordOnly {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+
+        fn get_core_tx_record(
+            &self,
+            _wallet_id: WalletId,
+            txid: &Txid,
+        ) -> Result<Option<TransactionRecord>, PersistenceError> {
+            Ok((*txid == self.record.txid).then(|| self.record.clone()))
+        }
+    }
+
+    /// After a restart the in-memory history can be empty while the
+    /// persister still holds the funding record confirmed in a block. That
+    /// record keeps the row: nothing is sent and nothing is released.
+    #[tokio::test]
+    async fn should_keep_an_oversized_row_whose_persisted_record_is_mined() {
+        let row = SmallCoinRow::oversized(AssetLockStatus::Broadcast).await;
+        let persistence = Arc::new(PersistedRecordOnly {
+            record: record_for(row.transaction.clone(), confirmed_at(100)),
+        });
+        let manager = AssetLockManager::new(
+            Arc::new(
+                dash_sdk::SdkBuilder::new_mock()
+                    .with_network(Network::Testnet)
+                    .build()
+                    .expect("mock sdk"),
+            ),
+            Arc::clone(&row.wallet_manager),
+            row.wallet_id,
+            Arc::new(Notify::new()),
+            Arc::clone(&row.broadcaster),
+            WalletPersister::new(row.wallet_id, persistence),
+        );
+
+        let error = manager
+            .resume_asset_lock(&row.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("a mined oversized lock cannot be settled here");
+
+        assert!(
+            matches!(error, PlatformWalletError::AssetLockTooManyInputs { .. }),
+            "{error:?}"
+        );
+        assert_eq!(row.sends(), 0);
+        assert_eq!(row.status().await, Some(AssetLockStatus::Broadcast));
+        let rebuild = row.rebuild_half().await;
+        assert!(
+            matches!(
+                rebuild,
+                Err(PlatformWalletError::AssetLockInsufficientFunds { .. })
+            ),
+            "the inputs stay behind the mined lock: {rebuild:?}"
+        );
     }
 
     /// Mined but not yet final: the lock is in a block the wallet has seen

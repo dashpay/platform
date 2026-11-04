@@ -583,8 +583,9 @@ public enum PlatformWalletError: LocalizedError {
     /// An asset lock needs more inputs than one may carry: a drain of every
     /// eligible input, or a fixed amount held only in many small coins. Nothing
     /// was broadcast and no partial drain occurred; consolidating the coins lets
-    /// it fit. Also the outcome of resuming a tracked lock over the cap: the
-    /// lock is untracked and its inputs released instead of being re-sent.
+    /// it fit. Also the outcome of resuming a tracked lock over the cap: it is
+    /// not re-sent, and unless it or one of its inputs is already on chain it
+    /// is untracked and its inputs released.
     case assetLockTooManyInputs(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition
