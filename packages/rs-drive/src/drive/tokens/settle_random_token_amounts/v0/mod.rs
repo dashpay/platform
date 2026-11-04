@@ -332,7 +332,26 @@ mod tests {
     use crate::drive::tokens::settle_random_token_amounts::random_token_reservation_id;
     use crate::util::batch::drive_op_batch::TokenOperationType;
     use crate::util::batch::DriveOperation;
+    use crate::drive::contract::DataContractFetchInfo;
+    use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelBatchOperationConverter;
+    use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{
+        TokenBaseTransitionAction, TokenBaseTransitionActionV0,
+    };
+    use crate::state_transition_action::batch::batched_transition::token_transition::token_mint_transition_action::{
+        TokenMintTransitionAction, TokenMintTransitionActionV0,
+    };
+    use crate::state_transition_action::batch::batched_transition::token_transition::token_transfer_transition_action::{
+        TokenTransferTransitionAction, TokenTransferTransitionActionV0,
+    };
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+    use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+    use dpp::data_contract::associated_token::token_keeps_history_rules::v0::TokenKeepsHistoryRulesV0;
+    use dpp::data_contract::config::v0::DataContractConfigV0;
+    use dpp::data_contract::v1::DataContractV1;
+    use grovedb_costs::OperationCost;
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
     use dpp::platform_value::Value;
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 
@@ -416,49 +435,98 @@ mod tests {
         })
     }
 
-    /// Applies what a random transfer or mint gathers when the block executes it: the
-    /// reservation, and the history document holding the range's minimum when `with_history`.
-    fn reserve(drive: &Drive, request: &RandomTokenRequest, with_history: bool) {
-        let token_id = request.token_id;
-        let (reservation, event) = match request.kind {
-            RandomTokenRequestKind::Transfer {
-                sender_id,
-                recipient_id,
-            } => (
-                TokenOperationType::TokenReserveRandomTransfer {
-                    token_id,
-                    sender_id,
+    /// A contract whose token, at position 0, keeps every kind of history when
+    /// `with_history`, and none otherwise.
+    fn token_contract(with_history: bool) -> Arc<DataContractFetchInfo> {
+        let mut token = TokenConfigurationV0::default_most_restrictive();
+        token.keeps_history =
+            TokenKeepsHistoryRulesV0::default_for_keeping_all_history(with_history).into();
+        Arc::new(DataContractFetchInfo {
+            contract: DataContract::V1(DataContractV1 {
+                id: Identifier::from([4; 32]),
+                version: 0,
+                owner_id: Identifier::from(SENDER),
+                document_types: Default::default(),
+                config: DataContractConfigV0::default().into(),
+                schema_defs: None,
+                created_at: None,
+                updated_at: None,
+                created_at_block_height: None,
+                updated_at_block_height: None,
+                created_at_epoch: None,
+                updated_at_epoch: None,
+                groups: Default::default(),
+                tokens: BTreeMap::from([(0, TokenConfiguration::V0(token))]),
+                keywords: Vec::new(),
+                description: None,
+            }),
+            storage_flags: None,
+            cost: OperationCost::default(),
+            fee: None,
+        })
+    }
+
+    /// The operations the block's execution of the random transfer or mint `request`
+    /// describes gathers: its action, as its transformer builds it, converted
+    /// (`into_high_level_batch_drive_operations`), with its token keeping history when
+    /// `with_history`.
+    fn random_operations(
+        request: &RandomTokenRequest,
+        with_history: bool,
+    ) -> Vec<DriveOperation<'static>> {
+        let base = TokenBaseTransitionAction::V0(TokenBaseTransitionActionV0 {
+            token_id: request.token_id,
+            identity_contract_nonce: request.identity_contract_nonce,
+            token_contract_position: 0,
+            data_contract: token_contract(with_history),
+            store_in_group: None,
+            perform_action: true,
+        });
+        let epoch = BlockInfo::default().epoch;
+        let platform_version = PlatformVersion::latest();
+        match request.kind {
+            RandomTokenRequestKind::Transfer { recipient_id, .. } => {
+                TokenTransferTransitionAction::V0(TokenTransferTransitionActionV0 {
+                    base,
+                    amount: request.maximum,
                     recipient_id,
-                    identity_contract_nonce: request.identity_contract_nonce,
-                    maximum: request.maximum,
-                },
-                TokenEvent::Transfer(recipient_id, None, None, None, request.minimum),
-            ),
-            RandomTokenRequestKind::Mint { recipient_id } => (
-                TokenOperationType::TokenReserveRandomMint {
-                    token_id,
-                    owner_id: request.owner_id,
-                    recipient_id,
-                    identity_contract_nonce: request.identity_contract_nonce,
-                    maximum: request.maximum,
-                    allow_first_mint: false,
-                },
-                TokenEvent::Mint(request.minimum, recipient_id, None),
-            ),
-        };
-        let mut operations = vec![DriveOperation::TokenOperation(reservation)];
-        if with_history {
-            operations.push(DriveOperation::TokenOperation(
-                TokenOperationType::TokenRandomAmountHistory {
-                    token_id,
-                    owner_id: request.owner_id,
-                    nonce: request.identity_contract_nonce,
-                    event,
-                    minimum: request.minimum,
-                    maximum: request.maximum,
-                },
-            ));
+                    public_note: None,
+                    shared_encrypted_note: None,
+                    private_encrypted_note: None,
+                    random_minimum_amount: Some(request.minimum),
+                })
+                .into_high_level_batch_drive_operations(
+                    &epoch,
+                    request.owner_id,
+                    platform_version,
+                )
+            }
+            RandomTokenRequestKind::Mint { recipient_id } => {
+                TokenMintTransitionAction::V0(TokenMintTransitionActionV0 {
+                    base,
+                    mint_amount: request.maximum,
+                    identity_balance_holder_id: recipient_id,
+                    public_note: None,
+                    random_minimum_amount: Some(request.minimum),
+                })
+                .into_high_level_batch_drive_operations(
+                    &epoch,
+                    request.owner_id,
+                    platform_version,
+                )
+            }
         }
+        .expect("expected the random action to convert")
+    }
+
+    /// Applies what the block's execution of `request` writes ([`random_operations`]): the
+    /// reservation, and the history document holding the range's minimum when `with_history`.
+    /// The identity contract nonce update is left out, as these tests keep no identities.
+    fn reserve(drive: &Drive, request: &RandomTokenRequest, with_history: bool) {
+        let operations = random_operations(request, with_history)
+            .into_iter()
+            .filter(|operation| matches!(operation, DriveOperation::TokenOperation(_)))
+            .collect();
         drive
             .apply_drive_operations(
                 operations,
@@ -562,6 +630,65 @@ mod tests {
             .properties()
             .get(HISTORY_AMOUNT_PROPERTY)
             .map(|amount: &Value| amount.to_integer::<u64>().expect("an integer amount"))
+    }
+
+    #[test]
+    fn should_convert_a_random_transfer_or_mint_into_a_reservation_and_a_range_bound_history() {
+        for request in [transfer(), mint()] {
+            for with_history in [true, false] {
+                let operations = random_operations(&request, with_history);
+                let token_operations: Vec<&TokenOperationType> = operations
+                    .iter()
+                    .filter_map(|operation| match operation {
+                        DriveOperation::TokenOperation(operation) => Some(operation),
+                        _ => None,
+                    })
+                    .collect();
+                // The maximum is reserved, and no fixed amount moves
+                let reserved: Vec<TokenAmount> = token_operations
+                    .iter()
+                    .filter_map(|operation| match operation {
+                        TokenOperationType::TokenReserveRandomTransfer { maximum, .. }
+                        | TokenOperationType::TokenReserveRandomMint { maximum, .. } => {
+                            Some(*maximum)
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                assert_eq!(reserved, vec![MAXIMUM]);
+                assert!(!token_operations.iter().any(|operation| matches!(
+                    operation,
+                    TokenOperationType::TokenTransfer { .. }
+                        | TokenOperationType::TokenMint { .. }
+                        | TokenOperationType::TokenHistory { .. }
+                )));
+                // The history, when kept, holds the minimum under the id bound to the range
+                let histories: Vec<(TokenAmount, TokenAmount, TokenAmount)> = token_operations
+                    .iter()
+                    .filter_map(|operation| match operation {
+                        TokenOperationType::TokenRandomAmountHistory {
+                            event,
+                            minimum,
+                            maximum,
+                            ..
+                        } => {
+                            let amount = match event {
+                                TokenEvent::Transfer(_, _, _, _, amount)
+                                | TokenEvent::Mint(amount, _, _) => *amount,
+                                other => panic!("expected a transfer or mint event, got {other:?}"),
+                            };
+                            Some((amount, *minimum, *maximum))
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                if with_history {
+                    assert_eq!(histories, vec![(MINIMUM, MINIMUM, MAXIMUM)]);
+                } else {
+                    assert!(histories.is_empty());
+                }
+            }
+        }
     }
 
     #[test]
