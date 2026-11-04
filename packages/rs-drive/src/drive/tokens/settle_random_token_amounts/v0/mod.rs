@@ -632,6 +632,91 @@ mod tests {
             .map(|amount: &Value| amount.to_integer::<u64>().expect("an integer amount"))
     }
 
+    /// The history write of `request`'s transition, as its conversion gathers it
+    /// ([`random_operations`]), its token keeping history.
+    fn random_history_write(request: &RandomTokenRequest) -> TokenOperationType {
+        random_operations(request, true)
+            .into_iter()
+            .find_map(|operation| match operation {
+                DriveOperation::TokenOperation(
+                    history @ TokenOperationType::TokenRandomAmountHistory { .. },
+                ) => Some(history),
+                _ => None,
+            })
+            .expect("expected a range-bound history write")
+    }
+
+    /// What applying `history` on a fresh drive bills, or what estimating it does when not
+    /// `apply`.
+    fn history_write_fee(history: TokenOperationType, apply: bool) -> FeeResult {
+        setup()
+            .apply_drive_operations(
+                vec![DriveOperation::TokenOperation(history)],
+                apply,
+                &BlockInfo::default(),
+                None,
+                PlatformVersion::latest(),
+                None,
+            )
+            .expect("expected the history write to apply")
+    }
+
+    #[test]
+    fn should_prepay_the_settlement_once_with_the_history_write() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup();
+        for request in [transfer(), mint()] {
+            let random = random_history_write(&request);
+            let TokenOperationType::TokenRandomAmountHistory {
+                token_id,
+                owner_id,
+                nonce,
+                event,
+                minimum,
+                maximum,
+            } = random.clone()
+            else {
+                unreachable!("a range-bound history write");
+            };
+            let prepayment = drive
+                .prepay_random_token_history_entries(
+                    token_id,
+                    owner_id,
+                    nonce,
+                    event.clone(),
+                    (minimum, maximum),
+                    &BlockInfo::default(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected the prepayment to be priced");
+            assert!(
+                prepayment.storage_fee > 0 && prepayment.processing_fee > 0,
+                "expected the settlement's entries to cost something: {prepayment:?}"
+            );
+            // The same event written as the history of a fixed amount: a document of the same
+            // size under an id of the same size, with no settlement to prepay
+            let fixed = TokenOperationType::TokenHistory {
+                token_id,
+                owner_id,
+                nonce,
+                event,
+            };
+            for apply in [false, true] {
+                let random_fee = history_write_fee(random.clone(), apply);
+                let fixed_fee = history_write_fee(fixed.clone(), apply);
+                assert_eq!(
+                    (
+                        random_fee.storage_fee - fixed_fee.storage_fee,
+                        random_fee.processing_fee - fixed_fee.processing_fee
+                    ),
+                    (prepayment.storage_fee, prepayment.processing_fee),
+                    "expected the history write to prepay once (applied: {apply})"
+                );
+            }
+        }
+    }
+
     #[test]
     fn should_convert_a_random_transfer_or_mint_into_a_reservation_and_a_range_bound_history() {
         for request in [transfer(), mint()] {

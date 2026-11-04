@@ -159,12 +159,14 @@ impl Drive {
     /// ([`Self::settle_random_token_amounts`]). The transition writes the document holding the
     /// range's minimum, and the settlement moves its entry in each index of the document's type
     /// holding `amount` (`byAmount`, under the token) to the drawn amount. The branch it moves
-    /// into may not exist yet: the settlement creates it, and is not billed. So the transition
-    /// pays for those entries once more, at what Drive's fee estimation gives for inserting the
-    /// document's entries into those indexes without reading state: the average layer
-    /// information it prices a dry run with, as if the branches had to be created (the average
-    /// case, whatever the draw finds). Selected by the settlement's method version, whose cost
-    /// model it is part of.
+    /// into may not exist yet: the settlement creates it, and is not billed. So the write of the
+    /// history document (`TokenOperationType::TokenRandomAmountHistory`) pays for those entries
+    /// once more, at what Drive's fee estimation gives for inserting the document's entries
+    /// into those indexes without reading state: the average layer information it prices a dry
+    /// run with, as if the branches had to be created (the average case, whatever the draw
+    /// finds). A transfer or mint refused before its execution writes no history document, so
+    /// it pays nothing for them. Selected by the settlement's method version, whose cost model
+    /// it is part of.
     ///
     /// # Parameters
     /// - `token_id`: the token.
