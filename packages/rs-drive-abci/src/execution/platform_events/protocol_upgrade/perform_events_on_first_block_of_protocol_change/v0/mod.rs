@@ -2427,12 +2427,14 @@ mod tests {
         use assert_matches::assert_matches;
         use dpp::dash_to_credits;
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
-        use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+        use dpp::data_contract::document_type::accessors::{
+            DocumentTypeV0Getters, DocumentTypeV2Getters,
+        };
         use dpp::data_contract::document_type::random_document::{
             CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
         };
         use dpp::data_contract::document_type::{
-            DocumentPropertyReferenceTarget, DocumentPropertyType,
+            DistinctFrom, DocumentPropertyReferenceTarget, DocumentPropertyType,
         };
         use dpp::data_contract::DataContract;
         use dpp::document::{Document, DocumentV0Setters};
@@ -2445,6 +2447,7 @@ mod tests {
         use drive::query::DriveDocumentQuery;
         use rand::rngs::StdRng;
         use rand::SeedableRng;
+        use std::collections::BTreeMap;
 
         const DOCUMENT_TYPES: [&str; 3] = ["profile", "contactRequest", "contactInfo"];
 
@@ -2637,6 +2640,67 @@ mod tests {
                 DocumentPropertyReferenceTarget::Identity
             ),
             "the stored DashPay v3 declares the contact request's identity reference"
+        );
+
+        // The other declarations that replace the triggers survive the store too: the
+        // stored contract holds what DashPay v3 loads with, whose values the dpp
+        // `dashpay_v3_tests` pin.
+        let dashpay_v3_loaded =
+            load_system_data_contract(SystemDataContract::Dashpay, platform_version_15)
+                .expect("expected to load DashPay v3");
+        let contact_request = dashpay_v3
+            .document_type_for_name("contactRequest")
+            .expect("expected the contactRequest document type");
+        assert_eq!(
+            contact_request
+                .flattened_properties()
+                .get("toUserId")
+                .expect("expected toUserId")
+                .distinct_from,
+            Some(DistinctFrom::OwnerId),
+            "the stored DashPay v3 keeps the contact request's distinctFrom"
+        );
+        let encrypted = contact_request
+            .encrypted_properties()
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(
+            encrypted
+                .keys()
+                .map(|path| path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["encryptedAccountLabel", "encryptedPublicKey"],
+            "the stored DashPay v3 keeps both encryptedFor declarations"
+        );
+        assert_eq!(
+            encrypted,
+            dashpay_v3_loaded
+                .document_type_for_name("contactRequest")
+                .expect("expected the loaded contactRequest document type")
+                .encrypted_properties()
+                .into_iter()
+                .collect::<BTreeMap<_, _>>(),
+            "the stored encryptedFor declarations are the ones DashPay v3 loads with"
+        );
+        let profile = dashpay_v3
+            .document_type_for_name("profile")
+            .expect("expected the profile document type");
+        let profile_rules = profile.property_constraints();
+        assert_eq!(
+            profile_rules
+                .keys()
+                .map(|name| name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["corePaymentAddressType", "platformPaymentAddressType"],
+            "the stored DashPay v3 keeps both byteAt rules"
+        );
+        assert_eq!(
+            profile_rules,
+            dashpay_v3_loaded
+                .document_type_for_name("profile")
+                .expect("expected the loaded profile document type")
+                .property_constraints(),
+            "the stored byteAt rules are the ones DashPay v3 loads with"
         );
 
         for (document_type_name, documents) in DOCUMENT_TYPES.into_iter().zip(documents_v2) {
