@@ -6,8 +6,6 @@ use dpp::consensus::state::document::document_contest_not_paid_for_error::Docume
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::indexes_a_random_property;
-use dpp::document::Document;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
 use dpp::identifier::Identifier;
@@ -18,7 +16,6 @@ use drive::query::TransactionArg;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{
     DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0,
-    DocumentFromCreateTransitionAction,
 };
 
 use crate::error::Error;
@@ -224,33 +221,6 @@ impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitio
             }
         }
 
-        // A create of a type indexing a `sys.random` property (protocol version 15) prepays the
-        // index entries the draw from the block's random beacon may create
-        // (`Drive::prepay_random_document_index_entries`), charged here, once the schema and
-        // the references hold: the prepayment keys the document's values, which only the
-        // structure validation checks. Added in place to this shipped generation: before 15 no
-        // type declares such a property, so no index holds one and nothing is charged.
-        let document_type = self.base().document_type()?;
-        if document_type
-            .indexes()
-            .values()
-            .any(|index| indexes_a_random_property(document_type, index))
-        {
-            let document =
-                Document::try_from_create_transition_action(self, owner_id, platform_version)?;
-            let fee_result = platform.drive.prepay_random_document_index_entries(
-                &document,
-                owner_id,
-                &self.base().data_contract_fetch_info_ref().contract,
-                document_type,
-                block_info,
-                transaction,
-                platform_version,
-            )?;
-            execution_context
-                .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
-        }
-
         Ok(SimpleConsensusValidationResult::new())
     }
 }
@@ -269,7 +239,9 @@ mod tests {
     use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
     use dpp::state_transition::batch_transition::document_create_transition::v0::DocumentCreateTransitionV0;
     use dpp::version::DefaultForPlatformVersion;
+    use dpp::document::Document;
     use drive::drive::contract::DataContractFetchInfo;
+    use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentFromCreateTransitionAction;
     use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionV0;
     use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
     use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
@@ -445,14 +417,14 @@ mod tests {
     }
 
     #[test]
-    fn should_charge_the_draw_prepayment_once_the_create_is_valid() {
+    fn should_leave_the_draw_prepayment_to_the_insert() {
+        // State validation charges a create indexing a random property what it charges one
+        // that indexes none: the prepayment rides on the document's insert, so a create
+        // refused at a later stage, whose document is never inserted, prepays nothing
         let (indexed, prepayment) = state_validation_charges("card");
         let (unindexed, nothing) = state_validation_charges("looseCard");
         assert_ne!(prepayment, FeeResult::default());
         assert_eq!(nothing, FeeResult::default());
-        // What a create the draw moves no index entry for is charged, then the prepayment
-        let mut expected = unindexed;
-        expected.push(prepayment);
-        assert_eq!(indexed, expected);
+        assert_eq!(indexed, unindexed);
     }
 }
