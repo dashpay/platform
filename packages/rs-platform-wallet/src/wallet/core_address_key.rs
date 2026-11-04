@@ -24,7 +24,7 @@ use std::str::FromStr;
 
 use dashcore::crypto::ecdsa::EcdsaSecretKey;
 use dashcore::{Address, Network, PrivateKey as DashPrivateKey, PublicKey};
-use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey};
+use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use key_wallet::{Account, Wallet};
 use zeroize::Zeroizing;
 
@@ -142,6 +142,20 @@ impl PlatformWallet {
     ) -> Result<Option<DerivationPath>, PlatformWalletError> {
         let address = parse_address(address_str, self.network())?;
         self.scan_bip44_account(&address)
+    }
+
+    /// Returns the extended public key of BIP-44 account 0.
+    ///
+    /// Takes a short `blocking_read` on the wallet manager, so call it off
+    /// the async runtime's worker.
+    ///
+    /// # Errors
+    /// - [`PlatformWalletError::WalletNotFound`] if the wallet was removed
+    ///   from its manager.
+    /// - [`PlatformWalletError::AccountNotFound`] if the wallet has no
+    ///   BIP-44 account 0.
+    pub fn bip44_account_xpub(&self) -> Result<ExtendedPubKey, PlatformWalletError> {
+        Ok(self.bip44_account()?.account_xpub)
     }
 
     /// The scan of [`Self::find_bip44_address_path`] for a parsed address.
@@ -344,7 +358,6 @@ mod tests {
     };
     use crate::wallet::mnemonic::first_receive_address_for_mnemonic;
     use key_wallet::account::StandardAccountType;
-    use key_wallet::bip32::ExtendedPubKey;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::{AccountType, Mnemonic};
     use std::cell::Cell;
@@ -390,6 +403,11 @@ mod tests {
             Address::p2pkh(&public_key, Network::Testnet).to_string()
         };
         let calls = Cell::new(0);
+
+        assert_eq!(
+            wallet.bip44_account_xpub().unwrap(),
+            ExtendedPubKey::from_priv(&master.derive_priv(&bip44).unwrap())
+        );
 
         // Key reveal stays pool-only: a tracked address resolves, one past
         // the pool does not.
@@ -502,8 +520,9 @@ mod tests {
             ));
         }
 
-        // A wallet without BIP-44 account 0 cannot run the scan, which is not
-        // the same as a scan that did not reach the address.
+        // A wallet without BIP-44 account 0 has no account xpub and cannot run
+        // the scan, which is not the same as a scan that did not reach the
+        // address.
         let no_bip44 = runtime
             .block_on(manager.create_wallet_from_seed_bytes(
                 Network::Testnet,
@@ -512,6 +531,10 @@ mod tests {
                 Some(0),
             ))
             .unwrap();
+        assert!(matches!(
+            no_bip44.bip44_account_xpub(),
+            Err(PlatformWalletError::AccountNotFound(_))
+        ));
         assert!(matches!(
             no_bip44.find_bip44_address_path(&tracked_address),
             Err(PlatformWalletError::AccountNotFound(_))
@@ -577,6 +600,10 @@ mod tests {
 
         assert!(matches!(
             wallet.find_bip44_address_path(&address),
+            Err(PlatformWalletError::WalletNotFound(_))
+        ));
+        assert!(matches!(
+            wallet.bip44_account_xpub(),
             Err(PlatformWalletError::WalletNotFound(_))
         ));
         let unused = || -> Result<ExtendedPrivKey, Infallible> { unreachable!() };

@@ -1236,6 +1236,17 @@ extension ManagedPlatformWallet {
         return String(cString: path)
     }
 
+    /// The extended public key of BIP-44 account 0, as an `xpub…` or `tpub…`
+    /// string, from Rust's `PlatformWallet::bip44_account_xpub`.
+    ///
+    /// - Throws: `PlatformWalletError.notFound` if the wallet has no BIP-44
+    ///   account 0. `PlatformWalletError` if the handle is invalid.
+    public func bip44AccountXpub() throws -> String {
+        try KeyDerivation.ownedString("platform_wallet_bip44_account_xpub") { out in
+            try platform_wallet_bip44_account_xpub(handle, &out).check()
+        }
+    }
+
     /// Reveal the private key of `address` at the path
     /// `findBIP44AddressPath(address:)` finds, returned as hex + WIF.
     ///

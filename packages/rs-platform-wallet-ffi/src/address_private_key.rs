@@ -235,6 +235,32 @@ pub unsafe extern "C" fn platform_wallet_find_bip44_address_path(
     PlatformWalletFFIResult::ok()
 }
 
+/// Returns the extended public key of BIP-44 account 0 from
+/// [`PlatformWallet::bip44_account_xpub`](platform_wallet::PlatformWallet::bip44_account_xpub),
+/// as an `xpub…` or `tpub…` string.
+///
+/// A wallet without BIP-44 account 0 fails with `NotFound`. On success the
+/// caller owns `*out_xpub` and must free it via
+/// [`crate::xpub_render::platform_wallet_free_string`].
+///
+/// # Safety
+/// `out_xpub` must point to writable memory for one `*mut c_char`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_bip44_account_xpub(
+    wallet_handle: Handle,
+    out_xpub: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_xpub);
+    unsafe { *out_xpub = std::ptr::null_mut() };
+
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.bip44_account_xpub());
+    let xpub = unwrap_result_or_return!(unwrap_option_or_return!(option));
+    let xpub = unwrap_result_or_return!(CString::new(xpub.to_string()));
+    unsafe { *out_xpub = xpub.into_raw() };
+    PlatformWalletFFIResult::ok()
+}
+
 /// Derives the private key of `address_cstr` at the path
 /// [`platform_wallet_find_bip44_address_path`] finds, and returns it as hex
 /// and WIF in `out`.
@@ -322,6 +348,9 @@ mod tests {
                 platform_wallet_find_bip44_address_path(handle, address.as_ptr(), out)
             })
         };
+        let xpub = |handle: Handle| {
+            out_string(|out| unsafe { platform_wallet_bip44_account_xpub(handle, out) })
+        };
         let key = |handle: Handle, address: &str| {
             let address = CString::new(address).unwrap();
             let mut out = AddressPrivateKeyFFI::empty();
@@ -346,6 +375,13 @@ mod tests {
             Ok(Some("m/44'/1'/0'/0/0".to_owned()))
         );
         assert_eq!(path(handle, &foreign.to_string()), Ok(None));
+        let expected = PLATFORM_WALLET_STORAGE
+            .with_item(handle, |w| w.bip44_account_xpub())
+            .unwrap()
+            .unwrap();
+        assert_eq!(xpub(handle), Ok(Some(expected.to_string())));
+        let r = unsafe { platform_wallet_bip44_account_xpub(handle, ptr::null_mut()) };
+        assert_eq!(r.code, ErrorNullPointer);
         assert!(path(handle, "not an address").is_err());
 
         let mut out: *mut c_char = ptr::null_mut();
@@ -366,6 +402,7 @@ mod tests {
             ))
             .unwrap();
         let no_bip44 = PLATFORM_WALLET_STORAGE.insert(no_bip44);
+        assert_eq!(xpub(no_bip44), Err(NotFound));
         assert_eq!(path(no_bip44, &foreign.to_string()), Err(NotFound));
         assert_eq!(key(no_bip44, &foreign.to_string()), NotFound);
         PLATFORM_WALLET_STORAGE.remove(no_bip44);
@@ -380,6 +417,7 @@ mod tests {
         });
         assert!(manager.get_wallet_blocking(&wallet_id).is_none());
         assert!(path(handle, &own.to_string()).is_err());
+        assert!(xpub(handle).is_err());
         assert_eq!(key(handle, &own.to_string()), ErrorInvalidHandle);
         PLATFORM_WALLET_STORAGE.remove(handle);
     }
