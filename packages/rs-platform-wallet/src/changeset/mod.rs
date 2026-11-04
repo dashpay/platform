@@ -41,7 +41,7 @@ pub use changeset::{
     KeyDerivationBreadcrumb, KeyWithBreadcrumb, PendingContactCrypto, PendingContactCryptoKey,
     PendingContactCryptoKind, PendingContactCryptoOp, PlatformAddressBalanceEntry,
     PlatformAddressChangeSet, PlatformWalletChangeSet, ProviderKeyAccountEntry,
-    ProviderKeyExtendedPubKey, ProviderPlatformNodePubKey, ReceivedContactRequestKey,
+    ProviderKeyExtendedPubKey, ProviderPlatformNodePubKey, ReceivedContactRequestKey, RestoredUtxo,
     SentContactRequestKey, TokenBalanceChangeSet, WalletMetadataEntry,
 };
 pub use client_start_state::ClientStartState;

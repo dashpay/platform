@@ -176,6 +176,79 @@ fn b2_spent_utxo_excluded() {
     );
 }
 
+/// A batch folding a spend of a coin and then a chain truncation that gives
+/// it back persists it unspent across a reopen; the reverse order persists
+/// it spent.
+#[test]
+fn a_restoration_and_a_spend_of_one_coin_persist_in_batch_order() {
+    use platform_wallet::changeset::{Merge, RestoredUtxo};
+
+    let seed = [0x0C; 64];
+    let (_wallet, coin) = wallet_and_utxo(seed, 5_000, 10, 0);
+    let spend = || CoreChangeSet {
+        spent_utxos: vec![coin.clone()],
+        ..Default::default()
+    };
+    let restore = || CoreChangeSet {
+        new_utxos: vec![coin.clone()],
+        restored_utxos: vec![RestoredUtxo {
+            account_type: key_wallet::account::AccountType::Standard {
+                index: 0,
+                standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+            },
+            utxo: coin.clone(),
+        }],
+        ..Default::default()
+    };
+
+    for (byte, restored_last) in [(0xC1, true), (0xC2, false)] {
+        let (persister, _tmp, path) = fresh_persister();
+        let w = wid(byte);
+        ensure_wallet_meta(&persister, &w);
+        // The coin was stored unspent before the batch.
+        persister
+            .store(
+                w,
+                PlatformWalletChangeSet {
+                    core: Some(CoreChangeSet {
+                        new_utxos: vec![coin.clone()],
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let (mut batch, newer) = if restored_last {
+            (spend(), restore())
+        } else {
+            (restore(), spend())
+        };
+        batch.merge(newer);
+        persister
+            .store(
+                w,
+                PlatformWalletChangeSet {
+                    core: Some(batch),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        drop(persister);
+
+        let p2 = reopen(&path);
+        let conn = p2.lock_conn_for_test();
+        let (core, _utxo_accounts) =
+            core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
+                .unwrap();
+        drop(conn);
+        let unspent = core.new_utxos.iter().any(|u| u.outpoint == coin.outpoint);
+        assert_eq!(
+            unspent, restored_last,
+            "restored_last={restored_last}: the newer of the two must decide"
+        );
+    }
+}
+
 /// A corrupt `record_blob` is a typed hard error.
 #[test]
 fn b3_corrupt_record_blob_is_hard_error() {

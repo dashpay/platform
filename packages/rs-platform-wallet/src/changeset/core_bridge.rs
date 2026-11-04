@@ -1749,6 +1749,16 @@ async fn build_core_changeset(
             // Updated records (re-confirmation, IS-lock applied to a known
             // mempool tx, etc.) don't usually change UTXO topology — the
             // record's content does change though, so re-emit it.
+            //
+            // Their spends are listed all the same. A spender seen in the
+            // mempool and ChainLocked before its `TransactionDetected` is
+            // projected loses its live record to the ChainLock, so the
+            // detection projects nothing and this block is the only place
+            // the spend appears. Re-marking a coin already spent is
+            // idempotent at every persister.
+            for r in updated {
+                cs.spent_utxos.extend(derive_spent_utxos(r));
+            }
             // Matured coinbase records likewise: no UTXO topology change,
             // just a status update for the persister.
             //
@@ -1855,6 +1865,7 @@ async fn build_core_changeset(
             }
         }
         WalletEvent::ChainTruncated {
+            wallet_id,
             height,
             txids,
             unconfirmed_txids,
@@ -1871,6 +1882,9 @@ async fn build_core_changeset(
             // truncation as an in-memory rewind instead, which the next
             // DashPay backfill record round carries to the host unless a
             // new-branch advance reaches it first.
+            //
+            // The coins the truncation gave back are the exception: they are
+            // re-delivered (see `restored_coins_changeset`).
             tracing::warn!(
                 height,
                 removed = txids.len(),
@@ -1878,7 +1892,7 @@ async fn build_core_changeset(
                 restored = restored_outpoints.len(),
                 "Chain truncation is not mirrored to the persister; stored wallet state keeps the replaced branch"
             );
-            CoreChangeSet::default()
+            restored_coins_changeset(wallet_manager, wallet_id, restored_outpoints).await
         }
         WalletEvent::SyncHeightAdvanced { wallet_id, height } => {
             // A watermark queued before a rewind must not land after it.
@@ -2471,6 +2485,56 @@ fn collect_usage_deltas_from_accounts(
     (marked_used, highest_used)
 }
 
+/// The coins a truncation gave back that the engine holds at drain time,
+/// each with its owning account (see [`CoreChangeSet::restored_utxos`]).
+///
+/// A store may have written such a coin spent with no spender link: its
+/// funding record arrived after a block had spent it, and the engine's
+/// [`UtxoCreditVerdict::ObservedSpent`] said so (the spender can be a
+/// transaction the wallet never recorded, rust-dashcore#992). Nothing above
+/// the last ChainLock is final, so a fork can drop that spender, and the
+/// engine then holds the coin again. Without this re-delivery nothing tells
+/// the store: the row stays spent, the restore path leaves it out, and the
+/// next launch loses the coin. The coin is read from the account's UTXO
+/// set, not from its funding record, which a ChainLock below the fork may
+/// already have dropped.
+///
+/// A coin spent again since the truncation is the spender's record to
+/// report, and a contact's watch-only chain holds the contact's coins.
+async fn restored_coins_changeset(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: &WalletId,
+    restored_outpoints: &[OutPoint],
+) -> CoreChangeSet {
+    let mut cs = CoreChangeSet::default();
+    if restored_outpoints.is_empty() {
+        return cs;
+    }
+    let guard = wallet_manager.read().await;
+    let Some(info) = guard.get_wallet_info(wallet_id) else {
+        return cs;
+    };
+    let accounts = info.core_wallet.accounts.all_accounts();
+    for outpoint in restored_outpoints {
+        let held = accounts.iter().find_map(|account| {
+            let account_type = account.managed_account_type().to_account_type();
+            if account_type.is_contact_owned() {
+                return None;
+            }
+            let utxo = account.as_funds()?.utxos.get(outpoint)?;
+            Some(crate::changeset::RestoredUtxo {
+                account_type,
+                utxo: utxo.clone(),
+            })
+        });
+        if let Some(restored) = held {
+            cs.new_utxos.push(restored.utxo.clone());
+            cs.restored_utxos.push(restored);
+        }
+    }
+    cs
+}
+
 /// Every account slice the manager currently holds for `txid` in
 /// `wallet_id` — the authoritative "all accounts matched so far"
 /// snapshot behind the wallet-level fold (see the `TransactionDetected`
@@ -2585,7 +2649,7 @@ fn is_contact_watch_only(record: &TransactionRecord) -> bool {
 /// see [`is_contact_watch_only`]. This is the direct counterpart of
 /// dashpay/rust-dashcore#926 dropping those accounts from `utxos()` /
 /// `get_spendable_utxos()`.
-fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
+pub(crate) fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
     if is_contact_watch_only(record) {
         return Vec::new();
     }
@@ -2704,7 +2768,8 @@ fn spent_outpoint(
 /// Every outpoint of ours that `record` spends.
 ///
 /// The fence-side view of [`derive_spent_utxos`], built on the same
-/// [`spent_outpoint`] walk — see that function for why they share it.
+/// [`spent_outpoint`] walk — see that function for why they share it. The
+/// changeset merge and the finalized-spend set read records through it too.
 pub(crate) fn spent_outpoints(record: &TransactionRecord) -> impl Iterator<Item = OutPoint> + '_ {
     record
         .input_details
@@ -4469,6 +4534,7 @@ mod contact_watch_only_projection_tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
         }
     }
 
@@ -5679,6 +5745,7 @@ mod tests {
         let ctx = TestWalletContext::new_random();
         let info = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             core_wallet: ctx.managed_wallet,
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
@@ -5731,6 +5798,7 @@ mod tests {
         let ctx = TestWalletContext::new_random();
         let mut info = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             core_wallet: ctx.managed_wallet,
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
@@ -5796,6 +5864,7 @@ mod tests {
         let ctx = TestWalletContext::new_random();
         let mut info = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             core_wallet: ctx.managed_wallet,
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
@@ -5876,6 +5945,7 @@ mod tests {
         let ctx = TestWalletContext::new_random();
         let mut info = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             core_wallet: ctx.managed_wallet,
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
@@ -6105,6 +6175,7 @@ mod tests {
         let retired = durable.retired().remove(&wallet_id).expect("retired");
         let mut successor = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             core_wallet: ManagedWalletInfo::from_wallet(&wallet, 0),
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
@@ -9058,6 +9129,7 @@ mod utxo_credit_verdict_tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
         };
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
         let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
@@ -9088,6 +9160,198 @@ mod utxo_credit_verdict_tests {
 
         let unknown = build_core_changeset(&manager, &event([0xEEu8; 32])).await;
         assert!(unknown.utxo_credit_verdicts.is_empty());
+    }
+
+    /// Spend first, funding second, then a fork drops the spender. The
+    /// funding round wrote the coin `ObservedSpent`, and a store keeps that
+    /// row spent with no spender link. The truncation gives the coin back to
+    /// the engine, and its changeset re-delivers it from the account's UTXO
+    /// set, with its account and without a verdict, so the store clears the
+    /// row before the next launch restores from it. With a ChainLock between
+    /// the funding and the fork, the funding record is dropped (with
+    /// `keep-finalized-transactions` off) and the coin is re-delivered all
+    /// the same.
+    #[tokio::test]
+    async fn truncation_re_delivers_a_coin_whose_observed_spender_it_drops() {
+        use crate::wallet::core::WalletGeneration;
+        use crate::wallet::identity::IdentityManager;
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        for chain_lock_between in [false, true] {
+            let mut ctx = TestWalletContext::new_random();
+            let fund_tx = funding_of(ctx.receive_address.script_pubkey(), 7);
+            let coin = OutPoint {
+                txid: fund_tx.txid(),
+                vout: 0,
+            };
+            assert!(
+                !ctx.check_transaction(&collateral_burn(coin), in_block(200))
+                    .await
+                    .is_relevant
+            );
+            let funding_record = ctx
+                .check_transaction(&fund_tx, in_block(100))
+                .await
+                .new_records
+                .first()
+                .expect("funding record")
+                .clone();
+
+            let info = PlatformWalletInfo {
+                core_wallet: ctx.managed_wallet,
+                generation: Arc::new(WalletGeneration::new()),
+                identity_manager: IdentityManager::new(),
+                tracked_asset_locks: BTreeMap::new(),
+                dpns_name_states: BTreeMap::new(),
+                dashpay_backfill: Default::default(),
+                rewind_barrier: Default::default(),
+                observed_input_conflicts: Default::default(),
+                finalized_spends: Default::default(),
+            };
+            let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
+            let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
+            let manager = Arc::new(RwLock::new(wm));
+
+            let funded = build_core_changeset(
+                &manager,
+                &WalletEvent::BlockProcessed {
+                    wallet_id,
+                    height: 100,
+                    chain_lock: None,
+                    inserted: vec![funding_record],
+                    updated: vec![],
+                    matured: vec![],
+                    balance: WalletCoreBalance::default(),
+                    account_balances: BTreeMap::new(),
+                    addresses_derived: vec![],
+                },
+            )
+            .await;
+            assert_eq!(
+                funded.utxo_credit_verdicts.get(&coin),
+                Some(&UtxoCreditVerdict::ObservedSpent { height: 200 }),
+                "the funding round marks the coin spent"
+            );
+
+            let mut guard = manager.write().await;
+            let info = guard.get_wallet_info_mut(&wallet_id).expect("wallet");
+            if chain_lock_between {
+                info.apply_chain_lock(dashcore::ephemerealdata::chain_lock::ChainLock::dummy(150));
+                #[cfg(not(feature = "keep-finalized-transactions"))]
+                assert!(
+                    info.core_wallet
+                        .accounts
+                        .all_accounts()
+                        .into_iter()
+                        .all(|account| account.transactions().get(&fund_tx.txid()).is_none()),
+                    "the ChainLock dropped the funding record"
+                );
+            }
+            let truncation = info.truncate_above(150).expect("truncates");
+            drop(guard);
+            assert_eq!(truncation.restored_outpoints, vec![coin]);
+            let event = WalletEvent::ChainTruncated {
+                wallet_id,
+                height: 150,
+                txids: truncation.txids,
+                unconfirmed_txids: truncation.unconfirmed_txids,
+                restored_outpoints: truncation.restored_outpoints,
+                balance: WalletCoreBalance::default(),
+                account_balances: BTreeMap::new(),
+            };
+
+            let cs = build_core_changeset(&manager, &event).await;
+
+            let restored: Vec<_> = cs
+                .restored_utxos
+                .iter()
+                .map(|r| (r.account_type, r.utxo.outpoint))
+                .collect();
+            assert_eq!(
+                restored,
+                vec![(
+                    AccountType::Standard {
+                        index: 0,
+                        standard_account_type:
+                            key_wallet::account::StandardAccountType::BIP44Account,
+                    },
+                    coin
+                )],
+                "ChainLock between: {chain_lock_between}"
+            );
+            assert!(cs.new_utxos.iter().any(|u| u.outpoint == coin));
+            assert!(
+                !cs.utxo_credit_verdicts.contains_key(&coin),
+                "the engine holds the coin again, so it carries no verdict"
+            );
+            assert!(cs.records.is_empty(), "nothing rests on the funding record");
+
+            // A wallet the manager does not know re-delivers nothing.
+            let unknown = WalletEvent::ChainTruncated {
+                wallet_id: [0xEEu8; 32],
+                height: 150,
+                txids: vec![],
+                unconfirmed_txids: vec![],
+                restored_outpoints: vec![coin],
+                balance: WalletCoreBalance::default(),
+                account_balances: BTreeMap::new(),
+            };
+            assert!(build_core_changeset(&manager, &unknown).await.is_empty());
+        }
+    }
+
+    /// A coin spent again between the truncation and the drain is the new
+    /// spender's record to report: nothing is re-delivered for it.
+    #[tokio::test]
+    async fn truncation_does_not_re_deliver_a_coin_spent_again_before_the_drain() {
+        use crate::wallet::core::WalletGeneration;
+        use crate::wallet::identity::IdentityManager;
+
+        let mut ctx = TestWalletContext::new_random();
+        let fund_tx = funding_of(ctx.receive_address.script_pubkey(), 8);
+        let coin = OutPoint {
+            txid: fund_tx.txid(),
+            vout: 0,
+        };
+        assert!(
+            ctx.check_transaction(&fund_tx, in_block(100))
+                .await
+                .is_relevant
+        );
+        assert!(
+            ctx.check_transaction(
+                &spend_to(coin, foreign_script(), 19_000),
+                TransactionContext::Mempool
+            )
+            .await
+            .is_relevant
+        );
+
+        let info = PlatformWalletInfo {
+            core_wallet: ctx.managed_wallet,
+            generation: Arc::new(WalletGeneration::new()),
+            identity_manager: IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+            dpns_name_states: BTreeMap::new(),
+            dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
+            observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
+        };
+        let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
+        let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
+        let manager = Arc::new(RwLock::new(wm));
+
+        let event = WalletEvent::ChainTruncated {
+            wallet_id,
+            height: 150,
+            txids: vec![],
+            unconfirmed_txids: vec![],
+            restored_outpoints: vec![coin],
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        };
+        assert!(build_core_changeset(&manager, &event).await.is_empty());
     }
 
     /// `TransactionDetected` judges the outputs of the records it READS,
@@ -9154,6 +9418,7 @@ mod utxo_credit_verdict_tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
         };
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
         let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
@@ -9175,6 +9440,251 @@ mod utxo_credit_verdict_tests {
         assert!(
             cs.records.iter().all(|r| r.context.block_info().is_some()),
             "the row is rebuilt from the manager's record, not the stale clone"
+        );
+    }
+
+    /// A manager holding `ctx`'s wallet, for tests that keep driving the
+    /// wallet after its first events are projected.
+    fn manager_holding(
+        ctx: TestWalletContext,
+    ) -> (Arc<RwLock<WalletManager<PlatformWalletInfo>>>, WalletId) {
+        use crate::wallet::core::WalletGeneration;
+        use crate::wallet::identity::IdentityManager;
+
+        let info = PlatformWalletInfo {
+            core_wallet: ctx.managed_wallet,
+            generation: Arc::new(WalletGeneration::new()),
+            identity_manager: IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+            dpns_name_states: BTreeMap::new(),
+            dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
+            observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
+        };
+        let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
+        let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
+        (Arc::new(RwLock::new(wm)), wallet_id)
+    }
+
+    async fn check_in_manager(
+        manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: &WalletId,
+        tx: &Transaction,
+        context: TransactionContext,
+    ) -> key_wallet::transaction_checking::TransactionCheckResult {
+        let mut guard = manager.write().await;
+        let (wallet, info) = guard
+            .get_wallet_mut_and_info_mut(wallet_id)
+            .expect("wallet");
+        info.check_core_transaction(tx, context, wallet, true, true)
+            .await
+    }
+
+    fn truncated(
+        wallet_id: WalletId,
+        height: u32,
+        truncation: key_wallet::wallet::managed_wallet_info::wallet_info_interface::Truncation,
+    ) -> WalletEvent {
+        WalletEvent::ChainTruncated {
+            wallet_id,
+            height,
+            txids: truncation.txids,
+            unconfirmed_txids: truncation.unconfirmed_txids,
+            restored_outpoints: truncation.restored_outpoints,
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        }
+    }
+
+    fn block_updating(
+        wallet_id: WalletId,
+        height: u32,
+        updated: Vec<TransactionRecord>,
+    ) -> WalletEvent {
+        WalletEvent::BlockProcessed {
+            wallet_id,
+            height,
+            chain_lock: None,
+            inserted: vec![],
+            updated,
+            matured: vec![],
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: vec![],
+        }
+    }
+
+    /// A truncation gives a coin back, and before its changeset commits a
+    /// new spender takes the coin: seen in the mempool, then mined and
+    /// ChainLocked before its detection is projected. The ChainLock prunes
+    /// the live record, so the detection projects nothing, and the block
+    /// carries the spender only in `updated`, which adds nothing to
+    /// `spent_utxos`. The spender's record is still newer evidence than the
+    /// restoration, so the round must not restore the coin.
+    #[tokio::test]
+    async fn a_spend_seen_only_in_an_updated_record_ends_an_older_restoration() {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        let mut ctx = TestWalletContext::new_random();
+        let fund_tx = funding_of(ctx.receive_address.script_pubkey(), 0x31);
+        let coin = OutPoint {
+            txid: fund_tx.txid(),
+            vout: 0,
+        };
+        assert!(
+            ctx.check_transaction(&fund_tx, in_block(100))
+                .await
+                .is_relevant
+        );
+        assert!(
+            ctx.check_transaction(&spend_to(coin, foreign_script(), 19_000), in_block(200))
+                .await
+                .is_relevant
+        );
+        let (manager, wallet_id) = manager_holding(ctx);
+
+        let truncation = {
+            let mut guard = manager.write().await;
+            let info = guard.get_wallet_info_mut(&wallet_id).expect("wallet");
+            info.truncate_above(150).expect("truncates")
+        };
+        assert_eq!(truncation.restored_outpoints, vec![coin]);
+        let mut round =
+            build_core_changeset(&manager, &truncated(wallet_id, 150, truncation)).await;
+        assert!(round.restores(&coin));
+
+        let spender = spend_to(coin, foreign_script(), 18_000);
+        let detected =
+            check_in_manager(&manager, &wallet_id, &spender, TransactionContext::Mempool)
+                .await
+                .new_records
+                .into_iter()
+                .next()
+                .expect("the spender is recorded");
+        let confirmed = check_in_manager(&manager, &wallet_id, &spender, in_block(160))
+            .await
+            .updated_records;
+        assert!(
+            !confirmed.is_empty(),
+            "the mined spender updates its record"
+        );
+        {
+            let mut guard = manager.write().await;
+            let info = guard.get_wallet_info_mut(&wallet_id).expect("wallet");
+            info.apply_chain_lock(dashcore::ephemerealdata::chain_lock::ChainLock::dummy(160));
+            #[cfg(not(feature = "keep-finalized-transactions"))]
+            assert!(
+                info.core_wallet
+                    .accounts
+                    .all_accounts()
+                    .into_iter()
+                    .all(|account| account.transactions().get(&spender.txid()).is_none()),
+                "the ChainLock pruned the spender's live record"
+            );
+        }
+
+        round.merge(
+            build_core_changeset(
+                &manager,
+                &WalletEvent::TransactionDetected {
+                    wallet_id,
+                    record: Box::new(detected),
+                    balance: WalletCoreBalance::default(),
+                    account_balances: BTreeMap::new(),
+                    addresses_derived: vec![],
+                },
+            )
+            .await,
+        );
+        round.merge(
+            build_core_changeset(&manager, &block_updating(wallet_id, 160, confirmed)).await,
+        );
+
+        assert!(
+            round.records.iter().any(|r| r.txid == spender.txid()),
+            "the round carries the spender's record"
+        );
+        assert!(
+            !round.restores(&coin),
+            "the newer spender ends the restoration"
+        );
+        assert!(
+            round.spent_utxos.iter().any(|utxo| utxo.outpoint == coin),
+            "the spend reaches stores that read `spent_utxos` after `new_utxos`"
+        );
+    }
+
+    /// A fork drops a block holding an InstantSend-locked funding and the
+    /// non-locked spend of its coin. The funding is kept as unconfirmed and
+    /// the coin given back with height 0 and no confirmation. The funding
+    /// is mined again before the round commits, and its updated record
+    /// says so. The restoration the round re-delivers must carry that newer
+    /// height and confirmation, not the copy taken at the truncation.
+    #[tokio::test]
+    async fn a_re_mined_funding_refreshes_its_older_restored_coin() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        let mut ctx = TestWalletContext::new_random();
+        let fund_tx = funding_of(ctx.receive_address.script_pubkey(), 0x32);
+        let coin = OutPoint {
+            txid: fund_tx.txid(),
+            vout: 0,
+        };
+        let lock = InstantLock {
+            txid: fund_tx.txid(),
+            ..InstantLock::dummy(0..1)
+        };
+        assert!(
+            ctx.check_transaction(&fund_tx, TransactionContext::InstantSend(lock))
+                .await
+                .is_relevant
+        );
+        ctx.check_transaction(&fund_tx, in_block(101)).await;
+        assert!(
+            ctx.check_transaction(&spend_to(coin, foreign_script(), 19_000), in_block(102))
+                .await
+                .is_relevant
+        );
+        let (manager, wallet_id) = manager_holding(ctx);
+
+        let truncation = {
+            let mut guard = manager.write().await;
+            let info = guard.get_wallet_info_mut(&wallet_id).expect("wallet");
+            info.truncate_above(100).expect("truncates")
+        };
+        assert_eq!(truncation.unconfirmed_txids, vec![fund_tx.txid()]);
+        assert_eq!(truncation.restored_outpoints, vec![coin]);
+        let mut round =
+            build_core_changeset(&manager, &truncated(wallet_id, 100, truncation)).await;
+        let at_truncation = &round.restored_utxos[0].utxo;
+        assert_eq!(
+            (at_truncation.height, at_truncation.is_confirmed),
+            (0, false),
+            "the truncation hands the coin back unconfirmed"
+        );
+
+        let re_mined = check_in_manager(&manager, &wallet_id, &fund_tx, in_block(103))
+            .await
+            .updated_records;
+        assert!(
+            !re_mined.is_empty(),
+            "the re-mined funding updates its record"
+        );
+        round
+            .merge(build_core_changeset(&manager, &block_updating(wallet_id, 103, re_mined)).await);
+
+        assert!(round.restores(&coin), "the coin is still given back");
+        let restored = round
+            .restored_utxos
+            .iter()
+            .find(|r| r.utxo.outpoint == coin)
+            .expect("restored coin");
+        assert_eq!(
+            (restored.utxo.height, restored.utxo.is_confirmed),
+            (103, true),
+            "the restoration carries the newer confirmation"
         );
     }
 }

@@ -242,15 +242,16 @@ pub type PersistWalletChangesetChainLockHeightFn =
 
 /// Carries the engine's credit verdicts for the round — every `Received` /
 /// `Change` output of the round's records that the engine did NOT credit
-/// to the owning account, with the reason (see [`UtxoCreditVerdictFFI`]).
+/// to the owning account, with the reason, and every coin the round
+/// restores (see [`UtxoCreditVerdictFFI`]).
 /// Fired inside the round's begin/end bracket, BEFORE
 /// `on_persist_wallet_changeset_fn`, so a persister that derives its UTXO
 /// rows from record roles can consult the verdicts while it applies the
 /// round's `utxos_added` entries — after the changeset callback would be
 /// too late, the row would already be staged as unspent. Fired only on
-/// rounds that carry at least one verdict; a round where every output was
-/// credited never fires it, so ignoring the slot is exactly today's
-/// behaviour. A non-zero return fails the round like any other per-kind
+/// rounds that carry at least one verdict or restored coin; a round where
+/// every output was credited never fires it, so ignoring the slot is
+/// exactly today's behaviour. A non-zero return fails the round like any other per-kind
 /// callback: a verdict silently dropped leaves a phantom coin the store
 /// hands back to the engine at the next load.
 pub type PersistWalletChangesetUtxoVerdictsFn = unsafe extern "C" fn(
@@ -2229,10 +2230,13 @@ impl PlatformWalletPersistence for FFIPersister {
             // derives its UTXO rows from record roles needs the verdicts in
             // hand while it materialises this round's `utxos_added`
             // entries, or it stages the very phantom row the verdict exists
-            // to prevent. Fired only when the round carries a verdict, so a
+            // to prevent. A restored coin rides the same slot, so a host
+            // can override the spender link this round's transaction
+            // callbacks make from a spender the truncation dropped. Fired
+            // only when the round carries a verdict or a restored coin, so a
             // host without the slot — or a round where every output was
             // credited — behaves exactly as before.
-            if !core_cs.utxo_credit_verdicts.is_empty() {
+            if !core_cs.utxo_credit_verdicts.is_empty() || !core_cs.restored_utxos.is_empty() {
                 if let Some(cb) = self.wallet_changeset_utxo_verdicts_callback {
                     let verdicts = build_utxo_credit_verdicts_for_callback(core_cs);
                     let result = unsafe {
@@ -9620,7 +9624,8 @@ mod tests {
     /// size-negotiated slot, BEFORE the changeset callback of the same
     /// round (the persister needs them while it materialises the round's
     /// UTXO rows), with outpoint, class and height intact; a round with no
-    /// verdict never fires the slot; and a host without the slot still
+    /// verdict never fires the slot, and one that only restores a coin
+    /// does; and a host without the slot still
     /// succeeds — it just materialises the row unspent, as every host did
     /// before the slot existed.
     #[test]
@@ -9721,6 +9726,50 @@ mod tests {
                 "verdict txid=ab vout=1 class=1 height=2402896".to_string(),
                 "verdict txid=cd vout=0 class=2 height=0".to_string(),
                 "verdict txid=ef vout=2 class=3 height=0".to_string(),
+                "changeset".to_string(),
+            ],
+        );
+        // A round that only restores a coin fires the slot too, so the host
+        // has the restoration before the round's transaction callbacks.
+        sink.events.lock().unwrap().clear();
+        let address = dashcore::Address::dummy(dashcore::Network::Testnet, 3);
+        let coin = key_wallet::Utxo::new(
+            outpoint(0x12, 3),
+            dashcore::TxOut {
+                value: 1_000,
+                script_pubkey: address.script_pubkey(),
+            },
+            address,
+            100,
+            false,
+        );
+        persister
+            .store(
+                [1u8; 32],
+                PlatformWalletChangeSet {
+                    core: Some(CoreChangeSet {
+                        new_utxos: vec![coin.clone()],
+                        restored_utxos: vec![platform_wallet::changeset::RestoredUtxo {
+                            account_type: key_wallet::account::AccountType::Standard {
+                                index: 0,
+                                standard_account_type:
+                                    key_wallet::account::StandardAccountType::BIP44Account,
+                            },
+                            utxo: coin,
+                        }],
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .expect("restoration round must succeed");
+        assert_eq!(
+            sink.events.lock().unwrap().clone(),
+            vec![
+                format!(
+                    "verdict txid=12 vout=3 class={} height=0",
+                    crate::core_wallet_types::UTXO_CREDIT_VERDICT_RESTORED
+                ),
                 "changeset".to_string(),
             ],
         );

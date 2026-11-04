@@ -224,6 +224,7 @@ pub fn apply(
         // The ordinary round. Everything below serves the sweep loop, and
         // building the survivor set would hash every input of every record
         // for a loop that never runs — with the write transaction open.
+        apply_restorations(tx, wallet_id, cs)?;
         if heights_advanced {
             collect_finalized_tombstones(tx, wallet_id)?;
         }
@@ -387,8 +388,40 @@ pub fn apply(
             }
         }
     }
+    apply_restorations(tx, wallet_id, cs)?;
     if heights_advanced {
         collect_finalized_tombstones(tx, wallet_id)?;
+    }
+    Ok(())
+}
+
+/// Write every coin the changeset restores unspent and unattributed, after
+/// everything else in the round.
+///
+/// [`CoreChangeSet::restores`] is the wallet's last word on the coin: its
+/// merge drops a restoration that a newer spend follows. `new_utxos` already
+/// carries each restored coin, but two writes that come after it can leave
+/// the row spent. A sweep in this round can hold the coin as an input its
+/// loser shared with the winner the truncation dropped. A placeholder an
+/// earlier round's sweep wrote keeps `spent` set through the upsert. Running
+/// last overrides both. The upsert has already materialised such a
+/// placeholder, so a row still flagged as one is not this coin's and is left
+/// alone rather than surfaced as a zero-value coin.
+fn apply_restorations(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    cs: &CoreChangeSet,
+) -> Result<(), WalletStorageError> {
+    if cs.restored_utxos.is_empty() {
+        return Ok(());
+    }
+    let mut stmt = tx.prepare_cached(
+        "UPDATE core_utxos SET spent = 0, spent_in_txid = NULL \
+         WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 0",
+    )?;
+    for restored in &cs.restored_utxos {
+        let key = blob::encode_outpoint(&restored.utxo.outpoint)?;
+        stmt.execute(params![wallet_id.as_slice(), &key[..]])?;
     }
     Ok(())
 }

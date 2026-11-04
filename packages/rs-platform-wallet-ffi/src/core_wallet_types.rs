@@ -82,10 +82,23 @@ pub const UTXO_CREDIT_VERDICT_DOOMED: u8 = 2;
 /// hand the coin back as unspent on this delivery, and must not mark it
 /// spent on this evidence alone.
 pub const UTXO_CREDIT_VERDICT_UNCREDITED: u8 = 3;
+/// `UtxoCreditVerdictFFI::verdict`: a chain truncation gave the coin back
+/// and the engine holds it unspent again
+/// (`CoreChangeSet::restored_utxos`). Unlike the codes above it is not a
+/// veto: the coin is in this round's `utxos_added`, and a persister writes
+/// it unspent with no spender link and drops any ordinary pending spend
+/// claim on it — including a link or claim this round's own transaction
+/// callbacks just made from a spender the truncation dropped, which
+/// arrive before the coin. A swept tombstone on a coin the store never
+/// materialised still holds it, as the SQLite store's placeholder does.
+/// `spent_at_height` is 0.
+pub const UTXO_CREDIT_VERDICT_RESTORED: u8 = 4;
 
 /// The engine's verdict on one `Received` / `Change` output that this
 /// round's records carry but the engine did NOT credit to the owning
-/// account — delivered through the size-negotiated extension slot
+/// account, or on a coin the round restores
+/// ([`UTXO_CREDIT_VERDICT_RESTORED`]) — delivered through the
+/// size-negotiated extension slot
 /// `on_persist_wallet_changeset_utxo_verdicts_fn`, BEFORE the round's
 /// changeset callback, so a persister can consult it while it
 /// materialises the round's `utxos_added` entries. Absence of an outpoint
@@ -154,11 +167,18 @@ pub fn build_dashpay_backfill_covered_for_callback(
 
 /// Project a changeset's credit verdicts into their C mirrors for the
 /// extension slot, in outpoint order (the map's own ordering — stable,
-/// so a host log of a round is reproducible).
+/// so a host log of a round is reproducible), then one
+/// [`UTXO_CREDIT_VERDICT_RESTORED`] entry per restored coin. `merge` never
+/// leaves a coin both restored and under a verdict.
 pub(crate) fn build_utxo_credit_verdicts_for_callback(
     cs: &platform_wallet::changeset::CoreChangeSet,
 ) -> Vec<UtxoCreditVerdictFFI> {
     use platform_wallet::changeset::changeset::UtxoCreditVerdict;
+    let restored = cs.restored_utxos.iter().map(|r| UtxoCreditVerdictFFI {
+        outpoint: OutPointFFI::from(&r.utxo.outpoint),
+        verdict: UTXO_CREDIT_VERDICT_RESTORED,
+        spent_at_height: 0,
+    });
     cs.utxo_credit_verdicts
         .iter()
         .map(|(outpoint, verdict)| {
@@ -175,6 +195,7 @@ pub(crate) fn build_utxo_credit_verdicts_for_callback(
                 spent_at_height,
             }
         })
+        .chain(restored)
         .collect()
 }
 
@@ -632,6 +653,17 @@ impl WalletChangeSetFFI {
             }
         }
 
+        // Coins a truncation gave back reach their account's bucket with or
+        // without a record (see `CoreChangeSet::restored_utxos`).
+        for restored in &cs.restored_utxos {
+            if !by_account
+                .iter()
+                .any(|(at, _, _)| at == &restored.account_type)
+            {
+                by_account.push((restored.account_type, Vec::new(), Vec::new()));
+            }
+        }
+
         let mut ffi_accounts = Vec::with_capacity(by_account.len());
         for (account_type, tx_rows, utxo_slices) in by_account {
             let type_name = CString::new(format!("{:?}", account_type))
@@ -644,10 +676,21 @@ impl WalletChangeSetFFI {
             // the UTXOs the persister should add or remove.
             let mut utxos_added: Vec<UtxoEntryFFI> = Vec::new();
             let mut utxos_spent: Vec<SpentOutPointFFI> = Vec::new();
+            // A spend of a coin the changeset restores is older than the
+            // restoration (`CoreChangeSet::restores`), and hosts apply
+            // `utxos_spent` after `utxos_added`, so it is left out.
             for rec in &utxo_slices {
                 utxos_added.extend(record_new_utxos_ffi(rec));
-                utxos_spent.extend(record_spent_outpoints_ffi(rec));
+                utxos_spent.extend(record_spent_outpoints_ffi(rec, |outpoint| {
+                    !cs.restores(outpoint)
+                }));
             }
+            utxos_added.extend(
+                cs.restored_utxos
+                    .iter()
+                    .filter(|r| r.account_type == account_type)
+                    .map(|r| utxo_entry_ffi(&r.utxo)),
+            );
 
             // Transaction rows for this account (wallet-level,
             // folded — see the bucketing comment above).
@@ -1211,19 +1254,49 @@ fn record_new_utxos_ffi(
         .collect()
 }
 
+/// One held coin as a `utxos_added` entry, from the account's own UTXO
+/// rather than a record's output details.
+fn utxo_entry_ffi(utxo: &key_wallet::Utxo) -> UtxoEntryFFI {
+    use std::ffi::CString;
+
+    let address =
+        CString::new(utxo.address.to_string()).unwrap_or_else(|_| CString::new("").unwrap());
+    let script_bytes = utxo.txout.script_pubkey.as_bytes().to_vec();
+    let script_len = script_bytes.len();
+    let script_ptr = vec_to_ptr_u8(script_bytes, script_len);
+    UtxoEntryFFI {
+        outpoint: OutPointFFI::new(&utxo.outpoint.txid, utxo.outpoint.vout),
+        amount: utxo.txout.value,
+        address: address.into_raw(),
+        script_pubkey: script_ptr,
+        script_pubkey_len: script_len,
+        height: utxo.height,
+        is_coinbase: utxo.is_coinbase,
+        is_confirmed: utxo.is_confirmed,
+        is_instantlocked: utxo.is_instantlocked,
+        is_locked: utxo.is_locked,
+    }
+}
+
 /// Project the outpoints spent by a `TransactionRecord` (i.e. the
 /// outpoints whose UTXO rows the persister should mark spent),
 /// paired with the spending transaction's txid so the Swift
-/// persister can populate `PersistentTxo.spendingTransaction`.
+/// persister can populate `PersistentTxo.spendingTransaction`. Only
+/// outpoints `keep` accepts are projected.
 fn record_spent_outpoints_ffi(
     rec: &key_wallet::managed_account::transaction_record::TransactionRecord,
+    keep: impl Fn(&dashcore::OutPoint) -> bool,
 ) -> Vec<SpentOutPointFFI> {
     let mut spending_txid = [0u8; 32];
     spending_txid.copy_from_slice(rec.txid.as_ref());
     rec.input_details
         .iter()
         .filter_map(|d| {
-            let input = rec.transaction.input.get(d.index as usize)?;
+            let input = rec
+                .transaction
+                .input
+                .get(d.index as usize)
+                .filter(|input| keep(&input.previous_output))?;
             Some(SpentOutPointFFI {
                 outpoint: OutPointFFI::from(&input.previous_output),
                 spending_txid,
@@ -2084,6 +2157,319 @@ mod tests {
         assert!(change.is_instantlocked);
         assert!(!change.is_confirmed);
         assert_eq!(change.height, 0);
+        unsafe { free_wallet_changeset_ffi(&ffi) };
+    }
+
+    /// A coin a truncation gave back reaches its account's `utxos_added`
+    /// from the account's own UTXO, with no record behind it (a ChainLock
+    /// below the fork may have dropped the funding record).
+    #[test]
+    fn a_restored_coin_reaches_its_accounts_utxos_added_without_a_record() {
+        use dashcore::hashes::Hash;
+        use dashcore::{Address, Network, OutPoint, TxOut, Txid};
+        use platform_wallet::changeset::RestoredUtxo;
+
+        let coinjoin = AccountType::CoinJoin { index: 0 };
+        let address = Address::dummy(Network::Testnet, 4);
+        let coin = OutPoint {
+            txid: Txid::from_slice(&[0x71; 32]).expect("valid txid"),
+            vout: 2,
+        };
+        let mut utxo = key_wallet::Utxo::new(
+            coin,
+            TxOut {
+                value: 19_549,
+                script_pubkey: address.script_pubkey(),
+            },
+            address.clone(),
+            100,
+            false,
+        );
+        utxo.is_confirmed = true;
+        let cs = CoreChangeSet {
+            new_utxos: vec![utxo.clone()],
+            restored_utxos: vec![RestoredUtxo {
+                account_type: coinjoin,
+                utxo,
+            }],
+            ..CoreChangeSet::default()
+        };
+
+        let ffi = WalletChangeSetFFI::from_changeset(&cs);
+        assert_eq!(ffi.accounts_count, 1);
+        let bucket = unsafe { &*ffi.accounts };
+        assert_eq!(bucket.type_tag, account_type_to_tags(&coinjoin).type_tag);
+        assert_eq!(bucket.transactions_count, 0);
+        assert_eq!(bucket.utxos_spent_count, 0);
+        assert_eq!(bucket.utxos_added_count, 1);
+        let added = unsafe { &*bucket.utxos_added };
+        assert_eq!(OutPoint::from(&added.outpoint), coin);
+        assert_eq!(added.amount, 19_549);
+        assert_eq!(added.height, 100);
+        assert!(added.is_confirmed);
+        let script =
+            unsafe { std::slice::from_raw_parts(added.script_pubkey, added.script_pubkey_len) };
+        assert_eq!(script, address.script_pubkey().as_bytes());
+        let projected = unsafe { std::ffi::CStr::from_ptr(added.address) };
+        assert_eq!(projected.to_str().unwrap(), address.to_string());
+        unsafe { free_wallet_changeset_ffi(&ffi) };
+    }
+
+    /// A round carrying an older spend of a coin and its later restoration
+    /// emits the restoration alone: hosts apply `utxos_spent` after
+    /// `utxos_added`, so the older spend would otherwise win.
+    #[test]
+    fn a_restored_coin_drops_an_older_spend_of_it_from_the_bucket() {
+        use dashcore::hashes::Hash;
+        use dashcore::{Address, Network, OutPoint, TxOut};
+        use key_wallet::managed_account::transaction_record::{
+            TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::transaction_router::TransactionType;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+        use platform_wallet::changeset::{Merge, RestoredUtxo};
+
+        let bip44 = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let SendWithChange {
+            tx,
+            our_input,
+            sent,
+            change,
+        } = send_with_change();
+        let coin = tx.input[our_input.index as usize].previous_output;
+        let send = TransactionRecord::new(
+            tx,
+            bip44,
+            TransactionContext::InBlock(BlockInfo::new(
+                200,
+                dashcore::BlockHash::from_byte_array([5u8; 32]),
+                0,
+            )),
+            TransactionType::Standard,
+            TransactionDirection::Outgoing,
+            vec![our_input],
+            vec![sent, change],
+            -901_000,
+        );
+        let address = Address::dummy(Network::Testnet, 3);
+        let utxo = key_wallet::Utxo::new(
+            coin,
+            TxOut {
+                value: 1_000_000,
+                script_pubkey: address.script_pubkey(),
+            },
+            address,
+            100,
+            false,
+        );
+        // The spend and the restoration arrive as two events folded into one
+        // batch, the way the event adapter accumulates them.
+        let mut cs = CoreChangeSet {
+            records: vec![send.clone()],
+            account_records: vec![send],
+            spent_utxos: vec![utxo.clone()],
+            ..CoreChangeSet::default()
+        };
+        cs.merge(CoreChangeSet {
+            new_utxos: vec![utxo.clone()],
+            restored_utxos: vec![RestoredUtxo {
+                account_type: bip44,
+                utxo,
+            }],
+            ..CoreChangeSet::default()
+        });
+        assert!(cs.spent_utxos.is_empty(), "the canonical batch agrees");
+
+        let ffi = WalletChangeSetFFI::from_changeset(&cs);
+        assert_eq!(ffi.accounts_count, 1);
+        let bucket = unsafe { &*ffi.accounts };
+        assert_eq!(
+            bucket.utxos_spent_count, 0,
+            "the restoration is the later word"
+        );
+        let added =
+            unsafe { std::slice::from_raw_parts(bucket.utxos_added, bucket.utxos_added_count) };
+        assert!(added.iter().any(|u| OutPoint::from(&u.outpoint) == coin));
+        unsafe { free_wallet_changeset_ffi(&ffi) };
+    }
+
+    /// A coin restored unconfirmed whose funding is mined again before the
+    /// round commits: every entry the bucket hands hosts for the coin,
+    /// the restoration's copy last among them, carries the newer height and
+    /// confirmation. Room and SwiftData write those fields from each entry
+    /// in order.
+    #[test]
+    fn a_restored_coin_carries_a_newer_funding_records_confirmation() {
+        use dashcore::hashes::Hash;
+        use dashcore::{Address, Network, OutPoint, Transaction, TxOut};
+        use key_wallet::managed_account::transaction_record::{
+            OutputDetail, OutputRole, TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::transaction_router::TransactionType;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+        use platform_wallet::changeset::{Merge, RestoredUtxo};
+
+        let bip44 = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let address = Address::dummy(Network::Testnet, 5);
+        let funding_tx = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: vec![TxOut {
+                value: 19_549,
+                script_pubkey: address.script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        };
+        let coin = OutPoint {
+            txid: funding_tx.txid(),
+            vout: 0,
+        };
+        let mut unconfirmed = key_wallet::Utxo::new(
+            coin,
+            funding_tx.output[0].clone(),
+            address.clone(),
+            0,
+            false,
+        );
+        unconfirmed.is_instantlocked = true;
+        let mut cs = CoreChangeSet {
+            new_utxos: vec![unconfirmed.clone()],
+            restored_utxos: vec![RestoredUtxo {
+                account_type: bip44,
+                utxo: unconfirmed,
+            }],
+            ..CoreChangeSet::default()
+        };
+        let re_mined = TransactionRecord::new(
+            funding_tx,
+            bip44,
+            TransactionContext::InBlock(BlockInfo::new(
+                103,
+                dashcore::BlockHash::from_byte_array([6u8; 32]),
+                0,
+            )),
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            vec![],
+            vec![OutputDetail {
+                index: 0,
+                role: OutputRole::Received,
+                address: Some(address),
+                value: 19_549,
+            }],
+            19_549,
+        );
+        cs.merge(CoreChangeSet {
+            records: vec![re_mined.clone()],
+            account_records: vec![re_mined],
+            ..CoreChangeSet::default()
+        });
+
+        let ffi = WalletChangeSetFFI::from_changeset(&cs);
+        assert_eq!(ffi.accounts_count, 1);
+        let bucket = unsafe { &*ffi.accounts };
+        let added =
+            unsafe { std::slice::from_raw_parts(bucket.utxos_added, bucket.utxos_added_count) };
+        let for_coin: Vec<(u32, bool)> = added
+            .iter()
+            .filter(|u| OutPoint::from(&u.outpoint) == coin)
+            .map(|u| (u.height, u.is_confirmed))
+            .collect();
+        assert_eq!(
+            for_coin,
+            vec![(103, true), (103, true)],
+            "the record's entry, then the restoration's, both newer"
+        );
+        unsafe { free_wallet_changeset_ffi(&ffi) };
+    }
+
+    /// A restored coin a newer record spends, with no `spent_utxos` entry
+    /// beside the record: the bucket spends the coin and the verdict slot
+    /// no longer marks it restored, so hosts keep the spender's link.
+    #[test]
+    fn a_newer_records_spend_of_a_restored_coin_reaches_the_bucket() {
+        use dashcore::hashes::Hash;
+        use dashcore::{Address, Network, OutPoint, TxOut};
+        use key_wallet::managed_account::transaction_record::{
+            TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::transaction_router::TransactionType;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+        use platform_wallet::changeset::{Merge, RestoredUtxo};
+
+        let bip44 = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let SendWithChange {
+            tx,
+            our_input,
+            sent,
+            change,
+        } = send_with_change();
+        let coin = tx.input[our_input.index as usize].previous_output;
+        let address = Address::dummy(Network::Testnet, 3);
+        let utxo = key_wallet::Utxo::new(
+            coin,
+            TxOut {
+                value: 1_000_000,
+                script_pubkey: address.script_pubkey(),
+            },
+            address,
+            100,
+            false,
+        );
+        let mut cs = CoreChangeSet {
+            new_utxos: vec![utxo.clone()],
+            restored_utxos: vec![RestoredUtxo {
+                account_type: bip44,
+                utxo,
+            }],
+            ..CoreChangeSet::default()
+        };
+        let send = TransactionRecord::new(
+            tx,
+            bip44,
+            TransactionContext::InBlock(BlockInfo::new(
+                160,
+                dashcore::BlockHash::from_byte_array([5u8; 32]),
+                0,
+            )),
+            TransactionType::Standard,
+            TransactionDirection::Outgoing,
+            vec![our_input],
+            vec![sent, change],
+            -901_000,
+        );
+        cs.merge(CoreChangeSet {
+            records: vec![send.clone()],
+            account_records: vec![send],
+            ..CoreChangeSet::default()
+        });
+
+        let ffi = WalletChangeSetFFI::from_changeset(&cs);
+        assert_eq!(ffi.accounts_count, 1);
+        let bucket = unsafe { &*ffi.accounts };
+        assert!(bucket.utxos_spent_count > 0, "the bucket spends something");
+        let spent =
+            unsafe { std::slice::from_raw_parts(bucket.utxos_spent, bucket.utxos_spent_count) };
+        assert!(
+            spent.iter().any(|s| OutPoint::from(&s.outpoint) == coin),
+            "the newer spend reaches the bucket"
+        );
+        assert!(
+            build_utxo_credit_verdicts_for_callback(&cs)
+                .iter()
+                .all(|v| v.verdict != UTXO_CREDIT_VERDICT_RESTORED),
+            "nothing tells hosts to restore the coin"
+        );
         unsafe { free_wallet_changeset_ffi(&ffi) };
     }
 
