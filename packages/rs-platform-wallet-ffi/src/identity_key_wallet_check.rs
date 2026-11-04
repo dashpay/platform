@@ -609,19 +609,23 @@ pub unsafe extern "C" fn platform_wallet_check_identity_keys_free(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::handle::next_handle;
     use crate::identity_key_preview::IdentityKeyPreviewFFI;
     use crate::runtime::runtime;
     use crate::types::FFINetwork;
     use crate::{
         dash_sdk_derive_identity_key_at_slot_free,
-        dash_sdk_derive_identity_key_at_slot_with_resolver,
+        dash_sdk_derive_identity_key_at_slot_with_resolver, platform_wallet_destroy,
     };
     use rs_sdk_ffi::{
         dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy,
         mnemonic_resolver_result,
     };
     use std::ffi::c_void;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::mpsc;
     use std::sync::Arc;
+    use std::time::Duration;
 
     /// English BIP-39 test vector (all-zero entropy): the seed of the
     /// wallet `test_platform_wallet_manager` creates.
@@ -685,9 +689,12 @@ mod tests {
 
     impl Resolver {
         fn new(resolve: rs_sdk_ffi::MnemonicResolveCallback) -> Self {
-            Resolver(unsafe {
-                dash_sdk_mnemonic_resolver_create(std::ptr::null_mut(), resolve, noop_destroy)
-            })
+            Self::with_context(resolve, std::ptr::null_mut())
+        }
+
+        /// A resolver whose callback gets `ctx`, which must outlive it.
+        fn with_context(resolve: rs_sdk_ffi::MnemonicResolveCallback, ctx: *mut c_void) -> Self {
+            Resolver(unsafe { dash_sdk_mnemonic_resolver_create(ctx, resolve, noop_destroy) })
         }
     }
 
@@ -1431,63 +1438,94 @@ mod tests {
 
     // ── The wallet registry ───────────────────────────────────────────
 
-    /// A resolver that destroys an unrelated wallet alias before it
-    /// answers, as a host may: a write to the wallet registry while the
-    /// check waits on the resolver.
+    /// The longest [`registry_writing_resolve`] waits for its write.
+    const REGISTRY_WRITE_WAIT: Duration = Duration::from_secs(10);
+
+    /// What [`registry_writing_resolve`] saw, counted through its context.
+    #[derive(Default)]
+    struct RegistryWrites {
+        /// Times the resolver ran.
+        resolved: AtomicUsize,
+        /// Times its write finished while it waited.
+        written_while_resolving: AtomicUsize,
+    }
+
+    /// A resolver that writes the wallet registry before it answers, as a
+    /// host may, by destroying an unrelated wallet alias on another thread.
+    /// It waits at most [`REGISTRY_WRITE_WAIT`] for that write, counts the
+    /// outcome in the [`RegistryWrites`] its context points at, and answers
+    /// either way. A check that holds the registry while the resolver runs
+    /// therefore still gets its answer and releases the registry, and the
+    /// write then finishes: no thread is left waiting on the registry.
     unsafe extern "C" fn registry_writing_resolve(
-        _ctx: *const c_void,
+        ctx: *const c_void,
         _wallet_id_bytes: *const u8,
         out_buf: *mut c_char,
         out_capacity: usize,
         out_len: *mut usize,
     ) -> i32 {
-        crate::platform_wallet_destroy(crate::handle::next_handle());
+        let writes = &*(ctx as *const RegistryWrites);
+        writes.resolved.fetch_add(1, Ordering::SeqCst);
+        let (written_tx, written_rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            unsafe { platform_wallet_destroy(next_handle()) };
+            let _ = written_tx.send(());
+        });
+        if written_rx.recv_timeout(REGISTRY_WRITE_WAIT).is_ok() {
+            writes
+                .written_while_resolving
+                .fetch_add(1, Ordering::SeqCst);
+        }
         write_phrase(TEST_MNEMONIC, out_buf, out_capacity, out_len)
     }
 
     /// Both checks answer while their resolver writes the wallet registry,
-    /// so neither holds the registry while the resolver runs. Holding it
-    /// deadlocks: the resolver's write waits on the check, and the check
-    /// waits on the resolver. They run on a thread so that a deadlock
-    /// fails the test instead of hanging it.
+    /// and the write finishes before the resolver answers, so neither check
+    /// holds the registry while the resolver runs. Holding it deadlocks a
+    /// host whose resolver waits on such a write: the write waits on the
+    /// check, and the check waits on the resolver. The resolver here waits
+    /// a bounded time, so a check that holds the registry fails the test
+    /// rather than hanging it or the other tests in the process.
     #[test]
     fn should_release_the_wallet_registry_before_the_resolver_runs() {
         let (_, public_key, _) = slot_key(1, 2);
         let (_, master_key, _) = slot_key(1, 0);
+        let writes = RegistryWrites::default();
+        let wallet = TestWallet::new();
+        let resolver = Resolver::with_context(
+            registry_writing_resolve,
+            &writes as *const RegistryWrites as *mut c_void,
+        );
 
-        let (done_tx, done_rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let wallet = TestWallet::new();
-            let resolver = Resolver::new(registry_writing_resolve);
+        let (result, mut out) = check(
+            &wallet,
+            &resolver,
+            1,
+            2,
+            KeyType::ECDSA_SECP256K1,
+            &public_key,
+        );
+        let one_key = (result.code, out.outcome);
+        unsafe { platform_wallet_check_identity_key_free(&mut out) };
 
-            let (result, mut out) = check(
-                &wallet,
-                &resolver,
-                1,
-                2,
-                KeyType::ECDSA_SECP256K1,
-                &public_key,
-            );
-            let one_key = (result.code, out.outcome);
-            unsafe { platform_wallet_check_identity_key_free(&mut out) };
+        let inputs = [input(
+            0,
+            KeyType::ECDSA_SECP256K1,
+            SecurityLevel::MASTER,
+            &master_key,
+            None,
+        )];
+        let (result, mut out) = check_identity(&wallet, &resolver, 1, &inputs, 0);
+        let identity = (result.code, out.ownership);
+        unsafe { platform_wallet_check_identity_keys_free(&mut out) };
 
-            let inputs = [input(
-                0,
-                KeyType::ECDSA_SECP256K1,
-                SecurityLevel::MASTER,
-                &master_key,
-                None,
-            )];
-            let (result, mut out) = check_identity(&wallet, &resolver, 1, &inputs, 0);
-            let identity = (result.code, out.ownership);
-            unsafe { platform_wallet_check_identity_keys_free(&mut out) };
-
-            let _ = done_tx.send((one_key, identity));
-        });
-
-        let (one_key, identity) = done_rx
-            .recv_timeout(std::time::Duration::from_secs(60))
-            .expect("a check must release the wallet registry before its resolver runs");
+        let resolved = writes.resolved.load(Ordering::SeqCst);
+        assert!(resolved >= 2, "each check resolves the mnemonic");
+        assert_eq!(
+            writes.written_while_resolving.load(Ordering::SeqCst),
+            resolved,
+            "a check must release the wallet registry before its resolver runs"
+        );
         assert_eq!(
             one_key,
             (
