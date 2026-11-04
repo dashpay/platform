@@ -3328,7 +3328,8 @@ async fn extract_spends_and_recorded_anchor<S: ShieldedStore>(
 ///    `ShieldedNoRecordedAnchor`, is final — no network round trip.
 /// 2. Otherwise (no usable set, the lock is contended, or the cached set
 ///    covers none of the checkpoints) `fetch` a fresh set OUTSIDE the store
-///    lock, record it in the cache, and probe against it.
+///    lock, record it in the cache when the pre-fetch tree size was read,
+///    and probe against it.
 ///
 /// See [`RecordedAnchorCache`] for why a cached set selects the same anchor a
 /// fresh fetch from an equally current node would.
