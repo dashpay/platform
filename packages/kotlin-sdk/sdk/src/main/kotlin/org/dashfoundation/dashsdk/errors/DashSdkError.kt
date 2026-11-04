@@ -239,6 +239,8 @@ sealed class DashSdkError(
         /**
          * Code 60: the asset lock exceeds the input cap, either a full drain or a fixed
          * amount held only in many small coins. Nothing was submitted, and no partial drain.
+         * Also returned when resuming a tracked lock over the cap: the lock is untracked
+         * and its inputs released instead of being re-sent.
          */
         class AssetLockTooManyInputs(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)

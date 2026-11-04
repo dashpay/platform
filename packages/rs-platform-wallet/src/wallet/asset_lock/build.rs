@@ -32,7 +32,7 @@ use crate::ASSET_LOCK_FUNDING_SOURCES;
 
 use super::manager::{AssetLockManager, DEFAULT_FEE_PER_KB};
 use super::tracked::{AssetLockStatus, TrackedAssetLock};
-use super::{max_asset_lock_inputs, AssetLockOperationContext, AssetLockOperationState};
+use super::{input_cap_violation, AssetLockOperationContext, AssetLockOperationState};
 
 /// Callback that receives the outpoint of an asset lock built for a
 /// [`AssetLockFunding::FromWalletBalance`](super::AssetLockFunding::FromWalletBalance),
@@ -1229,12 +1229,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // held only in many small coins selects as many. An oversized lock is
         // abandoned here rather than stranded on the wire; the caller can
         // consolidate the coins and build again.
-        let max_inputs = max_asset_lock_inputs(self.sdk.version());
-        let abandon = match amount {
-            _ if tx.input.len() > max_inputs => Some(PlatformWalletError::AssetLockTooManyInputs {
-                count: tx.input.len(),
-                max: max_inputs,
-            }),
+        let abandon = input_cap_violation(&tx, self.sdk.version()).or_else(|| match amount {
             AssetLockBuildAmount::DrainAll {
                 minimum_lock_duffs: Some(minimum),
             } if locked_amount_duffs < minimum => {
@@ -1245,7 +1240,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 )))
             }
             _ => None,
-        };
+        });
         if let Some(error) = abandon {
             {
                 // Nothing reached the broadcaster, so the fence has no

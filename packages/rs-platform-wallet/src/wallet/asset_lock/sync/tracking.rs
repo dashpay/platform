@@ -207,8 +207,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         cs
     }
 
-    // NOTE: there is deliberately no `untrack_unproven_broadcast_asset_lock`
-    // companion here. `Broadcast` records an attempt that was not definitely
+    // NOTE: there is deliberately no `Rejected`-driven companion for a
+    // `Broadcast` row. `Broadcast` records an attempt that was not definitely
     // rejected before dispatch, not that the network accepted it. A `Rejected`
     // verdict from a later attempt says only that attempt did not dispatch
     // (with the production `SpvBroadcaster`: an unstarted client or zero
@@ -216,6 +216,56 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     // network. Removing the row would therefore discard tracking for a
     // possibly-mined asset lock during an ordinary offline relaunch.
     // `resume_asset_lock` surfaces the typed error and leaves the row untouched.
+    // `untrack_unsendable_asset_lock` below is NOT that companion: it acts on
+    // a property of the transaction itself, never on a broadcaster's verdict.
+
+    /// Remove a `Built` or `Broadcast` row whose transaction can never be
+    /// relayed — one over the asset-lock input cap — unless a resume still
+    /// claims its dispatch window.
+    ///
+    /// The caller has already ruled out that the transaction is final or
+    /// mined (see `resume_asset_lock`'s input-cap abandon); what is left is
+    /// a row every resume would re-send and every peer would drop
+    /// silently, so the row stays `Built` / `Broadcast` for good and its
+    /// inputs stay behind it. Its `removed` entry carries the same contract
+    /// as [`untrack_asset_lock`](Self::untrack_asset_lock)'s: only when the
+    /// outpoint is in it was the row removed, and only then may the caller
+    /// release the inputs. A resume that still holds a claim is about to
+    /// reach this same abandon itself, so its row is left for it.
+    pub(crate) async fn untrack_unsendable_asset_lock(
+        &self,
+        out_point: &OutPoint,
+    ) -> AssetLockChangeSet {
+        let mut wm = self.wallet_manager.write().await;
+        let cleanup_excluded = self.resume_cleanup_excluded(out_point);
+        let mut cs = AssetLockChangeSet::default();
+        if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+            match info.tracked_asset_locks.get(out_point) {
+                Some(_) if cleanup_excluded => tracing::warn!(
+                    outpoint = %out_point,
+                    "untrack_unsendable_asset_lock: another resume claims this lock's \
+                     dispatch window — leaving it tracked for that resume to abandon"
+                ),
+                Some(entry)
+                    if matches!(
+                        entry.status,
+                        AssetLockStatus::Built | AssetLockStatus::Broadcast
+                    ) =>
+                {
+                    info.tracked_asset_locks.remove(out_point);
+                    cs.removed.insert(*out_point);
+                }
+                Some(entry) => tracing::warn!(
+                    outpoint = %out_point,
+                    status = ?entry.status,
+                    "untrack_unsendable_asset_lock: lock advanced past Broadcast \
+                     concurrently — leaving it tracked"
+                ),
+                None => {}
+            }
+        }
+        cs
+    }
 
     /// Mark a tracked asset lock as
     /// [`Consumed`](AssetLockStatus::Consumed) after a successful
