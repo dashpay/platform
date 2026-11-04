@@ -1221,8 +1221,10 @@ extension ManagedPlatformWallet {
     /// `m/44'/5'/0'/0/7`, or nil when the scan does not reach it. The scan
     /// uses public keys only, so the mnemonic is never read.
     ///
-    /// - Throws: `PlatformWalletError` if the address is not valid on this
-    ///   wallet's network or the handle is invalid.
+    /// - Throws: `PlatformWalletError.notFound` if the wallet has no BIP-44
+    ///   account 0, so the scan could not run. `PlatformWalletError` if the
+    ///   address is not valid on this wallet's network or the handle is
+    ///   invalid.
     public func findBIP44AddressPath(address: String) throws -> String? {
         try KeyDerivation.requireNoNUL(address, "Address")
         var out: UnsafeMutablePointer<CChar>? = nil
@@ -1240,7 +1242,8 @@ extension ManagedPlatformWallet {
     /// Routes through `platform_wallet_bip44_address_private_key`, with the
     /// same key source as `coreAddressPrivateKey(address:storage:)`.
     ///
-    /// - Throws: `PlatformWalletError` if the scan does not reach the
+    /// - Throws: `PlatformWalletError.notFound` if the wallet has no BIP-44
+    ///   account 0. `PlatformWalletError` if the scan does not reach the
     ///   address, the handle is invalid, or derivation fails.
     public func bip44AddressPrivateKey(
         address: String,

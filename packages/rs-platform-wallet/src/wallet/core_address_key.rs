@@ -25,7 +25,7 @@ use std::str::FromStr;
 use dashcore::crypto::ecdsa::EcdsaSecretKey;
 use dashcore::{Address, Network, PrivateKey as DashPrivateKey, PublicKey};
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey};
-use key_wallet::Wallet;
+use key_wallet::{Account, Wallet};
 use zeroize::Zeroizing;
 
 use super::mnemonic::key_derivation;
@@ -132,6 +132,8 @@ impl PlatformWallet {
     ///   a valid address for this wallet's network.
     /// - [`PlatformWalletError::WalletNotFound`] if the wallet was removed
     ///   from its manager.
+    /// - [`PlatformWalletError::AccountNotFound`] if the wallet has no
+    ///   BIP-44 account 0, so the scan could not run.
     /// - [`PlatformWalletError::KeyDerivation`] if deriving a scanned
     ///   address fails.
     pub fn find_bip44_address_path(
@@ -148,17 +150,7 @@ impl PlatformWallet {
         address: &Address,
     ) -> Result<Option<DerivationPath>, PlatformWalletError> {
         let network = self.network();
-        let account = {
-            let manager = self.wallet_manager().blocking_read();
-            let wallet = manager
-                .get_wallet(&self.wallet_id())
-                .ok_or_else(|| self.wallet_not_found())?;
-            wallet.accounts.standard_bip44_accounts.get(&0).cloned()
-        };
-        let Some(account) = account else {
-            return Ok(None);
-        };
-
+        let account = self.bip44_account()?;
         let account_path = account.derivation_path().map_err(key_derivation)?;
         for chain in [0, 1] {
             let chain = ChildNumber::from_normal_idx(chain).map_err(key_derivation)?;
@@ -186,7 +178,9 @@ impl PlatformWallet {
     /// # Errors
     /// - [`PlatformWalletError::AddressNotFound`] if the scan does not
     ///   reach the address.
-    /// - Any error of [`Self::find_bip44_address_path`], and the
+    /// - [`PlatformWalletError::AccountNotFound`] if the wallet has no
+    ///   BIP-44 account 0, so the scan could not run.
+    /// - Any other error of [`Self::find_bip44_address_path`], and the
     ///   `master_key` and derivation errors of
     ///   [`Self::derive_core_address_private_key`].
     pub fn bip44_address_private_key<E>(
@@ -237,6 +231,26 @@ impl PlatformWallet {
                 })
         };
         Ok(result?)
+    }
+
+    /// Returns a copy of BIP-44 account 0, taken under a short
+    /// `blocking_read` on the wallet manager.
+    fn bip44_account(&self) -> Result<Account, PlatformWalletError> {
+        let manager = self.wallet_manager().blocking_read();
+        let wallet = manager
+            .get_wallet(&self.wallet_id())
+            .ok_or_else(|| self.wallet_not_found())?;
+        wallet
+            .accounts
+            .standard_bip44_accounts
+            .get(&0)
+            .cloned()
+            .ok_or_else(|| {
+                PlatformWalletError::AccountNotFound(format!(
+                    "BIP-44 account 0 of wallet {}",
+                    hex::encode(self.wallet_id())
+                ))
+            })
     }
 
     fn wallet_not_found(&self) -> PlatformWalletError {
@@ -331,6 +345,7 @@ mod tests {
     use crate::wallet::mnemonic::first_receive_address_for_mnemonic;
     use key_wallet::account::StandardAccountType;
     use key_wallet::bip32::ExtendedPubKey;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::{AccountType, Mnemonic};
     use std::cell::Cell;
     use std::convert::Infallible;
@@ -486,6 +501,28 @@ mod tests {
                 Err(PlatformWalletError::AddressOperation(_))
             ));
         }
+
+        // A wallet without BIP-44 account 0 cannot run the scan, which is not
+        // the same as a scan that did not reach the address.
+        let no_bip44 = runtime
+            .block_on(manager.create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &foreign_seed,
+                WalletAccountCreationOptions::None,
+                Some(0),
+            ))
+            .unwrap();
+        assert!(matches!(
+            no_bip44.find_bip44_address_path(&tracked_address),
+            Err(PlatformWalletError::AccountNotFound(_))
+        ));
+        assert!(matches!(
+            no_bip44.bip44_address_private_key(&tracked_address, supply(&master, &calls)),
+            Err(CoreAddressKeyError::Wallet(
+                PlatformWalletError::AccountNotFound(_)
+            ))
+        ));
+        assert_eq!(calls.get(), 0);
     }
 
     /// A `master_key` callback for wallets that must never need one.

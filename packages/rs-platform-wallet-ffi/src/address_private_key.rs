@@ -205,9 +205,10 @@ pub(crate) fn secret_string_into_raw(
 /// such as `m/44'/5'/0'/0/7`.
 ///
 /// `*out_path` is null on success when the scan does not reach the address,
-/// and an address not valid on the wallet's network fails the call. On
-/// success the caller owns a non-null `*out_path` and must free it via
-/// [`crate::xpub_render::platform_wallet_free_string`].
+/// and an address not valid on the wallet's network fails the call. A wallet
+/// without BIP-44 account 0 fails with `NotFound`, because the scan cannot
+/// run. On success the caller owns a non-null `*out_path` and must free it
+/// via [`crate::xpub_render::platform_wallet_free_string`].
 ///
 /// # Safety
 /// `address_cstr` must point to a valid null-terminated UTF-8 C string and
@@ -240,7 +241,8 @@ pub unsafe extern "C" fn platform_wallet_find_bip44_address_path(
 ///
 /// Parameters and key source are as for
 /// [`platform_wallet_address_private_key`]. An address the scan does not
-/// reach fails the call. Release `out` with
+/// reach fails the call, and a wallet without BIP-44 account 0 fails with
+/// `NotFound`. Release `out` with
 /// [`platform_wallet_address_private_key_free`].
 ///
 /// # Safety
@@ -295,12 +297,16 @@ mod tests {
     use crate::runtime::runtime;
     use crate::test_fixtures::out_string;
     use crate::types::Network;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::Mnemonic;
     use platform_wallet::first_receive_address_for_mnemonic;
     use platform_wallet::test_support::{
         test_platform_wallet_manager, TEST_FRENCH_MNEMONIC as FRENCH, TEST_PLATFORM_WALLET_MNEMONIC,
     };
     use std::ptr;
-    use PlatformWalletFFIResultCode::{ErrorInvalidHandle, ErrorNullPointer, ErrorWalletOperation};
+    use PlatformWalletFFIResultCode::{
+        ErrorInvalidHandle, ErrorNullPointer, ErrorWalletOperation, NotFound,
+    };
 
     #[test]
     fn should_report_bip44_scan_paths_and_refuse_without_a_key_source() {
@@ -310,13 +316,13 @@ mod tests {
             (manager, wallet)
         });
         let handle = PLATFORM_WALLET_STORAGE.insert(wallet);
-        let path = |address: &str| {
+        let path = |handle: Handle, address: &str| {
             let address = CString::new(address).unwrap();
             out_string(|out| unsafe {
                 platform_wallet_find_bip44_address_path(handle, address.as_ptr(), out)
             })
         };
-        let key = |address: &str| {
+        let key = |handle: Handle, address: &str| {
             let address = CString::new(address).unwrap();
             let mut out = AddressPrivateKeyFFI::empty();
             let r = unsafe {
@@ -336,11 +342,11 @@ mod tests {
                 .unwrap();
         let foreign = first_receive_address_for_mnemonic(FRENCH, Network::Testnet).unwrap();
         assert_eq!(
-            path(&own.to_string()),
+            path(handle, &own.to_string()),
             Ok(Some("m/44'/1'/0'/0/0".to_owned()))
         );
-        assert_eq!(path(&foreign.to_string()), Ok(None));
-        assert!(path("not an address").is_err());
+        assert_eq!(path(handle, &foreign.to_string()), Ok(None));
+        assert!(path(handle, "not an address").is_err());
 
         let mut out: *mut c_char = ptr::null_mut();
         let r = unsafe { platform_wallet_find_bip44_address_path(handle, ptr::null(), &mut out) };
@@ -348,7 +354,21 @@ mod tests {
 
         // The test wallet is external-signable, so revealing a key needs the
         // mnemonic resolver this call leaves out.
-        assert_eq!(key(&own.to_string()), ErrorWalletOperation);
+        assert_eq!(key(handle, &own.to_string()), ErrorWalletOperation);
+
+        // A wallet without BIP-44 account 0 cannot run the scan.
+        let no_bip44 = runtime()
+            .block_on(manager.create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &Mnemonic::from_phrase(FRENCH).unwrap().to_seed(""),
+                WalletAccountCreationOptions::None,
+                Some(0),
+            ))
+            .unwrap();
+        let no_bip44 = PLATFORM_WALLET_STORAGE.insert(no_bip44);
+        assert_eq!(path(no_bip44, &foreign.to_string()), Err(NotFound));
+        assert_eq!(key(no_bip44, &foreign.to_string()), NotFound);
+        PLATFORM_WALLET_STORAGE.remove(no_bip44);
 
         // A handle kept past the wallet's removal fails instead of aborting.
         let wallet_id = runtime().block_on(async {
@@ -359,8 +379,8 @@ mod tests {
             wallet
         });
         assert!(manager.get_wallet_blocking(&wallet_id).is_none());
-        assert!(path(&own.to_string()).is_err());
-        assert_eq!(key(&own.to_string()), ErrorInvalidHandle);
+        assert!(path(handle, &own.to_string()).is_err());
+        assert_eq!(key(handle, &own.to_string()), ErrorInvalidHandle);
         PLATFORM_WALLET_STORAGE.remove(handle);
     }
 }
