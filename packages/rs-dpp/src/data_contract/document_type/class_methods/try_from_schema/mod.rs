@@ -3503,12 +3503,9 @@ fn refuse_state_generated_schema_path(schema: &Value, path: &str) -> Result<(), 
 /// the draw may create in the indexes holding it, priced on the document it writes
 /// (`prepay_random_document_index_entries`), so the draw may not create more entries than the
 /// create wrote: such an index may not be an `integerRange` index on it, which files a value
-/// in every window holding it, more for a drawn value than for the placeholder; nor may it
-/// skip documents on a stored property a replace could add before the draw (`skipIfAbsent`,
-/// or a typed array), nor be an `integerRange` index whose source a replace could move into
-/// more windows: a property is safe there only when it is fixed once written
-/// (`schema_property_is_fixed_once_written`: the type's documents are immutable, or it lists
-/// the property `immutable` and no moderator may change it).
+/// in every window holding it, more for a drawn value than for the placeholder (the inputs a
+/// replace or a moderator could change are judged once the moderators' abilities are known,
+/// [`validate_random_declarations_after_moderation`]).
 /// And nothing a write is judged by may read it: not a reference declared on the type (the property holding it, a `where`
 /// value, a `findBy` source, a function's params, a key id), nor an `encryptedFor` key, which
 /// would name another key once drawn. The rules reading it are refused where their reads are
@@ -3670,49 +3667,6 @@ pub(super) fn validate_generated_from_declarations(
                         generated_from.function, index.name
                     )));
                 }
-                // A replace in the block of the create may move a window source it can change
-                // before the draw, into more windows than the create's
-                if let Some(source) = index
-                    .integer_range
-                    .as_ref()
-                    .map(|transform| transform.source.as_str())
-                    .filter(|source| {
-                        !schema_property_is_fixed_once_written(
-                            DocumentTypeRef::V2(document_type),
-                            source,
-                        )
-                    })
-                {
-                    return Err(structure_error(format!(
-                        "function {} draws a value once the block is accepted, and integerRange \
-                         index \"{}\" files a document in every window its source \"{source}\" \
-                         falls in, which a replace in the block of the create could change \
-                         before the draw, creating entries the create did not prepay: window \
-                         such an index only on a property fixed once written",
-                        generated_from.function, index.name
-                    )));
-                }
-                // A derived property is fixed once written, so only a stored one a replace can
-                // change can be added
-                if let Some(skipped_on) =
-                    index.skip_if_absent_properties.iter().find(|skipped_on| {
-                        !document_type
-                            .derived_index_properties
-                            .contains_key(skipped_on.as_str())
-                            && !schema_property_is_fixed_once_written(
-                                DocumentTypeRef::V2(document_type),
-                                skipped_on,
-                            )
-                    })
-                {
-                    return Err(structure_error(format!(
-                        "function {} draws a value once the block is accepted, and index \
-                         \"{}\" skips a document without \"{skipped_on}\", which a replace in \
-                         the block of the create could add before the draw, creating entries the \
-                         create did not prepay: skip only on a property fixed once written",
-                        generated_from.function, index.name
-                    )));
-                }
             }
             // A reference is judged when the document is written, before the draw
             if paths_read_by_references(DocumentTypeRef::V2(document_type)).contains(path.as_str())
@@ -3830,6 +3784,102 @@ pub(super) fn validate_generated_from_declarations(
                          supplying the params always has the object the value is written into"
                     )));
                 }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// What a `sys.random` property (protocol version 15) needs of the rest of its type once the
+/// moderators' abilities are applied (`apply_moderator_abilities`) and the derived index
+/// properties are (`apply_derived_index_properties`), both after
+/// [`validate_generated_from_declarations`].
+///
+/// A create prepays the entries the draw may create in the indexes holding the property,
+/// priced on the document it writes (`prepay_random_document_index_entries`), so no write
+/// between the create and the draw may make the draw create more: an index holding it may not
+/// skip documents on a stored property a replace or a moderator's change could add before the
+/// draw (`skipIfAbsent`, or a typed array), nor be an `integerRange` index whose source either
+/// could move into more windows. A property is safe there only when it is fixed once written
+/// (`schema_property_is_fixed_once_written`: the type's documents are immutable, or it lists
+/// the property `immutable`, and no moderator may change it). And a moderator may not delete
+/// such a document keeping a record of it (`deleteKeepsRecord`, on by default): a restore puts
+/// the removed document back as it was, with the placeholder if the block's draw had not
+/// reached it yet, and nothing draws it after.
+///
+/// Owned by parser generation 3: the only generation that admits the keyword.
+pub(super) fn validate_random_declarations_after_moderation(
+    document_type: &DocumentTypeV2,
+    document_type_name: &str,
+) -> Result<(), DataContractError> {
+    for (path, property) in &document_type.flattened_properties {
+        let Some(generated_from) = &property.generated_from else {
+            continue;
+        };
+        let SystemFunction::Random(_) = generated_from.function else {
+            continue;
+        };
+        let structure_error = |message: String| {
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{document_type_name}\" property \"{path}\" generatedFrom \
+                 {message}"
+            ))
+        };
+
+        if document_type.documents_can_be_deleted_by_moderators
+            && document_type.moderator_deletions_keep_records
+        {
+            return Err(structure_error(format!(
+                "function {} draws a value once the block is accepted, and the type's \
+                 moderators delete its documents keeping a record of them, from which a \
+                 restore puts a removed document back as it was, with the placeholder if it \
+                 was removed before the draw: set deleteKeepsRecord to false",
+                generated_from.function
+            )));
+        }
+
+        let fixed_once_written = |path: &str| {
+            schema_property_is_fixed_once_written(DocumentTypeRef::V2(document_type), path)
+        };
+        for index in document_type.indices.values().filter(|index| {
+            index
+                .properties
+                .iter()
+                .any(|property| &property.name == path)
+        }) {
+            // A replace or a moderator's change in the block of the create may move a window
+            // source it can change before the draw, into more windows than the create's
+            if let Some(source) = index
+                .integer_range
+                .as_ref()
+                .map(|transform| transform.source.as_str())
+                .filter(|source| !fixed_once_written(source))
+            {
+                return Err(structure_error(format!(
+                    "function {} draws a value once the block is accepted, and integerRange \
+                     index \"{}\" files a document in every window its source \"{source}\" \
+                     falls in, which a replace or a moderator's change in the block of the \
+                     create could change before the draw, creating entries the create did not \
+                     prepay: window such an index only on a property fixed once written",
+                    generated_from.function, index.name
+                )));
+            }
+            // A derived property is fixed once written, so only a stored one a replace or a
+            // moderator's change can change can be added
+            if let Some(skipped_on) = index.skip_if_absent_properties.iter().find(|skipped_on| {
+                !document_type
+                    .derived_index_properties
+                    .contains_key(skipped_on.as_str())
+                    && !fixed_once_written(skipped_on)
+            }) {
+                return Err(structure_error(format!(
+                    "function {} draws a value once the block is accepted, and index \"{}\" \
+                     skips a document without \"{skipped_on}\", which a replace or a \
+                     moderator's change in the block of the create could add before the draw, \
+                     creating entries the create did not prepay: skip only on a property fixed \
+                     once written",
+                    generated_from.function, index.name
+                )));
             }
         }
     }
