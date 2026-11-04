@@ -231,7 +231,9 @@ pub enum TokenOperationType {
     },
     /// Adds the historical document of a random token transfer or mint (protocol version 15),
     /// whose id also hashes the range the amount is drawn from
-    /// (`token_history_document_id`), so that a proof of the document binds the range.
+    /// (`token_history_document_id`), so that a proof of the document binds the range, and
+    /// prepays the index entries the settlement of the amount may create
+    /// (`Drive::prepay_random_token_history_entries`).
     TokenRandomAmountHistory {
         /// The token id
         token_id: Identifier,
@@ -361,7 +363,21 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                 minimum,
                 maximum,
             } => {
-                let batch_operations = drive.add_token_transaction_history_operations(
+                // The settlement moves the document's `byAmount` index entry to the drawn
+                // amount, which may create a branch it does not bill, so the write prepays that
+                // entry: with the document, so a transfer or mint refused before its execution
+                // writes no history and prepays nothing
+                let prepayment = drive.prepay_random_token_history_entries(
+                    token_id,
+                    owner_id,
+                    nonce,
+                    event.clone(),
+                    (minimum, maximum),
+                    block_info,
+                    transaction,
+                    platform_version,
+                )?;
+                let mut batch_operations = drive.add_token_transaction_history_operations(
                     token_id,
                     owner_id,
                     nonce,
@@ -372,6 +388,7 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                     transaction,
                     platform_version,
                 )?;
+                batch_operations.push(LowLevelDriveOperation::PreCalculatedFeeResult(prepayment));
                 Ok(batch_operations)
             }
             TokenOperationType::TokenFreeze {

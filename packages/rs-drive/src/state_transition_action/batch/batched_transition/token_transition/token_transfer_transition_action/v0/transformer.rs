@@ -1,5 +1,3 @@
-use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
-use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_transfer_transition::v0::TokenTransferTransitionV0;
 use dpp::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV1;
@@ -8,12 +6,11 @@ use grovedb::TransactionArg;
 use std::sync::Arc;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
-use dpp::tokens::token_event::TokenEvent;
 use platform_version::version::PlatformVersion;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_transfer_transition_action::TokenTransferTransitionActionV0;
 
 impl TokenTransferTransitionActionV0 {
@@ -187,10 +184,11 @@ impl TokenTransferTransitionActionV0 {
     }
 
     /// Converts a `TokenTransferTransitionV1` into a `TokenTransferTransitionActionV0`: the
-    /// version 0 conversion of its version 0 fields, carrying its random minimum amount. A
-    /// random transfer of a token keeping transfer history also pays in advance for the history
-    /// index entries the settlement of its amount may create
-    /// (`Drive::prepay_random_token_history_entries`).
+    /// version 0 conversion of its version 0 fields, carrying its random minimum amount. It
+    /// bills only what the version 0 conversion does: the history index entries the settlement
+    /// of a random amount may create are prepaid by the write of the history document
+    /// (`TokenOperationType::TokenRandomAmountHistory`), which a transfer refused later never
+    /// reaches.
     ///
     /// # Arguments
     ///
@@ -200,7 +198,7 @@ impl TokenTransferTransitionActionV0 {
     /// # Returns
     ///
     /// * `Result<(TokenTransferTransitionActionV0, FeeResult), Error>` - The action and the fees
-    ///   of the lookups it made, and of the prepaid history index entries.
+    ///   of the lookups it made.
     #[allow(clippy::too_many_arguments)]
     pub fn try_from_token_transfer_transition_v1_with_contract_lookup(
         drive: &Drive,
@@ -213,7 +211,7 @@ impl TokenTransferTransitionActionV0 {
         platform_version: &PlatformVersion,
     ) -> Result<(Self, FeeResult), Error> {
         let (v0, random_minimum_amount) = value.into_v0_and_random_minimum_amount();
-        let (mut action, mut fee_result) =
+        let (mut action, fee_result) =
             Self::try_from_token_transfer_transition_with_contract_lookup(
                 drive,
                 owner_id,
@@ -225,38 +223,6 @@ impl TokenTransferTransitionActionV0 {
                 platform_version,
             )?;
         action.random_minimum_amount = random_minimum_amount;
-
-        // The execution writes the transfer's history document holding the range's minimum,
-        // and the settlement moves its `byAmount` index entry to the drawn amount, which may
-        // create a branch the settlement does not bill. So the transfer prepays that entry at
-        // the average case: what Drive's fee estimation gives for inserting the document's
-        // entries into the indexes holding the amount, without reading state.
-        if let Some(minimum) = random_minimum_amount {
-            if action
-                .base
-                .token_configuration()?
-                .keeps_history()
-                .keeps_transfer_history()
-            {
-                let history_event = TokenEvent::Transfer(
-                    action.recipient_id,
-                    action.public_note.clone(),
-                    action.shared_encrypted_note.clone(),
-                    action.private_encrypted_note.clone(),
-                    minimum,
-                );
-                fee_result.checked_add_assign(drive.prepay_random_token_history_entries(
-                    action.base.token_id(),
-                    owner_id,
-                    action.base.identity_contract_nonce(),
-                    history_event,
-                    (minimum, action.amount),
-                    block_info,
-                    transaction,
-                    platform_version,
-                )?)?;
-            }
-        }
         Ok((action, fee_result))
     }
 
@@ -272,7 +238,7 @@ impl TokenTransferTransitionActionV0 {
     /// # Returns
     ///
     /// * `Result<(TokenTransferTransitionActionV0, FeeResult), Error>` - The action and the fees
-    ///   of the lookups it made, and of the prepaid history index entries.
+    ///   of the lookups it made.
     #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_token_transfer_transition_v1_with_contract_lookup(
         drive: &Drive,
@@ -626,7 +592,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod random_amount_prepay_tests {
+mod random_amount_tests {
     use super::*;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::data_contract::accessors::v1::DataContractV1Getters;
@@ -724,21 +690,15 @@ mod random_amount_prepay_tests {
     }
 
     #[test]
-    fn should_prepay_the_history_entry_of_a_random_transfer() {
-        let random = transfer_fee(true, true);
-        let fixed = transfer_fee(true, false);
-        assert!(
-            random.storage_fee > fixed.storage_fee,
-            "expected the random transfer to prepay storage: {random:?} vs {fixed:?}"
-        );
-        assert!(
-            random.processing_fee > fixed.processing_fee,
-            "expected the random transfer to prepay processing: {random:?} vs {fixed:?}"
-        );
-    }
-
-    #[test]
-    fn should_prepay_nothing_for_a_random_transfer_of_a_token_keeping_no_transfer_history() {
-        assert_eq!(transfer_fee(false, true), transfer_fee(false, false));
+    fn should_bill_a_random_transfer_action_what_a_fixed_one_costs() {
+        // The history write prepays the entries the settlement may create, so a transfer its
+        // state validation refuses after this, whose action fee is still billed, prepays none
+        for keeps_history in [true, false] {
+            assert_eq!(
+                transfer_fee(keeps_history, true),
+                transfer_fee(keeps_history, false),
+                "keeps history: {keeps_history}"
+            );
+        }
     }
 }
