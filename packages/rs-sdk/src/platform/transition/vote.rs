@@ -155,7 +155,7 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
                         Ok(vote)
                     } else {
                         let Vote::ResourceVote(proved) = &vote;
-                        Err(Error::Generic(format!(
+                        Err(Error::InvalidProvedResponse(format!(
                             "vote was said to exist, but the vote proved on its poll is {}, \
                              not the submitted {}: the submitted vote is not recorded",
                             proved.resource_vote_choice(),
@@ -337,7 +337,8 @@ mod tests {
 
         let error = result.expect_err("the submitted vote is not the one recorded");
         assert!(
-            matches!(&error, Error::Generic(message) if message.contains(&recorded.to_string())),
+            matches!(&error, Error::InvalidProvedResponse(message)
+                if message.contains(&recorded.to_string())),
             "expected a mismatch naming the recorded choice, got {error:?}"
         );
         assert!(
