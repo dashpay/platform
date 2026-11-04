@@ -41,6 +41,7 @@ members = [
     "packages/app-connect-contract",
     "packages/moderation-charters-contract",
     "packages/decision-proposals-contract",
+    "packages/token-market-contract",
     "packages/rs-sdk-ffi",
     "packages/rs-sdk-cxx",
     "packages/wasm-drive-verify",
@@ -73,7 +74,6 @@ dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "7329126edf
 dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "7329126edf27fb0356c444888ad1207bdfa2e39a" }
 dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "7329126edf27fb0356c444888ad1207bdfa2e39a" }
 key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "7329126edf27fb0356c444888ad1207bdfa2e39a" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "7329126edf27fb0356c444888ad1207bdfa2e39a" }
 key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "7329126edf27fb0356c444888ad1207bdfa2e39a" }
 dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "7329126edf27fb0356c444888ad1207bdfa2e39a" }
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "7329126edf27fb0356c444888ad1207bdfa2e39a" }
@@ -172,5 +172,5 @@ opt-level = 3
 
 [workspace.package]
 
-version = "5.0.1"
+version = "5.0.3"
 rust-version = "1.98"

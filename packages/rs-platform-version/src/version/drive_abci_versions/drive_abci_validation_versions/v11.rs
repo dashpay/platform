@@ -15,6 +15,9 @@ use super::{
 /// - `create_domain_data_trigger` 2, which keeps only the parent domain checks of a DPNS domain
 ///   create: the DPNS contract v3 (`SYSTEM_DATA_CONTRACT_VERSIONS_V4`) checks the normalized
 ///   names, the preorder and the identity record with schema keywords.
+/// - the data trigger `bindings` 3, which refuse a document transition's replace or delete of a
+///   token market contract order (`ask` and `bid`): only the token marketplace transitions write
+///   them.
 /// - the batch `advanced_structure` 2: v1, then the structure checks of token actions protocol
 ///   v15 introduces, which read only the contract the action carries and so run in check_tx too.
 ///   A `TokenConfigUpdate` can make a token tradeable only if it is transferable.
@@ -30,6 +33,12 @@ use super::{
 ///   under the proposal's name, its rule must make a yes/no poll within the system limits, and
 ///   it must end one to four weeks after the block. The create conversion 1 opens and funds its
 ///   poll.
+/// - document create `state_validation` 3: v2, then a create outside a contest, of a type whose
+///   contest reads more than its index values (`fieldMatches` on a property outside the index,
+///   which registration refuses from protocol version 15), is refused
+///   (`DuplicateUniqueIndexError`) while a contest for the same index values is live: the
+///   document would take the unique index entry the contest awards. Only such a type pays the
+///   lookup, so a DPNS domain create costs what it did.
 /// - `document_reference_validation` 1: v0, but the `refersTo` lookup of a reference declaring
 ///   `consume` reads the commitment it finds with its stored element's storage flags
 ///   (`query_documents_with_flags`) and keeps that read in the `ConsumedDocument`, so the create
@@ -62,7 +71,9 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                 advanced_structure: 2, // a tradeable token must be transferable, checked in check_tx too
                 document_reference_validation: 1, // a consumed commitment keeps what its lookup read
                 document_create_transition_structure_validation: 2, // a decision proposal states its fund, a rule within the limits and an end date one to four weeks away
+                document_create_transition_state_validation: 3, // a non-contested create cannot take the values of a live contest its index values do not decide
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
+                    bindings: 3, // the token market contract's orders are written by the marketplace transitions only
                     triggers: DriveAbciValidationDataTriggerVersions {
                         create_domain_data_trigger: 2,
                         ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
@@ -71,10 +82,6 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                             .data_triggers
                             .triggers
                     },
-                    ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
-                        .state_transitions
-                        .batch_state_transition
-                        .data_triggers
                 },
                 ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
                     .state_transitions

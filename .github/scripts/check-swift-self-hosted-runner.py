@@ -10,8 +10,9 @@ exists to catch accidental regressions on trusted runs (same-repo branches,
 pushes, schedules), where the merge commit is not attacker-controlled.
 
 The workflows are parsed structurally (PyYAML, preinstalled on GitHub's
-Ubuntu runner images), so harmless reformatting does not break the check
-while any semantic change to the guard expressions still fails it.
+Ubuntu runner images and on the dash-x64-light image), so harmless
+reformatting does not break the check while any semantic change to the guard
+expressions still fails it.
 """
 
 import re

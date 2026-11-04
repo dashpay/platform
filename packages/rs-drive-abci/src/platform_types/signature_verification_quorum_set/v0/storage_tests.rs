@@ -1,6 +1,8 @@
 use super::for_saving_v1::QuorumForSavingV1;
 use super::quorum_set::PreviousPastQuorumsV0;
 use super::storage_vectors;
+use crate::error::Error;
+use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::platform_state_for_saving::v2::{
     deserialize_masternode_entry, deserialize_validator_set_entry, serialize_masternode_entry,
     serialize_validator_set_entry,
@@ -11,6 +13,8 @@ use crate::platform_types::signature_verification_quorum_set::{
     Quorums, SignatureVerificationQuorumSet, SignatureVerificationQuorumSetForSaving,
     SignatureVerificationQuorumSetV0Methods, VerificationQuorum,
 };
+use crate::rpc::core::MockCoreRPCLike;
+use crate::test::helpers::setup::TestPlatformBuilder;
 use dpp::bls::PublicKey;
 use dpp::core_types::validator_set::ValidatorSet;
 use dpp::dashcore::hashes::Hash;
@@ -19,6 +23,7 @@ use dpp::dashcore_rpc::json::QuorumType;
 use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::serialization::PlatformDeserializableFromVersionedStructureTrusted;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 
 const KEYS: [&str; 4] = [
     "97f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb",
@@ -48,8 +53,8 @@ fn assert_quorum(quorums: &Quorums<VerificationQuorum>, hash: u8, key: usize, in
 
 fn assert_quorums(set: &SignatureVerificationQuorumSet) {
     assert_eq!(set.config().quorum_type, QuorumType::Llmq400_60);
-    assert_eq!(set.config().active_signers, 4);
-    assert_eq!(set.config().window, 288);
+    assert_eq!(set.config().active_signers.get(), 4);
+    assert_eq!(set.config().window.get(), 288);
     assert!(!set.config().rotation);
     assert_eq!(set.current_quorums().len(), 2);
     assert_quorum(set.current_quorums(), 0x11, 0, None);
@@ -127,6 +132,85 @@ fn should_load_old_saved_state_and_checkpoint_with_both_quorum_sets() {
         assert_quorums(&state.instant_lock_validating_quorums);
         if bytes[0] == 1 {
             assert_eq!(state.serialize_standalone_to_bytes().unwrap(), bytes);
+        }
+    }
+}
+
+/// The bytes of `fixture` with its chain lock quorum config holding `active_signers` and `window`,
+/// encoded the way a `u16` and a `u32` were
+fn with_chain_lock_quorum_config(fixture: &str, active_signers: u16, window: u32) -> Vec<u8> {
+    let saved_config = |active_signers: u16, window: u32| {
+        bincode::encode_to_vec(
+            (QuorumType::Llmq400_60, active_signers, false, window),
+            config(),
+        )
+        .unwrap()
+    };
+    let saved = saved_config(4, 288);
+    let mut bytes = hex::decode(fixture.trim()).unwrap();
+    let positions: Vec<usize> = bytes
+        .windows(saved.len())
+        .enumerate()
+        .filter_map(|(position, window)| (window == saved).then_some(position))
+        .collect();
+    // The chain lock quorum set is saved before the instant lock one
+    assert_eq!(positions.len(), 2, "one config per quorum set");
+    bytes.splice(
+        positions[0]..positions[0] + saved.len(),
+        saved_config(active_signers, window),
+    );
+    bytes
+}
+
+#[test]
+fn should_refuse_to_restore_saved_state_holding_zero_chain_lock_active_signers_or_window() {
+    // A restarted node reads its chain lock quorum config from its saved state rather than from
+    // its config. Choosing a rotated quorum takes the logarithm of the active signers and chain
+    // lock verification divides by the window, so a saved 0 in either must stop the node from
+    // loading that state instead of reaching them.
+    let platform = TestPlatformBuilder::new().build_with_mock_rpc();
+    let restore = |bytes: &[u8], platform_version: &PlatformVersion| {
+        let transaction = platform.drive.grove.start_transaction();
+        platform
+            .drive
+            .store_platform_state_bytes(bytes, Some(&transaction), platform_version)
+            .unwrap();
+        Platform::<MockCoreRPCLike>::fetch_platform_state(
+            &platform.drive,
+            Some(&transaction),
+            platform_version,
+        )
+    };
+    let fixture = storage_vectors::PLATFORM_STATE_V1;
+
+    // Protocol version 13 reads the saved state with fetch_platform_state v0, 14 and later v1
+    for platform_version in [PlatformVersion::get(13).unwrap(), PlatformVersion::latest()] {
+        let state = restore(
+            &with_chain_lock_quorum_config(fixture, 1, 1),
+            platform_version,
+        )
+        .unwrap()
+        .unwrap();
+        let restored = state.chain_lock_validating_quorums.config();
+        assert_eq!(
+            (restored.active_signers.get(), restored.window.get()),
+            (1, 1)
+        );
+
+        for (active_signers, window) in [(0, 288), (4, 0)] {
+            let result = restore(
+                &with_chain_lock_quorum_config(fixture, active_signers, window),
+                platform_version,
+            );
+            assert!(
+                matches!(
+                    &result,
+                    Err(Error::Protocol(ProtocolError::PlatformDeserializationError(message)))
+                        if message.contains("NonZeroTypeIsZero")
+                ),
+                "protocol version {}, active signers {active_signers}, window {window}: got {result:?}",
+                platform_version.protocol_version
+            );
         }
     }
 }

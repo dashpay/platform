@@ -11,6 +11,7 @@
 
 - [Monorepo Overview](architecture/overview.md)
 - [Component Pipeline](architecture/component-pipeline.md)
+- [Core Fork Activations](architecture/core-fork-activations.md)
 
 # Contributing
 
@@ -148,6 +149,7 @@
 
 - [Builder Pattern](sdk/builder-pattern.md)
 - [Fetch Traits](sdk/fetch-traits.md)
+- [Protocol Versions in the SDK](sdk/protocol-versions.md)
 - [Features from Protocol Version 14](sdk/protocol-version-gate.md)
 - [Put Operations](sdk/put-operations.md)
 - [Identity Keys Deep Dive](sdk/identity-keys.md)

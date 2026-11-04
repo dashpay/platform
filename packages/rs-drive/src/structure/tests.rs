@@ -279,6 +279,7 @@ mod fixtures {
     use super::*;
     use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
     use crate::drive::credit_pools::operations::update_lifetime_storage_fee_pool_operation;
+    use crate::drive::system::core_fork_activations::CoreFork;
     use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use crate::drive::Drive;
     use crate::fees::op::LowLevelDriveOperation;
@@ -1241,6 +1242,16 @@ mod fixtures {
         conformance_of(&drive, "core_anchored_withdrawal_accounting", run);
     }
 
+    /// A Core fork Platform has seen active.
+    fn core_fork_activations(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        drive
+            .store_core_fork_activation_height(CoreFork::V24, 1_000, None, platform_version)
+            .expect("expected to record V24");
+        conformance_of(&drive, "core_fork_activations", run);
+    }
+
     /// An epoch while it runs, then after it was paid out: payout deletes the
     /// proposers and both fee items and keeps the epoch tree. The finished
     /// epoch info is written at payout, so no epoch ever holds all nine keys.
@@ -1770,6 +1781,43 @@ mod fixtures {
             .expect("expected to commit the token anchor");
         conformance_of(&drive, "token_shielded_pool", run);
     }
+    /// The token marketplace escrow: two listings of one token holding tokens, and two offers
+    /// holding credits.
+    fn token_order_escrow(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let token_id = [7; 32];
+        for (order_id, amount) in [([1; 32], 500), ([2; 32], 30)] {
+            apply_operations(
+                &drive,
+                drive
+                    .add_to_token_order_escrow_operations(
+                        token_id,
+                        order_id,
+                        amount,
+                        &mut None,
+                        None,
+                        &mut None,
+                        platform_version,
+                    )
+                    .expect("expected the listing escrow operations"),
+            );
+        }
+        for (order_id, credits) in [([3; 32], 70_000), ([4; 32], 1_000)] {
+            apply_operations(
+                &drive,
+                drive
+                    .add_to_credit_order_escrow_operations(
+                        order_id,
+                        credits,
+                        &mut None,
+                        platform_version,
+                    )
+                    .expect("expected the offer escrow operations"),
+            );
+        }
+        conformance_of(&drive, "token_order_escrow", run);
+    }
     /// Documents of a type declaring a `ttl`: stored without storage flags, each with an entry
     /// in the documents expirations tree under the time it expires, and a lifetime storage fee
     /// pool. Two of them expire together, created in the same block.
@@ -1877,6 +1925,7 @@ mod fixtures {
         tokens_and_group_actions(&mut run);
         address_balances(&mut run);
         core_anchored_withdrawal_accounting(&mut run);
+        core_fork_activations(&mut run);
         current_then_paid_epoch(&mut run);
         contested_documents(&mut run);
         yes_no_vote_polls(&mut run);
@@ -1884,6 +1933,7 @@ mod fixtures {
         contract_groups_and_bound_keys(&mut run);
         spent_nullifiers(&mut run);
         token_shielded_pool(&mut run);
+        token_order_escrow(&mut run);
         run
     }
 
