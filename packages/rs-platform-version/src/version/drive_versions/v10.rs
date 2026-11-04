@@ -75,7 +75,7 @@ use crate::version::drive_versions::{
 /// * **Core fork activations**: `platform_system.fetch_core_fork_activation_height` and
 ///   `store_core_fork_activation_height` are `Some(0)` (`None` before): Drive keeps, in `Misc`,
 ///   the chain locked Core height at which Platform first saw each tracked Core fork active.
-/// * **The Hecate signer index** (protocol v15 note 20): `DRIVE_IDENTITY_METHOD_VERSIONS_V3`
+/// * **The Hecate signer index** (protocol v15 note 21): `DRIVE_IDENTITY_METHOD_VERSIONS_V3`
 ///   sets `keys.fetch.fetch_identity_hecate_signer_key_ids` to `Some(0)` (`None` before): the
 ///   identity update adding a Hecate signer key reads the identity's enabled signer keys from
 ///   the index under its key references.

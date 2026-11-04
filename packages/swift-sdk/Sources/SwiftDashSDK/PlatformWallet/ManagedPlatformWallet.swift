@@ -1212,6 +1212,59 @@ extension ManagedPlatformWallet {
         address: String,
         storage: WalletStorage = WalletStorage()
     ) throws -> CoreAddressPrivateKey {
+        try revealAddressPrivateKey(
+            address: address, storage: storage, using: platform_wallet_address_private_key)
+    }
+
+    /// The derivation path of `address` within the BIP-44 account 0 scan of
+    /// Rust's `PlatformWallet::find_bip44_address_path`, such as
+    /// `m/44'/5'/0'/0/7`, or nil when the scan does not reach it. The scan
+    /// uses public keys only, so the mnemonic is never read.
+    ///
+    /// - Throws: `PlatformWalletError` if the address is not valid on this
+    ///   wallet's network or the handle is invalid.
+    public func findBIP44AddressPath(address: String) throws -> String? {
+        try KeyDerivation.requireNoNUL(address, "Address")
+        var out: UnsafeMutablePointer<CChar>? = nil
+        try address.withCString { addressPtr in
+            try platform_wallet_find_bip44_address_path(handle, addressPtr, &out).check()
+        }
+        guard let path = out else { return nil }
+        defer { platform_wallet_free_string(path) }
+        return String(cString: path)
+    }
+
+    /// Reveal the private key of `address` at the path
+    /// `findBIP44AddressPath(address:)` finds, returned as hex + WIF.
+    ///
+    /// Routes through `platform_wallet_bip44_address_private_key`, with the
+    /// same key source as `coreAddressPrivateKey(address:storage:)`.
+    ///
+    /// - Throws: `PlatformWalletError` if the scan does not reach the
+    ///   address, the handle is invalid, or derivation fails.
+    public func bip44AddressPrivateKey(
+        address: String,
+        storage: WalletStorage = WalletStorage()
+    ) throws -> CoreAddressPrivateKey {
+        try revealAddressPrivateKey(
+            address: address, storage: storage, using: platform_wallet_bip44_address_private_key)
+    }
+
+    /// Runs `reveal`, one of the resolver-based address key functions, and
+    /// returns the key it writes.
+    private func revealAddressPrivateKey(
+        address: String,
+        storage: WalletStorage,
+        using reveal: (
+            Handle,
+            UnsafeMutablePointer<MnemonicResolverHandle>?,
+            UnsafePointer<CChar>?,
+            UnsafeMutablePointer<AddressPrivateKeyFFI>?
+        ) -> PlatformWalletFFIResult
+    ) throws -> CoreAddressPrivateKey {
+        // The C string would end at an embedded NUL, so Rust would answer
+        // for the prefix.
+        try KeyDerivation.requireNoNUL(address, "Address")
         // Same resolver lifetime rationale as
         // `previewIdentityRegistrationKeys`: `withExtendedLifetime`
         // pins the resolver across the whole synchronous FFI call so
@@ -1221,12 +1274,7 @@ extension ManagedPlatformWallet {
         return try withExtendedLifetime(resolver) {
             var out = AddressPrivateKeyFFI()
             let result = address.withCString { addressPtr in
-                platform_wallet_address_private_key(
-                    handle,
-                    resolver.handle,
-                    addressPtr,
-                    &out
-                )
+                reveal(handle, resolver.handle, addressPtr, &out)
             }
             // Free the Rust-owned (zeroizing) strings whether we
             // succeeded or bailed — the free function no-ops on the
