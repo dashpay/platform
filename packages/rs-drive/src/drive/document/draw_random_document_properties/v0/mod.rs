@@ -1,4 +1,7 @@
 use crate::drive::document::draw_random_document_properties::RandomDocumentRequest;
+use crate::drive::document::expiration::pricing::{
+    document_remaining_lifetime_ms, document_ttl_pricing,
+};
 use crate::drive::document::paths::contract_documents_primary_key_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -121,6 +124,25 @@ impl Drive {
             &mut batch_operations,
             platform_version,
         )?;
+        // A type whose documents expire prices the entries by the lifetime the document has
+        // left, as its insert prices its own (`add_document_ttl_operations`): the entries the
+        // draw moves live as long as the document
+        if let Some(ttl_seconds) = document_type.documents_ttl_seconds() {
+            let pricing = document_ttl_pricing(
+                document_remaining_lifetime_ms(
+                    document.created_at(),
+                    ttl_seconds,
+                    block_info.time_ms,
+                )?,
+                self.config.epoch_time_length_s,
+                self.config.epochs_per_era,
+                &platform_version.fee_version,
+            )?;
+            batch_operations = batch_operations
+                .into_iter()
+                .map(|operation| operation.retag_document_ttl(pricing))
+                .collect();
+        }
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
@@ -320,7 +342,7 @@ mod tests {
     use crate::query::DriveDocumentQuery;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
-    use dpp::document::DocumentV0;
+    use dpp::document::{DocumentV0, DocumentV0Setters};
     use dpp::platform_value::{platform_value, Value};
     use std::collections::BTreeMap;
 
@@ -374,6 +396,24 @@ mod tests {
                         },
                         "indices": [{ "name": "byName", "properties": [{ "name": "asc" }] }],
                         "required": ["name"],
+                        "additionalProperties": false
+                    },
+                    "fleetingCard": {
+                        "type": "object",
+                        "documentsMutable": false,
+                        "ttl": 3600,
+                        "properties": {
+                            "name": { "type": "string", "maxLength": 32, "position": 0 },
+                            "rarity": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 100,
+                                "generatedFrom": { "function": "sys.random.uniform" },
+                                "position": 1
+                            }
+                        },
+                        "indices": [{ "name": "byRarity", "properties": [{ "rarity": "asc" }] }],
+                        "required": ["name", "rarity", "$createdAt"],
                         "additionalProperties": false
                     }
                 }
@@ -649,6 +689,42 @@ mod tests {
         assert_eq!(
             with.processing_fee,
             without.processing_fee + prepayment.processing_fee
+        );
+    }
+
+    #[test]
+    fn should_prepay_the_draw_of_an_expiring_document_for_the_lifetime_it_has_left() {
+        // A card that expires in an hour prepays its `byRarity` entry for that hour, where a
+        // card that never expires pays for it for good
+        let platform_version = drawing_platform_version();
+        let (drive, contract) = setup(&platform_version);
+        let prepay = |document_type_name: &str, document: &Document| {
+            drive
+                .prepay_random_document_index_entries(
+                    document,
+                    Identifier::from(OWNER),
+                    &contract,
+                    contract
+                        .document_type_for_name(document_type_name)
+                        .expect("the type"),
+                    &BlockInfo::default(),
+                    None,
+                    &platform_version,
+                )
+                .expect("the prepayment is priced")
+        };
+        let lasting = prepay("card", &card(1));
+        let mut fleeting_card = card(2);
+        fleeting_card.set_created_at(Some(0));
+        let fleeting = prepay("fleetingCard", &fleeting_card);
+
+        assert!(lasting.lifetime_storage_fees.is_empty());
+        assert!(!fleeting.lifetime_storage_fees.is_empty());
+        assert!(
+            fleeting.storage_fee < lasting.storage_fee,
+            "an hour of storage costs less than storage for good: {} against {}",
+            fleeting.storage_fee,
+            lasting.storage_fee
         );
     }
 
