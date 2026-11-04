@@ -663,6 +663,7 @@ mod tests {
             let refused = SdkError::ProtocolVersionNotActive {
                 method: "get_contract_fee_pots",
                 required: 14,
+                feature: None,
                 network: 13,
                 pinned,
                 cause: None,
@@ -678,6 +679,7 @@ mod tests {
         let unconfirmed = WasmSdkError::from(SdkError::ProtocolVersionNotActive {
             method: "get_contract_fee_pots",
             required: 14,
+            feature: None,
             network: 0,
             pinned: false,
             cause: Some(Box::new(SdkError::Generic("all nodes refused".to_string()))),
@@ -697,6 +699,7 @@ mod tests {
             WasmSdkError::from(SdkError::ProtocolVersionNotActive {
                 method: "get_contract_fee_pots",
                 required: 14,
+                feature: None,
                 network: 0,
                 pinned: false,
                 cause: Some(Box::new(SdkError::Proof(

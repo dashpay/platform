@@ -98,6 +98,9 @@ use crate::version::drive_versions::{
 ///   committing, so the missing-history error above never leaves a write
 ///   persisted without its fee result. With a caller transaction nothing
 ///   changes.
+/// * **Core fork activations**: `platform_system.fetch_core_fork_activation_height` and
+///   `store_core_fork_activation_height` are `Some(0)` (`None` before): Drive keeps, in `Misc`,
+///   the chain locked Core height at which Platform first saw each tracked Core fork active.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
@@ -137,6 +140,8 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             estimation_costs: DriveSystemEstimationCostsMethodVersions {
                 for_total_system_credits_update: 1, // changed in v10: `Misc` described with its subtrees
             },
+            fetch_core_fork_activation_height: Some(0), // changed in v10: the Core fork activations
+            store_core_fork_activation_height: Some(0), // changed in v10: the Core fork activations
         },
         fees: DriveFeesMethodVersions { calculate_fee: 1 }, // changed in v10: fee history required and consulted for every storage refund
         group: DRIVE_GROUP_METHOD_VERSIONS_V2, // changed in v10: add_group_action prices before committing an owned transaction
