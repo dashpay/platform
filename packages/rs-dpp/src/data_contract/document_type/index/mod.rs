@@ -32,6 +32,7 @@ use std::{collections::BTreeMap, convert::TryFrom};
 
 mod bucketing;
 mod contest_decided_by_values;
+mod contest_keyed_by_top_level_properties;
 mod derived_index_property;
 mod extract_contested_values;
 pub mod integer_range;
