@@ -4230,7 +4230,21 @@ pub(in crate::execution) mod tests {
         use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
         use dpp::ProtocolError;
+        use crate::execution::types::execution_operation::ValidationOperation;
+        use crate::execution::types::state_transition_execution_context::{
+            StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+        };
+        use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::DocumentCreateTransitionActionValidation;
+        use crate::platform_types::platform::PlatformStateRef;
+        use dpp::validation::SimpleConsensusValidationResult;
+        use dpp::version::DefaultForPlatformVersion;
         use drive::error::drive::DriveError as DriveInnerError;
+        use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{
+            DocumentBaseTransitionAction, DocumentBaseTransitionActionV0,
+        };
+        use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{
+            DocumentCreateTransitionAction, DocumentCreateTransitionActionV0,
+        };
 
         const CONTRACT: &str = "tests/supporting_files/contract/dpns/dpns-contract-contested-field-match-outside-index.json";
 
@@ -4249,21 +4263,19 @@ pub(in crate::execution) mod tests {
         /// [`CONTRACT`] with an optional byte array `tag` in the contested index.
         const BYTE_ARRAY_CONTRACT: &str = "tests/supporting_files/contract/dpns/dpns-contract-contested-field-match-outside-index-byte-array.json";
 
+        /// A `domain` of `owner_id` with the labels, under `parent` (none when `None`) and with
+        /// the `extra` properties, its id set for creation, and the entropy that set it.
         #[allow(clippy::too_many_arguments)]
-        async fn create_domain(
-            platform: &TempPlatform<MockCoreRPCLike>,
+        fn domain_document(
             contract: &DataContract,
-            identity: &(Identity, SimpleSigner, IdentityPublicKey),
+            owner_id: Identifier,
             rng: &mut StdRng,
             label: &str,
             normalized_label: &str,
             parent: Option<&str>,
             extra: &[(&str, Value)],
-            contested: bool,
-            time_ms: u64,
             platform_version: &PlatformVersion,
-        ) -> StateTransitionExecutionResult {
-            let (identity, signer, key) = identity;
+        ) -> (Document, Bytes32) {
             let domain = contract
                 .document_type_for_name("domain")
                 .expect("expected a domain document type");
@@ -4273,7 +4285,7 @@ pub(in crate::execution) mod tests {
             let mut document = domain
                 .random_document_with_identifier_and_entropy(
                     rng,
-                    identity.id(),
+                    owner_id,
                     entropy,
                     DocumentFieldFillType::FillIfNotRequired,
                     DocumentFieldFillSize::AnyDocumentFillSize,
@@ -4303,6 +4315,37 @@ pub(in crate::execution) mod tests {
             document
                 .set_id_for_creation(domain, &entropy.0, 2, platform_version)
                 .expect("expected to set the document id");
+            (document, entropy)
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        async fn create_domain(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            contract: &DataContract,
+            identity: &(Identity, SimpleSigner, IdentityPublicKey),
+            rng: &mut StdRng,
+            label: &str,
+            normalized_label: &str,
+            parent: Option<&str>,
+            extra: &[(&str, Value)],
+            contested: bool,
+            time_ms: u64,
+            platform_version: &PlatformVersion,
+        ) -> StateTransitionExecutionResult {
+            let (identity, signer, key) = identity;
+            let domain = contract
+                .document_type_for_name("domain")
+                .expect("expected a domain document type");
+            let (document, entropy) = domain_document(
+                contract,
+                identity.id(),
+                rng,
+                label,
+                normalized_label,
+                parent,
+                extra,
+                platform_version,
+            );
             let owner_id = document.owner_id();
             let create_transition: DocumentCreateTransition = DocumentCreateTransitionV0 {
                 base: DocumentBaseTransition::from_document(
@@ -4834,6 +4877,205 @@ pub(in crate::execution) mod tests {
                     ..
                 }
             );
+        }
+
+        /// The create the transformer builds for `document`, outside any contest, in the block
+        /// [`create_domain`] gives the second domain.
+        fn create_action(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            contract: &DataContract,
+            document: &Document,
+            platform_version: &PlatformVersion,
+        ) -> DocumentCreateTransitionAction {
+            let contract_fetch_info = platform
+                .drive
+                .get_contract_with_fetch_info(
+                    contract.id().to_buffer(),
+                    false,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch the contract")
+                .expect("expected the contract to be stored");
+            DocumentCreateTransitionAction::V0(DocumentCreateTransitionActionV0 {
+                base: DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0 {
+                    id: document.id(),
+                    identity_contract_nonce: 2,
+                    document_type_name: "domain".to_string(),
+                    data_contract: contract_fetch_info,
+                    token_cost: None,
+                    gas_fees_paid_by: GasFeesPaidBy::default(),
+                    contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+                    declared_action_fee: None,
+                    shielded_token_payment: None,
+                }),
+                block_info: BlockInfo::default_with_time(4000),
+                data: document.properties().clone(),
+                prefunded_voting_balance: None,
+                current_store_contest_info: None,
+                should_store_contest_info: None,
+                property_constraint_reads: Default::default(),
+                moderated: false,
+                consumed_documents: Vec::new(),
+                derived_index_values: None,
+                decision_proposal: None,
+            })
+        }
+
+        /// Validates `action` of `owner_id` against the committed state at `platform_version`,
+        /// returning the result and the operations billed for it.
+        fn validate_create_against_state(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            action: &DocumentCreateTransitionAction,
+            owner_id: Identifier,
+            platform_version: &PlatformVersion,
+        ) -> (SimpleConsensusValidationResult, Vec<ValidationOperation>) {
+            let platform_state = platform.state.load();
+            let platform_ref = PlatformStateRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+            };
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("expected an execution context");
+            let result = action
+                .clone()
+                .validate_state(
+                    &platform_ref,
+                    owner_id,
+                    &BlockInfo::default_with_time(4000),
+                    &mut Vec::new(),
+                    &mut execution_context,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to validate the create against state");
+            (result, execution_context.operations_consume())
+        }
+
+        /// Validates the second domain of [`CONTRACT`], `Quantum` under `dash`, against the
+        /// same state at document create state validation 2 and 3 of the latest protocol
+        /// version, after opening a contest for its index values when `open_contest`. Asserts
+        /// that version 3 bills what version 2 bills and then the poll's read, as one
+        /// precalculated operation with a processing fee and no storage fee, and returns
+        /// version 3's result.
+        async fn assert_the_contest_lookup_is_billed(
+            open_contest: bool,
+        ) -> SimpleConsensusValidationResult {
+            let platform_config = PlatformConfig {
+                network: Network::Mainnet,
+                ..Default::default()
+            };
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .with_config(platform_config)
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+            let platform_version = PlatformVersion::latest();
+
+            let mut rng = StdRng::seed_from_u64(0x0F1E_1D03);
+            let contender = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let other = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let contract_owner = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let contract = setup_contract(
+                &platform.drive,
+                CONTRACT,
+                None,
+                Some(contract_owner.0.id().to_buffer()),
+                None::<fn(&mut DataContract)>,
+                None,
+                Some(platform_version),
+            );
+
+            if open_contest {
+                assert_matches!(
+                    create_domain(
+                        &platform,
+                        &contract,
+                        &contender,
+                        &mut rng,
+                        "quantum",
+                        "quantum",
+                        Some("dash"),
+                        &[],
+                        true,
+                        3000,
+                        platform_version,
+                    )
+                    .await,
+                    StateTransitionExecutionResult::SuccessfulExecution { .. },
+                    "the contender must join the contest"
+                );
+            }
+
+            let owner_id = other.0.id();
+            let (document, _) = domain_document(
+                &contract,
+                owner_id,
+                &mut rng,
+                "Quantum",
+                "quantum",
+                Some("dash"),
+                &[],
+                platform_version,
+            );
+            let action = create_action(&platform, &contract, &document, platform_version);
+
+            let mut without_lookup = platform_version.clone();
+            without_lookup
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .batch_state_transition
+                .document_create_transition_state_validation = 2;
+
+            let (result_without_lookup, operations_without_lookup) =
+                validate_create_against_state(&platform, &action, owner_id, &without_lookup);
+            assert!(
+                result_without_lookup.is_valid(),
+                "version 2 looks no contest up and admits the create: {:?}",
+                result_without_lookup.errors
+            );
+            let (result, operations) =
+                validate_create_against_state(&platform, &action, owner_id, platform_version);
+
+            let (lookup, before_lookup) = operations
+                .split_last()
+                .expect("expected version 3 to bill operations");
+            assert_eq!(
+                before_lookup,
+                operations_without_lookup.as_slice(),
+                "version 3 must bill what version 2 bills before the lookup"
+            );
+            assert_matches!(
+                lookup,
+                ValidationOperation::PrecalculatedOperation(fee)
+                    if fee.processing_fee > 0 && fee.storage_fee == 0,
+                "version 3 must bill the poll's read last"
+            );
+            result
+        }
+
+        /// A lookup finding the live contest is billed with the refusal.
+        #[tokio::test]
+        async fn should_bill_the_contest_lookup_refusing_a_create_beside_a_live_contest_at_the_latest_protocol_version(
+        ) {
+            let result = assert_the_contest_lookup_is_billed(true).await;
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DuplicateUniqueIndexError(_)
+                )]
+            );
+        }
+
+        /// A lookup finding no contest is billed with the admitted create.
+        #[tokio::test]
+        async fn should_bill_the_contest_lookup_admitting_a_create_without_a_contest_at_the_latest_protocol_version(
+        ) {
+            let result = assert_the_contest_lookup_is_billed(false).await;
+            assert!(result.is_valid(), "{:?}", result.errors);
         }
     }
 }
