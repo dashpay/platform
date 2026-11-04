@@ -10,13 +10,14 @@
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
+use std::sync::Arc;
 
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
 use key_wallet::bip32::ExtendedPrivKey;
 use platform_wallet::wallet::identity::network::{IdentityKeyWalletCheck, IdentityWalletOwnership};
-use platform_wallet::PlatformWalletError;
+use platform_wallet::{PlatformWallet, PlatformWalletError};
 use rs_sdk_ffi::MnemonicResolverHandle;
 use zeroize::Zeroize;
 
@@ -132,17 +133,16 @@ pub unsafe extern "C" fn platform_wallet_check_identity_key_with_resolver(
         None,
     ));
 
-    let resolver_addr = mnemonic_resolver_handle as usize;
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let resolve_master = master_resolver(resolver_addr, wallet.wallet_id());
-        let wallet = wallet.clone();
-        block_on_worker(async move {
-            wallet
-                .check_identity_key(identity_index, &identity_public_key, resolve_master)
-                .await
-        })
-    });
-    let check = match unwrap_option_or_return!(option) {
+    // The registry's read guard is dropped before the host resolver runs:
+    // a resolver that writes the registry (destroying a wallet alias, say)
+    // would otherwise wait on this call while this call waits on it.
+    let wallet = unwrap_option_or_return!(registered_wallet(wallet_handle));
+    let resolve_master = master_resolver(mnemonic_resolver_handle as usize, wallet.wallet_id());
+    let check = match block_on_worker(async move {
+        wallet
+            .check_identity_key(identity_index, &identity_public_key, resolve_master)
+            .await
+    }) {
         Ok(check) => check,
         Err(failure) => return failure.into_result(),
     };
@@ -199,6 +199,12 @@ impl KeyCheckFailure {
             KeyCheckFailure::Wallet(error) => error.into(),
         }
     }
+}
+
+/// The wallet registered under `wallet_handle`, cloned out of the registry
+/// so that its read guard is released when this returns.
+fn registered_wallet(wallet_handle: Handle) -> Option<Arc<PlatformWallet>> {
+    PLATFORM_WALLET_STORAGE.with_item(wallet_handle, Arc::clone)
 }
 
 /// The master-key resolver a wallet's key check calls, at most once: the
@@ -457,22 +463,20 @@ pub unsafe extern "C" fn platform_wallet_check_identity_keys_with_resolver(
         )));
     }
 
-    let resolver_addr = mnemonic_resolver_handle as usize;
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let resolve_master = master_resolver(resolver_addr, wallet.wallet_id());
-        let wallet = wallet.clone();
-        block_on_worker(async move {
-            wallet
-                .check_identity_keys(
-                    identity_index,
-                    &identity_public_keys,
-                    unreadable_key_count,
-                    resolve_master,
-                )
-                .await
-        })
-    });
-    let check = match unwrap_option_or_return!(option) {
+    // As in the one-key check, the registry's guard is dropped before the
+    // host resolver runs.
+    let wallet = unwrap_option_or_return!(registered_wallet(wallet_handle));
+    let resolve_master = master_resolver(mnemonic_resolver_handle as usize, wallet.wallet_id());
+    let check = match block_on_worker(async move {
+        wallet
+            .check_identity_keys(
+                identity_index,
+                &identity_public_keys,
+                unreadable_key_count,
+                resolve_master,
+            )
+            .await
+    }) {
         Ok(check) => check,
         Err(failure) => return failure.into_result(),
     };
@@ -1348,5 +1352,80 @@ mod tests {
             platform_wallet_check_identity_keys_free(&mut out);
             platform_wallet_check_identity_keys_free(std::ptr::null_mut());
         }
+    }
+
+    // ── The wallet registry ───────────────────────────────────────────
+
+    /// A resolver that destroys an unrelated wallet alias before it
+    /// answers, as a host may: a write to the wallet registry while the
+    /// check waits on the resolver.
+    unsafe extern "C" fn registry_writing_resolve(
+        _ctx: *const c_void,
+        _wallet_id_bytes: *const u8,
+        out_buf: *mut c_char,
+        out_capacity: usize,
+        out_len: *mut usize,
+    ) -> i32 {
+        crate::platform_wallet_destroy(crate::handle::next_handle());
+        write_phrase(TEST_MNEMONIC, out_buf, out_capacity, out_len)
+    }
+
+    /// Both checks answer while their resolver writes the wallet registry,
+    /// so neither holds the registry while the resolver runs. Holding it
+    /// deadlocks: the resolver's write waits on the check, and the check
+    /// waits on the resolver. They run on a thread so that a deadlock
+    /// fails the test instead of hanging it.
+    #[test]
+    fn should_release_the_wallet_registry_before_the_resolver_runs() {
+        let (_, public_key, _) = slot_key(1, 2);
+        let (_, master_key, _) = slot_key(1, 0);
+
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let wallet = TestWallet::new();
+            let resolver = Resolver::new(registry_writing_resolve);
+
+            let (result, mut out) = check(
+                &wallet,
+                &resolver,
+                1,
+                2,
+                KeyType::ECDSA_SECP256K1,
+                &public_key,
+            );
+            let one_key = (result.code, out.outcome);
+            unsafe { platform_wallet_check_identity_key_free(&mut out) };
+
+            let inputs = [input(
+                0,
+                KeyType::ECDSA_SECP256K1,
+                SecurityLevel::MASTER,
+                &master_key,
+                None,
+            )];
+            let (result, mut out) = check_identity(&wallet, &resolver, 1, &inputs, 0);
+            let identity = (result.code, out.ownership);
+            unsafe { platform_wallet_check_identity_keys_free(&mut out) };
+
+            let _ = done_tx.send((one_key, identity));
+        });
+
+        let (one_key, identity) = done_rx
+            .recv_timeout(std::time::Duration::from_secs(60))
+            .expect("a check must release the wallet registry before its resolver runs");
+        assert_eq!(
+            one_key,
+            (
+                PlatformWalletFFIResultCode::Success,
+                IdentityKeyWalletCheckOutcomeFFI::Matches
+            )
+        );
+        assert_eq!(
+            identity,
+            (
+                PlatformWalletFFIResultCode::Success,
+                IdentityWalletOwnershipFFI::Owned
+            )
+        );
     }
 }
