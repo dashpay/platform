@@ -1140,6 +1140,24 @@ fn should_refuse_a_ranked_or_having_query_no_index_serves_before_sending() {
 /// A `post` whose index ranks hashtags by how many posts carry them within each day's window
 /// of `$createdAt`, so ranked and having-range queries pinned to a window are served.
 fn windowed_ranked_contract() -> Arc<DataContract> {
+    trending_contract(platform_value!({"on": "$createdAt", "range": 86400, "step": 86400}))
+}
+
+/// Seconds after a day's window starts that [`expiring_ranked_contract`]'s index drops it.
+const TRENDING_TTL_SECONDS: u64 = 172_800;
+
+/// [`windowed_ranked_contract`] with an index that drops each day's window
+/// [`TRENDING_TTL_SECONDS`] after it starts.
+fn expiring_ranked_contract() -> Arc<DataContract> {
+    trending_contract(platform_value!({
+        "on": "$createdAt",
+        "range": 86400,
+        "step": 86400,
+        "ttl": TRENDING_TTL_SECONDS
+    }))
+}
+
+fn trending_contract(time_range: Value) -> Arc<DataContract> {
     let schemas = platform_value!({"post": {
         "type": "object",
         "properties": {
@@ -1149,7 +1167,7 @@ fn windowed_ranked_contract() -> Arc<DataContract> {
         "indices": [
             {"name": "trending",
              "properties": [{"$createdAt": "asc"}, {"hashtag": "asc"}],
-             "timeRange": {"on": "$createdAt", "range": 86400, "step": 86400},
+             "timeRange": time_range,
              "countable": "countable",
              "rangeCountable": true,
              "rankedCountable": true}
@@ -1448,4 +1466,46 @@ fn should_refuse_before_sending_only_what_the_verifier_refuses_at_any_block_time
         refused >= 3 && accepted_by_both >= 2,
         "{refused} refused, {accepted_by_both} accepted by both"
     );
+}
+
+/// Whether a window by start has passed its index's TTL depends on the answer's block time, so
+/// the check before sending leaves it to the verifier. A window the TTL dropped long ago is
+/// sent; the verifier accepts it from an answer signed at its horizon and refuses it from one
+/// signed a millisecond later.
+#[test]
+fn should_leave_a_window_past_its_ttl_to_the_answers_block_time() {
+    // A day's window in September 2020: past its TTL at any block time a check could stand in
+    // for the answer's.
+    let start_ms = 1_600_041_600_000;
+    let horizon_ms = start_ms + TRENDING_TTL_SECONDS * 1_000;
+    let selector = TimeRangeSelector::ByStart { start_ms };
+    let expiring = |query: DocumentQuery| DocumentQuery {
+        data_contract: expiring_ranked_contract(),
+        ..query
+    };
+    let shapes: [(&str, Check, Verifies, DocumentQuery); 2] = [
+        (
+            "DocumentRankedEntries",
+            check::<DocumentRankedEntries>,
+            verifier_refuses::<DocumentRankedEntries>,
+            expiring(trending_ranked(selector)),
+        ),
+        (
+            "DocumentHavingEntries",
+            check::<DocumentHavingEntries>,
+            verifier_refuses::<DocumentHavingEntries>,
+            expiring(trending_having(selector)),
+        ),
+    ];
+    for (view, check, verifier_refuses, query) in &shapes {
+        assert!(check(query).is_ok(), "{view}: {:?}", check(query));
+        assert!(
+            !verifier_refuses(query, horizon_ms),
+            "{view}: a window is not expired at its horizon"
+        );
+        assert!(
+            verifier_refuses(query, horizon_ms + 1),
+            "{view}: a window is expired a millisecond past its horizon"
+        );
+    }
 }
