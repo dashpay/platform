@@ -2216,12 +2216,20 @@ pub(crate) mod test {
         let unproved = SdkBuilder::new_mock()
             .with_network(Network::Testnet)
             .with_proofs(false)
+            .with_context_provider(Requiring {
+                network: Some(Network::Testnet),
+                proofs: false,
+            })
             .build()
             .expect("an SDK without proofs");
         let error = unproved
             .set_context_provider(requiring())
             .expect_err("refused");
         assert!(is_config_error(error, "requires proofs"));
+        assert!(
+            !unproved.context_provider().expect("kept").requires_proofs(),
+            "the refused provider replaced the one the SDK had"
+        );
 
         SdkBuilder::new_mock()
             .with_network(Network::Testnet)
