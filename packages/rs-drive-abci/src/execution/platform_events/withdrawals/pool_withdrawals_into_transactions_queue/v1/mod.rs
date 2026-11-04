@@ -151,6 +151,10 @@ where
                 &mut documents_to_process,
                 start_transaction_index,
                 block_info,
+                // Read only by version 1 of the builder, which protocol version 15 selects;
+                // version 0, which protocol versions 1 to 14 select, ignores it, so their blocks
+                // pool the same transactions.
+                transaction,
                 platform_version,
             )?;
 

@@ -39,11 +39,10 @@ pub fn key_element_clauses(
     )
 }
 
-/// [`aggregate_where_clauses`] of `request` before it is sent, its pending
-/// window selections left unresolved: a relative time selection resolves only
-/// against the answer's signed block time. Resolving a selection adds an
-/// equality pin alone, which can add a refusal but never lift one, so whatever
-/// this refuses the verifier refuses too.
+/// [`aggregate_where_clauses`] of `request` before it is sent. Callers pass the
+/// request with its pending window selections resolved, as the verifier resolves
+/// them (`DocumentQuery::resolved_for_checking`), so whatever this refuses the
+/// verifier refuses too.
 pub(super) fn aggregate_request_where_clauses(
     request: &DocumentQuery,
     folds_entries: bool,
