@@ -76,6 +76,9 @@ pub(super) fn assert_select_is_count(
 /// serves one only when nothing constrains its group: its where clauses may
 /// only pin the index properties before the grouped one. Older nodes refuse
 /// those shapes, so refusing them here is right at every protocol version.
+///
+/// Pending window selections are resolved first, as the verifier resolves them
+/// ([`DocumentQuery::resolved_for_checking`]), so the checks read the clauses the verifier reads.
 pub(super) fn check_count_request(
     request: &DocumentQuery,
     folds_entries: bool,
@@ -83,8 +86,11 @@ pub(super) fn check_count_request(
 ) -> Result<(), drive_proof_verifier::Error> {
     request.ensure_no_sub_queries()?;
     assert_select_is_count(request)?;
+    let (resolved, _) = request.resolved_for_checking()?;
+    let request = &resolved;
     let where_clauses = aggregate_request_where_clauses(request, folds_entries, platform_version)?;
-    resolve_count_mode(&request.group_by, &where_clauses).map(|_| ())
+    resolve_count_mode(&request.group_by, &where_clauses)?;
+    request.ensure_no_having()
 }
 
 /// Translate the SDK's `u32`-with-`0`-sentinel limit into the

@@ -67,11 +67,12 @@ where
 
         let window_width = quorum_config.window;
 
-        // The last block in the window where the quorums would be the same
-        let last_block_in_window = platform_state.last_committed_core_height()
-            - platform_state.last_committed_core_height() % window_width
-            + window_width
-            - 1;
+        // The last block in the window where the quorums would be the same. The window is a
+        // `NonZeroU32`, so the remainder cannot divide by zero, and a window ending past the
+        // largest core height wraps, as it does in release builds, instead of overflowing.
+        let last_block_in_window = (platform_state.last_committed_core_height()
+            - platform_state.last_committed_core_height() % window_width)
+            .wrapping_add(window_width.get() - 1);
 
         let verification_height = chain_lock_height.saturating_sub(SIGN_OFFSET);
 
@@ -317,6 +318,7 @@ mod tests {
     use dpp::dashcore_rpc::json::QuorumType;
     use dpp::version::drive_abci_versions::drive_abci_method_versions::DkgMiningSchedule;
     use dpp::version::{PlatformVersion, PLATFORM_VERSIONS};
+    use std::num::{NonZeroU16, NonZeroU32};
     use std::str::FromStr;
 
     fn verify(
@@ -334,8 +336,8 @@ mod tests {
         ChainLockConfig {
             quorum_type: QuorumType::Llmq400_60,
             quorum_size: 400,
-            quorum_window: 288,
-            quorum_active_signers: 4,
+            quorum_window: NonZeroU32::new(288).unwrap(),
+            quorum_active_signers: NonZeroU16::new(4).unwrap(),
             quorum_rotation: false,
         }
     }

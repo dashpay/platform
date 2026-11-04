@@ -1,8 +1,8 @@
 //! JNI bindings for the Dash Platform SDK (Android/Kotlin).
 //!
 //! This crate is the Android analog of the iOS umbrella framework: a thin
-//! JNI shim that calls the `extern "C"` entry points of `rs-sdk-ffi`,
-//! `platform-wallet-ffi` and `key-wallet-ffi` **as ordinary Rust functions**
+//! JNI shim that calls the `extern "C"` entry points of `rs-sdk-ffi` and
+//! `platform-wallet-ffi` **as ordinary Rust functions**
 //! (they are rlib dependencies), so `DashSDKResult` and every other
 //! `#[repr(C)]` struct is consumed inside Rust and never crosses the JNI
 //! boundary by value.

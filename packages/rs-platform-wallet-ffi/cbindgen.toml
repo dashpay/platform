@@ -9,6 +9,12 @@ cpp_compat = true
 documentation = true
 documentation_style = "c99"
 
+[export]
+# Not a parameter type, which cbindgen would require to emit it: the
+# mnemonic functions take the language as a plain integer. Exported for the
+# value list.
+include = ["FFIMnemonicLanguage"]
+
 [fn]
 args = "horizontal"
 rename_args = "snake_case"

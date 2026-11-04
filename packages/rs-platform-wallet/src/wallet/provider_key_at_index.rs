@@ -65,8 +65,7 @@
 //! corrupt persisted xpub would otherwise let a mismatched (public,
 //! private) pair escape. On mismatch we return an error rather than a key.
 //!
-//! The raw 64-byte seed is obtained two ways, matching
-//! [`derive_core_address_private_key`](PlatformWallet::derive_core_address_private_key):
+//! The raw 64-byte seed is obtained two ways:
 //! `Some(seed)` for external-signable / watch-only wallets whose mnemonic
 //! the caller resolved on demand; `None` to take a resident key-bearing
 //! wallet's own [`wallet_seed_bytes`](key_wallet::wallet::Wallet::wallet_seed_bytes).
