@@ -17,9 +17,9 @@ pub struct DriveTokenMethodVersions {
     /// `settle_random_token_amounts`: pays out the random token transfers and mints of a block
     /// from the block's random beacon, once every transition of the block is accepted, and
     /// `prepay_random_token_history_entries`, the same generation's price of the history index
-    /// entries the settlement may create, which the transition pays. `Some(0)` from
-    /// `DRIVE_TOKEN_METHOD_VERSIONS_V3` (protocol version 15), `None` in every earlier table,
-    /// whose protocol versions decode no random token amount.
+    /// entries the settlement may create, which the transition's history write pays. `Some(0)`
+    /// from `DRIVE_TOKEN_METHOD_VERSIONS_V3` (protocol version 15), `None` in every earlier
+    /// table, whose protocol versions decode no random token amount.
     pub settle_random_token_amounts: OptionalFeatureVersion,
 }
 
