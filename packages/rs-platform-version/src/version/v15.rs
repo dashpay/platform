@@ -466,13 +466,14 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     curve, signature scheme and sign-bit rule) and `Poseidon(nk)` of a separate tag key.
 ///     Key structure validation 2 (`STATE_TRANSITION_METHOD_VERSIONS_V3`) admits it at MEDIUM
 ///     only, refuses a REDPALLAS_HECATE key of another purpose and a HECATE_SIGNER key of
-///     another type (`InvalidIdentityPublicKeyTypeForPurposeError`, 10540), data that is not
-///     such a key (`InvalidIdentityPublicKeyDataError`, 10511), and a transition adding two
-///     (`TooManyHecateSignerKeysError`, 10541); a budget or an expiry was already refused on
-///     every key that is not for authentication. Its proof of possession is a RedPallas
-///     signature by `ak` over the transition's signable bytes (`BasicRedPallasError`, 20018,
-///     when it does not verify), priced at `verify_signature_redpallas` (50,000 credits,
-///     `FEE_SIGNATURE_VERSION2` in `FEE_VERSION4`). Identity update state 2
+///     another type (`InvalidIdentityPublicKeyTypeForPurposeError`, 10540) and a transition
+///     adding two (`TooManyHecateSignerKeysError`, 10541); a budget or an expiry was already
+///     refused on every key that is not for authentication. It parses no curve point. Its proof
+///     of possession is a RedPallas signature by `ak` over the transition's signable bytes,
+///     priced at `verify_signature_redpallas` (50,000 credits, `FEE_SIGNATURE_VERSION2` in
+///     `FEE_VERSION4`); verifying it also refuses data that is not such a key, as the proof of
+///     an ECDSA_SECP256K1 or BLS12_381 key does (`BasicRedPallasError`, 20018, either way), and
+///     check_tx verifies it under its proof capacity. Identity update state 2
 ///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuses an update that adds one while the
 ///     identity keeps another enabled (`IdentityAlreadyHasHecateSignerKeyError`, 40223);
 ///     disabling the old key in the same update rotates it. To decide it, the update reads the

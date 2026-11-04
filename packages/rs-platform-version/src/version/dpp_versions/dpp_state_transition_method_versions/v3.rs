@@ -4,8 +4,8 @@ use crate::version::dpp_versions::dpp_state_transition_method_versions::{
 
 /// V3 is protocol version 15's table. `validate_identity_public_keys_structure` 1 -> 2: a public
 /// key in creation may be a Hecate signer key (`KeyType::REDPALLAS_HECATE`,
-/// `Purpose::HECATE_SIGNER`, MEDIUM only), whose data must be a valid RedPallas `ak` and
-/// `nk_commitment`, at most one per transition. V2 stays as is for replay.
+/// `Purpose::HECATE_SIGNER`, MEDIUM only), at most one per transition. Its data is left to its
+/// proof of possession. V2 stays as is for replay.
 pub const STATE_TRANSITION_METHOD_VERSIONS_V3: DPPStateTransitionMethodVersions =
     DPPStateTransitionMethodVersions {
         public_key_in_creation_methods: PublicKeyInCreationMethodVersions {

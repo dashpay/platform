@@ -3798,8 +3798,10 @@ mod tests {
         use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
         use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::TempPlatform;
+        use dpp::consensus::basic::BasicError;
         use dpp::consensus::signature::SignatureError;
         use dpp::consensus::state::state_error::StateError;
+        use dpp::identity::identity_public_key::redpallas_hecate::RedPallasHecateSecretKey;
         use dpp::identity::{Identity, IdentityPublicKey, IdentityV0, KeyID, PartialIdentity};
         use dpp::version::DefaultForPlatformVersion;
         use std::collections::BTreeSet;
@@ -4733,6 +4735,180 @@ mod tests {
                     StateError::MaxIdentityPublicKeyLimitReachedError(_)
                 )]
             );
+        }
+
+        /// Hecate signer key data that is not a key: a byte short, an `ak` that is the identity,
+        /// and a valid key's `ak` with its sign bit set.
+        fn malformed_signer_key_data() -> [Vec<u8>; 3] {
+            let valid = RedPallasHecateSecretKey::from_secret(&[0x41; 32])
+                .expect("a valid secret")
+                .public_key_data()
+                .expect("derivable data")
+                .to_vec();
+            let mut sign_bit = valid.clone();
+            sign_bit[31] |= 0x80;
+            [valid[..63].to_vec(), vec![0u8; 64], sign_bit]
+        }
+
+        /// An identity update at revision 1 and nonce 1 adding a Hecate signer key for each of
+        /// `signer_key_data`, as keys 1, 2 and on, signed by the owner's master key. Each key's
+        /// proof of possession is a well-formed RedPallas signature over the signable bytes, by a
+        /// key other than the one its data names.
+        async fn update_adding_signer_keys(
+            owner: &Owner,
+            signer_key_data: &[Vec<u8>],
+        ) -> StateTransition {
+            let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+                identity_id: owner.identity.id(),
+                revision: 1,
+                nonce: 1,
+                add_public_keys: signer_key_data
+                    .iter()
+                    .zip(1..)
+                    .map(|(data, id)| {
+                        IdentityPublicKeyInCreationV0 {
+                            id,
+                            purpose: Purpose::HECATE_SIGNER,
+                            security_level: SecurityLevel::MEDIUM,
+                            key_type: KeyType::REDPALLAS_HECATE,
+                            read_only: false,
+                            data: data.clone().into(),
+                            signature: Default::default(),
+                            contract_bounds: None,
+                        }
+                        .into()
+                    })
+                    .collect(),
+                disable_public_keys: vec![],
+                user_fee_increase: 0,
+                signature_public_key_id: owner.master_key.id(),
+                signature: Default::default(),
+            }
+            .into();
+            let mut transition: StateTransition = update_transition.into();
+            let signable_bytes = transition
+                .signable_bytes()
+                .expect("expected signable bytes");
+
+            let StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(update_v0)) =
+                &mut transition
+            else {
+                panic!("expected an identity update v0 transition");
+            };
+            let proof_of_possession = RedPallasHecateSecretKey::from_secret(&[0x52; 32])
+                .expect("a valid secret")
+                .sign(&signable_bytes)
+                .expect("a signature");
+            for key in update_v0.add_public_keys.iter_mut() {
+                key.set_signature(proof_of_possession.to_vec().into());
+            }
+
+            transition.set_signature(
+                owner
+                    .signer
+                    .sign(&owner.master_key, signable_bytes.as_slice())
+                    .await
+                    .expect("expected to sign"),
+            );
+            transition
+        }
+
+        /// A Hecate signer key's data is parsed by its proof of possession, under check_tx's
+        /// proof capacity: while that capacity is in use, an update adding malformed signer key
+        /// data is answered busy rather than refused by a check that parses it first. Once the
+        /// capacity is free, the proof refuses the data.
+        #[tokio::test]
+        async fn should_answer_busy_at_check_tx_an_identity_update_adding_malformed_hecate_signer_key_data_while_the_proof_capacity_is_in_use(
+        ) {
+            let platform_version = PlatformVersion::latest();
+            let platform = new_platform(platform_version.protocol_version);
+            let owner = owner(&platform, platform_version);
+            let proof_verifier = CheckTxProofVerifier::new(1);
+
+            for data in malformed_signer_key_data() {
+                let transition = update_adding_signer_keys(&owner, &[data]).await;
+                let in_use = proof_verifier
+                    .try_acquire(1)
+                    .expect("expected the proof capacity to be free");
+                assert_matches!(
+                    check_tx_under(&platform, &transition, &proof_verifier),
+                    Err(Error::Execution(
+                        ExecutionError::CheckTxProofVerificationBusy
+                    ))
+                );
+                drop(in_use);
+
+                let errors = check_tx_under(&platform, &transition, &proof_verifier)
+                    .expect("expected to check tx");
+                assert_matches!(
+                    errors.as_slice(),
+                    [ConsensusError::SignatureError(
+                        SignatureError::BasicRedPallasError(_)
+                    )],
+                    "{errors:?}"
+                );
+            }
+        }
+
+        /// An update adding two Hecate signer keys is refused before any proof is verified, so
+        /// check_tx refuses it while the whole proof capacity is in use, whatever the keys' data.
+        #[tokio::test]
+        async fn should_refuse_at_check_tx_an_identity_update_adding_two_hecate_signer_keys_while_the_proof_capacity_is_in_use(
+        ) {
+            let platform_version = PlatformVersion::latest();
+            let platform = new_platform(platform_version.protocol_version);
+            let owner = owner(&platform, platform_version);
+            let [short, identity, _] = malformed_signer_key_data();
+            let transition = update_adding_signer_keys(&owner, &[short, identity]).await;
+            let proof_verifier = CheckTxProofVerifier::new(1);
+
+            let _in_use = proof_verifier
+                .try_acquire(usize::MAX)
+                .expect("expected the proof capacity to be free");
+            let errors = check_tx_under(&platform, &transition, &proof_verifier)
+                .expect("expected to check tx");
+            assert_matches!(
+                errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::TooManyHecateSignerKeysError(_)
+                )],
+                "{errors:?}"
+            );
+        }
+
+        /// A block refuses unpaid an update adding malformed Hecate signer key data, as it does
+        /// any added key whose proof of possession fails, leaving the identity as it was.
+        #[tokio::test]
+        async fn should_refuse_unpaid_an_identity_update_adding_malformed_hecate_signer_key_data() {
+            let platform_version = PlatformVersion::latest();
+            let platform = new_platform(platform_version.protocol_version);
+            let owner = owner(&platform, platform_version);
+            let identity_before = stored_identity(&platform, &owner, platform_version);
+            let nonce_before = stored_nonce(&platform, &owner, platform_version);
+
+            for data in malformed_signer_key_data() {
+                let refused = process_block(
+                    &platform,
+                    &update_adding_signer_keys(&owner, &[data]).await,
+                    platform_version,
+                );
+                assert_matches!(
+                    refused.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::SignatureError(SignatureError::BasicRedPallasError(_))
+                    )],
+                    "{:?}",
+                    refused.execution_results()
+                );
+                assert_eq!(
+                    stored_identity(&platform, &owner, platform_version),
+                    identity_before
+                );
+                assert_eq!(
+                    stored_nonce(&platform, &owner, platform_version),
+                    nonce_before
+                );
+            }
         }
     }
 }

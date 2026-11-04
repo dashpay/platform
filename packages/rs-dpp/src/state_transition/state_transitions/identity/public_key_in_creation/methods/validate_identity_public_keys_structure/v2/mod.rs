@@ -9,8 +9,6 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
-#[cfg(feature = "redpallas")]
-use crate::identity::identity_public_key::redpallas_hecate;
 use crate::identity::{KeyID, KeyType, Purpose, SecurityLevel};
 use crate::state_transition::public_key_in_creation::accessors::{
     IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV1Getters,
@@ -41,23 +39,6 @@ fn allowed_security_levels(purpose: Purpose) -> Option<&'static [SecurityLevel]>
     }
 }
 
-/// Whether a REDPALLAS_HECATE key's data is valid, with the reason when it is not. Every build
-/// that validates state transitions has the `redpallas` feature; one without it cannot check the
-/// data and fails instead of admitting it.
-fn redpallas_hecate_key_data_verdict(data: &[u8]) -> Result<Result<(), String>, ProtocolError> {
-    #[cfg(feature = "redpallas")]
-    {
-        Ok(redpallas_hecate::validate_public_key_data(data))
-    }
-    #[cfg(not(feature = "redpallas"))]
-    {
-        let _ = data;
-        Err(ProtocolError::NotSupported(
-            "checking a REDPALLAS_HECATE key's data needs the redpallas feature".to_string(),
-        ))
-    }
-}
-
 /// Whether a key's type and purpose go together: a REDPALLAS_HECATE key is a HECATE_SIGNER key,
 /// and a HECATE_SIGNER key is a REDPALLAS_HECATE key.
 fn key_type_fits_purpose(key_type: KeyType, purpose: Purpose) -> bool {
@@ -69,10 +50,15 @@ impl IdentityPublicKeyInCreation {
     ///
     /// A HECATE_SIGNER key is a REDPALLAS_HECATE key at the MEDIUM security level, and the other
     /// way round; it cannot carry a budget or an expiry, as a key that is not for
-    /// authentication never can. Its data must be 64 bytes: a RedPallas `ak` that is a Pallas
-    /// point other than the identity with its sign bit clear, then a canonical `nk_commitment`.
-    /// A transition adds at most one: an identity holds at most one enabled, which state
-    /// validation checks against the keys it already has.
+    /// authentication never can. A transition adds at most one: an identity holds at most one
+    /// enabled, which state validation checks against the keys it already has.
+    ///
+    /// A REDPALLAS_HECATE key's data is left to its proof of possession, as v1 leaves an
+    /// ECDSA_SECP256K1 or BLS12_381 key's: verifying the proof refuses data that is not 64 bytes
+    /// of a RedPallas `ak` (a Pallas point other than the identity, sign bit clear) and a
+    /// canonical `nk_commitment`. Every caller verifies the proofs after this check, and check_tx
+    /// does so under its proof capacity, so this check parses no curve point: a key set it
+    /// refuses costs no more than reading it.
     ///
     /// The rules run in v1's order, each refusing the key set before the next runs, and the
     /// Hecate signer key rules run last, so a key set that also breaks an earlier rule keeps
@@ -203,7 +189,7 @@ impl IdentityPublicKeyInCreation {
                 | KeyType::EDDSA_25519_HASH160 => {
                     identity_public_key.data().len() != HASH_KEY_DATA_SIZE
                 }
-                // Checked with the Hecate signer key rules below.
+                // Left to the key's proof of possession.
                 KeyType::ECDSA_SECP256K1 | KeyType::BLS12_381 | KeyType::REDPALLAS_HECATE => false,
             })
             .map(|identity_public_key| {
@@ -225,34 +211,23 @@ impl IdentityPublicKeyInCreation {
         }
 
         // The Hecate signer key rules.
-        let mut validation_errors: Vec<ConsensusError> = Vec::new();
-        for identity_public_key in identity_public_keys_with_witness {
-            if !key_type_fits_purpose(
-                identity_public_key.key_type(),
-                identity_public_key.purpose(),
-            ) {
-                validation_errors.push(
-                    InvalidIdentityPublicKeyTypeForPurposeError::new(
-                        identity_public_key.id(),
-                        identity_public_key.key_type(),
-                        identity_public_key.purpose(),
-                    )
-                    .into(),
-                );
-            } else if identity_public_key.key_type() == KeyType::REDPALLAS_HECATE {
-                if let Err(message) =
-                    redpallas_hecate_key_data_verdict(identity_public_key.data().as_slice())?
-                {
-                    validation_errors.push(
-                        InvalidIdentityPublicKeyDataError::new(
-                            identity_public_key.id(),
-                            PublicKeyValidationError::new(message),
-                        )
-                        .into(),
-                    );
-                }
-            }
-        }
+        let validation_errors: Vec<ConsensusError> = identity_public_keys_with_witness
+            .iter()
+            .filter(|identity_public_key| {
+                !key_type_fits_purpose(
+                    identity_public_key.key_type(),
+                    identity_public_key.purpose(),
+                )
+            })
+            .map(|identity_public_key| {
+                InvalidIdentityPublicKeyTypeForPurposeError::new(
+                    identity_public_key.id(),
+                    identity_public_key.key_type(),
+                    identity_public_key.purpose(),
+                )
+                .into()
+            })
+            .collect();
         if !validation_errors.is_empty() {
             return Ok(SimpleConsensusValidationResult::new_with_errors(
                 validation_errors,
@@ -277,7 +252,7 @@ impl IdentityPublicKeyInCreation {
 #[cfg(all(test, feature = "redpallas"))]
 mod tests {
     use super::*;
-    use crate::identity::identity_public_key::redpallas_hecate::RedPallasHecateSecretKey;
+    use crate::identity::identity_public_key::redpallas_hecate::{self, RedPallasHecateSecretKey};
     use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
     use crate::state_transition::public_key_in_creation::v1::IdentityPublicKeyInCreationV1;
     use platform_value::BinaryData;
@@ -406,24 +381,44 @@ mod tests {
         assert_eq!(ids, vec![1, 2]);
     }
 
-    #[test]
-    fn should_refuse_malformed_hecate_signer_key_data() {
+    /// Hecate signer key data that is not a key: a byte short, an `ak` that is the identity,
+    /// and an `ak` with its sign bit set.
+    fn malformed_signer_key_data() -> [Vec<u8>; 3] {
         let valid = signer_key_data(1);
         let mut sign_bit = valid.clone();
         sign_bit[31] |= 0x80;
-        for data in [valid[..63].to_vec(), vec![0u8; 64], sign_bit] {
-            let result = validate(&[signer_key(1, data)]);
-            assert!(
-                matches!(
-                    result.errors.as_slice(),
-                    [ConsensusError::BasicError(
-                        BasicError::InvalidIdentityPublicKeyDataError(e)
-                    )] if e.public_key_id() == 1
-                ),
-                "{:?}",
-                result.errors
-            );
+        let malformed = [valid[..63].to_vec(), vec![0u8; 64], sign_bit];
+        for data in &malformed {
+            assert!(redpallas_hecate::validate_public_key_data(data).is_err());
         }
+        malformed
+    }
+
+    /// The structure check parses no curve point: the key's proof of possession, verified after
+    /// it under check_tx's proof capacity, refuses the data.
+    #[test]
+    fn should_leave_hecate_signer_key_data_to_its_proof_of_possession() {
+        for data in malformed_signer_key_data() {
+            let result = validate(&[signer_key(1, data)]);
+            assert!(result.is_valid(), "{:?}", result.errors);
+        }
+    }
+
+    /// Two signer keys are refused whatever their data, so a transition carrying several cannot
+    /// make the check parse their points.
+    #[test]
+    fn should_refuse_two_hecate_signer_keys_without_reading_their_data() {
+        let [short, identity, _] = malformed_signer_key_data();
+        let result = validate(&[signer_key(1, short), signer_key(2, identity)]);
+        assert!(
+            matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(BasicError::TooManyHecateSignerKeysError(e))]
+                    if e.public_key_ids() == [1, 2]
+            ),
+            "{:?}",
+            result.errors
+        );
     }
 
     #[test]
