@@ -1463,8 +1463,9 @@ extension ManagedPlatformWallet {
     /// What `checkIdentityKey(...)` found for one identity key. Rust's
     /// `check_identity_key_from_master` decides which.
     public enum IdentityKeyWalletCheck: Sendable, Equatable {
-        /// The wallet doesn't derive keys of this type at identity key
-        /// slots, so there is nothing to compare the key with.
+        /// The wallet derives no key at the key's slot (it doesn't derive
+        /// keys of this type, or the key's id is past the last hardened
+        /// index), so there is nothing to compare the key with.
         case notDerived
         /// The key is in an encoding the check doesn't compare (an ECDSA
         /// secp256k1 key that isn't 33 bytes), so it can't say whether

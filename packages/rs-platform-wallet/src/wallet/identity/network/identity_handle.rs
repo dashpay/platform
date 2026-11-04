@@ -525,8 +525,10 @@ pub fn derive_identity_auth_key_hash_from_master(
 /// Whether an identity key is the key the wallet derives at the key's
 /// slot, from [`check_identity_key_from_master`].
 pub enum IdentityKeyWalletCheck {
-    /// The wallet does not derive keys of this type at identity key
-    /// slots, so there is nothing to compare the key with.
+    /// The wallet derives no key at the key's slot, so there is nothing
+    /// to compare the key with: it does not derive keys of this type at
+    /// identity key slots, or the key's id is past the last hardened
+    /// index, which no slot has.
     NotDerived,
     /// The key is in an encoding the check does not compare (an
     /// ECDSA_SECP256K1 key that is not 33 bytes), so it can't say
@@ -592,6 +594,12 @@ fn key_comparison(
     identity_index: u32,
     identity_public_key: &IdentityPublicKey,
 ) -> Result<KeyComparison, PlatformWalletError> {
+    // The wallet derives at hardened slots only, so a key whose id is past
+    // the last hardened index is at none of them. Such a key, enabled or
+    // not, must not fail the check of the identity's other keys.
+    if ChildNumber::from_hardened_idx(identity_public_key.id()).is_err() {
+        return Ok(KeyComparison::Known(IdentityKeyWalletCheck::NotDerived));
+    }
     let Some(derivation_path) =
         identity_key_derivation_path(network, identity_index, identity_public_key)?
     else {
@@ -2094,6 +2102,47 @@ mod tests {
             .expect("compressed slot key")
             .serialize_uncompressed()
             .to_vec()
+    }
+
+    /// No wallet slot has an id past the last hardened index, so such a
+    /// key is not derived, and it doesn't fail the check of the identity's
+    /// other keys whether it is disabled or enabled.
+    #[test]
+    fn should_not_derive_a_key_whose_id_is_past_the_last_hardened_index() {
+        let past_last_hardened = 1u32 << 31;
+        for disabled_at in [Some(DISABLED_AT), None] {
+            let keys = [
+                ecdsa_key(0, SecurityLevel::MASTER, slot_public_key(1, 0), None),
+                ecdsa_key(
+                    past_last_hardened,
+                    SecurityLevel::HIGH,
+                    slot_public_key(1, 1),
+                    disabled_at,
+                ),
+            ];
+
+            let check = check_all(&keys, 1);
+
+            assert!(matches!(
+                check.keys[0],
+                IdentityKeyWalletCheck::Matches { .. }
+            ));
+            assert!(matches!(check.keys[1], IdentityKeyWalletCheck::NotDerived));
+            assert_eq!(check.ownership, IdentityWalletOwnership::Owned);
+        }
+
+        // As the only master it leaves the identity undetermined, never
+        // foreign.
+        let keys = [ecdsa_key(
+            past_last_hardened,
+            SecurityLevel::MASTER,
+            vec![2; 33],
+            None,
+        )];
+        assert_eq!(
+            check_all(&keys, 1).ownership,
+            IdentityWalletOwnership::Undetermined
+        );
     }
 
     /// A key the caller could not describe could be the one that is the

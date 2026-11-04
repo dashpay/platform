@@ -33,8 +33,9 @@ use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum IdentityKeyWalletCheckOutcomeFFI {
-    /// The wallet does not derive keys of this type at identity key
-    /// slots, so there is nothing to compare the key with.
+    /// The wallet derives no key at the key's slot (it does not derive
+    /// keys of this type, or the key's id is past the last hardened
+    /// index), so there is nothing to compare the key with.
     #[default]
     NotDerived = 0,
     /// The wallet's key at the slot is this key.
