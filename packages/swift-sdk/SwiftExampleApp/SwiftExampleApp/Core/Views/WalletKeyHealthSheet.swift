@@ -25,11 +25,19 @@ struct WalletKeyHealth: Identifiable {
         /// entry is missing or holds different bytes — a re-derive
         /// will repair it.
         case needsRederive(reason: String)
-        /// Stored pubkey doesn't match what this wallet's mnemonic
-        /// derives at `(identityIndex, keyId)`. The identity row
-        /// belongs to a different wallet (or a stale mnemonic).
-        /// Repair is destructive — only delete-identity.
+        /// The identity's master key doesn't match what this wallet
+        /// derives at its slot `(identityIndex, keyId)`. The master
+        /// key decides whose identity it is, so the identity row
+        /// belongs to a different wallet (or a stale mnemonic). Repair
+        /// is destructive: only delete-identity.
         case orphan(reason: String)
+        /// A key other than a master key that isn't the one this wallet
+        /// derives at its slot (one added from elsewhere, say). The
+        /// identity is still the wallet's, because its master key
+        /// decides that, but the wallet can't sign with this key.
+        /// Shown, with no repair; it leaves the identity's severity
+        /// alone.
+        case notWalletKey(reason: String)
         /// A key with nothing to compare it with: a type the wallet
         /// doesn't derive at the identity's key slots (Rust decides
         /// which), a row whose key type the app can't read, or a check
@@ -44,6 +52,7 @@ struct WalletKeyHealth: Identifiable {
         case .healthy: return "checkmark.circle.fill"
         case .needsRederive: return "exclamationmark.triangle.fill"
         case .orphan: return "xmark.circle.fill"
+        case .notWalletKey: return "xmark.circle"
         case .unchecked: return "questionmark.circle.fill"
         }
     }
@@ -53,6 +62,7 @@ struct WalletKeyHealth: Identifiable {
         case .healthy: return .green
         case .needsRederive: return .orange
         case .orphan: return .red
+        case .notWalletKey: return .orange
         case .unchecked: return .secondary
         }
     }
@@ -62,6 +72,7 @@ struct WalletKeyHealth: Identifiable {
         case .healthy: return "Healthy"
         case .needsRederive(let reason): return "Needs re-derive — \(reason)"
         case .orphan(let reason): return "Orphan — \(reason)"
+        case .notWalletKey(let reason): return "Not this wallet's key: \(reason)"
         case .unchecked(let reason): return "Not checked: \(reason)"
         }
     }
@@ -77,7 +88,9 @@ struct WalletKeyHealth: Identifiable {
 
 /// Per-identity rollup. Severity is the highest-severity child key
 /// status; drives which repair action is offered (re-derive vs
-/// delete-identity).
+/// delete-identity). Only `.orphan` (a master key) and
+/// `.needsRederive` raise it; `.notWalletKey` and `.unchecked` keys
+/// leave it alone.
 struct WalletIdentityKeyHealthReport: Identifiable {
     let id: Data  // identity id bytes
     let identityIdBase58: String
@@ -240,12 +253,14 @@ enum WalletKeyHealthChecker {
             )
         case .mismatch(let derivationPath, let derivedPublicKeyData):
             let derivedHex = derivedPublicKeyData.toHexString()
-            return (
-                .orphan(
-                    reason: "Stored \(storedHex.prefix(12))… doesn't match the wallet's key at \(derivationPath) (\(derivedHex.prefix(12))…)"
-                ),
-                derivedHex
-            )
+            let reason = "Stored \(storedHex.prefix(12))… doesn't match the wallet's key at \(derivationPath) (\(derivedHex.prefix(12))…)"
+            // Only the master key says whose identity it is. Another key
+            // that isn't the wallet's (added from elsewhere) must not
+            // offer to delete an identity the wallet owns.
+            if securityLevel == SecurityLevel.master.rawValue {
+                return (.orphan(reason: reason), derivedHex)
+            }
+            return (.notWalletKey(reason: reason), derivedHex)
         case .matches(let derivationPath, let privateKeyData, _):
             return (
                 keychainStatus(
@@ -492,6 +507,7 @@ struct WalletKeyHealthSheet: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var walletManager: PlatformWalletManager
 
     @State private var reports: [WalletIdentityKeyHealthReport] = []
     @State private var isRunning = false
@@ -511,9 +527,12 @@ struct WalletKeyHealthSheet: View {
                         }
                     }
                 } else if reports.isEmpty {
-                    Section {
-                        Text("No identities to check.")
-                            .foregroundColor(.secondary)
+                    // An error (keys not checked) is shown below instead.
+                    if errorMessage == nil {
+                        Section {
+                            Text("No identities to check.")
+                                .foregroundColor(.secondary)
+                        }
                     }
                 } else {
                     summarySection
@@ -676,6 +695,18 @@ struct WalletKeyHealthSheet: View {
         defer { isRunning = false }
         actionMessage = nil
         errorMessage = nil
+        // Every verdict below assumes the stored recovery phrase is this
+        // wallet's. Another wallet's phrase would report every key as
+        // not the wallet's and offer to delete identities the wallet
+        // owns, so check the binding first (Rust decides). A watch-only
+        // wallet passes and each key then reports unchecked.
+        do {
+            try walletManager.verifySeedBinding(wallet)
+        } catch {
+            reports = []
+            errorMessage = Self.seedBindingFailure("Keys weren't checked", error)
+            return
+        }
         reports = WalletKeyHealthChecker.runCheck(
             wallet: wallet,
             walletId: walletId,
@@ -686,6 +717,16 @@ struct WalletKeyHealthSheet: View {
 
     private func rederive(_ report: WalletIdentityKeyHealthReport) {
         Task { @MainActor in
+            // A re-derive on another wallet's recovery phrase would write
+            // that wallet's keys, so nothing is written unless the stored
+            // phrase is this wallet's.
+            do {
+                try walletManager.verifySeedBinding(wallet)
+            } catch {
+                actionMessage = nil
+                errorMessage = Self.seedBindingFailure("Nothing was re-derived", error)
+                return
+            }
             do {
                 let outcome = try WalletKeyHealthChecker.rederive(
                     report: report,
@@ -711,6 +752,12 @@ struct WalletKeyHealthSheet: View {
                 errorMessage = "Re-derive failed: \(error.localizedDescription)"
             }
         }
+    }
+
+    /// The message for a recovery phrase that doesn't bind to this
+    /// wallet (or couldn't be checked).
+    private static func seedBindingFailure(_ outcome: String, _ error: Error) -> String {
+        "\(outcome) because the recovery phrase stored for this wallet doesn't derive it: \(error.localizedDescription)"
     }
 
     private func deleteIdentity(_ report: WalletIdentityKeyHealthReport) {

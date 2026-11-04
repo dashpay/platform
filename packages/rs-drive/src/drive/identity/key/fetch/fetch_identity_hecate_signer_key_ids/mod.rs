@@ -236,6 +236,8 @@ mod tests {
         let (many_keys_fee, many_keys_ids) = signer_key_ids(&drive, many_keys);
         assert_eq!(few_keys_ids, vec![3]);
         assert_eq!(many_keys_ids, vec![40]);
+        // Equal fees prove nothing if the read is not billed at all.
+        assert!(few_keys_fee.processing_fee > 0, "the read must be billed");
         assert_eq!(
             few_keys_fee.processing_fee, many_keys_fee.processing_fee,
             "the read must not grow with the identity's other keys"

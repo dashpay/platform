@@ -14,7 +14,7 @@ use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
 use platform_wallet::wallet::identity::network::{
-    check_identity_key_from_master, IdentityKeyWalletCheck,
+    check_identity_key_from_master, identity_key_derivation_path, IdentityKeyWalletCheck,
 };
 use rs_sdk_ffi::MnemonicResolverHandle;
 use zeroize::Zeroize;
@@ -87,7 +87,9 @@ impl Default for IdentityKeyWalletCheckFFI {
 ///
 /// `key_type`, `purpose` and `security_level` are DPP discriminants; an
 /// unknown one is refused with `ErrorInvalidParameter` before the seed is
-/// resolved. `network` picks the coin type (`5'` mainnet, `1'`
+/// resolved. The seed is resolved only for a key type the wallet
+/// derives, so a key it does not derive is `NotDerived` even without a
+/// readable mnemonic. `network` picks the coin type (`5'` mainnet, `1'`
 /// otherwise).
 ///
 /// # Safety
@@ -128,6 +130,18 @@ pub unsafe extern "C" fn platform_wallet_check_identity_key_with_resolver(
     ));
 
     let kw_network: Network = network.into();
+    // Read the seed only when there is a key to compare with: a key the
+    // wallet does not derive is NotDerived (the empty result) even when
+    // the mnemonic cannot be read.
+    let derivation_path = unwrap_result_or_return!(identity_key_derivation_path(
+        kw_network,
+        identity_index,
+        &identity_public_key,
+    ));
+    if derivation_path.is_none() {
+        return PlatformWalletFFIResult::ok();
+    }
+
     let wallet_id: [u8; 32] = std::ptr::read(wallet_id_bytes.cast::<[u8; 32]>());
     let mut master = unwrap_result_or_return!(resolve_master_from_resolver(
         mnemonic_resolver_handle,
@@ -277,6 +291,16 @@ mod tests {
         mnemonic_resolver_result::SUCCESS
     }
 
+    unsafe extern "C" fn not_found_resolve(
+        _ctx: *const c_void,
+        _wallet_id_bytes: *const u8,
+        _out_buf: *mut c_char,
+        _out_capacity: usize,
+        _out_len: *mut usize,
+    ) -> i32 {
+        mnemonic_resolver_result::NOT_FOUND
+    }
+
     unsafe extern "C" fn noop_destroy(_ctx: *mut c_void) {}
 
     /// A resolver over [`TEST_MNEMONIC`]; destroy it with
@@ -365,6 +389,33 @@ mod tests {
         assert!(out.derived_public_key_data.is_null());
         assert_eq!(out.private_key_bytes, [0u8; 32]);
 
+        unsafe {
+            platform_wallet_check_identity_key_free(&mut out);
+            dash_sdk_mnemonic_resolver_destroy(resolver);
+        }
+    }
+
+    /// A key the wallet does not derive needs no seed, so a missing
+    /// mnemonic (or a locked Keychain) still answers NotDerived; a key it
+    /// derives still needs the seed.
+    #[test]
+    fn should_report_not_derived_without_reading_the_mnemonic() {
+        let resolver = unsafe {
+            dash_sdk_mnemonic_resolver_create(std::ptr::null_mut(), not_found_resolve, noop_destroy)
+        };
+
+        let (result, mut out) = check(resolver, 0, 3, KeyType::REDPALLAS_HECATE as u8, &[1; 64]);
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(out.outcome, IdentityKeyWalletCheckOutcomeFFI::NotDerived);
+        assert!(out.derivation_path.is_null());
+        unsafe { platform_wallet_check_identity_key_free(&mut out) };
+
+        let (result, mut out) = check(resolver, 0, 0, KeyType::ECDSA_SECP256K1 as u8, &[2; 33]);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        assert!(out.derivation_path.is_null());
         unsafe {
             platform_wallet_check_identity_key_free(&mut out);
             dash_sdk_mnemonic_resolver_destroy(resolver);

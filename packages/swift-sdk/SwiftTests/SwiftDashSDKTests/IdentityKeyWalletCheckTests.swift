@@ -86,7 +86,7 @@ final class IdentityKeyWalletCheckTests: XCTestCase {
         }
         XCTAssertEqual(path, slot.derivationPath)
         XCTAssertEqual(privateKeyData, slot.privateKeyData)
-        XCTAssertEqual(publicKeyHashHex.count, 40)
+        XCTAssertEqual(publicKeyHashHex, KeychainManager.computePublicKeyHashHex(slot.publicKeyData))
     }
 
     func testShouldReportAMismatchForAKeyFromAnotherSlot() throws {
