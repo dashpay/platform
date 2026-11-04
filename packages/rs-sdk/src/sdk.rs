@@ -876,6 +876,16 @@ impl Sdk {
         }
     }
 
+    /// The mock DAPI client, for tests that answer a request with an error, which
+    /// [`MockDashPlatformSdk`] expectations cannot express.
+    #[cfg(all(test, feature = "mocks"))]
+    pub(crate) fn mock_dapi(&self) -> &Arc<Mutex<MockDapiClient>> {
+        let SdkInstance::Mock { dapi, .. } = &self.inner else {
+            panic!("not a mock")
+        };
+        dapi
+    }
+
     /// Get or fetch identity nonce, querying Platform when stale or absent.
     /// Treats a missing nonce as `0` before applying the optional bump; on first
     /// interaction this may return `0` or `1` depending on `bump_first`. Does not

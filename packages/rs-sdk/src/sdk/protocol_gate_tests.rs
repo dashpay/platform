@@ -8,7 +8,7 @@
 use super::document_query_shape_tests::CheckedAt;
 use super::identity_discovery_tests as discovery;
 use super::protocol_gate::{decide, version_for_requests, Gate, GateState};
-use super::{Sdk, SdkInstance};
+use super::Sdk;
 use crate::error::{Error, StaleNodeError};
 use crate::platform::contract_fee_pots::ContractFeePots;
 use crate::platform::contract_groups::{
@@ -89,7 +89,6 @@ use drive_proof_verifier::types::{
     Documents, MostRecentShieldedAnchor, ShieldedAnchors, ShieldedEncryptedNotes,
     ShieldedNotesCount, ShieldedNullifierStatuses, ShieldedPoolState,
 };
-use rs_dapi_client::mock::MockDapiClient;
 use rs_dapi_client::transport::{TransportError, TransportRequest};
 use rs_dapi_client::{
     Address, DapiClientError, ExecutionError, ExecutionResponse, RequestSettings,
@@ -97,7 +96,6 @@ use rs_dapi_client::{
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 /// The protocol version a later protocol upgrade's requests need.
 const V14: u32 = PROTOCOL_VERSION_14;
@@ -221,13 +219,6 @@ fn sdk_with_provider<C: ContextProvider + 'static>(
     sdk
 }
 
-fn dapi(sdk: &Sdk) -> &Arc<Mutex<MockDapiClient>> {
-    let SdkInstance::Mock { dapi, .. } = &sdk.inner else {
-        panic!("mock")
-    };
-    dapi
-}
-
 /// The node answers `request` with `answer`.
 async fn answer<R>(sdk: &Sdk, request: &R, answer: Result<R::Response, Status>)
 where
@@ -246,12 +237,16 @@ where
             retries: 0,
         }),
     };
-    dapi(sdk).lock().await.expect(request, &result).unwrap();
+    sdk.mock_dapi()
+        .lock()
+        .await
+        .expect(request, &result)
+        .unwrap();
 }
 
 /// How many times `request` reached the node.
 async fn sent<R: Mockable>(sdk: &Sdk, request: &R) -> usize {
-    dapi(sdk).lock().await.request_count(request)
+    sdk.mock_dapi().lock().await.request_count(request)
 }
 
 /// The genesis epoch, which the SDK asks for to learn the network's protocol version.
