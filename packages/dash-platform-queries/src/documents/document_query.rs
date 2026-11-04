@@ -37,6 +37,7 @@ use dpp::{
     InvalidVectorSizeError, ProtocolError,
 };
 use drive::config::DEFAULT_QUERY_LIMIT;
+use drive::error::Error as DriveError;
 use drive::query::drive_document_ranked_query::mode_detection::ranked_order_key;
 use drive::query::{
     resolve_integer_range_bucket_clause, resolve_time_range_bucket_clause,
@@ -261,6 +262,21 @@ impl DocumentQuery {
         if !self.sub_queries.is_empty() {
             return Err(drive_proof_verifier::Error::RequestError {
                 error: "this result type cannot return sub-queries; fetch the query as CompositeDocuments".to_string(),
+            });
+        }
+        Ok(())
+    }
+
+    /// A count, sum or average view verifies grouped totals, not a `having` clause. Nodes from
+    /// protocol version 14 answer a grouped query with one as a having-range page, which only
+    /// the having view verifies, and every node refuses one without a grouping.
+    pub(super) fn ensure_no_having(&self) -> Result<(), drive_proof_verifier::Error> {
+        if !self.having.is_empty() {
+            return Err(drive_proof_verifier::Error::RequestError {
+                error: "a having clause is answered as a having-range page, which a count, sum \
+                        or average view cannot verify; fetch a grouped query with one as \
+                        DocumentHavingEntries"
+                    .to_string(),
             });
         }
         Ok(())
@@ -638,6 +654,8 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
     /// A grouping or a `having` clause has no meaning for a documents select, and every node
     /// refuses it. A projection field on the documents select is left alone: the server
     /// refuses it on the V1 wire, and the V0 encoder drops it, so the documents served verify.
+    /// The window selections are resolved as the verifier resolves them, which refuses one that
+    /// does not resolve, or an `In` or range clause beside it on the field it buckets.
     fn check_request(
         request: &Self::Request,
         _platform_version: &PlatformVersion,
@@ -670,7 +688,11 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
                     .to_string(),
             });
         }
-        Ok(())
+        // The verifier rebuilds the resolved query as Drive's before it reads the proof.
+        let (resolved, _) = request.resolved_for_checking()?;
+        DriveDocumentQuery::try_from(&resolved)
+            .map(drop)
+            .map_err(unconvertible_documents_query)
     }
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
@@ -711,12 +733,9 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
                 normalize_time_range_clauses_with_metadata_time(&mut request, time_ms)?;
         }
 
-        let mut drive_query: DriveDocumentQuery =
-            (&request)
-                .try_into()
-                .map_err(|e| drive_proof_verifier::Error::RequestError {
-                    error: format!("Failed to convert DocumentQuery to DriveQuery: {}", e),
-                })?;
+        let mut drive_query: DriveDocumentQuery = (&request)
+            .try_into()
+            .map_err(unconvertible_documents_query)?;
         // The conversion cannot recover which equalities came from resolution,
         // so the provenance is carried across here; index selection reads it
         // to pin the query to the index that buckets the field.
@@ -775,6 +794,92 @@ pub(super) fn normalize_time_range_clauses_with_metadata_time(
     Ok(resolved_time_ranges)
 }
 
+/// A block time well inside any network's lifetime, at which a check before sending resolves
+/// a relative time-range selection (newest or oldest window). The checks read that the
+/// resolved clause is one equality on the bucketed field, and a ranked or having-range check
+/// encodes its value as a timestamp key, which every window start encodes alike, so any block
+/// time an answer can carry gives them the same outcome. It is past every grid's phase, which
+/// contract validation keeps under a year, so a window resolves here exactly when it resolves
+/// at the block time of a real answer.
+const CHECKING_BLOCK_TIME_MS: u64 = 1_700_000_000_000;
+
+impl DocumentQuery {
+    /// This query with its pending window selections resolved as a verifier resolves them
+    /// from an answer's block time, and their provenance, for checking it before it is sent.
+    ///
+    /// A selection that does not resolve here does not resolve for any answer, so it is
+    /// refused here as the verifier refuses it. An integer-range selection, and a time-range
+    /// one by start, resolve from the query alone. A newest or oldest window resolves at the
+    /// answer's block time, but at any block time past the grid's phase it fails only for the
+    /// grid: no index buckets the field, or none declares the grid it names. A window by start
+    /// is resolved at its own start, where it is never past its TTL: whether it has expired
+    /// depends on the answer's block time, so the server and the verifier decide that.
+    ///
+    /// Refused as well, as every verifier refuses them for any answer: a document type the
+    /// contract lacks, a resolved query whose shape no verifier accepts (an `In` or range
+    /// clause on a field a selection buckets), and windows on two fields, which no index
+    /// serves since an index buckets one field.
+    pub(super) fn resolved_for_checking(
+        &self,
+    ) -> Result<(DocumentQuery, Vec<ResolvedTimeRange>), drive_proof_verifier::Error> {
+        let mut query = self.clone();
+        if query.time_range_clauses.is_empty() && query.integer_range_clauses.is_empty() {
+            return Ok((query, Vec::new()));
+        }
+        let document_type = self
+            .data_contract
+            .document_type_for_name(&self.document_type_name)
+            .map_err(unknown_window_document_type)?;
+        let mut resolved_time_ranges = Vec::new();
+        for TimeRangeClause {
+            field,
+            selector,
+            grid,
+        } in std::mem::take(&mut query.time_range_clauses)
+        {
+            // An absolute selection names its window, and is never expired at its own start.
+            let block_time_ms = match selector {
+                TimeRangeSelector::ByStart { start_ms } => start_ms,
+                TimeRangeSelector::Newest | TimeRangeSelector::Oldest => CHECKING_BLOCK_TIME_MS,
+            };
+            let (clause, resolved) = resolve_time_range_bucket_clause(
+                &field,
+                selector,
+                grid,
+                document_type,
+                block_time_ms,
+            )
+            .map_err(unresolved_time_range)?;
+            query.where_clauses.push(clause);
+            resolved_time_ranges.push(resolved);
+        }
+        for IntegerRangeClause { field, start, grid } in
+            std::mem::take(&mut query.integer_range_clauses)
+        {
+            let (clause, resolved) =
+                resolve_integer_range_bucket_clause(&field, &start, grid, document_type)
+                    .map_err(unresolved_integer_range)?;
+            query.where_clauses.push(clause);
+            resolved_time_ranges.push(resolved);
+        }
+        validate_resolved_time_range_clause_shapes(&query.where_clauses, &resolved_time_ranges)
+            .map_err(|e| drive_proof_verifier::Error::RequestError {
+                error: format!("invalid window selection query shape: {}", e),
+            })?;
+        if resolved_time_ranges.len() > 1 {
+            return Err(drive_proof_verifier::Error::RequestError {
+                error: format!(
+                    "at most one window selection (IN_TIME_RANGE or IN_INTEGER_RANGE) is \
+                     supported per query; this one resolves {}, and no single index can \
+                     bucket more than one field",
+                    resolved_time_ranges.len()
+                ),
+            });
+        }
+        Ok((query, resolved_time_ranges))
+    }
+}
+
 pub(super) fn resolve_time_range_clauses_with_metadata_time(
     request: &mut DocumentQuery,
     time_ms: u64,
@@ -785,9 +890,7 @@ pub(super) fn resolve_time_range_clauses_with_metadata_time(
     let data_contract = Arc::clone(&request.data_contract);
     let document_type = data_contract
         .document_type_for_name(&request.document_type_name)
-        .map_err(|e| drive_proof_verifier::Error::RequestError {
-            error: format!("document type not found for window selection query: {}", e),
-        })?;
+        .map_err(unknown_window_document_type)?;
     let time_range_clauses = std::mem::take(&mut request.time_range_clauses);
     let mut resolved_time_ranges = Vec::with_capacity(time_range_clauses.len());
     for TimeRangeClause {
@@ -798,9 +901,7 @@ pub(super) fn resolve_time_range_clauses_with_metadata_time(
     {
         let (clause, resolved) =
             resolve_time_range_bucket_clause(&field, selector, grid, document_type, time_ms)
-                .map_err(|e| drive_proof_verifier::Error::RequestError {
-                    error: format!("failed to resolve time range clause: {}", e),
-                })?;
+                .map_err(unresolved_time_range)?;
         request.where_clauses.push(clause);
         resolved_time_ranges.push(resolved);
     }
@@ -809,15 +910,43 @@ pub(super) fn resolve_time_range_clauses_with_metadata_time(
     let integer_range_clauses = std::mem::take(&mut request.integer_range_clauses);
     for IntegerRangeClause { field, start, grid } in integer_range_clauses {
         let (clause, resolved) =
-            resolve_integer_range_bucket_clause(&field, &start, grid, document_type).map_err(
-                |e| drive_proof_verifier::Error::RequestError {
-                    error: format!("failed to resolve integer range clause: {}", e),
-                },
-            )?;
+            resolve_integer_range_bucket_clause(&field, &start, grid, document_type)
+                .map_err(unresolved_integer_range)?;
         request.where_clauses.push(clause);
         resolved_time_ranges.push(resolved);
     }
     Ok(resolved_time_ranges)
+}
+
+/// The refusal of a documents select Drive's query cannot be built from.
+fn unconvertible_documents_query(error: impl std::fmt::Display) -> drive_proof_verifier::Error {
+    drive_proof_verifier::Error::RequestError {
+        error: format!("Failed to convert DocumentQuery to DriveQuery: {}", error),
+    }
+}
+
+/// The refusal of a window selection on a document type the contract lacks.
+fn unknown_window_document_type(error: impl std::fmt::Display) -> drive_proof_verifier::Error {
+    drive_proof_verifier::Error::RequestError {
+        error: format!(
+            "document type not found for window selection query: {}",
+            error
+        ),
+    }
+}
+
+/// The refusal of a time-range selection that does not resolve.
+fn unresolved_time_range(error: DriveError) -> drive_proof_verifier::Error {
+    drive_proof_verifier::Error::RequestError {
+        error: format!("failed to resolve time range clause: {}", error),
+    }
+}
+
+/// The refusal of an integer-range selection that does not resolve.
+fn unresolved_integer_range(error: DriveError) -> drive_proof_verifier::Error {
+    drive_proof_verifier::Error::RequestError {
+        error: format!("failed to resolve integer range clause: {}", error),
+    }
 }
 
 /// Version-aware encoder. The dispatch is driven by the

@@ -25,7 +25,7 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 ///   property names, on an integer property. Generation 1 parses `sys.random.uniform` too;
 /// - `random_generated_from`, `Some(0)` rather than `None`: registration admits
 ///   `sys.random.uniform`, whose values block execution draws from the random beacon Tenderdash
-///   delivers from consensus version 2 on (v15 notes 20 and 22);
+///   delivers from consensus version 2 on (v15 notes 21 and 23);
 /// - `contract_storage_serialization_version`, 2 rather than 1: Drive stores a contract in
 ///   format version 2, its document types compiled, while state transitions and clients keep
 ///   format version 1.
