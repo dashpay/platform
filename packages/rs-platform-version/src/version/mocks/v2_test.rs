@@ -113,6 +113,8 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 estimation_costs: DriveSystemEstimationCostsMethodVersions {
                     for_total_system_credits_update: 0,
                 },
+                fetch_core_fork_activation_height: None,
+                store_core_fork_activation_height: None,
             },
             operations: DriveOperationsMethodVersion {
                 rollback_transaction: 0,
