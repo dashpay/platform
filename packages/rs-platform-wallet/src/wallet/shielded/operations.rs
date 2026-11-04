@@ -3158,13 +3158,15 @@ pub(super) async fn redrive_pending_identity_shields<S: ShieldedStore>(
         };
         // The nonce read is the one wait here a stop can cut short: it
         // is read-only, so dropping it mid-flight loses nothing.
-        let fetched = tokio::select! {
-            biased;
-            _ = cancel.cancelled() => {
-                debug!("identity redrive: pass cancelled during the nonce read");
-                return;
-            }
-            fetched = IdentityNonceFetcher::fetch(sdk, identity_transition.identity_id()) => fetched,
+        let Some(fetched) = cancel
+            .run_until_cancelled(IdentityNonceFetcher::fetch(
+                sdk,
+                identity_transition.identity_id(),
+            ))
+            .await
+        else {
+            debug!("identity redrive: pass cancelled during the nonce read");
+            return;
         };
         if let Ok(fetched) = fetched {
             let result = {

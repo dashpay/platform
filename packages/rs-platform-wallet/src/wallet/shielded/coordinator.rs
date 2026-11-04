@@ -57,6 +57,8 @@ use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
 
+use crate::changeset::merge::Merge;
+
 /// Callback fired once per chunk during a coordinator sync pass —
 /// the **"downloaded"** progress signal.
 /// Arguments: `(cumulative_scanned, latest_block_height)`. Forwarded
@@ -1392,11 +1394,10 @@ impl NetworkShieldedCoordinator {
         // The prefetch is a read-only RPC, so a stop that lands while it is
         // in flight simply drops it: the release pass is skipped on a
         // cancelled pass anyway, and the scan below bails before locking.
-        let stranded_release = tokio::select! {
-            biased;
-            _ = cancel.cancelled() => None,
-            prefetched = self.prefetch_stranded_release(&subwallets) => prefetched,
-        };
+        let stranded_release = cancel
+            .run_until_cancelled(self.prefetch_stranded_release(&subwallets))
+            .await
+            .flatten();
 
         // ONE SDK call covers every registered IVK on the network.
         // Snapshot the optional progress handler installed by the
@@ -1435,10 +1436,14 @@ impl NetworkShieldedCoordinator {
         // so the manager treats it as "no pass ran" — `build_per_wallet_summary`
         // would otherwise mint an all-zero `Ok` for every registered
         // wallet, and the host would see a completion event for no work.
-        if cancelled
-            && notes.total_scanned == 0
-            && crate::changeset::merge::Merge::is_empty(&notes.changeset)
-        {
+        if cancelled && notes.total_scanned == 0 && Merge::is_empty(&notes.changeset) {
+            // The scan may have appended new leaves before the stop, so the
+            // chain has moved past whatever the last completed pass saw:
+            // drop the caught-up stamp so the next pass walks Platform at
+            // once instead of taking the cooldown skip.
+            if let Ok(mut guard) = self.last_caught_up_at.lock() {
+                *guard = None;
+            }
             tracing::debug!("Coordinator sync cancelled; the scan published nothing");
             return summary;
         }
@@ -1465,8 +1470,8 @@ impl NetworkShieldedCoordinator {
         //    never execute).
         //
         // Runs before the balance read so freed notes are reflected in
-        // this pass's balances. Skipped on a cancelled pass: both halves
-        // broadcast, and a skipped release simply waits for the next pass.
+        // this pass's balances. Skipped on a cancelled pass: the re-drive
+        // broadcasts, and a skipped release simply waits for the next pass.
         if let Some((snapshot, recorded)) = stranded_release.filter(|_| !cancelled) {
             // Snapshot the per-wallet persisters BEFORE the loop and drop
             // the read guard: `redrive_pending_spends` performs network
@@ -1559,7 +1564,7 @@ impl NetworkShieldedCoordinator {
         // WalletId directly — each per-wallet `WalletPersister.store`
         // only sees its own wallet's deltas.
         let consolidated = notes.changeset.clone();
-        if !crate::changeset::merge::Merge::is_empty(&consolidated) {
+        if !Merge::is_empty(&consolidated) {
             let per_wallet = consolidated.split_by_wallet_id();
             let persisters = self.persisters.read().await;
             for (wallet_id, cs) in per_wallet {

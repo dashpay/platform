@@ -311,13 +311,9 @@ where
     // another writer (a spend flow, a concurrent scan in tests) has made
     // no mutation yet, so a stop that lands here returns at once instead
     // of after the unrelated holder is done.
-    let mut store = tokio::select! {
-        biased;
-        _ = cancel.cancelled() => {
-            debug!("Shielded note sync cancelled while waiting for the store lock");
-            return Ok(MultiSyncNotesResult::default());
-        }
-        guard = store.write() => guard,
+    let Some(mut store) = cancel.run_until_cancelled(store.write()).await else {
+        debug!("Shielded note sync cancelled while waiting for the store lock");
+        return Ok(MultiSyncNotesResult::default());
     };
 
     // Snapshot each subwallet's watermark and the shared tree's
@@ -1197,8 +1193,9 @@ mod ovk_builder_roundtrip_tests;
 #[cfg(test)]
 mod memo_roundtrip_tests;
 
-/// Cancellation of a note-sync pass: the consumed prefix is finalized,
-/// a pre-scan cancel touches nothing, and a later pass resumes cleanly.
+/// Cancellation of a note-sync pass: a scan cut short keeps only its tree
+/// progress and publishes nothing, a pre-scan cancel touches nothing, and
+/// a later pass re-walks the prefix without re-appending it.
 #[cfg(test)]
 mod cancel_tests;
 
