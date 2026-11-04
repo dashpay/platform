@@ -1,6 +1,8 @@
 package org.dashfoundation.example.ui.wallet
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WalletKeyHealthStatusTest {
@@ -44,6 +46,30 @@ class WalletKeyHealthStatusTest {
                 isRecoverable = false,
                 derivationIdentityIndex = null,
                 derivationKeyIndex = 2,
+            ),
+        )
+    }
+
+    @Test
+    fun `should count an identity healthy only when none of its keys needs a repair`() {
+        assertTrue(
+            isIdentityKeyHealthy(
+                listOf(WalletKeyHealthStatus.Recoverable, WalletKeyHealthStatus.NotChecked),
+            ),
+        )
+        assertTrue(
+            isIdentityKeyHealthy(
+                listOf(WalletKeyHealthStatus.NotChecked, WalletKeyHealthStatus.NotChecked),
+            ),
+        )
+        assertTrue(isIdentityKeyHealthy(emptyList()))
+        assertFalse(
+            isIdentityKeyHealthy(
+                listOf(
+                    WalletKeyHealthStatus.Recoverable,
+                    WalletKeyHealthStatus.NotChecked,
+                    WalletKeyHealthStatus.Repairable,
+                ),
             ),
         )
     }

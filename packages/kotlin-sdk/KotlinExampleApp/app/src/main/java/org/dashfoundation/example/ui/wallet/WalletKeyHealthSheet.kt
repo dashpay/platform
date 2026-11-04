@@ -155,10 +155,8 @@ fun WalletKeyHealthSheet(
 
                 else -> {
                     // Summary (← summarySection).
-                    // A key the sheet can't check leaves its identity's status alone,
-                    // as `.unchecked` does in WalletKeyHealthSheet.swift.
                     val healthy = current.count { report ->
-                        report.keys.none { it.status == WalletKeyHealthStatus.Repairable }
+                        isIdentityKeyHealthy(report.keys.map { it.status })
                     }
                     val notChecked = current.sumOf { report ->
                         report.keys.count { it.status == WalletKeyHealthStatus.NotChecked }

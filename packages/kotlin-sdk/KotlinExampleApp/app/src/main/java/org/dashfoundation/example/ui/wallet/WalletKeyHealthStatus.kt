@@ -37,3 +37,11 @@ internal fun walletKeyHealthStatus(
     derivationIdentityIndex != null && derivationKeyIndex != null -> WalletKeyHealthStatus.Repairable
     else -> WalletKeyHealthStatus.NotChecked
 }
+
+/**
+ * Whether an identity whose keys have [statuses] counts as healthy: none of
+ * its keys needs a repair. A key the sheet can't check leaves the identity's
+ * status alone, as `.unchecked` does in WalletKeyHealthSheet.swift.
+ */
+internal fun isIdentityKeyHealthy(statuses: List<WalletKeyHealthStatus>): Boolean =
+    statuses.none { it == WalletKeyHealthStatus.Repairable }
