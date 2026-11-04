@@ -630,8 +630,8 @@ pub enum PlatformWalletError {
     /// than an asset lock may carry (`max_asset_lock_transaction_inputs`, 100:
     /// Dash Core relay policy and Platform consensus alike). Nothing was sent:
     /// a build refuses the lock before tracking it, and a resume of a tracked
-    /// `Built` / `Broadcast` row over the cap untracks it and releases its
-    /// inputs instead of re-sending it. The row is left as it is when it is
+    /// `Built` / `Broadcast` row over the cap untracks it instead of
+    /// re-sending it, releasing nothing. The row is left as it is when it is
     /// already on chain, one of its inputs is spent on chain, or another
     /// resume holds its dispatch window. Consolidating the coins lets a new
     /// lock fit.

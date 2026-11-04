@@ -1229,7 +1229,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // held only in many small coins selects as many. An oversized lock is
         // abandoned here rather than stranded on the wire; the caller can
         // consolidate the coins and build again.
-        let abandon = input_cap_violation(&tx, self.sdk.version()).or_else(|| match amount {
+        let abandon = input_cap_violation(&tx, 0, self.sdk.version()).or_else(|| match amount {
             AssetLockBuildAmount::DrainAll {
                 minimum_lock_duffs: Some(minimum),
             } if locked_amount_duffs < minimum => {

@@ -15,6 +15,7 @@ use dashcore::{OutPoint, Transaction, Txid};
 use dpp::prelude::CoreBlockHeight;
 use key_wallet::bip32::DerivationPath;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
@@ -155,7 +156,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         out_point: &OutPoint,
     ) -> (AssetLockStatus, Option<dpp::prelude::AssetLockProof>) {
         use super::proof::record_or_persister;
-        use key_wallet::transaction_checking::TransactionContext;
 
         let record = match record_or_persister(in_memory, &self.persister, &out_point.txid) {
             Ok(opt) => opt,
@@ -425,6 +425,22 @@ fn first_confirmed_input_conflict(
         return Some((*input, observed.spender, Some(observed.height)));
     }
     None
+}
+
+/// Whether the wallet holds evidence that `lock`'s transaction, or one of
+/// its inputs, reached the chain: its funding record is InstantSend-locked
+/// or in a block, its txid is in the finalized set, or a confirmed sibling
+/// spends one of its inputs ([`first_confirmed_input_conflict`]).
+///
+/// Judged on the wallet as handed in, so a caller holding the write guard
+/// that acts on the answer reads the same instant it acts on.
+fn on_chain_evidence(info: &PlatformWalletInfo, lock: &TrackedAssetLock) -> bool {
+    let accounts = &info.core_wallet.accounts;
+    let txid = lock.out_point.txid;
+    funding_tx_record(accounts, lock.account_index, &txid).is_some_and(|record| {
+        record.is_confirmed() || matches!(record.context, TransactionContext::InstantSend(_))
+    }) || funding_tx_is_finalized(accounts, lock.account_index, &txid)
+        || first_confirmed_input_conflict(info, lock).is_some()
 }
 
 /// The deadline a proof wait runs under once
@@ -828,59 +844,51 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Abandon a `Built` / `Broadcast` row whose transaction is over the
     /// asset-lock input cap, and render `cap_error` as the resume's outcome.
     ///
-    /// Before anything is released the lock is checked for having reached
-    /// the chain anyway: a node older than the relay rule may have mined it.
-    /// The evidence is what the resume already holds or can read from its
-    /// own wallet snapshot or its persister — no proof was found locally
-    /// (the caller's probe), the funding transaction's own record, in
-    /// memory or persisted, is not confirmed in a block nor in the
-    /// finalized set, and no confirmed sibling spends one of its inputs
-    /// (`input_spent`, from the double-spend screen). With
-    /// any of those present the row and its inputs are left exactly as they
-    /// are and only the error is returned: a mined oversized lock funds a
-    /// credit output Platform refuses, which no release here could recover
-    /// and which needs handling of its own; a spent input is already gone.
+    /// Before the row is removed the lock is checked for having reached
+    /// the chain anyway: a node older than the relay rule may have mined
+    /// it. The persisted funding record is asked first, outside any wallet
+    /// guard, because restored history may hold no record for it until the
+    /// next scan re-warms it; a store that cannot answer leaves the
+    /// question open, and an open question keeps the row. Then, under the
+    /// write guard that removes the row, the wallet itself is asked
+    /// ([`on_chain_evidence`]): a final or confirmed funding record, its
+    /// txid in the finalized set, or a confirmed sibling spending one of its
+    /// inputs. With any of those the row is left exactly as it is and only
+    /// the error is returned: a mined oversized lock funds a credit output
+    /// Platform refuses, which nothing here could recover and which needs
+    /// handling of its own.
     ///
-    /// Otherwise the row is removed and its inputs are released, in that
-    /// order (see `release_reservation_after_rejected_broadcast` for why the
-    /// row must go first). The release is token-less and reaches every
-    /// funding account, because a resume holds neither the build's
-    /// reservation token nor its account list — and after a restart there is
-    /// no reservation at all; the removal is then the whole release. The
-    /// funding index the build consumed is not handed back: a resume has no
-    /// path to hand back, and the row predates the builds that do.
+    /// Nothing is released. A resume holds neither the build's reservation
+    /// token nor its account list, and a token-less release would clear
+    /// whatever reservation a later payment took on these inputs — after a
+    /// restart there is no reservation of the row's own at all, and nothing
+    /// else holds the inputs behind it, so the removal is the whole
+    /// settlement. A reservation the build-only API took in this process
+    /// ages out as any abandoned build's does. The funding index the build
+    /// consumed is not handed back either: a resume has no path to hand
+    /// back, and the row predates the builds that do.
     async fn abandon_oversized_lock(
         &self,
         out_point: &OutPoint,
         tx: &Transaction,
-        account_index: u32,
-        input_spent: bool,
         cap_error: PlatformWalletError,
     ) -> PlatformWalletError {
-        let mined_in_memory = {
-            let wm = self.wallet_manager.read().await;
-            wm.get_wallet_info(&self.wallet_id).is_some_and(|info| {
-                let accounts = &info.core_wallet.accounts;
-                funding_tx_record(accounts, account_index, &out_point.txid)
-                    .is_some_and(|record| record.is_confirmed())
-                    || funding_tx_is_finalized(accounts, account_index, &out_point.txid)
-            })
-        };
-        // Restored history may hold no record for the funding transaction
-        // until the next scan re-warms it, so the persisted record is asked
-        // too — the same fallback the proof wait uses. A store that cannot
-        // answer leaves the question open, and an open question keeps the
-        // row: releasing on a read failure would free inputs a block may
-        // already hold.
-        let mined = match mined_in_memory {
-            true => Ok(true),
-            false => self
-                .persister
-                .get_core_tx_record(&out_point.txid)
-                .map(|record| record.is_some_and(|record| record.is_confirmed())),
-        };
-        let mined = match mined {
-            Ok(mined) => mined,
+        let persisted_mined = self
+            .persister
+            .get_core_tx_record(&out_point.txid)
+            .map(|record| record.is_some_and(|record| record.is_confirmed()));
+        match persisted_mined {
+            Ok(false) => {}
+            Ok(true) => {
+                tracing::warn!(
+                    outpoint = %out_point,
+                    inputs = tx.input.len(),
+                    "resume_asset_lock: the asset lock is over the input cap, but its \
+                     persisted record is already in a block — not sending it, and \
+                     leaving the row as it is"
+                );
+                return cap_error;
+            }
             Err(error) => {
                 tracing::warn!(
                     outpoint = %out_point,
@@ -888,46 +896,28 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     %error,
                     "resume_asset_lock: the asset lock is over the input cap, but the \
                      persisted funding record could not be read to rule out that it \
-                     was mined — not sending it, and leaving the row and its inputs \
-                     as they are"
+                     was mined — not sending it, and leaving the row as it is"
                 );
                 return cap_error;
             }
-        };
-        if mined || input_spent {
-            tracing::warn!(
-                outpoint = %out_point,
-                inputs = tx.input.len(),
-                mined,
-                input_spent,
-                "resume_asset_lock: the asset lock is over the input cap, but its \
-                 transaction or one of its inputs is already on chain — not sending \
-                 it, and leaving the row and its inputs as they are"
-            );
-            return cap_error;
         }
 
-        let cs_untrack = self.untrack_unsendable_asset_lock(out_point).await;
+        let cs_untrack = self
+            .untrack_unsendable_asset_lock(out_point, on_chain_evidence)
+            .await;
         if !cs_untrack.removed.contains(out_point) {
-            // Another resume holds the dispatch window and will reach this
-            // same abandon; the verdict is the same either way.
+            // Evidence landed, or another resume holds the dispatch window
+            // and will reach this same abandon; the verdict is the same
+            // either way.
             return cap_error;
         }
         tracing::warn!(
             outpoint = %out_point,
             inputs = tx.input.len(),
             "resume_asset_lock: the asset lock is over the input cap and no peer \
-             will relay it — untracked without sending, and its inputs released"
+             will relay it — untracked without sending"
         );
         self.queue_asset_lock_changeset(cs_untrack);
-        {
-            let wm = self.wallet_manager.read().await;
-            if let Some(info) = wm.get_wallet_info(&self.wallet_id) {
-                for account in info.core_wallet.accounts.all_funding_accounts() {
-                    account.release_reservation(tx);
-                }
-            }
-        }
         cap_error
     }
 
@@ -1209,7 +1199,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         if local_finality.is_none() {
             if let Some(cap_error) = match status {
                 AssetLockStatus::Built | AssetLockStatus::Broadcast => {
-                    input_cap_violation(&tx, self.sdk.version())
+                    input_cap_violation(&tx, out_point.vout, self.sdk.version())
                 }
                 AssetLockStatus::InstantSendLocked
                 | AssetLockStatus::ChainLocked
@@ -1220,15 +1210,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // The claim is this resume's own; nothing will be dispatched,
                 // so it must not exclude the removal below.
                 drop(dispatch_claim.take());
-                return Err(self
-                    .abandon_oversized_lock(
-                        out_point,
-                        &tx,
-                        account_index,
-                        input_conflict.is_some(),
-                        cap_error,
-                    )
-                    .await);
+                return Err(self.abandon_oversized_lock(out_point, &tx, cap_error).await);
             }
         }
 
@@ -6458,8 +6440,71 @@ mod tests {
         assert_eq!(row.sends(), 0, "nothing may be sent: every peer drops it");
         assert_eq!(row.status().await, None, "the row is untracked");
         assert!(row.persisted_removal(), "the removal reaches the persister");
+        // Nothing is released: the reservation the build-only API took in
+        // this process stays, as any abandoned build's does, so a rebuild
+        // over the same coins still waits for it. After a restart there is
+        // no reservation and the removal is the whole settlement.
         let rebuild = row.rebuild_half().await;
-        assert!(rebuild.is_ok(), "the inputs are released: {rebuild:?}");
+        assert!(
+            matches!(
+                rebuild,
+                Err(PlatformWalletError::AssetLockInsufficientFunds { .. })
+            ),
+            "the abandon must not clear a reservation it does not own: {rebuild:?}"
+        );
+    }
+
+    /// A confirmed sibling spending one of the lock's inputs is on-chain
+    /// evidence too: the row is kept and nothing is sent.
+    #[tokio::test]
+    async fn should_keep_an_oversized_row_whose_input_a_confirmed_sibling_spent() {
+        let row = SmallCoinRow::oversized(AssetLockStatus::Built).await;
+        let spent_input = row.transaction.input[0].previous_output;
+        let sibling = record_for(transaction_spending(spent_input), confirmed_at(100));
+        {
+            let mut wm = row.wallet_manager.write().await;
+            insert_record(
+                wm.get_wallet_info_mut(&row.wallet_id)
+                    .expect("wallet must remain registered"),
+                sibling,
+            );
+        }
+
+        let error = row
+            .manager
+            .resume_asset_lock(&row.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("a contested oversized lock cannot be settled here");
+
+        assert!(
+            matches!(error, PlatformWalletError::AssetLockTooManyInputs { .. }),
+            "{error:?}"
+        );
+        assert_eq!(row.sends(), 0);
+        assert_eq!(row.status().await, Some(AssetLockStatus::Built));
+        assert!(!row.persisted_removal());
+    }
+
+    /// Another resume holding the dispatch window keeps the row: that resume
+    /// reaches the same abandon itself.
+    #[tokio::test]
+    async fn should_leave_an_oversized_row_to_a_resume_that_claims_its_dispatch() {
+        let row = SmallCoinRow::oversized(AssetLockStatus::Built).await;
+        let _other_resume = row.manager.claim_resume_dispatch(row.out_point);
+
+        let error = row
+            .manager
+            .resume_asset_lock(&row.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("an oversized lock must not resume");
+
+        assert!(
+            matches!(error, PlatformWalletError::AssetLockTooManyInputs { .. }),
+            "{error:?}"
+        );
+        assert_eq!(row.sends(), 0);
+        assert_eq!(row.status().await, Some(AssetLockStatus::Built));
+        assert!(!row.persisted_removal());
     }
 
     /// A `Built` row over the cap, built before the pre-broadcast check

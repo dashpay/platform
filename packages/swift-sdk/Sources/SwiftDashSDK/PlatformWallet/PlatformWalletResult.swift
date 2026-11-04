@@ -585,7 +585,7 @@ public enum PlatformWalletError: LocalizedError {
     /// was broadcast and no partial drain occurred; consolidating the coins lets
     /// it fit. Also the outcome of resuming a tracked lock over the cap: it is
     /// not re-sent, and unless it or one of its inputs is already on chain it
-    /// may be untracked and its inputs released.
+    /// may be untracked. Nothing is released.
     case assetLockTooManyInputs(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition
