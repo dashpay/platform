@@ -6507,6 +6507,30 @@ mod tests {
         assert!(!row.persisted_removal());
     }
 
+    /// The helper's own cutoff: unlike `untrack_asset_lock` it removes
+    /// `Broadcast` rows too, but a row that advanced past `Broadcast` before
+    /// it took the write guard is left as it is, with no removal recorded,
+    /// even when the evidence check would allow the removal.
+    #[tokio::test]
+    async fn should_not_untrack_an_oversized_row_that_advanced_past_broadcast() {
+        for status in [
+            AssetLockStatus::InstantSendLocked,
+            AssetLockStatus::ChainLocked,
+        ] {
+            let row = SmallCoinRow::oversized(status.clone()).await;
+
+            let changeset = row
+                .manager
+                .untrack_unsendable_asset_lock(&row.out_point, |_, _| false)
+                .await;
+
+            assert!(changeset.removed.is_empty(), "{status:?}");
+            assert_eq!(row.status().await, Some(status));
+            assert_eq!(row.sends(), 0);
+            assert!(!row.persisted_removal());
+        }
+    }
+
     /// A `Built` row over the cap, built before the pre-broadcast check
     /// existed, is abandoned on resume: no send, row gone, inputs free, and
     /// the host gets the typed refusal it can act on.
