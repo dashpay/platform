@@ -6,6 +6,7 @@ use drive_proof_verifier::types::{
     ShieldedEncryptedNote, ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery,
 };
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 
 use super::{sync_notes_across, MAX_CONCURRENT_CHUNK_FETCHES};
 use crate::wallet::shielded::keys::{AccountViewingKeys, OrchardKeySet};
@@ -76,15 +77,16 @@ async fn assert_concurrent_sync_matches_sequential(initial_size: u8) {
         .collect();
     let sequential = seeded_store(initial_size, subwallets[0].0);
     let concurrent = seeded_store(initial_size, subwallets[0].0);
+    let never = CancellationToken::new();
     let baseline_sdk = pool_sdk(4).await;
-    sync_notes_across(&baseline_sdk, &sequential, &subwallets, None, None)
+    sync_notes_across(&baseline_sdk, &sequential, &subwallets, None, None, &never)
         .await
         .unwrap();
 
     let first_sdk = pool_sdk(4).await;
     let second_sdk = pool_sdk(4).await;
-    let first = sync_notes_across(&first_sdk, &concurrent, &subwallets, None, None);
-    let second = sync_notes_across(&second_sdk, &concurrent, &subwallets, None, None);
+    let first = sync_notes_across(&first_sdk, &concurrent, &subwallets, None, None, &never);
+    let second = sync_notes_across(&second_sdk, &concurrent, &subwallets, None, None, &never);
     futures::pin_mut!(first, second);
 
     // Queue both at their first store lock, without sleeps or scheduler races.
@@ -118,7 +120,7 @@ async fn assert_concurrent_sync_matches_sequential(initial_size: u8) {
 
     // A later real position must remain appendable after the overlapping scans.
     let next_sdk = pool_sdk(5).await;
-    sync_notes_across(&next_sdk, &concurrent, &subwallets, None, None)
+    sync_notes_across(&next_sdk, &concurrent, &subwallets, None, None, &never)
         .await
         .unwrap();
     let actual = concurrent.read().await;

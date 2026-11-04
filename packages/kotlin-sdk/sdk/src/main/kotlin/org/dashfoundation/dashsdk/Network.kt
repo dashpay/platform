@@ -3,10 +3,10 @@ package org.dashfoundation.dashsdk
 /**
  * The Dash network the SDK is operating on.
  *
- * Kotlin mirror of `dash-network`'s `FFINetwork` C-ABI enum — the single
+ * Kotlin mirror of `rs-sdk-ffi`'s `FFINetwork` C-ABI enum — the single
  * network type every Rust FFI surface takes/returns. Port of
  * `SwiftDashSDK/DashNetwork.swift`; [ffiValue] ordinals must stay in sync
- * with `dash-network/src/ffi.rs`.
+ * with `rs-sdk-ffi/src/types.rs`.
  */
 enum class Network(val ffiValue: Int) {
     MAINNET(0),
