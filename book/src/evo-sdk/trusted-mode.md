@@ -1,4 +1,4 @@
-# Trusted Mode and Proof Verification
+# Trusted Mode, Verified Mode and Proof Verification
 
 ## The problem
 
@@ -8,7 +8,8 @@ platform state tree. To verify these proofs the SDK needs the **quorum public
 keys** for the active validator set.
 
 On a full node you can look up quorum keys directly from the Core chain. In a
-browser or lightweight environment you cannot. Trusted mode solves this.
+browser or lightweight environment you cannot. Trusted mode and verified mode
+are the two ways the SDK gets them there.
 
 ## How trusted mode works
 
@@ -31,17 +32,48 @@ The trust model:
 This is a pragmatic trade-off: you trust one endpoint for the validator set,
 but verify all actual data cryptographically.
 
-## When to use trusted mode
+## How verified mode works
 
-| Scenario | Trusted mode? | Why |
-|----------|:---:|-----|
-| Browser app | Yes | No access to Core chain |
-| Node.js script | Yes | Simplest setup |
+On mainnet and testnet, `verified: true` removes that trust. The SDK proves
+each quorum public key with a DIP 175 quorum proof, starting from a checkpoint
+built into the SDK. The quorum service only relays the proofs: a relay that
+lies can delay requests, but it cannot make the SDK accept a forged key.
+
+```typescript
+const sdk = EvoSDK.testnetVerified();
+await sdk.connect(); // fetches no quorum keys up front
+```
+
+Nothing is fetched at `connect()`. A key is proven the first time the SDK
+verifies a response signed by its quorum, so the first query after a quorum
+rotation takes a little longer. In the browser, proof verification yields to
+the event loop between links, so the page stays responsive.
+
+Proofs grow with the age of the state they start from. A long-lived app should
+save `sdk.verifiedContinuation()` (for example on page hide) under a key per
+network and pass it back as `continuation` on the next start. If `connect()`
+refuses a saved continuation, drop it and start from the built-in checkpoint.
+The [Evo SDK README](https://github.com/dashpay/platform/tree/master/packages/js-evo-sdk#verified-quorum-keys)
+shows the full pattern.
+
+Verified mode needs relays that serve proofs. The public mainnet quorum service
+does not serve them yet, so on mainnet pass `quorumRelays` that do. Verified
+mode is not available on local networks or devnets, and it requires proofs
+(`proofs: false` is refused).
+
+## Which mode to use
+
+| Scenario | Mode | Why |
+|----------|------|-----|
+| Browser app on testnet | Verified | No access to the Core chain, and no endpoint to trust |
+| Browser app on mainnet | Verified with your own `quorumRelays`, or trusted | The public mainnet service does not serve proofs yet |
+| Node.js script | Verified or trusted | Trusted is the simplest setup |
 | Server with Core RPC | Optional | Can fetch quorum keys from your own node |
-| Local Docker setup | Yes | Use `EvoSDK.localTrusted()` |
+| Local Docker setup or devnet | Trusted | Use `EvoSDK.localTrusted()`; verified mode needs mainnet or testnet |
 
-If you do not use trusted mode, the SDK still works but cannot verify proofs.
-Queries return data but you are trusting the responding DAPI node.
+Trusted mode stays the default. If you use neither, the SDK still works but
+cannot verify proofs: queries return data, but you are trusting the responding
+DAPI node.
 
 ## Proofs in responses
 

@@ -314,10 +314,12 @@ export class EvoSDK {
    *
    * @example
    * ```typescript
+   * const key = 'dash-continuation.testnet'; // one key per network
    * const continuation = sdk.verifiedContinuation();
-   * if (continuation) localStorage.setItem('dash-continuation', JSON.stringify(continuation));
-   * // next start:
-   * const saved = localStorage.getItem('dash-continuation');
+   * if (continuation) localStorage.setItem(key, JSON.stringify(continuation));
+   * // next start; `connect()` throws an `InvalidArgument` error for a refused
+   * // continuation, so drop it then and start from the built-in checkpoint:
+   * const saved = localStorage.getItem(key);
    * const sdk = EvoSDK.testnetVerified({ continuation: saved ? JSON.parse(saved) : undefined });
    * ```
    */

@@ -90,16 +90,27 @@ await local.connect();
 `trusted: true` takes quorum public keys from the network's quorum service on trust. On mainnet and testnet, `verified: true` proves each key instead, from a checkpoint built into the SDK, with Dash Core's DIP 175 quorum proofs; the quorum service only relays them, and a relay that lies can delay requests but cannot make the SDK accept a forged key. Nothing is prefetched at `connect()`: a key is proven the first time a response signed by its quorum is verified. The trusted provider stays the default.
 
 ```typescript
-const saved = localStorage.getItem('dash-continuation');
-const sdk = EvoSDK.testnetVerified({ continuation: saved ? JSON.parse(saved) : undefined });
-await sdk.connect();
+// One key per network: a continuation only resumes an SDK of the network that saved it.
+const key = 'dash-continuation.testnet';
+const saved = localStorage.getItem(key);
+let sdk = EvoSDK.testnetVerified({ continuation: saved ? JSON.parse(saved) : undefined });
+try {
+  await sdk.connect();
+} catch (error) {
+  // A continuation the SDK refuses would fail every later load too: drop it and
+  // start again from the built-in checkpoint.
+  if (!saved || (error as { name?: string }).name !== 'InvalidArgument') throw error;
+  localStorage.removeItem(key);
+  sdk = EvoSDK.testnetVerified();
+  await sdk.connect();
+}
 
 // ... later: proofs grow with the age of the state they start from, so save where they got to.
 const continuation = sdk.verifiedContinuation();
-if (continuation) localStorage.setItem('dash-continuation', JSON.stringify(continuation));
+if (continuation) localStorage.setItem(key, JSON.stringify(continuation));
 ```
 
-A continuation is `{ anchor, states }`: an anchor, the newest verified state more than one DKG interval (24 blocks) below the lowest Core height of a response the SDK verified, which a Platform quorum signed (the session's own starting point if it verified none, or if no kept state is that far below it, as with a recent custom checkpoint; a response that fails verification never counts), so the next session can still prove the heights Platform reports, which only rise, including a key verified at a height from evidence up to that interval below it, for a quorum that has just retired; and the newer verified states, so proofs stay short. Save the whole continuation, not just the newest state: Platform's heights are often below it, and no key at or below a lone starting state can be proven. Like the checkpoint, a continuation is trust configuration; only pass back one the SDK saved.
+A continuation is `{ anchor, states }`: an anchor, the newest verified state more than one DKG interval (24 blocks) below the lowest Core height of a response the SDK verified, which a Platform quorum signed (the session's own starting point if it verified none, or if no kept state is that far below it, as with a recent custom checkpoint; a response that fails verification never counts), so the next session can still prove the heights Platform reports, which only rise, including a key verified at a height from evidence up to that interval below it, for a quorum that has just retired; and the newer verified states, so proofs stay short. Save the whole continuation, not just the newest state: Platform's heights are often below it, and no key at or below a lone starting state can be proven. Like the checkpoint, a continuation is trust configuration; only pass back one the SDK saved. A continuation does not record the checkpoint it started from, so it stays trusted after an SDK release replaces that checkpoint; if a release's notes say to, drop saved continuations.
 
 `EvoSDK.mainnetVerified()` is the mainnet counterpart. The public mainnet quorum service does not serve proofs yet, so pass `quorumRelays` that do. `verified` throws on `local` and `devnet`, together with `trusted: true`, or with `quorumUrl`; `checkpoint`, `continuation` and `quorumRelays` throw without it, `checkpoint` and `continuation` together throw, and `connect()` rejects `verified` with `proofs: false`.
 
