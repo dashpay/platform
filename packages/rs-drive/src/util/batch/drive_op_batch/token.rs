@@ -646,7 +646,9 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
 /// never sees it; a read during the block finds no listing under its key, which the domain of
 /// the reservation id keeps apart from every order id. The token conservation check counts the
 /// escrow, so it balances while the entry exists. A batch carries one transition, so no
-/// operation queued before this one in the batch creates the token's escrow tree.
+/// operation queued before this one in the batch creates the token's escrow tree, and
+/// `DriveOperation::refuse_repeated_token_balance_writes` refuses a batch reserving two random
+/// amounts of one token, whose second reservation would queue the tree's creation again.
 #[allow(clippy::too_many_arguments)]
 fn random_token_reservation_operations(
     drive: &Drive,
