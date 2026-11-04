@@ -162,3 +162,81 @@ impl EpochCosts for Epoch {
         cost_item.lookup_cost_on_epoch(self, cached_fee_version)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use platform_version::version::PLATFORM_VERSIONS;
+
+    /// Every known cost item, the hashing ones at a few sizes, with a name
+    /// for failure messages. The match stops a new item compiling until
+    /// it is listed here.
+    fn every_known_cost_item() -> Vec<(String, KnownCostItem)> {
+        let mut items = vec![
+            KnownCostItem::StorageDiskUsageCreditPerByte,
+            KnownCostItem::StorageProcessingCreditPerByte,
+            KnownCostItem::StorageLoadCreditPerByte,
+            KnownCostItem::NonStorageLoadCreditPerByte,
+            KnownCostItem::StorageSeekCost,
+            KnownCostItem::FetchIdentityBalanceProcessingCost,
+            KnownCostItem::FetchSingleIdentityKeyProcessingCost,
+            KnownCostItem::VerifySignatureEcdsaSecp256k1,
+            KnownCostItem::VerifySignatureBLS12_381,
+            KnownCostItem::VerifySignatureEcdsaHash160,
+            KnownCostItem::VerifySignatureBip13ScriptHash,
+            KnownCostItem::VerifySignatureEddsa25519Hash160,
+        ];
+        for size in [0, 1, 64, 1_000] {
+            items.push(KnownCostItem::SingleSHA256(size));
+            items.push(KnownCostItem::Blake3(size));
+        }
+        items
+            .into_iter()
+            .enumerate()
+            .map(|(index, item)| {
+                let name = match item {
+                    KnownCostItem::StorageDiskUsageCreditPerByte
+                    | KnownCostItem::StorageProcessingCreditPerByte
+                    | KnownCostItem::StorageLoadCreditPerByte
+                    | KnownCostItem::NonStorageLoadCreditPerByte
+                    | KnownCostItem::StorageSeekCost
+                    | KnownCostItem::FetchIdentityBalanceProcessingCost
+                    | KnownCostItem::FetchSingleIdentityKeyProcessingCost
+                    | KnownCostItem::VerifySignatureEcdsaSecp256k1
+                    | KnownCostItem::VerifySignatureBLS12_381
+                    | KnownCostItem::VerifySignatureEcdsaHash160
+                    | KnownCostItem::VerifySignatureBip13ScriptHash
+                    | KnownCostItem::VerifySignatureEddsa25519Hash160 => {
+                        format!("item {index}")
+                    }
+                    KnownCostItem::SingleSHA256(size) => format!("SingleSHA256({size})"),
+                    KnownCostItem::Blake3(size) => format!("Blake3({size})"),
+                };
+                (name, item)
+            })
+            .collect()
+    }
+
+    /// Saved platform state keeps only a fee version's number and reloads
+    /// the schedule registered under it, so every cost the fee history
+    /// serves must be the same in each protocol version's schedule and in
+    /// the one its number resolves to. A schedule that changes one needs
+    /// the next number.
+    #[test]
+    fn should_serve_every_known_cost_of_a_protocol_version_from_its_fee_version_number() {
+        for platform_version in PLATFORM_VERSIONS {
+            let fee_version = &platform_version.fee_version;
+            let registered = FeeVersion::get(fee_version.fee_version_number)
+                .expect("expected the fee version number to be registered");
+            for (name, item) in every_known_cost_item() {
+                assert_eq!(
+                    item.lookup_cost(fee_version),
+                    item.lookup_cost(registered),
+                    "protocol version {}: {name} differs from fee version number {}",
+                    platform_version.protocol_version,
+                    fee_version.fee_version_number
+                );
+            }
+        }
+    }
+}
