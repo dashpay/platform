@@ -331,10 +331,15 @@ reads Core. This is step 4, `verify_chain_lock` in
 `packages/rs-drive-abci/src/execution/platform_events/core_chain_lock/`:
 
 1. It checks the signature against the chain lock quorums in Platform's state.
-   When those cannot settle it, it leaves the check to its Core.
+   When those cannot settle it, it asks Core (`verify_chain_lock_through_core`):
+   from protocol version 15 it calls Core's `verifychainlock` first and refuses
+   the update if that check fails. Protocol versions up to 14 skip that call
+   and rely on the submission in step 2.
 2. It submits the chain lock to its Core (`make_sure_core_is_synced_to_chain_lock`,
    Core's `submitchainlock`). Core answers with the height of the best chain
-   lock it now holds.
+   lock it now holds. Submitting does not by itself authenticate a chain lock:
+   when Core already holds one at or above its height, `submitchainlock`
+   returns that height without checking the signature.
 3. If that height is at or above `c`, Core is synced. If it is one or two blocks
    short (`recent_block_count_amount`), drive-abci asks for Core's best chain
    lock up to five more times, 200 ms apart. If Core is further behind, or
