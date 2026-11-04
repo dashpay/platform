@@ -243,4 +243,119 @@ mod tests {
             "the read must not grow with the identity's other keys"
         );
     }
+
+    fn root_hash(drive: &Drive) -> [u8; 32] {
+        drive
+            .grove
+            .root_hash(None, &PlatformVersion::latest().drive.grove_version)
+            .unwrap()
+            .expect("expected a root hash")
+    }
+
+    /// Estimate `operation` (`apply` false), check the estimate wrote nothing,
+    /// then run it and check the estimate covers what the run cost.
+    fn assert_estimate_covers_execution(
+        drive: &Drive,
+        what: &str,
+        operation: impl Fn(bool) -> FeeResult,
+    ) {
+        let before = root_hash(drive);
+        let estimated = operation(false);
+        assert_eq!(root_hash(drive), before, "estimating {what} must not write");
+        let actual = operation(true);
+        assert_ne!(root_hash(drive), before, "{what} must write");
+        assert!(
+            estimated.processing_fee >= actual.processing_fee,
+            "{what}: estimated processing {} must cover execution {}",
+            estimated.processing_fee,
+            actual.processing_fee
+        );
+        assert!(
+            estimated.storage_fee >= actual.storage_fee,
+            "{what}: estimated storage {} must cover execution {}",
+            estimated.storage_fee,
+            actual.storage_fee
+        );
+    }
+
+    fn add_keys_fee(
+        drive: &Drive,
+        identity_id: [u8; 32],
+        keys: &[IdentityPublicKey],
+        apply: bool,
+    ) -> FeeResult {
+        drive
+            .add_new_unique_keys_to_identity(
+                identity_id,
+                keys.to_vec(),
+                &BlockInfo::default(),
+                apply,
+                None,
+                PlatformVersion::latest(),
+            )
+            .expect("expected to add the keys")
+    }
+
+    fn disable_keys_fee(
+        drive: &Drive,
+        identity_id: [u8; 32],
+        key_ids: &[KeyID],
+        apply: bool,
+    ) -> FeeResult {
+        drive
+            .disable_identity_keys(
+                identity_id,
+                key_ids.to_vec(),
+                1,
+                &BlockInfo::default(),
+                apply,
+                None,
+                PlatformVersion::latest(),
+            )
+            .expect("expected to disable the keys")
+    }
+
+    #[test]
+    fn should_estimate_a_first_signer_key_at_least_at_its_execution_cost() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let identity_id = stored_identity(&drive, 4);
+        let keys = [signer_key(3, 30)];
+
+        // The identity has no signer index yet, so the add creates it.
+        assert_estimate_covers_execution(&drive, "the first signer key", |apply| {
+            add_keys_fee(&drive, identity_id, &keys, apply)
+        });
+        assert_eq!(signer_key_ids(&drive, identity_id).1, vec![3]);
+    }
+
+    #[test]
+    fn should_estimate_disabling_a_signer_key_at_least_at_its_execution_cost() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let identity_id = stored_identity(&drive, 5);
+        add_keys(&drive, identity_id, vec![signer_key(3, 31)]);
+
+        assert_estimate_covers_execution(&drive, "disabling the only signer key", |apply| {
+            disable_keys_fee(&drive, identity_id, &[3], apply)
+        });
+        assert_eq!(signer_key_ids(&drive, identity_id).1, Vec::<KeyID>::new());
+    }
+
+    #[test]
+    fn should_estimate_rotating_a_signer_key_through_the_index_at_least_at_its_execution_cost() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let identity_id = stored_identity(&drive, 6);
+        add_keys(&drive, identity_id, vec![signer_key(3, 32)]);
+        let replacement = [signer_key(4, 33)];
+
+        // The new key joins the index that already holds key 3, then key 3
+        // leaves it while key 4 stays.
+        assert_estimate_covers_execution(&drive, "a second signer key", |apply| {
+            add_keys_fee(&drive, identity_id, &replacement, apply)
+        });
+        assert_eq!(signer_key_ids(&drive, identity_id).1, vec![3, 4]);
+        assert_estimate_covers_execution(&drive, "disabling the replaced signer key", |apply| {
+            disable_keys_fee(&drive, identity_id, &[3], apply)
+        });
+        assert_eq!(signer_key_ids(&drive, identity_id).1, vec![4]);
+    }
 }
