@@ -554,3 +554,39 @@ fn should_reject_commitments_core_rejects() {
         );
     }
 }
+
+/// A relay may send a valid chain through every ChainLock quorum since the
+/// checkpoint. A caller verifying it link by link sees each link verify in
+/// turn, and a bad link fails exactly when its turn comes.
+#[test]
+fn should_verify_a_long_chain_one_link_at_a_time() {
+    let quorums: Vec<Quorum> = (2..42).map(|seed| Quorum::new(seed, CHAINLOCK)).collect();
+    let next: Vec<&Quorum> = quorums.iter().collect();
+    let seed = Quorum::new(1, CHAINLOCK);
+    let built = build(&seed, &next, 4);
+    let bytes = envelope(&built.chain, 1, &[(0, &built.record)]);
+
+    let mut verification = bootstrap::start(&bytes, &built.checkpoint, 0).unwrap();
+    assert_eq!(verification.links_left(), 40);
+    for left in (0..40).rev() {
+        verification.verify_link().unwrap();
+        assert_eq!(verification.links_left(), left);
+    }
+    let verified = verification.finish().unwrap();
+    assert_eq!(verified.state().height, built.chain.target.height);
+
+    // Link 20 is signed by the wrong quorum.
+    let mut tampered = built.chain.clone();
+    tampered.links[20] = link(
+        &seed,
+        &quorums[20].commitment(),
+        tampered.links[20].certificate.height,
+    );
+    let bytes = envelope(&tampered, 1, &[(0, &built.record)]);
+    let mut verification = bootstrap::start(&bytes, &built.checkpoint, 0).unwrap();
+    for _ in 0..20 {
+        verification.verify_link().unwrap();
+    }
+    assert!(verification.verify_link().is_err());
+    assert!(bootstrap::verify(&bytes, &built.checkpoint, 0).is_err());
+}

@@ -122,6 +122,12 @@ pub enum VerifiedContextProviderError {
 /// each fetch has a 70 s deadline. Freshness of responses is the SDK's
 /// concern, not the provider's.
 ///
+/// A proof is verified on the task that polls the fetch, one chain link at a
+/// time, yielding to the executor every 10 ms. A link costs about 4 ms
+/// natively and 10 ms in a browser. A relay that sends a long valid chain
+/// slows that fetch down but does not stall other tasks, timers or a
+/// browser's event loop.
+///
 /// Keys are proven for the Core height Platform reports. If Platform halts,
 /// that height stops while Core moves on; a quorum not cached before the halt
 /// is still proven with a proof whose target is that height, as long as the
