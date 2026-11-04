@@ -142,6 +142,44 @@
   gains `ContractCompiledSizeValidation`, so struct literals and exhaustive matches
   need them. See [#5579](https://github.com/dashpay/platform/pull/5579).
 
+### [5.0.3](https://github.com/dashpay/platform/compare/v5.0.2...v5.0.3) (2026-11-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform-wallet:** restore a coin as final as its stored transaction (#5719)
+
+### Bug Fixes
+
+* **dashmate:** set up local networks on Dash Core v24 ([#5730](https://github.com/dashpay/platform/issues/5730))
+* **dashmate:** wait out the previous lego container's removal in ssl obtain ([#5602](https://github.com/dashpay/platform/issues/5602))
+* **platform-wallet:** carry a resumed asset lock's change into the store ([#5716](https://github.com/dashpay/platform/issues/5716))
+* **platform-wallet:** poll the asset-lock resume FFIs on a big-stack thread ([#5585](https://github.com/dashpay/platform/issues/5585))
+* **platform-wallet:** reject zero-amount shielded spends before reserving notes ([#5570](https://github.com/dashpay/platform/issues/5570))
+* **platform-wallet:** restore a coin as final as its stored transaction ([#5719](https://github.com/dashpay/platform/issues/5719))
+* **platform-wallet:** stop concurrent shielded syncs from duplicating commitments ([#5564](https://github.com/dashpay/platform/issues/5564))
+* **sdk:** let wasm-sdk build without its default features ([#5612](https://github.com/dashpay/platform/issues/5612))
+* **sdk:** query compacted address balances when the recent proof has no boundary ([#5572](https://github.com/dashpay/platform/issues/5572))
+* **sdk:** send wasm DAPI requests to a single-slash path ([#5611](https://github.com/dashpay/platform/issues/5611))
+* **sdk:** stop header sync errors from crashing the process or hiding their cause ([#5697](https://github.com/dashpay/platform/issues/5697))
+* **sdk:** validate SPV header difficulty exactly as Dash Core does ([#5699](https://github.com/dashpay/platform/issues/5699))
+
+
+### Tests
+
+* **platform-wallet:** add tempfile as a dev-dependency for the backported shielded tests ([#5731](https://github.com/dashpay/platform/issues/5731))
+
+### [5.0.2](https://github.com/dashpay/platform/compare/v5.0.1...v5.0.2) (2026-10-31)
+
+
+### Bug Fixes
+
+* **drive-abci:** make zero quorum windows and active-signer counts unrepresentable ([#5630](https://github.com/dashpay/platform/issues/5630))
+* **platform-wallet:** refuse ports Dash Core v24 refuses before building a version-3 ProUpServTx ([#5629](https://github.com/dashpay/platform/issues/5629))
+* **sdk:** read the proved vote of a masternode vote that already exists ([#5628](https://github.com/dashpay/platform/issues/5628))
+* **sdk:** refuse a non-unique identity V1 request before protocol 14 is proven ([#5615](https://github.com/dashpay/platform/issues/5615))
+* **sdk:** update dashcore-lib to 0.26.1 and refresh the testnet whitelist for Core V24 ([#5687](https://github.com/dashpay/platform/issues/5687))
+
 ### [5.0.1](https://github.com/dashpay/platform/compare/v5.0.0...v5.0.1) (2026-10-27)
 
 

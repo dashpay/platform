@@ -864,7 +864,7 @@ fn txid_to_array(txid: &dashcore::Txid) -> [u8; 32] {
     out
 }
 
-fn optional_into_raw(s: Option<String>) -> *mut c_char {
+pub(crate) fn optional_into_raw(s: Option<String>) -> *mut c_char {
     match s {
         Some(string) => match CString::new(string) {
             Ok(c) => c.into_raw(),
