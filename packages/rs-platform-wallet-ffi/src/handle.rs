@@ -80,6 +80,25 @@ impl<T> HandleStorage<T> {
         guard.get(&handle).map(f)
     }
 
+    /// [`with_item`](Self::with_item) for calls that can run while another
+    /// thread's read guard waits on them, such as an export called from an
+    /// event callback that another export dispatched while holding the
+    /// registry. A plain read parks behind any queued writer (parking_lot
+    /// prefers writers), and that writer waits for the outer guard, so the
+    /// three deadlock. This read only waits for a writer that holds the
+    /// registry, so it is only valid on a storage written solely through
+    /// `insert` and `remove`, which hold it just for the map update, as
+    /// [`PLATFORM_WALLET_MANAGER_STORAGE`] is. Writers that run other code
+    /// under the lock (`with_item_mut`, `get_mut`, `remove_matching`) void
+    /// that.
+    pub fn with_item_recursive<F, R>(&self, handle: Handle, f: F) -> Option<R>
+    where
+        F: FnOnce(&T) -> R,
+    {
+        let guard = self.items.read_recursive();
+        guard.get(&handle).map(f)
+    }
+
     pub fn with_item_mut<F, R>(&self, handle: Handle, f: F) -> Option<R>
     where
         F: FnOnce(&mut T) -> R,
