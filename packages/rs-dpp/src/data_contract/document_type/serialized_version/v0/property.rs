@@ -575,21 +575,28 @@ impl From<&GeneratedFrom> for StoredGeneratedFrom {
 impl TryFrom<StoredGeneratedFrom> for GeneratedFrom {
     type Error = ProtocolError;
 
-    /// Refuses a stored range [`RandomRange::new`] does not admit, which registration never
-    /// stores, rather than construct a range whose draw and size it does not hold.
+    /// Refuses a random declaration without a range, and a stored range [`RandomRange::new`]
+    /// does not admit, neither of which registration stores, rather than construct a
+    /// declaration the draw could not read.
     fn try_from(stored: StoredGeneratedFrom) -> Result<Self, Self::Error> {
         let StoredGeneratedFrom { function, params } = stored;
         let range = match function {
-            StoredSystemFunction::Random { range, .. } => range
-                .map(|(minimum, maximum)| {
-                    RandomRange::new(minimum, maximum).ok_or_else(|| {
-                        stored_error(format!(
-                            "generatedFrom range {minimum} to {maximum} is upside down or holds \
-                             more than 2^64 values"
-                        ))
-                    })
-                })
-                .transpose()?,
+            // Registration gives every random declaration its range, which the draw and the
+            // placeholder read: one without it could only be skipped by both
+            StoredSystemFunction::Random { range: None, .. } => {
+                return Err(stored_error(
+                    "a random generatedFrom declaration holds no range".to_string(),
+                ))
+            }
+            StoredSystemFunction::Random {
+                range: Some((minimum, maximum)),
+                ..
+            } => Some(RandomRange::new(minimum, maximum).ok_or_else(|| {
+                stored_error(format!(
+                    "generatedFrom range {minimum} to {maximum} is upside down or holds more \
+                     than 2^64 values"
+                ))
+            })?),
             _ => None,
         };
         Ok(GeneratedFrom {
@@ -687,6 +694,14 @@ mod tests {
             .expect("encodes");
             assert_eq!(bytes, expected, "the bytes of {function}");
         }
+    }
+
+    #[test]
+    fn should_refuse_a_stored_random_declaration_without_its_range() {
+        assert!(matches!(
+            GeneratedFrom::try_from(stored_uniform(None)),
+            Err(ProtocolError::CorruptedSerialization(_))
+        ));
     }
 
     #[test]
