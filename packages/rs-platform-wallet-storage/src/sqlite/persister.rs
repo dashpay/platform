@@ -1820,7 +1820,10 @@ fn load_one_wallet(
         let remaining =
             replay_wallet_history_blocking(&mut state, evidence).map_err(replay_failure)?;
         state.unconfirmed_outgoing_txs = outcome.resendable(state.unconfirmed_outgoing_txs);
-        if !remaining.sweeps.is_empty() || !remaining.authorization.rejected.is_empty() {
+        if !remaining.sweeps.is_empty()
+            || !remaining.authorization.rejected.is_empty()
+            || !remaining.withheld_asset_lock_inputs.is_empty()
+        {
             return Err(PersistenceError::backend(
                 HistoryReplayError::UnsettledAfterReplay,
             ));

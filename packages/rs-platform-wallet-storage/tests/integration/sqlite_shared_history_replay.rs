@@ -260,3 +260,134 @@ async fn should_verify_tracked_funding_before_atomic_history_settlement() {
         );
     }
 }
+
+#[tokio::test]
+async fn should_atomically_withhold_final_asset_lock_input_at_nonzero_vout_and_reopen() {
+    use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
+    use dashcore::transaction::TransactionPayload;
+    use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+    for status in [AssetLockStatus::ChainLocked, AssetLockStatus::Consumed] {
+        let (mut wallet, mut info, address) = wallet_with_receive_address();
+        let funding = spend_of(
+            &[outside(197)],
+            vec![pay(20_000, &address), pay(100_000, &address)],
+        );
+        let records = records_of(&mut info, &mut wallet, &funding, block(100)).await;
+        let spent = OutPoint::new(funding.txid(), 1);
+        let available = OutPoint::new(funding.txid(), 0);
+        let mut transaction = spend_of(
+            &[spent],
+            vec![dashcore::TxOut {
+                value: 99_000,
+                script_pubkey: dashcore::script::Builder::new()
+                    .push_opcode(dashcore::opcodes::all::OP_RETURN)
+                    .into_script(),
+            }],
+        );
+        transaction.version = 3;
+        transaction.special_transaction_payload = Some(TransactionPayload::AssetLockPayloadType(
+            AssetLockPayload::new(vec![pay(99_000, &address)]),
+        ));
+        let transaction = authorize(&wallet, &info, &address, transaction);
+        let out_point = OutPoint::new(transaction.txid(), 0);
+        let (persister, _directory, path) = fresh_persister();
+        let mut changes = registration(
+            &wallet,
+            Some(CoreChangeSet {
+                records,
+                new_utxos: vec![
+                    stored_utxo(&funding, 0, address.clone()),
+                    stored_utxo(&funding, 1, address),
+                ],
+                ..Default::default()
+            }),
+        );
+        changes.asset_locks = Some(AssetLockChangeSet {
+            asset_locks: [(
+                out_point,
+                AssetLockEntry {
+                    out_point,
+                    transaction: transaction.clone(),
+                    account_index: 0,
+                    funding_type: AssetLockFundingType::IdentityTopUp,
+                    identity_index: 0,
+                    amount_duffs: 99_000,
+                    status,
+                    proof: None,
+                    operation_id: Some([7; 16]),
+                },
+            )]
+            .into(),
+            ..Default::default()
+        });
+        persister.store(wallet.wallet_id, changes).unwrap();
+        let encoded = blob::encode_outpoint(&spent).unwrap();
+        // Simulate the legacy host projection that left a finalized input unspent.
+        persister.lock_conn_for_test().execute(
+        "UPDATE core_utxos SET spent=0, spent_in_txid=NULL, winner_mined_height=NULL WHERE wallet_id=?1 AND outpoint=?2",
+        rusqlite::params![wallet.wallet_id.as_slice(), &encoded],
+    ).unwrap();
+        persister.lock_conn_for_test().execute_batch(
+        "CREATE TEMP TRIGGER reject_final_hold BEFORE UPDATE OF spent ON core_utxos WHEN NEW.spent=1 BEGIN SELECT RAISE(ABORT, 'injected final hold failure'); END;"
+    ).unwrap();
+        let error = persister
+            .load_with_replay(&ReplayEvidence::default())
+            .unwrap_err();
+        assert!(format!("{error:?}").contains("injected final hold failure"));
+        let read_claim = |store: &SqlitePersister| {
+            store.lock_conn_for_test().query_row(
+        "SELECT spent, spent_in_txid, winner_mined_height FROM core_utxos WHERE wallet_id=?1 AND outpoint=?2",
+        rusqlite::params![wallet.wallet_id.as_slice(), &encoded],
+        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<Vec<u8>>>(1)?, row.get::<_, Option<i64>>(2)?)),
+    ).unwrap()
+        };
+        assert_eq!(read_claim(&persister), (0, None, None));
+        persister
+            .lock_conn_for_test()
+            .execute_batch("DROP TRIGGER reject_final_hold")
+            .unwrap();
+        let loaded = persister
+            .load_with_replay(&ReplayEvidence::default())
+            .unwrap();
+        let restored = &loaded.state.wallets[&wallet.wallet_id].wallet_info;
+        let account = &restored.accounts.standard_bip44_accounts[&0];
+        assert_eq!(restored.balance.total(), 20_000);
+        assert!(account.utxos.contains_key(&available));
+        assert!(!account
+            .spendable_utxos(200)
+            .iter()
+            .any(|coin| coin.outpoint == spent));
+        assert_eq!(
+            read_claim(&persister),
+            (1, Some(transaction.txid().to_byte_array().to_vec()), None)
+        );
+        drop(persister);
+        let reopened = SqlitePersister::open(SqlitePersisterConfig::new(path)).unwrap();
+        let loaded = reopened
+            .load_with_replay(&ReplayEvidence::default())
+            .unwrap();
+        assert_eq!(
+            loaded.state.wallets[&wallet.wallet_id]
+                .wallet_info
+                .balance
+                .total(),
+            20_000
+        );
+        assert!(loaded.state.wallets[&wallet.wallet_id]
+            .wallet_info
+            .utxos()
+            .iter()
+            .all(|coin| coin.outpoint != spent));
+        assert!(
+            loaded.outcomes[&wallet.wallet_id]
+                .withheld_asset_lock_inputs
+                .is_empty(),
+            "durable hold makes explicit retry idempotent"
+        );
+        assert_eq!(
+            read_claim(&reopened),
+            (1, Some(transaction.txid().to_byte_array().to_vec()), None)
+        );
+    }
+}

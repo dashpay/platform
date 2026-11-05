@@ -209,6 +209,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         Ok(outcome)
                             if outcome.sweeps.is_empty()
                                 && outcome.defeated.is_empty()
+                                && outcome.withheld_asset_lock_inputs.is_empty()
                                 && outcome.authorization.rejected.is_empty() =>
                         {
                             outcome
@@ -1548,11 +1549,23 @@ mod idempotent_load_tests {
                     )
                 ));
             } else {
-                result.unwrap();
+                let outcome = result.unwrap();
+                assert!(!outcome.withheld_asset_lock_inputs.is_empty());
                 assert!(
                     wallet.recorded_history.transactions.is_empty(),
                     "consumed history stays archival"
                 );
+                drop(loaded);
+                let id = persister.wallet.compute_wallet_id();
+                let manager = PlatformWalletManager::new(
+                    Arc::new(dash_sdk::SdkBuilder::new_mock().build().unwrap()),
+                    Arc::new(persister),
+                    Arc::new(NoopTestEventHandler),
+                );
+                let error = manager.load_from_persistor().await.unwrap_err();
+                assert!(format!("{error:?}").contains("AtomicPersistenceRequired"));
+                assert!(manager.get_wallet(&id).await.is_none());
+                assert!(manager.list_wallet_ids_blocking().is_empty());
             }
         }
     }

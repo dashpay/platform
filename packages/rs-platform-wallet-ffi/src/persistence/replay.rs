@@ -332,7 +332,10 @@ impl FFIPersister {
             claims = self.load_replay_claims(wallet_id, &mut wallet.recorded_history)?;
             let remaining = replay_wallet_history_blocking(wallet, evidence)
                 .map_err(PersistenceError::backend)?;
-            if !remaining.sweeps.is_empty() || !remaining.authorization.rejected.is_empty() {
+            if !remaining.sweeps.is_empty()
+                || !remaining.authorization.rejected.is_empty()
+                || !remaining.withheld_asset_lock_inputs.is_empty()
+            {
                 return Err(PersistenceError::backend(
                     HistoryReplayError::UnsettledAfterReplay,
                 ));
@@ -463,10 +466,11 @@ impl Drop for ClaimRowsGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::asset_lock_persistence::AssetLockEntryFFI;
     use crate::persistence::{FFIPersister, PersistenceCallbacks, PersistenceExtensionCallbacks};
     use crate::types::FFINetwork;
     use crate::wallet_restore_types::RecordedTransactionRestoreFFI;
-    use crate::wallet_restore_types::WalletRestoreEntryFFI;
+    use crate::wallet_restore_types::{UtxoRestoreEntryFFI, WalletRestoreEntryFFI};
     use dashcore::{Transaction, TxIn};
     use platform_wallet::changeset::recorded_history::ReplayEvidence;
     use platform_wallet::changeset::{PersistenceCapabilities, PlatformWalletPersistence};
@@ -489,6 +493,9 @@ mod tests {
         additional: RefCell<Vec<(Transaction, u32)>>,
         account_xpub: Vec<u8>,
         applied_claims: RefCell<Vec<AppliedClaim>>,
+        terminal_lock: Option<Transaction>,
+        coin: Option<(OutPoint, TxOut)>,
+        coin_held: Cell<bool>,
     }
 
     unsafe extern "C" fn scope(
@@ -501,6 +508,8 @@ mod tests {
         host.scopes.set(host.scopes.get() + 1);
         host.inside.set(true);
         let saved = host.additional.borrow().clone();
+        let saved_coin = host.coin_held.get();
+        let saved_claims = host.applied_claims.borrow().clone();
         if let Some(replacement) = host.replacement.borrow_mut().take() {
             *host.transaction.borrow_mut() = Some(replacement);
         }
@@ -523,6 +532,8 @@ mod tests {
         host.inside.set(false);
         if first != 0 || host.mode.get() == 4 {
             *host.additional.borrow_mut() = saved;
+            host.coin_held.set(saved_coin);
+            *host.applied_claims.borrow_mut() = saved_claims;
         }
         match host.mode.get() {
             1..=3 => 0,
@@ -583,6 +594,52 @@ mod tests {
                 &host.account_xpub,
             )))
         });
+        let coin =
+            host.coin
+                .as_ref()
+                .filter(|_| !host.coin_held.get())
+                .map(|(outpoint, output)| {
+                    let spec = &*account.unwrap();
+                    Box::into_raw(Box::new(UtxoRestoreEntryFFI {
+                        type_tag: spec.type_tag,
+                        standard_tag: spec.standard_tag,
+                        account_index: spec.index,
+                        registration_index: 0,
+                        key_class: 0,
+                        user_identity_id: [0; 32],
+                        friend_identity_id: [0; 32],
+                        prev_txid: outpoint.txid.to_byte_array(),
+                        vout: outpoint.vout,
+                        value_duffs: output.value,
+                        script_pubkey: output.script_pubkey.as_bytes().as_ptr(),
+                        script_pubkey_len: output.script_pubkey.len(),
+                        height: 100,
+                        is_coinbase: false,
+                        is_confirmed: true,
+                        is_instantlocked: false,
+                        is_locked: false,
+                        parent_context: 2,
+                        parent_block_height: 100,
+                    }))
+                });
+        let terminal = host.terminal_lock.as_ref().map(|transaction| {
+            let bytes = dashcore::consensus::serialize(transaction).into_boxed_slice();
+            let mut out_point = [0; 36];
+            out_point[..32].copy_from_slice(transaction.txid().as_byte_array());
+            out_point[32..].copy_from_slice(&1_u32.to_le_bytes());
+            Box::into_raw(Box::new(AssetLockEntryFFI {
+                out_point,
+                transaction_bytes_len: bytes.len(),
+                transaction_bytes: Box::into_raw(bytes).cast(),
+                account_index: 0,
+                funding_type: 0,
+                identity_index: 0,
+                amount_duffs: 50_000,
+                status: 4,
+                proof_bytes: std::ptr::null(),
+                proof_bytes_len: 0,
+            }))
+        });
         *rows = Box::into_raw(Box::new(WalletRestoreEntryFFI {
             wallet_id: [41; 32],
             accounts: account.unwrap_or(std::ptr::null_mut()),
@@ -590,6 +647,10 @@ mod tests {
             network: FFINetwork::Testnet,
             recorded_transactions: history,
             recorded_transactions_count: history_len,
+            utxos: coin.unwrap_or(std::ptr::null_mut()),
+            utxos_count: usize::from(coin.is_some()),
+            tracked_asset_locks: terminal.unwrap_or(std::ptr::null_mut()),
+            tracked_asset_locks_count: usize::from(terminal.is_some()),
             ..Default::default()
         }));
         *count = 1;
@@ -600,6 +661,16 @@ mod tests {
             let entry = Box::from_raw(rows.cast_mut());
             if !entry.accounts.is_null() {
                 drop(Box::from_raw(entry.accounts.cast_mut()));
+            }
+            if !entry.utxos.is_null() {
+                drop(Box::from_raw(entry.utxos.cast_mut()));
+            }
+            if !entry.tracked_asset_locks.is_null() {
+                let lock = Box::from_raw(entry.tracked_asset_locks.cast_mut());
+                drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                    lock.transaction_bytes.cast_mut(),
+                    lock.transaction_bytes_len,
+                )));
             }
             if !entry.recorded_transactions.is_null() {
                 let records = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
@@ -666,6 +737,9 @@ mod tests {
                 })
                 .collect();
         }
+        if host.mode.get() != 7 && host.coin.is_some() && effects.claims_count > 0 {
+            host.coin_held.set(true);
+        }
         if host.mode.get() == 6 {
             81
         } else {
@@ -726,6 +800,85 @@ mod tests {
         assert!(format!("{error:?}").contains("81"), "{error:?}");
         assert_eq!(host.effects.get(), 1);
         assert_eq!(*host.additional.borrow(), original);
+    }
+
+    #[test]
+    fn should_apply_terminal_input_hold_atomically_and_reject_a_noop_host() {
+        use dashcore::transaction::{
+            special_transaction::asset_lock::AssetLockPayload, TransactionPayload,
+        };
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+        for mode in [0, 6, 7] {
+            let wallet = key_wallet::Wallet::from_seed_bytes(
+                [0x51; 64],
+                dashcore::Network::Testnet,
+                WalletAccountCreationOptions::Default,
+            )
+            .unwrap();
+            let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+            let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
+            let address = info
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .unwrap()
+                .next_receive_address(Some(&xpub), true)
+                .unwrap();
+            let mut lock = transaction(90);
+            lock.version = 3;
+            lock.special_transaction_payload = Some(TransactionPayload::AssetLockPayloadType(
+                AssetLockPayload::new(
+                    [49_000, 50_000]
+                        .map(|value| TxOut {
+                            value,
+                            script_pubkey: address.script_pubkey(),
+                        })
+                        .to_vec(),
+                ),
+            ));
+            let spent = lock.input[0].previous_output;
+            let mut host = host_with_funds_account();
+            host.coin = Some((
+                spent,
+                TxOut {
+                    value: 100_000,
+                    script_pubkey: address.script_pubkey(),
+                },
+            ));
+            host.terminal_lock = Some(lock.clone());
+            host.mode.set(mode);
+            let result = persister(&host).load_with_replay(&ReplayEvidence::default());
+            if mode == 0 {
+                let loaded = result.unwrap();
+                assert_eq!(
+                    loaded.state.wallets[&[41; 32]].wallet_info.balance.total(),
+                    0
+                );
+                assert!(host.coin_held.get());
+                assert_eq!(
+                    *host.applied_claims.borrow(),
+                    vec![(spent, 2, Some(lock.txid()), None)]
+                );
+                let again = persister(&host)
+                    .load_with_replay(&ReplayEvidence::default())
+                    .unwrap();
+                assert_eq!(
+                    again.state.wallets[&[41; 32]].wallet_info.balance.total(),
+                    0
+                );
+            } else {
+                assert!(
+                    result.is_err(),
+                    "a failed or unapplied hold must not publish a wallet"
+                );
+                assert!(
+                    !host.coin_held.get(),
+                    "transaction rollback preserves the original host state"
+                );
+                assert!(host.applied_claims.borrow().is_empty());
+            }
+        }
     }
 
     fn persister(host: &Host) -> FFIPersister {

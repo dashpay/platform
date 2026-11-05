@@ -78,6 +78,8 @@ pub struct HistoryReplay {
     pub defeated: HashSet<Txid>,
     /// Conflict effects for the backend to apply in its load transaction.
     pub sweeps: Vec<SweepBatch>,
+    /// Materialized inputs withheld for final asset locks, requiring a durable hold.
+    pub withheld_asset_lock_inputs: BTreeMap<OutPoint, Txid>,
     /// Recovery views cannot settle or resend even when proof is available.
     pub read_only: bool,
 }
@@ -194,19 +196,33 @@ pub async fn replay_wallet_history(
     outcome.recorded_conflicts = recorded_conflicts;
     state.unconfirmed_outgoing_txs =
         outcome.resendable(std::mem::take(&mut state.unconfirmed_outgoing_txs));
-    state
-        .wallet_info
-        .restore_spent_outpoints(&final_lock_input_claims(
-            state
-                .unused_asset_locks
-                .values()
-                .flat_map(BTreeMap::values)
-                .filter(|lock| {
-                    let txid = lock.transaction.txid();
-                    !outcome.defeated.contains(&txid)
-                        && !outcome.authorization.rejected.contains(&txid)
-                }),
-        ));
+    let final_claims = final_lock_input_claims(
+        state
+            .unused_asset_locks
+            .values()
+            .flat_map(BTreeMap::values)
+            .filter(|lock| {
+                let txid = lock.transaction.txid();
+                !outcome.defeated.contains(&txid) && !outcome.authorization.rejected.contains(&txid)
+            }),
+    );
+    let claimants: BTreeMap<_, _> = final_claims
+        .iter()
+        .filter_map(|(input, claimant)| claimant.map(|claimant| (*input, claimant)))
+        .collect();
+    // Claims prevent future credits, but spendability checks the materialized UTXO set.
+    for account in state.wallet_info.accounts.all_funding_accounts_mut() {
+        account.utxos.retain(|input, _| {
+            if let Some(claimant) = claimants.get(input) {
+                outcome.withheld_asset_lock_inputs.insert(*input, *claimant);
+                false
+            } else {
+                true
+            }
+        });
+    }
+    state.wallet_info.restore_spent_outpoints(&final_claims);
+    state.wallet_info.update_balance();
     Ok(outcome)
 }
 
@@ -825,6 +841,7 @@ pub async fn replay_recorded_history_with_evidence(
         retired: swept,
         defeated,
         sweeps,
+        withheld_asset_lock_inputs: BTreeMap::new(),
         read_only: false,
     })
 }
@@ -1764,6 +1781,35 @@ mod tests {
             matches!(effects.claims.get(&spent), Some(ReplayClaimEffect::Hold { .. })),
             "the atomic adapter must durably repair the stale spent flag before publishing the wallet"
         );
+    }
+
+    #[tokio::test]
+    async fn should_preserve_existing_claim_provenance_when_withholding_final_asset_lock_input() {
+        use dashcore::hashes::Hash;
+        for claimant in [None, Some(Txid::from_byte_array([71; 32]))] {
+            for mined_height in [None, Some(123)] {
+                let (mut state, spent) = stale_consumed_asset_lock_fixture().await;
+                let outcome =
+                    replay_wallet_history_blocking(&mut state, &ReplayEvidence::default()).unwrap();
+                let existing = StoredReplayClaim {
+                    outpoint: spent,
+                    claimant,
+                    mined_height,
+                };
+                let effects = outcome
+                    .storage_effects(&state.recorded_history.transactions, &[existing])
+                    .unwrap();
+                assert_eq!(
+                    effects.claims[&spent],
+                    ReplayClaimEffect::Hold {
+                        claimant,
+                        mined_height
+                    }
+                );
+                assert!(effects.removed_records.is_empty());
+                assert!(effects.removed_evidence.is_empty());
+            }
+        }
     }
 
     /// The bug the replay exists for: a funding transaction redelivered after

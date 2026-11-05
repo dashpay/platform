@@ -348,6 +348,17 @@ impl HistoryReplay {
                     .or_insert(None);
             }
         }
+        for (&input, &claimant) in &self.withheld_asset_lock_inputs {
+            if removed_evidence.contains(&claimant) {
+                return Err(HistoryReplayError::UnsettledAfterReplay);
+            }
+            affected.insert(input);
+            survivors
+                .entry(input)
+                .or_default()
+                .entry(claimant)
+                .or_insert(None);
+        }
         let mut stored_claims: BTreeMap<OutPoint, Vec<StoredReplayClaim>> = BTreeMap::new();
         for claim in claims {
             if claim
