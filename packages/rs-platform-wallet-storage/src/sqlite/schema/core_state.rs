@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use dashcore::ephemerealdata::chain_lock::ChainLock;
+use dashcore::transaction::special_transaction::TransactionPayload;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::Utxo;
@@ -93,6 +94,7 @@ pub fn apply(
                 record_blob = excluded.record_blob",
         )?;
         for incoming in &cs.records {
+            ensure_current_transaction_identity(incoming)?;
             let record = core_history::preserve_known_details(tx, wallet_id, incoming)?;
             let block_info = record.block_info();
             let height = block_info.map(|b| i64::from(b.height()));
@@ -1280,17 +1282,37 @@ pub fn get_tx_record(
     Ok(Some(record))
 }
 
-/// Decode a record only when its body matches its transaction identifier.
+/// Decode historical records without changing their stored identifiers or index keys.
 pub(crate) fn decode_transaction_record(
     payload: &[u8],
 ) -> Result<TransactionRecord, WalletStorageError> {
     let record: TransactionRecord = blob::decode(payload)?;
+    if let Err(error) = ensure_current_transaction_identity(&record) {
+        // Before stable AssetUnlock txids, the writer committed the full quorum
+        // information. Only that historical payload shape may use an instance hash.
+        let historical_unlock = (record.transaction.version as i16) >= 3
+            && matches!(
+                &record.transaction.special_transaction_payload,
+                Some(TransactionPayload::AssetUnlockPayloadType(payload)) if payload.base.version >= 2
+            )
+            && record.txid == record.transaction.instance_hash();
+        if !historical_unlock {
+            return Err(error);
+        }
+    }
+    Ok(record)
+}
+
+/// New writes use the current canonical identifier; historical aliases are read-only.
+fn ensure_current_transaction_identity(
+    record: &TransactionRecord,
+) -> Result<(), WalletStorageError> {
     if record.txid != record.transaction.txid() {
         return Err(WalletStorageError::blob_decode(
             "transaction record txid disagrees with its transaction body hash",
         ));
     }
-    Ok(record)
+    Ok(())
 }
 
 /// Diagnose typed txid/height columns that disagree with the authoritative blob.
@@ -1371,6 +1393,173 @@ mod tests {
         TransactionDirection, TransactionRecord,
     };
     use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
+
+    // Encoded by TransactionRecord::new at rust-dashcore d631aaca3632cc713143476e363c9a9aca038d2e,
+    // using grovedb-bincode 2.1.0 serde standard config. Public mempool records, not finality proofs.
+    // Unlock: version 2, index 71, fee 1000, request height 200, quorum hash [0x31;32], sig [0x42;96].
+    // The second record spends its historical outpoint. Never regenerate these with the live writer.
+    fn historical_asset_unlock_rows() -> Vec<(Txid, Vec<u8>, TransactionRecord)> {
+        include_str!("../../../tests/fixtures/v019_asset_unlock_v2.txt")
+            .lines()
+            .map(|line| {
+                let fields: Vec<_> = line.split_whitespace().collect();
+                let txid = Txid::from_slice(&hex::decode(fields[1]).unwrap()).unwrap();
+                let bytes = hex::decode(fields[2]).unwrap();
+                let record: TransactionRecord = blob::decode(&bytes).unwrap();
+                assert_eq!(record.txid, txid);
+                assert_eq!(blob::encode(&record).unwrap(), bytes);
+                (txid, bytes, record)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn should_migrate_and_read_historical_asset_unlock_without_rekeying() {
+        let wallet = [0x74; 32];
+        let mut conn = wallet_db(&wallet);
+        let rows = historical_asset_unlock_rows();
+        let (legacy, _, withdrawal) = &rows[0];
+        let canonical = withdrawal.transaction.txid();
+        assert_eq!(
+            hex::encode(canonical.as_byte_array()),
+            "8df73be32e0ac0dea8619c57f212076f88e528563d1505e8316a2757abe32333"
+        );
+        assert_ne!(*legacy, canonical);
+        assert_eq!(*legacy, withdrawal.transaction.instance_hash());
+        for (txid, bytes, _) in &rows {
+            conn.execute("INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) VALUES (?1, ?2, 0, ?3)",
+                params![wallet.as_slice(), txid.as_byte_array().as_slice(), bytes]).unwrap();
+        }
+        rewind_v020(&conn);
+        migrations::run_for_open(&mut conn, LoadPolicy::Strict).unwrap();
+        for (txid, bytes, original) in &rows {
+            let loaded = get_tx_record(&conn, &wallet, txid, &LoadCtx::strict())
+                .unwrap()
+                .unwrap();
+            assert_eq!(loaded.txid, *txid);
+            assert_eq!(loaded.transaction, original.transaction);
+            let stored: Vec<u8> = conn
+                .query_row(
+                    "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+                    params![wallet.as_slice(), txid.as_byte_array().as_slice()],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(
+                &stored, bytes,
+                "unchanged accounting keeps the exact historical bytes"
+            );
+        }
+        assert!(
+            get_tx_record(&conn, &wallet, &canonical, &LoadCtx::strict())
+                .unwrap()
+                .is_none()
+        );
+        let (state, _) = load_state(
+            &conn,
+            &wallet,
+            dashcore::Network::Testnet,
+            &LoadCtx::strict(),
+        )
+        .unwrap();
+        assert!(state.records.iter().any(|r| r.txid == *legacy));
+        let indexed: (Vec<u8>, Vec<u8>) = conn
+            .query_row(
+                "SELECT txid, outpoint FROM core_transaction_inputs",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(indexed.0, rows[1].0.as_byte_array());
+        assert_eq!(
+            blob::decode_outpoint(&indexed.1).unwrap(),
+            OutPoint::new(*legacy, 0)
+        );
+    }
+
+    #[test]
+    fn should_reject_tampering_with_historical_asset_unlock_identity() {
+        let original = historical_asset_unlock_rows().remove(0).2;
+        for mutation in [
+            "output",
+            "quorum",
+            "version",
+            "type",
+            "record id",
+            "row key",
+        ] {
+            let wallet = [0x75; 32];
+            let mut conn = wallet_db(&wallet);
+            let mut record = original.clone();
+            let mut key = original.txid;
+            match mutation {
+                "output" => record.transaction.output[0].value += 1,
+                "quorum" => {
+                    let Some(TransactionPayload::AssetUnlockPayloadType(payload)) =
+                        &mut record.transaction.special_transaction_payload
+                    else {
+                        panic!("fixture payload")
+                    };
+                    payload.quorum_sig = [0x43; 96].into();
+                }
+                "version" => {
+                    let Some(TransactionPayload::AssetUnlockPayloadType(payload)) =
+                        &mut record.transaction.special_transaction_payload
+                    else {
+                        panic!("fixture payload")
+                    };
+                    payload.base.version = 1;
+                }
+                "type" => record.transaction.special_transaction_payload = None,
+                "record id" => record.txid = Txid::from_byte_array([0x76; 32]),
+                "row key" => key = Txid::from_byte_array([0x76; 32]),
+                _ => unreachable!(),
+            }
+            conn.execute("INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) VALUES (?1, ?2, 0, ?3)",
+                params![wallet.as_slice(), key.as_byte_array().as_slice(), blob::encode(&record).unwrap()]).unwrap();
+            assert!(
+                get_tx_record(&conn, &wallet, &key, &LoadCtx::strict()).is_err(),
+                "{mutation}"
+            );
+            rewind_v020(&conn);
+            assert!(
+                migrations::run_for_open(&mut conn, LoadPolicy::Strict).is_err(),
+                "{mutation}"
+            );
+            let version: i64 = conn
+                .query_row(
+                    "SELECT max(version) FROM refinery_schema_history",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(version, 19, "{mutation}: failed migration is atomic");
+        }
+    }
+
+    #[test]
+    fn should_require_canonical_asset_unlock_identity_for_current_writes() {
+        let wallet = [0x77; 32];
+        let mut conn = wallet_db(&wallet);
+        let historical = historical_asset_unlock_rows().remove(0).2;
+        {
+            let tx = conn.transaction().unwrap();
+            assert!(
+                apply(&tx, &wallet, &round(vec![historical.clone()], vec![])).is_err(),
+                "legacy aliases are accepted only on historical reads"
+            );
+        }
+        let mut canonical = historical;
+        canonical.txid = canonical.transaction.txid();
+        let tx = conn.transaction().unwrap();
+        apply(&tx, &wallet, &round(vec![canonical.clone()], vec![])).unwrap();
+        tx.commit().unwrap();
+        let loaded = get_tx_record(&conn, &wallet, &canonical.txid, &LoadCtx::strict())
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.txid, canonical.txid);
+        assert_eq!(loaded.transaction, canonical.transaction);
+    }
 
     fn transaction_record(context: TransactionContext) -> TransactionRecord {
         TransactionRecord::new(
