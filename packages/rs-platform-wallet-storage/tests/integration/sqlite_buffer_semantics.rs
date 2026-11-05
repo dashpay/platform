@@ -194,7 +194,6 @@ fn tc016_buffer_merge_oracle_smoke() {
 #[test]
 fn tc001_get_core_tx_record_roundtrip() {
     use dashcore::blockdata::transaction::Transaction;
-    use dashcore::Txid;
     use key_wallet::managed_account::transaction_record::{
         TransactionDirection, TransactionRecord,
     };
@@ -202,7 +201,6 @@ fn tc001_get_core_tx_record_roundtrip() {
     let (persister, _tmp, _path) = fresh_persister();
     let w = wid(0x50);
     ensure_wallet_meta(&persister, &w);
-    let txid = Txid::from_byte_array([9u8; 32]);
     let dummy_tx = Transaction {
         version: 3,
         lock_time: 0,
@@ -210,7 +208,7 @@ fn tc001_get_core_tx_record_roundtrip() {
         output: vec![],
         special_transaction_payload: None,
     };
-    let mut record = TransactionRecord::new(
+    let record = TransactionRecord::new(
         dummy_tx,
         key_wallet::account::AccountType::Standard {
             index: 0,
@@ -227,7 +225,7 @@ fn tc001_get_core_tx_record_roundtrip() {
         Vec::new(),
         100,
     );
-    record.txid = txid;
+    let txid = record.txid;
     let mut cs = PlatformWalletChangeSet::default();
     cs.core = Some(CoreChangeSet {
         records: vec![record],

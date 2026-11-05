@@ -14,6 +14,7 @@
 
 use std::path::PathBuf;
 
+use dashcore::hashes::Hash;
 use platform_wallet::changeset::{PersistenceError, PersistenceErrorKind};
 use platform_wallet_storage::sqlite::error::{AutoBackupOperation, WalletStorageError};
 use platform_wallet_storage::sqlite::util::safe_cast::SafeCastTarget;
@@ -117,11 +118,14 @@ fn tc_code_004_b_constraint_variants_map_to_constraint_kind() {
     }
 }
 
-/// Identity-slot uniqueness is enforced in Rust rather than by a SQL
-/// constraint, so its variants have to claim the `Constraint` kind
-/// explicitly — they are caller-data violations like any FK breach.
+/// Identity-slot uniqueness and history invariants are enforced in Rust
+/// rather than by a SQL constraint, so their variants have to claim the
+/// `Constraint` kind explicitly — they are caller-data violations like any
+/// FK breach: an incoming record that contradicts stored history is a data
+/// fault, not a retryable or engine failure.
 #[test]
-fn tc_code_004_b_identity_index_variants_map_to_constraint_kind() {
+fn tc_code_004_b_rust_enforced_variants_map_to_constraint_kind() {
+    let txid = dashcore::Txid::from_byte_array([0x44; 32]);
     let cases: Vec<(&str, WalletStorageError)> = vec![
         (
             "IdentityIndexConflict",
@@ -137,6 +141,21 @@ fn tc_code_004_b_identity_index_variants_map_to_constraint_kind() {
             WalletStorageError::WalletlessIdentityIndex {
                 identity_id: [0xDD; 32],
                 identity_index: 2,
+            },
+        ),
+        (
+            "TransactionBodyConflict",
+            WalletStorageError::TransactionBodyConflict {
+                wallet_id: [0xAA; 32],
+                txid,
+            },
+        ),
+        (
+            "NetAmountOverflow",
+            WalletStorageError::NetAmountOverflow {
+                wallet_id: [0xAA; 32],
+                txid,
+                value: i128::from(i64::MIN) - 1,
             },
         ),
     ];
@@ -231,6 +250,13 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
         (
             "BlobDecode",
             WalletStorageError::BlobDecode { reason: "len" },
+        ),
+        (
+            "UnknownWalletNetwork",
+            WalletStorageError::UnknownWalletNetwork {
+                wallet_id: [0xAA; 32],
+                label: "moonnet".into(),
+            },
         ),
         (
             "ForeignKeysNotEnforced",
