@@ -261,7 +261,8 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///   `gap_limit` beyond each address found, up to
 ///   [`MAX_REHYDRATION_DERIVATION_INDEX`]
 ///   ([`discover_in_funds_accounts`]); what that derives is marked, refilled
-///   and matched again. An address can still be left
+///   and matched again, the refills carrying on past that index from each
+///   stored address within a gap of the last. An address can still be left
 ///   unresolved in two distinct cases: (1) it is genuinely foreign (another
 ///   wallet's key, or corrupt), and (2) it is a *legitimately-owned but
 ///   deep-and-sparse* address, past that reach with no stored address
@@ -445,11 +446,14 @@ pub fn apply_persisted_core_state(
         )?;
         // Addresses still outside every funds pool, a coin's or a used one's,
         // are looked for past each pool as a rescan would reach them, and
-        // whatever that derives is marked, refilled and matched again. One
-        // pass reaches as far as repeating it would: past each find it probes
-        // one index beyond the window the refill after it opens, which is
-        // where a next pass would start and stop. A restore that already
-        // failed would only fail, and be reported, again.
+        // whatever that derives is marked, refilled and matched again. Up to
+        // `MAX_REHYDRATION_DERIVATION_INDEX` one pass reaches as far as
+        // repeating it would: past each find it probes one index beyond the
+        // window the refill after it opens, which is where a next pass would
+        // start and stop. Past that index the probe stops, and the restore's
+        // rounds carry on from the refill past the deepest find, as a rescan
+        // would. A restore that already failed would only fail, and be
+        // reported, again.
         if restorable {
             let mut outside = outside_funds_pools(
                 wallet_info,
@@ -554,15 +558,23 @@ fn owner_label(owner: &OwningAccount) -> String {
 /// run again: false once a refill was refused or a restore failed.
 ///
 /// Used addresses and the coins' own extend the reach as a rescan's would:
-/// each round marks the ones the pools now hold and extends every pool to its
-/// gap limit past its highest used address, until a round marks nothing new,
-/// so a run of spent addresses longer than one gap window still leads to the
-/// coins past it, and a coin's refill to the spent addresses past it. The
-/// final restore then marks no address the rounds left unused, so its refill
-/// derives nothing past them. The first round looks up every address the
-/// pools hold; each later round only the ones the previous refill derived, so
-/// the rounds together look up each derived address once. Terminates: each
-/// round marks at least one more address of a finite set.
+/// each round marks the ones the funds pools now hold and extends every pool
+/// to its gap limit past its highest used address, until a round marks
+/// nothing and its refill derives nothing in a funds pool, so a run of spent
+/// addresses longer than one gap window still leads to the coins past it, and
+/// a coin's refill to the spent addresses past it. The final restore then
+/// marks no funds address the rounds left unused, so its refill derives
+/// nothing in a funds pool (it may still extend a DashPay contact pool, which
+/// the rounds do not cover). The first round looks up every address the
+/// funds pools hold; each later round only the ones the previous refill
+/// derived, so the rounds together look up each derived funds address once.
+///
+/// Terminates: every round but the last marks at least one more address of a
+/// finite set, or is the call's first and its refill derived addresses no
+/// round has looked up. A later round that marks nothing leaves each pool's
+/// highest used address where the refill before it found it, so its own
+/// refill derives nothing and the loop exits. Each refill is bounded as
+/// below.
 ///
 /// Every refill of the marking rounds is bounded first, as
 /// [`extend_pools_for_restored_addresses`] bounds its own
@@ -619,7 +631,7 @@ fn restore_owned_utxos(
         if let Err(source) = wallet_info.restore_utxos(wallet, std::iter::empty()) {
             return restore_failed(ctx, wallet_id, source).map(|()| (all_unmatched(), false));
         }
-        if !marked_any {
+        if !marked_any && !derived_past(wallet_info, &looked_up) {
             break;
         }
     }
@@ -627,6 +639,16 @@ fn restore_owned_utxos(
         Ok(unmatched) => Ok((unmatched, true)),
         Err(source) => restore_failed(ctx, wallet_id, source).map(|()| (all_unmatched(), false)),
     }
+}
+
+/// Whether a funds pool holds addresses past the highest index `looked_up`
+/// records for it, in [`restore_owned_utxos`]'s pool order.
+fn derived_past(wallet_info: &ManagedWalletInfo, looked_up: &[Option<u32>]) -> bool {
+    let pools = (wallet_info.accounts.all_funding_accounts().into_iter())
+        .flat_map(|funds| funds.managed_account_type().address_pools());
+    pools
+        .zip(looked_up)
+        .any(|(pool, seen)| pool.highest_generated > *seen)
 }
 
 /// Pools, by account and pool type, whose gap refill was refused and
@@ -4386,6 +4408,122 @@ mod tests {
                 (coinjoin_address(&wallet, 140), cj()),
             ];
             assert_live_and_spent(&wallet, &manifest, &coins, &spent);
+        }
+
+        /// A live CoinJoin coin (50) brings the spent address its refill
+        /// derives (140; gap 100) back used, with only that spent address in
+        /// the used set.
+        #[test]
+        fn a_live_coinjoin_coin_brings_its_spent_address_back_used() {
+            let (wallet, manifest) = fixture(48);
+            let coin = utxo(1, &coinjoin_address(&wallet, 50));
+            let spent = coinjoin_address(&wallet, 140);
+            assert_live_and_spent(&wallet, &manifest, &[(coin, cj())], &[(spent, cj())]);
+        }
+
+        /// `account`'s `pool_type` pool, derived through `through` on a copy.
+        fn pool_through(
+            wallet: &Wallet,
+            account: AccountType,
+            pool_type: AddressPoolType,
+            through: u32,
+        ) -> AddressPool {
+            let info = ManagedWalletInfo::from_wallet(wallet, 1);
+            let funds = info.accounts.funds_account(&account).unwrap();
+            let pools = funds.managed_account_type().address_pools();
+            let pool = pools
+                .into_iter()
+                .find(|p| p.pool_type == pool_type)
+                .unwrap();
+            let mut probe = AddressPool::new_without_generation(
+                pool.base_path.clone(),
+                pool.pool_type,
+                pool.gap_limit,
+                Network::Testnet,
+            );
+            probe
+                .generate_addresses(through + 1, &wallet.key_source_for_account(account), true)
+                .unwrap();
+            probe
+        }
+
+        /// Ownerless spent addresses a gap apart in `account`'s `pool_type`
+        /// pool, from one gap through `last`, then a coin at last + gap/2, a
+        /// spent address at last + gap + gap/5 and a coin at last + 2 gaps:
+        /// each within a gap of the one before, as a rescan reaches them.
+        /// With and without the coins in the used set (the SQLite loader
+        /// passes both), every stored address comes back used, both coins
+        /// restore signable into `account`, and nothing is unresolved.
+        fn assert_chain_restored(
+            seed: u8,
+            account: AccountType,
+            pool_type: AddressPoolType,
+            last: u32,
+        ) {
+            let (wallet, manifest) = fixture(seed);
+            let gap = pool_through(&wallet, account, pool_type, 0).gap_limit;
+            let probe = pool_through(&wallet, account, pool_type, last + 2 * gap);
+            let at = |i: u32| probe.address_at_index(i).unwrap();
+            let mut spent: Vec<Address> = (gap..=last).step_by(gap as usize).map(at).collect();
+            spent.push(at(last + gap + gap / 5));
+            let coins = [utxo(1, &at(last + gap / 2)), utxo(2, &at(last + 2 * gap))];
+            for coins_in_used in [false, true] {
+                let mut used = ownerless(&spent.iter().collect::<Vec<_>>());
+                if coins_in_used {
+                    used.extend(ownerless(
+                        &coins.iter().map(|c| &c.address).collect::<Vec<_>>(),
+                    ));
+                }
+                let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+                let ctx = LoadCtx::strict();
+                let utxos = coins.to_vec();
+                load_into(&mut info, &manifest, utxos, &HashMap::new(), &used, &ctx).unwrap();
+                for coin in &coins {
+                    assert_eq!(holders(&info, &coin.outpoint), vec![account]);
+                    assert!(
+                        derives(&info, &account, &coin.address),
+                        "{} is signable (coins in used: {coins_in_used})",
+                        coin.address
+                    );
+                }
+                for address in &spent {
+                    assert!(
+                        used_in(&info, &account, address),
+                        "{address} comes back used (coins in used: {coins_in_used})"
+                    );
+                }
+                assert_eq!(info.balance.total(), 2 * VALUE);
+                assert_eq!(
+                    ctx.degradation()
+                        .by_site
+                        .get(&LoadSite::UnresolvedUtxoAddress),
+                    None
+                );
+            }
+        }
+
+        /// The chain's last stored address (10000) sits at the discovery
+        /// ceiling, so the coin and spent address past it (10050, 10120) and
+        /// the coin past those (10200) are reached by the refills after
+        /// discovery, not by its probe.
+        #[test]
+        fn a_coinjoin_chain_to_the_discovery_ceiling_reaches_the_coins_past_it() {
+            assert_chain_restored(45, cj(), AddressPoolType::External, 10_000);
+        }
+
+        /// The same on a BIP44 change chain (gap 30, through 9990): the coin
+        /// past the ceiling (10005), the spent address past it (10026) and
+        /// the coin past that (10050).
+        #[test]
+        fn a_change_chain_to_the_discovery_ceiling_reaches_the_coins_past_it() {
+            assert_chain_restored(46, bip44(), AddressPoolType::Internal, 9_990);
+        }
+
+        /// The same CoinJoin chain ending well below the ceiling (5000),
+        /// which discovery's probe covers on its own.
+        #[test]
+        fn a_coinjoin_chain_below_the_discovery_ceiling_reaches_the_coins_past_it() {
+            assert_chain_restored(47, cj(), AddressPoolType::External, 5_000);
         }
     }
 }
