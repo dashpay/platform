@@ -1640,6 +1640,132 @@ mod tests {
         (wallet, restored, funding, records, spent)
     }
 
+    async fn stale_consumed_asset_lock_fixture() -> (ClientWalletStartState, OutPoint) {
+        use crate::wallet::asset_lock::tracked::TrackedAssetLock;
+        use crate::AssetLockFundingType;
+        use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
+
+        let (wallet, mut info, funding, records, spent) = confirmed_spend_fixture().await;
+        let address =
+            Address::from_script(&funding.output[0].script_pubkey, wallet.network).unwrap();
+        info.accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .unwrap()
+            .utxos
+            .insert(
+                spent,
+                Utxo::new(
+                    spent,
+                    funding.output[0].clone(),
+                    address.clone(),
+                    100,
+                    false,
+                ),
+            );
+        let asset_lock = authorize(
+            &wallet,
+            &info,
+            &address,
+            Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![dashcore::TxIn {
+                    previous_output: spent,
+                    ..Default::default()
+                }],
+                output: vec![TxOut {
+                    value: 99_000,
+                    script_pubkey: dashcore::script::Builder::new()
+                        .push_opcode(dashcore::opcodes::all::OP_RETURN)
+                        .into_script(),
+                }],
+                special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(
+                    AssetLockPayload::new(vec![TxOut {
+                        value: 99_000,
+                        script_pubkey: address.script_pubkey(),
+                    }]),
+                )),
+            },
+        );
+        let out_point = OutPoint::new(asset_lock.txid(), 0);
+        let mut history = history(vec![records[0].clone()], BTreeMap::new());
+        history.transactions.push(StoredTransaction {
+            txid: asset_lock.txid(),
+            transaction: asset_lock.clone(),
+            context: TransactionContext::Mempool,
+            stored_net_amount: None,
+            stored_direction: None,
+            owned_inputs: vec![],
+        });
+        let tracked = TrackedAssetLock {
+            operation_id: None,
+            out_point,
+            transaction: asset_lock,
+            account_index: 0,
+            funding_type: AssetLockFundingType::IdentityRegistration,
+            identity_index: 0,
+            amount: 99_000,
+            status: AssetLockStatus::Consumed,
+            proof: None,
+        };
+        info.update_balance();
+        (
+            ClientWalletStartState {
+                wallet,
+                wallet_info: info,
+                identity_manager: Default::default(),
+                unused_asset_locks: [(0, [(out_point, tracked)].into())].into(),
+                unconfirmed_outgoing_txs: vec![],
+                recorded_history: history,
+                dashpay_backfill: Default::default(),
+            },
+            spent,
+        )
+    }
+
+    #[tokio::test]
+    async fn should_remove_stale_consumed_asset_lock_input_from_spendable_projection() {
+        let (mut state, spent) = stale_consumed_asset_lock_fixture().await;
+        assert!(state
+            .wallet_info
+            .utxos()
+            .iter()
+            .any(|coin| coin.outpoint == spent));
+        replay_wallet_history_blocking(&mut state, &ReplayEvidence::default()).unwrap();
+        let account = &state.wallet_info.accounts.standard_bip44_accounts[&0];
+        assert_eq!(
+            (
+                account
+                    .spendable_utxos(200)
+                    .iter()
+                    .any(|coin| coin.outpoint == spent),
+                state.wallet_info.balance.total()
+            ),
+            (false, 20_000),
+            "send funding must exclude the consumed coin while preserving the unrelated coin"
+        );
+        assert!(
+            !state.wallet_info.utxos().iter().any(|coin| coin.outpoint == spent),
+            "a terminal asset lock consumed this restored coin; a claim alone cannot make it unspendable"
+        );
+        assert_eq!(state.wallet_info.balance.total(), 20_000);
+    }
+
+    #[tokio::test]
+    async fn should_persist_hold_for_stale_consumed_asset_lock_input() {
+        let (mut state, spent) = stale_consumed_asset_lock_fixture().await;
+        let outcome =
+            replay_wallet_history_blocking(&mut state, &ReplayEvidence::default()).unwrap();
+        let effects = outcome
+            .storage_effects(&state.recorded_history.transactions, &[])
+            .unwrap();
+        assert!(
+            matches!(effects.claims.get(&spent), Some(ReplayClaimEffect::Hold { .. })),
+            "the atomic adapter must durably repair the stale spent flag before publishing the wallet"
+        );
+    }
+
     /// The bug the replay exists for: a funding transaction redelivered after
     /// load (rescan, gap-limit rediscovery) must not resurrect an output a
     /// confirmed spend already consumed. The control half pins that the same
