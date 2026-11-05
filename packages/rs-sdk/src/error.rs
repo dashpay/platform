@@ -263,7 +263,8 @@ impl Error {
 
 /// A trusted source outage is not the responding node's fault. Preserve that
 /// attribution and quorum context. A missing context provider, or one configured so that
-/// it cannot give quorum keys at all, is this SDK's own setup, which no node can change:
+/// it cannot serve a lookup the verifier makes (a quorum key, or a data contract or token
+/// configuration a proof is read with), is this SDK's own setup, which no node can change:
 /// it is a configuration error that is not retried and bans no node. Every other verifier
 /// failure stays `Proof`.
 impl From<drive_proof_verifier::Error> for Error {
@@ -281,7 +282,10 @@ impl From<drive_proof_verifier::Error> for Error {
             drive_proof_verifier::Error::QuorumKeyUnavailable {
                 error: error @ ContextProviderError::Config(_),
                 ..
-            } => Self::ContextProviderError(error),
+            }
+            | drive_proof_verifier::Error::ContextProviderError(
+                error @ ContextProviderError::Config(_),
+            ) => Self::ContextProviderError(error),
             drive_proof_verifier::Error::ContextProviderNotSet => {
                 Self::ContextProviderError(ContextProviderError::Config(
                     "context provider is not set, so no proof can be verified; set one with \
@@ -675,6 +679,25 @@ mod tests {
             !behind.spares_responder(),
             "a node behind an upgrade the network has proven is banned"
         );
+    }
+
+    /// A context provider configured so that it cannot serve a lookup the verifier makes,
+    /// such as the data contract a document history proof is read with, fails alike for
+    /// every node's answer: the request is not retried and no node is banned for it.
+    #[test]
+    fn should_not_retry_a_lookup_the_context_provider_is_configured_not_to_serve() {
+        let error = Error::from(drive_proof_verifier::Error::ContextProviderError(
+            ContextProviderError::Config("dump dir not set".to_string()),
+        ));
+        assert!(
+            matches!(
+                &error,
+                Error::ContextProviderError(ContextProviderError::Config(reason))
+                    if reason == "dump dir not set"
+            ),
+            "{error:?}"
+        );
+        assert!(!error.can_retry());
     }
 
     /// A refusal may lift soon only when the SDK could not learn the network's version for a

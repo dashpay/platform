@@ -53,8 +53,8 @@ settings (timeouts, retries). Once an answer signed at 14 has been verified, the
 asks again. It does not ask when no answer can change the outcome:
 
 - an SDK pinned below 14 speaks its pinned version, whatever the network runs;
-- an SDK without a context provider cannot verify the answer, and an answer it cannot
-  verify would ban the node that sent it.
+- an SDK without a context provider cannot verify the answer, so asking cannot show the
+  network's version.
 
 An SDK that does not ask for proofs still asks for this one, and needs a context provider
 that can give quorum keys for it. When its provider cannot, the question fails on every
