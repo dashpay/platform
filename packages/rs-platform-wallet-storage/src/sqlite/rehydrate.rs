@@ -11,6 +11,7 @@ use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
+use std::collections::HashSet;
 
 use platform_wallet::changeset::provider_key_account::{
     rebuild_provider_key_account, ProviderAccountRebuildError,
@@ -253,20 +254,21 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///
 /// # Deferred to the first post-load `sync` (safe re-warm)
 ///
-/// - **Deep-index address visibility**: each chain's pool scan stops
-///   after [`MAX_REHYDRATION_DERIVATION_INDEX`] or after `gap_limit`
-///   consecutive non-matching indices past the deepest resolved index.
-///   The horizon only advances when an unspent UTXO anchors a match, so a
-///   UTXO address can be left unresolved in two distinct cases: (1) it is
-///   genuinely foreign (a different account's key routed here, or corrupt),
-///   and (2) it is a *legitimately-owned but deep-and-sparse* address —
-///   owned by this account, yet sitting past the first `gap_limit` window
-///   with no nearer unspent UTXO to walk the horizon out to it. Both cases
-///   are counted and logged via `tracing::warn!` and re-warm on the next
-///   full sync. The wallet *total* stays exact (every UTXO is summed
-///   regardless of pool visibility); only the per-address view is
-///   incomplete until that sync. This is the accepted behavior of the
-///   horizon-walk algorithm — see [`extend_pools_for_restored_addresses`].
+/// - **Deep-index address visibility**: an address no pool holds after the
+///   marking rounds, a coin's or a used one's, is looked for in every funds
+///   account past each pool, through one index past what the pool holds and
+///   a `gap_limit` past each address found, up to
+///   [`MAX_REHYDRATION_DERIVATION_INDEX`]; what that derives is marked,
+///   refilled and matched again until a pass derives nothing
+///   ([`discover_in_funds_accounts`]). An address can still be left
+///   unresolved in two distinct cases: (1) it is genuinely foreign (another
+///   wallet's key, or corrupt), and (2) it is a *legitimately-owned but
+///   deep-and-sparse* address, past that reach with no stored address
+///   nearer to it. Both are counted at [`LoadSite::UnresolvedUtxoAddress`]
+///   and re-warm on the next full sync; such a coin falls back to its stored
+///   owner, else the first funds account. The wallet *total* stays exact
+///   (every UTXO is summed regardless of pool visibility); only the
+///   per-address view is incomplete until that sync.
 /// - **Per-UTXO `is_coinbase` / `is_trusted` flags**: not columns in
 ///   `core_utxos`; conservatively defaulted (non-coinbase,
 ///   confirmed-by-height) and refreshed on the next scan.
@@ -346,6 +348,12 @@ pub fn apply_persisted_core_state(
     // Used addresses with no owner among the funds accounts: marked wherever
     // the pools, once extended, derive them.
     let mut unattributed_used: Vec<key_wallet::Address> = Vec::new();
+    // Addresses given to their stored owner's account, whose extension below
+    // already reported any it could not resolve.
+    let mut attributed: HashSet<key_wallet::Address> = HashSet::new();
+    // Pools whose gap refill was refused and reported, so a later check
+    // refuses them without reporting them again.
+    let mut refused = RefusedRefills::new();
     if !funding.is_empty() {
         // Per-account addresses to derive-and-mark-used: each account gets only
         // its own attributed addresses, so `extend_pools_for_restored_addresses`
@@ -418,9 +426,11 @@ pub fn apply_persisted_core_state(
                     &per_account_addrs[i],
                     wallet_id,
                     ctx,
+                    &mut refused,
                 )?;
             }
         }
+        attributed.extend(per_account_addrs.into_iter().flatten());
     }
 
     if !unspent.is_empty() || !unattributed_used.is_empty() {
@@ -429,47 +439,44 @@ pub fn apply_persisted_core_state(
             wallet_id,
             ecdsa_accounts(wallet_info.network(), wallet_id, manifest)?,
         );
-        let (unmatched, restorable) = restore_owned_utxos(
+        let (mut unmatched, mut restorable) = restore_owned_utxos(
             wallet_info,
             &wallet,
             &unspent,
             &unattributed_used,
             wallet_id,
             ctx,
+            &mut refused,
         )?;
-        // The horizon walk past the generated window still covers a coin there
-        // that no used address of its pool anchors. Coins are placed once every
-        // walk is done, so one a walk's refill reaches goes to the account that
-        // derives it.
-        {
-            let mut funding = wallet_info.accounts.all_funding_accounts_mut();
-            let mut walk_from: Vec<Vec<key_wallet::Address>> = vec![Vec::new(); funding.len()];
-            for utxo in &unmatched {
-                let target = fallback_account(&account_keys, utxo_accounts.get(&utxo.outpoint));
-                walk_from[target].push(utxo.address.clone());
+        // Addresses still outside every pool, a coin's or a used one's, are
+        // looked for past each funds pool as a rescan would reach them, and
+        // whatever that derives is marked, refilled and matched again, until
+        // a pass derives nothing. A restore that already failed would only
+        // fail, and be reported, again. Terminates: a pass that derives
+        // anything takes at least one address of the finite set into a pool.
+        while restorable {
+            let mut outside = outside_funds_pools(
+                wallet_info,
+                (unmatched.iter().map(|u| &u.address)).chain(&unattributed_used),
+            );
+            if outside.is_empty()
+                || discover_in_funds_accounts(wallet_info, manifest, &mut outside, wallet_id, ctx)?
+                    == 0
+            {
+                break;
             }
-            for (i, addrs) in walk_from.iter().enumerate() {
-                if !addrs.is_empty() {
-                    extend_pools_for_restored_addresses(
-                        funding[i], manifest, addrs, wallet_id, ctx,
-                    )?;
-                }
-            }
+            let pending = std::mem::take(&mut unmatched);
+            let pending: Vec<&key_wallet::Utxo> = pending.iter().collect();
+            (unmatched, restorable) = restore_owned_utxos(
+                wallet_info,
+                &wallet,
+                &pending,
+                &unattributed_used,
+                wallet_id,
+                ctx,
+                &mut refused,
+            )?;
         }
-        // A restore that already failed would only fail, and be reported,
-        // again.
-        let unmatched = if unmatched.is_empty() || !restorable || !gap_refills_bounded(wallet_info)
-        {
-            unmatched
-        } else {
-            match wallet_info.restore_utxos(&wallet, unmatched.iter().cloned()) {
-                Ok(rest) => rest,
-                Err(source) => {
-                    restore_failed(ctx, wallet_id, source)?;
-                    unmatched
-                }
-            }
-        };
         if !unmatched.is_empty() {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
@@ -479,23 +486,22 @@ pub fn apply_persisted_core_state(
                  were placed by their stored owner, or in the first funds account"
             );
         }
-        let placed: Vec<key_wallet::Address> =
-            unmatched.iter().map(|u| u.address.clone()).collect();
+        // Every address no pool holds after the passes, counted once: the
+        // fallback coins' and the used ones', less those the stored owner's
+        // extension already reported.
+        let unresolved = outside_funds_pools(
+            wallet_info,
+            (unmatched.iter().map(|u| &u.address)).chain(&unattributed_used),
+        )
+        .iter()
+        .filter(|address| !attributed.contains(*address))
+        .count();
         let mut funding = wallet_info.accounts.all_funding_accounts_mut();
         for utxo in unmatched {
             let target = fallback_account(&account_keys, utxo_accounts.get(&utxo.outpoint));
             funding[target].utxos.insert(utxo.outpoint, utxo);
         }
         drop(funding);
-        let accounts = &wallet_info.accounts;
-        let unresolved = unattributed_used
-            .iter()
-            .filter(|address| !placed.contains(address))
-            .filter(|address| {
-                !(accounts.all_funding_accounts().into_iter())
-                    .any(|a| a.managed_account_type().contains_address(address))
-            })
-            .count();
         if unresolved > 0 {
             ctx.note_degraded(
                 LoadSite::UnresolvedUtxoAddress,
@@ -505,8 +511,8 @@ pub fn apply_persisted_core_state(
                     affected: unresolved,
                     detail: None,
                 },
-                "restored used addresses did not resolve against any funds account's xpub \
-                 within its gap limit; they re-warm on the next full sync",
+                "restored coin or used addresses did not resolve against any funds account's \
+                 xpub within its reach; they re-warm on the next full sync",
             );
         }
     }
@@ -561,11 +567,11 @@ fn owner_label(owner: &OwningAccount) -> String {
 /// address of a finite set.
 ///
 /// Every refill of the marking rounds is bounded first, as
-/// [`extend_pools_for_restored_addresses`] bounds its own. A pool past those
-/// bounds was already reported there, so it only stops the restore, returning
-/// every UTXO unmatched; so does a derivation error, which is reported at
-/// [`LoadSite::RehydrationMaintainGapLimit`]. The final placement grows each
-/// pool at most one gap past each stored coin's address.
+/// [`extend_pools_for_restored_addresses`] bounds its own
+/// ([`gap_refills_bounded`]). A pool past those bounds stops the restore,
+/// returning every UTXO unmatched; so does a derivation error, which is
+/// reported at [`LoadSite::RehydrationMaintainGapLimit`]. The final placement
+/// grows each pool at most one gap past each stored coin's address.
 fn restore_owned_utxos(
     wallet_info: &mut ManagedWalletInfo,
     wallet: &Wallet,
@@ -573,6 +579,7 @@ fn restore_owned_utxos(
     unattributed_used: &[key_wallet::Address],
     wallet_id: [u8; 32],
     ctx: &LoadCtx,
+    refused: &mut RefusedRefills,
 ) -> Result<(Vec<key_wallet::Utxo>, bool), WalletStorageError> {
     let all_unmatched = || unspent.iter().map(|u| (*u).clone()).collect();
     let wanted: std::collections::HashSet<&key_wallet::Address> =
@@ -607,7 +614,7 @@ fn restore_owned_utxos(
                 slot += 1;
             }
         }
-        if !gap_refills_bounded(wallet_info) {
+        if !gap_refills_bounded(wallet_info, wallet_id, ctx, refused)? {
             return Ok((all_unmatched(), false));
         }
         if let Err(source) = wallet_info.restore_utxos(wallet, std::iter::empty()) {
@@ -623,19 +630,167 @@ fn restore_owned_utxos(
     }
 }
 
-/// Whether a gap-limit refill of every pool `restore_utxos` extends is
-/// representable and within [`MAX_REHYDRATION_GAP_REFILL`].
-fn gap_refills_bounded(wallet_info: &ManagedWalletInfo) -> bool {
+/// Pools, by account and pool type, whose gap refill was refused and
+/// reported during this load.
+type RefusedRefills = HashSet<(AccountType, AddressPoolType)>;
+
+/// Whether a gap-limit refill of every pool `restore_utxos` extends (every
+/// funds and DashPay contact pool) is representable and within
+/// [`MAX_REHYDRATION_GAP_REFILL`]. Each refused pool not yet in `refused` is
+/// reported through the load policy at the site
+/// [`extend_pools_for_restored_addresses`] reports it at, with its account
+/// and pool type, and added: strict fails the load, recovery counts it once.
+fn gap_refills_bounded(
+    wallet_info: &ManagedWalletInfo,
+    wallet_id: [u8; 32],
+    ctx: &LoadCtx,
+    refused: &mut RefusedRefills,
+) -> Result<bool, WalletStorageError> {
     let accounts = &wallet_info.accounts;
-    accounts
-        .all_funding_accounts()
-        .into_iter()
+    let mut bounded = true;
+    for account in (accounts.all_funding_accounts().into_iter())
         .chain(accounts.dashpay_external_accounts.values())
-        .flat_map(|account| account.managed_account_type().address_pools())
-        .all(|pool| {
-            ImpliedRefill::of(pool.highest_used, pool.highest_generated, pool.gap_limit)
-                .is_ok_and(|refill| refill.implied <= MAX_REHYDRATION_GAP_REFILL)
+    {
+        let account_type = account.managed_account_type().to_account_type();
+        for pool in account.managed_account_type().address_pools() {
+            let (site, error) = match ImpliedRefill::of(
+                pool.highest_used,
+                pool.highest_generated,
+                pool.gap_limit,
+            ) {
+                Ok(refill) if refill.implied <= MAX_REHYDRATION_GAP_REFILL => continue,
+                Ok(refill) => (LoadSite::RehydrationGapLimit, refill.too_large()),
+                Err(error) => (LoadSite::RehydrationMaintainGapLimit, error),
+            };
+            bounded = false;
+            if refused.insert((account_type, pool.pool_type)) {
+                ctx.tolerate_at(
+                    site,
+                    SiteCoords {
+                        wallet_id: Some(wallet_id),
+                        account_type: &account_type,
+                        affected: 1,
+                        detail: Some(&pool.pool_type),
+                    },
+                    error,
+                )?;
+            }
+        }
+    }
+    Ok(bounded)
+}
+
+/// The `addresses` no funds pool of `wallet_info` holds, once each.
+fn outside_funds_pools<'a>(
+    wallet_info: &ManagedWalletInfo,
+    addresses: impl IntoIterator<Item = &'a key_wallet::Address>,
+) -> HashSet<key_wallet::Address> {
+    let funding = wallet_info.accounts.all_funding_accounts();
+    addresses
+        .into_iter()
+        .filter(|address| {
+            !(funding.iter()).any(|a| a.managed_account_type().contains_address(address))
         })
+        .cloned()
+        .collect()
+}
+
+/// Derives into the funds pools the `wanted` addresses they derive past what
+/// they hold, from each account's xpub in `manifest`, removing each found
+/// from `wanted`, and marks them used. Each pool is probed as a rescan's gap
+/// would reach: through one index past what it holds (its gap limit when it
+/// holds less), and a gap limit past each address found, up to
+/// [`MAX_REHYDRATION_DERIVATION_INDEX`]. The probe derives on a copy of the
+/// pool, so the pool itself grows only to the deepest address found. Every
+/// funds account is probed, whatever owner a coin's row names, since only
+/// derivation proves which account can sign for an address. Returns how many
+/// were derived.
+///
+/// A pool that does not derive its deepest find reports it at
+/// [`LoadSite::RehydrationEnsureDerived`] (strict fails the load); its finds
+/// are then not counted.
+fn discover_in_funds_accounts(
+    wallet_info: &mut ManagedWalletInfo,
+    manifest: &[AccountRegistrationEntry],
+    wanted: &mut HashSet<key_wallet::Address>,
+    wallet_id: [u8; 32],
+    ctx: &LoadCtx,
+) -> Result<usize, WalletStorageError> {
+    use key_wallet::managed_account::address_pool::KeySource;
+
+    let mut derived = 0;
+    for account in wallet_info.accounts.all_funding_accounts_mut() {
+        if wanted.is_empty() {
+            break;
+        }
+        let account_type = account.managed_account_type().to_account_type();
+        let Some(key_source) = (manifest.iter())
+            .find(|e| e.account_type == account_type)
+            .map(|e| KeySource::Public(e.account_xpub))
+        else {
+            continue;
+        };
+        for pool in account.managed_account_type_mut().address_pools_mut() {
+            if wanted.is_empty() {
+                break;
+            }
+            if pool.pool_type == AddressPoolType::AbsentHardened {
+                continue;
+            }
+            let gap = pool.gap_limit;
+            let start = pool.highest_generated.map_or(0, |h| h.saturating_add(1));
+            let mut horizon = start.max(gap);
+            let mut index = start;
+            let mut probe = pool.clone();
+            let mut found = Vec::new();
+            let mut deepest = None;
+            while index <= horizon
+                && index <= MAX_REHYDRATION_DERIVATION_INDEX
+                && !wanted.is_empty()
+            {
+                let Some(address) = ensure_derived(&mut probe, &key_source, index) else {
+                    break;
+                };
+                if wanted.remove(&address) {
+                    found.push(address);
+                    deepest = Some(index);
+                    horizon = horizon.max(index.saturating_add(gap));
+                }
+                index = index.saturating_add(1);
+            }
+            if index.saturating_sub(start) > REHYDRATION_DEEP_SCAN_WARN_INDEX {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    account_type = ?account_type,
+                    pool_type = ?pool.pool_type,
+                    scanned_to = index.saturating_sub(1),
+                    "rehydration: discovery past the pool scanned abnormally deep — \
+                     likely a foreign-heavy or sparse UTXO set"
+                );
+            }
+            let Some(deepest) = deepest else {
+                continue;
+            };
+            if ensure_derived(pool, &key_source, deepest).is_none() {
+                ctx.tolerate_at(
+                    LoadSite::RehydrationEnsureDerived,
+                    SiteCoords {
+                        wallet_id: Some(wallet_id),
+                        account_type: &account_type,
+                        affected: 1,
+                        detail: Some(&pool.pool_type),
+                    },
+                    WalletStorageError::RehydrationEnsureDerivedFailed { index: deepest },
+                )?;
+                continue;
+            }
+            for address in &found {
+                pool.mark_used(address);
+            }
+            derived += found.len();
+        }
+    }
+    Ok(derived)
 }
 
 fn restore_failed(
@@ -744,10 +899,10 @@ fn extend_pools_for_restored_addresses(
     restored_addresses: &[key_wallet::Address],
     wallet_id: [u8; 32],
     ctx: &LoadCtx,
+    refused: &mut RefusedRefills,
 ) -> Result<(), WalletStorageError> {
     use key_wallet::managed_account::address_pool::{AddressPool, KeySource};
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-    use std::collections::HashSet;
 
     let account_type = account.managed_account_type().to_account_type();
 
@@ -965,15 +1120,19 @@ fn extend_pools_for_restored_addresses(
             // the way out. Validity first: an unrepresentable target has no
             // meaningful cost to weigh against the cap, and upstream panics
             // computing it (debug) or wraps it into a bogus one (release).
-            let refill = match ImpliedRefill::of(
+            let refusal = match ImpliedRefill::of(
                 pool.highest_used,
                 pool.highest_generated,
                 pool.gap_limit,
             ) {
-                Ok(refill) => refill,
-                Err(error) => {
+                Ok(refill) if refill.implied <= MAX_REHYDRATION_GAP_REFILL => None,
+                Ok(refill) => Some((LoadSite::RehydrationGapLimit, refill.too_large())),
+                Err(error) => Some((LoadSite::RehydrationMaintainGapLimit, error)),
+            };
+            if let Some((site, error)) = refusal {
+                if refused.insert((account_type, pool.pool_type)) {
                     ctx.tolerate_at(
-                        LoadSite::RehydrationMaintainGapLimit,
+                        site,
                         SiteCoords {
                             wallet_id: Some(wallet_id),
                             account_type: &account_type,
@@ -982,25 +1141,7 @@ fn extend_pools_for_restored_addresses(
                         },
                         error,
                     )?;
-                    break;
                 }
-            };
-            if refill.implied > MAX_REHYDRATION_GAP_REFILL {
-                ctx.tolerate_at(
-                    LoadSite::RehydrationGapLimit,
-                    SiteCoords {
-                        wallet_id: Some(wallet_id),
-                        account_type: &account_type,
-                        affected: 1,
-                        detail: Some(&pool.pool_type),
-                    },
-                    WalletStorageError::RehydrationGapLimitRefillTooLarge {
-                        refill_target: refill.target,
-                        already_generated: refill.already_generated,
-                        implied: refill.implied,
-                        cap: MAX_REHYDRATION_GAP_REFILL,
-                    },
-                )?;
                 break;
             }
 
@@ -1077,6 +1218,16 @@ impl ImpliedRefill {
             already_generated,
             implied: target.saturating_add(1).saturating_sub(already_generated),
         })
+    }
+
+    /// The refusal of this refill for exceeding [`MAX_REHYDRATION_GAP_REFILL`].
+    fn too_large(&self) -> WalletStorageError {
+        WalletStorageError::RehydrationGapLimitRefillTooLarge {
+            refill_target: self.target,
+            already_generated: self.already_generated,
+            implied: self.implied,
+            cap: MAX_REHYDRATION_GAP_REFILL,
+        }
     }
 }
 
@@ -2985,7 +3136,14 @@ mod tests {
         let restored = std::slice::from_ref(&fixture.marked);
         let manifest = fixture.manifest.clone();
         let mut funding = fixture.wallet_info.accounts.all_funding_accounts_mut();
-        extend_pools_for_restored_addresses(funding[0], &manifest, restored, wallet_id, ctx)
+        extend_pools_for_restored_addresses(
+            funding[0],
+            &manifest,
+            restored,
+            wallet_id,
+            ctx,
+            &mut RefusedRefills::new(),
+        )
     }
 
     /// A pool whose `highest_used` sits far past `highest_generated` implies a
@@ -3807,6 +3965,225 @@ mod tests {
                 .values()
                 .any(|a| a.utxos.contains_key(&contact_coin.outpoint)));
             assert_eq!(holders(&info, &own_coin.outpoint), vec![bip44()]);
+            assert_eq!(info.balance.total(), VALUE);
+        }
+
+        /// The used set as the persister loads it: every stored script, spent
+        /// or unspent, with no owner (no pool row covers any of them).
+        fn ownerless(addresses: &[&Address]) -> HashMap<Address, Option<OwningAccount>> {
+            addresses.iter().map(|a| ((*a).clone(), None)).collect()
+        }
+
+        /// Whether `account`'s pools hold `address`, marked used.
+        fn used_in(info: &ManagedWalletInfo, account: &AccountType, address: &Address) -> bool {
+            let funds = info.accounts.funds_account(account).unwrap();
+            (funds.managed_account_type().address_pools().iter())
+                .any(|p| p.address_info(address).is_some_and(|i| i.is_used()))
+        }
+
+        /// Whether `account` can sign for `address`: coin selection finds its
+        /// derivation path there.
+        fn derives(info: &ManagedWalletInfo, account: &AccountType, address: &Address) -> bool {
+            let funds = info.accounts.funds_account(account).unwrap();
+            (funds.managed_account_type())
+                .get_address_derivation_path(address)
+                .is_some()
+        }
+
+        /// [`load`] under `ctx`, onto `info` as the caller prepared it.
+        fn load_into(
+            info: &mut ManagedWalletInfo,
+            manifest: &[AccountRegistrationEntry],
+            utxos: Vec<Utxo>,
+            used: &HashMap<Address, Option<OwningAccount>>,
+            ctx: &LoadCtx,
+        ) -> Result<(), WalletStorageError> {
+            let core = CoreChangeSet {
+                new_utxos: utxos,
+                last_processed_height: Some(HEIGHT),
+                synced_height: Some(HEIGHT),
+                ..Default::default()
+            };
+            apply_persisted_core_state(info, manifest, &core, &HashMap::new(), used, ctx)
+        }
+
+        /// Loads `coin` and `used` strictly, then checks the coin is held
+        /// once, by `account`, which signs for it; that every `used` address
+        /// comes back used there; that the total is exact; and that nothing
+        /// was left unresolved.
+        fn assert_restored(
+            wallet: &Wallet,
+            manifest: &[AccountRegistrationEntry],
+            coin: &Utxo,
+            used: &HashMap<Address, Option<OwningAccount>>,
+            account: AccountType,
+        ) {
+            let mut info = ManagedWalletInfo::from_wallet(wallet, 1);
+            let ctx = LoadCtx::strict();
+            load_into(&mut info, manifest, vec![coin.clone()], used, &ctx).unwrap();
+            assert_eq!(holders(&info, &coin.outpoint), vec![account]);
+            assert!(
+                derives(&info, &account, &coin.address),
+                "the coin is signable"
+            );
+            for address in used.keys() {
+                assert!(
+                    used_in(&info, &account, address),
+                    "{address} comes back used"
+                );
+            }
+            assert!(used_in(&info, &account, &coin.address));
+            assert_eq!(info.balance.total(), VALUE);
+            assert_eq!(
+                ctx.degradation()
+                    .by_site
+                    .get(&LoadSite::UnresolvedUtxoAddress),
+                None
+            );
+        }
+
+        /// A spent BIP44 address one past the generated window (30) with no
+        /// pool row leads to the coin past it (45), with no stored owner for
+        /// either, whether or not the coin's own script is in the used set.
+        #[test]
+        fn a_spent_address_one_past_the_pool_leads_to_the_coin_past_it() {
+            let (wallet, manifest) = fixture(31);
+            let spent = external_address(&wallet, &bip44(), 30);
+            let coin = utxo(1, &external_address(&wallet, &bip44(), 45));
+            for used in [ownerless(&[&spent]), ownerless(&[&spent, &coin.address])] {
+                assert_restored(&wallet, &manifest, &coin, &used, bip44());
+            }
+        }
+
+        /// The reverse: the coin one past the window (30) brings the spent
+        /// address past it (45) back used, never as a fresh receive address.
+        #[test]
+        fn a_coin_one_past_the_pool_brings_the_spent_address_past_it_back_used() {
+            let (wallet, manifest) = fixture(32);
+            let spent = external_address(&wallet, &bip44(), 45);
+            let coin = utxo(1, &external_address(&wallet, &bip44(), 30));
+            let used = ownerless(&[&spent, &coin.address]);
+            assert_restored(&wallet, &manifest, &coin, &used, bip44());
+        }
+
+        /// Spent addresses past the window bridge to a deeper coin: 30, then
+        /// 55 (within a gap of 30), then the coin at 84 (within a gap of 55).
+        #[test]
+        fn spent_addresses_past_the_pool_bridge_to_a_deeper_coin() {
+            let (wallet, manifest) = fixture(33);
+            let spent: Vec<Address> = [30, 55]
+                .iter()
+                .map(|i| external_address(&wallet, &bip44(), *i))
+                .collect();
+            let coin = utxo(1, &external_address(&wallet, &bip44(), 84));
+            let used = ownerless(&[&spent[0], &spent[1], &coin.address]);
+            assert_restored(&wallet, &manifest, &coin, &used, bip44());
+        }
+
+        /// A lone CoinJoin coin one past its pool (100, the pool generated
+        /// through 99), with no stored owner and no other coin to extend
+        /// CoinJoin, restores into CoinJoin, not the first funds account:
+        /// with and without its script in the used set.
+        #[test]
+        fn a_lone_coinjoin_coin_one_past_its_pool_restores_into_coinjoin() {
+            let (wallet, manifest) = fixture(34);
+            assert_eq!(
+                external_pool(&ManagedWalletInfo::from_wallet(&wallet, 1), &cj()).highest_generated,
+                Some(99)
+            );
+            let coin = utxo(1, &coinjoin_address(&wallet, 100));
+            for used in [HashMap::new(), ownerless(&[&coin.address])] {
+                assert_restored(&wallet, &manifest, &coin, &used, cj());
+            }
+        }
+
+        /// A spent CoinJoin address one past its pool (100) leads to the
+        /// coin past it (180), neither with a stored owner.
+        #[test]
+        fn a_spent_coinjoin_address_one_past_its_pool_leads_to_the_coin_past_it() {
+            let (wallet, manifest) = fixture(35);
+            let spent = coinjoin_address(&wallet, 100);
+            let coin = utxo(1, &coinjoin_address(&wallet, 180));
+            let used = ownerless(&[&spent, &coin.address]);
+            assert_restored(&wallet, &manifest, &coin, &used, cj());
+        }
+
+        /// A wallet whose DashPay contact pool has a gap limit of 0, a pool
+        /// no gap refill can be computed for, with one shallow BIP44 coin.
+        fn unrefillable_contact_fixture() -> (Wallet, Vec<AccountRegistrationEntry>, Utxo) {
+            let (mut wallet, _) = fixture(36);
+            let contact = AccountType::DashpayExternalAccount {
+                index: 0,
+                user_identity_id: [0xaa; 32],
+                friend_identity_id: [0xbb; 32],
+            };
+            wallet.add_account(contact, None).unwrap();
+            let manifest = manifest_for(&wallet);
+            let coin = utxo(1, &external_address(&wallet, &bip44(), 3));
+            (wallet, manifest, coin)
+        }
+
+        fn with_unrefillable_contact_pool(wallet: &Wallet) -> ManagedWalletInfo {
+            let mut info = ManagedWalletInfo::from_wallet(wallet, 1);
+            let contact = info.accounts.dashpay_external_accounts.values_mut().next();
+            for pool in contact
+                .unwrap()
+                .managed_account_type_mut()
+                .address_pools_mut()
+            {
+                pool.gap_limit = 0;
+            }
+            info
+        }
+
+        /// The refill preflight's refusal of a pool no extension visits (the
+        /// contact pool) fails a strict load with its typed error.
+        #[test]
+        fn an_unrefillable_contact_pool_fails_a_strict_load() {
+            let (wallet, manifest, coin) = unrefillable_contact_fixture();
+            let mut info = with_unrefillable_contact_pool(&wallet);
+            let err = load_into(
+                &mut info,
+                &manifest,
+                vec![coin],
+                &HashMap::new(),
+                &LoadCtx::strict(),
+            )
+            .expect_err("a refused refill must fail a strict load");
+            assert!(
+                matches!(
+                    err,
+                    WalletStorageError::RehydrationGapLimitTargetOutOfRange { gap_limit: 0, .. }
+                ),
+                "{err:?}"
+            );
+        }
+
+        /// Under recovery the same refusal is counted once, though the
+        /// preflight runs before every restore, and the coin stays counted.
+        #[test]
+        fn an_unrefillable_contact_pool_is_counted_once_under_recovery() {
+            let (wallet, manifest, coin) = unrefillable_contact_fixture();
+            let mut info = with_unrefillable_contact_pool(&wallet);
+            let ctx = LoadCtx::recovery();
+            load_into(
+                &mut info,
+                &manifest,
+                vec![coin.clone()],
+                &ownerless(&[&coin.address]),
+                &ctx,
+            )
+            .expect("recovery tolerates the refusal");
+            let degradation = ctx.degradation();
+            assert_eq!(
+                degradation
+                    .by_site
+                    .get(&LoadSite::RehydrationMaintainGapLimit),
+                Some(&1),
+                "{:?}",
+                degradation.by_site
+            );
+            assert_eq!(holders(&info, &coin.outpoint), vec![bip44()]);
             assert_eq!(info.balance.total(), VALUE);
         }
     }
