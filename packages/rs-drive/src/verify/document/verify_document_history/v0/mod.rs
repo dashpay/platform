@@ -27,7 +27,7 @@ impl Drive {
     ) -> Result<(RootHash, Option<BTreeMap<u64, Document>>), Error> {
         let path_query = Self::fetch_document_history_query(
             contract_id,
-            document_type_name,
+            document_type,
             document_id,
             start_at_ms,
             limit,

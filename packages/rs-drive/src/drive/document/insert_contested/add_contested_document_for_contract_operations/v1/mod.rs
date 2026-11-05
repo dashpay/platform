@@ -13,6 +13,7 @@ use crate::query::vote_poll_vote_state_query::{
     ContestedDocumentVotePollDriveQueryResultType, ResolvedContestedDocumentVotePollDriveQuery,
 };
 use crate::query::GroveError;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::grove_operations::{BatchDeleteUpTreeApplyType, DirectQueryType};
 use crate::util::object_size_info::DocumentAndContractInfo;
@@ -27,8 +28,7 @@ use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
 };
 use dpp::voting::vote_polls::VotePoll;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
-use std::collections::HashMap;
+use grovedb::{MaybeTree, TransactionArg, TreeType};
 
 impl Drive {
     /// Gathers the operations to add a contested document to a contract.
@@ -51,9 +51,7 @@ impl Drive {
         block_info: &BlockInfo,
         also_insert_vote_poll_stored_info: Option<ContestedDocumentVotePollStoredInfo>,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -200,7 +198,8 @@ impl Drive {
                     contested_document_resource_vote_poll.into(),
                 );
 
-                let unique_id = vote_poll.unique_id()?;
+                // A contested poll's id does not read the platform version.
+                let unique_id = vote_poll.unique_id(platform_version)?;
                 let join_end_path =
                     vote_contested_resource_end_date_queries_at_time_tree_path_vec(join_end);
                 // The windows are read again rather than remembered, so the entry the contest

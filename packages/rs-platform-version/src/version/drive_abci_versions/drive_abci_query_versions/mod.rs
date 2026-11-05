@@ -2,7 +2,7 @@ pub mod v0;
 pub mod v1;
 pub mod v2;
 
-use versioned_feature_core::{FeatureVersion, FeatureVersionBounds};
+use versioned_feature_core::{FeatureVersion, FeatureVersionBounds, OptionalFeatureVersion};
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciQueryVersions {
@@ -10,7 +10,26 @@ pub struct DriveAbciQueryVersions {
     pub response_metadata: FeatureVersion,
     pub proofs_query: FeatureVersion,
     pub document_query: FeatureVersionBounds,
+    /// Composite document queries: the `sub_queries` of a `getDocuments` V1 request. `None`
+    /// at the protocol versions that nodes of a release without the field can sign: such a
+    /// node drops it and proves the plain page instead.
+    ///
+    /// The SDK reads it to know from which protocol version every node serves composite
+    /// queries (`DocumentQuery::required_protocol_version` in `dash-platform-queries`). Nodes
+    /// do not read it: a node whose release has the field serves it at every protocol version.
+    /// Only whether it is set is read; the number selects nothing.
+    pub document_sub_queries: OptionalFeatureVersion,
+    /// Chained document queries: the `chained` join of a `getDocuments` V1 request. `None` at
+    /// the protocol versions that nodes of a release without the field can sign: such a node
+    /// drops it and proves the inner query instead.
+    ///
+    /// Read by the SDK and not by nodes, as [`Self::document_sub_queries`] is.
+    pub chained_document_query: OptionalFeatureVersion,
     pub document_history: FeatureVersionBounds,
+    /// `getPrivateDocumentEntries`: a page of the entries of a private document type's store.
+    /// Served from protocol version 15, where Drive's private document entry methods are
+    /// active; earlier versions answer that the feature is not active.
+    pub private_document_entries: FeatureVersionBounds,
     /// Per-helper version slots for internal v1-document-query
     /// routing helpers. Separate from `document_query` (which
     /// versions the wire surface) because the helper output is
@@ -44,6 +63,10 @@ pub struct DriveAbciDocumentQueryHelperVersions {
     /// mode for `SELECT COUNT / SUM / AVG` and enforces the
     /// per-mode `accepts_limit()` contract. See
     /// `query::document_query::v1::compute_aggregate_mode_and_check_limit`.
+    ///
+    /// The SDK reads it too, to know from which protocol version every node routes a ranked
+    /// aggregate (from 1) and a having-range aggregate (from 2)
+    /// (`DocumentQuery::required_protocol_version` in `dash-platform-queries`).
     pub compute_aggregate_mode_and_check_limit: FeatureVersion,
 }
 
@@ -154,6 +177,14 @@ pub struct DriveAbciQueryVotingVersions {
     pub contested_resource_voters_for_identity: FeatureVersionBounds,
     pub contested_resource_identity_vote_status: FeatureVersionBounds,
     pub contested_resources: FeatureVersionBounds,
+    /// A yes/no vote poll's status and tallies, by the poll's id. The Drive read it serves
+    /// (`fetch_yes_no_vote_poll_state`) is not active before protocol version 15, which refuses
+    /// the query there.
+    pub yes_no_vote_poll_state: FeatureVersionBounds,
+    /// A masternode's answer on a yes/no vote poll, by the poll's id. The Drive reads it serves
+    /// (`fetch_identity_yes_no_vote`, `prove_identity_yes_no_vote`) are not active before
+    /// protocol version 15, which refuses the query there.
+    pub masternode_yes_no_vote: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

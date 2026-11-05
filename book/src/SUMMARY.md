@@ -11,6 +11,7 @@
 
 - [Monorepo Overview](architecture/overview.md)
 - [Component Pipeline](architecture/component-pipeline.md)
+- [Core Fork Activations](architecture/core-fork-activations.md)
 
 # Contributing
 
@@ -133,7 +134,7 @@
 
 - [Overview](evo-sdk/overview.md)
 - [Getting Started](evo-sdk/getting-started.md)
-- [Trusted Mode and Proofs](evo-sdk/trusted-mode.md)
+- [Trusted and Verified Mode](evo-sdk/trusted-mode.md)
 - [State Transitions](evo-sdk/state-transitions.md)
 - [Wallet Utilities](evo-sdk/wallet-utilities.md)
 - [DashPay Contact Requests](evo-sdk/dashpay-contact-requests.md)
@@ -148,6 +149,7 @@
 
 - [Builder Pattern](sdk/builder-pattern.md)
 - [Fetch Traits](sdk/fetch-traits.md)
+- [Protocol Versions in the SDK](sdk/protocol-versions.md)
 - [Features from Protocol Version 14](sdk/protocol-version-gate.md)
 - [Put Operations](sdk/put-operations.md)
 - [Identity Keys Deep Dive](sdk/identity-keys.md)

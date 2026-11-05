@@ -511,6 +511,7 @@ async fn should_report_conflict_and_refuse_same_uuid_drain_after_sweep_and_reope
             0,
             None,
             None,
+            None,
         )
         .await
         .unwrap_err();

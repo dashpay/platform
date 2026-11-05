@@ -53,13 +53,15 @@ use dapi_grpc::platform::v0::{
     GetIdentityKeysRequest, GetIdentityKeysResponse, GetIdentityNonceRequest,
     GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse,
     GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse,
-    GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse,
-    GetMostRecentShieldedAnchorRequest, GetMostRecentShieldedAnchorResponse,
-    GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
-    GetPrefundedSpecializedBalanceResponse, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetProtocolVersionUpgradeVoteStatusResponse, GetRecentAddressBalanceChangesRequest,
-    GetRecentAddressBalanceChangesResponse, GetRecentCompactedAddressBalanceChangesRequest,
+    GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse, GetMasternodeYesNoVoteRequest,
+    GetMasternodeYesNoVoteResponse, GetMostRecentShieldedAnchorRequest,
+    GetMostRecentShieldedAnchorResponse, GetPathElementsRequest, GetPathElementsResponse,
+    GetPrefundedSpecializedBalanceRequest, GetPrefundedSpecializedBalanceResponse,
+    GetPrivateDocumentEntriesRequest, GetPrivateDocumentEntriesResponse,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
+    GetRecentAddressBalanceChangesRequest, GetRecentAddressBalanceChangesResponse,
+    GetRecentCompactedAddressBalanceChangesRequest,
     GetRecentCompactedAddressBalanceChangesResponse, GetShieldedAnchorsRequest,
     GetShieldedAnchorsResponse, GetShieldedEncryptedNotesRequest,
     GetShieldedEncryptedNotesResponse, GetShieldedNotesCountRequest, GetShieldedNotesCountResponse,
@@ -71,6 +73,7 @@ use dapi_grpc::platform::v0::{
     GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
     GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
     GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
+    GetYesNoVotePollStateRequest, GetYesNoVotePollStateResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Code, Request, Response, Status};
@@ -727,6 +730,30 @@ impl PlatformService for QueryService {
         .await
     }
 
+    async fn get_yes_no_vote_poll_state(
+        &self,
+        request: Request<GetYesNoVotePollStateRequest>,
+    ) -> Result<Response<GetYesNoVotePollStateResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_yes_no_vote_poll_state,
+            "get_yes_no_vote_poll_state",
+        )
+        .await
+    }
+
+    async fn get_masternode_yes_no_vote(
+        &self,
+        request: Request<GetMasternodeYesNoVoteRequest>,
+    ) -> Result<Response<GetMasternodeYesNoVoteResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_masternode_yes_no_vote,
+            "get_masternode_yes_no_vote",
+        )
+        .await
+    }
+
     async fn get_prefunded_specialized_balance(
         &self,
         request: Request<GetPrefundedSpecializedBalanceRequest>,
@@ -1131,6 +1158,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_shielded_nullifiers,
             "get_shielded_nullifiers",
+        )
+        .await
+    }
+
+    async fn get_private_document_entries(
+        &self,
+        request: Request<GetPrivateDocumentEntriesRequest>,
+    ) -> Result<Response<GetPrivateDocumentEntriesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_private_document_entries,
+            "get_private_document_entries",
         )
         .await
     }

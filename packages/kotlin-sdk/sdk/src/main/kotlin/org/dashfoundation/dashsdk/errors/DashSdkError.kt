@@ -236,7 +236,10 @@ sealed class DashSdkError(
         class AssetLockInsufficientFunds(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
-        /** Code 60: the full drain exceeds the input cap; no partial drain was submitted. */
+        /**
+         * Code 60: the asset lock exceeds the input cap, either a full drain or a fixed
+         * amount held only in many small coins. Nothing was submitted, and no partial drain.
+         */
         class AssetLockTooManyInputs(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 

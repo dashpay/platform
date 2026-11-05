@@ -103,6 +103,23 @@ class ChainStore extends EventEmitter {
     }
   }
 
+  /**
+   * Forgets the headers from `height` on, which a reorg replaces
+   * @param {number} height
+   */
+  rewindHeaders(height) {
+    const { lastSyncedHeaderHeight, blockHeaders } = this.state;
+
+    for (let currentHeight = height; currentHeight <= lastSyncedHeaderHeight; currentHeight += 1) {
+      this.state.headersMetadata.delete(this.state.hashesByHeight.get(currentHeight));
+      this.state.hashesByHeight.delete(currentHeight);
+    }
+
+    const removedCount = lastSyncedHeaderHeight - height + 1;
+    this.state.blockHeaders = blockHeaders.slice(0, Math.max(0, blockHeaders.length - removedCount));
+    this.state.lastSyncedHeaderHeight = height - 1;
+  }
+
   updateLastSyncedHeaderHeight(height) {
     if (height < this.state.lastSyncedHeaderHeight) {
       throw new Error(`Cannot update lastSyncedHeaderHeight to a lower value ${height} < ${this.state.lastSyncedHeaderHeight}`);

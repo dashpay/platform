@@ -15,6 +15,8 @@
 
 use crate::types::QuorumData;
 use futures::future::{BoxFuture, FutureExt, Shared};
+#[cfg(not(target_arch = "wasm32"))]
+use std::any::Any;
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -213,7 +215,7 @@ impl QuorumRefreshes {
     }
 
     /// Make the latest refresh look `by` older, as if that much time had passed.
-    #[cfg(test)]
+    #[cfg(all(test, not(target_arch = "wasm32")))]
     pub(crate) fn age_latest(&self, by: Duration) {
         if let Some(latest) = self.lock().latest.as_mut() {
             latest.started -= by;
@@ -271,15 +273,21 @@ where
     {
         Ok(fetched) => fetched,
         Err(payload) => {
-            let message = payload
-                .downcast_ref::<&str>()
-                .map(|message| message.to_string())
-                .or_else(|| payload.downcast_ref::<String>().cloned())
-                .unwrap_or_default();
+            let message = panic_message(payload.as_ref());
             tracing::error!(%message, "quorum list refresh panicked");
             FetchedQuorums::failed(&format!("quorum refresh panicked: {message}"))
         }
     }
+}
+
+/// The message a panic was raised with, if it has one.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn panic_message(payload: &(dyn Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|message| message.to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_default()
 }
 
 /// Run a refresh as a `Send` future.
@@ -317,7 +325,7 @@ pub(crate) async fn sleep(duration: Duration) {
 /// transport. `None` if the task is dropped before it finishes, which happens
 /// only when the executor goes away.
 #[cfg(target_arch = "wasm32")]
-async fn on_local_executor<F, Fut>(make: F) -> Option<Fut::Output>
+pub(crate) async fn on_local_executor<F, Fut>(make: F) -> Option<Fut::Output>
 where
     F: FnOnce() -> Fut + Send + 'static,
     Fut: Future + 'static,
@@ -330,7 +338,7 @@ where
     receiver.await.ok()
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 
