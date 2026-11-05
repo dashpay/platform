@@ -501,7 +501,10 @@ pub fn apply_persisted_core_state(
         // Degraded in BOTH policies, never fatal: a foreign address and a
         // legitimately-owned deep-and-sparse one look the same in the stored
         // rows, and no fix short of an unbounded scan tells them apart. The
-        // wallet total is exact either way.
+        // wallet total is exact either way, except after a refused or failed
+        // refill (Recovery only): a coin a contact pool already holds before
+        // its funds pool reaches it is placed there, outside the total
+        // (`place_held_coins`).
         if unresolved > 0 {
             ctx.note_degraded(
                 LoadSite::UnresolvedUtxoAddress,
@@ -654,6 +657,11 @@ fn restore_owned_utxos(
 /// pool has a key source and its refill skips every one. Returns the coins no
 /// account holds, or every coin if the placement fails, which is reported as
 /// a failed restore is.
+///
+/// Only the pools as far as the marking rounds grew them are matched, so a
+/// coin a DashPay contact account already holds before its funds account's
+/// pool reaches it lands in the contact account, outside the balance and not
+/// counted as unresolved.
 fn place_held_coins(
     wallet_info: &mut ManagedWalletInfo,
     wallet: &Wallet,
