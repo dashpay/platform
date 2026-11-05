@@ -65,7 +65,55 @@ fn copy_fixture(dir: &Path) -> PathBuf {
 fn copy_fixture_as(dir: &Path, file_name: &str) -> PathBuf {
     let dst = dir.join(file_name);
     std::fs::copy(fixture_src(), &dst).expect("copy fixture");
+    correct_fixture_transaction_id(&dst);
     dst
+}
+
+/// The historical generator assigned a synthetic txid to an empty transaction.
+/// Preserve the committed schema fixture; make only this test copy self-consistent.
+fn correct_fixture_transaction_id(path: &Path) {
+    use dashcore::hashes::Hash;
+    use key_wallet::managed_account::transaction_record::TransactionRecord;
+    use platform_wallet_storage::sqlite::schema::blob;
+
+    let mut conn = Connection::open(path).unwrap();
+    let tx = conn.transaction().unwrap();
+    let (_, bytes) = transaction_height_and_blob(&tx, &wid(FULL_WALLET));
+    let mut record: TransactionRecord = blob::decode(&bytes).unwrap();
+    let previous = record.txid;
+    record.txid = record.transaction.txid();
+    tx.execute("UPDATE core_transactions SET txid = ?1, record_blob = ?2 WHERE wallet_id = ?3 AND txid = ?4",
+        rusqlite::params![record.txid.as_byte_array().as_slice(), blob::encode(&record).unwrap(), wid(FULL_WALLET).as_slice(), previous.as_byte_array().as_slice()]).unwrap();
+    tx.execute(
+        "UPDATE core_utxos SET outpoint = ?1 WHERE wallet_id = ?2 AND outpoint = ?3",
+        rusqlite::params![
+            blob::encode_outpoint(&dashcore::OutPoint::new(record.txid, 0)).unwrap(),
+            wid(FULL_WALLET).as_slice(),
+            blob::encode_outpoint(&dashcore::OutPoint::new(previous, 0)).unwrap()
+        ],
+    )
+    .unwrap();
+    tx.commit().unwrap();
+}
+
+#[test]
+fn should_reject_legacy_fixture_with_a_synthetic_transaction_id() {
+    let tmp = common::secure_tempdir().unwrap();
+    let path = tmp.path().join("invalid-record.db");
+    std::fs::copy(fixture_src(), &path).unwrap();
+    let before = transaction_height_and_blob(&ro_conn(&path), &wid(FULL_WALLET));
+
+    assert!(matches!(
+        SqlitePersister::open(SqlitePersisterConfig::new(&path)),
+        Err(WalletStorageError::Migration(_))
+    ));
+
+    let conn = ro_conn(&path);
+    assert_eq!(schema_version(&conn), 6);
+    assert_eq!(
+        transaction_height_and_blob(&conn, &wid(FULL_WALLET)),
+        before
+    );
 }
 
 /// Names of the `pre-migration-*` backups sitting in `dir`.
@@ -103,6 +151,15 @@ fn count(conn: &Connection, sql: &str, wallet: &[u8; 32]) -> i64 {
         .unwrap()
 }
 
+fn transaction_height_and_blob(conn: &Connection, wallet: &WalletId) -> (Option<i64>, Vec<u8>) {
+    conn.query_row(
+        "SELECT height, record_blob FROM core_transactions WHERE wallet_id = ?1",
+        rusqlite::params![wallet.as_slice()],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .unwrap()
+}
+
 /// Assert the post-migration store carries the full fixture data intact.
 fn assert_full_data_preserved(conn: &Connection) {
     let full = wid(FULL_WALLET);
@@ -125,11 +182,30 @@ fn assert_full_data_preserved(conn: &Connection) {
         ),
         1
     );
-    // V020 drops mined Core history; the next SPV start rescans it from birth.
-    for table in ["core_utxos", "core_transactions"] {
-        let sql = format!("SELECT COUNT(*) FROM {table} WHERE wallet_id = ?1");
-        assert_eq!(count(conn, &sql, &full), 0, "{table}");
-    }
+    let utxos = count(
+        conn,
+        "SELECT COUNT(*) FROM core_utxos WHERE wallet_id = ?1",
+        &full,
+    );
+    assert_eq!(utxos, 1, "UTXO preserved");
+    assert_eq!(
+        count(
+            conn,
+            "SELECT COUNT(*) FROM core_transactions WHERE wallet_id = ?1",
+            &full
+        ),
+        1
+    );
+    let (height, record_blob) = transaction_height_and_blob(conn, &full);
+    assert_eq!(height, Some(200), "transaction height preserved by V010");
+    let record: key_wallet::managed_account::transaction_record::TransactionRecord =
+        platform_wallet_storage::sqlite::schema::blob::decode(&record_blob)
+            .expect("transaction record blob preserved by V010");
+    assert_eq!(
+        record.height(),
+        Some(200),
+        "transaction record blob retains its block context"
+    );
     assert_eq!(
         count(
             conn,
@@ -173,13 +249,25 @@ fn assert_full_data_preserved(conn: &Connection) {
 fn v4_2_dev_database_opens_and_migrates_forward() {
     let tmp = common::secure_tempdir().unwrap();
     let path = copy_fixture(tmp.path());
-    assert_eq!(
-        schema_version(&ro_conn(&path)),
-        6,
-        "fixture starts at the v4.2-dev schema"
-    );
+    let original_transaction = {
+        let pre = ro_conn(&path);
+        assert_eq!(
+            schema_version(&pre),
+            6,
+            "fixture starts at the v4.2-dev schema"
+        );
+        transaction_height_and_blob(&pre, &wid(FULL_WALLET))
+    };
     let p = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
-    assert_full_data_preserved(&p.lock_conn_for_test());
+    {
+        let conn = p.lock_conn_for_test();
+        assert_full_data_preserved(&conn);
+        assert_eq!(
+            transaction_height_and_blob(&conn, &wid(FULL_WALLET)),
+            original_transaction,
+            "the rebuild must preserve the fixture transaction height and blob byte-for-byte"
+        );
+    }
     // The full wallet reconstructs; converted pool and UTXO usage agree.
     let state = p.load().unwrap();
     let full = wid(FULL_WALLET);
@@ -244,12 +332,8 @@ fn v014_backfills_recordless_confirmed_utxo_height() {
         assert_eq!(schema_version(&conn), 13);
     }
 
-    // Checked at V018: V020 then drops mined Core history for a rescan.
-    let mut conn = Connection::open(&path).unwrap();
-    mig::runner()
-        .set_target(refinery::Target::Version(18))
-        .run(&mut conn)
-        .unwrap();
+    let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    let conn = persister.lock_conn_for_test();
     let (height, record_blob): (Option<i64>, Option<Vec<u8>>) = conn
         .query_row(
             "SELECT height, record_blob FROM core_transactions \
@@ -459,46 +543,6 @@ fn forward_version_rejected_at_new_max() {
     }
 }
 
-/// A database that applied a later version before an earlier one was merged
-/// in is refused, typed and untouched, rather than skipping the earlier one.
-///
-/// A feature branch's migration can land on a database before a lower version
-/// from another branch is merged forward. Refinery's `abort_missing` (left at
-/// its default) then sees an embedded version below the applied maximum that
-/// was never applied. Dropping V018's history row reproduces that state with the
-/// migrations this binary embeds.
-#[test]
-fn should_refuse_a_database_that_skipped_an_earlier_migration() {
-    let tmp = common::secure_tempdir().unwrap();
-    let path = tmp.path().join("wallet.db");
-    drop(SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap());
-    let history = |conn: &Connection| -> Vec<i64> {
-        let mut stmt = conn
-            .prepare("SELECT version FROM refinery_schema_history ORDER BY version")
-            .unwrap();
-        stmt.query_map([], |r| r.get(0))
-            .unwrap()
-            .map(Result::unwrap)
-            .collect()
-    };
-    let before = {
-        let conn = Connection::open(&path).unwrap();
-        conn.execute("DELETE FROM refinery_schema_history WHERE version = 18", [])
-            .unwrap();
-        history(&conn)
-    };
-
-    match SqlitePersister::open(SqlitePersisterConfig::new(&path)) {
-        Err(WalletStorageError::Migration(error)) => assert!(
-            matches!(error.kind(), refinery::error::Kind::MissingVersion(m) if m.version() == 18),
-            "expected MissingVersion(18), got {error:?}"
-        ),
-        Err(other) => panic!("expected a migration error, got {other:?}"),
-        Ok(_) => panic!("a skipped migration must not be applied out of order or ignored"),
-    }
-    assert_eq!(history(&Connection::open(&path).unwrap()), before);
-}
-
 /// A structural + row snapshot of the affected tables, for convergence
 /// comparison between a clean migration and a recovered one. Excludes the
 /// per-store random generation token (unique by design).
@@ -639,4 +683,36 @@ fn reopen_of_migrated_store_is_idempotent() {
         "first open migrates to the newest embedded version"
     );
     assert_eq!(first, second, "reopen is a byte-stable no-op");
+}
+
+#[test]
+fn should_refuse_a_database_that_skipped_an_earlier_migration() {
+    let tmp = common::secure_tempdir().unwrap();
+    let path = tmp.path().join("wallet.db");
+    drop(SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap());
+    let history = |conn: &Connection| -> Vec<i64> {
+        let mut stmt = conn
+            .prepare("SELECT version FROM refinery_schema_history ORDER BY version")
+            .unwrap();
+        stmt.query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    };
+    let before = {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute("DELETE FROM refinery_schema_history WHERE version = 18", [])
+            .unwrap();
+        history(&conn)
+    };
+
+    match SqlitePersister::open(SqlitePersisterConfig::new(&path)) {
+        Err(WalletStorageError::Migration(error)) => assert!(
+            matches!(error.kind(), refinery::error::Kind::MissingVersion(m) if m.version() == 18),
+            "expected MissingVersion(18), got {error:?}"
+        ),
+        Err(other) => panic!("expected a migration error, got {other:?}"),
+        Ok(_) => panic!("a skipped migration must not be applied out of order or ignored"),
+    }
+    assert_eq!(history(&Connection::open(&path).unwrap()), before);
 }
