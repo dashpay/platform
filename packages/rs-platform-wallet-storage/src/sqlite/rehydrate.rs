@@ -347,8 +347,9 @@ pub fn apply_persisted_core_state(
     }
     let account_keys: Vec<OwningAccount> = funding.iter().map(|a| owning_account_of(a)).collect();
     // Every stored used address, whatever owner its row names: marked
-    // wherever the pools, once extended, derive it.
-    let used: Vec<key_wallet::Address> = used_pool_addresses.keys().cloned().collect();
+    // wherever the pools, once extended, derive it. None without a funds
+    // account, which has no pool to mark one in.
+    let mut used: Vec<key_wallet::Address> = Vec::new();
     // Pools whose gap refill was refused and reported, so a later check
     // refuses them without reporting them again.
     let mut refused = RefusedRefills::new();
@@ -357,6 +358,7 @@ pub fn apply_persisted_core_state(
         // its own attributed addresses, so `extend_pools_for_restored_addresses`
         // never scans another account's keys as "unresolved".
         let mut per_account_addrs: Vec<Vec<key_wallet::Address>> = vec![Vec::new(); funding.len()];
+        used.extend(used_pool_addresses.keys().cloned());
 
         // Owners that resolve to no funds account (store drift, above), plus
         // used addresses with an owner absent from this wallet — collected
