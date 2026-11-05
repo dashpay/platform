@@ -17,6 +17,7 @@ pub mod sdk;
 pub mod serialization;
 pub mod settings;
 pub mod state_transitions;
+pub mod verified_context;
 pub mod wallet;
 
 // Re-export commonly used items
