@@ -285,6 +285,9 @@ pub async fn replay_recorded_history_with_evidence(
             }
         }
     }
+    // Mined contexts retain the existing trusted local producer/store contract;
+    // they are not independently reverified transaction-inclusion proofs here.
+    // InstantSend observations require the opaque SPV evidence checked above.
     let candidates = transactions
         .iter()
         .filter(|stored| {
@@ -4628,7 +4631,6 @@ mod tests {
                 history(records, locks),
                 &evidence,
             );
-            // TODO: integrate the owner fail-closed result for missing finality evidence.
             assert!(
                 result.await.is_err(),
                 "{case}: mismatched finality evidence must fail"
