@@ -6,9 +6,11 @@
 
 use std::collections::BTreeMap;
 
+use super::ClientWalletStartState;
 use dash_spv::VerifiedInstantLock;
 use dashcore::ephemerealdata::instant_lock::InstantLock;
 use dashcore::{Transaction, Txid};
+use dpp::prelude::AssetLockProof;
 use key_wallet::managed_account::transaction_record::{
     InputDetail, TransactionDirection, TransactionRecord,
 };
@@ -94,4 +96,36 @@ impl From<TransactionRecord> for StoredTransaction {
             context: record.context,
         }
     }
+}
+
+/// Advisory proof candidates from every persisted source of wallet finality.
+/// These bytes grant no authority until the SPV verifier and fresh snapshot agree.
+pub fn replay_lock_candidates(state: &ClientWalletStartState) -> Vec<InstantLock> {
+    let mut locks: Vec<_> = state
+        .recorded_history
+        .instant_locks
+        .values()
+        .cloned()
+        .collect();
+    locks.extend(
+        state
+            .recorded_history
+            .transactions
+            .iter()
+            .filter_map(|record| match &record.context {
+                TransactionContext::InstantSend(lock) => Some(lock.clone()),
+                _ => None,
+            }),
+    );
+    locks.extend(
+        state
+            .unused_asset_locks
+            .values()
+            .flat_map(BTreeMap::values)
+            .filter_map(|tracked| match &tracked.proof {
+                Some(AssetLockProof::Instant(proof)) => Some(proof.instant_lock().clone()),
+                _ => None,
+            }),
+    );
+    locks
 }

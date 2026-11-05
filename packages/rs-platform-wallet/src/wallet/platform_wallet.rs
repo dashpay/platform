@@ -314,6 +314,23 @@ pub struct PlatformWalletInfo {
     pub rewind_barrier: crate::changeset::core_bridge::RewindBarrier,
 }
 
+/// Whether restored history can participate in live wallet operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HistoryReadiness {
+    /// All required evidence was verified and the wallet is active.
+    Ready,
+    /// Stored finality awaits the SPV verifier; the snapshot remains read-only.
+    AwaitingProof,
+    /// Explicit recovery mode keeps the snapshot read-only.
+    Recovery,
+}
+
+pub(crate) struct DeferredWalletSnapshot {
+    pub wallet: Wallet,
+    pub info: PlatformWalletInfo,
+    pub readiness: HistoryReadiness,
+}
+
 /// A platform wallet that combines core UTXO functionality with identity management.
 ///
 /// This is SPV-free. It needs only key material and an `Sdk`.
@@ -326,6 +343,7 @@ pub struct PlatformWalletInfo {
 /// clones see the same UTXOs, balances, and identities through the shared
 /// `WalletManager` lock.
 pub struct PlatformWallet {
+    pub(crate) deferred_history: Arc<arc_swap::ArcSwapOption<DeferredWalletSnapshot>>,
     wallet_id: WalletId,
     pub(crate) sdk: Arc<dash_sdk::Sdk>,
     pub(crate) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
@@ -394,6 +412,14 @@ pub struct PlatformWallet {
 }
 
 impl PlatformWallet {
+    /// Readiness of this wallet's restored history, including conservative cold starts.
+    pub fn history_readiness(&self) -> HistoryReadiness {
+        self.deferred_history
+            .load()
+            .as_ref()
+            .map_or(HistoryReadiness::Ready, |snapshot| snapshot.readiness)
+    }
+
     /// Access the core wallet (balance, UTXOs, addresses).
     pub fn core(&self) -> &CoreWallet<SpvBroadcaster> {
         &self.core
@@ -472,10 +498,7 @@ impl PlatformWallet {
     /// Read-lock the wallet manager and return a guard that derefs to this
     /// wallet's `PlatformWalletInfo`.
     pub async fn state(&self) -> WalletStateReadGuard<'_> {
-        WalletStateReadGuard {
-            guard: self.wallet_manager.read().await,
-            wallet_id: self.wallet_id,
-        }
+        self.read_guard(self.wallet_manager.read().await)
     }
 
     /// Write-lock the wallet manager and return a guard that derefs to this
@@ -489,10 +512,7 @@ impl PlatformWallet {
 
     /// Blocking read-lock.
     pub fn state_blocking(&self) -> WalletStateReadGuard<'_> {
-        WalletStateReadGuard {
-            guard: self.wallet_manager.blocking_read(),
-            wallet_id: self.wallet_id,
-        }
+        self.read_guard(self.wallet_manager.blocking_read())
     }
 
     /// Blocking write-lock.
@@ -655,10 +675,23 @@ impl PlatformWallet {
         self.wallet_manager
             .try_read()
             .ok()
-            .map(|guard| WalletStateReadGuard {
-                guard,
-                wallet_id: self.wallet_id,
-            })
+            .map(|guard| self.read_guard(guard))
+    }
+
+    fn read_guard<'a>(
+        &self,
+        guard: RwLockReadGuard<'a, WalletManager<PlatformWalletInfo>>,
+    ) -> WalletStateReadGuard<'a> {
+        let deferred = if guard.get_wallet_info(&self.wallet_id).is_none() {
+            self.deferred_history.load_full()
+        } else {
+            None
+        };
+        WalletStateReadGuard {
+            guard,
+            wallet_id: self.wallet_id,
+            deferred,
+        }
     }
 
     /// Non-blocking write-lock. Returns `None` if the lock is currently
@@ -756,6 +789,7 @@ impl PlatformWallet {
         );
 
         Self {
+            deferred_history: Arc::new(arc_swap::ArcSwapOption::empty()),
             wallet_id,
             sdk,
             wallet_manager,
@@ -2261,6 +2295,7 @@ impl PlatformWallet {
 impl Clone for PlatformWallet {
     fn clone(&self) -> Self {
         Self {
+            deferred_history: Arc::clone(&self.deferred_history),
             wallet_id: self.wallet_id,
             sdk: self.sdk.clone(),
             wallet_manager: self.wallet_manager.clone(),
@@ -2295,6 +2330,7 @@ impl std::fmt::Debug for PlatformWallet {
 /// Read guard that locks `WalletManager` and derefs to this wallet's
 /// `PlatformWalletInfo`. Also provides `.wallet()` for key material access.
 pub struct WalletStateReadGuard<'a> {
+    deferred: Option<Arc<DeferredWalletSnapshot>>,
     guard: RwLockReadGuard<'a, WalletManager<PlatformWalletInfo>>,
     wallet_id: WalletId,
 }
@@ -2302,6 +2338,9 @@ pub struct WalletStateReadGuard<'a> {
 impl<'a> WalletStateReadGuard<'a> {
     /// Access the immutable `Wallet` (key material).
     pub fn wallet(&self) -> &Wallet {
+        if let Some(snapshot) = &self.deferred {
+            return &snapshot.wallet;
+        }
         self.guard
             .get_wallet(&self.wallet_id)
             .expect("wallet exists in guard")
@@ -2311,6 +2350,9 @@ impl<'a> WalletStateReadGuard<'a> {
 impl Deref for WalletStateReadGuard<'_> {
     type Target = PlatformWalletInfo;
     fn deref(&self) -> &PlatformWalletInfo {
+        if let Some(snapshot) = &self.deferred {
+            return &snapshot.info;
+        }
         self.guard
             .get_wallet_info(&self.wallet_id)
             .expect("wallet exists in guard")

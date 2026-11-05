@@ -326,6 +326,42 @@ impl SpvRuntime {
         self.task.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    /// Prefetch checked history evidence without holding a wallet or persistence lock.
+    pub(crate) async fn verify_history_locks(
+        &self,
+        candidates: Vec<dashcore::InstantLock>,
+    ) -> crate::changeset::recorded_history::ReplayEvidence {
+        let mut evidence = crate::changeset::recorded_history::ReplayEvidence::default();
+        let client = self.client.read().await;
+        let Some(client) = client.as_ref() else {
+            return evidence;
+        };
+        for lock in candidates {
+            match client.verify_instant_lock(&lock).await {
+                Ok(Some(proof)) => {
+                    evidence.instant_locks.insert(proof.txid(), proof);
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    tracing::debug!(%error, txid = %lock.txid, "stored InstantLock failed SPV verification; wallet remains read-only")
+                }
+            }
+        }
+        evidence
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn install_history_fixture(
+        &self,
+        fixture: &dash_spv::test_utils::InstantLockFixture,
+    ) {
+        let client = self.client.read().await;
+        fixture
+            .install(client.as_ref().expect("SPV started"))
+            .await
+            .unwrap();
+    }
+
     /// Check whether the SPV client has been started.
     pub fn is_started(&self) -> bool {
         self.client.try_read().map(|c| c.is_some()).unwrap_or(false)

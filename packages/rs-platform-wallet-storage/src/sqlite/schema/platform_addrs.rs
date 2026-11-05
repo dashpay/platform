@@ -197,9 +197,7 @@ fn account_state_from_rows(
 /// network-scoped sync watermark plus the per-account committed state
 /// reconstructed from registrations + address rows.
 ///
-/// `load()` uses the grouped [`load_all`] path; this per-wallet form is
-/// retained for this crate's integration tests.
-#[cfg(any(test, feature = "__test-helpers"))]
+/// The scoped replay loader uses this form to leave other wallets untouched.
 pub fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,

@@ -6,7 +6,9 @@ use dash_spv::{ClientConfig, DashSpvClient};
 use dashcore::{hashes::Hash, OutPoint};
 use key_wallet::transaction_checking::TransactionContext;
 use platform_wallet::changeset::recorded_history::ReplayEvidence;
-use platform_wallet::changeset::{CoreChangeSet, PlatformWalletPersistence};
+use platform_wallet::changeset::{
+    CoreChangeSet, PersistenceCapabilities, PlatformWalletPersistence,
+};
 use platform_wallet::key_wallet_manager::test_utils::MockWallet;
 use platform_wallet::test_support::core_fixtures::{
     block, outside, pay, records_of, spend_of, stored_utxo, wallet_with_receive_address,
@@ -83,7 +85,7 @@ async fn should_retry_sqlite_history_with_verified_lock_before_unsafe_amount_fil
 
     let spv_directory = tempfile::TempDir::new().unwrap();
     let client = DashSpvClient::new(
-        ClientConfig::mainnet()
+        ClientConfig::new(dashcore::Network::Testnet)
             .without_filters()
             .with_storage_path(spv_directory.path()),
         MockNetworkManager::new(),
@@ -134,4 +136,15 @@ async fn should_retry_sqlite_history_with_verified_lock_before_unsafe_amount_fil
         .deferred
         .contains(&locked.txid()));
     assert!(changed.outcomes[&wallet.wallet_id].sweeps.is_empty());
+}
+
+#[test]
+fn should_not_attest_operation_status_after_replay_cleanup() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let capabilities = persister.persistence_capabilities();
+    assert!(capabilities.contains(PersistenceCapabilities::TRACKED_ASSET_LOCKS));
+    assert!(
+        !capabilities.contains(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS),
+        "replay cleanup has no durable operation tombstone to distinguish absence from never sent"
+    );
 }

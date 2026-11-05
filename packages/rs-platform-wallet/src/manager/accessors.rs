@@ -324,15 +324,23 @@ pub fn wallet_utxos_page(
     after: Option<&WalletUtxoCursor>,
     limit: usize,
 ) -> (Vec<WalletUtxoRow>, bool) {
+    let Some(info) = wm.get_wallet_info(wallet_id) else {
+        return (Vec::new(), false);
+    };
+    wallet_utxos_page_from_info(info, after, limit)
+}
+
+fn wallet_utxos_page_from_info(
+    info: &crate::wallet::platform_wallet::PlatformWalletInfo,
+    after: Option<&WalletUtxoCursor>,
+    limit: usize,
+) -> (Vec<WalletUtxoRow>, bool) {
     use std::ops::Bound;
 
     let limit = if limit == 0 {
         WALLET_UTXO_PAGE_DEFAULT
     } else {
         limit.min(WALLET_UTXO_PAGE_MAX)
-    };
-    let Some(info) = wm.get_wallet_info(wallet_id) else {
-        return (Vec::new(), false);
     };
     let mut accounts: Vec<(
         AccountType,
@@ -671,7 +679,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// tokio async task.
     pub fn account_balances_blocking(&self, wallet_id: &WalletId) -> Vec<AccountBalanceRow> {
         let wm = self.wallet_manager.blocking_read();
-        let Some(info) = wm.get_wallet_info(wallet_id) else {
+        let deferred = self
+            .get_wallet_blocking(wallet_id)
+            .and_then(|wallet| wallet.deferred_history.load_full());
+        let Some(info) = wm
+            .get_wallet_info(wallet_id)
+            .or_else(|| deferred.as_ref().map(|snapshot| &snapshot.info))
+        else {
             return Vec::new();
         };
         let last_processed_height = info.core_wallet.metadata.last_processed_height;
@@ -743,7 +757,15 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// `RwLock` read, no I/O.
     pub fn wallet_network_blocking(&self, wallet_id: &WalletId) -> Option<key_wallet::Network> {
         let wm = self.wallet_manager.blocking_read();
-        Some(wm.get_wallet_info(wallet_id)?.core_wallet.network())
+        let deferred = self
+            .get_wallet_blocking(wallet_id)
+            .and_then(|wallet| wallet.deferred_history.load_full());
+        Some(
+            wm.get_wallet_info(wallet_id)
+                .or_else(|| deferred.as_ref().map(|snapshot| &snapshot.info))?
+                .core_wallet
+                .network(),
+        )
     }
 
     /// Snapshot of [`PlatformAddressSyncManager`] tunables and last-
@@ -800,7 +822,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         wallet_id: &WalletId,
     ) -> Option<CoreWalletStateSnapshot> {
         let wm = self.wallet_manager.blocking_read();
-        let info = wm.get_wallet_info(wallet_id)?;
+        let deferred = self
+            .get_wallet_blocking(wallet_id)
+            .and_then(|wallet| wallet.deferred_history.load_full());
+        let info = wm
+            .get_wallet_info(wallet_id)
+            .or_else(|| deferred.as_ref().map(|snapshot| &snapshot.info))?;
         let monitor_revision = info
             .core_wallet
             .accounts
@@ -893,7 +920,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         wallet_id: &WalletId,
     ) -> Option<IdentityWalletStateSnapshot> {
         let wm = self.wallet_manager.blocking_read();
-        let info = wm.get_wallet_info(wallet_id)?;
+        let deferred = self
+            .get_wallet_blocking(wallet_id)
+            .and_then(|wallet| wallet.deferred_history.load_full());
+        let info = wm
+            .get_wallet_info(wallet_id)
+            .or_else(|| deferred.as_ref().map(|snapshot| &snapshot.info))?;
         let last_scanned_index = info
             .identity_manager
             .highest_registration_index(wallet_id)
@@ -958,7 +990,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         wallet_id: &WalletId,
     ) -> Vec<TrackedAssetLockSnapshot> {
         let wm = self.wallet_manager.blocking_read();
-        let Some(info) = wm.get_wallet_info(wallet_id) else {
+        let deferred = self
+            .get_wallet_blocking(wallet_id)
+            .and_then(|wallet| wallet.deferred_history.load_full());
+        let Some(info) = wm
+            .get_wallet_info(wallet_id)
+            .or_else(|| deferred.as_ref().map(|snapshot| &snapshot.info))
+        else {
             return Vec::new();
         };
         info.tracked_asset_locks
@@ -999,7 +1037,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// untouched).
     pub fn instant_send_locks_blocking(&self, wallet_id: &WalletId) -> Vec<Txid> {
         let wm = self.wallet_manager.blocking_read();
-        let Some(info) = wm.get_wallet_info(wallet_id) else {
+        let deferred = self
+            .get_wallet_blocking(wallet_id)
+            .and_then(|wallet| wallet.deferred_history.load_full());
+        let Some(info) = wm
+            .get_wallet_info(wallet_id)
+            .or_else(|| deferred.as_ref().map(|snapshot| &snapshot.info))
+        else {
             return Vec::new();
         };
         info.core_wallet
@@ -1024,7 +1068,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         target: &AccountType,
     ) -> Option<AccountMetadataSnapshot> {
         let wm = self.wallet_manager.blocking_read();
-        let info = wm.get_wallet_info(wallet_id)?;
+        let deferred = self
+            .get_wallet_blocking(wallet_id)
+            .and_then(|wallet| wallet.deferred_history.load_full());
+        let info = wm
+            .get_wallet_info(wallet_id)
+            .or_else(|| deferred.as_ref().map(|snapshot| &snapshot.info))?;
         let accounts = info.core_wallet.accounts.all_accounts();
         let account = accounts
             .iter()
@@ -1058,7 +1107,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         target: &AccountType,
     ) -> Vec<AccountAddressPoolSnapshot> {
         let wm = self.wallet_manager.blocking_read();
-        let Some(info) = wm.get_wallet_info(wallet_id) else {
+        let deferred = self
+            .get_wallet_blocking(wallet_id)
+            .and_then(|wallet| wallet.deferred_history.load_full());
+        let Some(info) = wm
+            .get_wallet_info(wallet_id)
+            .or_else(|| deferred.as_ref().map(|snapshot| &snapshot.info))
+        else {
             return Vec::new();
         };
         let accounts = info.core_wallet.accounts.all_accounts();
@@ -1101,6 +1156,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         limit: usize,
     ) -> (Vec<WalletUtxoRow>, bool) {
         let wm = self.wallet_manager.blocking_read();
+        let deferred = self
+            .get_wallet_blocking(wallet_id)
+            .and_then(|wallet| wallet.deferred_history.load_full());
+        if let Some(snapshot) = deferred {
+            return wallet_utxos_page_from_info(&snapshot.info, after, limit);
+        }
         wallet_utxos_page(&wm, wallet_id, after, limit)
     }
 
@@ -1112,6 +1173,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         queries: &[OutpointOwnershipQuery],
     ) -> Vec<OutpointClass> {
         let wm = self.wallet_manager.blocking_read();
+        // Pending history cannot authorize a persistence repair from spend classification.
         classify_outpoints(&wm, wallet_id, queries)
     }
 
@@ -1122,7 +1184,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         target: &AccountType,
     ) -> Vec<AccountUtxoSnapshot> {
         let wm = self.wallet_manager.blocking_read();
-        let Some(info) = wm.get_wallet_info(wallet_id) else {
+        let deferred = self
+            .get_wallet_blocking(wallet_id)
+            .and_then(|wallet| wallet.deferred_history.load_full());
+        let Some(info) = wm
+            .get_wallet_info(wallet_id)
+            .or_else(|| deferred.as_ref().map(|snapshot| &snapshot.info))
+        else {
             return Vec::new();
         };
         let accounts = info.core_wallet.accounts.all_accounts();
@@ -1170,7 +1238,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         page_limit: usize,
     ) -> Vec<AccountTransactionSnapshot> {
         let wm = self.wallet_manager.blocking_read();
-        let Some(info) = wm.get_wallet_info(wallet_id) else {
+        let deferred = self
+            .get_wallet_blocking(wallet_id)
+            .and_then(|wallet| wallet.deferred_history.load_full());
+        let Some(info) = wm
+            .get_wallet_info(wallet_id)
+            .or_else(|| deferred.as_ref().map(|snapshot| &snapshot.info))
+        else {
             return Vec::new();
         };
         let accounts = info.core_wallet.accounts.all_accounts();
@@ -1234,7 +1308,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // provider pools (`info.core_wallet` is a `ManagedWalletInfo`).
         let (network, txs, operator_scan_max, platform_index) = {
             let wm = self.wallet_manager.blocking_read();
-            let info = wm.get_wallet_info(wallet_id)?;
+            let deferred = self
+                .get_wallet_blocking(wallet_id)
+                .and_then(|wallet| wallet.deferred_history.load_full());
+            let info = wm
+                .get_wallet_info(wallet_id)
+                .or_else(|| deferred.as_ref().map(|snapshot| &snapshot.info))?;
             let network = info.core_wallet.network();
 
             let mut by_txid: std::collections::BTreeMap<
@@ -1374,7 +1453,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         wallet_id: &WalletId,
     ) -> Vec<Identifier> {
         let wm = self.wallet_manager.blocking_read();
-        let Some(info) = wm.get_wallet_info(wallet_id) else {
+        let deferred = self
+            .get_wallet_blocking(wallet_id)
+            .and_then(|wallet| wallet.deferred_history.load_full());
+        let Some(info) = wm
+            .get_wallet_info(wallet_id)
+            .or_else(|| deferred.as_ref().map(|snapshot| &snapshot.info))
+        else {
             return Vec::new();
         };
         info.identity_manager
@@ -1392,7 +1477,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         wallet_id: &WalletId,
     ) -> Vec<WalletIdentityRowSnapshot> {
         let wm = self.wallet_manager.blocking_read();
-        let Some(info) = wm.get_wallet_info(wallet_id) else {
+        let deferred = self
+            .get_wallet_blocking(wallet_id)
+            .and_then(|wallet| wallet.deferred_history.load_full());
+        let Some(info) = wm
+            .get_wallet_info(wallet_id)
+            .or_else(|| deferred.as_ref().map(|snapshot| &snapshot.info))
+        else {
             return Vec::new();
         };
         let Some(inner) = info.identity_manager.wallet_identities.get(wallet_id) else {

@@ -7,7 +7,6 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use rusqlite::{Connection, OptionalExtension};
 
 use dpp::prelude::Identifier;
-use key_wallet::transaction_checking::TransactionContext;
 use platform_wallet::changeset::recorded_history::ReplayEvidence;
 use platform_wallet::changeset::{
     ClientStartState, IdentityChangeSet, PersistenceCapabilities, PersistenceError,
@@ -1318,6 +1317,8 @@ impl PlatformWalletPersistence for SqlitePersister {
         // full restore remains lossy. Shielded viewing keys are native when
         // compiled in; notes, nullifiers, and sync state use ShieldedStore.
         // WALLET_DRAIN folds in WALLET_RESTORE, so it stays unattested too.
+        // TODO(operation-tombstones): replay cleanup can erase operation UUIDs;
+        // ASSET_LOCK_OPERATION_IDS requires durable evidence distinguishing that from never sent.
         let capabilities = PersistenceCapabilities::ATOMIC_CHANGESETS
             .union(PersistenceCapabilities::INVITATIONS)
             .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
@@ -1325,7 +1326,6 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO)
             .union(PersistenceCapabilities::DPNS_NAME_STATES)
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
-            .union(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS)
             .union(PersistenceCapabilities::TRACKED_MASTERNODES)
             .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
             .union(PersistenceCapabilities::DASHPAY_PAYMENTS)
@@ -1534,115 +1534,47 @@ impl PlatformWalletPersistence for SqlitePersister {
         let mut candidates = Vec::new();
         for wallet_id in schema::wallets::list_ids(&conn).map_err(PersistenceError::from)? {
             let state = load_wallet_snapshot(&conn, wallet_id, &ctx)?;
-            candidates.extend(state.recorded_history.instant_locks.into_values());
-            candidates.extend(state.recorded_history.transactions.into_iter().filter_map(
-                |record| match record.context {
-                    TransactionContext::InstantSend(lock) => Some(lock),
-                    _ => None,
-                },
-            ));
+            candidates.extend(
+                platform_wallet::changeset::recorded_history::replay_lock_candidates(&state),
+            );
         }
         Ok(candidates)
+    }
+
+    fn load_wallet_with_replay(
+        &self,
+        wallet_id: WalletId,
+        evidence: &ReplayEvidence,
+    ) -> Result<HistoryReplayLoad, PersistenceError> {
+        let conn = self.conn().map_err(PersistenceError::from)?;
+        let ctx = LoadCtx::new(self.config.load_policy);
+        if schema::wallets::fetch(&conn, &wallet_id)
+            .map_err(PersistenceError::from)?
+            .is_none()
+        {
+            return Ok(HistoryReplayLoad::default());
+        }
+        let addresses = schema::platform_addrs::load_state(&conn, &wallet_id)
+            .map_err(PersistenceError::from)?;
+        let (wallet, outcome) =
+            load_one_wallet(&conn, wallet_id, &ctx, self.config.load_policy, evidence)?;
+        let mut loaded = HistoryReplayLoad::default();
+        loaded.state.wallets.insert(wallet_id, wallet);
+        loaded.state.platform_addresses.insert(wallet_id, addresses);
+        loaded.outcomes.insert(wallet_id, outcome);
+        self.replace_load_degradation(ctx.degradation());
+        Ok(loaded)
     }
 
     fn load_with_replay(
         &self,
         evidence: &ReplayEvidence,
     ) -> Result<HistoryReplayLoad, PersistenceError> {
-        let conn = self.conn().map_err(PersistenceError::from)?;
-        let ctx = LoadCtx::new(self.config.load_policy);
-        // Cleared up front so a failed load never leaves the previous load's
-        // snapshot behind, masquerading as this one's verdict.
-        self.replace_load_degradation(LoadDegradation::default());
-        let mut state = ClientStartState::default();
-        let mut outcomes = BTreeMap::new();
+        self.load_client_snapshot(Some(evidence))
+    }
 
-        #[cfg(feature = "shielded")]
-        {
-            state.shielded.viewing_keys = schema::shielded_viewing_keys::load_all(&conn, &ctx)
-                .map_err(PersistenceError::from)?;
-        }
-
-        let addrs_all = schema::platform_addrs::load_all(&conn).map_err(PersistenceError::from)?;
-        let mut addresses_loaded: usize = 0;
-        // Wallets whose platform-address rows could not be read. They are
-        // already counted here, so the loop below skips them rather than
-        // rebuilding a wallet whose platform balance would be understated.
-        let mut unreadable: std::collections::BTreeSet<WalletId> =
-            std::collections::BTreeSet::new();
-        for (wallet_id, entry) in addrs_all {
-            let (addrs, count) = match entry {
-                Ok(entry) => entry,
-                Err(original) => {
-                    degrade_whole_wallet(&ctx, wallet_id, &original)
-                        .map_err(|_| PersistenceError::from(original))?;
-                    unreadable.insert(wallet_id);
-                    continue;
-                }
-            };
-            // Skip a wallet with no platform state at all (no addresses,
-            // no registrations, all sync watermarks zero).
-            if count > 0
-                || !addrs.per_account.is_empty()
-                || addrs.sync_height > 0
-                || addrs.sync_timestamp > 0
-                || addrs.last_known_recent_block > 0
-            {
-                addresses_loaded += count;
-                state.platform_addresses.insert(wallet_id, addrs);
-            }
-        }
-
-        // Per-wallet keyless rehydration payload; the manager rebuilds each
-        // wallet watch-only and derives signing keys later on demand.
-        let wallet_ids = schema::wallets::list_ids(&conn).map_err(PersistenceError::from)?;
-        let wallets_seen = wallet_ids.len();
-        for wallet_id in wallet_ids {
-            if unreadable.contains(&wallet_id) {
-                continue;
-            }
-            match load_one_wallet(&conn, wallet_id, &ctx, self.config.load_policy, evidence) {
-                Ok((wallet_state, outcome)) => {
-                    state.wallets.insert(wallet_id, wallet_state);
-                    outcomes.insert(wallet_id, outcome);
-                }
-                // The isolation boundary. One wallet's failure is recorded
-                // against that wallet and the walk continues; under Strict
-                // `tolerate_at` returns, and the ORIGINAL error propagates
-                // rather than the boundary's own wrapper, so a caller
-                // matching on a specific cause still sees it.
-                Err(original) => {
-                    let cause = wallet_storage_kind(&original);
-                    record_wallet_degradation(&ctx, wallet_id, cause, &original)
-                        .map_err(|_| original)?;
-                }
-            }
-        }
-        let wallets_rehydrated = state.wallets.len();
-        #[cfg(feature = "shielded")]
-        let shielded_viewing_keys_loaded = state.shielded.viewing_keys.len();
-        #[cfg(not(feature = "shielded"))]
-        let shielded_viewing_keys_loaded = 0usize;
-
-        ctx.add_unimplemented_rows(
-            count_unimplemented_rows(&conn).map_err(PersistenceError::from)?,
-        );
-        let degradation = ctx.degradation();
-        tracing::info!(
-            wallets_seen,
-            addresses_loaded,
-            wallets_rehydrated,
-            shielded_viewing_keys_loaded,
-            wallets_pending_rehydration = 0usize,
-            degraded = degradation.degraded,
-            degraded_total = degradation.total,
-            degraded_by_site = ?degradation.by_site,
-            unimplemented = ?LOAD_UNIMPLEMENTED,
-            unimplemented_rows = degradation.unimplemented_rows,
-            "load() summary"
-        );
-        self.replace_load_degradation(degradation);
-        Ok(HistoryReplayLoad { state, outcomes })
+    fn load_read_snapshot(&self) -> Result<ClientStartState, PersistenceError> {
+        self.load_client_snapshot(None).map(|loaded| loaded.state)
     }
 
     fn get_core_tx_record(
@@ -1715,6 +1647,126 @@ fn populated_field_count(cs: &PendingWrites) -> usize {
 ///
 /// Extracted from `load()`'s loop so the loop has somewhere to put a
 /// boundary: every `?` in here ends this wallet, not the file.
+impl SqlitePersister {
+    fn load_client_snapshot(
+        &self,
+        evidence: Option<&ReplayEvidence>,
+    ) -> Result<HistoryReplayLoad, PersistenceError> {
+        let conn = self.conn().map_err(PersistenceError::from)?;
+        let ctx = LoadCtx::new(self.config.load_policy);
+        // Cleared up front so a failed load never leaves the previous load's
+        // snapshot behind, masquerading as this one's verdict.
+        self.replace_load_degradation(LoadDegradation::default());
+        let mut state = ClientStartState::default();
+        let mut outcomes = BTreeMap::new();
+
+        #[cfg(feature = "shielded")]
+        {
+            state.shielded.viewing_keys = schema::shielded_viewing_keys::load_all(&conn, &ctx)
+                .map_err(PersistenceError::from)?;
+        }
+
+        let addrs_all = schema::platform_addrs::load_all(&conn).map_err(PersistenceError::from)?;
+        let mut addresses_loaded: usize = 0;
+        // Wallets whose platform-address rows could not be read. They are
+        // already counted here, so the loop below skips them rather than
+        // rebuilding a wallet whose platform balance would be understated.
+        let mut unreadable: std::collections::BTreeSet<WalletId> =
+            std::collections::BTreeSet::new();
+        for (wallet_id, entry) in addrs_all {
+            let (addrs, count) = match entry {
+                Ok(entry) => entry,
+                Err(original) => {
+                    degrade_whole_wallet(&ctx, wallet_id, &original)
+                        .map_err(|_| PersistenceError::from(original))?;
+                    unreadable.insert(wallet_id);
+                    continue;
+                }
+            };
+            // Skip a wallet with no platform state at all (no addresses,
+            // no registrations, all sync watermarks zero).
+            if count > 0
+                || !addrs.per_account.is_empty()
+                || addrs.sync_height > 0
+                || addrs.sync_timestamp > 0
+                || addrs.last_known_recent_block > 0
+            {
+                addresses_loaded += count;
+                state.platform_addresses.insert(wallet_id, addrs);
+            }
+        }
+
+        // Per-wallet keyless rehydration payload; the manager rebuilds each
+        // wallet watch-only and derives signing keys later on demand.
+        let wallet_ids = schema::wallets::list_ids(&conn).map_err(PersistenceError::from)?;
+        let wallets_seen = wallet_ids.len();
+        for wallet_id in wallet_ids {
+            if unreadable.contains(&wallet_id) {
+                continue;
+            }
+            let restored = match evidence {
+                Some(evidence) => {
+                    load_one_wallet(&conn, wallet_id, &ctx, self.config.load_policy, evidence)
+                }
+                None => {
+                    let tx = rusqlite::Transaction::new_unchecked(
+                        &conn,
+                        rusqlite::TransactionBehavior::Deferred,
+                    )
+                    .map_err(WalletStorageError::from)
+                    .map_err(PersistenceError::from)?;
+                    let result = load_wallet_snapshot(&tx, wallet_id, &ctx);
+                    tx.rollback()
+                        .map_err(WalletStorageError::from)
+                        .map_err(PersistenceError::from)?;
+                    result.map(|state| (state, HistoryReplay::default()))
+                }
+            };
+            match restored {
+                Ok((wallet_state, outcome)) => {
+                    state.wallets.insert(wallet_id, wallet_state);
+                    outcomes.insert(wallet_id, outcome);
+                }
+                // The isolation boundary. One wallet's failure is recorded
+                // against that wallet and the walk continues; under Strict
+                // `tolerate_at` returns, and the ORIGINAL error propagates
+                // rather than the boundary's own wrapper, so a caller
+                // matching on a specific cause still sees it.
+                Err(original) => {
+                    let cause = wallet_storage_kind(&original);
+                    record_wallet_degradation(&ctx, wallet_id, cause, &original)
+                        .map_err(|_| original)?;
+                }
+            }
+        }
+        let wallets_rehydrated = state.wallets.len();
+        #[cfg(feature = "shielded")]
+        let shielded_viewing_keys_loaded = state.shielded.viewing_keys.len();
+        #[cfg(not(feature = "shielded"))]
+        let shielded_viewing_keys_loaded = 0usize;
+
+        ctx.add_unimplemented_rows(
+            count_unimplemented_rows(&conn).map_err(PersistenceError::from)?,
+        );
+        let degradation = ctx.degradation();
+        tracing::info!(
+            wallets_seen,
+            addresses_loaded,
+            wallets_rehydrated,
+            shielded_viewing_keys_loaded,
+            wallets_pending_rehydration = 0usize,
+            degraded = degradation.degraded,
+            degraded_total = degradation.total,
+            degraded_by_site = ?degradation.by_site,
+            unimplemented = ?LOAD_UNIMPLEMENTED,
+            unimplemented_rows = degradation.unimplemented_rows,
+            "load() summary"
+        );
+        self.replace_load_degradation(degradation);
+        Ok(HistoryReplayLoad { state, outcomes })
+    }
+}
+
 fn load_one_wallet(
     conn: &Connection,
     wallet_id: WalletId,

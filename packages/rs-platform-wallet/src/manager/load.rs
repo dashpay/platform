@@ -7,8 +7,11 @@ use crate::changeset::{
     funding_txids, history_accounting, ClientStartState, ClientWalletStartState,
     PersistenceCapabilities, PlatformWalletPersistence,
 };
+use crate::changeset::{
+    persists_backfill_coverage, CoreChangeSet, DashPayBackfillRecord, DurableCursor,
+    PlatformWalletChangeSet,
+};
 use crate::error::PlatformWalletError;
-use crate::manager::history_replay::replay_recorded_history;
 use crate::wallet::asset_lock::sync::recovery::{
     add_tracked_instant_locks, detach_unconfirmed_records, final_lock_input_claims,
     reattach_records, recorded_input_conflicts, seed_observed_input_conflicts,
@@ -16,8 +19,11 @@ use crate::wallet::asset_lock::sync::recovery::{
 };
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
-use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+use crate::wallet::platform_wallet::{
+    DeferredWalletSnapshot, HistoryReadiness, PlatformWalletInfo, WalletId,
+};
 use crate::wallet::PlatformWallet;
+use key_wallet_manager::WalletManager;
 
 use std::time::Duration;
 
@@ -45,6 +51,117 @@ use super::{run_blocking_load, PlatformWalletManager};
 const RESEND_TRANSPORT_READY_WAIT: Duration = Duration::from_secs(90);
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
+    /// Restore wallets, keeping unverifiable snapshots visible and read-only while SPV synchronizes.
+    pub async fn load_from_persistor(&self) -> Result<(), PlatformWalletError> {
+        self.load_tracked_masternodes_from_persistence();
+        let driver = Arc::new(LoadDriver::new(self));
+        let evidence = driver.prefetch().await?;
+        driver.load(None, &evidence).await?;
+        let mut task = self.history_retry_join.lock().await;
+        if task.is_none() && !self.history_retry_cancel.is_cancelled() {
+            *task = driver.start_retry(self.history_retry_cancel.clone());
+        }
+        Ok(())
+    }
+}
+
+pub(super) struct LoadDriver<P: PlatformWalletPersistence + 'static> {
+    sdk: Arc<dash_sdk::Sdk>,
+    persister: Arc<P>,
+    wallet_manager: Arc<tokio::sync::RwLock<key_wallet_manager::WalletManager<PlatformWalletInfo>>>,
+    wallets: Arc<arc_swap::ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
+    lock_notify: Arc<tokio::sync::Notify>,
+    spv_manager: Arc<crate::spv::SpvRuntime>,
+    sync_fault: Arc<std::sync::atomic::AtomicBool>,
+    durable_cursors: crate::changeset::DurableCursors,
+    in_broadcast_fences:
+        Arc<Mutex<BTreeMap<WalletId, Arc<crate::wallet::core::InBroadcastFences>>>>,
+}
+
+impl<P: PlatformWalletPersistence + 'static> LoadDriver<P> {
+    pub(super) fn new(manager: &PlatformWalletManager<P>) -> Self {
+        Self {
+            sdk: Arc::clone(&manager.sdk),
+            persister: Arc::clone(&manager.persister),
+            wallet_manager: Arc::clone(&manager.wallet_manager),
+            wallets: Arc::clone(&manager.wallets),
+            lock_notify: Arc::clone(&manager.lock_notify),
+            spv_manager: Arc::clone(&manager.spv_manager),
+            sync_fault: Arc::clone(&manager.sync_fault),
+            durable_cursors: Arc::clone(&manager.durable_cursors),
+            in_broadcast_fences: Arc::clone(&manager.in_broadcast_fences),
+        }
+    }
+
+    async fn prefetch(
+        &self,
+    ) -> Result<crate::changeset::recorded_history::ReplayEvidence, PlatformWalletError> {
+        let persister = Arc::clone(&self.persister);
+        let candidates = run_blocking_load(move || persister.replay_lock_candidates())
+            .await
+            .map_err(PlatformWalletError::from_load_failure)?;
+        Ok(self.spv_manager.verify_history_locks(candidates).await)
+    }
+
+    fn start_retry(
+        self: Arc<Self>,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> Option<tokio::task::JoinHandle<()>> {
+        if !self
+            .wallets
+            .load()
+            .values()
+            .any(|wallet| wallet.history_readiness() == HistoryReadiness::AwaitingProof)
+        {
+            return None;
+        }
+        Some(tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => break,
+                    _ = tokio::time::sleep(Duration::from_secs(1)) => {}
+                }
+                let pending: Vec<_> = self
+                    .wallets
+                    .load()
+                    .values()
+                    .filter(|wallet| wallet.history_readiness() == HistoryReadiness::AwaitingProof)
+                    .cloned()
+                    .collect();
+                if pending.is_empty() {
+                    continue;
+                }
+                // Network work precedes lifecycle, cursor, manager and backend locks.
+                let evidence = match self.prefetch().await {
+                    Ok(evidence) => evidence,
+                    Err(error) => {
+                        tracing::debug!(%error, "history proof prefetch failed; retry remains scheduled");
+                        continue;
+                    }
+                };
+                for wallet in pending {
+                    if cancel.is_cancelled() {
+                        break;
+                    }
+                    let wallet_id = wallet.core().wallet_id();
+                    let current = self.wallets.load().get(&wallet_id).is_some_and(|current| {
+                        Arc::ptr_eq(current.generation(), wallet.generation())
+                            && current.history_readiness() == HistoryReadiness::AwaitingProof
+                    });
+                    if !current {
+                        continue;
+                    }
+                    // Finish an admitted atomic load even if cancellation arrives; shutdown joins this worker.
+                    if let Err(error) = self.load(Some(wallet_id), &evidence).await {
+                        tracing::debug!(%error, wallet_id = %hex::encode(wallet_id), "deferred wallet restore failed; retry remains scheduled");
+                    }
+                }
+            }
+        }))
+    }
+}
+
+impl<P: PlatformWalletPersistence + 'static> LoadDriver<P> {
     /// Load the full [`ClientStartState`] from the configured persister
     /// and rehydrate the manager's `wallet_manager` and `wallets` maps.
     ///
@@ -78,13 +195,34 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// the store and call again, or reconstruct. Reconstructing over the same
     /// path needs every strong persister reference released first. Dropping
     /// the manager releases its own references; wallet handles, workers and
-    /// in-flight operations can retain others. [`shutdown`](Self::shutdown)
+    /// in-flight operations can retain others. [`shutdown`](PlatformWalletManager::shutdown)
     /// takes `&self`, so it cannot release the manager's own `Arc<P>`.
     ///
     /// [`WalletManager`]: key_wallet_manager::WalletManager
-    pub async fn load_from_persistor(&self) -> Result<(), PlatformWalletError> {
+    async fn load(
+        &self,
+        target: Option<WalletId>,
+        evidence: &crate::changeset::recorded_history::ReplayEvidence,
+    ) -> Result<(), PlatformWalletError> {
         let persister = Arc::clone(&self.persister);
-        let start_state = match run_blocking_load(move || persister.load()).await {
+        let loaded = match run_blocking_load(move || match target {
+            Some(wallet_id) => persister.load_read_snapshot().map(|mut state| {
+                state.wallets.retain(|id, _| *id == wallet_id);
+                state.platform_addresses.retain(|id, _| *id == wallet_id);
+                crate::manager::history_replay::HistoryReplayLoad {
+                    state,
+                    outcomes: Default::default(),
+                }
+            }),
+            None => persister.load_read_snapshot().map(|state| {
+                crate::manager::history_replay::HistoryReplayLoad {
+                    state,
+                    outcomes: Default::default(),
+                }
+            }),
+        })
+        .await
+        {
             Ok(state) => state,
             Err(e) => {
                 // Debug, not Display: it carries the real cause (e.g. a
@@ -93,6 +231,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 return Err(PlatformWalletError::from_load_failure(e));
             }
         };
+        let crate::manager::history_replay::HistoryReplayLoad {
+            state: start_state,
+            mut outcomes,
+        } = loaded;
         let ClientStartState {
             mut platform_addresses,
             wallets,
@@ -120,7 +262,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // Tracked (wallet-independent) masternodes ride the same startup
         // hydration; a failure logs and starts empty rather than failing
         // wallet restore.
-        self.load_tracked_masternodes_from_persistence();
 
         let persister_dyn: Arc<dyn PlatformWalletPersistence> = Arc::clone(&self.persister) as _;
 
@@ -167,8 +308,77 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // the wallet processed from it. Nothing between the two takes the
         // lock, and it is released before the rollback below.
         let mut held = None;
+        let mut held_lifecycle = None;
 
         'load: while let Some((expected_wallet_id, wallet_state, reread)) = pending.pop_front() {
+            if !reread {
+                held_lifecycle = None;
+                // Pending publication shares removal's generation gate; a retry cannot resurrect a removed handle.
+                let candidate = self.wallets.load().get(&expected_wallet_id).cloned();
+                if target.is_some() && candidate.is_none() {
+                    continue 'load;
+                }
+                if let Some(candidate) = &candidate {
+                    if candidate.history_readiness() == HistoryReadiness::Ready {
+                        already_registered.push(expected_wallet_id);
+                        continue 'load;
+                    }
+                    held_lifecycle = Some(candidate.generation().teardown_guard().await);
+                }
+                let cursors = Arc::clone(&self.durable_cursors.cursors).lock_owned().await;
+                if self
+                    .wallet_manager
+                    .read()
+                    .await
+                    .get_wallet(&expected_wallet_id)
+                    .is_some()
+                {
+                    held_lifecycle = None;
+                    already_registered.push(expected_wallet_id);
+                    continue 'load;
+                }
+                if let Some(candidate) = &candidate {
+                    if !self
+                        .wallets
+                        .load()
+                        .get(&expected_wallet_id)
+                        .is_some_and(|current| {
+                            Arc::ptr_eq(current.generation(), candidate.generation())
+                        })
+                    {
+                        held_lifecycle = None;
+                        continue 'load;
+                    }
+                }
+                let persister = Arc::clone(&self.persister);
+                let prefetched = evidence.clone();
+                let lifecycle = held_lifecycle.take();
+                match run_blocking_load(move || {
+                    let loaded =
+                        persister.load_wallet_with_replay(expected_wallet_id, &prefetched)?;
+                    // An abandoned async caller cannot release publication fences while this transaction still runs.
+                    Ok((loaded, cursors, lifecycle))
+                })
+                .await
+                {
+                    Ok((mut loaded, cursors, lifecycle)) => {
+                        held_lifecycle = lifecycle;
+                        outcomes.extend(loaded.outcomes);
+                        platform_addresses.extend(loaded.state.platform_addresses);
+                        if let Some(state) = loaded.state.wallets.remove(&expected_wallet_id) {
+                            pending.push_front((expected_wallet_id, state, true));
+                            held = Some(cursors);
+                        } else {
+                            held_lifecycle = None;
+                        }
+                    }
+                    Err(error) => {
+                        load_error = Some(PlatformWalletError::from_load_failure(error));
+                        break 'load;
+                    }
+                }
+                continue 'load;
+            }
             let ClientWalletStartState {
                 mut wallet,
                 mut wallet_info,
@@ -208,10 +418,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // replay out as well, or the replay would plan it as unconfirmed.
             let withheld_records = detach_unconfirmed_records(&mut wallet_info, &withheld);
             let mut defeated = HashSet::new();
+            let backend_outcome = outcomes.remove(&expected_wallet_id).unwrap_or_default();
+            let mut deferred = !backend_outcome.deferred.is_empty();
+            let read_only = backend_outcome.read_only;
+            unconfirmed_outgoing_txs = backend_outcome.resendable(unconfirmed_outgoing_txs);
             if !recorded_history.is_empty() {
                 let offered = recorded_history.transactions.len();
                 let outcome =
-                    replay_recorded_history(&mut wallet_info, &mut wallet, recorded_history).await;
+                    crate::manager::history_replay::replay_recorded_history_with_evidence(
+                        &mut wallet_info,
+                        &mut wallet,
+                        recorded_history,
+                        evidence,
+                    )
+                    .await;
                 tracing::info!(
                     wallet_id = %hex::encode(expected_wallet_id),
                     offered,
@@ -221,6 +441,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 );
                 // A send the replay retired is not dispatched again below.
                 unconfirmed_outgoing_txs = outcome.resendable(unconfirmed_outgoing_txs);
+                deferred = !outcome.deferred.is_empty();
                 defeated = outcome.defeated;
             }
             reattach_records(&mut wallet_info, withheld_records);
@@ -310,9 +531,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             //
             // A fresh PROCESS still starts empty: this registry is not durable.
             // See `InBroadcastFences` for what closing that half requires.
-            let generation = Arc::new(WalletGeneration::with_fences(
-                self.in_broadcast_fences_for(&wallet_id),
-            ));
+            let previous = self
+                .wallets
+                .load()
+                .get(&wallet_id)
+                .cloned()
+                .filter(|wallet| wallet.history_readiness() != HistoryReadiness::Ready);
+            let generation = previous
+                .as_ref()
+                .map(|wallet| Arc::clone(wallet.generation()))
+                .unwrap_or_else(|| {
+                    Arc::new(WalletGeneration::with_fences(
+                        self.in_broadcast_fences_for(&wallet_id),
+                    ))
+                });
             // Mirror the inner `ManagedWalletInfo.balance` (already
             // recomputed from the freshly-loaded UTXO set on the FFI
             // side via `update_balance`) into the lock-free `Arc` the
@@ -397,6 +629,55 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 break 'load;
             }
 
+            if deferred || read_only {
+                let _cursors = match held.take() {
+                    Some(guard) => guard,
+                    None => Arc::clone(&self.durable_cursors.cursors).lock_owned().await,
+                };
+                let wm = self.wallet_manager.read().await;
+                if wm.get_wallet(&wallet_id).is_some() {
+                    held_lifecycle = None;
+                    continue 'load;
+                }
+                let newly_visible = previous.is_none();
+                let handle = previous.unwrap_or_else(|| {
+                    Arc::new(PlatformWallet::new(
+                        Arc::clone(&self.sdk),
+                        wallet_id,
+                        Arc::clone(&self.wallet_manager),
+                        Arc::clone(&generation),
+                        Arc::clone(&self.lock_notify),
+                        Arc::clone(&persister_dyn),
+                        Arc::new(crate::broadcaster::SpvBroadcaster::new(Arc::clone(
+                            &self.spv_manager,
+                        ))),
+                        Arc::clone(&self.sync_fault),
+                        Arc::clone(&self.durable_cursors),
+                    ))
+                });
+                handle
+                    .deferred_history
+                    .store(Some(Arc::new(DeferredWalletSnapshot {
+                        wallet,
+                        info: platform_info,
+                        readiness: if read_only {
+                            HistoryReadiness::Recovery
+                        } else {
+                            HistoryReadiness::AwaitingProof
+                        },
+                    })));
+                self.wallets.rcu(|wallets| {
+                    let mut wallets = BTreeMap::clone(wallets);
+                    wallets.insert(wallet_id, Arc::clone(&handle));
+                    wallets
+                });
+                if newly_visible {
+                    inserted_in_wallets.push((wallet_id, generation));
+                }
+                held_lifecycle = None;
+                continue 'load;
+            }
+
             // Insert into `wallet_manager` first so we have a wallet handle
             // to build the `PlatformWallet` against. Track success in
             // `inserted_in_manager` so the batch-rollback at the bottom can
@@ -462,7 +743,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             {
                 let mut durable_cursors = match held.take() {
                     Some(guard) => guard,
-                    None => self.durable_cursors.lock().await,
+                    None => Arc::clone(&self.durable_cursors.cursors).lock_owned().await,
                 };
                 if self
                     .wallet_manager
@@ -472,28 +753,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .is_some()
                 {
                     already_registered.push(wallet_id);
-                    continue 'load;
-                }
-                if !reread && durable_cursors.contains_key(&wallet_id) {
-                    let persister = Arc::clone(&self.persister);
-                    let current = match run_blocking_load(move || persister.load()).await {
-                        Ok(mut state) => state.wallets.remove(&expected_wallet_id),
-                        Err(e) => {
-                            load_error = Some(PlatformWalletError::from_load_failure(e));
-                            break 'load;
-                        }
-                    };
-                    match current {
-                        Some(state) => {
-                            pending.push_front((expected_wallet_id, state, true));
-                            held = Some(durable_cursors);
-                        }
-                        None => tracing::warn!(
-                            wallet_id = %hex::encode(expected_wallet_id),
-                            "load: the wallet is no longer on the host; not publishing its \
-                             stale snapshot"
-                        ),
-                    }
                     continue 'load;
                 }
                 // Coverage for a receival account this wallet did not restore
@@ -594,17 +853,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 ));
             }
 
-            let platform_wallet = PlatformWallet::new(
-                Arc::clone(&self.sdk),
-                wallet_id,
-                Arc::clone(&self.wallet_manager),
-                generation,
-                Arc::clone(&self.lock_notify),
-                Arc::clone(&persister_dyn),
-                broadcaster,
-                Arc::clone(&self.sync_fault),
-                Arc::clone(&self.durable_cursors),
-            );
+            let platform_wallet = previous.unwrap_or_else(|| {
+                Arc::new(PlatformWallet::new(
+                    Arc::clone(&self.sdk),
+                    wallet_id,
+                    Arc::clone(&self.wallet_manager),
+                    generation,
+                    Arc::clone(&self.lock_notify),
+                    Arc::clone(&persister_dyn),
+                    broadcaster,
+                    Arc::clone(&self.sync_fault),
+                    Arc::clone(&self.durable_cursors),
+                ))
+            });
 
             // Initialize the platform-address provider. If the snapshot
             // carried a slice for this wallet, restore it directly;
@@ -626,7 +887,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 platform_wallet.platform().initialize().await;
             }
 
-            let platform_wallet = Arc::new(platform_wallet);
+            platform_wallet.deferred_history.store(None);
             self.wallets.rcu(|wallets| {
                 let mut wallets = std::collections::BTreeMap::clone(wallets);
                 wallets.insert(wallet_id, Arc::clone(&platform_wallet));
@@ -666,6 +927,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 }
             }
         }
+        drop(held_lifecycle);
         // A `break` between a re-read and its publication leaves the lock
         // held; the rollback must not run under it.
         drop(held);
@@ -924,6 +1186,125 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 "load: persisting backfilled transaction accounting failed"
             );
         }
+    }
+
+    pub(super) fn remove_from_wallet_manager(
+        &self,
+        wm: &mut WalletManager<PlatformWalletInfo>,
+        wallet_id: &WalletId,
+    ) -> Result<(), key_wallet_manager::WalletError> {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+        let (_, info) = wm.remove_wallet(wallet_id)?;
+        let retiring = info
+            .rewind_barrier
+            .retire(WalletInfoInterface::account_generation(&info));
+        let mut retired = self.durable_cursors.retired();
+        let entry = retired.entry(*wallet_id).or_default();
+        entry.in_flight = entry.in_flight.saturating_add(retiring.in_flight);
+        entry.epoch = entry.epoch.max(retiring.epoch);
+        entry.account_generation = entry.account_generation.max(retiring.account_generation);
+        Ok(())
+    }
+
+    pub(super) fn settle_published_backfill(
+        &self,
+        durable_cursors: &mut BTreeMap<WalletId, DurableCursor>,
+        wallet_id: WalletId,
+        record: DashPayBackfillRecord,
+        dropped: bool,
+        own_cursor: u32,
+        snapshot_cursor: u32,
+    ) -> Result<DashPayBackfillRecord, PlatformWalletError> {
+        let inline = self.persister.store_commits_inline();
+        let durable = persists_backfill_coverage(&*self.persister);
+        let predecessor = durable_cursors.contains_key(&wallet_id);
+        let held_on_host = !record.is_empty() || dropped;
+        let record = if durable {
+            record
+        } else {
+            DashPayBackfillRecord::default()
+        };
+        // A backend that cannot hold the record durably never had one
+        // written by this process, so only a record it handed back can need
+        // invalidating; one that can is replaced when the snapshot's record
+        // may disagree with what the wallet carries.
+        let replace = if durable {
+            dropped || predecessor
+        } else {
+            held_on_host
+        };
+        if !replace {
+            return Ok(record);
+        }
+        let host_cursor = durable_cursors
+            .get(&wallet_id)
+            .map_or(snapshot_cursor, |entry| entry.height);
+        let cursor = (!record.is_empty() && own_cursor < host_cursor).then_some(own_cursor);
+        tracing::info!(
+            wallet_id = %hex::encode(wallet_id),
+            covered = record.covered().len(),
+            dropped,
+            predecessor,
+            durable,
+            cursor = ?cursor,
+            "the host's DashPay backfill record is replaced with the one this wallet \
+             carries before the wallet is published"
+        );
+        let changeset = PlatformWalletChangeSet {
+            core: cursor.map(|cursor| CoreChangeSet {
+                synced_height: Some(cursor),
+                synced_height_is_rewind: true,
+                ..CoreChangeSet::default()
+            }),
+            dashpay_backfill: Some(record.clone()),
+            ..PlatformWalletChangeSet::default()
+        };
+        self.persister.store(wallet_id, changeset).map_err(|e| {
+            tracing::error!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "failed to replace the host's DashPay backfill record; \
+                 the wallet was not published"
+            );
+            PlatformWalletError::from_store_failure(&*self.persister, e)
+        })?;
+        if !inline {
+            self.persister.flush(wallet_id).map_err(|e| {
+                tracing::error!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %e,
+                    "failed to commit the replaced DashPay backfill record; \
+                     the wallet was not published"
+                );
+                PlatformWalletError::from_flush_failure(e)
+            })?;
+        }
+        if let Some(cursor) = cursor {
+            durable_cursors.insert(wallet_id, DurableCursor::at(cursor));
+        }
+        Ok(record)
+    }
+    pub(super) fn inherit_rewind_barrier(
+        &self,
+        wm: &mut WalletManager<PlatformWalletInfo>,
+        wallet_id: &WalletId,
+    ) {
+        let retired = self.durable_cursors.retired().remove(wallet_id);
+        if let (Some(retired), Some(info)) = (retired, wm.get_wallet_info_mut(wallet_id)) {
+            info.rewind_barrier.inherit(retired);
+        }
+    }
+    pub(super) fn in_broadcast_fences_for(
+        &self,
+        wallet_id: &WalletId,
+    ) -> Arc<crate::wallet::core::InBroadcastFences> {
+        Arc::clone(
+            self.in_broadcast_fences
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .entry(*wallet_id)
+                .or_default(),
+        )
     }
 }
 
@@ -1562,6 +1943,91 @@ mod idempotent_load_tests {
         }
     }
 
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn should_retry_pending_history_without_hiding_the_wallet() {
+        use crate::wallet::platform_wallet::HistoryReadiness;
+        use dash_spv::test_utils::InstantLockFixture;
+
+        let (ctx, funding) = TestWalletContext::new_random()
+            .with_mempool_funding(100_000)
+            .await;
+        let wallet_id = ctx.wallet.compute_wallet_id();
+        let fixture = InstantLockFixture::new(&funding).unwrap();
+        let history = RecordedHistory {
+            transactions: vec![StoredTransaction {
+                txid: funding.txid(),
+                transaction: funding.clone(),
+                context: TransactionContext::Mempool,
+                stored_net_amount: None,
+                stored_direction: None,
+                owned_inputs: Vec::new(),
+            }],
+            instant_locks: BTreeMap::from([(funding.txid(), fixture.instant_lock().clone())]),
+        };
+        let manager = PlatformWalletManager::new(
+            Arc::new(dash_sdk::SdkBuilder::new_mock().build().unwrap()),
+            Arc::new(RecordedHistoryPersister {
+                wallet: ctx.wallet,
+                managed: ctx.managed_wallet,
+                history,
+                asset_locks: BTreeMap::new(),
+            }),
+            Arc::new(NoopTestEventHandler),
+        );
+        manager.load_from_persistor().await.unwrap();
+        assert_eq!(manager.list_wallet_ids_blocking(), vec![wallet_id]);
+        let visible = manager.get_wallet(&wallet_id).await.unwrap();
+        assert_eq!(visible.balance().total(), 100_000);
+        assert!(
+            manager
+                .wallet_manager
+                .read()
+                .await
+                .get_wallet(&wallet_id)
+                .is_none(),
+            "unverified history must remain outside the active SPV wallet manager"
+        );
+        assert!(!visible.core().is_current_generation().await);
+        assert_eq!(visible.state().await.core_wallet.balance.total(), 100_000);
+        let storage = tempfile::TempDir::new().unwrap();
+        let offline = dash_spv::ClientConfig::testnet()
+            .with_storage_path(storage.path())
+            .with_restrict_to_configured_peers(true);
+        assert!(offline.peers.is_empty() && offline.restrict_to_configured_peers);
+        assert!(manager
+            .spv_manager
+            .start_and_spawn(offline, || true)
+            .await
+            .unwrap());
+        assert!(manager.spv_manager.is_started());
+        let revision_before = manager.wallet_manager.read().await.monitor_revision();
+        manager.spv_manager.install_history_fixture(&fixture).await;
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while visible.history_readiness() != HistoryReadiness::Ready {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("SML readiness must activate the existing visible handle");
+        assert!(visible.core().is_current_generation().await);
+        assert!(
+            manager.wallet_manager.read().await.monitor_revision() > revision_before,
+            "activation must invalidate the running SPV script/filter view"
+        );
+        assert_eq!(manager.list_wallet_ids_blocking(), vec![wallet_id]);
+        assert!(Arc::ptr_eq(
+            &visible,
+            &manager.get_wallet(&wallet_id).await.unwrap()
+        ));
+        assert!(manager
+            .wallet_manager
+            .read()
+            .await
+            .get_wallet(&wallet_id)
+            .is_some());
+        assert!(manager.shutdown().await.all_clean());
+    }
+
     /// `load_from_persistor` replays the stored history the persister hands
     /// back, whatever the persister: a stored spend of the only coin must
     /// leave nothing spendable even though the persisted UTXO set still
@@ -2131,12 +2597,10 @@ mod idempotent_load_tests {
                 )]),
                 _ => BTreeMap::new(),
             };
+            let fixture = dash_spv::test_utils::InstantLockFixture::new(&asset_lock).unwrap();
             let instant = |txid| {
-                let lock = InstantLock {
-                    txid,
-                    inputs: vec![contested, other],
-                    ..Default::default()
-                };
+                let mut lock = fixture.instant_lock().clone();
+                lock.txid = txid;
                 AssetLockProof::Instant(InstantAssetLockProof::new(lock, asset_lock.clone(), 0))
             };
             let (status, proof) = match evidence {
@@ -2164,7 +2628,12 @@ mod idempotent_load_tests {
             let competitor_context = match competing {
                 Competitor::Unconfirmed => TransactionContext::Mempool,
                 Competitor::PlainBlock => in_block(120),
-                Competitor::ChainLocked => in_block(100),
+                Competitor::ChainLocked => match in_block(100) {
+                    TransactionContext::InBlock(block) => {
+                        TransactionContext::InChainLockedBlock(block)
+                    }
+                    _ => unreachable!(),
+                },
             };
             let mut wallet = ctx.wallet.clone();
             let manager = make_history_manager(RecordedHistoryPersister {
@@ -2206,6 +2675,17 @@ mod idempotent_load_tests {
                         .collect()
                 },
             });
+            let spv_storage = tempfile::TempDir::new().unwrap();
+            manager
+                .spv_manager
+                .start(
+                    dash_spv::ClientConfig::testnet()
+                        .with_storage_path(spv_storage.path())
+                        .with_restrict_to_configured_peers(true),
+                )
+                .await
+                .unwrap();
+            manager.spv_manager.install_history_fixture(&fixture).await;
             manager
                 .load_from_persistor()
                 .await
@@ -2254,7 +2734,6 @@ mod idempotent_load_tests {
     /// transaction that no longer stands.
     #[tokio::test]
     async fn should_not_claim_inputs_of_a_tracked_funding_the_replay_defeated() {
-        use dashcore::ephemerealdata::instant_lock::InstantLock;
         use dashcore::hashes::Hash;
         use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
         use dpp::prelude::AssetLockProof;
@@ -2315,11 +2794,8 @@ mod idempotent_load_tests {
             txid: asset_lock.txid(),
             vout: 0,
         };
-        let instant_lock = InstantLock {
-            txid: asset_lock.txid(),
-            inputs: vec![contested, other],
-            ..Default::default()
-        };
+        let fixture = dash_spv::test_utils::InstantLockFixture::new(&asset_lock).unwrap();
+        let instant_lock = fixture.instant_lock().clone();
         let mut wallet = ctx.wallet.clone();
         let manager = make_history_manager(RecordedHistoryPersister {
             wallet: ctx.wallet,
@@ -2327,7 +2803,15 @@ mod idempotent_load_tests {
             history: RecordedHistory {
                 transactions: vec![
                     stored(&asset_lock, TransactionContext::Mempool),
-                    stored(&winner, in_block(100)),
+                    stored(
+                        &winner,
+                        match in_block(100) {
+                            TransactionContext::InBlock(block) => {
+                                TransactionContext::InChainLockedBlock(block)
+                            }
+                            _ => unreachable!(),
+                        },
+                    ),
                 ],
                 instant_locks: BTreeMap::new(),
             },
@@ -2352,6 +2836,17 @@ mod idempotent_load_tests {
             .into_iter()
             .collect(),
         });
+        let spv_storage = tempfile::TempDir::new().unwrap();
+        manager
+            .spv_manager
+            .start(
+                dash_spv::ClientConfig::testnet()
+                    .with_storage_path(spv_storage.path())
+                    .with_restrict_to_configured_peers(true),
+            )
+            .await
+            .unwrap();
+        manager.spv_manager.install_history_fixture(&fixture).await;
         manager
             .load_from_persistor()
             .await

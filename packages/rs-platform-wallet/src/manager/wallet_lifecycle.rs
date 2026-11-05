@@ -375,7 +375,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // a wallet registered between the two checks still collides there.
         {
             let wm = self.wallet_manager.read().await;
-            if wm.get_wallet_info(&registration_wallet_id).is_some() {
+            if wm.get_wallet_info(&registration_wallet_id).is_some()
+                || self.wallets.load().contains_key(&registration_wallet_id)
+            {
                 return Err(already_registered(registration_wallet_id));
             }
         }
@@ -521,6 +523,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 .get_wallet_info(&registration_wallet_id)
                 .is_some()
             {
+                return Err(already_registered(registration_wallet_id));
+            }
+            if self.wallets.load().contains_key(&registration_wallet_id) {
                 return Err(already_registered(registration_wallet_id));
             }
             let host_backfill = self.settle_published_backfill(
@@ -991,12 +996,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                      their identity-sync rows are left for the next launch to reconcile"
                 );
             }
-            if let Err(e) = self.remove_from_wallet_manager(&mut wm, wallet_id) {
-                tracing::warn!(
-                    wallet_id = %hex::encode(wallet_id),
-                    error = %e,
-                    "remove_wallet: inner wallet-manager removal failed (state may be inconsistent)"
-                );
+            if wm.get_wallet(wallet_id).is_some() {
+                if let Err(e) = self.remove_from_wallet_manager(&mut wm, wallet_id) {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error = %e,
+                        "remove_wallet: inner wallet-manager removal failed (state may be inconsistent)"
+                    );
+                }
             }
         }
 

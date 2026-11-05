@@ -450,6 +450,11 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// wallet attribution where needed.
     fn load(&self) -> Result<ClientStartState, PersistenceError>;
 
+    /// Read startup data without settling history; active wallets may share this backend.
+    fn load_read_snapshot(&self) -> Result<ClientStartState, PersistenceError> {
+        self.load()
+    }
+
     /// Restore with prefetched evidence inside the backend's atomic scope.
     ///
     /// The default supplies raw history for the common owner; it does not claim
@@ -465,9 +470,32 @@ pub trait PlatformWalletPersistence: Send + Sync {
         })
     }
 
+    /// Restore only one wallet during a deferred-load retry.
+    ///
+    /// The default reads a raw snapshot without applying replay effects. Transactional
+    /// backends override this to ensure no other wallet can be mutated by the retry.
+    fn load_wallet_with_replay(
+        &self,
+        wallet_id: WalletId,
+        _evidence: &ReplayEvidence,
+    ) -> Result<HistoryReplayLoad, PersistenceError> {
+        let mut state = self.load_read_snapshot()?;
+        state.wallets.retain(|id, _| *id == wallet_id);
+        state.platform_addresses.retain(|id, _| *id == wallet_id);
+        Ok(HistoryReplayLoad {
+            state,
+            outcomes: Default::default(),
+        })
+    }
+
     /// Advisory lock candidates; callers must rebind verified proof in a fresh snapshot.
     fn replay_lock_candidates(&self) -> Result<Vec<dashcore::InstantLock>, PersistenceError> {
-        Ok(Vec::new())
+        Ok(self
+            .load_read_snapshot()?
+            .wallets
+            .values()
+            .flat_map(super::recorded_history::replay_lock_candidates)
+            .collect())
     }
 
     /// Look up a single core transaction record by `txid` for `wallet_id`.

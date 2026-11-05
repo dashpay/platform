@@ -212,7 +212,8 @@ pub async fn replay_recorded_history_with_evidence(
                 .instant_locks
                 .get(&stored.txid)
                 .is_some_and(|proof| {
-                    proof.txid() == stored.txid
+                    proof.network() == wallet_info.network()
+                        && proof.txid() == stored.txid
                         && proof.instant_lock() == lock
                         && proof.matches_transaction(&stored.transaction)
                 })
@@ -356,6 +357,18 @@ pub async fn replay_recorded_history_with_evidence(
     let mut swept = plan.removed;
     let mut sweeps = plan.effects;
     replay.retain(|stored| !swept.contains(&stored.txid));
+    // Verified IS evidence survives a mining-block reorg independently of the
+    // record's block context. Records are detached here, so this cannot sweep
+    // outside the common planner. Only surviving transactions retain the metadata.
+    for stored in &replay {
+        let lock = match &stored.context {
+            TransactionContext::InstantSend(lock) => Some(lock),
+            _ => instant_locks.get(&stored.txid),
+        };
+        if let Some(lock) = lock.filter(|lock| lock_matches_record(lock, stored)) {
+            wallet_info.mark_instant_send_utxos(&stored.txid, lock);
+        }
+    }
     let (replay, set_aside): (Vec<_>, Vec<_>) = replay
         .into_iter()
         .partition(|stored| !unsafe_txids.contains(&stored.txid));
@@ -1492,7 +1505,7 @@ mod tests {
 
         let directory = tempfile::TempDir::new().unwrap();
         let client = DashSpvClient::new(
-            ClientConfig::mainnet()
+            ClientConfig::new(dashcore::Network::Testnet)
                 .without_filters()
                 .with_storage_path(directory.path()),
             MockNetworkManager::new(),
@@ -1575,6 +1588,110 @@ mod tests {
             assert!(deferred.deferred.contains(&locked.txid));
             assert!(deferred.sweeps.is_empty());
         }
+    }
+
+    #[tokio::test]
+    async fn should_defer_history_proven_on_another_network() {
+        use dash_spv::test_utils::{InstantLockFixture, MockNetworkManager};
+        use dash_spv::{ClientConfig, DashSpvClient};
+        use key_wallet_manager::test_utils::MockWallet;
+        use std::sync::Arc;
+        use tokio::sync::RwLock;
+
+        let directory = tempfile::TempDir::new().unwrap();
+        let client = DashSpvClient::new(
+            ClientConfig::mainnet()
+                .without_filters()
+                .with_storage_path(directory.path()),
+            MockNetworkManager::new(),
+            Arc::new(RwLock::new(MockWallet::new())),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+        let (mut wallet, mut info, _, records, _) = confirmed_spend_fixture().await;
+        let mut locked = records[1].clone();
+        locked.context = TransactionContext::Mempool;
+        let fixture = InstantLockFixture::new(&locked.transaction).unwrap();
+        fixture.install(&client).await.unwrap();
+        let proof = client
+            .verify_instant_lock(fixture.instant_lock())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(proof.network(), dashcore::Network::Mainnet);
+        assert_eq!(info.network(), dashcore::Network::Testnet);
+        let outcome = replay_recorded_history_with_evidence(
+            &mut info,
+            &mut wallet,
+            history(
+                vec![locked.clone()],
+                BTreeMap::from([(locked.txid, fixture.instant_lock().clone())]),
+            ),
+            &ReplayEvidence {
+                instant_locks: BTreeMap::from([(locked.txid, proof)]),
+            },
+        )
+        .await;
+        assert!(outcome.deferred.contains(&locked.txid));
+        assert!(outcome.sweeps.is_empty());
+        assert!(outcome.resendable(vec![locked.transaction]).is_empty());
+    }
+
+    #[tokio::test]
+    async fn should_retain_verified_mined_lock_when_history_is_rewound() {
+        use dash_spv::test_utils::{InstantLockFixture, MockNetworkManager};
+        use dash_spv::{ClientConfig, DashSpvClient};
+        use key_wallet_manager::test_utils::MockWallet;
+        use std::sync::Arc;
+        use tokio::sync::RwLock;
+
+        let (mut wallet, mut info, _, records, _) = confirmed_spend_fixture().await;
+        let locked = records[1].clone();
+        let fixture = InstantLockFixture::new(&locked.transaction).unwrap();
+        let directory = tempfile::TempDir::new().unwrap();
+        let client = DashSpvClient::new(
+            ClientConfig::testnet()
+                .without_filters()
+                .with_storage_path(directory.path()),
+            MockNetworkManager::new(),
+            Arc::new(RwLock::new(MockWallet::new())),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+        fixture.install(&client).await.unwrap();
+        let proof = client
+            .verify_instant_lock(fixture.instant_lock())
+            .await
+            .unwrap()
+            .unwrap();
+        let outcome = replay_recorded_history_with_evidence(
+            &mut info,
+            &mut wallet,
+            history(
+                records,
+                BTreeMap::from([(locked.txid, fixture.instant_lock().clone())]),
+            ),
+            &ReplayEvidence {
+                instant_locks: BTreeMap::from([(locked.txid, proof)]),
+            },
+        )
+        .await;
+        assert!(outcome.deferred.is_empty());
+        assert!(info.instant_send_locks().contains(&locked.txid));
+        let before = info.accounts.standard_bip44_accounts[&0].transactions()[&locked.txid].clone();
+        assert_eq!(
+            before.context, locked.context,
+            "InstantSend evidence must preserve the mined block context"
+        );
+        info.truncate_above(100).unwrap();
+        assert!(
+            info.accounts.standard_bip44_accounts[&0]
+                .transactions()
+                .contains_key(&locked.txid),
+            "verified InstantSend survives removal of its mining block"
+        );
     }
 
     /// A persister that stores no per-input ownership leaves the replay
