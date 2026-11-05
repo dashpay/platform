@@ -21,6 +21,27 @@ interface TxoDao {
     @Query("SELECT * FROM txos WHERE walletId = :walletId")
     fun observeByWallet(walletId: ByteArray): Flow<List<TxoEntity>>
 
+    /**
+     * One outpoint-ordered page of a wallet's `isSpent = 0` TXOs, for the
+     * store reconcile's classify pass, which must not hold the whole table
+     * at once and only ever asks the engine about the rows the restore
+     * would hand back. Pass an empty [after] to start (an empty BLOB sorts
+     * before every real 36-byte outpoint), then the previous page's last
+     * `outpoint` to continue.
+     *
+     * Not cheap per page: SQLite finds the wallet's rows through the
+     * `walletId` index, so each page reads all of them (spent rows are
+     * never deleted) and sorts the unspent ones past [after]. The cursor
+     * is an outpoint, not an offset, so it is exact: no row is visited
+     * twice or skipped because another was inserted, deleted or marked
+     * spent mid-sweep.
+     */
+    @Query(
+        "SELECT * FROM txos WHERE walletId = :walletId AND isSpent = 0 AND outpoint > :after " +
+            "ORDER BY outpoint LIMIT :limit",
+    )
+    suspend fun pageUnspentByWallet(walletId: ByteArray, after: ByteArray, limit: Int): List<TxoEntity>
+
     /** WalletMemoryExplorer: `txo.walletId == walletId && txo.isSpent == false`. */
     @Query("SELECT * FROM txos WHERE walletId = :walletId AND isSpent = 0")
     fun observeUnspentByWallet(walletId: ByteArray): Flow<List<TxoEntity>>
