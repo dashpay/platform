@@ -10,7 +10,7 @@ import org.dashfoundation.dashsdk.ffi.TxDecodeNative
  * A consensus-decoded Dash transaction: per-output `(address, value,
  * script)` plus per-input previous outpoints with a best-effort P2PKH
  * sender address — port of `SwiftDashSDK/KeyWallet/TransactionDecoder.swift`
- * (platform PR #3981) over key-wallet-ffi's `transaction_decode`.
+ * (platform PR #3981) over platform-wallet-ffi's `platform_wallet_transaction_decode`.
  *
  * Wallet persistence stores every transaction's raw bytes
  * (`TransactionEntity.transactionData`) but only materializes TXO rows for
@@ -88,8 +88,8 @@ class DecodedTransaction(
 }
 
 /**
- * Pure utility — decodes raw transaction bytes via key-wallet-ffi's
- * `transaction_decode`. No wallet handle or state involved.
+ * Pure utility — decodes raw transaction bytes via platform-wallet-ffi's
+ * `platform_wallet_transaction_decode`. No wallet handle or state involved.
  */
 object TransactionDecoder {
 
@@ -99,7 +99,7 @@ object TransactionDecoder {
      * @param txData serialized transaction bytes (e.g. a persisted
      *   `TransactionEntity.transactionData`).
      * @param network network used to render addresses (base58 version bytes).
-     * @throws org.dashfoundation.dashsdk.errors.DashSdkError.InvalidParameter
+     * @throws org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet
      *   for malformed or empty bytes (including trailing garbage).
      */
     fun decode(txData: ByteArray, network: Network): DecodedTransaction {

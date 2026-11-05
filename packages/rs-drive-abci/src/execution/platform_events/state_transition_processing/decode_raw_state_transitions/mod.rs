@@ -72,8 +72,9 @@ mod tests {
     use dpp::platform_value::BinaryData;
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV1};
-    use dpp::state_transition::StateTransition;
+    use dpp::state_transition::{validate_state_transition_size, StateTransition};
     use dpp::version::PlatformVersion;
+    use platform_version::version::LATEST_VERSION;
 
     /// Protocol version 13 decodes a transition with bytes after it as the transition alone;
     /// protocol version 14 refuses it. The exact bytes decode at both.
@@ -136,6 +137,52 @@ mod tests {
                     invalid.error
                 ),
                 other => panic!("protocol version 14 refuses left over bytes, got {other:?}"),
+            }
+        }
+    }
+
+    /// Each decoder generation keeps its own size check; clients check sizes with
+    /// `validate_state_transition_size`. At every protocol version both must agree on the
+    /// boundary: the limit itself passes, one byte more is refused with the same error.
+    #[test]
+    fn should_agree_with_the_client_size_check_at_every_protocol_version() {
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        for protocol_version in 1..=LATEST_VERSION {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("known protocol version");
+            let max_size = platform_version.system_limits.max_state_transition_size;
+            let raw_state_transitions = vec![
+                vec![0u8; max_size as usize],
+                vec![0u8; max_size as usize + 1],
+            ];
+
+            let decoded: Vec<DecodedStateTransition> = platform
+                .decode_raw_state_transitions(&raw_state_transitions, platform_version)
+                .expect("known decoder version")
+                .into();
+            assert_eq!(decoded.len(), 2);
+
+            for (raw, decoded) in raw_state_transitions.iter().zip(&decoded) {
+                let size_bytes = raw.len() as u64;
+                let refused_for_size = match decoded {
+                    DecodedStateTransition::InvalidEncoding(invalid) => match &invalid.error {
+                        ConsensusError::BasicError(
+                            BasicError::StateTransitionMaxSizeExceededError(_),
+                        ) => Some(invalid.error.clone()),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                let client_verdict = validate_state_transition_size(size_bytes, platform_version)
+                    .err()
+                    .map(ConsensusError::from);
+                assert_eq!(
+                    refused_for_size, client_verdict,
+                    "protocol version {protocol_version}, {size_bytes} bytes"
+                );
             }
         }
     }

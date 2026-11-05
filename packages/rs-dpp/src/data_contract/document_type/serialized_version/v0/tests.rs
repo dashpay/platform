@@ -50,24 +50,42 @@ fn should_refuse_a_stored_rule_nested_deeper_than_the_rule_grammar_admits() {
     );
 }
 
-/// A contested field's regex is compiled when its index is read back: a stored form that holds
-/// one that does not compile is refused, where the lazy regex would have panicked on first
-/// use. The schema parser refuses such a pattern at registration.
+/// A contested field's regex is read back uncompiled, as the schema parser keeps it, and
+/// compiles on its first match: reading a stored type compiles none of its patterns. A pattern
+/// that does not compile, which registration refuses so state never holds, reads back and
+/// matches nothing.
 #[test]
-fn should_refuse_a_stored_contested_regex_that_does_not_compile() {
+fn should_read_back_a_stored_contested_regex_without_compiling_it() {
     let contract =
         get_dpns_data_contract_fixture(None, 0, PlatformVersion::latest().protocol_version)
             .data_contract_owned();
-    let (name, index) = contract
+    let index = contract
         .document_types()
         .values()
-        .flat_map(|document_type| document_type.indexes().iter())
-        .find(|(_, index)| index.contested_index.is_some())
-        .map(|(name, index)| (name.clone(), index.clone()))
+        .flat_map(|document_type| document_type.indexes().values())
+        .find(|index| index.contested_index.is_some())
+        .cloned()
         .expect("expected DPNS to have a contested index");
+    let regex = |index: &Index| {
+        index
+            .contested_index
+            .as_ref()
+            .expect("expected the contested index")
+            .field_matches
+            .values()
+            .find_map(|field_match| match field_match {
+                ContestedIndexFieldMatch::Regex(regex) => Some(regex.clone()),
+                ContestedIndexFieldMatch::PositiveIntegerMatch(_) => None,
+            })
+            .expect("expected a contested regex")
+    };
 
-    let read_back = Index::try_from(StoredIndex::from(&index)).expect("expected the index back");
+    let read_back = Index::from(StoredIndex::from(&index));
     assert_eq!(read_back, index);
+    let read_back_regex = regex(&read_back);
+    assert!(!read_back_regex.is_compiled());
+    assert!(read_back_regex.is_match("dash"));
+    assert!(read_back_regex.is_compiled());
 
     let mut broken = index;
     let contested = broken
@@ -84,12 +102,8 @@ fn should_refuse_a_stored_contested_regex_that_does_not_compile() {
         field,
         ContestedIndexFieldMatch::Regex(LazyRegex::new("(".to_string())),
     );
-    let error = Index::try_from(StoredIndex::from(&broken))
-        .expect_err("expected the stored regex to be refused");
-    assert!(
-        error.to_string().contains("does not compile"),
-        "{name}: {error}"
-    );
+    let broken_regex = regex(&Index::from(StoredIndex::from(&broken)));
+    assert!(!broken_regex.is_match("("));
 }
 
 /// A type indexing a typed array reads back with the index structure its parse built: the

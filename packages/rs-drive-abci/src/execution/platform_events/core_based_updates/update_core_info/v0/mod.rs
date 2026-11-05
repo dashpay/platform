@@ -82,8 +82,9 @@ mod tests {
     /// fire RPC calls we haven't set up in the mock.
     #[test]
     fn v0_returns_ok_when_same_core_height_and_not_init() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(platform_version.protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -125,8 +126,9 @@ mod tests {
     fn v0_short_circuit_is_idempotent_when_not_init_chain() {
         // Re-confirm that both conditions together are required by running
         // the short-circuit case twice; idempotency guards against flakiness.
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(platform_version.protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 

@@ -14,7 +14,6 @@ use dpp::document::DocumentV0Getters;
 use dpp::fee::Credits;
 use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dpp::voting::contender_structs::ContenderWithSerializedDocument;
-use dpp::voting::vote_polls::VotePoll;
 use drive::config::DEFAULT_QUERY_LIMIT;
 use drive::query::vote_poll_vote_state_query::{
     ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
@@ -56,7 +55,7 @@ impl Sdk {
         // `generatedFrom` property generated from its params as the platform generates it
         let mut document = document.clone();
         document_type.regenerate_generated_properties(document.properties_mut(), self.version())?;
-        let Some(VotePoll::ContestedDocumentResourceVotePoll(vote_poll)) =
+        let Some(vote_poll) =
             document_type.contested_vote_poll_for_document(&document, self.version())?
         else {
             return Ok(None);

@@ -36,6 +36,8 @@ use platform_wallet::changeset::{
     PlatformWalletChangeSet, PlatformWalletPersistence, ProviderKeyAccountEntry,
     ProviderKeyExtendedPubKey, PERSISTENCE_CAPABILITIES_VERSION,
 };
+use platform_wallet::wallet::asset_lock::restored_record::held_output_details;
+use platform_wallet::wallet::core::stored_coin::{reconcile_with_parent, StoredParentState};
 use platform_wallet::wallet::platform_wallet::WalletId;
 #[cfg(feature = "shielded")]
 use platform_wallet::wallet::shielded::ShieldedActivityStatus;
@@ -96,6 +98,8 @@ use std::ffi::CStr;
 /// `Mempool` vs no-evidence); see each match's comment.
 pub(crate) const TX_CONTEXT_RAW_IN_BLOCK: u32 = 2;
 pub(crate) const TX_CONTEXT_RAW_IN_CHAIN_LOCKED_BLOCK: u32 = 3;
+/// The InstantSend discriminant of the same encoding.
+pub(crate) const TX_CONTEXT_RAW_INSTANT_SEND: u32 = 1;
 
 /// Byte budget for decoding a host-supplied account extended public key.
 ///
@@ -4101,7 +4105,7 @@ impl PlatformWalletPersistence for FFIPersister {
 
         let context = match context_kind {
             0 => TransactionContext::Mempool,
-            1 => {
+            k if u32::from(k) == TX_CONTEXT_RAW_INSTANT_SEND => {
                 // InstantSend requires the IS-lock blob, which the
                 // persister doesn't currently store. Treat as miss
                 // so the proof flow's SPV wait path completes the
@@ -4731,26 +4735,16 @@ fn build_core_address_entry_ffi(
         pool_type_tag,
         address_index: info.index,
         // `CoreAddressEntryFFI` carries a single `is_used` bool with no
-        // slot for a reservation, so `Reserved` can only flatten to
-        // `false` and would reload as `Available` — silently returning a
-        // handed-out address to the pool. Nothing in platform reserves
-        // addresses (no caller of `next_receive_address_and_reserve` /
-        // `next_unused_and_reserve` in the workspace), so that arm is
-        // unreachable today. It is spelled out rather than folded into a
-        // catch-all so the first reserving caller shows up as an explicit
-        // schema decision instead of losing state on the next reload.
+        // slot for a reservation. The row is a reuse guard, so `Reserved`
+        // flattens to `true`: a handed-out address must not be handed out
+        // again after a reload. Its release is a later `Available` row,
+        // stored as `false`, which the host applies as written. The
+        // reserving callers are the DashPay contact sends — `send_payment`
+        // and the two-step `send_prepared_payment` — which reserve the
+        // contact address for the length of their broadcast.
         is_used: match info.state {
-            AddressState::Used => true,
+            AddressState::Used | AddressState::Reserved { .. } => true,
             AddressState::Available => false,
-            AddressState::Reserved { .. } => {
-                tracing::warn!(
-                    index = info.index,
-                    "persist: address pool entry is reserved, but the persisted \
-                     address schema cannot represent a reservation; it will \
-                     reload as available and may be handed out again"
-                );
-                false
-            }
         },
         balance: info.balance,
         address_base58: address_ptr,
@@ -4848,8 +4842,8 @@ unsafe fn address_info_from_ffi(
         index: entry.address_index,
         path,
         // The persisted entry only carries `is_used`, so state round-trips
-        // to `Used`/`Available`; a `Reserved` entry is not representable —
-        // see `build_core_address_entry_ffi`.
+        // to `Used`/`Available`; a `Reserved` entry is stored as used and
+        // reloads `Used` — see `build_core_address_entry_ffi`.
         state: if entry.is_used {
             AddressState::Used
         } else {
@@ -5860,7 +5854,7 @@ fn build_wallet_start_state(
             value: u.value_duffs,
             script_pubkey,
         };
-        let utxo = key_wallet::Utxo {
+        let mut utxo = key_wallet::Utxo {
             outpoint,
             txout,
             address,
@@ -5874,6 +5868,15 @@ fn build_wallet_start_state(
             // us). Recompute on the next SPV pass; default to false.
             is_trusted: false,
         };
+        // The coin row can lag its own transaction's row: the transaction
+        // was confirmed or locked through a record that named none of its
+        // coins, so only the transaction row was rewritten. Raise the coin
+        // to what its transaction's row says.
+        reconcile_with_parent(
+            &mut utxo,
+            stored_parent_state(u),
+            wallet_info.metadata.last_processed_height,
+        );
         // Route into the target funds-bearing account. Match on the
         // resolved `AccountType` and look up the right map field. Keys
         // and Platform variants are intentionally no-ops.
@@ -5983,13 +5986,18 @@ fn build_wallet_start_state(
     // `AssetLockManager::resolve_status_with_in_memory` path
     // builds a `ChainAssetLockProof` from the row's block info.
     //
-    // Each restored record is synthetic: `input_details` /
-    // `output_details` are empty (we don't have the per-account
-    // role classification at load time), `net_amount` is zero, and
-    // `account_type` reflects the funding BIP44 slot. None of
-    // those fields are read by the chain-lock cascade — only
-    // `context` and `height()` matter for the
-    // `apply_chain_lock` → bridge → persister loop.
+    // Each restored record is synthetic: `input_details` are empty,
+    // `net_amount` is zero and the direction is `Internal`, so a
+    // re-emit of the record writes the transaction row as a
+    // zero-amount internal transfer. The asset-lock proof path reads
+    // only `context` and `height()`. `output_details` carry the coins
+    // this account still holds from the transaction and can classify
+    // (`held_output_details`, built from the UTXOs restored above; a held
+    // coin it cannot classify is left out and logged as `load: account
+    // holds …`):
+    // when the InstantSend lock or block arrives, key-wallet re-emits
+    // this record and the store takes those coins' new flags from it.
+    // Without them the change would stay unconfirmed in the store.
     let unresolved_recs: &[UnresolvedAssetLockTxRecordFFI] =
         if entry.unresolved_asset_lock_tx_records.is_null()
             || entry.unresolved_asset_lock_tx_records_count == 0
@@ -7119,6 +7127,21 @@ impl UnresolvedRestoreStats {
     }
 }
 
+/// What the host's row for a restored coin's creating transaction says,
+/// decoded from the raw context the host copied.
+fn stored_parent_state(u: &UtxoRestoreEntryFFI) -> StoredParentState {
+    match u.parent_context {
+        TX_CONTEXT_RAW_IN_BLOCK | TX_CONTEXT_RAW_IN_CHAIN_LOCKED_BLOCK => {
+            StoredParentState::InBlock {
+                height: u.parent_block_height,
+            }
+        }
+        TX_CONTEXT_RAW_INSTANT_SEND => StoredParentState::InstantLocked,
+        // Mempool, no row, or a value this build does not know: no evidence.
+        _ => StoredParentState::Unconfirmed,
+    }
+}
+
 /// Project a slice of [`UnresolvedAssetLockTxRecordFFI`] rows onto the
 /// in-memory `transactions()` maps of the rebuilt `ManagedWalletInfo`,
 /// routing each record to the first present family the proof lookup
@@ -7243,6 +7266,11 @@ fn restore_unresolved_asset_lock_tx_records(
         };
 
         let account_type = account.managed_account_type().to_account_type();
+        // The coins this account holds from the transaction, classified the
+        // way the live checker would. When the transaction's InstantSend
+        // lock or block arrives, key-wallet re-emits this record as-is, and
+        // the store takes each coin's new flags from these details.
+        let output_details = held_output_details(account, &tx);
         // Classify from the transaction itself, the way the upstream
         // router does: an `AssetLockPayloadType` special-tx payload IS
         // the definition of an asset lock. This array carries both the
@@ -7273,7 +7301,7 @@ fn restore_unresolved_asset_lock_tx_records(
             // direction; this is just the most-correct tag.
             TransactionDirection::Internal,
             Vec::new(),
-            Vec::new(),
+            output_details,
             0,
         );
         account.transactions_mut().insert(record.txid, record);
@@ -10519,15 +10547,25 @@ mod tests {
         );
     }
 
+    use crate::core_wallet_types::{free_wallet_changeset_ffi, WalletChangeSetFFI};
     use dashcore::blockdata::transaction::txin::TxIn;
     use dashcore::blockdata::transaction::txout::TxOut;
     use dashcore::blockdata::transaction::Transaction;
     use dashcore::consensus::encode::serialize;
+    use dashcore::ephemerealdata::instant_lock::InstantLock;
+    use dashcore::hashes::Hash;
+    use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
+    use dashcore::transaction::special_transaction::TransactionPayload;
+    use dashcore::{BlockHash, OutPoint, Txid};
     use dashcore::{Network, ScriptBuf};
     use key_wallet::account::{Account, AccountType, StandardAccountType};
     use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    use key_wallet::managed_account::transaction_record::{OutputRole, TransactionRecord};
     use key_wallet::mnemonic::Mnemonic;
+    use key_wallet::test_utils::TestWalletContext;
+    use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+    use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
     use key_wallet::wallet::Wallet;
 
     /// Regression: restored pool addresses must be tagged with the
@@ -10662,6 +10700,310 @@ mod tests {
         assert_eq!(stats.restored, 0);
         assert_eq!(stats.dropped_no_account, 1);
         drop(tx_buf);
+    }
+
+    /// Where the asset lock in [`reloaded_after_unlocked_asset_lock`] returns
+    /// its change.
+    #[derive(Clone, Copy)]
+    enum ChangeTo {
+        /// The funding BIP44 account's own change pool.
+        FundingAccount,
+        /// The BIP32 account — not the one the restored record is filed under.
+        OtherAccount,
+    }
+
+    const ASSET_LOCK_CREDITS: u64 = 60_000_000;
+    const ASSET_LOCK_CHANGE: u64 = 39_999_000;
+
+    /// A wallet that locked part of one confirmed coin into an asset lock
+    /// (burn output at vout 0, the credit output in the payload) and got the
+    /// rest back as change at vout 1, saw the lock only in the mempool (no
+    /// InstantSend lock), and was then reloaded: the coins are restored, the
+    /// lock's record is not, and the funding transaction comes back as an
+    /// unresolved asset-lock record — what a store hands back after the app
+    /// was killed between the broadcast and the lock. Returns the wallet, the
+    /// funding transaction, and the outpoint of its change.
+    fn reloaded_after_unlocked_asset_lock(
+        rt: &tokio::runtime::Runtime,
+        change_to: ChangeTo,
+    ) -> (TestWalletContext, Transaction, OutPoint) {
+        let mut ctx = TestWalletContext::new_random();
+        let funding = Transaction::dummy(
+            &ctx.receive_address,
+            0..1,
+            &[ASSET_LOCK_CREDITS + ASSET_LOCK_CHANGE + 1_000],
+        );
+        rt.block_on(ctx.check_transaction(
+            &funding,
+            TransactionContext::InChainLockedBlock(BlockInfo::new(
+                1,
+                BlockHash::all_zeros(),
+                1_700_000_000,
+            )),
+        ));
+
+        let change_address = match change_to {
+            ChangeTo::FundingAccount => ctx
+                .managed_wallet
+                .first_bip44_managed_account_mut()
+                .expect("bip44 managed account")
+                .next_change_address(Some(&ctx.xpub), true)
+                .expect("bip44 change address"),
+            ChangeTo::OtherAccount => {
+                let xpub = ctx
+                    .wallet
+                    .accounts
+                    .standard_bip32_accounts
+                    .get(&0)
+                    .expect("bip32 account")
+                    .account_xpub;
+                ctx.managed_wallet
+                    .first_bip32_managed_account_mut()
+                    .expect("bip32 managed account")
+                    .next_receive_address(Some(&xpub), true)
+                    .expect("bip32 receive address")
+            }
+        };
+        let credit_to = TestWalletContext::new_random().receive_address;
+        let lock = Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint {
+                    txid: funding.txid(),
+                    vout: 0,
+                },
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffffffff,
+                witness: dashcore::Witness::default(),
+            }],
+            output: vec![
+                TxOut {
+                    value: ASSET_LOCK_CREDITS,
+                    script_pubkey: ScriptBuf::new_op_return(&[]),
+                },
+                TxOut {
+                    value: ASSET_LOCK_CHANGE,
+                    script_pubkey: change_address.script_pubkey(),
+                },
+            ],
+            special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(
+                AssetLockPayload::new(vec![TxOut {
+                    value: ASSET_LOCK_CREDITS,
+                    script_pubkey: credit_to.script_pubkey(),
+                }]),
+            )),
+        };
+        let seen = rt.block_on(ctx.check_transaction(&lock, TransactionContext::Mempool));
+        assert!(seen.is_relevant, "the asset lock must be the wallet's");
+        let change = OutPoint {
+            txid: lock.txid(),
+            vout: 1,
+        };
+
+        // Reload: the in-memory records go, the coins stay.
+        for account in ctx.managed_wallet.accounts.all_funding_accounts_mut() {
+            account.transactions_mut().remove(&lock.txid());
+        }
+        restore_mempool_lock_record(&mut ctx.managed_wallet, &lock);
+
+        (ctx, lock, change)
+    }
+
+    /// Restore `tx` as an unresolved asset-lock record at account index 0,
+    /// as a store does for a lock it last saw in the mempool.
+    fn restore_mempool_lock_record(wallet_info: &mut ManagedWalletInfo, tx: &Transaction) {
+        let mut tx_buf = serialize(tx);
+        let rec = UnresolvedAssetLockTxRecordFFI {
+            account_index: 0,
+            tx_bytes: tx_buf.as_mut_ptr(),
+            tx_bytes_len: tx_buf.len(),
+            context_raw: 0,
+            block_height: 0,
+            block_hash: [0u8; 32],
+            block_timestamp: 0,
+            first_seen: 1_700_000_100,
+        };
+        let stats = restore_unresolved_asset_lock_tx_records(wallet_info, &[rec])
+            .expect("a well-formed row restores");
+        assert_eq!(stats.restored, 1);
+        drop(tx_buf);
+    }
+
+    /// Every account's record of `txid` — the slices the bridge re-reads
+    /// from the wallet when an InstantSend lock arrives for a known
+    /// transaction.
+    fn wallet_slices(wallet_info: &ManagedWalletInfo, txid: &Txid) -> Vec<TransactionRecord> {
+        wallet_info
+            .accounts
+            .all_accounts()
+            .into_iter()
+            .filter_map(|account| account.transactions().get(txid).cloned())
+            .collect()
+    }
+
+    /// The coins a store adds or refreshes for `records`, as
+    /// `(outpoint, height, is_confirmed, is_instantlocked)` — read through the
+    /// same projection the Swift and Kotlin stores apply.
+    fn stored_coin_flags(records: Vec<TransactionRecord>) -> Vec<(OutPoint, u32, bool, bool)> {
+        let cs = platform_wallet::changeset::CoreChangeSet {
+            records: records.clone(),
+            account_records: records,
+            ..Default::default()
+        };
+        let ffi = WalletChangeSetFFI::from_changeset(&cs);
+        let mut flags = Vec::new();
+        let accounts: &[_] = if ffi.accounts.is_null() {
+            &[]
+        } else {
+            unsafe { slice::from_raw_parts(ffi.accounts, ffi.accounts_count) }
+        };
+        for account in accounts {
+            if account.utxos_added.is_null() {
+                continue;
+            }
+            let utxos =
+                unsafe { slice::from_raw_parts(account.utxos_added, account.utxos_added_count) };
+            for utxo in utxos {
+                flags.push((
+                    OutPoint {
+                        txid: Txid::from_byte_array(utxo.outpoint.txid),
+                        vout: utxo.outpoint.vout,
+                    },
+                    utxo.height,
+                    utxo.is_confirmed,
+                    utxo.is_instantlocked,
+                ));
+            }
+        }
+        unsafe { free_wallet_changeset_ffi(&ffi) };
+        flags
+    }
+
+    /// The restored record names the change the lock pays back to its own
+    /// account — the only coin of the lock that account holds — and nothing
+    /// else: not the burn output, not the credit output.
+    #[test]
+    fn should_name_the_held_change_on_a_restored_lock_record() {
+        let rt = tokio::runtime::Runtime::new().expect("runtime");
+        let (ctx, lock, change) = reloaded_after_unlocked_asset_lock(&rt, ChangeTo::FundingAccount);
+
+        let record = ctx
+            .managed_wallet
+            .first_bip44_managed_account()
+            .expect("bip44 managed account")
+            .transactions()
+            .get(&lock.txid())
+            .expect("restored record");
+        assert_eq!(record.output_details.len(), 1);
+        let detail = &record.output_details[0];
+        assert_eq!(detail.index, change.vout);
+        assert_eq!(detail.role, OutputRole::Change);
+        assert_eq!(detail.value, ASSET_LOCK_CHANGE);
+    }
+
+    /// A change coin the account no longer holds gets no detail: a store
+    /// whose row for it is already gone would insert it as unspent.
+    #[test]
+    fn should_leave_a_coin_no_longer_held_off_a_restored_lock_record() {
+        let rt = tokio::runtime::Runtime::new().expect("runtime");
+        let (mut ctx, lock, change) =
+            reloaded_after_unlocked_asset_lock(&rt, ChangeTo::FundingAccount);
+        let account = ctx
+            .managed_wallet
+            .first_bip44_managed_account_mut()
+            .expect("bip44 managed account");
+        account.utxos.remove(&change);
+        account.transactions_mut().remove(&lock.txid());
+        restore_mempool_lock_record(&mut ctx.managed_wallet, &lock);
+
+        let record = ctx
+            .managed_wallet
+            .first_bip44_managed_account()
+            .expect("bip44 managed account")
+            .transactions()
+            .get(&lock.txid())
+            .expect("restored record");
+        assert!(record.output_details.is_empty());
+    }
+
+    /// The block that confirms a restored lock reaches the store: the change
+    /// is written back confirmed, at the block's height.
+    #[test]
+    fn should_store_the_change_confirmed_when_a_restored_lock_is_mined() {
+        let rt = tokio::runtime::Runtime::new().expect("runtime");
+        let (mut ctx, lock, change) =
+            reloaded_after_unlocked_asset_lock(&rt, ChangeTo::FundingAccount);
+
+        let result = rt.block_on(ctx.check_transaction(
+            &lock,
+            TransactionContext::InBlock(BlockInfo::new(500, BlockHash::all_zeros(), 1_700_000_500)),
+        ));
+        let records = result
+            .new_records
+            .into_iter()
+            .chain(result.updated_records)
+            .collect();
+
+        let flags = stored_coin_flags(records);
+        assert!(
+            flags.contains(&(change, 500, true, false)),
+            "the store must receive the change as confirmed at 500, got {flags:?}"
+        );
+    }
+
+    /// An InstantSend lock arriving for a restored lock reaches the store:
+    /// the change is written back locked, so it is spendable before the
+    /// block.
+    #[test]
+    fn should_store_the_change_locked_when_a_restored_lock_gets_its_instant_lock() {
+        let rt = tokio::runtime::Runtime::new().expect("runtime");
+        let (mut ctx, lock, change) =
+            reloaded_after_unlocked_asset_lock(&rt, ChangeTo::FundingAccount);
+
+        assert!(ctx
+            .managed_wallet
+            .mark_instant_send_utxos(&lock.txid(), &InstantLock::default()));
+
+        let flags = stored_coin_flags(wallet_slices(&ctx.managed_wallet, &lock.txid()));
+        assert!(
+            flags.contains(&(change, 0, false, true)),
+            "the store must receive the change as InstantSend-locked, got {flags:?}"
+        );
+    }
+
+    /// Change paid to another account than the one the restored record is
+    /// filed under: the restored record does not claim it, and the block
+    /// still reaches the store through that account's own record.
+    #[test]
+    fn should_store_another_accounts_change_confirmed_when_a_restored_lock_is_mined() {
+        let rt = tokio::runtime::Runtime::new().expect("runtime");
+        let (mut ctx, lock, change) =
+            reloaded_after_unlocked_asset_lock(&rt, ChangeTo::OtherAccount);
+        let restored = ctx
+            .managed_wallet
+            .first_bip44_managed_account()
+            .expect("bip44 managed account")
+            .transactions()
+            .get(&lock.txid())
+            .expect("restored record");
+        assert!(restored.output_details.is_empty());
+
+        let result = rt.block_on(ctx.check_transaction(
+            &lock,
+            TransactionContext::InBlock(BlockInfo::new(500, BlockHash::all_zeros(), 1_700_000_500)),
+        ));
+        let records = result
+            .new_records
+            .into_iter()
+            .chain(result.updated_records)
+            .collect();
+
+        let flags = stored_coin_flags(records);
+        assert!(
+            flags.contains(&(change, 500, true, false)),
+            "the store must receive the other account's change as confirmed, got {flags:?}"
+        );
     }
 
     /// Helper: build a `ManagedWalletInfo` with a single BIP44
@@ -11159,13 +11501,11 @@ mod tests {
 
     /// Pin what the persisted address row does to `AddressState`.
     /// `CoreAddressEntryFFI` carries a single `is_used` bool, so only
-    /// `Used` and `Available` survive a save/load cycle intact;
-    /// `Reserved { .. }` has no representation and comes back
-    /// `Available`, i.e. a reload silently frees a handed-out address.
-    /// Nothing in platform reserves addresses today, so this records the
-    /// boundary rather than a live bug: if a reserving caller is ever
-    /// added, this test is where the schema decision (a dedicated
-    /// reservation field on the row) has to be made.
+    /// `Used` and `Available` survive a save/load cycle intact.
+    /// `Reserved { .. }` flattens to used: the row is a reuse guard, and a
+    /// reload must never hand out an address that was handed out (the
+    /// two-step DashPay contact payment reserves its address across the
+    /// broadcast). A released reservation is stored as `Available`.
     #[test]
     fn address_state_round_trip_keeps_used_and_flattens_reserved() {
         for (state, expected) in [
@@ -11173,7 +11513,7 @@ mod tests {
             (AddressState::Used, AddressState::Used),
             (
                 AddressState::Reserved { at: 1_700_000_000 },
-                AddressState::Available,
+                AddressState::Used,
             ),
         ] {
             let mut info = typed_key_test_address_info(11, None);
@@ -11380,6 +11720,112 @@ mod tests {
             Some(&wallet.wallet_id[..])
         );
         assert!(restored_eddsa.is_watch_only);
+    }
+
+    /// A coin stored unconfirmed under a transaction the store has in a block
+    /// this wallet has processed is restored confirmed at that block's
+    /// height; one under an InstantSend-locked transaction is restored
+    /// locked; one under a mempool transaction, an unknown context, or a
+    /// block beyond this wallet's processed height is restored as stored.
+    #[test]
+    fn should_restore_a_coin_as_final_as_its_stored_transaction() {
+        let wallet = Wallet::from_seed_bytes(
+            [0x42; 64],
+            Network::Testnet,
+            key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
+        )
+        .expect("seeded wallet");
+        let bip44 = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let xpub = wallet
+            .accounts
+            .standard_bip44_accounts
+            .get(&0)
+            .expect("bip44 account")
+            .account_xpub;
+        let xpub_bytes = bincode::encode_to_vec(xpub, config::standard()).expect("encode xpub");
+        let specs = [build_account_spec_ffi(&bip44, &xpub_bytes)];
+        let script = TestWalletContext::new_random()
+            .receive_address
+            .script_pubkey();
+        let coin =
+            |txid_byte: u8, parent_context: u32, parent_block_height: u32| UtxoRestoreEntryFFI {
+                type_tag: specs[0].type_tag,
+                standard_tag: specs[0].standard_tag,
+                account_index: specs[0].index,
+                registration_index: specs[0].registration_index,
+                key_class: specs[0].key_class,
+                user_identity_id: specs[0].user_identity_id,
+                friend_identity_id: specs[0].friend_identity_id,
+                prev_txid: [txid_byte; 32],
+                vout: 1,
+                value_duffs: 1_000_000,
+                script_pubkey: script.as_bytes().as_ptr(),
+                script_pubkey_len: script.len(),
+                height: 0,
+                is_coinbase: false,
+                is_confirmed: false,
+                is_instantlocked: false,
+                is_locked: false,
+                parent_context,
+                parent_block_height,
+            };
+        let utxos = [
+            coin(1, TX_CONTEXT_RAW_IN_BLOCK, 500),
+            coin(2, TX_CONTEXT_RAW_INSTANT_SEND, 0),
+            coin(3, 0, 0),
+            coin(4, TX_CONTEXT_RAW_IN_CHAIN_LOCKED_BLOCK, 600),
+            coin(5, 7, 700),
+            coin(6, TX_CONTEXT_RAW_IN_BLOCK, 2_000),
+        ];
+        let entry = WalletRestoreEntryFFI {
+            wallet_id: wallet.wallet_id,
+            network: Network::Testnet.into(),
+            accounts: specs.as_ptr(),
+            accounts_count: specs.len(),
+            utxos: utxos.as_ptr(),
+            utxos_count: utxos.len(),
+            synced_height: 1_000,
+            last_processed_height: 1_000,
+            ..Default::default()
+        };
+
+        let (state, _) = build_wallet_start_state(&entry).expect("the wallet restores");
+
+        let account = state
+            .wallet_info
+            .accounts
+            .standard_bip44_accounts
+            .get(&0)
+            .expect("bip44 managed account");
+        let restored = |txid_byte: u8| {
+            account
+                .utxos
+                .get(&OutPoint {
+                    txid: Txid::from_byte_array([txid_byte; 32]),
+                    vout: 1,
+                })
+                .expect("the coin is restored")
+        };
+        let in_block = restored(1);
+        assert!(in_block.is_confirmed);
+        assert_eq!(in_block.height, 500);
+        let locked = restored(2);
+        assert!(locked.is_instantlocked);
+        assert!(!locked.is_confirmed);
+        let mempool = restored(3);
+        assert!(!mempool.is_confirmed);
+        assert!(!mempool.is_instantlocked);
+        let chain_locked = restored(4);
+        assert!(chain_locked.is_confirmed);
+        assert_eq!(chain_locked.height, 600);
+        let unknown_context = restored(5);
+        assert!(!unknown_context.is_confirmed);
+        assert!(!unknown_context.is_instantlocked);
+        let above_this_wallet = restored(6);
+        assert!(!above_this_wallet.is_confirmed);
     }
 
     /// The BLS xpub decoder is the only account-xpub graph with a

@@ -256,8 +256,9 @@ class ReconnectableStream extends EventEmitter {
         newArgs = args;
       };
 
-      // Emit beforeReconnect event in case parent would want to alter arguments
-      this.emit(EVENTS.BEFORE_RECONNECT, updateArgsBeforeReconnect);
+      // Emit beforeReconnect event in case parent would want to alter arguments,
+      // with the error that caused the retry
+      this.emit(EVENTS.BEFORE_RECONNECT, updateArgsBeforeReconnect, e);
 
       // Wait before reconnecting
       wait(this.retryOnErrorDelay)

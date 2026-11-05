@@ -1,5 +1,6 @@
 mod v0;
 
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::storage_flags::StorageFlags;
 
 use crate::drive::Drive;
@@ -9,11 +10,8 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::util::object_size_info::{DocumentAndContractInfo, PathInfo};
 use dpp::version::PlatformVersion;
 
-use grovedb::batch::KeyInfoPath;
-
 use dpp::data_contract::document_type::IndexLevelTypeInfo;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Adds the terminal reference.
@@ -33,9 +31,7 @@ impl Drive {
         all_fields_null: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         // A full `PlatformVersion` (was `&DriveVersion`): the indexOnly

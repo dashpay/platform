@@ -86,7 +86,7 @@ impl Drive {
     /// - `vote_poll`: The specific contested document resource vote poll context.
     /// - `vote_choice`: The choice made by the voter on the contested resource.
     /// - `block_info`: Reference to the block information at the time of the vote.
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an optional HashMap that, if provided,
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an optional `EstimatedLayers` that, if provided,
     ///   will be filled with estimated costs and layer information necessary for processing the vote.
     /// - `transaction`: Transaction arguments providing context for this operation.
     /// - `platform_version`: Reference to the platform version against which the operation is executed.
