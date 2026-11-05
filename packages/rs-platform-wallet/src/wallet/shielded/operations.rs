@@ -2458,6 +2458,28 @@ where
 // invitations — the claim side)
 // -------------------------------------------------------------------------
 
+/// Convert a failed claim-key reservation into the claim's error.
+///
+/// A damaged claim record stays typed as
+/// [`PlatformWalletError::ShieldedRecoveryCorrupted`], so hosts get the
+/// recovery-corruption code (56) instead of a generic persistence failure and
+/// can tell "repair needed" from an ordinary failure. Anything else is a
+/// persistence failure.
+fn claim_reservation_error<E: std::error::Error + 'static>(e: E) -> PlatformWalletError {
+    match (&e as &dyn std::any::Any).downcast_ref::<super::file_store::FileShieldedStoreError>() {
+        Some(super::file_store::FileShieldedStoreError::RecoveryCorrupted {
+            account_index,
+            reason,
+        }) => PlatformWalletError::ShieldedRecoveryCorrupted {
+            account_index: *account_index,
+            reason: reason.clone(),
+        },
+        _ => PlatformWalletError::Persistence(format!(
+            "one-time claim: could not reserve the invitation's claim-record key: {e}"
+        )),
+    }
+}
+
 /// Create a brand-new Platform identity funded from a ONE-TIME Orchard spending
 /// key (the L2-invitation *claim* side).
 ///
@@ -2741,9 +2763,7 @@ where
         .map_err(|e| {
             // Fail closed. Proceeding without knowing who owns the key is
             // exactly the clobber this reservation exists to prevent.
-            PlatformWalletError::Persistence(format!(
-                "one-time claim: could not reserve the invitation's claim-record key: {e}"
-            ))
+            claim_reservation_error(e)
         });
     let reservation = match reservation {
         Ok(r) => r,
@@ -8857,6 +8877,35 @@ mod claim_removal_fence_tests {
         assert_eq!(
             live, 0,
             "the refusal must release its claim lease before returning"
+        );
+    }
+}
+
+#[cfg(test)]
+mod claim_reservation_error_tests {
+    use super::super::file_store::FileShieldedStoreError;
+    use super::*;
+
+    #[test]
+    fn a_damaged_claim_record_stays_typed_as_recovery_corrupted() {
+        let error = claim_reservation_error(FileShieldedStoreError::RecoveryCorrupted {
+            account_index: Some(u32::MAX),
+            reason: "one-time claim record: bad anchor".to_string(),
+        });
+        assert!(matches!(
+            error,
+            PlatformWalletError::ShieldedRecoveryCorrupted {
+                account_index: Some(u32::MAX),
+                ref reason,
+            } if reason.contains("bad anchor")
+        ));
+    }
+
+    #[test]
+    fn other_reservation_failures_are_persistence_errors() {
+        let error = claim_reservation_error(FileShieldedStoreError::Storage("disk full".into()));
+        assert!(
+            matches!(error, PlatformWalletError::Persistence(ref m) if m.contains("disk full"))
         );
     }
 }

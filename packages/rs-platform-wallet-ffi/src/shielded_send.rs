@@ -1424,14 +1424,18 @@ fn map_one_time_claim_result(
         //   earlier attempt submitted. Nothing was rebroadcast and the pending
         //   claim record is kept, so a rerun with the ORIGINAL arguments
         //   resumes it; flattened to 6 the host would abandon the claim.
+        // * `ShieldedRecoveryCorrupted` → 56, REPAIR NEEDED — the invitation's
+        //   claim record is damaged and was kept. Flattened to 6 the host
+        //   could not tell it from an ordinary failure.
         //
-        // The blanket conversion is the single source of truth for all four;
+        // The blanket conversion is the single source of truth for all five;
         // this arm only keeps them from reaching the catch-all.
         Err(
             e @ (PlatformWalletError::ShieldedInviteAlreadyClaimed { .. }
             | PlatformWalletError::ShieldedForeignScanBudgetExhausted { .. }
             | PlatformWalletError::ShieldedLifecycleBusy { .. }
-            | PlatformWalletError::ShieldedClaimBindingMismatch { .. }),
+            | PlatformWalletError::ShieldedClaimBindingMismatch { .. }
+            | PlatformWalletError::ShieldedRecoveryCorrupted { .. }),
         ) => (None, e.into()),
         Err(e) => (
             None,
@@ -3843,6 +3847,22 @@ mod tests {
     /// non-retryable `ErrorWalletOperation` (6), so a host abandoned a
     /// recoverable claim; it must reach the host as its own code 62, with no
     /// identity id written.
+    #[test]
+    fn map_one_time_claim_result_passes_the_recovery_corrupted_code_through() {
+        let (identity_id, result) =
+            map_one_time_claim_result(Err(PlatformWalletError::ShieldedRecoveryCorrupted {
+                account_index: Some(u32::MAX),
+                reason: "one-time claim record: bad anchor".to_string(),
+            }));
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedRecoveryCorrupted,
+            "a damaged claim record must not flatten to ErrorWalletOperation (6)"
+        );
+        assert!(identity_id.is_none());
+        assert!(message_of(&result).contains("bad anchor"));
+    }
+
     #[test]
     fn map_one_time_claim_result_passes_the_binding_mismatch_code_through() {
         let (identity_id, result) =
