@@ -1516,10 +1516,18 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 })
                 .and_then(|()| self.persister.flush());
             if let Err(error) = durable {
-                // The row may have committed (a store that succeeded before a
-                // failed flush). It is never tracked here, and a restart that
-                // loads it finds the right recipient on it. The funding index
+                // The row may be buffered (a backend that restores a failed
+                // flush to its buffer) or committed (a store that succeeded
+                // before a failed flush), and a later flush or a restart would
+                // then surface a resumable row for inputs released below. Its
+                // removal is queued behind it — stores apply removals after
+                // upserts — so the abandoned row does not outlive this call
+                // unless the backend refuses that write too. The funding index
                 // stays consumed, as for the pool gate above.
+                self.queue_asset_lock_changeset(AssetLockChangeSet {
+                    removed: [out_point].into(),
+                    ..Default::default()
+                });
                 drop(build_persist_guard);
                 self.abandon_unsent_build(
                     in_broadcast_pin,

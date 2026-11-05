@@ -118,7 +118,13 @@ impl PlatformWalletPersistence for RecoveryPersistence {
             return Err(PersistenceError::backend("store failed"));
         }
         if let Some(cs) = cs.asset_locks {
-            self.staged.lock().unwrap().extend(cs.asset_locks);
+            let mut staged = self.staged.lock().unwrap();
+            staged.extend(cs.asset_locks);
+            // A removal cancels a row that is still only staged; committed
+            // rows are kept so tests can read what a broadcast saw.
+            for out_point in &cs.removed {
+                staged.remove(out_point);
+            }
         }
         if self.store_commits_inline() {
             self.commit_staged();
@@ -1167,6 +1173,8 @@ async fn fund_typed_amount(
 /// the broadcaster: a rejected store and a rejected flush of a buffered store
 /// both fail the call with a persistence error, leave the lock untracked and
 /// uncommitted, and hand the inputs back so the next attempt builds again.
+/// The abandoned row of a failed flush is withdrawn from the buffer, so the
+/// next successful flush does not commit it.
 #[tokio::test]
 async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_durable() {
     for fail_flush in [false, true] {
@@ -1208,6 +1216,11 @@ async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_dur
             "fail_flush={fail_flush}: {error}"
         );
         assert_eq!(retried.len(), 1, "fail_flush={fail_flush}");
+        assert_ne!(retried[0], seen[0]);
+        assert!(
+            !persistence.committed.lock().unwrap().contains_key(&seen[0]),
+            "fail_flush={fail_flush}: the abandoned row was committed by a later flush"
+        );
         assert_eq!(
             persistence.committed.lock().unwrap()[&retried[0]].shielded_recipient,
             Some(recipient.to_raw_bytes())
