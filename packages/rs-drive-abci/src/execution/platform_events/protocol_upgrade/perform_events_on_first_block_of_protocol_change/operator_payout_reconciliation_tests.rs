@@ -29,6 +29,8 @@ use std::sync::{Arc, Mutex};
 /// upgrade block reconciles at.
 const LISTED_AT: u32 = 999;
 const COMMITTED_AT: u32 = 1000;
+/// The core height the upgrade block moves to.
+const UPGRADE_AT: u32 = 1001;
 
 /// A Regular masternode named by `id` with an operator reward, operator key `[key; 48]` and
 /// `operator_payout`.
@@ -69,9 +71,9 @@ fn diff_entry(fields: serde_json::Value) -> DMNStateDiff {
 /// The masternode list calls Platform made to Core, as (base height, height).
 type CoreCalls = Arc<Mutex<Vec<(Option<u32>, u32)>>>;
 
-/// Two masternodes, as Core lists them at `LISTED_AT` and at `COMMITTED_AT`, and the diff Core
-/// prints between the two: `changed`'s operator sets payout 0x81 in place of 0x61, and
-/// `new_operator`'s owner sets operator key 0x72, which empties the payout 0x62.
+/// Three masternodes, as Core lists them at `LISTED_AT` and at `COMMITTED_AT`, and the diff Core
+/// prints between the two: 0x61's operator sets another payout in place of 0x61, and 0x62's
+/// owner sets operator key 0x72, which empties the payout 0x62. 0x64 does not change.
 fn core_history() -> (
     Vec<MasternodeListItem>,
     MasternodeListDiff,
@@ -80,6 +82,7 @@ fn core_history() -> (
     let listed = vec![
         masternode(0x61, 0x61, Some(0x61)),
         masternode(0x62, 0x62, Some(0x62)),
+        masternode(0x64, 0x64, Some(0x64)),
     ];
     let diff = MasternodeListDiff {
         base_height: LISTED_AT,
@@ -107,6 +110,57 @@ fn core_history() -> (
     at_committed[1].state.pub_key_operator = vec![0x72; 48];
     at_committed[1].state.operator_payout_address = None;
     (listed, diff, at_committed)
+}
+
+/// The diff of the upgrade block itself, `COMMITTED_AT` to `UPGRADE_AT`: 0x61's owner sets
+/// operator key 0x71, 0x62's new operator sets a payout, 0x64 is removed and 0x65 registered.
+fn upgrade_block_diff() -> MasternodeListDiff {
+    MasternodeListDiff {
+        base_height: COMMITTED_AT,
+        block_height: UPGRADE_AT,
+        added_mns: vec![masternode(0x65, 0x65, Some(0x65))],
+        removed_mns: vec![ProTxHash::from_byte_array([0x64; 32])],
+        updated_mns: vec![
+            (
+                ProTxHash::from_byte_array([0x61; 32]),
+                diff_entry(serde_json::json!({ "pubKeyOperator": "71".repeat(48) })),
+            ),
+            (
+                ProTxHash::from_byte_array([0x62; 32]),
+                diff_entry(serde_json::json!({
+                    "operatorPayoutAddress": "yd59MzNMSWf5LdNE9qxZGrcFeR2BzjuqM2",
+                })),
+            ),
+        ],
+    }
+}
+
+/// Runs the protocol change events of the first block of protocol version 15 after `previous`,
+/// in `transaction`, on a fresh copy of `committed` as `run_block_proposal` makes for each round.
+fn run_upgrade_events(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    committed: &PlatformState,
+    previous: ProtocolVersion,
+    transaction: &Transaction,
+) -> PlatformState {
+    let platform_version = PlatformVersion::latest();
+    let mut block_state = committed.clone();
+    block_state.set_current_protocol_version_in_consensus(platform_version.protocol_version);
+    platform
+        .perform_events_on_first_block_of_protocol_change(
+            committed,
+            &mut block_state,
+            &BlockInfo {
+                height: 3,
+                core_height: UPGRADE_AT,
+                ..Default::default()
+            },
+            transaction,
+            previous,
+            platform_version,
+        )
+        .expect("expected the protocol change events to succeed");
+    block_state
 }
 
 /// A platform at `previous` that processed `core_history` as Platform did at that protocol
@@ -141,6 +195,7 @@ fn platform_after_core_history(
                 (None, LISTED_AT) => listed.clone(),
                 (None, COMMITTED_AT) => at_committed.clone(),
                 (Some(LISTED_AT), COMMITTED_AT) => return Ok(diff.clone()),
+                (Some(COMMITTED_AT), UPGRADE_AT) => return Ok(upgrade_block_diff()),
                 other => panic!("unexpected masternode list call {other:?}"),
             };
             Ok(MasternodeListDiff {
@@ -371,5 +426,124 @@ fn should_not_reconcile_operator_payouts_in_the_first_block_of_protocol_version_
     assert_eq!(
         transfer_keys(&platform, &transaction, 0x62, 0x72),
         [(vec![0x62; 20], false)]
+    );
+}
+
+/// The upgrade block then applies its own diff from the reconciled list, under protocol version
+/// 15's rules, with the committed state as the identity updates' base as in a real block: a
+/// key change clears the payout, a payout reaches the identity the reconciliation fixed, under a
+/// fresh key id, and masternodes come and go as always.
+#[test]
+fn should_apply_the_upgrade_blocks_own_diff_after_the_reconciliation() {
+    let platform_version = PlatformVersion::latest();
+    let (platform, committed, calls) = platform_after_core_history(14);
+    let transaction = platform.drive.grove.start_transaction();
+    let mut block_state = run_upgrade_events(&platform, &committed, 14, &transaction);
+
+    platform
+        .update_core_info(
+            Some(&committed),
+            &mut block_state,
+            UPGRADE_AT,
+            false,
+            &BlockInfo {
+                height: 3,
+                core_height: UPGRADE_AT,
+                ..Default::default()
+            },
+            &transaction,
+            platform_version,
+        )
+        .expect("expected to apply the upgrade block's diff");
+
+    assert_eq!(
+        *calls.lock().unwrap(),
+        vec![(None, COMMITTED_AT), (Some(COMMITTED_AT), UPGRADE_AT)]
+    );
+    let stored = |id: u8| {
+        block_state
+            .full_masternode_list()
+            .get(&ProTxHash::from_byte_array([id; 32]))
+            .map(|masternode| {
+                (
+                    masternode.state.pub_key_operator.clone(),
+                    masternode.state.operator_payout_address,
+                )
+            })
+    };
+    assert_eq!(stored(0x61), Some((vec![0x71; 48], None)));
+    let upgrade_diff = upgrade_block_diff();
+    let new_payout = upgrade_diff.updated_mns[1]
+        .1
+        .operator_payout_address
+        .expect("expected the diff to set the payout")
+        .expect("expected a payout");
+    assert_eq!(stored(0x62), Some((vec![0x72; 48], Some(new_payout))));
+    assert_eq!(stored(0x64), None);
+    assert_eq!(stored(0x65), Some((vec![0x65; 48], Some([0x65; 20]))));
+
+    assert_eq!(transfer_keys(&platform, &transaction, 0x61, 0x71), []);
+    let (_, _, at_committed) = core_history();
+    let reconciled_payout = at_committed[0]
+        .state
+        .operator_payout_address
+        .expect("expected Core's payout")
+        .to_vec();
+    assert_eq!(
+        transfer_keys(&platform, &transaction, 0x61, 0x61),
+        [(vec![0x61; 20], true), (reconciled_payout, false)],
+        "the identity 0x61 leaves keeps the reconciled payout key"
+    );
+    assert_eq!(
+        transfer_keys(&platform, &transaction, 0x62, 0x72),
+        [(vec![0x62; 20], true), (new_payout.to_vec(), false)]
+    );
+    assert_eq!(
+        transfer_keys(&platform, &transaction, 0x65, 0x65),
+        [(vec![0x65; 20], false)]
+    );
+}
+
+/// A round of the upgrade block that fails is thrown away with its transaction and its copy of
+/// the state. The next round reconciles again, from the same committed state and Core's same
+/// list, to the same result: nothing from the failed round is kept or applied twice.
+#[test]
+fn should_reconcile_the_same_way_when_a_round_of_the_upgrade_block_is_retried() {
+    let (platform, committed, calls) = platform_after_core_history(14);
+    {
+        let failed_round = platform.drive.grove.start_transaction();
+        run_upgrade_events(&platform, &committed, 14, &failed_round);
+    }
+    let transaction = platform.drive.grove.start_transaction();
+    let block_state = run_upgrade_events(&platform, &committed, 14, &transaction);
+
+    assert_eq!(
+        *calls.lock().unwrap(),
+        vec![(None, COMMITTED_AT), (None, COMMITTED_AT)]
+    );
+    let (_, _, at_committed) = core_history();
+    assert_eq!(
+        block_state.full_masternode_list()[&ProTxHash::from_byte_array([0x61; 32])]
+            .state
+            .operator_payout_address,
+        at_committed[0].state.operator_payout_address
+    );
+    assert_eq!(
+        transfer_keys(&platform, &transaction, 0x61, 0x61),
+        [
+            (vec![0x61; 20], true),
+            (
+                at_committed[0]
+                    .state
+                    .operator_payout_address
+                    .expect("expected Core's payout")
+                    .to_vec(),
+                false
+            )
+        ]
+    );
+    assert_eq!(
+        transfer_keys(&platform, &transaction, 0x62, 0x72),
+        [(vec![0x62; 20], true)]
     );
 }

@@ -259,7 +259,7 @@ where
             else {
                 continue;
             };
-            // Old in-memory addresses were not persisted before this generation. Start
+            // Old in-memory addresses were not persisted before version 1. Start
             // from the stored state so a running node and a restarted node agree.
             let previous_state = legacy_stored_form(masternode.state.clone());
             let updated_state = apply_diff_in_stored_form(&previous_state, state_diff);

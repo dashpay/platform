@@ -507,18 +507,34 @@ pub(crate) async fn run_chain_for_strategy<'a>(
                 .clone())
         });
 
+    let genesis_core_height = config.abci.genesis_core_height;
     platform
         .core_rpc
         .expect_get_protx_diff_with_masternodes()
         .returning(move |base_block, block| {
             let diff = if base_block.is_none() {
-                MasternodeListDiff {
-                    base_height: 0,
-                    block_height: block,
-                    added_mns: initial_all_masternodes
+                // Core's whole list at `block`: the initial masternodes at the genesis core
+                // height, where init chain starts, and what the strategy made of them at a later
+                // height, which the first block of protocol version 15 reads to reconcile
+                // operator payouts.
+                let added_mns = match (
+                    with_extra_masternodes_with_updates.get(&block),
+                    with_extra_hpmns_with_updates.get(&block),
+                ) {
+                    (Some(masternodes), Some(hpmns)) if block != genesis_core_height => masternodes
+                        .iter()
+                        .chain(hpmns)
+                        .map(|masternode| masternode.get_state_at_height(block).clone())
+                        .collect(),
+                    _ => initial_all_masternodes
                         .iter()
                         .map(|masternode_list_item| masternode_list_item.masternode.clone())
                         .collect(),
+                };
+                MasternodeListDiff {
+                    base_height: 0,
+                    block_height: block,
+                    added_mns,
                     removed_mns: vec![],
                     updated_mns: vec![],
                 }

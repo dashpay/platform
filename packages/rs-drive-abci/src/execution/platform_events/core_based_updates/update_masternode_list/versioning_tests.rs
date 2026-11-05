@@ -169,22 +169,20 @@ fn should_use_nested_ports_only_after_the_protocol_upgrade() {
     }
 }
 
-/// Operator payouts from Core's diffs apply through `update_masternode_list` 2 and
-/// `update_operator_identity` 1, selected from protocol version 15 only. Every earlier protocol
-/// version keeps the generations its blocks were executed with, so they replay unchanged.
+/// Historical freeze: protocol versions 1 to 14 executed their blocks with
+/// `update_masternode_list` 0 or 1 and `update_operator_identity` 0, which ignore the operator
+/// payouts of Core's diffs, so they must keep selecting them for those blocks to replay to the
+/// same state. The generations that apply the payouts are exercised through the dispatcher at
+/// the latest protocol version (`operator_payout_tests`).
 #[test]
-fn should_select_the_operator_payout_generations_only_from_protocol_version_15() {
-    for protocol_version in 1..=PlatformVersion::latest().protocol_version {
+fn should_keep_the_masternode_generations_protocol_versions_1_to_14_executed_with() {
+    for protocol_version in 1..=14 {
         let core_based_updates = &PlatformVersion::get(protocol_version)
             .expect("expected a protocol version")
             .drive_abci
             .methods
             .core_based_updates;
-        let expected = match protocol_version {
-            ..=13 => (0, 0),
-            14 => (1, 0),
-            _ => (2, 1),
-        };
+        let update_masternode_list = if protocol_version == 14 { 1 } else { 0 };
         assert_eq!(
             (
                 core_based_updates.update_masternode_list,
@@ -192,7 +190,7 @@ fn should_select_the_operator_payout_generations_only_from_protocol_version_15()
                     .masternode_updates
                     .update_operator_identity
             ),
-            expected,
+            (update_masternode_list, 0),
             "protocol version {protocol_version}"
         );
     }

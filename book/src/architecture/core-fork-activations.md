@@ -151,10 +151,15 @@ and `perform_events_on_first_block_of_protocol_change`, run before
 `update_core_info`, so they cannot rely on the record for a fork that the same
 upgrade starts tracking.
 
-Closing the window would mean asking Core in the first block of the new protocol
-version whatever its `c`. That would put Core on the upgrade block's critical
-path: a node whose Core failed could not execute the upgrade block, and the
-upgrade would wait for every Core that was down.
+Closing the window would mean asking Core about the fork in the first block of
+the new protocol version whatever its `c`. That would put Core on the upgrade
+block's critical path: a node whose Core failed could not execute the upgrade
+block, and the upgrade would wait for every Core that was down. The upgrade to
+protocol version 15 pays that cost once for another reason: it reconciles the
+operator payouts Platform holds with Core's full masternode list (see
+[Syncing with Dash Core](component-pipeline.md#syncing-with-dash-core)), which
+nothing short of that list can do. The fork record does not need it: its window
+is short, and every consumer must be safe in it anyway.
 
 ## V24's signal
 

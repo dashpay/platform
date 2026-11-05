@@ -11,6 +11,9 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use std::collections::BTreeMap;
 
+/// How many masternodes of each side a membership mismatch names.
+const MISMATCHES_REPORTED: usize = 10;
+
 impl<C> Platform<C>
 where
     C: CoreRPCLike,
@@ -33,7 +36,12 @@ where
     /// locked height every node agrees on, so every node reads the same list from its Core. A
     /// Core error, or a Core list whose masternodes are not the ones Platform lists, fails the
     /// block: both mean that this node cannot tell what the others reconcile.
-    pub(in crate::execution) fn reconcile_operator_payouts_with_core(
+    ///
+    /// Part of protocol version 15's upgrade block (`transition_to_version_15`), its only caller:
+    /// once that version ships, a change in what this does needs a new step in the upgrade
+    /// ladder, not an edit here. It relies on an `update_operator_identity` generation that
+    /// reconciles every TRANSFER key with the payout, 1 or later.
+    pub(in crate::execution::platform_events) fn reconcile_operator_payouts_with_core(
         &self,
         block_platform_state: &mut PlatformState,
         core_height: u32,
@@ -58,6 +66,7 @@ where
             ))
             .into());
         }
+        let listed_by_core = core_list.added_mns.len();
         let core_payouts = core_list
             .added_mns
             .into_iter()
@@ -68,23 +77,35 @@ where
                 )
             })
             .collect::<BTreeMap<ProTxHash, Option<[u8; 20]>>>();
+        if core_payouts.len() != listed_by_core {
+            return Err(ExecutionError::DashCoreBadResponseError(format!(
+                "the masternode list at core height {core_height} lists a masternode more than once"
+            ))
+            .into());
+        }
 
         let stored_list = block_platform_state.full_masternode_list();
         if !stored_list.keys().eq(core_payouts.keys()) {
-            let missing_in_core = stored_list
+            // The first few of each side are enough to find what diverged and why.
+            let not_in_core = stored_list
                 .keys()
                 .filter(|pro_tx_hash| !core_payouts.contains_key(*pro_tx_hash))
-                .count();
-            let missing_in_platform = core_payouts
+                .collect::<Vec<_>>();
+            let not_listed = core_payouts
                 .keys()
                 .filter(|pro_tx_hash| !stored_list.contains_key(*pro_tx_hash))
-                .count();
-            return Err(ExecutionError::CorruptedCachedState(format!(
+                .collect::<Vec<_>>();
+            let message = format!(
                 "Platform's masternode list at core height {core_height} is not Dash Core's: \
-                 {missing_in_core} listed masternodes are not in Core's list and \
-                 {missing_in_platform} of Core's are not listed"
-            ))
-            .into());
+                 {} listed masternodes are not in Core's list (first: {:?}) and {} of Core's \
+                 are not listed (first: {:?})",
+                not_in_core.len(),
+                &not_in_core[..not_in_core.len().min(MISMATCHES_REPORTED)],
+                not_listed.len(),
+                &not_listed[..not_listed.len().min(MISMATCHES_REPORTED)],
+            );
+            tracing::error!(core_height, "{message}");
+            return Err(ExecutionError::CorruptedCachedState(message).into());
         }
 
         // Both lists hold the same masternodes in the same order.
@@ -227,7 +248,7 @@ mod tests {
     /// calls made to Core at `RECONCILED_AT`.
     fn platform_with_core(
         listed: Vec<MasternodeListItem>,
-        core_list: Result<Vec<MasternodeListItem>, CoreRpcError>,
+        core_list: Result<MasternodeListDiff, CoreRpcError>,
     ) -> (TempPlatform<MockCoreRPCLike>, CoreCalls) {
         let mut platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig::default())
@@ -240,13 +261,7 @@ mod tests {
             removed_mns: vec![],
             updated_mns: vec![],
         };
-        let core_list = Mutex::new(Some(core_list.map(|added_mns| MasternodeListDiff {
-            base_height: 1,
-            block_height: RECONCILED_AT,
-            added_mns,
-            removed_mns: vec![],
-            updated_mns: vec![],
-        })));
+        let core_list = Mutex::new(Some(core_list));
         let calls = CoreCalls::default();
         let recorded_calls = Arc::clone(&calls);
         platform
@@ -267,6 +282,17 @@ mod tests {
                     .expect("expected one masternode list call at the reconciled height")
             });
         (platform, calls)
+    }
+
+    /// Core's full list of `masternodes` at `RECONCILED_AT`.
+    fn full_list(masternodes: Vec<MasternodeListItem>) -> MasternodeListDiff {
+        MasternodeListDiff {
+            base_height: 1,
+            block_height: RECONCILED_AT,
+            added_mns: masternodes,
+            removed_mns: vec![],
+            updated_mns: vec![],
+        }
     }
 
     /// Lists the masternodes at `LISTED_AT` as init chain does, creating their identities.
@@ -347,7 +373,15 @@ mod tests {
     fn should_fix_stale_operator_payouts_and_the_current_identities_keys() {
         let changed = masternode(0x61, Some(0x61));
         let cleared = masternode(0x62, Some(0x62));
-        let first_set = masternode(0x63, None);
+        // An evonode, which the evonode list holds too.
+        let mut first_set = masternode(0x63, None);
+        first_set.node_type = MasternodeType::Evo;
+        first_set.state.platform_node_id = Some([0x73; 20]);
+        #[allow(deprecated)]
+        {
+            first_set.state.legacy_platform_p2p_port = Some(26656);
+            first_set.state.legacy_platform_http_port = Some(443);
+        }
         let matching = masternode(0x64, Some(0x64));
         let in_core = |masternode: &MasternodeListItem, payout: Option<u8>| {
             let mut masternode = masternode.clone();
@@ -361,12 +395,12 @@ mod tests {
                 first_set.clone(),
                 matching.clone(),
             ],
-            Ok(vec![
+            Ok(full_list(vec![
                 in_core(&changed, Some(0x81)),
                 in_core(&cleared, None),
                 in_core(&first_set, Some(0x83)),
                 matching.clone(),
-            ]),
+            ])),
         );
         let transaction = platform.drive.grove.start_transaction();
         let mut state = list_masternodes(&platform, &transaction);
@@ -389,6 +423,12 @@ mod tests {
                 masternode.pro_tx_hash
             );
         }
+        assert_eq!(
+            state.hpmn_masternode_list()[&first_set.pro_tx_hash]
+                .state
+                .operator_payout_address,
+            Some([0x83; 20])
+        );
         assert_eq!(
             state.masternode_changes.upserted,
             BTreeSet::from([
@@ -426,7 +466,7 @@ mod tests {
             vec![listed.clone(), other.clone()],
             vec![other.clone()],
         ] {
-            let (platform, _) = platform_with_core(vec![listed.clone()], Ok(core_list));
+            let (platform, _) = platform_with_core(vec![listed.clone()], Ok(full_list(core_list)));
             let transaction = platform.drive.grove.start_transaction();
             let mut state = list_masternodes(&platform, &transaction);
             let before = state.clone();
@@ -458,5 +498,32 @@ mod tests {
                 .operator_payout_address,
             Some([0x67; 20])
         );
+    }
+
+    /// A full list from the first block cannot remove or update masternodes, nor list one twice:
+    /// such an answer fails the block instead of being reconciled against.
+    #[test]
+    fn should_fail_when_core_answers_something_other_than_a_full_list() {
+        let listed = masternode(0x68, Some(0x68));
+        let mut removes = full_list(vec![listed.clone()]);
+        removes.removed_mns = vec![listed.pro_tx_hash];
+        let mut updates = full_list(vec![listed.clone()]);
+        updates.updated_mns = vec![(
+            listed.pro_tx_hash,
+            serde_json::from_str("{}").expect("an empty Core state diff"),
+        )];
+        let twice = full_list(vec![listed.clone(), listed.clone()]);
+        for core_list in [removes, updates, twice] {
+            let (platform, _) = platform_with_core(vec![listed.clone()], Ok(core_list));
+            let transaction = platform.drive.grove.start_transaction();
+            let mut state = list_masternodes(&platform, &transaction);
+
+            assert!(matches!(
+                reconcile(&platform, &mut state, &transaction),
+                Err(Error::Execution(ExecutionError::DashCoreBadResponseError(
+                    _
+                )))
+            ));
+        }
     }
 }

@@ -415,7 +415,7 @@ mod tests {
         platform: &TempPlatform<C>,
         rng: &mut StdRng,
     ) -> (ProTxHash, Identity, [u8; 20], Vec<u8>, [u8; 20]) {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         // Create a dummy ProTxHash
         let pro_tx_hash_bytes: [u8; 32] = rng.gen();
@@ -508,8 +508,9 @@ mod tests {
 
     #[test]
     fn test_update_operator_payout_address() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -589,8 +590,9 @@ mod tests {
 
     #[test]
     fn test_update_operator_change_back_to_previous_operator_address() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -730,8 +732,9 @@ mod tests {
 
     #[test]
     fn test_update_operator_platform_node_id() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -811,8 +814,9 @@ mod tests {
 
     #[test]
     fn test_update_operator_change_back_to_previous_node_id() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -954,8 +958,9 @@ mod tests {
 
     #[test]
     fn test_update_operator_public_key() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -1052,8 +1057,9 @@ mod tests {
 
     #[test]
     fn test_update_operator_identity_reuses_node_id_without_change() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -1193,8 +1199,9 @@ mod tests {
 
     #[test]
     fn test_update_operator_change_back_to_previous_public_key() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
             .build_with_mock_rpc()
             .set_genesis_state();
 

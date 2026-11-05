@@ -936,6 +936,24 @@ where
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        // Operator payouts (v15 note 22): from this version they follow Core's diffs, and this
+        // fixes once what earlier versions left stale. Reconciled against Core's list at the
+        // last committed chain locked core height, the height the masternode list is at here;
+        // this block's own diff to its chain locked height is applied afterwards, under this
+        // version's rules. That height is chain locked and already processed, so every node's
+        // Core holds it and reports the same list. This puts Core on the upgrade block's path
+        // whatever the block's own height: a node whose Core cannot answer cannot execute the
+        // upgrade block. It goes first, so a round whose Core cannot answer stops before the
+        // rest of this transition's work.
+        let core_height = block_platform_state.last_committed_core_height();
+        self.reconcile_operator_payouts_with_core(
+            block_platform_state,
+            core_height,
+            block_info,
+            transaction,
+            platform_version,
+        )?;
+
         // DPNS contract v3 (v15 note 1): its preorders are unsalted, one per owner and name,
         // which no contract update can turn a unique index into, so the `preorder` type is
         // rebuilt and every preorder made before this block is deleted, unrefunded.
@@ -993,23 +1011,6 @@ where
             true,
             None,
             Some(transaction),
-            platform_version,
-        )?;
-
-        // Operator payouts (v15 note 22): from this version they follow Core's diffs, and this
-        // fixes once what earlier versions left stale. Reconciled against Core's list at the
-        // last committed chain locked core height, the height the masternode list is at here;
-        // this block's own diff to its chain locked height is applied afterwards, under this
-        // version's rules. That height is chain locked and already processed, so every node's
-        // Core holds it and reports the same list. This puts Core on the upgrade block's path
-        // whatever the block's own height: a node whose Core cannot answer cannot execute the
-        // upgrade block.
-        let core_height = block_platform_state.last_committed_core_height();
-        self.reconcile_operator_payouts_with_core(
-            block_platform_state,
-            core_height,
-            block_info,
-            transaction,
             platform_version,
         )?;
 

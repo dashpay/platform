@@ -12,6 +12,7 @@ use dpp::dashcore_rpc::json::{
     DMNStateDiff, MasternodeListDiff, MasternodeListItem, MasternodeType,
 };
 use dpp::identity::Purpose;
+use dpp::util::hash::ripemd160_sha256;
 use dpp::version::PlatformVersion;
 use std::collections::BTreeSet;
 
@@ -351,4 +352,200 @@ fn should_keep_the_revived_height_a_diff_does_not_print() {
             Some(900)
         );
     }
+}
+
+/// An evonode `id` with platform node id `[id; 20]`.
+fn evonode(id: u8) -> MasternodeListItem {
+    let mut evonode = masternode_with_operator_payout(id);
+    evonode.node_type = MasternodeType::Evo;
+    evonode.state.platform_node_id = Some([id ^ 0x0f; 20]);
+    #[allow(deprecated)]
+    {
+        evonode.state.legacy_platform_p2p_port = Some(26656);
+        evonode.state.legacy_platform_http_port = Some(443);
+    }
+    evonode
+}
+
+/// The (data, disabled) of every key of the operator identity of `masternode` with operator key
+/// `pub_key_operator` whose purpose is `purpose`, by key id.
+fn keys_with_purpose(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    masternode: &MasternodeListItem,
+    pub_key_operator: &[u8],
+    purpose: Purpose,
+) -> Vec<(Vec<u8>, bool)> {
+    operator_identity_keys(
+        platform,
+        None,
+        &masternode.pro_tx_hash,
+        pub_key_operator,
+        PlatformVersion::latest(),
+    )
+    .into_values()
+    .filter(|(key_purpose, _, _)| *key_purpose == purpose)
+    .map(|(_, data, disabled)| (data, disabled))
+    .collect()
+}
+
+/// An operator payout and a platform node id are any 20 bytes Core accepts, so an operator can
+/// make the payout equal the platform node id or the hash of the operator key, or the node id
+/// equal a payout. Drive refuses a second key with a hash the identity already holds, on every
+/// node, so adding one would fail the block. The update leaves that key out instead, and a later
+/// change of both the node id and the payout goes through.
+#[test]
+fn should_not_halt_when_an_operator_payout_or_node_id_repeats_another_keys_hash() {
+    let payout_is_node_id = evonode(0x6a);
+    let payout_is_operator_key_hash = evonode(0x6b);
+    let node_id_is_payout = evonode(0x6c);
+    let node_id = |masternode: &MasternodeListItem| {
+        masternode
+            .state
+            .platform_node_id
+            .expect("expected an evonode")
+    };
+    let payout = |masternode: &MasternodeListItem| {
+        masternode
+            .state
+            .operator_payout_address
+            .expect("expected an operator payout")
+    };
+    let operator_key_hash = ripemd160_sha256(&payout_is_operator_key_hash.state.pub_key_operator);
+    let (platform, state) = masternode_list_after_diffs(
+        PlatformVersion::latest(),
+        vec![
+            payout_is_node_id.clone(),
+            payout_is_operator_key_hash.clone(),
+            node_id_is_payout.clone(),
+        ],
+        vec![
+            vec![
+                (
+                    payout_is_node_id.pro_tx_hash,
+                    DMNStateDiff {
+                        operator_payout_address: Some(Some(node_id(&payout_is_node_id))),
+                        ..empty_state_diff()
+                    },
+                ),
+                (
+                    payout_is_operator_key_hash.pro_tx_hash,
+                    DMNStateDiff {
+                        operator_payout_address: Some(Some(operator_key_hash)),
+                        ..empty_state_diff()
+                    },
+                ),
+                (
+                    node_id_is_payout.pro_tx_hash,
+                    DMNStateDiff {
+                        platform_node_id: Some(payout(&node_id_is_payout)),
+                        ..empty_state_diff()
+                    },
+                ),
+            ],
+            vec![(
+                payout_is_node_id.pro_tx_hash,
+                DMNStateDiff {
+                    platform_node_id: Some([0x7a; 20]),
+                    operator_payout_address: Some(Some([0x8a; 20])),
+                    ..empty_state_diff()
+                },
+            )],
+        ],
+    );
+
+    let key = &payout_is_node_id.state.pub_key_operator;
+    assert_eq!(
+        keys_with_purpose(&platform, &payout_is_node_id, key, Purpose::TRANSFER),
+        [
+            (payout(&payout_is_node_id).to_vec(), true),
+            (vec![0x8a; 20], false)
+        ]
+    );
+    assert!(
+        keys_with_purpose(&platform, &payout_is_node_id, key, Purpose::SYSTEM)
+            .contains(&(vec![0x7a; 20], false))
+    );
+    assert_eq!(
+        stored_operator_payout(&state, &payout_is_node_id),
+        Some([0x8a; 20])
+    );
+
+    let key = &payout_is_operator_key_hash.state.pub_key_operator;
+    assert_eq!(
+        keys_with_purpose(
+            &platform,
+            &payout_is_operator_key_hash,
+            key,
+            Purpose::TRANSFER
+        ),
+        [(payout(&payout_is_operator_key_hash).to_vec(), true)]
+    );
+
+    let key = &node_id_is_payout.state.pub_key_operator;
+    assert_eq!(
+        keys_with_purpose(&platform, &node_id_is_payout, key, Purpose::TRANSFER),
+        [(payout(&node_id_is_payout).to_vec(), false)]
+    );
+    assert_eq!(
+        state.full_masternode_list()[&node_id_is_payout.pro_tx_hash]
+            .state
+            .platform_node_id,
+        Some(payout(&node_id_is_payout))
+    );
+}
+
+/// A new operator whose payout Core reports equal to the platform node id gets an identity with
+/// the payout key and no second key of the same hash, so no key of the identity repeats a hash
+/// and a later added key never meets one Drive would refuse.
+#[test]
+fn should_create_a_new_operator_identity_whose_payout_equals_the_platform_node_id() {
+    let masternode = evonode(0x6d);
+    let node_id = masternode
+        .state
+        .platform_node_id
+        .expect("expected an evonode");
+    let (platform, _state) = masternode_list_after_diffs(
+        PlatformVersion::latest(),
+        vec![masternode.clone()],
+        vec![vec![(
+            masternode.pro_tx_hash,
+            DMNStateDiff {
+                pub_key_operator: Some(vec![0x7d; 48]),
+                operator_payout_address: Some(Some(node_id)),
+                ..empty_state_diff()
+            },
+        )]],
+    );
+
+    assert_eq!(
+        keys_with_purpose(&platform, &masternode, &[0x7d; 48], Purpose::TRANSFER),
+        [(node_id.to_vec(), false)]
+    );
+    assert_eq!(
+        keys_with_purpose(&platform, &masternode, &[0x7d; 48], Purpose::SYSTEM),
+        [(vec![0x7d; 48], false)]
+    );
+}
+
+/// Core reports a masternode as updated on nearly every block for its payment fields alone; such
+/// a diff leaves the stored list and the platform state clean, so the block does not rewrite the
+/// saved state.
+#[test]
+fn should_leave_the_state_clean_after_a_payment_only_diff() {
+    let masternode = masternode_with_operator_payout(0x6e);
+    let (_platform, state) = masternode_list_after_diffs(
+        PlatformVersion::latest(),
+        vec![masternode.clone()],
+        vec![vec![(
+            masternode.pro_tx_hash,
+            DMNStateDiff {
+                last_paid_height: Some(1001),
+                consecutive_payments: Some(1),
+                ..empty_state_diff()
+            },
+        )]],
+    );
+
+    assert!(!state.heavy_fields_dirty);
+    assert!(state.masternode_changes.upserted.is_empty());
 }

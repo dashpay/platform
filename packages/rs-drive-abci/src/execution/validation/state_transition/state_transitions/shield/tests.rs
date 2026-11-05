@@ -1586,7 +1586,7 @@ mod tests {
         ) {
             let old = PlatformVersion::get(13).expect("PV13");
             let latest = PlatformVersion::latest();
-            let mut platform = setup_platform_at_protocol_version(13);
+            let mut platform = setup_platform_at_protocol_version(13).with_no_core_masternodes();
             let (signer, address) = funded_address(&mut platform);
             let (historical, mut notes) = historical_bundle_with_notes(1_000_000_000, &[], 13014);
             let shield = signed_shield(&signer, address, 1, &historical).await;
@@ -1670,7 +1670,7 @@ mod tests {
         async fn should_refuse_historical_credit_rho_reuse_on_first_pv14_candidate() {
             let old_version = PlatformVersion::get(13).expect("protocol 13");
             let new_version = PlatformVersion::latest();
-            let mut platform = setup_platform_at_protocol_version(13);
+            let mut platform = setup_platform_at_protocol_version(13).with_no_core_masternodes();
             let (signer, address) = funded_address(&mut platform);
             let historical = historical_bundle(&[], 14013);
             let first = signed_shield(&signer, address, 1, &historical).await;

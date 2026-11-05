@@ -203,11 +203,14 @@ impl TempPlatform<MockCoreRPCLike> {
 
     /// Has the mock Core list no masternodes at any height, which is the list of a platform that
     /// never processed one. The first block of protocol version 15 reads Core's masternode list
-    /// to reconcile operator payouts.
+    /// to reconcile operator payouts. It answers every full list call, and the mock takes the
+    /// first expectation that matches, so a test that answers them itself must not use it. A
+    /// diff between two heights still finds no answer.
     pub fn with_no_core_masternodes(mut self) -> Self {
         self.platform
             .core_rpc
             .expect_get_protx_diff_with_masternodes()
+            .withf(|base_block, _| base_block.is_none())
             .returning(|base_block, block| {
                 Ok(MasternodeListDiff {
                     base_height: base_block.unwrap_or_default(),
