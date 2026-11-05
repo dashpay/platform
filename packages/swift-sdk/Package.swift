@@ -24,7 +24,7 @@ let package = Package(
             name: "SwiftDashSDK",
             dependencies: ["DashSDKFFI"],
             path: "Sources/SwiftDashSDK",
-            exclude: ["KeyWallet/README.md", "PlatformWallet/README.md"],
+            exclude: ["PlatformWallet/README.md"],
             linkerSettings: [.linkedFramework("SystemConfiguration")]
         ),
 

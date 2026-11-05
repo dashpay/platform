@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dash-spv",
-  "version": "6.0.1",
+  "version": "6.0.3",
   "description": "Repository containing SPV functions used by @dashevo",
   "main": "index.js",
   "scripts": {
@@ -12,7 +12,6 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@dashevo/dark-gravity-wave": "^1.1.1",
     "@dashevo/dash-util": "^2.0.3",
     "@dashevo/dashcore-lib": "~0.26.1",
     "levelup": "^4.4.0",

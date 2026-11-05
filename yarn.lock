@@ -1638,18 +1638,10 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/dark-gravity-wave@npm:^1.1.1":
-  version: 1.1.1
-  resolution: "@dashevo/dark-gravity-wave@npm:1.1.1"
-  checksum: 10/920ee3859015c1df88353d17ade6b2cd82f6776194807f066137e22a0d48aef32943fb74de87dafb7d89185ceb3dfeb46c1f772fa89360c7bf919b618cd495c8
-  languageName: node
-  linkType: hard
-
 "@dashevo/dash-spv@workspace:*, @dashevo/dash-spv@workspace:packages/dash-spv":
   version: 0.0.0-use.local
   resolution: "@dashevo/dash-spv@workspace:packages/dash-spv"
   dependencies:
-    "@dashevo/dark-gravity-wave": "npm:^1.1.1"
     "@dashevo/dash-util": "npm:^2.0.3"
     "@dashevo/dashcore-lib": "npm:~0.26.1"
     chai: "npm:^4.3.10"
@@ -2015,6 +2007,20 @@ __metadata:
 "@dashevo/token-history-contract@workspace:packages/token-history-contract":
   version: 0.0.0-use.local
   resolution: "@dashevo/token-history-contract@workspace:packages/token-history-contract"
+  dependencies:
+    "@dashevo/wasm-dpp": "workspace:*"
+    chai: "npm:^4.3.10"
+    dirty-chai: "npm:^2.0.1"
+    eslint: "npm:^9.18.0"
+    mocha: "npm:^11.1.0"
+    sinon: "npm:^18.0.1"
+    sinon-chai: "npm:^3.7.0"
+  languageName: unknown
+  linkType: soft
+
+"@dashevo/token-market-contract@workspace:packages/token-market-contract":
+  version: 0.0.0-use.local
+  resolution: "@dashevo/token-market-contract@workspace:packages/token-market-contract"
   dependencies:
     "@dashevo/wasm-dpp": "workspace:*"
     chai: "npm:^4.3.10"

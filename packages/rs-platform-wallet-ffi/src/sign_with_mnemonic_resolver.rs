@@ -44,7 +44,7 @@ use crate::types::{FFINetwork, Network};
 use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
 use zeroize::Zeroizing;
 
-use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
+use platform_wallet::parse_mnemonic_any_language;
 use rs_sdk_ffi::{
     mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
 };

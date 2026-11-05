@@ -7,7 +7,7 @@ use dash_sdk::{
     error::ContextProviderError,
     platform::{DataContract, Identifier},
 };
-use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
+use rs_sdk_trusted_context_provider::{TrustedHttpContextProvider, VerifiedHttpContextProvider};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use crate::error::WasmSdkError;
@@ -45,7 +45,7 @@ impl ContextProvider for WasmContext {
         _core_chain_locked_height: u32,
     ) -> Result<[u8; 48], ContextProviderError> {
         Err(ContextProviderError::Config(
-            "Non-trusted mode is not supported in WASM. Please construct a WasmTrustedContext via prefetchMainnet/prefetchTestnet/prefetchDevnet/prefetchLocal and attach it with WasmSdkBuilder.withTrustedContext().".to_string()
+            "Non-trusted mode is not supported in WASM. Please construct a WasmTrustedContext via prefetchMainnet/prefetchTestnet/prefetchDevnet/prefetchLocal and attach it with WasmSdkBuilder.withTrustedContext(), or a WasmVerifiedContext via mainnet/testnet and attach it with WasmSdkBuilder.withVerifiedContext().".to_string()
         ))
     }
 
@@ -132,6 +132,24 @@ impl ContextProvider for WasmTrustedContext {
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         self.inner.get_platform_activation_height()
+    }
+
+    fn network(&self) -> Option<Network> {
+        self.inner.network()
+    }
+
+    fn requires_proofs(&self) -> bool {
+        self.inner.requires_proofs()
+    }
+
+    fn core_height_verified(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) {
+        self.inner
+            .core_height_verified(quorum_type, quorum_hash, core_chain_locked_height)
     }
 }
 
@@ -402,6 +420,85 @@ impl WasmTrustedContext {
         WasmTrustedContext {
             inner: Arc::new(inner),
             discovered_addresses,
+        }
+    }
+}
+
+/// The quorum context a `WasmSdk` serves proofs from: one of the two kinds a
+/// builder can attach. The SDK caches the contracts and token
+/// configurations it fetches in whichever is attached. A verified context is
+/// held as the provider a `WasmVerifiedContext` wraps, which is also what the
+/// builder attaches; clones share its caches.
+#[derive(Clone)]
+pub(crate) enum QuorumContext {
+    Trusted(WasmTrustedContext),
+    Verified(VerifiedHttpContextProvider),
+}
+
+impl From<WasmTrustedContext> for QuorumContext {
+    fn from(context: WasmTrustedContext) -> Self {
+        Self::Trusted(context)
+    }
+}
+
+impl QuorumContext {
+    /// Refresh the trusted context's quorum lists before proof verification.
+    /// A verified context proves each quorum key when it is first needed, so
+    /// it has nothing to refresh.
+    pub(crate) async fn refresh_quorums(&self) -> Result<(), WasmSdkError> {
+        match self {
+            Self::Trusted(context) => context.refresh_quorums().await,
+            Self::Verified(_) => Ok(()),
+        }
+    }
+
+    pub(crate) fn get_data_contract(
+        &self,
+        id: &Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        match self {
+            Self::Trusted(context) => context.get_data_contract(id, platform_version),
+            Self::Verified(context) => context.get_data_contract(id, platform_version),
+        }
+    }
+
+    pub(crate) fn add_known_contract(&self, contract: DataContract) {
+        match self {
+            Self::Trusted(context) => context.add_known_contract(contract),
+            Self::Verified(context) => context.add_known_contract(contract),
+        }
+    }
+
+    pub(crate) fn add_known_contract_if_newer(&self, contract: DataContract) -> Arc<DataContract> {
+        match self {
+            Self::Trusted(context) => context.add_known_contract_if_newer(contract),
+            Self::Verified(context) => context.add_known_contract_if_newer(contract),
+        }
+    }
+
+    pub(crate) fn get_known_contract(&self, id: &Identifier) -> Option<Arc<DataContract>> {
+        match self {
+            Self::Trusted(context) => context.get_known_contract(id),
+            Self::Verified(context) => context.get_known_contract(id),
+        }
+    }
+
+    pub(crate) fn remove_known_contract(&self, id: &Identifier) -> bool {
+        match self {
+            Self::Trusted(context) => context.remove_known_contract(id),
+            Self::Verified(context) => context.remove_known_contract(id),
+        }
+    }
+
+    pub(crate) fn add_known_token_configuration(
+        &self,
+        token_id: Identifier,
+        config: TokenConfiguration,
+    ) {
+        match self {
+            Self::Trusted(context) => context.add_known_token_configuration(token_id, config),
+            Self::Verified(context) => context.add_known_token_configuration(token_id, config),
         }
     }
 }

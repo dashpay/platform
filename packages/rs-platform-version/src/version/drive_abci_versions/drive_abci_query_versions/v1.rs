@@ -26,6 +26,8 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V1: DriveAbciQueryVersions = DriveAbciQueryV
         max_version: 1,
         default_current_version: 1,
     },
+    document_sub_queries: None,
+    chained_document_query: None,
     document_history: FeatureVersionBounds {
         min_version: 0,
         max_version: 0,

@@ -671,6 +671,7 @@ mod tests {
             let err = dash_sdk::Error::ProtocolVersionNotActive {
                 method: "get_contract_fee_pots",
                 required: 14,
+                feature: None,
                 network: 13,
                 pinned,
                 cause: cause.map(Box::new),
