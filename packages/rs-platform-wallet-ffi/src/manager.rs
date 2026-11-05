@@ -8,15 +8,16 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, FreeCoreHistoryForAccountingFn, FreeCoreInstantLockFn, FreeTrackedMasternodesFn,
-    LoadAssetLockOperationIdFn, LoadCoreHistoryForAccountingFn, LoadCoreInstantLockFn,
-    LoadIdentityBalanceBlockTimeFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
+    ApplyReplayEffectsFn, FFIPersister, FreeCoreHistoryForAccountingFn, FreeCoreInstantLockFn,
+    FreeReplayClaimsFn, FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn,
+    LoadCoreHistoryForAccountingFn, LoadCoreInstantLockFn, LoadIdentityBalanceBlockTimeFn,
+    LoadReplayClaimsFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
     PersistCoreHistoryAccountedFn, PersistCoreInstantLockFn, PersistDpnsNameStatesFn,
     PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn, PersistTransactionAccountingFn,
     PersistWalletChangesetChainLockHeightFn, PersistWalletChangesetSweepsFn,
     PersistWalletChangesetUtxoVerdictsFn, PersistWalletDashPayBackfillFn, PersistenceCallbacks,
     PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
-    PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
+    ReplayWalletFn, PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
@@ -311,6 +312,10 @@ unsafe fn persistence_extension_callbacks(
         persist_core_instant_lock: slot!(on_persist_core_instant_lock_fn, PersistCoreInstantLockFn),
         load_core_instant_lock: slot!(on_load_core_instant_lock_fn, LoadCoreInstantLockFn),
         free_core_instant_lock: slot!(on_load_core_instant_lock_free_fn, FreeCoreInstantLockFn),
+        replay_wallet: slot!(on_replay_wallet_fn, ReplayWalletFn),
+        load_replay_claims: slot!(on_load_replay_claims_fn, LoadReplayClaimsFn),
+        free_replay_claims: slot!(on_load_replay_claims_free_fn, FreeReplayClaimsFn),
+        apply_replay_effects: slot!(on_apply_replay_effects_fn, ApplyReplayEffectsFn),
     }
 }
 
@@ -1553,6 +1558,71 @@ mod tests {
             on_persist_transaction_accounting_fn
         );
         assert_eq!(present(&ext), [false; 4]);
+    }
+
+    #[test]
+    fn should_size_gate_every_atomic_replay_callback_without_reading_a_partial_slot() {
+        unsafe extern "C" fn scope(
+            _: *mut c_void,
+            _: *const u8,
+            _: ReplayOperationFn,
+            _: *mut c_void,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load(
+            _: *mut c_void,
+            _: *const u8,
+            _: *mut *const ReplayClaimRestoreFFI,
+            _: *mut usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn free(_: *mut c_void, _: *const ReplayClaimRestoreFFI, _: usize) {}
+        unsafe extern "C" fn apply(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const HistoryReplayEffectsFFI,
+        ) -> i32 {
+            0
+        }
+        use crate::persistence::{
+            HistoryReplayEffectsFFI, ReplayClaimRestoreFFI, ReplayOperationFn,
+        };
+        let mut ext = PersistenceCallbacksExtension {
+            on_replay_wallet_fn: Some(scope),
+            on_load_replay_claims_fn: Some(load),
+            on_load_replay_claims_free_fn: Some(free),
+            on_apply_replay_effects_fn: Some(apply),
+            ..Default::default()
+        };
+        let present = |ext: &PersistenceCallbacksExtension| {
+            let parsed = unsafe { persistence_extension_callbacks(ext) };
+            [
+                parsed.replay_wallet.is_some(),
+                parsed.load_replay_claims.is_some(),
+                parsed.free_replay_claims.is_some(),
+                parsed.apply_replay_effects.is_some(),
+            ]
+        };
+        assert_eq!(present(&ext), [true; 4]);
+        for (index, offset) in [
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_replay_wallet_fn),
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_load_replay_claims_fn),
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_load_replay_claims_free_fn),
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_apply_replay_effects_fn),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            for length in [
+                offset,
+                offset + std::mem::size_of::<Option<ReplayWalletFn>>() - 1,
+            ] {
+                ext.struct_size = length;
+                assert_eq!(present(&ext), std::array::from_fn(|slot| slot < index));
+            }
+        }
     }
 
     /// A host whose `struct_size` stops right after the chainlock-height

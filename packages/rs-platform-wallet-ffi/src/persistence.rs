@@ -9,6 +9,13 @@
 //! `rs-unified-sdk-jni`'s `RESOLVE_*` mnemonic-resolver codes, which reuse the
 //! same integers on a different callback family.
 
+mod replay;
+use replay::ReplayCallbacks;
+pub use replay::{
+    ApplyReplayEffectsFn, FreeReplayClaimsFn, HistoryReplayEffectsFFI, LoadReplayClaimsFn,
+    ReplayClaimEffectFFI, ReplayClaimRestoreFFI, ReplayOperationFn, ReplayWalletFn,
+};
+
 use bincode::config;
 use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType, StandardAccountType};
@@ -624,6 +631,37 @@ pub struct PersistenceCallbacksExtension {
     >,
     pub on_load_core_instant_lock_free_fn:
         Option<unsafe extern "C" fn(context: *mut c_void, bytes: *const u8, len: usize)>,
+    /// Synchronous exactly-once scope; rollback if the operation or commit fails.
+    pub on_replay_wallet_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            operation: unsafe extern "C" fn(operation_context: *mut c_void) -> i32,
+            operation_context: *mut c_void,
+        ) -> i32,
+    >,
+    pub on_load_replay_claims_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            out_rows: *mut *const ReplayClaimRestoreFFI,
+            out_count: *mut usize,
+        ) -> i32,
+    >,
+    pub on_load_replay_claims_free_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            rows: *const ReplayClaimRestoreFFI,
+            count: usize,
+        ),
+    >,
+    pub on_apply_replay_effects_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            effects: *const HistoryReplayEffectsFFI,
+        ) -> i32,
+    >,
 }
 
 impl Default for PersistenceCallbacksExtension {
@@ -651,6 +689,10 @@ impl Default for PersistenceCallbacksExtension {
             on_persist_core_instant_lock_fn: None,
             on_load_core_instant_lock_fn: None,
             on_load_core_instant_lock_free_fn: None,
+            on_replay_wallet_fn: None,
+            on_load_replay_claims_fn: None,
+            on_load_replay_claims_free_fn: None,
+            on_apply_replay_effects_fn: None,
         }
     }
 }
@@ -679,6 +721,10 @@ pub struct PersistenceExtensionCallbacks {
     pub persist_core_instant_lock: Option<PersistCoreInstantLockFn>,
     pub load_core_instant_lock: Option<LoadCoreInstantLockFn>,
     pub free_core_instant_lock: Option<FreeCoreInstantLockFn>,
+    pub replay_wallet: Option<ReplayWalletFn>,
+    pub load_replay_claims: Option<LoadReplayClaimsFn>,
+    pub free_replay_claims: Option<FreeReplayClaimsFn>,
+    pub apply_replay_effects: Option<ApplyReplayEffectsFn>,
 }
 
 /// Return value by which a persistence callback reports a **retryable**
@@ -1650,6 +1696,7 @@ pub struct FFIPersister {
     /// each round atomic with respect to every other round and the complete
     /// restore read (including additive sidecars).
     round_lock: Mutex<RoundGuardState>,
+    replay_callbacks: ReplayCallbacks,
 }
 
 /// Releases the host callback context when the persister's last owner
@@ -1767,7 +1814,572 @@ impl FFIPersister {
             free_core_instant_lock_callback: extensions.free_core_instant_lock,
             declared_capabilities,
             round_lock: Mutex::new(RoundGuardState::default()),
+            replay_callbacks: ReplayCallbacks {
+                transaction: extensions.replay_wallet,
+                load_claims: extensions.load_replay_claims,
+                free_claims: extensions.free_replay_claims,
+                apply: extensions.apply_replay_effects,
+            },
         }
+    }
+
+    /// Read under the caller's round guard; atomic replay must not acquire it recursively.
+    fn load_snapshot_unlocked(
+        &self,
+        wallet_id: Option<WalletId>,
+    ) -> Result<ClientStartState, PersistenceError> {
+        // If Swift hasn't wired up `on_load_wallet_list_fn` there's
+        // nothing to restore — treat as a fresh client.
+        let Some(load_cb) = self.callbacks.on_load_wallet_list_fn else {
+            return Ok(ClientStartState::default());
+        };
+
+        // Swift allocates the entries array (and every nested byte
+        // buffer); we read it under a `Guard` that calls the matching
+        // free callback on drop, so failures inside the loop don't
+        // leak.
+        let mut entries_ptr: *const WalletRestoreEntryFFI = std::ptr::null();
+        let mut count: usize = 0;
+        let rc = unsafe { load_cb(self.callbacks.context, &mut entries_ptr, &mut count) };
+        if rc != 0 {
+            return Err(persist_callback_error(
+                rc,
+                format!("on_load_wallet_list_fn returned error code {}", rc),
+            ));
+        }
+        let _guard = LoadGuard {
+            context: self.callbacks.context,
+            free_fn: self.callbacks.on_load_wallet_list_free_fn,
+            entries: entries_ptr,
+            count,
+        };
+
+        let mut out = ClientStartState::default();
+        if entries_ptr.is_null() && count != 0 {
+            return Err(PersistenceError::backend(
+                "wallet restore: missing row buffer",
+            ));
+        }
+        if count == 0 {
+            return Ok(out);
+        }
+
+        // SAFETY: Swift guarantees `entries_ptr` points to `count`
+        // contiguous `WalletRestoreEntryFFI` values for the lifetime
+        // of the callback window. `_guard` ensures the free callback
+        // fires before we leave this function.
+        let entries = unsafe { slice::from_raw_parts(entries_ptr, count) };
+        for entry in entries {
+            if wallet_id.is_some_and(|wallet_id| entry.wallet_id != wallet_id) {
+                continue;
+            }
+            if out.wallets.contains_key(&entry.wallet_id) {
+                return Err(PersistenceError::backend(
+                    "wallet restore: duplicate wallet ID",
+                ));
+            }
+            let (mut wallet_state, platform_address_state) = build_wallet_start_state(entry)?;
+            self.load_core_instant_locks(&entry.wallet_id, &mut wallet_state.recorded_history)?;
+            if let Some(cb) = self
+                .tracked_masternodes_callbacks
+                .load_asset_lock_operation_id
+            {
+                load_asset_lock_operation_ids(
+                    cb,
+                    self.callbacks.context,
+                    &entry.wallet_id,
+                    &mut wallet_state.unused_asset_locks,
+                )?;
+            }
+            if let Some(cb) = self.load_identity_balance_block_time_callback {
+                for identities in wallet_state.identity_manager.wallet_identities.values_mut() {
+                    for managed in identities.values_mut() {
+                        let mut found = false;
+                        let mut stamp = crate::types::BlockTime {
+                            height: 0,
+                            core_height: 0,
+                            timestamp: 0,
+                        };
+                        let rc = unsafe {
+                            cb(
+                                self.callbacks.context,
+                                entry.wallet_id.as_ptr(),
+                                managed.id().as_bytes().as_ptr(),
+                                &mut found,
+                                &mut stamp,
+                            )
+                        };
+                        if rc != 0 {
+                            return Err(persist_callback_error(
+                                rc,
+                                "Loading identity balance block time failed".to_string(),
+                            ));
+                        }
+                        managed.last_updated_balance_block_time = found.then(|| stamp.into());
+                    }
+                }
+            }
+            out.wallets.insert(entry.wallet_id, wallet_state);
+            if let Some(platform_address_state) = platform_address_state {
+                out.platform_addresses
+                    .insert(entry.wallet_id, platform_address_state);
+            }
+        }
+
+        // Restore shielded sub-wallet state if the host has wired
+        // up the optional callbacks. Notes and per-subwallet sync
+        // states travel separately so the host can populate them
+        // from independent SwiftData fetch descriptors. Both arms
+        // walk the same `(wallet_id, account_index)` key space and
+        // funnel into a single `SubwalletId` map on
+        // `ClientStartState.shielded`.
+        #[cfg(feature = "shielded")]
+        {
+            use crate::shielded_persistence::*;
+            use platform_wallet::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
+            use platform_wallet::wallet::shielded::{
+                ShieldedActivityEntry, ShieldedActivityKind, ShieldedDirection, ShieldedNote,
+                ShieldedOutgoingNote, SubwalletId,
+            };
+
+            let mut shielded_state = ShieldedSyncStartState::default();
+
+            // Fail fast on a half-wired callback pair: a loader without
+            // its matching free callback leaks the host-allocated buffer
+            // on every successful load (the guard's `Drop` is a no-op
+            // when `free_fn` is `None`).
+            if self.callbacks.on_load_shielded_notes_fn.is_some()
+                != self.callbacks.on_load_shielded_notes_free_fn.is_some()
+            {
+                return Err(PersistenceError::backend(
+                    "on_load_shielded_notes_fn and on_load_shielded_notes_free_fn must be \
+                     provided together",
+                ));
+            }
+            if self.callbacks.on_load_shielded_sync_states_fn.is_some()
+                != self
+                    .callbacks
+                    .on_load_shielded_sync_states_free_fn
+                    .is_some()
+            {
+                return Err(PersistenceError::backend(
+                    "on_load_shielded_sync_states_fn and on_load_shielded_sync_states_free_fn \
+                     must be provided together",
+                ));
+            }
+            if self.callbacks.on_load_shielded_outgoing_notes_fn.is_some()
+                != self
+                    .callbacks
+                    .on_load_shielded_outgoing_notes_free_fn
+                    .is_some()
+            {
+                return Err(PersistenceError::backend(
+                    "on_load_shielded_outgoing_notes_fn and \
+                     on_load_shielded_outgoing_notes_free_fn must be provided together",
+                ));
+            }
+
+            // 1) notes
+            if let Some(load_notes) = self.callbacks.on_load_shielded_notes_fn {
+                let mut notes_ptr: *const ShieldedNoteRestoreFFI = std::ptr::null();
+                let mut notes_count: usize = 0;
+                let rc =
+                    unsafe { load_notes(self.callbacks.context, &mut notes_ptr, &mut notes_count) };
+                if rc != 0 {
+                    return Err(persist_callback_error(
+                        rc,
+                        format!("on_load_shielded_notes_fn returned error code {}", rc),
+                    ));
+                }
+                struct NotesGuard {
+                    context: *mut c_void,
+                    free_fn: Option<
+                        unsafe extern "C" fn(
+                            context: *mut c_void,
+                            entries: *const ShieldedNoteRestoreFFI,
+                            count: usize,
+                        ),
+                    >,
+                    entries: *const ShieldedNoteRestoreFFI,
+                    count: usize,
+                }
+                impl Drop for NotesGuard {
+                    fn drop(&mut self) {
+                        if let Some(free_fn) = self.free_fn {
+                            unsafe { free_fn(self.context, self.entries, self.count) };
+                        }
+                    }
+                }
+                let _notes_guard = NotesGuard {
+                    context: self.callbacks.context,
+                    free_fn: self.callbacks.on_load_shielded_notes_free_fn,
+                    entries: notes_ptr,
+                    count: notes_count,
+                };
+                if !notes_ptr.is_null() && notes_count > 0 {
+                    let slice = unsafe { slice::from_raw_parts(notes_ptr, notes_count) };
+                    for ffi in slice {
+                        if ffi.note_data_ptr.is_null() || ffi.note_data_len == 0 {
+                            continue;
+                        }
+                        let note_data = unsafe {
+                            std::slice::from_raw_parts(ffi.note_data_ptr, ffi.note_data_len)
+                                .to_vec()
+                        };
+                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
+                        let entry = shielded_state
+                            .per_subwallet
+                            .entry(id)
+                            .or_insert_with(ShieldedSubwalletStartState::default);
+                        entry.notes.push(ShieldedNote {
+                            position: ffi.position,
+                            cmx: ffi.cmx,
+                            nullifier: ffi.nullifier,
+                            block_height: ffi.block_height,
+                            is_spent: ffi.is_spent != 0,
+                            value: ffi.value,
+                            note_data,
+                        });
+                    }
+                }
+            }
+
+            // 2) outgoing (sent) notes recovered via OVK
+            if let Some(load_outgoing) = self.callbacks.on_load_shielded_outgoing_notes_fn {
+                let mut out_ptr: *const ShieldedOutgoingNoteRestoreFFI = std::ptr::null();
+                let mut out_count: usize = 0;
+                let rc =
+                    unsafe { load_outgoing(self.callbacks.context, &mut out_ptr, &mut out_count) };
+                if rc != 0 {
+                    return Err(persist_callback_error(
+                        rc,
+                        format!(
+                            "on_load_shielded_outgoing_notes_fn returned error code {}",
+                            rc
+                        ),
+                    ));
+                }
+                struct OutgoingGuard {
+                    context: *mut c_void,
+                    free_fn: Option<
+                        unsafe extern "C" fn(
+                            context: *mut c_void,
+                            entries: *const ShieldedOutgoingNoteRestoreFFI,
+                            count: usize,
+                        ),
+                    >,
+                    entries: *const ShieldedOutgoingNoteRestoreFFI,
+                    count: usize,
+                }
+                impl Drop for OutgoingGuard {
+                    fn drop(&mut self) {
+                        if let Some(free_fn) = self.free_fn {
+                            unsafe { free_fn(self.context, self.entries, self.count) };
+                        }
+                    }
+                }
+                let _outgoing_guard = OutgoingGuard {
+                    context: self.callbacks.context,
+                    free_fn: self.callbacks.on_load_shielded_outgoing_notes_free_fn,
+                    entries: out_ptr,
+                    count: out_count,
+                };
+                if !out_ptr.is_null() && out_count > 0 {
+                    let slice = unsafe { slice::from_raw_parts(out_ptr, out_count) };
+                    for ffi in slice {
+                        let memo = if ffi.memo_ptr.is_null() || ffi.memo_len == 0 {
+                            Vec::new()
+                        } else {
+                            unsafe {
+                                std::slice::from_raw_parts(ffi.memo_ptr, ffi.memo_len).to_vec()
+                            }
+                        };
+                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
+                        let entry = shielded_state
+                            .per_subwallet
+                            .entry(id)
+                            .or_insert_with(ShieldedSubwalletStartState::default);
+                        entry.outgoing_notes.push(ShieldedOutgoingNote {
+                            cmx: ffi.cmx,
+                            recipient: ffi.recipient.to_vec(),
+                            value: ffi.value,
+                            memo,
+                            block_height: ffi.block_height,
+                        });
+                    }
+                }
+            }
+
+            // 3) per-subwallet sync states
+            if let Some(load_states) = self.callbacks.on_load_shielded_sync_states_fn {
+                let mut states_ptr: *const ShieldedSubwalletSyncStateFFI = std::ptr::null();
+                let mut states_count: usize = 0;
+                let rc = unsafe {
+                    load_states(self.callbacks.context, &mut states_ptr, &mut states_count)
+                };
+                if rc != 0 {
+                    return Err(persist_callback_error(
+                        rc,
+                        format!("on_load_shielded_sync_states_fn returned error code {}", rc),
+                    ));
+                }
+                struct StatesGuard {
+                    context: *mut c_void,
+                    free_fn: Option<
+                        unsafe extern "C" fn(
+                            context: *mut c_void,
+                            entries: *const ShieldedSubwalletSyncStateFFI,
+                            count: usize,
+                        ),
+                    >,
+                    entries: *const ShieldedSubwalletSyncStateFFI,
+                    count: usize,
+                }
+                impl Drop for StatesGuard {
+                    fn drop(&mut self) {
+                        if let Some(free_fn) = self.free_fn {
+                            unsafe { free_fn(self.context, self.entries, self.count) };
+                        }
+                    }
+                }
+                let _states_guard = StatesGuard {
+                    context: self.callbacks.context,
+                    free_fn: self.callbacks.on_load_shielded_sync_states_free_fn,
+                    entries: states_ptr,
+                    count: states_count,
+                };
+                if !states_ptr.is_null() && states_count > 0 {
+                    let slice = unsafe { slice::from_raw_parts(states_ptr, states_count) };
+                    for ffi in slice {
+                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
+                        let entry = shielded_state
+                            .per_subwallet
+                            .entry(id)
+                            .or_insert_with(ShieldedSubwalletStartState::default);
+                        entry.last_synced_index = ffi.last_synced_index;
+                        entry.has_sync_state = true;
+                    }
+                }
+            }
+
+            // 4) derived activity entries
+            if self.callbacks.on_load_shielded_activity_fn.is_some()
+                != self.callbacks.on_load_shielded_activity_free_fn.is_some()
+            {
+                return Err(PersistenceError::backend(
+                    "on_load_shielded_activity_fn and on_load_shielded_activity_free_fn must be \
+                     provided together",
+                ));
+            }
+            if let Some(load_activity) = self.callbacks.on_load_shielded_activity_fn {
+                let mut act_ptr: *const ShieldedActivityRestoreFFI = std::ptr::null();
+                let mut act_count: usize = 0;
+                let rc =
+                    unsafe { load_activity(self.callbacks.context, &mut act_ptr, &mut act_count) };
+                if rc != 0 {
+                    return Err(persist_callback_error(
+                        rc,
+                        format!("on_load_shielded_activity_fn returned error code {}", rc),
+                    ));
+                }
+                struct ActivityGuard {
+                    context: *mut c_void,
+                    free_fn: Option<
+                        unsafe extern "C" fn(
+                            context: *mut c_void,
+                            entries: *const ShieldedActivityRestoreFFI,
+                            count: usize,
+                        ),
+                    >,
+                    entries: *const ShieldedActivityRestoreFFI,
+                    count: usize,
+                }
+                impl Drop for ActivityGuard {
+                    fn drop(&mut self) {
+                        if let Some(free_fn) = self.free_fn {
+                            unsafe { free_fn(self.context, self.entries, self.count) };
+                        }
+                    }
+                }
+                let _activity_guard = ActivityGuard {
+                    context: self.callbacks.context,
+                    free_fn: self.callbacks.on_load_shielded_activity_free_fn,
+                    entries: act_ptr,
+                    count: act_count,
+                };
+                if !act_ptr.is_null() && act_count > 0 {
+                    let slice = unsafe { slice::from_raw_parts(act_ptr, act_count) };
+                    for ffi in slice {
+                        let kind = match ffi.kind_tag {
+                            0 => ShieldedActivityKind::Shield,
+                            1 => ShieldedActivityKind::ShieldFromAssetLock,
+                            2 => ShieldedActivityKind::Received,
+                            3 => ShieldedActivityKind::Sent,
+                            4 => ShieldedActivityKind::Unshield,
+                            5 => ShieldedActivityKind::Withdrawal,
+                            6 => ShieldedActivityKind::IdentityCreate {
+                                identity_id: ffi.identity_id,
+                            },
+                            8 => ShieldedActivityKind::ShieldFromIdentity {
+                                identity_id: ffi.identity_id,
+                            },
+                            9 => ShieldedActivityKind::IdentityTopUp {
+                                identity_id: ffi.identity_id,
+                            },
+                            // 7 and any unknown tag fall back to the
+                            // residual — a forward-compat tag we don't yet
+                            // model still loads as an opaque spend rather
+                            // than getting dropped.
+                            _ => ShieldedActivityKind::ShieldedSpend,
+                        };
+                        let direction = match ffi.direction {
+                            0 => ShieldedDirection::In,
+                            1 => ShieldedDirection::Out,
+                            2 => ShieldedDirection::SelfTransfer,
+                            other => {
+                                // Unlike kind_tag (whose residual
+                                // `ShieldedSpend` variant is a designed
+                                // forward-compat catch-all), direction has
+                                // no "unknown" bucket — make a corrupted /
+                                // future byte loud instead of silently
+                                // reading as a real classification.
+                                tracing::warn!(
+                                    direction = other,
+                                    "unknown shielded-activity direction byte on load; folding to SelfTransfer"
+                                );
+                                ShieldedDirection::SelfTransfer
+                            }
+                        };
+                        let status = activity_status_from_tag(ffi.status);
+                        let counterparty = if ffi.counterparty_ptr.is_null()
+                            || ffi.counterparty_len == 0
+                        {
+                            None
+                        } else {
+                            Some(unsafe {
+                                slice::from_raw_parts(ffi.counterparty_ptr, ffi.counterparty_len)
+                                    .to_vec()
+                            })
+                        };
+                        let memo = if ffi.memo_ptr.is_null() || ffi.memo_len == 0 {
+                            None
+                        } else {
+                            Some(unsafe {
+                                slice::from_raw_parts(ffi.memo_ptr, ffi.memo_len).to_vec()
+                            })
+                        };
+                        let note_cmxs =
+                            unsafe { decode_cmx_array(ffi.note_cmxs_ptr, ffi.note_cmxs_count) };
+                        let spent_nullifiers = unsafe {
+                            decode_cmx_array(ffi.spent_nullifiers_ptr, ffi.spent_nullifiers_count)
+                        };
+
+                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
+                        let entry = shielded_state
+                            .per_subwallet
+                            .entry(id)
+                            .or_insert_with(ShieldedSubwalletStartState::default);
+                        entry.activity.push(ShieldedActivityEntry {
+                            id: ffi.entry_id,
+                            kind,
+                            direction,
+                            amount: ffi.amount,
+                            fee: if ffi.has_fee != 0 {
+                                Some(ffi.fee)
+                            } else {
+                                None
+                            },
+                            counterparty,
+                            memo,
+                            block_height: if ffi.has_block_height != 0 {
+                                Some(ffi.block_height)
+                            } else {
+                                None
+                            },
+                            status,
+                            created_at_ms: ffi.created_at_ms,
+                            min_note_position: if ffi.has_min_note_position != 0 {
+                                Some(ffi.min_note_position)
+                            } else {
+                                None
+                            },
+                            note_cmxs,
+                            spent_nullifiers,
+                        });
+                    }
+                }
+            }
+
+            // 5) persisted Orchard viewing keys (raw 96-byte FVK
+            //    encodings), consumed by
+            //    `PlatformWallet::bind_shielded_from_persisted` so a
+            //    launch-time rebind needs no mnemonic resolve.
+            if self.callbacks.on_load_shielded_viewing_keys_fn.is_some()
+                != self
+                    .callbacks
+                    .on_load_shielded_viewing_keys_free_fn
+                    .is_some()
+            {
+                return Err(PersistenceError::backend(
+                    "on_load_shielded_viewing_keys_fn and \
+                     on_load_shielded_viewing_keys_free_fn must be provided together",
+                ));
+            }
+            if let Some(load_viewing_keys) = self.callbacks.on_load_shielded_viewing_keys_fn {
+                let mut vk_ptr: *const ShieldedViewingKeyRestoreFFI = std::ptr::null();
+                let mut vk_count: usize = 0;
+                let rc = unsafe {
+                    load_viewing_keys(self.callbacks.context, &mut vk_ptr, &mut vk_count)
+                };
+                if rc != 0 {
+                    return Err(persist_callback_error(
+                        rc,
+                        format!(
+                            "on_load_shielded_viewing_keys_fn returned error code {}",
+                            rc
+                        ),
+                    ));
+                }
+                struct ViewingKeysGuard {
+                    context: *mut c_void,
+                    free_fn: Option<
+                        unsafe extern "C" fn(
+                            context: *mut c_void,
+                            entries: *const ShieldedViewingKeyRestoreFFI,
+                            count: usize,
+                        ),
+                    >,
+                    entries: *const ShieldedViewingKeyRestoreFFI,
+                    count: usize,
+                }
+                impl Drop for ViewingKeysGuard {
+                    fn drop(&mut self) {
+                        if let Some(free_fn) = self.free_fn {
+                            unsafe { free_fn(self.context, self.entries, self.count) };
+                        }
+                    }
+                }
+                let _viewing_keys_guard = ViewingKeysGuard {
+                    context: self.callbacks.context,
+                    free_fn: self.callbacks.on_load_shielded_viewing_keys_free_fn,
+                    entries: vk_ptr,
+                    count: vk_count,
+                };
+                if !vk_ptr.is_null() && vk_count > 0 {
+                    let slice = unsafe { slice::from_raw_parts(vk_ptr, vk_count) };
+                    for ffi in slice {
+                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
+                        shielded_state
+                            .viewing_keys
+                            .insert(id, ffi.fvk_bytes.to_vec());
+                    }
+                }
+            }
+
+            out.shielded = shielded_state;
+        }
+
+        Ok(out)
     }
 
     fn load_core_instant_locks(
@@ -1881,28 +2493,16 @@ impl FFIPersister {
         if wallet_restore {
             // History rides the same wallet-list load; a host that wires it
             // must still declare the bit to attest it fills the rows.
-            capabilities = capabilities
-                .union(PersistenceCapabilities::WALLET_RESTORE)
-                .union(PersistenceCapabilities::CORE_HISTORY_RESTORE);
+            capabilities = capabilities.union(PersistenceCapabilities::CORE_HISTORY_RESTORE);
+            if self.replay_callbacks.complete() {
+                capabilities = capabilities.union(PersistenceCapabilities::WALLET_RESTORE);
+            }
         }
         if self.callbacks.on_persist_asset_locks_fn.is_some() {
             capabilities = capabilities.union(PersistenceCapabilities::TRACKED_ASSET_LOCKS);
         }
-        if wallet_restore
-            && self.callbacks.on_persist_asset_locks_fn.is_some()
-            && self
-                .tracked_masternodes_callbacks
-                .persist_asset_lock_operation_id
-                .is_some()
-            && self
-                .tracked_masternodes_callbacks
-                .load_asset_lock_operation_id
-                .is_some()
-        {
-            // The declaration additionally attests UUID preservation, consumed
-            // tombstones and fail-closed loads. Legacy hosts do not set this bit.
-            capabilities = capabilities.union(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS);
-        }
+        // Replay cleanup has no durable operation tombstones yet; UUID callbacks
+        // alone cannot attest ASSET_LOCK_OPERATION_IDS after conflicting history is removed.
         if self
             .tracked_masternodes_callbacks
             .persist_tracked_masternodes
@@ -3976,565 +4576,43 @@ impl PlatformWalletPersistence for FFIPersister {
     }
 
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
-        // Host loaders may read the same context that store() stages into.
-        // Keep base rows and every sidecar in one committed snapshot: a load
-        // between per-kind callbacks and end must never expose a Consumed row
-        // whose commit can still fail. Callbacks must not re-enter this API.
         let round = self.round_lock.lock();
         if round.in_round {
             return Err(PersistenceError::backend(
                 "FFIPersister: cannot restore from an unclosed changeset round",
             ));
         }
-        // If Swift hasn't wired up `on_load_wallet_list_fn` there's
-        // nothing to restore — treat as a fresh client.
-        let Some(load_cb) = self.callbacks.on_load_wallet_list_fn else {
-            return Ok(ClientStartState::default());
-        };
+        self.load_snapshot_unlocked(None)
+    }
 
-        // Swift allocates the entries array (and every nested byte
-        // buffer); we read it under a `Guard` that calls the matching
-        // free callback on drop, so failures inside the loop don't
-        // leak.
-        let mut entries_ptr: *const WalletRestoreEntryFFI = std::ptr::null();
-        let mut count: usize = 0;
-        let rc = unsafe { load_cb(self.callbacks.context, &mut entries_ptr, &mut count) };
-        if rc != 0 {
-            return Err(persist_callback_error(
-                rc,
-                format!("on_load_wallet_list_fn returned error code {}", rc),
-            ));
-        }
-        let _guard = LoadGuard {
-            context: self.callbacks.context,
-            free_fn: self.callbacks.on_load_wallet_list_free_fn,
-            entries: entries_ptr,
-            count,
-        };
+    fn load_wallet_with_replay(
+        &self,
+        wallet_id: WalletId,
+        evidence: &platform_wallet::changeset::recorded_history::ReplayEvidence,
+    ) -> Result<platform_wallet::manager::history_replay::HistoryReplayLoad, PersistenceError> {
+        self.load_wallet_replay_scope(wallet_id, evidence)
+    }
 
-        let mut out = ClientStartState::default();
-        if entries_ptr.is_null() && count != 0 {
-            return Err(PersistenceError::backend(
-                "wallet restore: missing row buffer",
-            ));
-        }
-        if count == 0 {
-            return Ok(out);
-        }
-
-        // SAFETY: Swift guarantees `entries_ptr` points to `count`
-        // contiguous `WalletRestoreEntryFFI` values for the lifetime
-        // of the callback window. `_guard` ensures the free callback
-        // fires before we leave this function.
-        let entries = unsafe { slice::from_raw_parts(entries_ptr, count) };
-        for entry in entries {
-            if out.wallets.contains_key(&entry.wallet_id) {
-                return Err(PersistenceError::backend(
-                    "wallet restore: duplicate wallet ID",
-                ));
-            }
-            let (mut wallet_state, platform_address_state) = build_wallet_start_state(entry)?;
-            self.load_core_instant_locks(&entry.wallet_id, &mut wallet_state.recorded_history)?;
-            if let Some(cb) = self
-                .tracked_masternodes_callbacks
-                .load_asset_lock_operation_id
-            {
-                load_asset_lock_operation_ids(
-                    cb,
-                    self.callbacks.context,
-                    &entry.wallet_id,
-                    &mut wallet_state.unused_asset_locks,
-                )?;
-            }
-            if let Some(cb) = self.load_identity_balance_block_time_callback {
-                for identities in wallet_state.identity_manager.wallet_identities.values_mut() {
-                    for managed in identities.values_mut() {
-                        let mut found = false;
-                        let mut stamp = crate::types::BlockTime {
-                            height: 0,
-                            core_height: 0,
-                            timestamp: 0,
-                        };
-                        let rc = unsafe {
-                            cb(
-                                self.callbacks.context,
-                                entry.wallet_id.as_ptr(),
-                                managed.id().as_bytes().as_ptr(),
-                                &mut found,
-                                &mut stamp,
-                            )
-                        };
-                        if rc != 0 {
-                            return Err(persist_callback_error(
-                                rc,
-                                "Loading identity balance block time failed".to_string(),
-                            ));
-                        }
-                        managed.last_updated_balance_block_time = found.then(|| stamp.into());
-                    }
-                }
-            }
-            out.wallets.insert(entry.wallet_id, wallet_state);
-            if let Some(platform_address_state) = platform_address_state {
-                out.platform_addresses
-                    .insert(entry.wallet_id, platform_address_state);
-            }
-        }
-
-        // Restore shielded sub-wallet state if the host has wired
-        // up the optional callbacks. Notes and per-subwallet sync
-        // states travel separately so the host can populate them
-        // from independent SwiftData fetch descriptors. Both arms
-        // walk the same `(wallet_id, account_index)` key space and
-        // funnel into a single `SubwalletId` map on
-        // `ClientStartState.shielded`.
+    fn load_with_replay(
+        &self,
+        evidence: &platform_wallet::changeset::recorded_history::ReplayEvidence,
+    ) -> Result<platform_wallet::manager::history_replay::HistoryReplayLoad, PersistenceError> {
+        let snapshot = self.load_read_snapshot()?;
+        let mut loaded = platform_wallet::manager::history_replay::HistoryReplayLoad::default();
         #[cfg(feature = "shielded")]
         {
-            use crate::shielded_persistence::*;
-            use platform_wallet::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
-            use platform_wallet::wallet::shielded::{
-                ShieldedActivityEntry, ShieldedActivityKind, ShieldedDirection, ShieldedNote,
-                ShieldedOutgoingNote, SubwalletId,
-            };
-
-            let mut shielded_state = ShieldedSyncStartState::default();
-
-            // Fail fast on a half-wired callback pair: a loader without
-            // its matching free callback leaks the host-allocated buffer
-            // on every successful load (the guard's `Drop` is a no-op
-            // when `free_fn` is `None`).
-            if self.callbacks.on_load_shielded_notes_fn.is_some()
-                != self.callbacks.on_load_shielded_notes_free_fn.is_some()
-            {
-                return Err(PersistenceError::backend(
-                    "on_load_shielded_notes_fn and on_load_shielded_notes_free_fn must be \
-                     provided together",
-                ));
-            }
-            if self.callbacks.on_load_shielded_sync_states_fn.is_some()
-                != self
-                    .callbacks
-                    .on_load_shielded_sync_states_free_fn
-                    .is_some()
-            {
-                return Err(PersistenceError::backend(
-                    "on_load_shielded_sync_states_fn and on_load_shielded_sync_states_free_fn \
-                     must be provided together",
-                ));
-            }
-            if self.callbacks.on_load_shielded_outgoing_notes_fn.is_some()
-                != self
-                    .callbacks
-                    .on_load_shielded_outgoing_notes_free_fn
-                    .is_some()
-            {
-                return Err(PersistenceError::backend(
-                    "on_load_shielded_outgoing_notes_fn and \
-                     on_load_shielded_outgoing_notes_free_fn must be provided together",
-                ));
-            }
-
-            // 1) notes
-            if let Some(load_notes) = self.callbacks.on_load_shielded_notes_fn {
-                let mut notes_ptr: *const ShieldedNoteRestoreFFI = std::ptr::null();
-                let mut notes_count: usize = 0;
-                let rc =
-                    unsafe { load_notes(self.callbacks.context, &mut notes_ptr, &mut notes_count) };
-                if rc != 0 {
-                    return Err(persist_callback_error(
-                        rc,
-                        format!("on_load_shielded_notes_fn returned error code {}", rc),
-                    ));
-                }
-                struct NotesGuard {
-                    context: *mut c_void,
-                    free_fn: Option<
-                        unsafe extern "C" fn(
-                            context: *mut c_void,
-                            entries: *const ShieldedNoteRestoreFFI,
-                            count: usize,
-                        ),
-                    >,
-                    entries: *const ShieldedNoteRestoreFFI,
-                    count: usize,
-                }
-                impl Drop for NotesGuard {
-                    fn drop(&mut self) {
-                        if let Some(free_fn) = self.free_fn {
-                            unsafe { free_fn(self.context, self.entries, self.count) };
-                        }
-                    }
-                }
-                let _notes_guard = NotesGuard {
-                    context: self.callbacks.context,
-                    free_fn: self.callbacks.on_load_shielded_notes_free_fn,
-                    entries: notes_ptr,
-                    count: notes_count,
-                };
-                if !notes_ptr.is_null() && notes_count > 0 {
-                    let slice = unsafe { slice::from_raw_parts(notes_ptr, notes_count) };
-                    for ffi in slice {
-                        if ffi.note_data_ptr.is_null() || ffi.note_data_len == 0 {
-                            continue;
-                        }
-                        let note_data = unsafe {
-                            std::slice::from_raw_parts(ffi.note_data_ptr, ffi.note_data_len)
-                                .to_vec()
-                        };
-                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
-                        let entry = shielded_state
-                            .per_subwallet
-                            .entry(id)
-                            .or_insert_with(ShieldedSubwalletStartState::default);
-                        entry.notes.push(ShieldedNote {
-                            position: ffi.position,
-                            cmx: ffi.cmx,
-                            nullifier: ffi.nullifier,
-                            block_height: ffi.block_height,
-                            is_spent: ffi.is_spent != 0,
-                            value: ffi.value,
-                            note_data,
-                        });
-                    }
-                }
-            }
-
-            // 2) outgoing (sent) notes recovered via OVK
-            if let Some(load_outgoing) = self.callbacks.on_load_shielded_outgoing_notes_fn {
-                let mut out_ptr: *const ShieldedOutgoingNoteRestoreFFI = std::ptr::null();
-                let mut out_count: usize = 0;
-                let rc =
-                    unsafe { load_outgoing(self.callbacks.context, &mut out_ptr, &mut out_count) };
-                if rc != 0 {
-                    return Err(persist_callback_error(
-                        rc,
-                        format!(
-                            "on_load_shielded_outgoing_notes_fn returned error code {}",
-                            rc
-                        ),
-                    ));
-                }
-                struct OutgoingGuard {
-                    context: *mut c_void,
-                    free_fn: Option<
-                        unsafe extern "C" fn(
-                            context: *mut c_void,
-                            entries: *const ShieldedOutgoingNoteRestoreFFI,
-                            count: usize,
-                        ),
-                    >,
-                    entries: *const ShieldedOutgoingNoteRestoreFFI,
-                    count: usize,
-                }
-                impl Drop for OutgoingGuard {
-                    fn drop(&mut self) {
-                        if let Some(free_fn) = self.free_fn {
-                            unsafe { free_fn(self.context, self.entries, self.count) };
-                        }
-                    }
-                }
-                let _outgoing_guard = OutgoingGuard {
-                    context: self.callbacks.context,
-                    free_fn: self.callbacks.on_load_shielded_outgoing_notes_free_fn,
-                    entries: out_ptr,
-                    count: out_count,
-                };
-                if !out_ptr.is_null() && out_count > 0 {
-                    let slice = unsafe { slice::from_raw_parts(out_ptr, out_count) };
-                    for ffi in slice {
-                        let memo = if ffi.memo_ptr.is_null() || ffi.memo_len == 0 {
-                            Vec::new()
-                        } else {
-                            unsafe {
-                                std::slice::from_raw_parts(ffi.memo_ptr, ffi.memo_len).to_vec()
-                            }
-                        };
-                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
-                        let entry = shielded_state
-                            .per_subwallet
-                            .entry(id)
-                            .or_insert_with(ShieldedSubwalletStartState::default);
-                        entry.outgoing_notes.push(ShieldedOutgoingNote {
-                            cmx: ffi.cmx,
-                            recipient: ffi.recipient.to_vec(),
-                            value: ffi.value,
-                            memo,
-                            block_height: ffi.block_height,
-                        });
-                    }
-                }
-            }
-
-            // 3) per-subwallet sync states
-            if let Some(load_states) = self.callbacks.on_load_shielded_sync_states_fn {
-                let mut states_ptr: *const ShieldedSubwalletSyncStateFFI = std::ptr::null();
-                let mut states_count: usize = 0;
-                let rc = unsafe {
-                    load_states(self.callbacks.context, &mut states_ptr, &mut states_count)
-                };
-                if rc != 0 {
-                    return Err(persist_callback_error(
-                        rc,
-                        format!("on_load_shielded_sync_states_fn returned error code {}", rc),
-                    ));
-                }
-                struct StatesGuard {
-                    context: *mut c_void,
-                    free_fn: Option<
-                        unsafe extern "C" fn(
-                            context: *mut c_void,
-                            entries: *const ShieldedSubwalletSyncStateFFI,
-                            count: usize,
-                        ),
-                    >,
-                    entries: *const ShieldedSubwalletSyncStateFFI,
-                    count: usize,
-                }
-                impl Drop for StatesGuard {
-                    fn drop(&mut self) {
-                        if let Some(free_fn) = self.free_fn {
-                            unsafe { free_fn(self.context, self.entries, self.count) };
-                        }
-                    }
-                }
-                let _states_guard = StatesGuard {
-                    context: self.callbacks.context,
-                    free_fn: self.callbacks.on_load_shielded_sync_states_free_fn,
-                    entries: states_ptr,
-                    count: states_count,
-                };
-                if !states_ptr.is_null() && states_count > 0 {
-                    let slice = unsafe { slice::from_raw_parts(states_ptr, states_count) };
-                    for ffi in slice {
-                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
-                        let entry = shielded_state
-                            .per_subwallet
-                            .entry(id)
-                            .or_insert_with(ShieldedSubwalletStartState::default);
-                        entry.last_synced_index = ffi.last_synced_index;
-                        entry.has_sync_state = true;
-                    }
-                }
-            }
-
-            // 4) derived activity entries
-            if self.callbacks.on_load_shielded_activity_fn.is_some()
-                != self.callbacks.on_load_shielded_activity_free_fn.is_some()
-            {
-                return Err(PersistenceError::backend(
-                    "on_load_shielded_activity_fn and on_load_shielded_activity_free_fn must be \
-                     provided together",
-                ));
-            }
-            if let Some(load_activity) = self.callbacks.on_load_shielded_activity_fn {
-                let mut act_ptr: *const ShieldedActivityRestoreFFI = std::ptr::null();
-                let mut act_count: usize = 0;
-                let rc =
-                    unsafe { load_activity(self.callbacks.context, &mut act_ptr, &mut act_count) };
-                if rc != 0 {
-                    return Err(persist_callback_error(
-                        rc,
-                        format!("on_load_shielded_activity_fn returned error code {}", rc),
-                    ));
-                }
-                struct ActivityGuard {
-                    context: *mut c_void,
-                    free_fn: Option<
-                        unsafe extern "C" fn(
-                            context: *mut c_void,
-                            entries: *const ShieldedActivityRestoreFFI,
-                            count: usize,
-                        ),
-                    >,
-                    entries: *const ShieldedActivityRestoreFFI,
-                    count: usize,
-                }
-                impl Drop for ActivityGuard {
-                    fn drop(&mut self) {
-                        if let Some(free_fn) = self.free_fn {
-                            unsafe { free_fn(self.context, self.entries, self.count) };
-                        }
-                    }
-                }
-                let _activity_guard = ActivityGuard {
-                    context: self.callbacks.context,
-                    free_fn: self.callbacks.on_load_shielded_activity_free_fn,
-                    entries: act_ptr,
-                    count: act_count,
-                };
-                if !act_ptr.is_null() && act_count > 0 {
-                    let slice = unsafe { slice::from_raw_parts(act_ptr, act_count) };
-                    for ffi in slice {
-                        let kind = match ffi.kind_tag {
-                            0 => ShieldedActivityKind::Shield,
-                            1 => ShieldedActivityKind::ShieldFromAssetLock,
-                            2 => ShieldedActivityKind::Received,
-                            3 => ShieldedActivityKind::Sent,
-                            4 => ShieldedActivityKind::Unshield,
-                            5 => ShieldedActivityKind::Withdrawal,
-                            6 => ShieldedActivityKind::IdentityCreate {
-                                identity_id: ffi.identity_id,
-                            },
-                            8 => ShieldedActivityKind::ShieldFromIdentity {
-                                identity_id: ffi.identity_id,
-                            },
-                            9 => ShieldedActivityKind::IdentityTopUp {
-                                identity_id: ffi.identity_id,
-                            },
-                            // 7 and any unknown tag fall back to the
-                            // residual — a forward-compat tag we don't yet
-                            // model still loads as an opaque spend rather
-                            // than getting dropped.
-                            _ => ShieldedActivityKind::ShieldedSpend,
-                        };
-                        let direction = match ffi.direction {
-                            0 => ShieldedDirection::In,
-                            1 => ShieldedDirection::Out,
-                            2 => ShieldedDirection::SelfTransfer,
-                            other => {
-                                // Unlike kind_tag (whose residual
-                                // `ShieldedSpend` variant is a designed
-                                // forward-compat catch-all), direction has
-                                // no "unknown" bucket — make a corrupted /
-                                // future byte loud instead of silently
-                                // reading as a real classification.
-                                tracing::warn!(
-                                    direction = other,
-                                    "unknown shielded-activity direction byte on load; folding to SelfTransfer"
-                                );
-                                ShieldedDirection::SelfTransfer
-                            }
-                        };
-                        let status = activity_status_from_tag(ffi.status);
-                        let counterparty = if ffi.counterparty_ptr.is_null()
-                            || ffi.counterparty_len == 0
-                        {
-                            None
-                        } else {
-                            Some(unsafe {
-                                slice::from_raw_parts(ffi.counterparty_ptr, ffi.counterparty_len)
-                                    .to_vec()
-                            })
-                        };
-                        let memo = if ffi.memo_ptr.is_null() || ffi.memo_len == 0 {
-                            None
-                        } else {
-                            Some(unsafe {
-                                slice::from_raw_parts(ffi.memo_ptr, ffi.memo_len).to_vec()
-                            })
-                        };
-                        let note_cmxs =
-                            unsafe { decode_cmx_array(ffi.note_cmxs_ptr, ffi.note_cmxs_count) };
-                        let spent_nullifiers = unsafe {
-                            decode_cmx_array(ffi.spent_nullifiers_ptr, ffi.spent_nullifiers_count)
-                        };
-
-                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
-                        let entry = shielded_state
-                            .per_subwallet
-                            .entry(id)
-                            .or_insert_with(ShieldedSubwalletStartState::default);
-                        entry.activity.push(ShieldedActivityEntry {
-                            id: ffi.entry_id,
-                            kind,
-                            direction,
-                            amount: ffi.amount,
-                            fee: if ffi.has_fee != 0 {
-                                Some(ffi.fee)
-                            } else {
-                                None
-                            },
-                            counterparty,
-                            memo,
-                            block_height: if ffi.has_block_height != 0 {
-                                Some(ffi.block_height)
-                            } else {
-                                None
-                            },
-                            status,
-                            created_at_ms: ffi.created_at_ms,
-                            min_note_position: if ffi.has_min_note_position != 0 {
-                                Some(ffi.min_note_position)
-                            } else {
-                                None
-                            },
-                            note_cmxs,
-                            spent_nullifiers,
-                        });
-                    }
-                }
-            }
-
-            // 5) persisted Orchard viewing keys (raw 96-byte FVK
-            //    encodings), consumed by
-            //    `PlatformWallet::bind_shielded_from_persisted` so a
-            //    launch-time rebind needs no mnemonic resolve.
-            if self.callbacks.on_load_shielded_viewing_keys_fn.is_some()
-                != self
-                    .callbacks
-                    .on_load_shielded_viewing_keys_free_fn
-                    .is_some()
-            {
-                return Err(PersistenceError::backend(
-                    "on_load_shielded_viewing_keys_fn and \
-                     on_load_shielded_viewing_keys_free_fn must be provided together",
-                ));
-            }
-            if let Some(load_viewing_keys) = self.callbacks.on_load_shielded_viewing_keys_fn {
-                let mut vk_ptr: *const ShieldedViewingKeyRestoreFFI = std::ptr::null();
-                let mut vk_count: usize = 0;
-                let rc = unsafe {
-                    load_viewing_keys(self.callbacks.context, &mut vk_ptr, &mut vk_count)
-                };
-                if rc != 0 {
-                    return Err(persist_callback_error(
-                        rc,
-                        format!(
-                            "on_load_shielded_viewing_keys_fn returned error code {}",
-                            rc
-                        ),
-                    ));
-                }
-                struct ViewingKeysGuard {
-                    context: *mut c_void,
-                    free_fn: Option<
-                        unsafe extern "C" fn(
-                            context: *mut c_void,
-                            entries: *const ShieldedViewingKeyRestoreFFI,
-                            count: usize,
-                        ),
-                    >,
-                    entries: *const ShieldedViewingKeyRestoreFFI,
-                    count: usize,
-                }
-                impl Drop for ViewingKeysGuard {
-                    fn drop(&mut self) {
-                        if let Some(free_fn) = self.free_fn {
-                            unsafe { free_fn(self.context, self.entries, self.count) };
-                        }
-                    }
-                }
-                let _viewing_keys_guard = ViewingKeysGuard {
-                    context: self.callbacks.context,
-                    free_fn: self.callbacks.on_load_shielded_viewing_keys_free_fn,
-                    entries: vk_ptr,
-                    count: vk_count,
-                };
-                if !vk_ptr.is_null() && vk_count > 0 {
-                    let slice = unsafe { slice::from_raw_parts(vk_ptr, vk_count) };
-                    for ffi in slice {
-                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
-                        shielded_state
-                            .viewing_keys
-                            .insert(id, ffi.fvk_bytes.to_vec());
-                    }
-                }
-            }
-
-            out.shielded = shielded_state;
+            loaded.state.shielded = snapshot.shielded;
         }
-
-        Ok(out)
+        for wallet_id in snapshot.wallets.keys() {
+            let one = self.load_wallet_replay_scope(*wallet_id, evidence)?;
+            loaded.state.wallets.extend(one.state.wallets);
+            loaded
+                .state
+                .platform_addresses
+                .extend(one.state.platform_addresses);
+            loaded.outcomes.extend(one.outcomes);
+        }
+        Ok(loaded)
     }
 
     /// Look up a transaction record by `txid` via the
@@ -11048,7 +11126,7 @@ mod tests {
     }
 
     #[test]
-    fn should_require_explicit_operation_id_persistence_attestation() {
+    fn should_withhold_operation_id_capability_until_replay_preserves_tombstones() {
         unsafe extern "C" fn persist(
             _: *mut c_void,
             _: *const u8,
@@ -11090,7 +11168,7 @@ mod tests {
                 .persistence_capabilities()
                 .contains(required)
         );
-        assert!(persister(callbacks(), required, extensions)
+        assert!(!persister(callbacks(), required, extensions)
             .persistence_capabilities()
             .contains(required));
         assert!(!declared_persister(callbacks(), required)
@@ -11220,11 +11298,41 @@ mod tests {
         cb.on_persist_token_balances_fn = Some(noop_token_balances);
         // "Fully wired" includes the extension's sweeps slot — the legacy
         // vtable alone can no longer attest CORE_SWEEP_REMOVAL.
-        let capabilities = FFIPersister::new_with_persistence_capabilities_and_extension_callbacks(
+        unsafe extern "C" fn scope(
+            _: *mut c_void,
+            _: *const u8,
+            _: ReplayOperationFn,
+            _: *mut c_void,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load(
+            _: *mut c_void,
+            _: *const u8,
+            _: *mut *const ReplayClaimRestoreFFI,
+            _: *mut usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn free(_: *mut c_void, _: *const ReplayClaimRestoreFFI, _: usize) {}
+        unsafe extern "C" fn apply(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const HistoryReplayEffectsFFI,
+        ) -> i32 {
+            0
+        }
+        let capabilities = FFIPersister::new_with_persistence_capabilities_and_extensions(
             cb,
             expected,
-            None,
-            Some(noop_wallet_changeset_sweeps),
+            PersistenceExtensionCallbacks {
+                wallet_changeset_sweeps: Some(noop_wallet_changeset_sweeps),
+                replay_wallet: Some(scope),
+                load_replay_claims: Some(load),
+                free_replay_claims: Some(free),
+                apply_replay_effects: Some(apply),
+                ..Default::default()
+            },
         )
         .persistence_capabilities();
 
@@ -11485,6 +11593,26 @@ mod tests {
                 PersistenceCallbacksExtension,
                 on_load_core_instant_lock_free_fn
             ) + std::mem::size_of::<Option<FreeCoreInstantLockFn>>(),
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_replay_wallet_fn)
+        );
+        assert_eq!(
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_replay_wallet_fn)
+                + std::mem::size_of::<Option<ReplayWalletFn>>(),
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_load_replay_claims_fn)
+        );
+        assert_eq!(
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_load_replay_claims_fn)
+                + std::mem::size_of::<Option<LoadReplayClaimsFn>>(),
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_load_replay_claims_free_fn)
+        );
+        assert_eq!(
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_load_replay_claims_free_fn)
+                + std::mem::size_of::<Option<FreeReplayClaimsFn>>(),
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_apply_replay_effects_fn)
+        );
+        assert_eq!(
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_apply_replay_effects_fn)
+                + std::mem::size_of::<Option<ApplyReplayEffectsFn>>(),
             std::mem::size_of::<PersistenceCallbacksExtension>()
         );
         assert_eq!(
