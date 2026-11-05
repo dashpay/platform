@@ -2557,7 +2557,10 @@ public class PlatformWalletManager: ObservableObject {
     /// In practice that verdict is always the provisional
     /// `assetLockInputContested`; the terminal `assetLockInputConflict` is
     /// reserved with no emitter and is matched so it would surface intact
-    /// if that ever changes.
+    /// if that ever changes. The input-cap refusal
+    /// (`assetLockTooManyInputs`) is returned the same way: such a lock is
+    /// never re-sent, and only this error tells the host to offer coin
+    /// consolidation.
     nonisolated private static func runCatchUp(assetLockManager: ManagedAssetLockManager, txid: Data, vout: UInt32) -> PlatformWalletError? {
         // Build the txid tuple inline so the Task body captures only
         // Sendable values.
@@ -2595,7 +2598,8 @@ public class PlatformWalletManager: ObservableObject {
                 vout
             )
             return nil
-        case .errorAssetLockInputConflict, .errorAssetLockInputContested:
+        case .errorAssetLockInputConflict, .errorAssetLockInputContested,
+             .errorAssetLockTooManyInputs:
             return PlatformWalletError(result: result)
         default:
             return nil

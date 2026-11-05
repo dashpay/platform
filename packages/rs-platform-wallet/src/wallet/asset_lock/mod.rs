@@ -35,6 +35,11 @@ pub use orchestration::AssetLockFunding;
 /// build-only `build_asset_lock_transaction*` does not check it: refusing it
 /// at construction belongs in key-wallet's builder (dashpay/rust-dashcore#1190).
 /// Tighter than key-wallet's standard-transaction input limit.
+///
+/// The shielded pooled drain counts candidates against it before a
+/// transaction exists; a built transaction is judged by
+/// [`input_cap_violation`].
+#[cfg(feature = "shielded")]
 pub(crate) fn max_asset_lock_inputs(version: &dpp::version::PlatformVersion) -> usize {
     usize::from(
         version

@@ -383,8 +383,14 @@ pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
                 // intact rather than flattening the day it ships.
                 // Flattening either to ErrorWalletOperation would leave
                 // the host with a spinner it can never resolve.
-                conflict @ (PlatformWalletError::AssetLockInputConflict { .. }
-                | PlatformWalletError::AssetLockInputContested { .. }) => conflict.into(),
+                //
+                // The input-cap refusal (60) crosses typed for the same
+                // reason: a lock over the cap is never re-sent, so every
+                // catch-up ends here, and only the code tells the host to
+                // offer coin consolidation.
+                typed @ (PlatformWalletError::AssetLockInputConflict { .. }
+                | PlatformWalletError::AssetLockInputContested { .. }
+                | PlatformWalletError::AssetLockTooManyInputs { .. }) => typed.into(),
                 other => PlatformWalletFFIResult::err(
                     PlatformWalletFFIResultCode::ErrorWalletOperation,
                     format!("{}", other),
