@@ -99,6 +99,14 @@ interface TxoDao {
     suspend fun getByOutpoints(outpoints: List<ByteArray>): List<TxoEntity>
 
     /**
+     * Which of [outpoints] the store holds a row for — the reconcile heal
+     * pass's presence check for one engine page. Callers chunk the list
+     * under the 999-variable ceiling.
+     */
+    @Query("SELECT outpoint FROM txos WHERE outpoint IN (:outpoints)")
+    suspend fun getExistingOutpoints(outpoints: List<ByteArray>): List<ByteArray>
+
+    /**
      * Every row still linked to one of [spendingTxids] — the sweep pass's
      * link-keyed fallback for a loser whose stored bytes cannot name its
      * inputs (record lost, or a stub row written by `utxos_added` before

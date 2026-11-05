@@ -8,6 +8,7 @@ import androidx.room.Room
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
 import androidx.sqlite.db.SupportSQLiteQuery
+import androidx.sqlite.db.SupportSQLiteStatement
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.Dispatchers
@@ -207,13 +208,19 @@ class PlatformWalletPersistenceHandlerTest {
             wallet, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), ByteArray(78) { xpubFill },
         )
         val account = db.accountDao().observeByWallet(wallet).first().single()
+        saveCoreAddress(account.id, address)
+    }
+
+    /** Save the BIP44 `core_addresses` row for [address] under [accountId]
+     *  (null: a row with no account), as a real wallet load leaves it. */
+    private suspend fun saveCoreAddress(accountId: Long?, address: String) {
         db.coreAddressDao().upsert(
             CoreAddressEntity(
                 address = address,
                 poolTypeTag = 0,
                 addressIndex = 0,
                 derivationPath = "m/44'/1'/0'/0/0",
-                accountId = account.id,
+                accountId = accountId,
             ),
         )
     }
@@ -7129,17 +7136,8 @@ class PlatformWalletPersistenceHandlerTest {
     /** Save the `core_addresses` row for [address] under [accountId], as a
      *  real wallet load leaves it. The heal pass refuses a coin whose
      *  address has no saved row. */
-    private suspend fun saveReconcileAddress(accountId: Long, address: String = reconcileAddress) {
-        db.coreAddressDao().upsert(
-            CoreAddressEntity(
-                address = address,
-                poolTypeTag = 0,
-                addressIndex = 0,
-                derivationPath = "m/44'/1'/0'/0/0",
-                accountId = accountId,
-            ),
-        )
-    }
+    private suspend fun saveReconcileAddress(accountId: Long, address: String = reconcileAddress) =
+        saveCoreAddress(accountId, address)
 
     /** An unspent, confirmed row of [wallet] for `txid:vout`, owned through
      *  the address projection exactly as the changeset path writes it. */
@@ -7573,6 +7571,10 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(summary, summary.contains("completed=true"))
     }
 
+    /** `AccountTypeTagFFI::DashpayExternalAccount`: a contact's watch-only
+     *  DIP-15 chain. */
+    private val ACCOUNT_TYPE_TAG_DASHPAY_EXTERNAL = 13
+
     /** A watch-only DIP-15 contact (DashPay external) account of [walletId],
      *  owning [address] through the core_addresses projection. */
     private suspend fun seedContactAccount(index: Int, address: String): Long {
@@ -7580,7 +7582,7 @@ class PlatformWalletPersistenceHandlerTest {
         val accountId = db.accountDao().insert(
             org.dashfoundation.dashsdk.persistence.entities.AccountEntity(
                 walletId = walletId,
-                accountType = PlatformWalletPersistenceHandler.ACCOUNT_TYPE_TAG_DASHPAY_EXTERNAL,
+                accountType = ACCOUNT_TYPE_TAG_DASHPAY_EXTERNAL,
                 accountIndex = index,
                 accountTypeName = "DashpayExternalAccount",
             ),
@@ -7600,14 +7602,15 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun watchOnlyContactRowsAreExcludedFromTheClassifyPassHoweverTheyResolve() = runTest {
-        // Watch-only DIP-15 contact rows are never in the engine's
-        // inventories; asking about them would be a false positive on every
-        // wallet with contact payments. Vout 6 is filed under the contact
-        // account directly. Vout 8 is the production shape: changeset
-        // writes leave txos.accountId null and route ownership through
-        // coreAddressId -> core_addresses.accountId, and the exclusion must
-        // resolve that path too, or every contact row gets classified.
+    fun watchOnlyContactRowsAreAskedAboutAndLeftUnspentHoweverTheyResolve() = runTest {
+        // A watch-only DIP-15 contact row is the contact's money: the engine
+        // gives it no verdict (`classify_outpoints`), so it is asked about
+        // like any other row and never flipped — even when the inventory
+        // names a spender for it. Vout 6 is filed under the contact account
+        // directly. Vout 8 is the production shape: changeset writes leave
+        // txos.accountId null and route ownership through coreAddressId ->
+        // core_addresses.accountId, so the query must name the contact
+        // account that way too.
         val contactAccountId = seedContactAccount(index = 0, address = "yContactRouted")
         for ((vout, address) in listOf(6 to "yContactAddr", 8 to "yContactRouted")) {
             handler.onWalletChangesetUtxoAdded(
@@ -7621,11 +7624,19 @@ class PlatformWalletPersistenceHandlerTest {
             db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 8))!!.accountId,
         )
 
-        val report = handler.reconcileInventory(inventoryJson())
+        val engine = FakeEngine(inventoryJson(spent = listOf(changeTxid to 6, changeTxid to 8)))
+        attributeUnownedTxos(walletId)
+        val report = handler.reconcileWith(engine)
 
-        assertEquals(2, report.skippedForeign)
-        assertEquals(0, report.storeRows)
-        assertEquals(0, report.unknown)
+        assertTrue(report.completed)
+        assertEquals(2, report.storeRows)
+        assertEquals(2, report.unknown)
+        assertEquals(0, report.flipped)
+        assertEquals(
+            "both rows are asked about under the contact account",
+            listOf(ACCOUNT_TYPE_TAG_DASHPAY_EXTERNAL, ACCOUNT_TYPE_TAG_DASHPAY_EXTERNAL),
+            engine.queries.map { it["typeTag"]!!.jsonPrimitive.int },
+        )
         assertFalse(storedIsSpent(changeTxid, 6))
         assertFalse(storedIsSpent(changeTxid, 8))
     }
@@ -7753,31 +7764,34 @@ class PlatformWalletPersistenceHandlerTest {
 
     @Test
     fun theHealPassNeverHealsContactAccountCoins() = runTest {
-        // The engine's inventory carries the watch-only DIP-15 external
-        // accounts' coins — it tracks them to show payments TO contacts, but
-        // they are the CONTACT's money (12 rows / 5,692,493 duffs healed into
-        // the store on the 2026-08-25 large-wallet validation run before
-        // this exclusion). Such a coin is skipped and counted as foreign,
-        // not healed. The inventory tag is the authoritative check: vout 13
-        // is skipped even though its address row never survived
-        // persistence. The address is the fallback: vout 9's resolves to an
-        // external account.
+        // The engine tracks the watch-only DIP-15 external accounts' coins
+        // to show payments TO contacts, but they are the CONTACT's money (12
+        // rows / 5,692,493 duffs healed into the store on the 2026-08-25
+        // large-wallet validation run before the exclusion). The engine's
+        // heal page never offers one (`wallet_utxos_page`): vout 13 is not
+        // in it at all. A funds-account coin whose address the store files
+        // under a contact account (vout 9) has no address row under its own
+        // account, so it is not healed either.
         seedContactAccount(index = 2, address = "yContactPaid")
-        val report = handler.reconcileInventory(
+        val engine = FakeEngine(
             inventoryJson(
                 rows = listOf(
                     engineRowJson(changeTxid, vout = 9, amount = 10_000L, address = "yContactPaid", height = 1_400_000),
                     engineRowJson(
                         changeTxid, vout = 13, amount = 10_000L, address = "yContactNoRow", height = 1_400_000,
-                        typeTag = 13, identities = "11".repeat(32) to "22".repeat(32),
+                        typeTag = ACCOUNT_TYPE_TAG_DASHPAY_EXTERNAL, identities = "11".repeat(32) to "22".repeat(32),
                     ),
                 ),
             ),
         )
+        attributeUnownedTxos(walletId)
+        val report = handler.reconcileWith(engine)
 
+        assertTrue(report.completed)
+        assertEquals("the contact's coin is never offered", 1, report.engineRows)
+        assertEquals(1, report.skippedMissingAddress)
         assertEquals(0, report.inserted)
         assertEquals(0L, report.insertedDuffs)
-        assertEquals(2, report.skippedForeign)
         for (vout in listOf(9, 13)) {
             assertNull(
                 "the contact's coin must not enter the store",
@@ -7873,15 +7887,7 @@ class PlatformWalletPersistenceHandlerTest {
             inventoryJson(rows = listOf(engineRowJson(changeTxid, vout = 13, amount = 70_000L))),
         )
 
-        db.coreAddressDao().upsert(
-            CoreAddressEntity(
-                address = reconcileAddress,
-                poolTypeTag = 0,
-                addressIndex = 0,
-                derivationPath = "m/44'/1'/0'/0/0",
-                accountId = null,
-            ),
-        )
+        saveCoreAddress(accountId = null, address = reconcileAddress)
         val noAccount = handler.reconcileWith(engine)
         assertTrue(noAccount.completed)
         assertEquals("a row with no account", 1, noAccount.skippedMissingAddress)
@@ -7893,7 +7899,6 @@ class PlatformWalletPersistenceHandlerTest {
         val otherAccount = handler.reconcileWith(engine)
         assertTrue(otherAccount.completed)
         assertEquals("a row under another account", 1, otherAccount.skippedMissingAddress)
-        assertEquals(0, otherAccount.skippedForeign)
         assertEquals(0, otherAccount.inserted)
         assertNull(db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 13)))
 
@@ -8408,11 +8413,11 @@ class PlatformWalletPersistenceHandlerTest {
 
     @Test
     fun theRunStopsWhenTheHealCannotReadTheStore() = runTest {
-        // The heal asks the store whether it already holds each engine
-        // coin. A read that fails there must not read as "absent" (that
-        // would insert a row the store may well hold): the step fails, it
-        // rolls back, and the run stops.
-        val faults = useFaultedDatabase("SELECT * FROM txos WHERE outpoint")
+        // The heal asks the store, once per page, which engine coins it
+        // already holds. A read that fails there must not read as "absent"
+        // (that would insert a row the store may well hold): the step fails,
+        // it rolls back, and the run stops.
+        val faults = useFaultedDatabase("SELECT outpoint FROM txos WHERE outpoint IN")
         seedReconcileWallet()
         val txid = ByteArray(32) { 0x84.toByte() }
         faults.armed = true
@@ -8433,11 +8438,11 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun theRunStopsWhenTheFlipLookupCannotRead() = runTest {
-        // The classify pass re-reads each known-uncredited row before it
-        // flips it. A read that fails there must not read as "stale": the
-        // step fails, nothing staged is kept, and the row stays as it was.
-        val faults = useFaultedDatabase("SELECT * FROM txos WHERE outpoint")
+    fun theRunStopsWhenTheFlipCannotWrite() = runTest {
+        // The classify pass marks each known-uncredited row spent. A write
+        // that fails there must not read as "stale": the step fails, nothing
+        // staged is kept, and the row stays as it was.
+        val faults = useFaultedDatabase("UPDATE txos SET isSpent = 1")
         seedReconcileWallet()
         val txid = ByteArray(32) { 0x85.toByte() }
         seedUnspentTxo(txid)
@@ -8450,7 +8455,7 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(1, report.storeFailures)
         assertEquals("the page itself was read", 1, report.storeRows)
         assertEquals(0, report.flipped)
-        assertEquals("a failed read is not a stale page either", 0, report.staleRetries)
+        assertEquals("a failed write is not a stale page either", 0, report.staleRetries)
         assertFalse(db.txoDao().getByOutpoint(makeOutpoint(txid, 0))!!.isSpent)
         val failure = org.robolectric.shadows.ShadowLog.getLogs()
             .map { it.msg }
@@ -8482,12 +8487,11 @@ class PlatformWalletPersistenceHandlerTest {
 
         val report = handler.reconcileWith(
             engine,
-            // The run checks once for the account read, then before each
-            // engine read, before each store step and before each applied
-            // report: the first four admit the account read, page one, its
-            // heal and its report; the fifth (before page two) reports the
-            // epoch bumped.
-            isCancelled = { ++checks >= 5 },
+            // The run checks before each engine read, before each store step
+            // and before each applied report: the first three admit page
+            // one, its heal and its report; the fourth (before page two)
+            // reports the epoch bumped.
+            isCancelled = { ++checks >= 4 },
         )
 
         assertFalse(report.completed)
@@ -8960,8 +8964,13 @@ class PlatformWalletPersistenceHandlerTest {
                 .parseToJsonElement(inventoryJson).jsonObject
             fun keys(list: String) = root[list]?.jsonArray.orEmpty().map { it.jsonObject }
                 .map { key(it["txid"]!!.jsonPrimitive.content, it["vout"]!!.jsonPrimitive.int) }.toSet()
-            utxos = root["utxos"]?.jsonArray?.map { it.jsonObject } ?: emptyList()
-            unspentKeys = keys("utxos")
+            val inventory = root["utxos"]?.jsonArray?.map { it.jsonObject } ?: emptyList()
+            // A contact's watch-only coin never enters a heal page
+            // (`wallet_utxos_page`).
+            utxos = inventory.filter { !isContact(it) }
+            // Nor does a coin the engine holds only in a contact's chain
+            // answer `unspent` for this wallet's row.
+            unspentKeys = utxos.map { key(it["txid"]!!.jsonPrimitive.content, it["vout"]!!.jsonPrimitive.int) }.toSet()
             spentKeys = keys("spent")
             notOwnedKeys = keys("notOwned")
         }
@@ -9052,6 +9061,9 @@ class PlatformWalletPersistenceHandlerTest {
                 requireNotNull(q["scriptHex"]) { "classification query carries no script" }
                 val k = key(q["txid"]!!.jsonPrimitive.content, q["vout"]!!.jsonPrimitive.int)
                 verdicts[i] = when {
+                    // A contact's watch-only chain gets no verdict at all
+                    // (`classify_outpoints`).
+                    isContact(q) -> 0
                     k in notOwnedKeys -> 3
                     k in unspentKeys -> 1
                     k in spentKeys -> 2
@@ -9077,7 +9089,7 @@ class PlatformWalletPersistenceHandlerTest {
             return pagesLeft > 0
         }
 
-        override suspend fun releaseVerdicts() {
+        override fun releaseVerdicts() {
             if (held) events += "release"
             held = false
         }
@@ -9088,6 +9100,10 @@ class PlatformWalletPersistenceHandlerTest {
         }
 
         private fun key(txidHex: String, vout: Int) = "$txidHex:$vout"
+
+        /** A row or query of a DashPay external (contact) account. */
+        private fun isContact(row: kotlinx.serialization.json.JsonObject) =
+            row["typeTag"]?.jsonPrimitive?.int == 13
 
         companion object {
             /** The rs-unified-sdk-jni `OutpointQuery` keys with no serde
@@ -9376,7 +9392,9 @@ class PlatformWalletPersistenceHandlerTest {
 /**
  * Room open-helper factory that fails exactly one prepared statement —
  * the one whose SQL starts with [failingSqlPrefix] — once [armed], and
- * delegates every other read and write to real SQLite.
+ * delegates every other read and write to real SQLite. A write fails when
+ * it is compiled, so it must not have been compiled (and cached by Room)
+ * before the injector is armed.
  *
  * Faults ONE query rather than dropping its table: `asset_locks` is read
  * by three independent restore builders, so a table-level fault proves
@@ -9419,5 +9437,9 @@ private class SingleStatementFaultInjector(
         ): Cursor =
             if (shouldFail(query)) throw SQLiteException("injected read failure: ${query.sql}")
             else delegate.query(query, cancellationSignal)
+
+        override fun compileStatement(sql: String): SupportSQLiteStatement =
+            if (armed && sql.startsWith(failingSqlPrefix)) throw SQLiteException("injected write failure: $sql")
+            else delegate.compileStatement(sql)
     }
 }

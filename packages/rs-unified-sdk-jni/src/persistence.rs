@@ -4602,7 +4602,7 @@ unsafe extern "C" fn tramp_get_core_tx_record_free(
 ///
 /// # Safety
 /// `ptr` must point to `count` valid `T`s (or be null with `count == 0`).
-unsafe fn slice_or_empty<'a, T>(ptr: *const T, count: usize) -> &'a [T] {
+pub(crate) unsafe fn slice_or_empty<'a, T>(ptr: *const T, count: usize) -> &'a [T] {
     if ptr.is_null() || count == 0 {
         &[]
     } else {

@@ -42,7 +42,7 @@
 
 use crate::events::{build_event_extension, build_event_vtable, KotlinEventCtx};
 use crate::persistence::{
-    build_extension, build_vtable, restrict_account_writers, KotlinPersistenceCtx,
+    build_extension, build_vtable, restrict_account_writers, slice_or_empty, KotlinPersistenceCtx,
 };
 use crate::support::{guard, take_pwffi_error, throw_pwffi_result, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JObject, JObjectArray, JString, JValue};
@@ -3271,39 +3271,6 @@ impl UtxoAccountTuple {
             friend_identity_id: identity(&e.friend_identity_id),
         }
     }
-
-    /// The two 32-byte identity halves, or `None` when a hex string the
-    /// host handed back is malformed — a tuple this layer did not emit.
-    fn identity_ids(&self) -> Option<([u8; 32], [u8; 32])> {
-        fn id32(hex_id: &Option<String>) -> Option<[u8; 32]> {
-            match hex_id {
-                None => Some([0u8; 32]),
-                Some(h) => hex32(h),
-            }
-        }
-        Some((
-            id32(&self.user_identity_id)?,
-            id32(&self.friend_identity_id)?,
-        ))
-    }
-
-    /// The two identity halves and the FFI outpoint of a row keyed by this
-    /// tuple and `txid`/`vout`, or the error naming the malformed field.
-    fn keyed_outpoint(
-        &self,
-        txid: &str,
-        vout: u32,
-    ) -> Result<([u8; 32], [u8; 32], platform_wallet_ffi::OutPointFFI), &'static str> {
-        let (user_identity_id, friend_identity_id) = self
-            .identity_ids()
-            .ok_or("outpoint query carries a malformed identity id")?;
-        let txid = hex32(txid).ok_or("outpoint query carries a malformed txid")?;
-        Ok((
-            user_identity_id,
-            friend_identity_id,
-            platform_wallet_ffi::OutPointFFI { txid, vout },
-        ))
-    }
 }
 
 /// 32 bytes from their hex form, or `None` when it is not exactly that.
@@ -3348,11 +3315,7 @@ impl UtxoPageRow {
     /// bytes — the heal page's contract for every row it returns.
     unsafe fn from_heal_row(r: &platform_wallet_ffi::TxoHealRowFFI) -> Self {
         let e = &r.utxo;
-        let script: &[u8] = if e.script_pubkey.is_null() || e.script_pubkey_len == 0 {
-            &[]
-        } else {
-            std::slice::from_raw_parts(e.script_pubkey, e.script_pubkey_len)
-        };
+        let script = slice_or_empty(e.script_pubkey, e.script_pubkey_len);
         // Never null per the accessor's contract; treated as empty if it
         // ever is (the engine's verdict on such a row is `invalid`).
         let address = cstr_opt(e.address).unwrap_or_default();
@@ -3386,12 +3349,12 @@ struct UtxoPage {
 }
 
 impl UtxoPage {
-    /// The page for `utxos`. A page with no rows reports no more, whatever
-    /// the accessor said: there is nothing after it to read.
+    /// The page for `utxos`. `has_more` is the engine's, which is already
+    /// false on an empty page.
     fn new(utxos: Vec<UtxoPageRow>, has_more: bool) -> Self {
         UtxoPage {
-            has_more: has_more && !utxos.is_empty(),
             utxos,
+            has_more,
             budget_spent: false,
         }
     }
@@ -3430,8 +3393,18 @@ impl OutpointQuery {
     fn to_ffi(
         &self,
     ) -> Result<(platform_wallet_ffi::OutpointOwnershipQueryFFI, Vec<u8>), &'static str> {
-        let (user_identity_id, friend_identity_id, outpoint) =
-            self.account.keyed_outpoint(&self.txid, self.vout)?;
+        // An absent identity half is all-zero; a present one this layer did
+        // not emit (malformed hex) fails the batch.
+        let identity = |hex_id: &Option<String>| match hex_id {
+            None => Some([0u8; 32]),
+            Some(h) => hex32(h),
+        };
+        const MALFORMED_IDENTITY: &str = "outpoint query carries a malformed identity id";
+        let user_identity_id =
+            identity(&self.account.user_identity_id).ok_or(MALFORMED_IDENTITY)?;
+        let friend_identity_id =
+            identity(&self.account.friend_identity_id).ok_or(MALFORMED_IDENTITY)?;
+        let txid = hex32(&self.txid).ok_or("outpoint query carries a malformed txid")?;
         let script = hex::decode(&self.script_hex)
             .map_err(|_| "outpoint query carries a malformed script")?;
         let query = platform_wallet_ffi::OutpointOwnershipQueryFFI {
@@ -3442,7 +3415,10 @@ impl OutpointQuery {
             key_class: self.account.key_class,
             user_identity_id,
             friend_identity_id,
-            outpoint,
+            outpoint: platform_wallet_ffi::OutPointFFI {
+                txid,
+                vout: self.vout,
+            },
             script_pubkey: ptr::null(),
             script_pubkey_len: 0,
         };
@@ -3483,9 +3459,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
 
 /// Claim one wallet for a TXO-store reconcile run and check that it may
 /// start. Returns `TXO_RECONCILE_GATE_RUN` (0) or a `TXO_RECONCILE_SKIP_*`
-/// reason; on 0, `outTipHeight[0]` is the scan tip the run is measured
-/// against (the claim keeps it; the host only reports it), and the claim
-/// holds until `walletManagerTxoReconcileFinish`. Bridges
+/// reason; on 0 the claim holds until `walletManagerTxoReconcileFinish`.
+/// The claim keeps the scan tip the run is measured against; the host
+/// never sees it. Bridges
 /// `platform_wallet_manager_txo_reconcile_begin`, where every gate lives.
 ///
 /// On 0 `outStart[0]` is where the run starts, a `TXO_RECONCILE_START_*`
@@ -3502,7 +3478,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     _class: JClass,
     manager_handle: jlong,
     wallet_id: JByteArray,
-    out_tip_height: jni::sys::jintArray,
     out_start: jni::sys::jintArray,
     out_store_after: jni::sys::jobjectArray,
 ) -> jint {
@@ -3510,27 +3485,23 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         let Some(wid) = read_id32(env, &wallet_id) else {
             return -1;
         };
-        const OUTS: &str =
-            "outTipHeight and outStart must be IntArray(1), outStoreAfter an Array<ByteArray?>(1)";
-        if out_tip_height.is_null() || out_start.is_null() || out_store_after.is_null() {
+        const OUTS: &str = "outStart must be an IntArray(1), outStoreAfter an Array<ByteArray?>(1)";
+        if out_start.is_null() || out_store_after.is_null() {
             throw_sdk_exception(env, 1, OUTS);
             return -1;
         }
         // SAFETY: non-null arrays from the Kotlin caller.
-        let out_tip = unsafe { jni::objects::JIntArray::from_raw(out_tip_height) };
         let out_start = unsafe { jni::objects::JIntArray::from_raw(out_start) };
         let out_store_after = unsafe { JObjectArray::from_raw(out_store_after) };
         // Checked before the claim is taken: a wrong-sized array would
         // otherwise fail a write below with the wallet already claimed.
-        if !has_out_slot(env.get_array_length(&out_tip))
-            || !has_out_slot(env.get_array_length(&out_start))
+        if !has_out_slot(env.get_array_length(&out_start))
             || !has_out_slot(env.get_array_length(&out_store_after))
         {
             throw_sdk_exception(env, 1, OUTS);
             return -1;
         }
         let mut gate = 0u8;
-        let mut tip_height = 0u32;
         let mut start = platform_wallet_ffi::TXO_RECONCILE_START_HEAL;
         let mut store_after = [0u8; platform_wallet_ffi::TXO_RECONCILE_STORE_CURSOR_MAX];
         let mut store_after_len = 0usize;
@@ -3539,7 +3510,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 manager_handle as Handle,
                 wid.as_ptr(),
                 &mut gate as *mut u8,
-                &mut tip_height as *mut u32,
                 &mut start as *mut u8,
                 store_after.as_mut_ptr(),
                 &mut store_after_len as *mut usize,
@@ -3565,12 +3535,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 false,
             );
         });
-        // A tip past i32::MAX cannot cross as a jint; no Dash height is near it.
-        let tip = jint::try_from(tip_height).unwrap_or(jint::MAX);
-        if env.set_int_array_region(&out_tip, 0, &[tip]).is_err()
-            || env
-                .set_int_array_region(&out_start, 0, &[jint::from(start)])
-                .is_err()
+        if env
+            .set_int_array_region(&out_start, 0, &[jint::from(start)])
+            .is_err()
         {
             return -1;
         }
@@ -3771,28 +3738,24 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         };
         // Every exit before the hand-over frees the guard — see
         // `walletManagerTxoReconcileClassifyOutpoints`.
-        let held = UnsentHeldVerdicts::new(
-            held,
-            platform_wallet_ffi::platform_wallet_txo_reconcile_held_verdicts_free,
-        );
+        let unsent = until_held_handed_over(held);
         if take_pwffi_error(env, result) {
             return ptr::null_mut();
         }
-        let mut rows: Vec<UtxoPageRow> = Vec::with_capacity(count);
-        if !entries.is_null() && count > 0 {
-            let items = unsafe { std::slice::from_raw_parts(entries, count) };
-            for r in items {
-                // SAFETY: every row the heal page returns satisfies the
-                // pointer contract `from_heal_row` documents.
-                rows.push(unsafe { UtxoPageRow::from_heal_row(r) });
-            }
-            unsafe {
-                platform_wallet_ffi::platform_wallet_txo_reconcile_heal_page_free(
-                    entries as *mut platform_wallet_ffi::TxoHealRowFFI,
-                    count,
-                )
-            };
-        }
+        // SAFETY: the heal page returned `count` rows at `entries` (or
+        // null/0), each satisfying the pointer contract `from_heal_row`
+        // documents; they are read before the page is freed.
+        let rows: Vec<UtxoPageRow> = unsafe { slice_or_empty(entries, count) }
+            .iter()
+            .map(|r| unsafe { UtxoPageRow::from_heal_row(r) })
+            .collect();
+        // A null or empty page is a no-op to free.
+        unsafe {
+            platform_wallet_ffi::platform_wallet_txo_reconcile_heal_page_free(
+                entries as *mut platform_wallet_ffi::TxoHealRowFFI,
+                count,
+            )
+        };
         let page = if budget_spent {
             UtxoPage::budget_spent()
         } else {
@@ -3808,7 +3771,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         let Ok(page) = env.new_string(json).map(|s| s.into_raw()) else {
             return ptr::null_mut();
         };
-        if !held.send(env, &out) {
+        if !send_held(env, &out, held, unsent) {
             return ptr::null_mut();
         }
         page
@@ -3940,10 +3903,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         };
         // From here every exit — an error, a failed write, a panic that
         // `guard` catches — frees the guard, until Kotlin owns it.
-        let held = UnsentHeldVerdicts::new(
-            held,
-            platform_wallet_ffi::platform_wallet_txo_reconcile_held_verdicts_free,
-        );
+        let unsent = until_held_handed_over(held);
         // `scripts` must outlive the call above; this keeps that explicit
         // against a future reorder.
         drop(scripts);
@@ -3960,7 +3920,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         let Ok(answers) = env.byte_array_from_slice(&classes).map(|a| a.into_raw()) else {
             return ptr::null_mut();
         };
-        if !held.send(env, &out) {
+        if !send_held(env, &out, held, unsent) {
             return ptr::null_mut();
         }
         answers
@@ -3991,10 +3951,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 &mut may_continue,
             )
         };
-        if take_pwffi_error(env, result) || !may_continue {
-            return JNI_FALSE;
-        }
-        JNI_TRUE
+        page_applied_answer(env, result, may_continue)
     })
 }
 
@@ -4036,11 +3993,22 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 &mut may_continue,
             )
         };
-        if take_pwffi_error(env, result) || !may_continue {
-            return JNI_FALSE;
-        }
-        JNI_TRUE
+        page_applied_answer(env, result, may_continue)
     })
+}
+
+/// The answer a `…PageApplied` export returns: whether the run has budget
+/// left for another page, false (with the SDK exception pending) when the
+/// report failed.
+fn page_applied_answer(
+    env: &mut JNIEnv,
+    result: PlatformWalletFFIResult,
+    may_continue: bool,
+) -> jboolean {
+    if take_pwffi_error(env, result) || !may_continue {
+        return JNI_FALSE;
+    }
+    JNI_TRUE
 }
 
 /// Validate `outHeld` as a `LongArray(1)` and write "nothing held" to it,
@@ -4067,59 +4035,39 @@ fn clear_out_held<'local>(
     Some(out)
 }
 
-/// A held-verdicts guard `walletManagerTxoHealPageJson` or
+/// The guard for a held-verdicts token `walletManagerTxoHealPageJson` or
 /// `walletManagerTxoReconcileClassifyOutpoints` has not handed to Kotlin
-/// yet. Dropped before [`Self::hand_over`] — an early return, or a panic
-/// unwinding into `guard` — it frees the guard at once. Left to
-/// `walletManagerTxoReconcileFinish` instead, it would be released only by
-/// a call that resolves the manager handle in the native registry while
-/// the guard is still held, the registry/engine lock cycle the token exists
-/// to avoid.
-struct UnsentHeldVerdicts<T> {
-    held: *mut T,
-    free: unsafe extern "C" fn(*mut T),
+/// yet: dropped before the hand-over — an early return, or a panic
+/// unwinding into `guard` — it frees the token at once (null frees
+/// nothing). Left to `walletManagerTxoReconcileFinish` instead, it would be
+/// released only by a call that resolves the manager handle in the native
+/// registry while the guard is still held, the registry/engine lock cycle
+/// the token exists to avoid.
+fn until_held_handed_over(
+    held: *mut platform_wallet_ffi::TxoReconcileHeldVerdictsFFI,
+) -> UntilHandedOver<impl FnOnce()> {
+    // SAFETY: `held` came from the native held read and is freed here only
+    // if it was never handed over, so nothing else frees it.
+    UntilHandedOver::new(move || unsafe {
+        platform_wallet_ffi::platform_wallet_txo_reconcile_held_verdicts_free(held)
+    })
 }
 
-impl<T> UnsentHeldVerdicts<T> {
-    fn new(held: *mut T, free: unsafe extern "C" fn(*mut T)) -> Self {
-        Self { held, free }
+/// Write `held` to `outHeld[0]`, last, once the call's answer is ready to
+/// return, and hand it to Kotlin, which frees it with
+/// `txoReconcileHeldVerdictsFree`. `false` — the token freed here, by
+/// `unsent` — when the write failed.
+fn send_held(
+    env: &mut JNIEnv,
+    out: &jni::objects::JLongArray,
+    held: *mut platform_wallet_ffi::TxoReconcileHeldVerdictsFFI,
+    unsent: UntilHandedOver<impl FnOnce()>,
+) -> bool {
+    if env.set_long_array_region(out, 0, &[held as jlong]).is_err() {
+        return false;
     }
-
-    fn as_ptr(&self) -> *mut T {
-        self.held
-    }
-
-    /// Kotlin owns the guard now and frees it with
-    /// `txoReconcileHeldVerdictsFree`.
-    fn hand_over(mut self) {
-        self.held = ptr::null_mut();
-    }
-}
-
-impl UnsentHeldVerdicts<platform_wallet_ffi::TxoReconcileHeldVerdictsFFI> {
-    /// Write the guard to `outHeld[0]`, last, once the call's answer is
-    /// ready to return, and hand it to Kotlin. `false` — the guard freed
-    /// here — when the write failed.
-    fn send(self, env: &mut JNIEnv, out: &jni::objects::JLongArray) -> bool {
-        if env
-            .set_long_array_region(out, 0, &[self.as_ptr() as jlong])
-            .is_err()
-        {
-            return false;
-        }
-        self.hand_over();
-        true
-    }
-}
-
-impl<T> Drop for UnsentHeldVerdicts<T> {
-    fn drop(&mut self) {
-        if !self.held.is_null() {
-            // SAFETY: `held` came from the native held read and was never
-            // handed over, so nothing else frees it.
-            unsafe { (self.free)(self.held) };
-        }
-    }
+    unsent.hand_over();
+    true
 }
 
 /// Read a 32-byte id from a Java `byte[]`; throws + returns None on the
@@ -5145,16 +5093,12 @@ mod tests {
     }
 
     #[test]
-    fn a_last_or_empty_page_reports_no_more_and_carries_no_cursor() {
+    fn a_last_page_reports_no_more_and_carries_no_cursor() {
         let last = UtxoPage::new(rows(&golden_coins()), false);
         let value = serde_json::to_value(&last).expect("page serializes");
         assert_eq!(value["hasMore"], serde_json::Value::Bool(false));
         assert_eq!(value["budgetSpent"], serde_json::Value::Bool(false));
         assert!(value.get("cursor").is_none(), "the run keeps its own place");
-
-        // An empty page has nothing after it, whatever the accessor said.
-        let empty = UtxoPage::new(Vec::new(), true);
-        assert!(!empty.has_more);
     }
 
     #[test]
@@ -5281,13 +5225,22 @@ mod tests {
         use std::cell::Cell;
         use std::sync::atomic::{AtomicUsize, Ordering};
 
-        use super::super::{has_out_slot, UntilHandedOver};
+        use super::super::{has_out_slot, until_held_handed_over, UntilHandedOver};
 
+        /// A begin claim or a held-verdicts token (`until_held_handed_over`)
+        /// not handed to Kotlin is released once.
         #[test]
         fn an_unreturned_claim_is_released_once_on_drop() {
             let released = Cell::new(0);
             drop(UntilHandedOver::new(|| released.set(released.get() + 1)));
             assert_eq!(released.get(), 1);
+        }
+
+        #[test]
+        fn an_unsent_null_held_token_frees_nothing() {
+            // The native free is a no-op on null, which is what an errored
+            // held read leaves behind.
+            drop(until_held_handed_over(std::ptr::null_mut()));
         }
 
         #[test]
@@ -5304,7 +5257,7 @@ mod tests {
                 let _claim = UntilHandedOver::new(|| {
                     released.fetch_add(1, Ordering::SeqCst);
                 });
-                panic!("writing outTipHeight failed");
+                panic!("writing outStart failed");
             });
             assert!(unwound.is_err());
             assert_eq!(
@@ -5323,64 +5276,6 @@ mod tests {
                 "an empty array is refused before the claim"
             );
             assert!(!has_out_slot(Err(jni::errors::Error::NullPtr("array"))));
-        }
-    }
-
-    mod unsent_held_verdicts {
-        use std::ptr::NonNull;
-        use std::sync::atomic::{AtomicUsize, Ordering};
-
-        use super::super::UnsentHeldVerdicts;
-
-        /// A stand-in guard: the frees below only count, never dereference.
-        fn token() -> *mut u8 {
-            NonNull::<u8>::dangling().as_ptr()
-        }
-
-        #[test]
-        fn an_unsent_guard_is_freed_once_on_drop() {
-            static FREED: AtomicUsize = AtomicUsize::new(0);
-            unsafe extern "C" fn free(_: *mut u8) {
-                FREED.fetch_add(1, Ordering::SeqCst);
-            }
-            drop(UnsentHeldVerdicts::new(token(), free));
-            assert_eq!(FREED.load(Ordering::SeqCst), 1);
-        }
-
-        #[test]
-        fn a_guard_handed_to_kotlin_is_not_freed() {
-            static FREED: AtomicUsize = AtomicUsize::new(0);
-            unsafe extern "C" fn free(_: *mut u8) {
-                FREED.fetch_add(1, Ordering::SeqCst);
-            }
-            let held = UnsentHeldVerdicts::new(token(), free);
-            assert_eq!(held.as_ptr(), token());
-            held.hand_over();
-            assert_eq!(FREED.load(Ordering::SeqCst), 0);
-        }
-
-        #[test]
-        fn a_panic_before_the_hand_over_frees_the_guard() {
-            static FREED: AtomicUsize = AtomicUsize::new(0);
-            unsafe extern "C" fn free(_: *mut u8) {
-                FREED.fetch_add(1, Ordering::SeqCst);
-            }
-            let unwound = std::panic::catch_unwind(|| {
-                let _held = UnsentHeldVerdicts::new(token(), free);
-                panic!("writing outHeld failed");
-            });
-            assert!(unwound.is_err());
-            assert_eq!(FREED.load(Ordering::SeqCst), 1, "freed while unwinding");
-        }
-
-        #[test]
-        fn nothing_held_is_nothing_freed() {
-            static FREED: AtomicUsize = AtomicUsize::new(0);
-            unsafe extern "C" fn free(_: *mut u8) {
-                FREED.fetch_add(1, Ordering::SeqCst);
-            }
-            drop(UnsentHeldVerdicts::new(std::ptr::null_mut(), free));
-            assert_eq!(FREED.load(Ordering::SeqCst), 0);
         }
     }
 }
