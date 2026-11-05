@@ -3989,12 +3989,31 @@ mod utxo_credit_verdict_merge_tests {
 mod coalesce_account_records_tests {
     use super::*;
     use dashcore::hashes::Hash;
-    use dashcore::BlockHash;
+    use dashcore::{Address, BlockHash, Network, PubkeyHash, TxOut};
+    use key_wallet::managed_account::transaction_record::{
+        InputDetail, OutputDetail, OutputRole, TransactionDirection,
+    };
     use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
 
     fn record(net_amount: i64, context: TransactionContext) -> TransactionRecord {
-        let mut tx = crate::test_support::core_fixtures::spend_of(&[], vec![]);
+        let address = Address::new(
+            Network::Testnet,
+            dashcore::address::Payload::PubkeyHash(PubkeyHash::from_byte_array(
+                [net_amount as u8; 20],
+            )),
+        );
+        let mut tx = crate::test_support::core_fixtures::spend_of(
+            &[OutPoint::new(
+                Txid::from_byte_array([net_amount as u8; 32]),
+                1,
+            )],
+            vec![TxOut {
+                value: net_amount as u64,
+                script_pubkey: address.script_pubkey(),
+            }],
+        );
         tx.version = 2;
+        tx.lock_time = net_amount as u32;
         let mut record = TransactionRecord::new(
             tx,
             key_wallet::account::AccountType::Standard {
@@ -4003,12 +4022,32 @@ mod coalesce_account_records_tests {
             },
             context,
             key_wallet::transaction_checking::transaction_router::TransactionType::Standard,
-            key_wallet::managed_account::transaction_record::TransactionDirection::Incoming,
-            Vec::new(),
-            Vec::new(),
+            if net_amount == 500 {
+                TransactionDirection::Incoming
+            } else {
+                TransactionDirection::Internal
+            },
+            vec![InputDetail {
+                index: 0,
+                value: net_amount as u64 + 100,
+                address: address.clone(),
+            }],
+            vec![OutputDetail {
+                index: 0,
+                role: if net_amount == 500 {
+                    OutputRole::Received
+                } else {
+                    OutputRole::Change
+                },
+                address: Some(address),
+                value: net_amount as u64,
+            }],
             net_amount,
         );
+        // Synthetic grouping key deliberately puts different bodies in the same bucket.
         record.txid = Txid::from_byte_array([7; 32]);
+        record.fee = Some(net_amount as u64 / 10);
+        record.label = format!("snapshot {net_amount}");
         record
     }
 
@@ -4032,11 +4071,47 @@ mod coalesce_account_records_tests {
             ("equal rank", mempool(), mempool(), (900, false)),
             ("higher rank", mempool(), in_block(), (900, true)),
         ] {
-            let mut records = vec![record(500, earlier), record(900, later)];
+            let earlier = record(500, earlier);
+            let later = record(900, later);
+            let expected = if kept.0 == 500 {
+                earlier.clone()
+            } else {
+                later.clone()
+            };
+            let mut records = vec![earlier, later];
             coalesce_account_records(&mut records);
             assert_eq!(records.len(), 1, "{case}");
             let confirmed = matches!(records[0].context, TransactionContext::InBlock(_));
             assert_eq!((records[0].net_amount, confirmed), kept, "{case}");
+            let actual = &records[0];
+            assert_eq!(
+                actual.transaction, expected.transaction,
+                "{case}: entire body"
+            );
+            assert_eq!(actual.context, expected.context, "{case}");
+            assert_eq!(
+                (actual.fee, &actual.label, actual.direction),
+                (expected.fee, &expected.label, expected.direction),
+                "{case}: metadata"
+            );
+            let inputs = |r: &TransactionRecord| {
+                r.input_details
+                    .iter()
+                    .map(|d| (d.index, d.value, d.address.clone()))
+                    .collect::<Vec<_>>()
+            };
+            let outputs = |r: &TransactionRecord| {
+                r.output_details
+                    .iter()
+                    .map(|d| (d.index, d.role, d.value, d.address.clone()))
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(inputs(actual), inputs(&expected), "{case}: input details");
+            assert_eq!(
+                outputs(actual),
+                outputs(&expected),
+                "{case}: output details"
+            );
         }
     }
 }
