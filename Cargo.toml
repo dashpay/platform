@@ -70,6 +70,7 @@ grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "9b19035f5
 grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "9b19035f51905b156e8a628c10b71b85797ffa21" }
 grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", rev = "9b19035f51905b156e8a628c10b71b85797ffa21" }
 grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "9b19035f51905b156e8a628c10b71b85797ffa21" }
+# TODO(upstream-merge): verify this compat revision is reachable from merged rust-dashcore dev; PR #1336 alone does not prove its ancestry.
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "5e7982b3b7a3b5ab3999cd0d83235c705abcd3cb" }
 dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "5e7982b3b7a3b5ab3999cd0d83235c705abcd3cb" }
 dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "5e7982b3b7a3b5ab3999cd0d83235c705abcd3cb" }
