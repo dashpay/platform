@@ -2559,8 +2559,9 @@ public class PlatformWalletManager: ObservableObject {
     /// reserved with no emitter and is matched so it would surface intact
     /// if that ever changes. The input-cap refusal
     /// (`assetLockTooManyInputs`) is returned the same way: such a lock is
-    /// never re-sent, and only this error tells the host to offer coin
-    /// consolidation.
+    /// never re-sent and stays tracked, so this error is how the host
+    /// learns that the row will not complete. Consolidating coins does not
+    /// change that row; it lets a new lock fit.
     nonisolated private static func runCatchUp(assetLockManager: ManagedAssetLockManager, txid: Data, vout: UInt32) -> PlatformWalletError? {
         // Build the txid tuple inline so the Task body captures only
         // Sendable values.
