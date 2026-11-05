@@ -7,9 +7,11 @@ use std::collections::{HashMap, HashSet};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use dashcore::ephemerealdata::chain_lock::ChainLock;
+use dashcore::{OutPoint, Txid};
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::Utxo;
+use platform_wallet::changeset::changeset::UtxoCreditVerdict;
 use platform_wallet::changeset::CoreChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -146,7 +148,26 @@ pub fn apply(
                      refresh the record itself to update its confirmation height"
                 );
             }
-            execute_upsert_utxo(&mut utxo_stmt, wallet_id, utxo, false)?;
+            let spent = match cs.utxo_credit_verdicts.get(&utxo.outpoint) {
+                Some(UtxoCreditVerdict::ObservedSpent { .. } | UtxoCreditVerdict::Doomed) => true,
+                Some(UtxoCreditVerdict::Uncredited) => {
+                    let prior_spent: Option<bool> = tx
+                        .prepare_cached(
+                            "SELECT spent FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+                        )?
+                        .query_row(
+                            params![wallet_id.as_slice(), blob::encode_outpoint(&utxo.outpoint)?],
+                            |row| row.get(0),
+                        )
+                        .optional()?;
+                    let Some(prior_spent) = prior_spent else {
+                        continue;
+                    };
+                    prior_spent
+                }
+                None => false,
+            };
+            execute_upsert_utxo(&mut utxo_stmt, wallet_id, utxo, spent, None)?;
         }
     }
     if !cs.spent_utxos.is_empty() {
@@ -163,20 +184,36 @@ pub fn apply(
             "SELECT 1 FROM core_utxos \
              WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 0",
         )?;
+        // A reservation created here names the record that made it, so a
+        // conflict removing that record can release the coin. Only the unspent
+        // -> spent transition is attributed: an existing claim, known or not, stands.
+        let mut spenders: HashMap<OutPoint, Txid> = HashMap::new();
+        for record in &cs.records {
+            for input in &record.transaction.input {
+                spenders.entry(input.previous_output).or_insert(record.txid);
+            }
+        }
         let mut mark_spent_stmt = tx.prepare_cached(
-            "UPDATE core_utxos SET spent = 1 WHERE wallet_id = ?1 AND outpoint = ?2",
+            "UPDATE core_utxos SET spent = 1, \
+                 spent_in_txid = CASE WHEN spent = 0 THEN ?3 ELSE spent_in_txid END \
+             WHERE wallet_id = ?1 AND outpoint = ?2",
         )?;
         let mut upsert_stmt = tx.prepare_cached(UPSERT_UTXO_SQL)?;
         for utxo in &cs.spent_utxos {
             let op = blob::encode_outpoint(&utxo.outpoint)?;
+            let spender = spenders.get(&utxo.outpoint);
             let materialised: bool = materialised_stmt
                 .query_row(params![wallet_id.as_slice(), &op[..]], |_| Ok(true))
                 .optional()?
                 .unwrap_or(false);
             if materialised {
-                mark_spent_stmt.execute(params![wallet_id.as_slice(), &op[..]])?;
+                mark_spent_stmt.execute(params![
+                    wallet_id.as_slice(),
+                    &op[..],
+                    spender.map(AsRef::<[u8]>::as_ref)
+                ])?;
             } else {
-                execute_upsert_utxo(&mut upsert_stmt, wallet_id, utxo, true)?;
+                execute_upsert_utxo(&mut upsert_stmt, wallet_id, utxo, true, spender)?;
             }
         }
     }
@@ -766,8 +803,8 @@ fn apply_sweep(
 }
 
 const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
-        (wallet_id, outpoint, value, script, spent) \
-     VALUES (?1, ?2, ?3, ?4, ?5) \
+        (wallet_id, outpoint, value, script, spent, spent_in_txid) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
      ON CONFLICT(wallet_id, outpoint) DO UPDATE SET \
         value = excluded.value, \
         script = excluded.script, \
@@ -781,6 +818,8 @@ const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
             ELSE NULL END";
 
 /// Upsert one `core_utxos` row; `spent` marks spent-only synthetic rows.
+/// `spender` is the claimant of a freshly inserted row only: an existing row
+/// keeps the claim it already has.
 ///
 /// # Errors
 ///
@@ -793,6 +832,7 @@ fn execute_upsert_utxo(
     wallet_id: &WalletId,
     utxo: &Utxo,
     spent: bool,
+    spender: Option<&Txid>,
 ) -> Result<(), WalletStorageError> {
     if utxo.txout.script_pubkey.as_bytes().is_empty() {
         return Err(WalletStorageError::EmptyUtxoScript {
@@ -806,6 +846,7 @@ fn execute_upsert_utxo(
         crate::sqlite::util::safe_cast::u64_to_i64("core_utxos.value", utxo.value())?,
         utxo.txout.script_pubkey.as_bytes(),
         spent,
+        spender.map(AsRef::<[u8]>::as_ref),
     ])?;
     Ok(())
 }

@@ -5937,6 +5937,7 @@ fn decode_recorded_transactions(entry: &WalletRestoreEntryFFI) -> RecordedHistor
         );
     }
     RecordedHistory {
+        owned_prevouts: Default::default(),
         transactions,
         instant_locks: BTreeMap::new(),
     }
@@ -14321,7 +14322,9 @@ mod tests {
             let (state, _) = build_wallet_start_state(&entry).expect("wallet must restore");
             let (mut wallet, mut info) = (state.wallet, state.wallet_info);
             runtime.block_on(async {
-                replay_recorded_history(&mut info, &mut wallet, state.recorded_history).await;
+                replay_recorded_history(&mut info, &mut wallet, state.recorded_history)
+                    .await
+                    .unwrap();
                 info.check_core_transaction(
                     &funding,
                     TransactionContext::InBlock(BlockInfo::new(

@@ -2770,12 +2770,9 @@ async fn should_repair_invalid_claims_without_releasing_authorized_competitors()
         let mut alternative = info.clone();
         records.extend(records_of(&mut info, &mut wallet, &bad, MEMPOOL).await);
         records.extend(records_of(&mut info, &mut wallet, &child, MEMPOOL).await);
+        let (checked_lock, evidence) = common::checked_instant_lock(&survivor).await;
         let context = if matches!(context, TransactionContext::InstantSend(_)) {
-            TransactionContext::InstantSend(dashcore::InstantLock {
-                txid: survivor.txid(),
-                inputs: vec![shared],
-                ..Default::default()
-            })
+            TransactionContext::InstantSend(checked_lock)
         } else {
             context
         };
@@ -2802,7 +2799,7 @@ async fn should_repair_invalid_claims_without_releasing_authorized_competitors()
             },
         );
         for _ in 0..2 {
-            let mut state = persister.load().unwrap();
+            let mut state = persister.load_with_replay(&evidence).unwrap().state;
             let restored = state.wallets.get_mut(&wallet.wallet_id).unwrap();
             let mut expected = vec![extra, OutPoint::new(survivor.txid(), 0)];
             expected.sort();

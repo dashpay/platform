@@ -31,10 +31,13 @@ use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Utxo;
 
+use super::history_authorization::plan_history_authorization;
+pub use super::history_authorization::HistoryAuthorization;
 use crate::changeset::changeset::SweepBatch;
 use crate::changeset::recorded_history::ReplayEvidence;
 use crate::changeset::{is_owned, ClientStartState, RecordedHistory, StoredTransaction};
 use crate::wallet::platform_wallet::WalletId;
+use key_wallet::transaction_checking::spend_authorization::SpendAuthorizationError;
 
 /// Backend snapshot and the replay verdict committed with each wallet.
 #[derive(Debug, Default)]
@@ -48,6 +51,8 @@ pub struct HistoryReplayLoad {
 /// What [`replay_recorded_history`] made of the stored history.
 #[derive(Debug, Default)]
 pub struct HistoryReplay {
+    /// Owner-authorized rejections and surviving claims for atomic backend repair.
+    pub authorization: HistoryAuthorization,
     /// How many records went through the wallet checker.
     pub replayed: usize,
     /// Stored transactions the replay removed or left out: the losers of a
@@ -81,7 +86,10 @@ impl HistoryReplay {
             .iter()
             .filter_map(|(outpoint, claimant)| {
                 (candidates.contains(outpoint)
-                    && claimant.is_none_or(|txid| !self.defeated.contains(&txid)))
+                    && claimant.is_none_or(|txid| {
+                        !self.defeated.contains(&txid)
+                            && !self.authorization.rejected.contains(&txid)
+                    }))
                 .then_some(*outpoint)
             })
             .collect();
@@ -111,6 +119,9 @@ impl HistoryReplay {
 /// A blocking backend cannot commit a replay that suspended part-way through.
 #[derive(Debug, thiserror::Error)]
 pub enum HistoryReplayError {
+    /// Stored input authorization cannot be checked with supported rules.
+    #[error("cannot verify stored input authorization")]
+    SpendAuthorization(#[from] SpendAuthorizationError),
     /// The wallet checker requested asynchronous work during local restoration.
     #[error("wallet history replay requires asynchronous work")]
     Suspended,
@@ -140,7 +151,12 @@ pub fn replay_recorded_history_blocking(
             .poll(&mut Context::from_waker(Waker::noop()))
     };
     match outcome {
-        Poll::Ready(replay) => Ok(replay),
+        Poll::Ready(Ok(replay)) => Ok(replay),
+        Poll::Ready(Err(error)) => {
+            *wallet_info = original_info;
+            *wallet = original_wallet;
+            Err(error)
+        }
         Poll::Pending => {
             *wallet_info = original_info;
             *wallet = original_wallet;
@@ -184,7 +200,7 @@ pub async fn replay_recorded_history(
     wallet_info: &mut ManagedWalletInfo,
     wallet: &mut Wallet,
     history: RecordedHistory,
-) -> HistoryReplay {
+) -> Result<HistoryReplay, HistoryReplayError> {
     replay_recorded_history_with_evidence(wallet_info, wallet, history, &ReplayEvidence::default())
         .await
 }
@@ -195,7 +211,7 @@ pub async fn replay_recorded_history_with_evidence(
     wallet: &mut Wallet,
     history: RecordedHistory,
     evidence: &ReplayEvidence,
-) -> HistoryReplay {
+) -> Result<HistoryReplay, HistoryReplayError> {
     let mut deferred = BTreeSet::new();
     for stored in &history.transactions {
         let locks =
@@ -253,18 +269,76 @@ pub async fn replay_recorded_history_with_evidence(
             .collect();
         wallet_info.restore_spent_outpoints(&claims);
         wallet_info.update_balance();
-        return HistoryReplay {
+        return Ok(HistoryReplay {
             deferred,
             ..Default::default()
-        };
+        });
     }
     let RecordedHistory {
-        transactions,
+        mut owned_prevouts,
+        mut transactions,
         instant_locks,
     } = history;
     if transactions.is_empty() {
-        return HistoryReplay::default();
+        return Ok(HistoryReplay::default());
     }
+    let owns = |script: &dashcore::ScriptBuf| {
+        dashcore::Address::from_script(script, wallet_info.network())
+            .ok()
+            .is_some_and(|address| {
+                wallet_info
+                    .accounts
+                    .all_funding_accounts()
+                    .into_iter()
+                    .any(|account| {
+                        !funds_account_type(account).is_contact_owned()
+                            && account.contains_address(&address)
+                    })
+            })
+    };
+    owned_prevouts.retain(|_, output| owns(&output.script_pubkey));
+    for account in wallet_info.accounts.all_funding_accounts() {
+        if !funds_account_type(account).is_contact_owned() {
+            for (outpoint, coin) in &account.utxos {
+                owned_prevouts.insert(*outpoint, coin.txout.clone());
+            }
+        }
+    }
+    for stored in &mut transactions {
+        stored
+            .owned_inputs
+            .retain(|detail| owns(&detail.address.script_pubkey()));
+        for (vout, output) in stored.transaction.output.iter().enumerate() {
+            if owns(&output.script_pubkey) {
+                owned_prevouts.insert(
+                    OutPoint::new(stored.transaction.txid(), vout as u32),
+                    output.clone(),
+                );
+            }
+        }
+    }
+    let candidates = transactions
+        .iter()
+        .filter(|stored| {
+            matches!(stored.context, TransactionContext::Mempool)
+                && !instant_locks.contains_key(&stored.txid)
+        })
+        .map(|stored| stored.transaction.txid())
+        .collect();
+    let authorization = plan_history_authorization(&transactions, &candidates, &owned_prevouts)?;
+    // A backend will rebuild released credits from its committed projection.
+    // Until then, never replay the rejected body or restore its fallback record.
+    for account in wallet_info.accounts.all_funding_accounts_mut() {
+        account
+            .utxos
+            .retain(|outpoint, _| !authorization.rejected.contains(&outpoint.txid));
+    }
+    for mut account in wallet_info.accounts.all_accounts_mut() {
+        account
+            .transactions_mut()
+            .retain(|_, record| !authorization.rejected.contains(&record.transaction.txid()));
+    }
+    transactions.retain(|stored| !authorization.rejected.contains(&stored.transaction.txid()));
     // Where the load projection parked each unspent outpoint; its keys are
     // the outputs persistence still considers unspent.
     let placed: HashMap<OutPoint, AccountType> = wallet_info
@@ -570,14 +644,16 @@ pub async fn replay_recorded_history_with_evidence(
     wallet_info.update_balance();
     let defeated = swept.clone();
     swept.extend(set_aside.iter().map(|stored| stored.txid));
-    HistoryReplay {
+    swept.extend(authorization.rejected.iter().copied());
+    Ok(HistoryReplay {
+        authorization,
         replayed: replay.len(),
         retired: swept,
         defeated,
         sweeps,
         deferred,
         read_only: false,
-    }
+    })
 }
 
 fn sanitize_unsafe_record(record: &mut TransactionRecord) {
@@ -1203,6 +1279,7 @@ mod tests {
         instant_locks: BTreeMap<Txid, InstantLock>,
     ) -> RecordedHistory {
         RecordedHistory {
+            owned_prevouts: Default::default(),
             transactions: records.into_iter().map(StoredTransaction::from).collect(),
             instant_locks,
         }
@@ -1336,6 +1413,7 @@ mod tests {
             history(records, BTreeMap::new()),
         )
         .await
+        .unwrap()
         .replayed;
         assert_eq!(count, 2);
         replayed
@@ -1388,6 +1466,7 @@ mod tests {
             100,
         ));
         let replay = |transactions| RecordedHistory {
+            owned_prevouts: Default::default(),
             transactions,
             instant_locks: BTreeMap::new(),
         };
@@ -1402,7 +1481,9 @@ mod tests {
         };
 
         let mut replayed = restored.clone();
-        replay_recorded_history(&mut replayed, &mut wallet, replay(spender.clone())).await;
+        replay_recorded_history(&mut replayed, &mut wallet, replay(spender.clone()))
+            .await
+            .unwrap();
         assert!(
             !replayed.accounts.standard_bip44_accounts[&0]
                 .utxos
@@ -1446,7 +1527,9 @@ mod tests {
             signature: Default::default(),
         });
 
-        replay_recorded_history(&mut info, &mut wallet, history(records, BTreeMap::new())).await;
+        replay_recorded_history(&mut info, &mut wallet, history(records, BTreeMap::new()))
+            .await
+            .unwrap();
 
         for account in info.accounts.all_accounts() {
             for (txid, context) in &contexts {
@@ -1487,7 +1570,8 @@ mod tests {
             &mut wallet,
             history(vec![spender], BTreeMap::from([(lock.txid, lock)])),
         )
-        .await;
+        .await
+        .unwrap();
         assert!(outcome.defeated.is_empty());
         assert!(
             outcome.resendable(sends).is_empty(),
@@ -1538,7 +1622,8 @@ mod tests {
             raw.clone(),
             &ReplayEvidence::default(),
         )
-        .await;
+        .await
+        .unwrap();
         assert!(pending.deferred.contains(&locked.txid));
         assert!(pending.sweeps.is_empty());
         assert!(pending
@@ -1560,7 +1645,8 @@ mod tests {
             raw.clone(),
             &evidence,
         )
-        .await;
+        .await
+        .unwrap();
         assert!(ready.deferred.is_empty());
         assert!(
             !ready.defeated.contains(&locked.txid),
@@ -1584,7 +1670,8 @@ mod tests {
                 changed,
                 &evidence,
             )
-            .await;
+            .await
+            .unwrap();
             assert!(deferred.deferred.contains(&locked.txid));
             assert!(deferred.sweeps.is_empty());
         }
@@ -1632,7 +1719,8 @@ mod tests {
                 instant_locks: BTreeMap::from([(locked.txid, proof)]),
             },
         )
-        .await;
+        .await
+        .unwrap();
         assert!(outcome.deferred.contains(&locked.txid));
         assert!(outcome.sweeps.is_empty());
         assert!(outcome.resendable(vec![locked.transaction]).is_empty());
@@ -1677,7 +1765,8 @@ mod tests {
                 instant_locks: BTreeMap::from([(locked.txid, proof)]),
             },
         )
-        .await;
+        .await
+        .unwrap();
         assert!(outcome.deferred.is_empty());
         assert!(info.instant_send_locks().contains(&locked.txid));
         let before = info.accounts.standard_bip44_accounts[&0].transactions()[&locked.txid].clone();
@@ -1777,10 +1866,13 @@ mod tests {
                 ..spender.clone()
             };
             let history = RecordedHistory {
+                owned_prevouts: Default::default(),
                 transactions: vec![without_ownership],
                 instant_locks: BTreeMap::new(),
             };
-            replay_recorded_history(&mut info, &mut wallet, history).await;
+            replay_recorded_history(&mut info, &mut wallet, history)
+                .await
+                .unwrap();
             info.apply_chain_lock(chain_lock(300));
             info.update_synced_height(300);
             assert!(info.observed_spent_outpoints().is_empty(), "{case}");
@@ -1824,13 +1916,16 @@ mod tests {
         );
         let mut info = restored;
         let history = RecordedHistory {
+            owned_prevouts: Default::default(),
             transactions: vec![StoredTransaction {
                 owned_inputs: Vec::new(),
                 ..spender
             }],
             instant_locks: BTreeMap::new(),
         };
-        replay_recorded_history(&mut info, &mut wallet, history).await;
+        replay_recorded_history(&mut info, &mut wallet, history)
+            .await
+            .unwrap();
 
         info.truncate_above(100).unwrap();
         let block = BlockInfo::new(100, BlockHash::from_byte_array([100; 32]), 100);
@@ -1887,6 +1982,7 @@ mod tests {
                 Utxo::new(spent, funding.output[0].clone(), address, 100, false),
             );
         let history = RecordedHistory {
+            owned_prevouts: Default::default(),
             transactions: vec![StoredTransaction {
                 context: TransactionContext::Mempool,
                 owned_inputs: Vec::new(),
@@ -1894,7 +1990,9 @@ mod tests {
             }],
             instant_locks: BTreeMap::new(),
         };
-        replay_recorded_history(&mut info, &mut wallet, history).await;
+        replay_recorded_history(&mut info, &mut wallet, history)
+            .await
+            .unwrap();
         info.apply_chain_lock(ChainLock {
             block_height: 300,
             block_hash: BlockHash::from_byte_array([30; 32]),
@@ -1946,6 +2044,7 @@ mod tests {
                 history(records.clone(), BTreeMap::new()),
             )
             .await
+            .unwrap()
             .replayed;
             restored
                 .check_core_transaction(
@@ -1985,7 +2084,8 @@ mod tests {
             &mut wallet,
             history(vec![held], BTreeMap::new()),
         )
-        .await;
+        .await
+        .unwrap();
         assert_eq!(
             restored.accounts.standard_bip44_accounts[&0].transactions()[&txid].label,
             "proof lookup"
@@ -2036,7 +2136,8 @@ mod tests {
                 &mut wallet,
                 history(vec![loser.clone(), child.clone(), winner], BTreeMap::new()),
             )
-            .await;
+            .await
+            .unwrap();
             assert!(
                 !info.accounts.standard_bip44_accounts[&0]
                     .transactions()
@@ -2079,7 +2180,8 @@ mod tests {
             &mut wallet,
             history(vec![winner], BTreeMap::new()),
         )
-        .await;
+        .await
+        .unwrap();
 
         assert!(!restored.accounts.standard_bip44_accounts[&0]
             .transactions()
@@ -2131,7 +2233,8 @@ mod tests {
                 &mut wallet,
                 history(vec![loser.clone(), child.clone(), winner], BTreeMap::new()),
             )
-            .await;
+            .await
+            .unwrap();
             let transactions = info.accounts.standard_bip44_accounts[&0].transactions();
             assert!(
                 !transactions.contains_key(&loser.txid),
@@ -2268,7 +2371,9 @@ mod tests {
             };
             let locks = [(winner.txid(), lock)].into_iter().collect();
 
-            replay_recorded_history(&mut restored, &mut wallet, history(records, locks)).await;
+            replay_recorded_history(&mut restored, &mut wallet, history(records, locks))
+                .await
+                .unwrap();
 
             let account = &restored.accounts.standard_bip44_accounts[&0];
             for (name, txid) in [("loser", loser.txid()), ("child", child.txid())] {
@@ -2399,7 +2504,8 @@ mod tests {
             &mut wallet,
             history(records, BTreeMap::new()),
         )
-        .await;
+        .await
+        .unwrap();
 
         for (index, account) in &restored.accounts.standard_bip44_accounts {
             for (name, txid) in [("root", root.txid()), ("child", child.txid())] {
@@ -2510,11 +2616,13 @@ mod tests {
                 &mut restored,
                 &mut wallet,
                 RecordedHistory {
+                    owned_prevouts: Default::default(),
                     transactions: stored,
                     instant_locks: BTreeMap::new(),
                 },
             )
             .await
+            .unwrap()
             .replayed;
             restored
                 .check_core_transaction(&funding, block(100), &mut wallet, true, true)
@@ -2637,11 +2745,13 @@ mod tests {
             &mut restored,
             &mut wallet,
             RecordedHistory {
+                owned_prevouts: Default::default(),
                 transactions: history,
                 instant_locks: BTreeMap::new(),
             },
         )
-        .await;
+        .await
+        .unwrap();
 
         let account = &restored.accounts.standard_bip44_accounts[&0];
         assert!(!account.transactions().contains_key(&loser));
@@ -2678,11 +2788,13 @@ mod tests {
             &mut restored,
             &mut wallet,
             RecordedHistory {
+                owned_prevouts: Default::default(),
                 transactions: history,
                 instant_locks: BTreeMap::new(),
             },
         )
-        .await;
+        .await
+        .unwrap();
 
         let account = &restored.accounts.standard_bip44_accounts[&0];
         assert!(account.transactions().contains_key(&loser));
@@ -2754,11 +2866,13 @@ mod tests {
             &mut restored,
             &mut wallet,
             RecordedHistory {
+                owned_prevouts: Default::default(),
                 transactions: vec![loser],
                 instant_locks: BTreeMap::new(),
             },
         )
-        .await;
+        .await
+        .unwrap();
         assert_eq!(outcome.replayed, 0);
         assert!(
             restored.accounts.standard_bip44_accounts[&0]
@@ -2938,6 +3052,7 @@ mod tests {
         };
         let block = BlockInfo::new(101, BlockHash::from_byte_array([101; 32]), 101);
         let history = RecordedHistory {
+            owned_prevouts: Default::default(),
             transactions: vec![
                 stored(&winner, TransactionContext::InBlock(block)),
                 stored(&loser, TransactionContext::Mempool),
@@ -2965,7 +3080,9 @@ mod tests {
             );
         }
 
-        let outcome = replay_recorded_history(&mut restored, &mut wallet, history).await;
+        let outcome = replay_recorded_history(&mut restored, &mut wallet, history)
+            .await
+            .unwrap();
 
         for (retired, why) in [
             (&loser, "the loser of a settled conflict"),
@@ -3255,6 +3372,7 @@ mod tests {
             };
             let block = BlockInfo::new(100, BlockHash::from_byte_array([82; 32]), 100);
             let history = RecordedHistory {
+                owned_prevouts: Default::default(),
                 transactions: vec![
                     stored(funding.clone(), TransactionContext::InBlock(block)),
                     stored(child.clone(), TransactionContext::Mempool),
@@ -3280,7 +3398,9 @@ mod tests {
                     ),
                 );
 
-            replay_recorded_history(&mut restored, &mut wallet, history).await;
+            replay_recorded_history(&mut restored, &mut wallet, history)
+                .await
+                .unwrap();
 
             let [fallback, owner] =
                 [0, 1].map(|index| &restored.accounts.standard_bip44_accounts[&index]);
@@ -3377,6 +3497,7 @@ mod tests {
             );
         }
         let history = RecordedHistory {
+            owned_prevouts: Default::default(),
             transactions: unsafe_spends
                 .iter()
                 .zip(stored_only)
@@ -3399,7 +3520,9 @@ mod tests {
                 .collect(),
             instant_locks: BTreeMap::new(),
         };
-        replay_recorded_history(&mut restored, &mut wallet, history).await;
+        replay_recorded_history(&mut restored, &mut wallet, history)
+            .await
+            .unwrap();
         assert_eq!(
             restored.balance.total(),
             0,
@@ -3579,6 +3702,7 @@ mod tests {
                 }
             }
             let history = RecordedHistory {
+                owned_prevouts: Default::default(),
                 transactions: parents
                     .iter()
                     .chain(&forged)
@@ -3593,7 +3717,9 @@ mod tests {
                     .collect(),
                 instant_locks: BTreeMap::new(),
             };
-            replay_recorded_history(&mut restored, &mut wallet, history).await;
+            replay_recorded_history(&mut restored, &mut wallet, history)
+                .await
+                .unwrap();
             assert!(!redelivery_credits(&restored, &mut wallet, &fundings[0], &genuine).await);
 
             let settled = deliver_confirmed_spend(&mut restored, &mut wallet, &[one, other]).await;
@@ -3685,6 +3811,7 @@ mod tests {
             .utxos
             .insert(coin, parked);
         let history = RecordedHistory {
+            owned_prevouts: Default::default(),
             transactions: vec![StoredTransaction {
                 txid: funding.txid(),
                 transaction: funding,
@@ -3696,7 +3823,9 @@ mod tests {
             instant_locks: BTreeMap::new(),
         };
 
-        replay_recorded_history(&mut restored, &mut wallet, history).await;
+        replay_recorded_history(&mut restored, &mut wallet, history)
+            .await
+            .unwrap();
 
         let [fallback, owner] =
             [0, 1].map(|index| &restored.accounts.standard_bip44_accounts[&index]);
@@ -3775,6 +3904,7 @@ mod tests {
                 .utxos
                 .insert(coin, stored_coin);
             let history = RecordedHistory {
+                owned_prevouts: Default::default(),
                 transactions: vec![StoredTransaction {
                     txid: funding.txid(),
                     transaction: funding,
@@ -3786,7 +3916,9 @@ mod tests {
                 instant_locks: BTreeMap::new(),
             };
 
-            replay_recorded_history(&mut restored, &mut wallet, history).await;
+            replay_recorded_history(&mut restored, &mut wallet, history)
+                .await
+                .unwrap();
 
             let kept = &restored.accounts.standard_bip44_accounts[&0].utxos[&coin];
             assert_eq!(kept.is_confirmed.then_some(kept.height), expected, "{case}");
@@ -3908,6 +4040,7 @@ mod tests {
         let mut info = restored.clone();
         let count = replay_recorded_history(&mut info, &mut wallet, RecordedHistory::default())
             .await
+            .unwrap()
             .replayed;
         assert_eq!(count, 0);
         assert_eq!(info.balance.total(), restored.balance.total());
@@ -4017,7 +4150,8 @@ mod tests {
                 &mut wallet,
                 history(records, BTreeMap::new()),
             )
-            .await;
+            .await
+            .unwrap();
 
             let coins = &restored.accounts.standard_bip44_accounts[&0].utxos;
             assert!(!coins.contains_key(&spent), "{case}");
@@ -4112,7 +4246,9 @@ mod tests {
         // Alone, the locked spend comes back InstantSend.
         let mut alone = ManagedWalletInfo::from_wallet(&wallet, 0);
         let pair = vec![record_of(funding.txid()), record_of(winner.txid())];
-        replay_recorded_history(&mut alone, &mut wallet, history(pair, locks.clone())).await;
+        replay_recorded_history(&mut alone, &mut wallet, history(pair, locks.clone()))
+            .await
+            .unwrap();
         assert!(
             alone.accounts.standard_bip44_accounts[&0]
                 .transactions()
@@ -4142,7 +4278,8 @@ mod tests {
             &mut wallet,
             history(records.clone(), locks.clone()),
         )
-        .await;
+        .await
+        .unwrap();
         assert!(
             !contested.accounts.standard_bip44_accounts[&0]
                 .transactions()
@@ -4299,7 +4436,9 @@ mod tests {
                     }
                 }
 
-                replay_recorded_history(&mut restored, &mut wallet, history(records, locks)).await;
+                replay_recorded_history(&mut restored, &mut wallet, history(records, locks))
+                    .await
+                    .unwrap();
 
                 let account = &restored.accounts.standard_bip44_accounts[&0];
                 let keep_competitor = matches!(settlement, "block" | "persisted_chainlock_below")
@@ -4414,7 +4553,8 @@ mod tests {
             let locks: BTreeMap<Txid, InstantLock> = [(key, lock)].into_iter().collect();
             let mut restored = ManagedWalletInfo::from_wallet(&wallet, 0);
             replay_recorded_history(&mut restored, &mut wallet, history(records, locks.clone()))
-                .await;
+                .await
+                .unwrap();
             let transactions = restored.accounts.standard_bip44_accounts[&0].transactions();
             assert!(
                 !transactions

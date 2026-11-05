@@ -432,6 +432,15 @@ impl<P: PlatformWalletPersistence + 'static> LoadDriver<P> {
                         evidence,
                     )
                     .await;
+                let outcome = match outcome {
+                    Ok(outcome) => outcome,
+                    Err(error) => {
+                        load_error = Some(PlatformWalletError::from_load_failure(
+                            crate::changeset::PersistenceError::backend(error),
+                        ));
+                        break 'load;
+                    }
+                };
                 tracing::info!(
                     wallet_id = %hex::encode(expected_wallet_id),
                     offered,
@@ -1954,6 +1963,7 @@ mod idempotent_load_tests {
         let wallet_id = ctx.wallet.compute_wallet_id();
         let fixture = InstantLockFixture::new(&funding).unwrap();
         let history = RecordedHistory {
+            owned_prevouts: Default::default(),
             transactions: vec![StoredTransaction {
                 txid: funding.txid(),
                 transaction: funding.clone(),
@@ -2070,6 +2080,7 @@ mod idempotent_load_tests {
             wallet: ctx.wallet,
             managed: projection,
             history: RecordedHistory {
+                owned_prevouts: Default::default(),
                 transactions: vec![stored(spend), stored(funding)],
                 instant_locks: BTreeMap::new(),
             },
@@ -2154,6 +2165,7 @@ mod idempotent_load_tests {
                 wallet: ctx.wallet,
                 managed: projection,
                 history: RecordedHistory {
+                    owned_prevouts: Default::default(),
                     transactions,
                     instant_locks: BTreeMap::new(),
                 },
@@ -2291,6 +2303,7 @@ mod idempotent_load_tests {
                 wallet: ctx.wallet,
                 managed: projection,
                 history: RecordedHistory {
+                    owned_prevouts: Default::default(),
                     // The funding's row never left the mempool context.
                     transactions: vec![StoredTransaction {
                         txid: asset_lock.txid(),
@@ -2640,6 +2653,7 @@ mod idempotent_load_tests {
                 wallet: ctx.wallet,
                 managed: projection,
                 history: RecordedHistory {
+                    owned_prevouts: Default::default(),
                     transactions: vec![
                         stored(&asset_lock, TransactionContext::Mempool),
                         stored(&competitor, competitor_context),
@@ -2801,6 +2815,7 @@ mod idempotent_load_tests {
             wallet: ctx.wallet,
             managed: projection,
             history: RecordedHistory {
+                owned_prevouts: Default::default(),
                 transactions: vec![
                     stored(&asset_lock, TransactionContext::Mempool),
                     stored(
@@ -2899,6 +2914,7 @@ mod idempotent_load_tests {
             managed: ManagedWalletInfo::from_wallet(&ctx.wallet, 0),
             wallet: ctx.wallet,
             history: RecordedHistory {
+                owned_prevouts: Default::default(),
                 transactions: vec![StoredTransaction {
                     txid: asset_lock.txid(),
                     transaction: asset_lock.clone(),
@@ -2994,6 +3010,7 @@ mod idempotent_load_tests {
             wallet: ctx.wallet,
             managed: projection,
             history: RecordedHistory {
+                owned_prevouts: Default::default(),
                 transactions: vec![stored(unsafe_spend), stored(funding)],
                 instant_locks: BTreeMap::new(),
             },

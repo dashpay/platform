@@ -3,7 +3,7 @@
 pub mod accessors;
 pub mod dashpay_sync;
 pub mod dpns_sync;
-pub mod history_authorization;
+mod history_authorization;
 pub mod history_replay;
 pub mod identity_sync;
 mod load;

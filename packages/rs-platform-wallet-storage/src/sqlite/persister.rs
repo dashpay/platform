@@ -1767,6 +1767,15 @@ impl SqlitePersister {
     }
 }
 
+fn replay_failure(error: HistoryReplayError) -> PersistenceError {
+    match error {
+        HistoryReplayError::SpendAuthorization(error) => {
+            WalletStorageError::SpendAuthorization(error).into()
+        }
+        error => PersistenceError::backend(error),
+    }
+}
+
 fn load_one_wallet(
     conn: &Connection,
     wallet_id: WalletId,
@@ -1791,12 +1800,13 @@ fn load_one_wallet(
         history.clone(),
         evidence,
     )
-    .map_err(PersistenceError::backend)?;
+    .map_err(replay_failure)?;
     let mut claims =
         history_replay::load_spent_claims(&tx, &wallet_id).map_err(PersistenceError::from)?;
-    if outcome.deferred.is_empty() && !outcome.sweeps.is_empty() {
-        history_replay::apply(&tx, &wallet_id, &mut outcome, &claims)
-            .map_err(PersistenceError::from)?;
+    if outcome.deferred.is_empty()
+        && (!outcome.sweeps.is_empty() || !outcome.authorization.rejected.is_empty())
+    {
+        history_replay::apply(&tx, &wallet_id, &mut outcome).map_err(PersistenceError::from)?;
         state = load_wallet_snapshot(&tx, wallet_id, ctx)?;
         let remaining = replay_recorded_history_blocking(
             &mut state.wallet_info,
@@ -1804,8 +1814,11 @@ fn load_one_wallet(
             std::mem::take(&mut state.recorded_history),
             evidence,
         )
-        .map_err(PersistenceError::backend)?;
-        if !remaining.sweeps.is_empty() || !remaining.deferred.is_empty() {
+        .map_err(replay_failure)?;
+        if !remaining.sweeps.is_empty()
+            || !remaining.deferred.is_empty()
+            || !remaining.authorization.rejected.is_empty()
+        {
             return Err(PersistenceError::backend(
                 HistoryReplayError::UnsettledAfterReplay,
             ));
@@ -2021,6 +2034,8 @@ fn load_wallet_snapshot(
         // field existed.
         unconfirmed_outgoing_txs: Vec::new(),
         recorded_history: platform_wallet::changeset::RecordedHistory {
+            owned_prevouts: history_replay::load_prevouts(conn, &wallet_id)
+                .map_err(PersistenceError::from)?,
             transactions: core_state.records.into_iter().map(Into::into).collect(),
             instant_locks: core_state.instant_locks_for_non_final_records,
         },

@@ -31,7 +31,7 @@ pub struct HistoryAuthorization {
 /// All identifiers are computed from transaction bodies, independently of stored
 /// row keys. Unsupported authorization returns an error so callers can preserve
 /// existing holds instead of treating unavailable verification as rejection.
-pub fn plan_history_authorization(
+pub(super) fn plan_history_authorization(
     records: &[StoredTransaction],
     candidates: &BTreeSet<Txid>,
     owned_prevouts: &BTreeMap<OutPoint, TxOut>,

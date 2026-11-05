@@ -4,7 +4,14 @@
 
 #![allow(dead_code)]
 
+use dash_spv::test_utils::{InstantLockFixture, MockNetworkManager};
+use dash_spv::{ClientConfig, DashSpvClient};
+use dashcore::{InstantLock, Network, Transaction};
+use platform_wallet::changeset::recorded_history::ReplayEvidence;
+use platform_wallet::key_wallet_manager::test_utils::MockWallet;
 use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use platform_wallet::changeset::PlatformWalletPersistence;
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -410,4 +417,32 @@ pub fn authorize_with_mode(
             .into_script();
     }
     tx
+}
+
+/// Produce evidence through the public verifier; no synthetic token constructor.
+pub async fn checked_instant_lock(transaction: &Transaction) -> (InstantLock, ReplayEvidence) {
+    let fixture = InstantLockFixture::new(transaction).unwrap();
+    let directory = secure_tempdir().unwrap();
+    let client = DashSpvClient::new(
+        ClientConfig::new(Network::Testnet)
+            .without_filters()
+            .with_storage_path(directory.path()),
+        MockNetworkManager::new(),
+        Arc::new(RwLock::new(MockWallet::new())),
+        Vec::new(),
+    )
+    .await
+    .unwrap();
+    fixture.install(&client).await.unwrap();
+    let proof = client
+        .verify_instant_lock(fixture.instant_lock())
+        .await
+        .unwrap()
+        .unwrap();
+    (
+        fixture.instant_lock().clone(),
+        ReplayEvidence {
+            instant_locks: [(proof.txid(), proof)].into(),
+        },
+    )
 }

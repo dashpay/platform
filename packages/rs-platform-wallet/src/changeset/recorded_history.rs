@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use super::ClientWalletStartState;
 use dash_spv::VerifiedInstantLock;
 use dashcore::ephemerealdata::instant_lock::InstantLock;
-use dashcore::{Transaction, Txid};
+use dashcore::{OutPoint, Transaction, TxOut, Txid};
 use dpp::prelude::AssetLockProof;
 use key_wallet::managed_account::transaction_record::{
     InputDetail, TransactionDirection, TransactionRecord,
@@ -40,6 +40,8 @@ pub struct ReplayEvidence {
 /// already attached to the restored wallet, which it puts back afterwards.
 #[derive(Debug, Clone, Default)]
 pub struct RecordedHistory {
+    /// Stored coin material, including spent rows; ownership is checked by the wallet.
+    pub owned_prevouts: BTreeMap<OutPoint, TxOut>,
     /// Stored transactions, in any order; the replay orders them.
     pub transactions: Vec<StoredTransaction>,
     /// Persisted InstantSend locks keyed by the txid they lock. A lock that
