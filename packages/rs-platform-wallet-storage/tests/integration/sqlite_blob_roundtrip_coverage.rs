@@ -53,6 +53,8 @@ fn entry(op: OutPoint, status: AssetLockStatus, proof: Option<AssetLockProof>) -
         funding_type: AssetLockFundingType::IdentityRegistration,
         identity_index: 0,
         operation_id: None,
+        operation_revision: 0,
+        expected_operation_revision: None,
         amount_duffs: 1000,
         status,
         proof,

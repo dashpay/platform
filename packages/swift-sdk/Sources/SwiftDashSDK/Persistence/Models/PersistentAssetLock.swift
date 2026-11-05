@@ -5,10 +5,9 @@ import SwiftData
 /// output (DIP-0027). Mirrors
 /// [`AssetLockEntry`](platform_wallet::changeset::AssetLockEntry) on
 /// the Rust side, one row per `(walletId, outpoint)`. Upserted by the
-/// `on_persist_asset_locks_fn` callback whenever the asset-lock
-/// manager flushes a status transition (Built → Broadcast →
-/// InstantSendLocked → ChainLocked) and deleted when the lock is
-/// consumed by a successful identity-registration / top-up flow.
+/// asset-lock persistence callbacks whenever the manager flushes a
+/// status transition. Consumed rows and dispatched drain operation
+/// bindings remain durable recovery and historical evidence.
 ///
 /// Two consumers:
 /// 1. `RegistrationProgressView` reads `statusRaw` to drive the
@@ -115,7 +114,7 @@ public final class PersistentAssetLock {
 
     /// Discriminant of [`AssetLockStatus`]:
     /// 0 = Built, 1 = Broadcast, 2 = InstantSendLocked, 3 = ChainLocked,
-    /// 4 = Consumed, 5 = RecoveredFromChain, 6 = DrainCompleted (proven owned output).
+    /// 4 = Consumed, 5 = RecoveredFromChain, 6 = DrainCompleted (proven owned output), 7 = Conflicted (not final).
     /// Stored as `Int` so
     /// `#Predicate` can match raw values directly (the progress bar
     /// compares against 0/1/2/3 and the resumable-locks filter against
@@ -205,6 +204,9 @@ public final class PersistentAssetLock {
     /// Retained on consumed locks so restart recovery can distinguish a
     /// completed transfer from an operation that never reached broadcast.
     public var operationId: Data?
+
+    /// Ordered conflict/recovery generation. Migrated nil means legacy generation zero.
+    public var operationRevision: Int64?
 
     /// Record timestamps.
     public var createdAt: Date

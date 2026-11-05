@@ -66,6 +66,8 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
         case recoveredFromChain = 5
         /// The wallet drain was proven and its owned output recorded durably.
         case drainCompleted = 6
+        /// Funding conflicted; retain the operation binding without offering a new drain.
+        case conflicted = 7
     }
 
     /// A tracked asset lock.
@@ -118,9 +120,12 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
 
         guard let locks = locksPtr, count > 0 else { return [] }
 
-        return (0..<Int(count)).map { i in
+        return try (0..<Int(count)).map { i in
             let lock = locks[i]
             let txidData = withUnsafeBytes(of: lock.txid) { Data($0) }
+            guard let status = AssetLockStatus(rawValue: lock.status) else {
+                throw PlatformWalletError.deserialization("Unknown asset-lock status: \(lock.status)")
+            }
             return TrackedAssetLock(
                 txid: txidData,
                 vout: lock.vout,
@@ -128,7 +133,7 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
                 fundingType: FundingType(rawValue: lock.funding_type) ?? .identityRegistration,
                 identityIndex: lock.identity_index,
                 amount: lock.amount,
-                status: AssetLockStatus(rawValue: lock.status) ?? .built,
+                status: status,
                 hasProof: lock.has_proof
             )
         }

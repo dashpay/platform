@@ -84,20 +84,19 @@ fn sqlite_advertises_shielded_viewing_key_capability() {
 }
 
 #[test]
-fn should_not_attest_wallet_drain_without_durable_operation_evidence() {
+fn should_attest_wallet_drain_with_durable_operation_evidence() {
     let (persister, _tmp, _path) = fresh_persister();
     let capabilities = persister.persistence_capabilities();
-    assert!(!capabilities.contains(PersistenceCapabilities::WALLET_DRAIN));
+    assert!(capabilities.contains(PersistenceCapabilities::WALLET_DRAIN));
     assert!(capabilities
         .missing(PersistenceCapabilities::WALLET_DRAIN)
         .names()
-        .contains(&"asset_lock_operation_ids"));
-    // Core restoration and status reconciliation remain available without
-    // claiming that absent operation evidence proves a drain was never sent.
+        .is_empty());
+    // The restored snapshot includes revision-ordered conflict evidence.
     assert!(capabilities.contains(PersistenceCapabilities::TRACKED_ASSET_LOCKS));
     assert!(capabilities.contains(PersistenceCapabilities::WALLET_RESTORE));
     assert!(capabilities.contains(PersistenceCapabilities::ASSET_LOCK_RECONCILIATION));
-    assert!(!capabilities.contains(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS));
+    assert!(capabilities.contains(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS));
 }
 
 #[test]

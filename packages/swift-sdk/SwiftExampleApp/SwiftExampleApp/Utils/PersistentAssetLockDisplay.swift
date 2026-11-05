@@ -84,6 +84,7 @@ extension PersistentAssetLock {
         // Rendered as "Unknown(5)" before this case existed.
         case 5: return "RecoveredFromChain"
         case 6: return "DrainCompleted"
+        case 7: return "Funding conflicted"
         default: return "Unknown(\(statusRaw))"
         }
     }

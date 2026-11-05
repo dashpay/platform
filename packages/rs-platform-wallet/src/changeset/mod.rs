@@ -35,15 +35,16 @@ mod wallet_accounting;
 pub(crate) use changeset::account_address_pool_entries;
 pub use changeset::{
     upsert_pending_contact_crypto, AccountAddressPoolEntry, AccountRegistrationEntry,
-    AssetLockChangeSet, AssetLockEntry, ContactChangeSet, ContactRequestEntry, CoreChangeSet,
-    DpnsNameSaleStatus, DpnsNameStateChangeSet, DpnsNameStateEntry, HighestUsedIndexes,
-    IdentityChangeSet, IdentityEntry, IdentityKeyDerivationIndices, IdentityKeyEntry,
-    IdentityKeysChangeSet, InvitationChangeSet, InvitationEntry, InvitationStatus,
-    KeyDerivationBreadcrumb, KeyWithBreadcrumb, PendingContactCrypto, PendingContactCryptoKey,
-    PendingContactCryptoKind, PendingContactCryptoOp, PlatformAddressBalanceEntry,
-    PlatformAddressChangeSet, PlatformWalletChangeSet, ProviderKeyAccountEntry,
-    ProviderKeyExtendedPubKey, ProviderPlatformNodePubKey, ReceivedContactRequestKey,
-    SentContactRequestKey, TokenBalanceChangeSet, WalletMetadataEntry,
+    AssetLockChangeSet, AssetLockEntry, AssetLockPersistenceAction, AssetLockPersistenceError,
+    ContactChangeSet, ContactRequestEntry, CoreChangeSet, DpnsNameSaleStatus,
+    DpnsNameStateChangeSet, DpnsNameStateEntry, HighestUsedIndexes, IdentityChangeSet,
+    IdentityEntry, IdentityKeyDerivationIndices, IdentityKeyEntry, IdentityKeysChangeSet,
+    InvitationChangeSet, InvitationEntry, InvitationStatus, KeyDerivationBreadcrumb,
+    KeyWithBreadcrumb, PendingContactCrypto, PendingContactCryptoKey, PendingContactCryptoKind,
+    PendingContactCryptoOp, PlatformAddressBalanceEntry, PlatformAddressChangeSet,
+    PlatformWalletChangeSet, ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
+    ProviderPlatformNodePubKey, ReceivedContactRequestKey, SentContactRequestKey,
+    TokenBalanceChangeSet, WalletMetadataEntry,
 };
 pub use client_start_state::ClientStartState;
 pub use client_wallet_start_state::ClientWalletStartState;
