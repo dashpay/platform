@@ -331,34 +331,55 @@ async fn should_keep_real_ambiguity_despite_a_later_state_dependent_consensus_re
 }
 
 #[tokio::test(start_paused = true)]
-async fn should_treat_exact_dapi_processing_rejection_as_local_to_its_attempt() {
+async fn should_check_original_transition_after_dapi_cache_processing_fallback() {
+    let transition = signed_address_transfer();
     for rejection in [
         DAPI_PROCESSING_REJECTION.to_owned(),
         format!("Internal error: {DAPI_PROCESSING_REJECTION}"),
     ] {
         let (refused, sent, executions) = retrying_broadcast(
-            &signed_transition(),
+            &transition,
             vec![Attempt::Error(Status::internal(&rejection))],
             1,
         )
         .await;
         assert_eq!(sent.len(), 1);
         assert_eq!(executions, 1);
-        let result: Result<(), Error> = wait_after_broadcast(refused, async {
-            panic!("both attempts returned the exact local processing refusal")
+        assert!(refused
+            .as_ref()
+            .unwrap_err()
+            .is_state_transition_result_unconfirmed());
+        assert_eq!(
+            wait_after_broadcast(refused, async { Ok(42) })
+                .await
+                .unwrap(),
+            42
+        );
+
+        let (unconfirmed, _, _) = retrying_broadcast(
+            &transition,
+            vec![Attempt::Error(Status::internal(&rejection))],
+            1,
+        )
+        .await;
+        let result: Result<(), Error> = wait_after_broadcast(unconfirmed, async {
+            Err(Error::TimeoutReached(
+                Duration::from_secs(1),
+                "wait timed out".into(),
+            ))
         })
         .await;
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains(DAPI_PROCESSING_REJECTION));
+        assert!(
+            matches!(result, Err(Error::StateTransitionResultUnconfirmed(cause))
+            if matches!(*cause, Error::TimeoutReached(..)))
+        );
 
         for ambiguous in [
             Status::unavailable("acknowledgement lost"),
             Status::internal("Failed checking state transition: connection reset"),
         ] {
             let (outcome, sent, executions) = retrying_broadcast(
-                &signed_transition(),
+                &transition,
                 vec![
                     Attempt::Error(ambiguous),
                     Attempt::Error(Status::internal(&rejection)),

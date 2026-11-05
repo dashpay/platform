@@ -36,7 +36,9 @@ pub(super) fn classify_error(error: &TransportError) -> RequestErrorClassificati
         .strip_prefix("Internal error: ")
         .unwrap_or(status.message());
     if status.code() == Code::Internal && message == PROCESSING_REJECTION {
-        return definite(false);
+        // A cache hit can precede mempool insertion; successful standalone CheckTx
+        // does not rule out the original submission. Stop sending, but check its result.
+        return uncertain(false);
     }
     if status.code() == Code::AlreadyExists {
         return uncertain(!matches!(
