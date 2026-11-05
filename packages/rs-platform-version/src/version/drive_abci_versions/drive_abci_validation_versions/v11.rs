@@ -16,9 +16,10 @@ use super::{
 ///   than 1: the check that the identity id is the one the asset lock's outpoint derives moves
 ///   from advanced structure to basic structure, as it reads only the transition. A wrong
 ///   identity id is still refused without a fee, but before the asset lock proof is verified,
-///   so a transition with a wrong identity id and a spent or invalid asset lock is refused for
-///   its identity id. Advanced structure 2 still charges the double SHA-256 of deriving the
-///   identity id, so every identity create costs what it did.
+///   so a transition with a wrong identity id and an asset lock that is spent or whose proof
+///   does not verify is refused for its identity id. An asset lock proof whose structure is
+///   invalid is still refused first, for its structure. Advanced structure 2 still charges the
+///   double SHA-256 of deriving the identity id, so every identity create costs what it did.
 /// - `create_domain_data_trigger` 2, which keeps only the parent domain checks of a DPNS domain
 ///   create: the DPNS contract v3 (`SYSTEM_DATA_CONTRACT_VERSIONS_V4`) checks the normalized
 ///   names, the preorder and the identity record with schema keywords.
