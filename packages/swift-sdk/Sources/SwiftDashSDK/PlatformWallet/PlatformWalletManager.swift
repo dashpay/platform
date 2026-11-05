@@ -109,6 +109,13 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     public static let dashpayPayments: UInt64 = 1 << 12
     /// Durable operation UUIDs, including consumed asset-lock tombstones.
     public static let assetLockOperationIds: UInt64 = 1 << 13
+    /// A round's chain truncations — delivered through the persistence
+    /// extension's size-negotiated truncations callback — are durably
+    /// applied before the rest of their round. Bit 14 is reserved for
+    /// `CORE_HISTORY_RESTORE`. Mirrors
+    /// `PersistenceCapabilities::CORE_CHAIN_TRUNCATION`; Rust only honours
+    /// the declaration when the extension actually carries the callback.
+    public static let coreChainTruncation: UInt64 = 1 << 15
 
     public let version: UInt32
     public let bits: UInt64

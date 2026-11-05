@@ -25,6 +25,7 @@ mod sqlite_backup_restore;
 mod sqlite_blob_roundtrip_coverage;
 mod sqlite_blob_size_gate_on_load;
 mod sqlite_buffer_semantics;
+mod sqlite_chain_truncation;
 mod sqlite_check_constraints;
 mod sqlite_clean_restart;
 mod sqlite_cli_smoke;

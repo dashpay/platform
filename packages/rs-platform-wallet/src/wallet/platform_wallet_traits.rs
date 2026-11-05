@@ -192,13 +192,20 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.update_synced_height(current_height);
     }
 
-    /// Forwarded, then noted like any other in-memory rewind (see
-    /// `note_in_memory_rewind`) when it lowered the scan cursor: the persister
-    /// does not mirror `ChainTruncated`, so the host still holds the replaced
-    /// branch's cursor. A refused truncation changes nothing and notes nothing.
+    /// Fence restored coins and note a lowered cursor's rewind epoch before
+    /// the truncation and its checkpoint reach the persister.
+    /// A refused truncation changes nothing and notes nothing.
     fn truncate_above(&mut self, height: CoreBlockHeight) -> Result<Truncation, key_wallet::Error> {
         let before = self.core_wallet.metadata.synced_height;
         let truncation = self.core_wallet.truncate_above(height)?;
+        // Fenced here, not on the `ChainTruncated` event: the caller holds
+        // the wallet-manager write lock, so no build can select a restored
+        // coin before its fence stands, and a fork recovery truncates
+        // between two runs of the SPV client, when no handler is listening.
+        // Lock order: wallet manager, then the fence mutex — a leaf, which
+        // nothing holds while it takes another lock.
+        self.generation
+            .fence_restored(truncation.restored_outpoints.iter().copied());
         self.note_in_memory_rewind(before);
         Ok(truncation)
     }
@@ -404,13 +411,10 @@ impl ManagedAccountOperations for PlatformWalletInfo {
 impl PlatformWalletInfo {
     /// key-wallet lowers the scan cursor on its own: an account add rewinds
     /// it to just below wallet birth (the new account has no filter
-    /// coverage), a chain truncation to the fork height. Neither lowering
-    /// reaches the persister (an account add emits nothing, and
-    /// `ChainTruncated` projects to an empty changeset), so treat it like any
-    /// other in-memory rewind: advances emitted before it must not be stored
-    /// after it, and the next DashPay backfill record round owes the host the
-    /// lowered cursor — otherwise a round could store coverage beside a host
-    /// cursor that never came down.
+    /// coverage), a chain truncation to the fork height. Advances emitted
+    /// before either rewind must not be stored afterwards. The DashPay
+    /// backfill record also owes the host the lowered cursor, so coverage
+    /// cannot be stored beside a cursor that never came down.
     fn note_in_memory_rewind(&mut self, before: u32) {
         let after = self.core_wallet.metadata.synced_height;
         if after < before {
