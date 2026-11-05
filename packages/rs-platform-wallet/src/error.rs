@@ -631,11 +631,9 @@ pub enum PlatformWalletError {
     /// Dash Core relay policy and Platform consensus alike). Nothing new was
     /// sent: a build refuses the lock before tracking it and releases its
     /// reservation, and a resume of a tracked `Built` / `Broadcast` row over
-    /// the cap untracks it instead of re-sending it, releasing nothing (an
-    /// earlier attempt may still have reached peers). The row is left as it is when it is
-    /// already on chain, one of its inputs is spent on chain, or another
-    /// resume holds its dispatch window. Consolidating the coins lets a new
-    /// lock fit.
+    /// the cap is refused instead of re-sent, leaving the row tracked and
+    /// releasing nothing (an earlier attempt may still have reached peers).
+    /// Consolidating the coins lets a new lock fit.
     #[error("Asset lock requires {count} inputs, exceeding the limit of {max}")]
     AssetLockTooManyInputs { count: usize, max: usize },
 
