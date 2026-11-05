@@ -1,6 +1,6 @@
 #![cfg(feature = "sqlite")]
 
-//! A wallet whose mined Core history was wiped (what V020 does to an older store)
+//! A wallet whose mined Core history was wiped (what V021 does to an older store)
 //! rebuilds it by rescanning from its birth height. These tests drive that
 //! rescan through the real manager, event adapter, store and load replay.
 
@@ -83,7 +83,7 @@ impl Chain {
     }
 }
 
-/// A registered wallet with no Core history, as V020 leaves it, and its first
+/// A registered wallet with no Core history, as V021 leaves it, and its first
 /// receive address.
 fn wiped_wallet(persister: &SqlitePersister) -> (WalletId, Address) {
     let (wallet, _, address) = wallet_with_receive_address();
@@ -186,7 +186,7 @@ async fn should_rebuild_accounting_when_a_wiped_wallet_rescans_from_birth() {
     }
 }
 
-/// R3: a wallet upgraded from V018. V020 drops its mined Core history but keeps
+/// R3: a wallet upgraded from V018. V021 drops its mined Core history but keeps
 /// `last_processed_height` and the ChainLock, both above that history, so the
 /// rescan replays every historical block below a ChainLock the loaded wallet
 /// already holds: key-wallet's ChainLocked path, not the ordinary block one.
@@ -240,13 +240,13 @@ async fn should_rebuild_accounting_when_an_upgraded_wallet_rescans_below_its_cha
     }
     assert_eq!(sync_state(), (Some(500), Some(500), Some(400)));
 
-    // `rescan` opens through `SqlitePersister::open`, so V020 runs first.
+    // `rescan` opens through `SqlitePersister::open`, so V020 and V021 run first.
     let state = rescan(&path, wallet_id, &chain.blocks()).await;
 
     assert_eq!(
         sync_state(),
         (Some(500), Some(0), Some(400)),
-        "V020 rewinds only the filter checkpoint"
+        "V021 rewinds only the filter checkpoint"
     );
     for tx in [&chain.funding, &chain.spend, &chain.lock] {
         assert!(
@@ -469,7 +469,7 @@ fn manager_of(
 }
 
 /// R4: a V019 store holding unmined spends of a confirmed funding. A block
-/// rescan redelivers the funding but never the spends, so V020 keeps their
+/// rescan redelivers the funding but never the spends, so V021 keeps their
 /// evidence for the load to authenticate: an InstantSend-locked spend and a
 /// signed pending send keep their inputs reserved, a forged claim is
 /// released. Nothing is redelivered from the mempool or InstantSend.
@@ -501,11 +501,7 @@ async fn should_keep_unmined_spends_reserved_when_an_upgraded_wallet_rescans() {
         spend_of(&[coin(1)], vec![pay(49_000, &foreign_address(6))]),
     );
     let forged = spend_of(&[coin(2)], vec![pay(29_000, &foreign_address(5))]);
-    let lock = dashcore::InstantLock {
-        txid: locked.txid(),
-        inputs: vec![coin(0)],
-        ..Default::default()
-    };
+    let (lock, evidence) = common::checked_instant_lock(&locked).await;
     let (manager, mut events) = manager_of(wallet, info);
     let persister = Arc::new(persister);
     mine(&manager, wallet_id, funding.clone(), 100).await;
@@ -524,8 +520,9 @@ async fn should_keep_unmined_spends_reserved_when_an_upgraded_wallet_rescans() {
 
     let persister = Arc::new(SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap());
     let loaded = persister
-        .load()
+        .load_with_replay(&evidence)
         .unwrap()
+        .state
         .wallets
         .remove(&wallet_id)
         .unwrap();
@@ -541,7 +538,7 @@ async fn should_keep_unmined_spends_reserved_when_an_upgraded_wallet_rescans() {
             .unwrap()
             .core_wallet,
     );
-    let reloaded = persister.load().unwrap();
+    let reloaded = persister.load_with_replay(&evidence).unwrap().state;
 
     let mut expected = vec![coin(2), OutPoint::new(locked.txid(), 1)];
     expected.sort();
@@ -581,8 +578,9 @@ async fn should_keep_unmined_spends_reserved_when_an_upgraded_wallet_rescans() {
     drop((manager, events, persister));
     let mined = SqlitePersister::open(SqlitePersisterConfig::new(&path))
         .unwrap()
-        .load()
-        .unwrap();
+        .load_with_replay(&evidence)
+        .unwrap()
+        .state;
     assert_eq!(row(&locked), Some((Some(101), true)));
     assert_eq!(row(&signed), Some((Some(102), true)));
     for (tx, value, net) in [(&locked, 100_000, -61_000), (&signed, 50_000, -50_000)] {

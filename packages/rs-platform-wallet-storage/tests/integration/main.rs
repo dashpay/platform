@@ -92,4 +92,5 @@ mod sqlite_clean_restart;
 
 mod sqlite_core_rescan;
 
+mod sqlite_replay_migration;
 mod sqlite_shared_history_replay;

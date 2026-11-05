@@ -548,6 +548,11 @@ pub(crate) fn add_tracked_instant_locks<'a>(
     locks: impl IntoIterator<Item = &'a TrackedAssetLock>,
 ) {
     for lock in locks {
+        // Terminal proofs are archival; durable claims remain restored separately.
+        if lock.status.is_consumed() {
+            continue;
+        }
+
         let Some(AssetLockProof::Instant(proof)) = &lock.proof else {
             continue;
         };
@@ -4151,6 +4156,47 @@ mod tests {
                 (supplied.txid(), kept),
             ])
         );
+    }
+
+    #[test]
+    fn should_not_require_archival_instant_proof_from_consumed_operations() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+        use dpp::prelude::AssetLockProof;
+        use std::collections::HashSet;
+
+        let funding = transaction_spending(OutPoint::new(Txid::from_byte_array([71; 32]), 0));
+        for status in [AssetLockStatus::Consumed, AssetLockStatus::DrainCompleted] {
+            let lock = TrackedAssetLock {
+                operation_id: Some([72; 16]),
+                out_point: OutPoint::new(funding.txid(), 0),
+                transaction: funding.clone(),
+                account_index: 0,
+                funding_type: AssetLockFundingType::IdentityRegistration,
+                identity_index: 0,
+                amount: 1,
+                status,
+                proof: Some(AssetLockProof::Instant(InstantAssetLockProof::new(
+                    InstantLock {
+                        txid: funding.txid(),
+                        ..Default::default()
+                    },
+                    funding.clone(),
+                    0,
+                ))),
+            };
+            let mut history = RecordedHistory::default();
+            super::add_tracked_instant_locks(
+                &mut history,
+                &HashSet::from([funding.txid()]),
+                [&lock],
+            );
+            assert!(history.instant_locks.is_empty());
+            assert_eq!(
+                super::final_lock_input_claims([&lock]),
+                vec![(funding.input[0].previous_output, Some(funding.txid()))]
+            );
+        }
     }
 
     /// Only the unconfirmed record of a funding that a tracked lock holds as

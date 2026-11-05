@@ -117,7 +117,12 @@ mod tests {
             let mut conn = wallet_db(&wallet);
             conn.execute("INSERT INTO core_transactions (wallet_id, txid, height, finalized, record_blob) VALUES (?1, ?2, 200, 1, ?3)", params![wallet.as_slice(), record.txid.as_byte_array().as_slice(), bytes]).unwrap();
             rewind_v020(&conn);
-            migrations::run_for_open(&mut conn, LoadPolicy::Strict).unwrap();
+            migrations::run_with_runner(
+                &mut conn,
+                migrations::migrations::runner().set_target(refinery::Target::Version(20)),
+                LoadPolicy::Strict,
+            )
+            .unwrap();
             let remaining: (i64, i64) = conn.query_row("SELECT (SELECT count(*) FROM core_transactions), (SELECT count(*) FROM core_transaction_inputs)", [], |row| Ok((row.get(0)?, row.get(1)?))).unwrap();
             assert_eq!(remaining.0, 1, "{name}: mined history must remain");
             assert_eq!(remaining.1, record.transaction.input.len() as i64);
@@ -210,7 +215,12 @@ mod tests {
             let mut conn = wallet_db(&wallet);
             conn.execute("INSERT INTO core_transactions (wallet_id, txid, height, finalized, record_blob) VALUES (?1, ?2, NULL, 0, ?3)", params![wallet.as_slice(), txid, bytes]).unwrap();
             rewind_v020(&conn);
-            migrations::run_for_open(&mut conn, LoadPolicy::Strict).unwrap();
+            migrations::run_with_runner(
+                &mut conn,
+                migrations::migrations::runner().set_target(refinery::Target::Version(20)),
+                LoadPolicy::Strict,
+            )
+            .unwrap();
             let indexed: (Vec<u8>, Vec<u8>) = conn
                 .query_row(
                     "SELECT txid, outpoint FROM core_transaction_inputs",
@@ -247,8 +257,12 @@ mod tests {
                     .expect("Recovery skips oversized bodies");
             }
             rewind_v020(&conn);
-            migrations::run_for_open(&mut conn, LoadPolicy::Recovery)
-                .expect("Recovery completes V020");
+            migrations::run_with_runner(
+                &mut conn,
+                migrations::migrations::runner().set_target(refinery::Target::Version(20)),
+                LoadPolicy::Recovery,
+            )
+            .expect("Recovery completes V020");
             let count: i64 = conn
                 .query_row("SELECT count(*) FROM core_transaction_inputs", [], |r| {
                     r.get(0)

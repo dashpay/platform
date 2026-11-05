@@ -320,6 +320,91 @@ pub async fn replay_recorded_history_with_evidence(
 ) -> Result<HistoryReplay, HistoryReplayError> {
     let mut deferred = BTreeSet::new();
     let mut history = history;
+    // A checkpoint proves its exact block, never every lower height.
+    for stored in &mut history.transactions {
+        if let TransactionContext::InBlock(block) = stored.context {
+            if wallet_info
+                .metadata
+                .last_applied_chain_lock
+                .as_ref()
+                .is_some_and(|lock| {
+                    block.height() == lock.block_height && block.block_hash() == lock.block_hash
+                })
+            {
+                stored.context = TransactionContext::InChainLockedBlock(block);
+            }
+        }
+    }
+    // Preserve the planner's protection of observed IS descendants, including sidecars.
+    // This is a local candidate context; verification below still gates every effect.
+    for stored in &mut history.transactions {
+        if matches!(stored.context, TransactionContext::Mempool) {
+            if let Some(lock) = history
+                .instant_locks
+                .get(&stored.txid)
+                .filter(|lock| lock_matches_record(lock, stored))
+            {
+                stored.context = TransactionContext::InstantSend(lock.clone());
+            }
+        }
+    }
+    // Preview only authoritative ChainLock winners with the same conflict planner.
+    // Their own old IS metadata, and that of definite losers, cannot change the verdict.
+    // No preview effect is applied before all remaining required proof is rebound.
+    let operands: Vec<ReplayOperands<'_>> = history
+        .transactions
+        .iter()
+        .map(|stored| {
+            (
+                stored.txid,
+                &stored.transaction,
+                stored.owned_inputs.as_slice(),
+            )
+        })
+        .collect();
+    let unsafe_txids = unsafe_replay_amounts(wallet_info, &operands)
+        .into_keys()
+        .collect();
+    let marker_preview = (!history.required_instant_locks.is_empty()).then(|| {
+        let mut records = history.transactions.clone();
+        for stored in &mut records {
+            if history.required_instant_locks.contains(&stored.txid)
+                && matches!(stored.context, TransactionContext::Mempool)
+            {
+                // The scratch sweep reads only this observation's variant, not a signature.
+                // Never return this placeholder to the replay or an evidence provider.
+                stored.context = TransactionContext::InstantSend(InstantLock {
+                    txid: stored.txid,
+                    inputs: stored
+                        .transaction
+                        .input
+                        .iter()
+                        .map(|input| input.previous_output)
+                        .collect(),
+                    ..Default::default()
+                });
+            }
+        }
+        records
+    });
+    let chain_final_losers = plan_replay_sweeps_where(
+        wallet_info,
+        marker_preview.as_deref().unwrap_or(&history.transactions),
+        &unsafe_txids,
+        |stored| matches!(stored.context, TransactionContext::InChainLockedBlock(_)),
+    )
+    .removed;
+    for stored in &mut history.transactions {
+        if matches!(stored.context, TransactionContext::InChainLockedBlock(_))
+            || chain_final_losers.contains(&stored.txid)
+        {
+            history.required_instant_locks.remove(&stored.txid);
+            history.instant_locks.remove(&stored.txid);
+            if matches!(stored.context, TransactionContext::InstantSend(_)) {
+                stored.context = TransactionContext::Mempool;
+            }
+        }
+    }
     deferred.extend(history.required_instant_locks.iter().copied());
     for stored in &history.transactions {
         if history.required_instant_locks.contains(&stored.txid) {
@@ -416,6 +501,7 @@ pub async fn replay_recorded_history_with_evidence(
         .filter(|stored| {
             matches!(stored.context, TransactionContext::Mempool)
                 && !instant_locks.contains_key(&stored.txid)
+                && !chain_final_losers.contains(&stored.txid)
         })
         .map(|stored| stored.transaction.txid())
         .collect();
@@ -474,20 +560,8 @@ pub async fn replay_recorded_history_with_evidence(
     // IS-locked or confirmed spend releases it. Sibling of
     // TODO(release-repair-spends-after-reorg) in the SQLite `core_history`.
     let mut replay = replay_order(transactions);
-    // A checkpoint proves its exact block, not ancestry of every lower height.
     for stored in &mut replay {
         stored.context = match &stored.context {
-            TransactionContext::InBlock(block)
-                if wallet_info
-                    .metadata
-                    .last_applied_chain_lock
-                    .as_ref()
-                    .is_some_and(|lock| {
-                        block.height() == lock.block_height && block.block_hash() == lock.block_hash
-                    }) =>
-            {
-                TransactionContext::InChainLockedBlock(*block)
-            }
             TransactionContext::Mempool => instant_locks
                 .get(&stored.txid)
                 .filter(|lock| lock_matches_record(lock, stored))
@@ -951,6 +1025,15 @@ fn plan_replay_sweeps(
     records: &[StoredTransaction],
     unsafe_txids: &HashSet<Txid>,
 ) -> SweepPlan {
+    plan_replay_sweeps_where(wallet_info, records, unsafe_txids, |_| true)
+}
+
+fn plan_replay_sweeps_where(
+    wallet_info: &ManagedWalletInfo,
+    records: &[StoredTransaction],
+    unsafe_txids: &HashSet<Txid>,
+    eligible_winner: impl Fn(&StoredTransaction) -> bool,
+) -> SweepPlan {
     // The scratch wallet lends the sweep its rules and nothing to scan: its
     // unconfirmed records move to the pool, the rest and its coins are dropped.
     let mut scratch = wallet_info.clone();
@@ -987,6 +1070,7 @@ fn plan_replay_sweeps(
     let mut winners: Vec<&StoredTransaction> = records
         .iter()
         .filter(|stored| !matches!(stored.context, TransactionContext::Mempool))
+        .filter(|stored| eligible_winner(stored))
         // A record with unsafe amounts can lose a conflict, never win one.
         .filter(|stored| !unsafe_txids.contains(&stored.txid))
         .collect();
@@ -1857,6 +1941,121 @@ mod tests {
                 matches!(deferred, HistoryReplayError::MissingFinalityEvidence { txids } if txids.contains(&locked.txid))
             );
         }
+    }
+
+    #[tokio::test]
+    async fn should_not_require_an_archived_instant_lock_for_a_chain_final_transaction() {
+        for exact_checkpoint in [false, true] {
+            let (mut wallet, mut info, _, mut records, _) = confirmed_spend_fixture().await;
+            let transaction = records[1].transaction.clone();
+            let TransactionContext::InBlock(block) = records[1].context else {
+                unreachable!()
+            };
+            if exact_checkpoint {
+                info.metadata.last_applied_chain_lock = Some(dashcore::ChainLock {
+                    block_height: block.height(),
+                    block_hash: block.block_hash(),
+                    signature: Default::default(),
+                });
+            } else {
+                records[1].context = TransactionContext::InChainLockedBlock(block);
+            }
+            let raw = InstantLock {
+                txid: transaction.txid(),
+                inputs: transaction
+                    .input
+                    .iter()
+                    .map(|input| input.previous_output)
+                    .collect(),
+                ..Default::default()
+            };
+            let mut stored = history(records, [(transaction.txid(), raw)].into());
+            stored.required_instant_locks.insert(transaction.txid());
+            replay_recorded_history(&mut info, &mut wallet, stored)
+                .await
+                .unwrap();
+            assert!(
+                !info.instant_send_locks().contains(&transaction.txid()),
+                "unused raw metadata must not mint authenticated IS state"
+            );
+        }
+    }
+
+    async fn assert_chain_final_rival_evidence(chain_final: bool, child_observation: u8) {
+        let (mut wallet, mut info, _, records, _) = confirmed_spend_fixture().await;
+        let mut loser = records[1].clone();
+        let raw = InstantLock {
+            txid: loser.txid,
+            inputs: loser
+                .transaction
+                .input
+                .iter()
+                .map(|input| input.previous_output)
+                .collect(),
+            ..Default::default()
+        };
+        loser.context = TransactionContext::InstantSend(raw.clone());
+        let mut winner = records[1].clone();
+        winner.transaction.output[0].value -= 1;
+        winner.txid = winner.transaction.txid();
+        if chain_final {
+            let TransactionContext::InBlock(block) = winner.context else {
+                unreachable!()
+            };
+            winner.context = TransactionContext::InChainLockedBlock(block);
+        }
+        let mut child = loser.clone();
+        child.transaction.input[0].previous_output = OutPoint::new(loser.txid, 0);
+        child.txid = child.transaction.txid();
+        let child_lock = InstantLock {
+            txid: child.txid,
+            inputs: vec![child.transaction.input[0].previous_output],
+            ..Default::default()
+        };
+        child.context = TransactionContext::Mempool;
+        let mut stored = history(
+            vec![
+                records[0].clone(),
+                loser.clone(),
+                winner.clone(),
+                child.clone(),
+            ],
+            [(loser.txid, raw), (child.txid, child_lock)].into(),
+        );
+        if child_observation != 1 {
+            stored.instant_locks.remove(&child.txid);
+        }
+        if child_observation == 2 {
+            stored.required_instant_locks.insert(child.txid);
+        }
+        let result = replay_recorded_history(&mut info, &mut wallet, stored).await;
+        if chain_final && child_observation == 0 {
+            let outcome = result.unwrap();
+            assert!(outcome.defeated.contains(&loser.txid));
+            assert!(outcome.defeated.contains(&child.txid));
+            assert!(!outcome.defeated.contains(&winner.txid));
+        } else {
+            assert!(matches!(
+                result,
+                Err(HistoryReplayError::MissingFinalityEvidence { .. })
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn should_remove_mempool_descendants_only_after_a_chain_final_rival_settles() {
+        assert_chain_final_rival_evidence(false, 0).await;
+        assert_chain_final_rival_evidence(true, 0).await;
+    }
+
+    #[tokio::test]
+    async fn should_require_a_descendants_own_raw_instant_lock_after_parent_is_defeated() {
+        assert_chain_final_rival_evidence(true, 1).await;
+    }
+
+    #[tokio::test]
+    async fn should_require_a_descendants_own_instant_send_marker_without_payload() {
+        assert_chain_final_rival_evidence(true, 2).await;
     }
 
     #[tokio::test]
