@@ -1670,6 +1670,37 @@ mod idempotent_load_tests {
         assert!(manager.shutdown().await.all_clean());
     }
 
+    fn authorize(
+        wallet: &key_wallet::Wallet,
+        info: &key_wallet::wallet::ManagedWalletInfo,
+        address: &dashcore::Address,
+        mut tx: dashcore::Transaction,
+    ) -> dashcore::Transaction {
+        use dashcore::hashes::Hash;
+        use dashcore::script::{Builder, PushBytesBuf};
+        use dashcore::sighash::SighashCache;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        let path = info
+            .accounts
+            .all_funding_accounts()
+            .into_iter()
+            .find_map(|account| account.address_derivation_path(address))
+            .unwrap();
+        let key = wallet.derive_private_key(&path).unwrap();
+        for index in 0..tx.input.len() {
+            let hash = SighashCache::new(&tx)
+                .legacy_signature_hash(index, &address.script_pubkey(), 1)
+                .unwrap();
+            let mut sig = key.sign(&hash.to_byte_array()).with_der(|der| der.to_vec());
+            sig.push(1);
+            tx.input[index].script_sig = Builder::new()
+                .push_slice(PushBytesBuf::try_from(sig).unwrap())
+                .push_slice(key.public_key().to_compressed())
+                .into_script();
+        }
+        tx
+    }
+
     /// `load_from_persistor` replays the stored history the persister hands
     /// back, whatever the persister: a stored spend of the only coin must
     /// leave nothing spendable even though the persisted UTXO set still
@@ -1684,7 +1715,15 @@ mod idempotent_load_tests {
             txid: funding.txid(),
             vout: 0,
         };
-        let spend = spend_to(funded_outpoint, 74_000);
+        let address = &ctx.managed_wallet.accounts.standard_bip44_accounts[&0].utxos
+            [&funded_outpoint]
+            .address;
+        let spend = authorize(
+            &ctx.wallet,
+            &ctx.managed_wallet,
+            address,
+            spend_to(funded_outpoint, 74_000),
+        );
 
         // The persisted projection: the coin as an unspent row, no history.
         let mut projection = ManagedWalletInfo::from_wallet(&ctx.wallet, 0);
@@ -2620,6 +2659,13 @@ mod idempotent_load_tests {
             ctx.managed_wallet.accounts.standard_bip44_accounts[&0].utxos[&funded_outpoint].clone();
         let mut unsafe_spend = spend_to(funded_outpoint, 1 << 63);
         unsafe_spend.output[0].script_pubkey = coin.txout.script_pubkey.clone();
+
+        let unsafe_spend = authorize(
+            &ctx.wallet,
+            &ctx.managed_wallet,
+            &coin.address,
+            unsafe_spend,
+        );
 
         let mut projection = ManagedWalletInfo::from_wallet(&ctx.wallet, 0);
         projection

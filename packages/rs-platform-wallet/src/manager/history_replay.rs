@@ -1240,6 +1240,72 @@ mod tests {
         Wallet::from_mnemonic(mnemonic, Network::Testnet, accounts).unwrap()
     }
 
+    fn authorize(
+        wallet: &key_wallet::Wallet,
+        info: &key_wallet::wallet::ManagedWalletInfo,
+        address: &dashcore::Address,
+        mut tx: dashcore::Transaction,
+    ) -> dashcore::Transaction {
+        use dashcore::hashes::Hash;
+        use dashcore::script::{Builder, PushBytesBuf};
+        use dashcore::sighash::SighashCache;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        let path = info
+            .accounts
+            .all_funding_accounts()
+            .into_iter()
+            .find_map(|account| account.address_derivation_path(address))
+            .unwrap();
+        let key = wallet.derive_private_key(&path).unwrap();
+        for index in 0..tx.input.len() {
+            let hash = SighashCache::new(&tx)
+                .legacy_signature_hash(index, &address.script_pubkey(), 1)
+                .unwrap();
+            let mut sig = key.sign(&hash.to_byte_array()).with_der(|der| der.to_vec());
+            sig.push(1);
+            tx.input[index].script_sig = Builder::new()
+                .push_slice(PushBytesBuf::try_from(sig).unwrap())
+                .push_slice(key.public_key().to_compressed())
+                .into_script();
+        }
+        tx
+    }
+
+    async fn checked_instant_lock(
+        transaction: &dashcore::Transaction,
+    ) -> (InstantLock, ReplayEvidence) {
+        use dash_spv::test_utils::{InstantLockFixture, MockNetworkManager};
+        use dash_spv::{ClientConfig, DashSpvClient};
+        use key_wallet_manager::test_utils::MockWallet;
+        use std::sync::Arc;
+        use tokio::sync::RwLock;
+
+        let fixture = InstantLockFixture::new(transaction).unwrap();
+        let directory = tempfile::TempDir::new().unwrap();
+        let client = DashSpvClient::new(
+            ClientConfig::new(Network::Testnet)
+                .without_filters()
+                .with_storage_path(directory.path()),
+            MockNetworkManager::new(),
+            Arc::new(RwLock::new(MockWallet::new())),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+        fixture.install(&client).await.unwrap();
+        let proof = client
+            .verify_instant_lock(fixture.instant_lock())
+            .await
+            .unwrap()
+            .unwrap();
+        (
+            fixture.instant_lock().clone(),
+            ReplayEvidence {
+                instant_locks: [(proof.txid(), proof)].into(),
+            },
+        )
+    }
+
     /// Stored history built from checker-produced records.
     fn history(
         records: Vec<TransactionRecord>,
@@ -1313,6 +1379,7 @@ mod tests {
             }],
             special_transaction_payload: None,
         };
+        let spending = authorize(&wallet, &info, &address, spending);
         let block = |height| {
             TransactionContext::InBlock(BlockInfo::new(
                 height,
@@ -1781,11 +1848,8 @@ mod tests {
                 height,
             ))
         };
-        let locked = TransactionContext::InstantSend(InstantLock {
-            txid: spender.txid,
-            inputs: vec![spent],
-            ..Default::default()
-        });
+        let (lock, evidence) = checked_instant_lock(&spender.transaction).await;
+        let locked = TransactionContext::InstantSend(lock);
         // A payment the stored history knows nothing about.
         let unrelated = Transaction {
             version: 1,
@@ -1803,7 +1867,7 @@ mod tests {
 
         let chain_lock = |block_height| ChainLock {
             block_height,
-            block_hash: BlockHash::from_byte_array([30; 32]),
+            block_hash: BlockHash::from_byte_array([block_height as u8; 32]),
             signature: BLSSignature::from([0; 96]),
         };
         let in_block = spender.context.clone();
@@ -1832,7 +1896,7 @@ mod tests {
                 transactions: vec![without_ownership],
                 instant_locks: BTreeMap::new(),
             };
-            replay_recorded_history(&mut info, &mut wallet, history)
+            replay_recorded_history_with_evidence(&mut info, &mut wallet, history, &evidence)
                 .await
                 .unwrap();
             info.apply_chain_lock(chain_lock(300));
@@ -2064,22 +2128,17 @@ mod tests {
             let mut child = loser.clone();
             child.transaction.input[0].previous_output = OutPoint::new(loser.txid, 0);
             child.txid = child.transaction.txid();
+            child.input_details.clear();
             let mut winner = loser.clone();
             winner.transaction.output[0].value -= 1;
             winner.txid = winner.transaction.txid();
-            winner.context = if instant {
-                TransactionContext::InstantSend(InstantLock {
-                    txid: winner.txid,
-                    inputs: winner
-                        .transaction
-                        .input
-                        .iter()
-                        .map(|input| input.previous_output)
-                        .collect(),
-                    ..Default::default()
-                })
+            let evidence = if instant {
+                let (lock, evidence) = checked_instant_lock(&winner.transaction).await;
+                winner.context = TransactionContext::InstantSend(lock);
+                evidence
             } else {
-                records[1].context.clone()
+                winner.context = records[1].context.clone();
+                ReplayEvidence::default()
             };
             info.accounts
                 .standard_bip44_accounts
@@ -2093,10 +2152,11 @@ mod tests {
                 .unwrap()
                 .transactions_mut()
                 .insert(child.txid, child.clone());
-            replay_recorded_history(
+            replay_recorded_history_with_evidence(
                 &mut info,
                 &mut wallet,
                 history(vec![loser.clone(), child.clone(), winner], BTreeMap::new()),
+                &evidence,
             )
             .await
             .unwrap();
@@ -2168,32 +2228,25 @@ mod tests {
             let mut winner = loser.clone();
             winner.transaction.output[0].value -= delta;
             winner.txid = winner.transaction.txid();
-            winner.context = TransactionContext::InstantSend(InstantLock {
-                txid: winner.txid,
-                inputs: winner
-                    .transaction
-                    .input
-                    .iter()
-                    .map(|input| input.previous_output)
-                    .collect(),
-                ..Default::default()
-            });
             winner
         };
         for winner_first in [true, false] {
-            let winner = (1..)
+            let mut winner = (1..)
                 .map(winner_with)
                 .find(|winner| (winner.txid < loser.txid) == winner_first)
                 .unwrap();
+            let (lock, evidence) = checked_instant_lock(&winner.transaction).await;
+            winner.context = TransactionContext::InstantSend(lock);
             let mut info = restored.clone();
             let account = info.accounts.standard_bip44_accounts.get_mut(&0).unwrap();
             for raw in [&loser, &child] {
                 account.transactions_mut().insert(raw.txid, raw.clone());
             }
-            replay_recorded_history(
+            replay_recorded_history_with_evidence(
                 &mut info,
                 &mut wallet,
                 history(vec![loser.clone(), child.clone(), winner], BTreeMap::new()),
+                &evidence,
             )
             .await
             .unwrap();
@@ -2221,25 +2274,34 @@ mod tests {
         use key_wallet::transaction_checking::BlockInfo;
 
         let (mut wallet, mut info, address) = wallet_with_receive_address();
-        let pay = |previous_output: OutPoint, outputs: &[(u64, bool)]| Transaction {
-            version: 1,
-            lock_time: 0,
-            input: vec![TxIn {
-                previous_output,
-                ..Default::default()
-            }],
-            output: outputs
-                .iter()
-                .map(|(value, ours)| TxOut {
-                    value: *value,
-                    script_pubkey: if *ours {
-                        address.script_pubkey()
-                    } else {
-                        dashcore::ScriptBuf::new()
-                    },
-                })
-                .collect(),
-            special_transaction_payload: None,
+        let signing_wallet = wallet.clone();
+        let signing_info = info.clone();
+        let pay = |previous_output: OutPoint, outputs: &[(u64, bool)]| {
+            authorize(
+                &signing_wallet,
+                &signing_info,
+                &address,
+                Transaction {
+                    version: 1,
+                    lock_time: 0,
+                    input: vec![TxIn {
+                        previous_output,
+                        ..Default::default()
+                    }],
+                    output: outputs
+                        .iter()
+                        .map(|(value, ours)| TxOut {
+                            value: *value,
+                            script_pubkey: if *ours {
+                                address.script_pubkey()
+                            } else {
+                                dashcore::ScriptBuf::new()
+                            },
+                        })
+                        .collect(),
+                    special_transaction_payload: None,
+                },
+            )
         };
         let funding = pay(
             OutPoint::new(Txid::from_byte_array([51; 32]), 0),
@@ -2326,16 +2388,17 @@ mod tests {
                     Utxo::new(outpoint, txout.clone(), address.clone(), 0, false),
                 );
             }
-            let lock = InstantLock {
-                inputs: vec![coin],
-                txid: winner.txid(),
-                ..Default::default()
-            };
+            let (lock, evidence) = checked_instant_lock(&winner).await;
             let locks = [(winner.txid(), lock)].into_iter().collect();
 
-            replay_recorded_history(&mut restored, &mut wallet, history(records, locks))
-                .await
-                .unwrap();
+            replay_recorded_history_with_evidence(
+                &mut restored,
+                &mut wallet,
+                history(records, locks),
+                &evidence,
+            )
+            .await
+            .unwrap();
 
             let account = &restored.accounts.standard_bip44_accounts[&0];
             for (name, txid) in [("loser", loser.txid()), ("child", child.txid())] {
@@ -2539,7 +2602,7 @@ mod tests {
             } else {
                 coin
             };
-            let unsafe_spend = pay(spent, &outputs);
+            let unsafe_spend = authorize(&wallet, &info, &address, pay(spent, &outputs));
             let mut stored: Vec<StoredTransaction> =
                 funded.into_iter().map(StoredTransaction::from).collect();
             stored.push(StoredTransaction {
@@ -2671,7 +2734,12 @@ mod tests {
             .map(StoredTransaction::from)
             .collect();
         history.push(stored(
-            spend(&coins, 1 << 63, address.script_pubkey()),
+            authorize(
+                &wallet,
+                &info,
+                &address,
+                spend(&coins, 1 << 63, address.script_pubkey()),
+            ),
             TransactionContext::Mempool,
         ));
         let winner = stored(
@@ -2817,6 +2885,7 @@ mod tests {
         account.utxos.clear();
         let mut loser = records.pop().unwrap();
         loser.transaction.output[0].value = 25_000;
+        loser.transaction = authorize(&wallet, &restored, &address, loser.transaction);
         loser.txid = loser.transaction.txid();
         loser.owned_inputs = vec![InputDetail {
             index: 1,
@@ -2979,23 +3048,31 @@ mod tests {
         use dashcore::{BlockHash, Transaction, TxIn};
         use key_wallet::transaction_checking::BlockInfo;
 
-        let (mut wallet, _, address) = wallet_with_receive_address();
+        let (mut wallet, signing_info, address) = wallet_with_receive_address();
         let coin = |byte: u8| OutPoint::new(Txid::from_byte_array([byte; 32]), 0);
-        let spend = |spends: &[OutPoint], value: u64| Transaction {
-            version: 1,
-            lock_time: 0,
-            input: spends
-                .iter()
-                .map(|previous_output| TxIn {
-                    previous_output: *previous_output,
-                    ..Default::default()
-                })
-                .collect(),
-            output: vec![TxOut {
-                value,
-                script_pubkey: address.script_pubkey(),
-            }],
-            special_transaction_payload: None,
+        let signing_wallet = wallet.clone();
+        let spend = |spends: &[OutPoint], value: u64| {
+            authorize(
+                &signing_wallet,
+                &signing_info,
+                &address,
+                Transaction {
+                    version: 1,
+                    lock_time: 0,
+                    input: spends
+                        .iter()
+                        .map(|previous_output| TxIn {
+                            previous_output: *previous_output,
+                            ..Default::default()
+                        })
+                        .collect(),
+                    output: vec![TxOut {
+                        value,
+                        script_pubkey: address.script_pubkey(),
+                    }],
+                    special_transaction_payload: None,
+                },
+            )
         };
         // The winner took coin 1 in a block; the loser wanted coins 1 and 2.
         let winner = spend(&[coin(1)], 9_000);
@@ -3323,7 +3400,7 @@ mod tests {
             };
             let funding = pay(OutPoint::new(Txid::from_byte_array([81; 32]), 0), value);
             let coin = OutPoint::new(funding.txid(), 0);
-            let child = pay(coin, 1);
+            let child = authorize(&wallet, &restored, &addresses[1], pay(coin, 1));
             let stored = |transaction: Transaction, context| StoredTransaction {
                 txid: transaction.txid(),
                 transaction,
@@ -3441,6 +3518,10 @@ mod tests {
                 by_stored_amounts[1],
             ),
         ];
+        let (_, signing_info, _) = wallet_with_receive_address();
+        for (spend, _, _) in &mut spends {
+            *spend = authorize(&wallet, &signing_info, &address, spend.clone());
+        }
         spends.sort_by_key(|(spend, _, _)| spend.txid());
         let own = [spends[0].1, spends[1].1];
         let stored_only = [spends[0].2, spends[1].2];
@@ -3590,9 +3671,8 @@ mod tests {
         );
     }
 
-    /// Amounts a peer can make the wallet record: unconfirmed parents paying
-    /// it `1 << 62` twice, and two spends of both parent outputs and of one
-    /// genuine coin. The parents' bodies prove the spends take in more than
+    /// Stored unconfirmed parents pay the wallet `1 << 62` twice; two signed
+    /// spends consume both parent outputs and one genuine coin. The parents' bodies prove the spends take in more than
     /// can exist, so neither spend can ever confirm, and once a settled
     /// transaction has swept both, the genuine coin must be released.
     #[tokio::test]
@@ -3601,7 +3681,7 @@ mod tests {
         use dashcore::{Transaction, TxIn};
 
         for one_parent in [false, true] {
-            let (mut wallet, _, address) = wallet_with_receive_address();
+            let (mut wallet, signing_info, address) = wallet_with_receive_address();
             let pay = |spends: &[OutPoint], values: &[u64]| Transaction {
                 version: 1,
                 lock_time: 0,
@@ -3645,8 +3725,14 @@ mod tests {
             ];
             let [genuine, one, other] =
                 [0, 1, 2].map(|index| OutPoint::new(fundings[index].txid(), 0));
-            let forged = [(one, 5_000), (other, 6_000)]
-                .map(|(own, value)| pay(&[fakes[0], fakes[1], genuine, own], &[value]));
+            let forged = [(one, 5_000), (other, 6_000)].map(|(own, value)| {
+                authorize(
+                    &wallet,
+                    &signing_info,
+                    &address,
+                    pay(&[fakes[0], fakes[1], genuine, own], &[value]),
+                )
+            });
 
             let mut restored = ManagedWalletInfo::from_wallet(&wallet, 0);
             let account = restored
@@ -4151,18 +4237,27 @@ mod tests {
             }],
             special_transaction_payload: None,
         };
-        let spend = |value| Transaction {
-            version: 1,
-            lock_time: 0,
-            input: vec![TxIn {
-                previous_output: OutPoint::new(funding.txid(), 0),
-                ..Default::default()
-            }],
-            output: vec![TxOut {
-                value,
-                script_pubkey: dashcore::ScriptBuf::new(),
-            }],
-            special_transaction_payload: None,
+        let signing_wallet = wallet.clone();
+        let signing_info = info.clone();
+        let spend = |value| {
+            authorize(
+                &signing_wallet,
+                &signing_info,
+                &address,
+                Transaction {
+                    version: 1,
+                    lock_time: 0,
+                    input: vec![TxIn {
+                        previous_output: OutPoint::new(funding.txid(), 0),
+                        ..Default::default()
+                    }],
+                    output: vec![TxOut {
+                        value,
+                        script_pubkey: dashcore::ScriptBuf::new(),
+                    }],
+                    special_transaction_payload: None,
+                },
+            )
         };
         let block = TransactionContext::InBlock(BlockInfo::new(
             100,
@@ -4196,11 +4291,7 @@ mod tests {
         if winner.txid() < loser.txid() {
             std::mem::swap(&mut winner, &mut loser);
         }
-        let lock = InstantLock {
-            inputs: vec![OutPoint::new(funding.txid(), 0)],
-            txid: winner.txid(),
-            ..Default::default()
-        };
+        let (lock, evidence) = checked_instant_lock(&winner).await;
         let locks: BTreeMap<Txid, InstantLock> = [(winner.txid(), lock)].into_iter().collect();
 
         let record_of = |txid: Txid| records.iter().find(|r| r.txid == txid).unwrap().clone();
@@ -4208,9 +4299,14 @@ mod tests {
         // Alone, the locked spend comes back InstantSend.
         let mut alone = ManagedWalletInfo::from_wallet(&wallet, 0);
         let pair = vec![record_of(funding.txid()), record_of(winner.txid())];
-        replay_recorded_history(&mut alone, &mut wallet, history(pair, locks.clone()))
-            .await
-            .unwrap();
+        replay_recorded_history_with_evidence(
+            &mut alone,
+            &mut wallet,
+            history(pair, locks.clone()),
+            &evidence,
+        )
+        .await
+        .unwrap();
         assert!(
             alone.accounts.standard_bip44_accounts[&0]
                 .transactions()
@@ -4235,10 +4331,11 @@ mod tests {
             .unwrap()
             .transactions_mut()
             .insert(winner.txid(), record_of(winner.txid()));
-        replay_recorded_history(
+        replay_recorded_history_with_evidence(
             &mut contested,
             &mut wallet,
             history(records.clone(), locks.clone()),
+            &evidence,
         )
         .await
         .unwrap();
@@ -4290,24 +4387,33 @@ mod tests {
                     }],
                     special_transaction_payload: None,
                 };
-                let spend = |change| Transaction {
-                    version: 1,
-                    lock_time: 0,
-                    input: vec![TxIn {
-                        previous_output: OutPoint::new(funding.txid(), 0),
-                        ..Default::default()
-                    }],
-                    output: vec![
-                        TxOut {
-                            value: 99_000 - change,
-                            script_pubkey: dashcore::ScriptBuf::new(),
+                let signing_wallet = wallet.clone();
+                let signing_info = info.clone();
+                let spend = |change| {
+                    authorize(
+                        &signing_wallet,
+                        &signing_info,
+                        &address,
+                        Transaction {
+                            version: 1,
+                            lock_time: 0,
+                            input: vec![TxIn {
+                                previous_output: OutPoint::new(funding.txid(), 0),
+                                ..Default::default()
+                            }],
+                            output: vec![
+                                TxOut {
+                                    value: 99_000 - change,
+                                    script_pubkey: dashcore::ScriptBuf::new(),
+                                },
+                                TxOut {
+                                    value: change,
+                                    script_pubkey: address.script_pubkey(),
+                                },
+                            ],
+                            special_transaction_payload: None,
                         },
-                        TxOut {
-                            value: change,
-                            script_pubkey: address.script_pubkey(),
-                        },
-                    ],
-                    special_transaction_payload: None,
+                    )
                 };
                 let block = TransactionContext::InBlock(BlockInfo::new(
                     100,
@@ -4351,14 +4457,12 @@ mod tests {
                         );
                 }
                 assert_eq!(records.len(), 3, "{case}");
-                let lock_of = |txid| InstantLock {
-                    inputs: vec![OutPoint::new(funding.txid(), 0)],
-                    txid,
-                    ..Default::default()
-                };
+                let mut evidence = ReplayEvidence::default();
                 let mut locks = BTreeMap::new();
                 if settlement == "instant_send" {
-                    locks.insert(winner.txid(), lock_of(winner.txid()));
+                    let (lock, checked) = checked_instant_lock(&winner).await;
+                    locks.insert(winner.txid(), lock);
+                    evidence.instant_locks.extend(checked.instant_locks);
                 } else {
                     let block = BlockInfo::new(101, BlockHash::from_byte_array([10; 32]), 101);
                     let record = records
@@ -4383,7 +4487,9 @@ mod tests {
                     });
                 }
                 if locked_competitor {
-                    locks.insert(loser.txid(), lock_of(loser.txid()));
+                    let (lock, checked) = checked_instant_lock(&loser).await;
+                    locks.insert(loser.txid(), lock);
+                    evidence.instant_locks.extend(checked.instant_locks);
                 }
                 if raw_restored {
                     let account = restored
@@ -4398,9 +4504,14 @@ mod tests {
                     }
                 }
 
-                replay_recorded_history(&mut restored, &mut wallet, history(records, locks))
-                    .await
-                    .unwrap();
+                replay_recorded_history_with_evidence(
+                    &mut restored,
+                    &mut wallet,
+                    history(records, locks),
+                    &evidence,
+                )
+                .await
+                .unwrap();
 
                 let account = &restored.accounts.standard_bip44_accounts[&0];
                 let keep_competitor = matches!(settlement, "block" | "persisted_chainlock_below")
@@ -4430,9 +4541,7 @@ mod tests {
         }
     }
 
-    /// A persisted lock is trusted only when it names the record it is keyed
-    /// under and that record's transaction really has that txid; otherwise the
-    /// record replays in its stored mempool context and no sweep runs.
+    /// Mismatched persisted finality evidence fails without upgrading or replaying records.
     #[tokio::test]
     async fn should_not_upgrade_record_to_instant_send_with_mismatched_lock() {
         use dashcore::hashes::Hash;
@@ -4488,12 +4597,10 @@ mod tests {
             .new_records,
         );
         assert_eq!(records.len(), 2);
-        let foreign = Txid::from_byte_array([24; 32]);
-        let lock_for = |txid| InstantLock {
-            inputs: vec![OutPoint::new(funding.txid(), 0)],
-            txid,
-            ..Default::default()
-        };
+        let mut foreign_transaction = spend.clone();
+        foreign_transaction.output[0].value -= 1;
+        let foreign = foreign_transaction.txid();
+        let (foreign_lock, evidence) = checked_instant_lock(&foreign_transaction).await;
         let mut forged_record = records.clone();
         forged_record
             .iter_mut()
@@ -4506,17 +4613,26 @@ mod tests {
                 "lock txid",
                 records.clone(),
                 spend.txid(),
-                lock_for(foreign),
+                foreign_lock.clone(),
             ),
             // Record and lock agree, but the record's transaction is another one.
-            ("record txid", forged_record, foreign, lock_for(foreign)),
+            ("record txid", forged_record, foreign, foreign_lock.clone()),
         ];
         for (case, records, key, lock) in cases {
             let locks: BTreeMap<Txid, InstantLock> = [(key, lock)].into_iter().collect();
             let mut restored = ManagedWalletInfo::from_wallet(&wallet, 0);
-            replay_recorded_history(&mut restored, &mut wallet, history(records, locks.clone()))
-                .await
-                .unwrap();
+            let before = restored.clone();
+            let result = replay_recorded_history_with_evidence(
+                &mut restored,
+                &mut wallet,
+                history(records, locks),
+                &evidence,
+            );
+            // TODO: integrate the owner fail-closed result for missing finality evidence.
+            assert!(
+                result.await.is_err(),
+                "{case}: mismatched finality evidence must fail"
+            );
             let transactions = restored.accounts.standard_bip44_accounts[&0].transactions();
             assert!(
                 !transactions
@@ -4525,8 +4641,14 @@ mod tests {
                 "{case}: a mismatched lock must not upgrade any record"
             );
             assert!(
-                transactions.contains_key(&spend.txid()),
-                "{case}: the spend must still replay in its stored context"
+                transactions.is_empty(),
+                "{case}: failed replay must not attach transaction records"
+            );
+            assert_eq!(restored.balance, before.balance, "{case}");
+            assert_eq!(
+                restored.accounts.standard_bip44_accounts[&0].utxos,
+                before.accounts.standard_bip44_accounts[&0].utxos,
+                "{case}"
             );
         }
     }
