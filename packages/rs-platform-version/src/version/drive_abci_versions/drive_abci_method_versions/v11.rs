@@ -2,7 +2,8 @@ use super::v10::DRIVE_ABCI_METHOD_VERSIONS_V10;
 use super::{
     DkgMiningSchedule, DriveAbciBlockEndMethodVersions, DriveAbciCoreBasedUpdatesMethodVersions,
     DriveAbciCoreChainLockMethodVersionsAndConstants, DriveAbciEngineMethodVersions,
-    DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciMethodVersions,
+    DriveAbciIdentityCreditWithdrawalMethodVersions,
+    DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
     DriveAbciVotingMethodVersions,
 };
 
@@ -97,7 +98,8 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 /// move the chain locked Core height record, the first time they see it, that Core's V24 is
 /// active there (the coinbase of that Core block has payload version 4 or higher), and Core is
 /// not asked again once it is recorded; in the asset unlocks it emits for withdrawals, described
-/// below; in the consensus evidence policy; and in the chain lock verification. The chain lock
+/// below; in the voter key of a masternode that returns to a voting address, described below; in
+/// the consensus evidence policy; and in the chain lock verification. The chain lock
 /// changes only work as a whole:
 /// - `core_chain_lock.verify_chain_lock_locally` is 1 rather than 0: a chain lock is rejected
 ///   locally only when Platform holds exactly the quorums active at its signing height, using
@@ -116,6 +118,10 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 /// rather than 0: a withdrawal pooled once `update_core_info` 1 has recorded Dash Core's V24 as
 /// active gets asset unlock payload version 2, whose txid every re-signed instance shares,
 /// unless its amount is Core dust. It reads the record and does not ask Core.
+///
+/// `core_based_updates.masternode_updates.update_voter_identity` is 1 rather than 0: a
+/// masternode that returns to a voting address it used before has the key of that address's
+/// voter identity re-enabled, where 0 re-enabled the key of the voter identity it was leaving.
 ///
 /// `block_end.apply_random_beacon` is `Some(0)`: a block collects the documents it creates and
 /// its random token transfers and mints, and `ApplyBlockRandomness` (or `FinalizeBlock`, with
@@ -137,6 +143,12 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMet
     },
     core_based_updates: DriveAbciCoreBasedUpdatesMethodVersions {
         update_core_info: 1, // changed in v15: records the chain locked Core height at which V24 is first seen active
+        masternode_updates: DriveAbciMasternodeIdentitiesUpdatesMethodVersions {
+            update_voter_identity: 1, // changed in v15: re-enables the voter key of the address a masternode returns to
+            ..DRIVE_ABCI_METHOD_VERSIONS_V10
+                .core_based_updates
+                .masternode_updates
+        },
         ..DRIVE_ABCI_METHOD_VERSIONS_V10.core_based_updates
     },
     voting: DriveAbciVotingMethodVersions {
