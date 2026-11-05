@@ -960,7 +960,26 @@ pub fn load_state(
     ),
     WalletStorageError,
 > {
+    let snapshot = load_snapshot(conn, wallet_id, network, ctx)?;
+    Ok((snapshot.changes, snapshot.utxo_accounts))
+}
+
+/// Physical keys stay paired with accepted records, including tolerated Recovery drift.
+pub(crate) struct CoreStateSnapshot {
+    pub changes: CoreChangeSet,
+    pub utxo_accounts: HashMap<OutPoint, OwningAccount>,
+    pub record_keys: Vec<Txid>,
+}
+
+/// Read projection and replay row identities together without decoding records twice.
+pub(crate) fn load_snapshot(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    network: dashcore::Network,
+    ctx: &LoadCtx,
+) -> Result<CoreStateSnapshot, WalletStorageError> {
     let mut cs = CoreChangeSet::default();
+    let mut record_keys = Vec::new();
     let mut utxo_accounts: HashMap<dashcore::OutPoint, OwningAccount> = HashMap::new();
 
     let mut transaction_heights: HashMap<dashcore::Txid, Option<u32>> = HashMap::new();
@@ -997,6 +1016,7 @@ pub fn load_state(
                     ctx.tolerate(LoadSite::CoreTransactionColumnDrift, mismatch)?;
                 }
                 cs.records.push(record);
+                record_keys.push(txid);
                 transaction_heights.insert(effective_txid, effective_height);
                 blob_backed_transaction_heights.insert(effective_txid);
             } else if !blob_backed_transaction_heights.contains(&effective_txid) {
@@ -1115,7 +1135,11 @@ pub fn load_state(
         }
     }
 
-    Ok((cs, utxo_accounts))
+    Ok(CoreStateSnapshot {
+        changes: cs,
+        utxo_accounts,
+        record_keys,
+    })
 }
 
 /// Every address that has ever held a `core_utxos` row for this wallet —

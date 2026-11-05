@@ -240,7 +240,9 @@ impl FFIPersister {
         let records = wallet.recorded_history.transactions.clone();
         let outcome =
             replay_wallet_history_blocking(wallet, evidence).map_err(PersistenceError::backend)?;
-        let effects = outcome.storage_effects(&records, &claims);
+        let effects = outcome
+            .storage_effects(&records, &claims)
+            .map_err(PersistenceError::backend)?;
         let has_effects = !effects.removed_records.is_empty()
             || !effects.removed_evidence.is_empty()
             || !effects.claims.is_empty();

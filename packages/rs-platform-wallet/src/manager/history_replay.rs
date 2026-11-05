@@ -80,34 +80,6 @@ pub struct HistoryReplay {
 }
 
 impl HistoryReplay {
-    /// Keep durable anonymous or surviving claims out of the release effects.
-    pub fn protect_durable_claims(
-        &mut self,
-        claims: &[(OutPoint, Option<Txid>)],
-    ) -> BTreeSet<OutPoint> {
-        let candidates: HashSet<_> = self
-            .sweeps
-            .iter()
-            .flat_map(|sweep| sweep.released_outpoints.iter().copied())
-            .collect();
-        let held: BTreeSet<_> = claims
-            .iter()
-            .filter_map(|(outpoint, claimant)| {
-                (candidates.contains(outpoint)
-                    && claimant.is_none_or(|txid| {
-                        !self.defeated.contains(&txid)
-                            && !self.authorization.rejected.contains(&txid)
-                    }))
-                .then_some(*outpoint)
-            })
-            .collect();
-        for sweep in &mut self.sweeps {
-            sweep
-                .released_outpoints
-                .retain(|outpoint| !held.contains(outpoint));
-        }
-        held
-    }
     /// The unconfirmed sends of `sends` still worth dispatching again.
     ///
     /// A dispatch hands the transaction back to the wallet as a mempool

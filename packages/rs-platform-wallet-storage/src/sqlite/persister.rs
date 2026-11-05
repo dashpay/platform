@@ -1798,12 +1798,19 @@ fn load_one_wallet(
         .map_err(WalletStorageError::from)
         .map_err(PersistenceError::from)?;
     let mut state = load_wallet_snapshot(&tx, wallet_id, ctx)?;
+    let records = state.recorded_history.transactions.clone();
     let mut outcome =
         replay_wallet_history_blocking(&mut state, evidence).map_err(replay_failure)?;
     let mut claims =
         history_replay::load_spent_claims(&tx, &wallet_id).map_err(PersistenceError::from)?;
-    if !outcome.sweeps.is_empty() || !outcome.authorization.rejected.is_empty() {
-        history_replay::apply(&tx, &wallet_id, &mut outcome).map_err(PersistenceError::from)?;
+    let effects = outcome
+        .storage_effects(&records, &claims)
+        .map_err(replay_failure)?;
+    if !effects.removed_records.is_empty()
+        || !effects.removed_evidence.is_empty()
+        || !effects.claims.is_empty()
+    {
+        history_replay::apply_effects(&tx, &wallet_id, &effects).map_err(PersistenceError::from)?;
         state = load_wallet_snapshot(&tx, wallet_id, ctx)?;
         let remaining =
             replay_wallet_history_blocking(&mut state, evidence).map_err(replay_failure)?;
@@ -1816,7 +1823,12 @@ fn load_one_wallet(
         claims =
             history_replay::load_spent_claims(&tx, &wallet_id).map_err(PersistenceError::from)?;
     }
-    state.wallet_info.restore_spent_outpoints(&claims);
+    state.wallet_info.restore_spent_outpoints(
+        &claims
+            .iter()
+            .map(|claim| (claim.outpoint, claim.claimant))
+            .collect::<Vec<_>>(),
+    );
     outcome.read_only = policy == LoadPolicy::Recovery;
     if outcome.read_only {
         tx.rollback()
@@ -1851,9 +1863,12 @@ fn load_wallet_snapshot(
 
     let account_manifest =
         schema::accounts::load_state(conn, &wallet_id, ctx).map_err(PersistenceError::from)?;
-    let (core_state, utxo_accounts) =
-        schema::core_state::load_state(conn, &wallet_id, network, ctx)
-            .map_err(PersistenceError::from)?;
+    let schema::core_state::CoreStateSnapshot {
+        changes: core_state,
+        utxo_accounts,
+        record_keys,
+    } = schema::core_state::load_snapshot(conn, &wallet_id, network, ctx)
+        .map_err(PersistenceError::from)?;
     // Pre-keyed rehydration: each `ManagedIdentity` leaves the loader
     // already carrying its own public keys + contact state (matching
     // the FFI persister), so signing works immediately post-load
@@ -2024,7 +2039,16 @@ fn load_wallet_snapshot(
             required_instant_locks: Default::default(),
             owned_prevouts: history_replay::load_prevouts(conn, &wallet_id)
                 .map_err(PersistenceError::from)?,
-            transactions: core_state.records.into_iter().map(Into::into).collect(),
+            transactions: core_state
+                .records
+                .into_iter()
+                .zip(record_keys)
+                .map(|(record, key)| {
+                    let mut stored = platform_wallet::changeset::StoredTransaction::from(record);
+                    stored.txid = key;
+                    stored
+                })
+                .collect(),
             instant_locks: core_state.instant_locks_for_non_final_records,
         },
         // Not persisted by this backend yet: the backfill record rides the

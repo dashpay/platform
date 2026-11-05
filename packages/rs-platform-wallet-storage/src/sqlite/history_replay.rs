@@ -1,29 +1,29 @@
 //! SQL adapter for wallet-owned replay effects.
 
-use crate::sqlite::util::safe_cast::i64_to_u64;
+use crate::sqlite::util::safe_cast::{i64_to_u32, i64_to_u64};
 use dashcore::{hashes::Hash, OutPoint, ScriptBuf, TxOut, Txid};
-use platform_wallet::changeset::CoreChangeSet;
-use platform_wallet::manager::history_replay::HistoryReplay;
+use platform_wallet::manager::history_replay::{
+    HistoryReplayEffects, ReplayClaimEffect, StoredReplayClaim,
+};
 use platform_wallet::wallet::platform_wallet::WalletId;
 use rusqlite::{params, Connection, Transaction};
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::slice;
+use std::collections::BTreeMap;
 
-use crate::sqlite::schema::{asset_locks, blob, core_state, dashpay};
+use crate::sqlite::schema::{asset_locks, blob, dashpay};
 use crate::WalletStorageError;
 
 /// Decode durable claim provenance from the same snapshot as wallet history.
 pub(crate) fn load_spent_claims(
     conn: &Connection,
     wallet_id: &WalletId,
-) -> Result<Vec<(OutPoint, Option<Txid>)>, WalletStorageError> {
+) -> Result<Vec<StoredReplayClaim>, WalletStorageError> {
     // SQLite evaluates every result column when the row is stepped, but a
     // CASE lazily: a payload past its gate is never loaded, and the length
     // beside it reports the typed error below.
     let mut stmt = conn.prepare_cached(
         "SELECT length(outpoint), CASE WHEN length(outpoint) <= ?2 THEN outpoint END, \
                 length(spent_in_txid), \
-                CASE WHEN length(spent_in_txid) = 32 THEN spent_in_txid END \
+                CASE WHEN length(spent_in_txid) = 32 THEN spent_in_txid END, winner_mined_height \
          FROM core_utxos WHERE wallet_id = ?1 AND spent = 1",
     )?;
     let limit = i64::try_from(blob::BLOB_SIZE_LIMIT_BYTES).unwrap_or(i64::MAX);
@@ -39,47 +39,16 @@ pub(crate) fn load_spent_claims(
         } else {
             None
         };
-        outpoints.push((blob::decode_outpoint(&bytes)?, claimant));
+        outpoints.push(StoredReplayClaim {
+            outpoint: blob::decode_outpoint(&bytes)?,
+            claimant,
+            mined_height: row
+                .get::<_, Option<i64>>(4)?
+                .map(|height| i64_to_u32("core_utxos.winner_mined_height", height))
+                .transpose()?,
+        });
     }
     Ok(outpoints)
-}
-
-/// Apply an owner's effects atomically, preserving claim provenance it protects.
-pub(crate) fn apply(
-    tx: &Transaction<'_>,
-    wallet_id: &WalletId,
-    outcome: &mut HistoryReplay,
-) -> Result<(), WalletStorageError> {
-    apply_authorization(tx, wallet_id, outcome)?;
-    let claims = load_spent_claims(tx, wallet_id)?;
-    let held = outcome.protect_durable_claims(&claims);
-    let mut preserved = Vec::new();
-    for outpoint in held {
-        let key = blob::encode_outpoint(&outpoint)?;
-        let (claimant, height): (Option<Vec<u8>>, Option<i64>) = tx.query_row(
-            "SELECT spent_in_txid, winner_mined_height FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
-            params![wallet_id.as_slice(), &key[..]],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )?;
-        preserved.push((key, claimant, height));
-    }
-    asset_locks::remove_swept(tx, wallet_id, &outcome.defeated)?;
-    dashpay::settle_swept_payments(tx, wallet_id, &outcome.defeated)?;
-    core_state::apply(
-        tx,
-        wallet_id,
-        &CoreChangeSet {
-            sweeps: outcome.sweeps.clone(),
-            ..Default::default()
-        },
-    )?;
-    for (outpoint, claimant, height) in preserved {
-        tx.execute(
-            "UPDATE core_utxos SET spent = 1, spent_in_txid = ?3, winner_mined_height = ?4 WHERE wallet_id = ?1 AND outpoint = ?2",
-            params![wallet_id.as_slice(), &outpoint[..], claimant, height],
-        )?;
-    }
-    Ok(())
 }
 
 /// Stored coin material is validated against wallet address ownership by the owner.
@@ -107,129 +76,181 @@ pub(crate) fn load_prevouts(
     Ok(coins)
 }
 
-/// Map canonical owner verdicts to physical rows without inferring authorization in SQL.
-fn apply_authorization(
+/// Apply storage-independent effects without selecting claimants in SQL.
+pub(crate) fn apply_effects(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
-    outcome: &HistoryReplay,
+    effects: &HistoryReplayEffects,
 ) -> Result<(), WalletStorageError> {
-    let rejected: HashSet<_> = outcome.authorization.rejected.iter().copied().collect();
-    if rejected.is_empty() {
-        return Ok(());
-    }
-    let mut record_keys: HashMap<Txid, Vec<Txid>> = HashMap::new();
-    let limit = i64::try_from(blob::BLOB_SIZE_LIMIT_BYTES).unwrap_or(i64::MAX);
-    let mut stmt = tx.prepare_cached("SELECT length(txid), CASE WHEN length(txid) = 32 THEN txid END, length(record_blob), CASE WHEN length(record_blob) <= ?2 THEN record_blob END FROM core_transactions WHERE wallet_id = ?1 AND record_blob IS NOT NULL")?;
-    let mut rows = stmt.query(params![wallet_id.as_slice(), limit])?;
-    while let Some(row) = rows.next()? {
-        blob::check_fixed_width(row.get(0)?, 32, "core_transactions.txid")?;
-        blob::check_size(row.get(2)?)?;
-        let key: Vec<u8> = row.get(1)?;
-        let raw: Vec<u8> = row.get(3)?;
-        let record = core_state::decode_transaction_record(&raw)?;
-        record_keys
-            .entry(record.transaction.txid())
-            .or_default()
-            .push(Txid::from_slice(&key)?);
-    }
-    let survivors: HashMap<_, _> = outcome
-        .authorization
-        .surviving_claimants
-        .iter()
-        .filter_map(|(outpoint, claims)| claims.first().map(|claim| (*outpoint, *claim)))
-        .collect();
-    let physical_keys: HashSet<Txid> = rejected
-        .iter()
-        .flat_map(|txid| {
-            record_keys
-                .get(txid)
-                .map(Vec::as_slice)
-                .unwrap_or_else(|| slice::from_ref(txid))
-        })
-        .copied()
-        .collect();
-    let surviving_txids: HashSet<Txid> = record_keys
-        .keys()
-        .filter(|txid| !rejected.contains(*txid))
-        .copied()
-        .collect();
-    let protected_keys: HashSet<Txid> = physical_keys
-        .intersection(&surviving_txids)
-        .copied()
-        .collect();
-    // A corrupt physical key can also name a surviving body: its evidence belongs to that survivor.
-    let rejected_evidence: HashSet<Txid> = rejected
-        .union(&physical_keys)
-        .filter(|txid| !surviving_txids.contains(*txid))
-        .copied()
-        .collect();
-    let mut protected_claims = Vec::new();
-    // Release before deleting bodies: their cleanup trigger clears claimant IDs.
-    // Never reinterpret an anonymous or recordless final claim as a rejected peer claim.
-    let mut claims = Vec::new();
-    let mut stmt = tx.prepare_cached("SELECT length(outpoint), CASE WHEN length(outpoint) <= ?2 THEN outpoint END, length(spent_in_txid), CASE WHEN length(spent_in_txid) = 32 THEN spent_in_txid END, is_sweep_placeholder FROM core_utxos WHERE wallet_id = ?1 AND spent = 1 AND spent_in_txid IS NOT NULL")?;
-    let mut rows = stmt.query(params![wallet_id.as_slice(), limit])?;
-    while let Some(row) = rows.next()? {
-        blob::check_size(row.get(0)?)?;
-        let raw: Vec<u8> = row.get(1)?;
-        blob::check_fixed_width(row.get(2)?, 32, "core_utxos.spent_in_txid")?;
-        let claimant: Vec<u8> = row.get(3)?;
-        let claimant = Txid::from_slice(&claimant)?;
-        if protected_keys.contains(&claimant) {
-            protected_claims.push((raw, claimant));
-        } else if rejected_evidence.contains(&claimant) {
-            claims.push((raw, row.get::<_, bool>(4)?));
-        }
-    }
-    for (raw, placeholder) in claims {
-        let op = blob::decode_outpoint(&raw)?;
-        if let Some(survivor) = survivors.get(&op) {
-            if protected_keys.contains(survivor) {
-                protected_claims.push((raw.clone(), *survivor));
-            }
-            tx.execute(
-                "UPDATE core_utxos SET spent_in_txid = ?3 WHERE wallet_id = ?1 AND outpoint = ?2",
-                params![
-                    wallet_id.as_slice(),
-                    raw,
-                    survivor.as_byte_array().as_slice()
-                ],
-            )?;
-        } else if placeholder {
-            tx.execute(
-                "DELETE FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
-                params![wallet_id.as_slice(), raw],
-            )?;
-        } else {
-            tx.execute("UPDATE core_utxos SET spent = 0, spent_in_txid = NULL, winner_mined_height = NULL WHERE wallet_id = ?1 AND outpoint = ?2", params![wallet_id.as_slice(), raw])?;
-        }
-    }
-    for txid in &physical_keys {
+    for txid in &effects.removed_records {
         tx.execute(
             "DELETE FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
             params![wallet_id.as_slice(), txid.as_byte_array().as_slice()],
         )?;
     }
-    // The row-delete trigger clears claims by physical key, even when that key
-    // names a surviving blob. Restore only the claims we just protected.
-    for (raw, claimant) in protected_claims {
-        tx.execute("UPDATE core_utxos SET spent_in_txid = ?3 WHERE wallet_id = ?1 AND outpoint = ?2 AND spent = 1 AND spent_in_txid IS NULL",
-            params![wallet_id.as_slice(), raw, claimant.as_byte_array().as_slice()])?;
-    }
-    for txid in &rejected_evidence {
+    for txid in &effects.removed_evidence {
         let key = params![wallet_id.as_slice(), txid.as_byte_array().as_slice()];
         tx.execute(
             "DELETE FROM core_instant_locks WHERE wallet_id = ?1 AND txid = ?2",
             key,
         )?;
-        // `encode_outpoint_txid_occupies_bytes_two_to_thirty_three` pins this prefix.
+        // The encoded outpoint's transaction ID occupies bytes 2..=33.
         tx.execute(
-            "DELETE FROM core_utxos \
-             WHERE wallet_id = ?1 AND substr(outpoint, 2, 32) = ?2",
+            "DELETE FROM core_utxos WHERE wallet_id = ?1 AND substr(outpoint, 2, 32) = ?2",
             key,
         )?;
     }
-    asset_locks::remove_swept(tx, wallet_id, &rejected_evidence)?;
-    dashpay::settle_swept_payments(tx, wallet_id, &rejected_evidence)?;
+    let removed = effects.removed_evidence.iter().copied().collect();
+    asset_locks::remove_swept(tx, wallet_id, &removed)?;
+    dashpay::settle_swept_payments(tx, wallet_id, &removed)?;
+    // Row deletion can clear claimant links; exact owner effects restore them last.
+    for (outpoint, effect) in &effects.claims {
+        let key = blob::encode_outpoint(outpoint)?;
+        match effect {
+            ReplayClaimEffect::Remove => {
+                tx.execute(
+                    "DELETE FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+                    params![wallet_id.as_slice(), key],
+                )?;
+            }
+            ReplayClaimEffect::Release => {
+                tx.execute("DELETE FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 1", params![wallet_id.as_slice(), key])?;
+                tx.execute("UPDATE core_utxos SET spent = 0, spent_in_txid = NULL, winner_mined_height = NULL WHERE wallet_id = ?1 AND outpoint = ?2", params![wallet_id.as_slice(), key])?;
+            }
+            ReplayClaimEffect::Hold {
+                claimant,
+                mined_height,
+            } => {
+                tx.execute("INSERT INTO core_utxos (wallet_id, outpoint, value, script, is_sweep_placeholder, spent, spent_in_txid, winner_mined_height) VALUES (?1, ?2, 0, X'', 1, 1, ?3, ?4) ON CONFLICT(wallet_id, outpoint) DO UPDATE SET spent = 1, spent_in_txid = excluded.spent_in_txid, winner_mined_height = excluded.winner_mined_height",
+                    params![wallet_id.as_slice(), key, claimant.map(|id| id.to_byte_array().to_vec()), mined_height.map(i64::from)])?;
+            }
+        }
+    }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sqlite::migrations;
+    use platform_wallet::manager::history_replay::{HistoryReplayEffects, ReplayClaimEffect};
+
+    fn database() -> Connection {
+        let mut connection = Connection::open_in_memory().unwrap();
+        migrations::run(&mut connection).unwrap();
+        for id in [[1u8; 32], [2u8; 32]] {
+            connection.execute("INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)", params![id.as_slice()]).unwrap();
+        }
+        connection
+    }
+
+    fn point(marker: u8) -> OutPoint {
+        OutPoint::new(Txid::from_byte_array([marker; 32]), 0)
+    }
+
+    fn seed_coin(connection: &Connection, wallet: &[u8; 32], point: OutPoint) {
+        connection.execute("INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent, spent_in_txid, winner_mined_height) VALUES (?1, ?2, 100, X'', 1, ?3, 99)",
+            params![wallet.as_slice(), blob::encode_outpoint(&point).unwrap(), point.txid.as_byte_array().as_slice()]).unwrap();
+    }
+
+    #[test]
+    fn should_apply_exact_owner_claims_without_inheriting_a_removed_stamp() {
+        let mut connection = database();
+        let held = point(3);
+        let released = point(4);
+        let missing = point(5);
+        for id in [[1u8; 32], [2u8; 32]] {
+            seed_coin(&connection, &id, held);
+            seed_coin(&connection, &id, released);
+        }
+        let effects = HistoryReplayEffects {
+            claims: [
+                (
+                    held,
+                    ReplayClaimEffect::Hold {
+                        claimant: None,
+                        mined_height: None,
+                    },
+                ),
+                (released, ReplayClaimEffect::Release),
+                (
+                    missing,
+                    ReplayClaimEffect::Hold {
+                        claimant: Some(point(6).txid),
+                        mined_height: Some(101),
+                    },
+                ),
+            ]
+            .into(),
+            ..Default::default()
+        };
+        let tx = connection.transaction().unwrap();
+        apply_effects(&tx, &[1; 32], &effects).unwrap();
+        tx.commit().unwrap();
+        let row = |wallet: [u8; 32],
+                   point: OutPoint|
+         -> (bool, Option<Vec<u8>>, Option<u32>, bool) {
+            connection.query_row("SELECT spent, spent_in_txid, winner_mined_height, is_sweep_placeholder FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2", params![wallet.as_slice(), blob::encode_outpoint(&point).unwrap()], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))).unwrap()
+        };
+        assert_eq!(row([1; 32], held), (true, None, None, false));
+        assert_eq!(row([1; 32], released), (false, None, None, false));
+        assert_eq!(
+            row([1; 32], missing),
+            (
+                true,
+                Some(point(6).txid.to_byte_array().to_vec()),
+                Some(101),
+                true
+            )
+        );
+        assert_eq!(
+            row([2; 32], held),
+            (
+                true,
+                Some(held.txid.to_byte_array().to_vec()),
+                Some(99),
+                false
+            )
+        );
+    }
+
+    #[test]
+    fn should_roll_back_removals_when_a_later_claim_write_fails() {
+        let mut connection = database();
+        let record = point(7).txid;
+        let held = point(8);
+        seed_coin(&connection, &[1; 32], held);
+        connection.execute("INSERT INTO core_transactions (wallet_id, txid, height, finalized) VALUES (?1, ?2, 1, 0)", params![[1u8; 32].as_slice(), record.as_byte_array().as_slice()]).unwrap();
+        connection.execute_batch("CREATE TRIGGER fail_replay_claim BEFORE UPDATE ON core_utxos WHEN NOT EXISTS (SELECT 1 FROM core_transactions) BEGIN SELECT RAISE(ABORT, 'replay claim fault'); END;").unwrap();
+        {
+            let tx = connection.transaction().unwrap();
+            let effects = HistoryReplayEffects {
+                removed_records: [record].into(),
+                claims: [(
+                    held,
+                    ReplayClaimEffect::Hold {
+                        claimant: None,
+                        mined_height: None,
+                    },
+                )]
+                .into(),
+                ..Default::default()
+            };
+            let error = apply_effects(&tx, &[1; 32], &effects).unwrap_err();
+            assert!(
+                matches!(&error, WalletStorageError::Sqlite(cause) if cause.to_string().contains("replay claim fault")),
+                "{error:?}"
+            );
+        }
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT count(*) FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+                    params![[1u8; 32].as_slice(), record.as_byte_array().as_slice()],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            1
+        );
+    }
 }
