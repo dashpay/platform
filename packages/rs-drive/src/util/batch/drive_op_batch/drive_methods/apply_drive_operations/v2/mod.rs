@@ -12,7 +12,7 @@ use grovedb::TransactionArg;
 
 use dpp::version::PlatformVersion;
 
-use crate::drive::RootTree;
+use crate::drive::{non_unique_key_hashes_tree_path_vec, RootTree};
 use crate::util::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
@@ -20,6 +20,7 @@ use crate::util::estimated_layers::EstimatedLayers;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
+use std::collections::HashSet;
 
 /// The level of the root tree each root key sits on, as `drive/mod.rs` draws the root tree and
 /// `grovedb-structure.json` records it (`layer_shapes.root`, kept in step with a real GroveDB by
@@ -93,7 +94,9 @@ impl Drive {
     /// descriptions name a shallower one (the credit shielded pool's, at level 3, for
     /// `ShieldedBalances` at level 4). The estimate does not depend on the order of the batch's operations, and no
     /// write is priced at a shallower depth than its own description. Applying a batch is
-    /// generation 1's.
+    /// generation 1's, except that the batch creates a hash's tree under the non-unique key hashes
+    /// tree once where several of its identity operations each queue it
+    /// (`retain_one_insert_per_non_unique_key_hash_tree`).
     #[inline(always)]
     pub(crate) fn apply_drive_operations_v2(
         &self,
@@ -209,6 +212,8 @@ impl Drive {
             .map(|layers| layers.resolve(platform_version))
             .transpose()?;
 
+        retain_one_insert_per_non_unique_key_hash_tree(&mut low_level_operations);
+
         let repaid_identity_debt =
             LowLevelDriveOperation::take_repaid_identity_debt(&mut low_level_operations)?;
 
@@ -290,6 +295,27 @@ impl Drive {
             previous_fee_versions,
         )
     }
+}
+
+/// Keeps the first of the identical inserts that create one hash's tree under the non-unique key
+/// hashes tree, and drops the others.
+///
+/// Each identity operation is lowered on its own, against stored state. Several identities adding
+/// a key of one hash no identity held before, in one batch (masternodes whose operators share a
+/// payout address, say), therefore each queue the same tree, beside their own entries under it.
+/// One insert creates it; a batch checked for consistency refuses the repeats.
+fn retain_one_insert_per_non_unique_key_hash_tree(operations: &mut Vec<LowLevelDriveOperation>) {
+    let hashes_tree_path =
+        KeyInfoPath::from_known_owned_path(non_unique_key_hashes_tree_path_vec());
+    let mut inserted = HashSet::new();
+    operations.retain(|operation| match operation {
+        LowLevelDriveOperation::GroveOperation(grove_operation)
+            if grove_operation.path == hashes_tree_path =>
+        {
+            inserted.insert(grove_operation.clone())
+        }
+        _ => true,
+    });
 }
 
 #[cfg(test)]

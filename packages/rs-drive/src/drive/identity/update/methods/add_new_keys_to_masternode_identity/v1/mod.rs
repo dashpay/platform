@@ -41,11 +41,11 @@ impl Drive {
 
         let mut referenced_hashes = BTreeSet::new();
         for key in non_unique_keys_to_add {
-            // When estimating costs the reference is assumed, as by version 0. The probes record
-            // no cost operation, as version 0's does not.
+            // When estimating costs the reference is assumed, as by version 0, once per hash of
+            // the call. The probes record no cost operation, as version 0's does not.
             let with_reference_to_non_unique_key = if estimated_costs_only_with_layer_info.is_some()
             {
-                true
+                referenced_hashes.insert(key.public_key_hash()?)
             } else {
                 let public_key_hash = key.public_key_hash()?;
                 !self.has_unique_public_key_hash(

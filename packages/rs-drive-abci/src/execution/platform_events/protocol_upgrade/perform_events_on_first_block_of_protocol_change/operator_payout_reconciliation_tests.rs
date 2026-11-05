@@ -184,9 +184,26 @@ fn platform_after_history(
     diffs: Vec<MasternodeListDiff>,
     at_committed: Vec<MasternodeListItem>,
 ) -> (TempPlatform<MockCoreRPCLike>, PlatformState, CoreCalls) {
+    platform_with_config_after_history(
+        PlatformConfig::default(),
+        previous,
+        listed,
+        diffs,
+        at_committed,
+    )
+}
+
+/// `platform_after_history` with `config`.
+fn platform_with_config_after_history(
+    config: PlatformConfig,
+    previous: ProtocolVersion,
+    listed: Vec<MasternodeListItem>,
+    diffs: Vec<MasternodeListDiff>,
+    at_committed: Vec<MasternodeListItem>,
+) -> (TempPlatform<MockCoreRPCLike>, PlatformState, CoreCalls) {
     let previous_version = PlatformVersion::get(previous).expect("expected the protocol version");
     let mut platform = TestPlatformBuilder::new()
-        .with_config(PlatformConfig::default())
+        .with_config(config)
         .with_initial_protocol_version(previous)
         .build_with_mock_rpc()
         .set_genesis_state();
@@ -611,4 +628,65 @@ fn should_re_enable_a_payout_key_an_earlier_node_id_change_disabled_in_the_first
         transfer_keys(&platform, &transaction, 0x66, 0x66),
         [(vec![0x66; 20], false)]
     );
+}
+
+/// One operator running several masternodes usually gives them one payout address, which
+/// protocol version 14 never took from Core's diffs. The first block of protocol version 15 then
+/// adds that address's key to each of their operator identities in one batch, which creates the
+/// address's hash tree once, also where Drive checks batches for consistency.
+#[test]
+fn should_reconcile_masternodes_that_share_a_new_payout_in_one_batch() {
+    for batching_consistency_verification in [false, true] {
+        let listed = vec![masternode(0x67, 0x67, None), masternode(0x68, 0x68, None)];
+        let shared_payout_diff = MasternodeListDiff {
+            base_height: 0,
+            block_height: 0,
+            added_mns: vec![],
+            removed_mns: vec![],
+            updated_mns: listed
+                .iter()
+                .map(|masternode| {
+                    (
+                        masternode.pro_tx_hash,
+                        diff_entry(serde_json::json!({
+                            "operatorPayoutAddress": "yXkZa7p2ne58x2XQYdNthAxfXy9cHiWxF5",
+                        })),
+                    )
+                })
+                .collect(),
+        };
+        let shared_payout = shared_payout_diff.updated_mns[0]
+            .1
+            .operator_payout_address
+            .expect("expected the diff to set the payout");
+        let at_committed = listed
+            .iter()
+            .cloned()
+            .map(|mut masternode| {
+                masternode.state.operator_payout_address = shared_payout;
+                masternode
+            })
+            .collect();
+        let mut config = PlatformConfig::default();
+        config.drive.batching_consistency_verification = batching_consistency_verification;
+        let (platform, committed, _calls) = platform_with_config_after_history(
+            config,
+            14,
+            listed,
+            vec![shared_payout_diff],
+            at_committed,
+        );
+        let transaction = platform.drive.grove.start_transaction();
+
+        run_upgrade_events(&platform, &committed, 14, &transaction);
+
+        let shared_payout = shared_payout.expect("expected a shared payout").to_vec();
+        for id in [0x67, 0x68] {
+            assert_eq!(
+                transfer_keys(&platform, &transaction, id, id),
+                [(shared_payout.clone(), false)],
+                "masternode {id:#x}, consistency checks {batching_consistency_verification}"
+            );
+        }
+    }
 }

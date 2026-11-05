@@ -99,14 +99,13 @@ where
 
         let Some(pub_key_operator_change) = pub_key_operator_change else {
             // Same identity.
-            let Some(last_key_id) = old_identity_keys.keys().max().copied() else {
+            let Some(mut last_key_id) = old_identity_keys.keys().max().copied() else {
                 return Err(ExecutionError::DriveMissingData(format!(
                     "expected the operator identity of masternode {} to be in state",
                     masternode_pro_tx_hash
                 ))
                 .into());
             };
-            let mut new_key_id = Self::next_operator_key_id_v1(last_key_id)?;
             let mut changes = KeyChanges::default();
 
             if let Some(platform_node_id_change) = platform_node_id_change {
@@ -127,10 +126,9 @@ where
                     changes.to_re_enable.push(key_id);
                 } else {
                     changes.to_add.push(Self::platform_node_id_key_v1(
-                        new_key_id,
+                        Self::next_operator_key_id_v1(&mut last_key_id)?,
                         platform_node_id_change,
                     ));
-                    new_key_id = Self::next_operator_key_id_v1(new_key_id)?;
                 }
             }
 
@@ -138,9 +136,9 @@ where
                 Self::reconcile_operator_payout_keys_v1(
                     &old_identity_keys,
                     operator_payout_address,
-                    new_key_id,
+                    &mut last_key_id,
                     &mut changes,
-                );
+                )?;
             }
 
             Self::push_key_changes_v1(old_operator_identifier, changes, drive_operations);
@@ -187,7 +185,7 @@ where
             platform_version,
         )?;
 
-        let Some(last_key_id) = identity_keys.keys().max().copied() else {
+        let Some(mut last_key_id) = identity_keys.keys().max().copied() else {
             let mut identity =
                 Identity::create_basic_identity(operator_identifier, platform_version)?;
             identity.add_public_keys(Self::get_operator_identity_keys(
@@ -203,16 +201,13 @@ where
             return Ok(());
         };
 
-        let mut new_key_id = Self::next_operator_key_id_v1(last_key_id)?;
         let mut changes = KeyChanges::default();
-        if Self::reconcile_operator_payout_keys_v1(
+        Self::reconcile_operator_payout_keys_v1(
             &identity_keys,
             new_payout_address,
-            new_key_id,
+            &mut last_key_id,
             &mut changes,
-        ) {
-            new_key_id = Self::next_operator_key_id_v1(new_key_id)?;
-        }
+        )?;
 
         if let Some(new_platform_node_id) = new_platform_node_id {
             if let Some((key_id, found_old_key)) = identity_keys.iter().find(|(_, key)| {
@@ -223,7 +218,7 @@ where
                 }
             } else {
                 changes.to_add.push(Self::platform_node_id_key_v1(
-                    new_key_id,
+                    Self::next_operator_key_id_v1(&mut last_key_id)?,
                     new_platform_node_id,
                 ));
             }
@@ -236,14 +231,14 @@ where
     /// Queues the changes that leave `operator_payout_address` the only enabled TRANSFER key
     /// among `keys`, or no TRANSFER key enabled when it is `None`: a key holding the payout is
     /// kept, an enabled one before a disabled one and lower ids first, and re-enabled if it is
-    /// disabled; otherwise a key with `new_key_id` is added. Every other enabled TRANSFER key is
-    /// disabled. Returns whether a key was added.
+    /// disabled; otherwise a key is added, with the id after `last_key_id`, which it advances.
+    /// Every other enabled TRANSFER key is disabled.
     fn reconcile_operator_payout_keys_v1(
         keys: &KeyIDIdentityPublicKeyPairBTreeMap,
         operator_payout_address: Option<[u8; 20]>,
-        new_key_id: KeyID,
+        last_key_id: &mut KeyID,
         changes: &mut KeyChanges,
-    ) -> bool {
+    ) -> Result<(), Error> {
         let reusable_key = operator_payout_address.and_then(|address| {
             keys.iter()
                 .filter(|(_, key)| {
@@ -268,12 +263,11 @@ where
                 if key.is_disabled() {
                     changes.to_re_enable.push(*key_id);
                 }
-                false
             }
             (None, Some(address)) => {
                 changes.to_add.push(
                     IdentityPublicKeyV0 {
-                        id: new_key_id,
+                        id: Self::next_operator_key_id_v1(last_key_id)?,
                         key_type: KeyType::ECDSA_HASH160,
                         purpose: TRANSFER,
                         security_level: SecurityLevel::CRITICAL,
@@ -284,10 +278,10 @@ where
                     }
                     .into(),
                 );
-                true
             }
-            (None, None) => false,
+            (None, None) => {}
         }
+        Ok(())
     }
 
     fn fetch_operator_identity_keys_v1(
@@ -310,10 +304,15 @@ where
             )?)
     }
 
-    fn next_operator_key_id_v1(key_id: KeyID) -> Result<KeyID, Error> {
-        key_id.checked_add(1).ok_or_else(|| {
-            ExecutionError::Overflow("masternode operator identity key id exhausted").into()
-        })
+    /// The id for a key added after `last_key_id`, which becomes it. Only an added key takes an
+    /// id, so an identity at the last id can still have keys reused, disabled or re-enabled.
+    fn next_operator_key_id_v1(last_key_id: &mut KeyID) -> Result<KeyID, Error> {
+        *last_key_id = last_key_id.checked_add(1).ok_or_else(|| {
+            Error::from(ExecutionError::Overflow(
+                "masternode operator identity key id exhausted",
+            ))
+        })?;
+        Ok(*last_key_id)
     }
 
     fn platform_node_id_key_v1(key_id: KeyID, platform_node_id: [u8; 20]) -> IdentityPublicKey {
@@ -380,7 +379,7 @@ mod tests {
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::{IdentityV0, KeyID, KeyType, Purpose, SecurityLevel};
     use dpp::platform_value::BinaryData;
-    use dpp::prelude::{Identifier, Identity};
+    use dpp::prelude::{Identifier, Identity, IdentityPublicKey};
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
     use std::net::SocketAddr;
@@ -805,5 +804,62 @@ mod tests {
                 "payout {payout:?}: {identity:?}"
             );
         }
+    }
+
+    /// Only an added key takes a new id, so an operator identity whose last key id is the
+    /// largest one can still have its payout key reused or its other keys disabled.
+    #[test]
+    fn should_reconcile_without_a_new_key_id_when_no_key_is_added() {
+        let (platform, platform_state) = platform_with_operator(Some([0x51; 20]), &[], false);
+        let key = |id: KeyID, data: [u8; 20], disabled: bool| -> IdentityPublicKey {
+            IdentityPublicKeyV0 {
+                id,
+                key_type: KeyType::ECDSA_HASH160,
+                purpose: Purpose::TRANSFER,
+                security_level: SecurityLevel::CRITICAL,
+                read_only: true,
+                data: BinaryData::new(data.to_vec()),
+                disabled_at: disabled.then_some(1),
+                contract_bounds: None,
+            }
+            .into()
+        };
+        let identity: Identity = IdentityV0 {
+            id: operator_identifier(),
+            public_keys: BTreeMap::from([
+                (0, key(0, [0x51; 20], false)),
+                (KeyID::MAX, key(KeyID::MAX, [0x52; 20], true)),
+            ]),
+            balance: 0,
+            revision: 0,
+        }
+        .into();
+        platform
+            .drive
+            .add_new_identity(
+                identity,
+                true,
+                &BlockInfo::default(),
+                true,
+                None,
+                PlatformVersion::latest(),
+            )
+            .expect("expected to add the operator identity");
+
+        update(
+            &platform,
+            &platform_state,
+            None,
+            Some(Some([0x52; 20])),
+            None,
+        )
+        .expect("expected to reuse the payout key");
+        assert_eq!(
+            keys(&platform),
+            [
+                (Purpose::TRANSFER, vec![0x51; 20], true),
+                (Purpose::TRANSFER, vec![0x52; 20], false),
+            ]
+        );
     }
 }

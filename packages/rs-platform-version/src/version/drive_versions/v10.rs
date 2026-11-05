@@ -82,7 +82,9 @@ use crate::version::drive_versions::{
 ///   has, gets no second reference instead of failing with `IdentityKeyAlreadyExists`. Core
 ///   accepts any 20 bytes as an operator payout or platform node id, so an operator identity can
 ///   need two keys of different kinds with one hash. The keys Platform adds to owner and voter
-///   identities go through the same method.
+///   identities go through the same method. `apply_drive_operations` 2 also creates a hash's
+///   tree under the non-unique key hashes tree once where several identity operations of one
+///   batch each queue it, as masternodes whose operators share a payout address do.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {

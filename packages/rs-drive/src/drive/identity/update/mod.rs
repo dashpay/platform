@@ -665,6 +665,115 @@ mod tests {
             assert!(holds_reference(&drive, hash));
         }
 
+        /// Masternodes whose operators share a payout address add keys of one hash no identity held
+        /// before, to several identities in one batch. Each identity's operation queues that hash's
+        /// tree under the non-unique key hashes tree; from protocol version 15 the batch creates it
+        /// once and keeps every identity's key and entry, also where batches are checked for
+        /// consistency, which refuse the repeated insert at protocol version 14.
+        #[test]
+        fn should_add_keys_of_one_new_hash_to_several_identities_in_one_batch() {
+            let other_identity_id = [2; 32];
+            let hash = [0x9b; 20];
+            for (platform_version, applied) in [
+                (
+                    PlatformVersion::get(14).expect("expected protocol version 14"),
+                    false,
+                ),
+                (PlatformVersion::latest(), true),
+            ] {
+                let drive = drive_with_masternode_identity(platform_version);
+                let other_identity: Identity = IdentityV0 {
+                    id: other_identity_id.into(),
+                    public_keys: BTreeMap::from([(
+                        0,
+                        key_with_data(0, KeyType::ECDSA_HASH160, Purpose::TRANSFER, [3; 20]),
+                    )]),
+                    balance: 0,
+                    revision: 0,
+                }
+                .into();
+                drive
+                    .add_new_identity(
+                        other_identity,
+                        true,
+                        &BlockInfo::default(),
+                        true,
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to insert the other masternode identity");
+                let add = |identity_id: [u8; 32]| {
+                    DriveOperation::IdentityOperation(
+                        IdentityOperationType::AddNewKeysToMasternodeIdentity {
+                            identity_id,
+                            non_unique_keys_to_add: vec![key_with_data(
+                                1,
+                                KeyType::ECDSA_HASH160,
+                                Purpose::TRANSFER,
+                                hash,
+                            )],
+                        },
+                    )
+                };
+                let result = drive.apply_drive_operations(
+                    vec![add(MASTERNODE_IDENTITY_ID), add(other_identity_id)],
+                    true,
+                    &BlockInfo::default(),
+                    None,
+                    platform_version,
+                    None,
+                );
+                let context = format!("protocol version {}", platform_version.protocol_version);
+                if applied {
+                    result.expect("expected to add both keys");
+                    assert_eq!(key_ids(&drive, platform_version), [0, 1], "{context}");
+                    assert!(holds_reference(&drive, hash), "{context}");
+                    assert!(
+                        drive
+                            .has_non_unique_public_key_hash_already_for_identity_operations(
+                                hash,
+                                other_identity_id,
+                                None,
+                                &mut vec![],
+                                &platform_version.drive,
+                            )
+                            .expect("expected to read the reference"),
+                        "{context}"
+                    );
+                } else {
+                    assert!(result.is_err(), "{context}: {result:?}");
+                }
+            }
+        }
+
+        /// Estimating the cost of a call with two keys of one hash counts the hash's reference
+        /// once, as applying it writes it once: fewer operations than for two keys of two hashes.
+        #[test]
+        fn should_estimate_one_reference_for_two_keys_with_one_hash() {
+            let platform_version = PlatformVersion::latest();
+            let drive = drive_with_masternode_identity(platform_version);
+            let estimated_operations = |second_hash: [u8; 20]| {
+                let mut estimated_costs = Some(EstimatedLayers::new());
+                IdentityOperationType::AddNewKeysToMasternodeIdentity {
+                    identity_id: MASTERNODE_IDENTITY_ID,
+                    non_unique_keys_to_add: vec![
+                        key_with_data(1, KeyType::EDDSA_25519_HASH160, Purpose::SYSTEM, [0x9d; 20]),
+                        key_with_data(2, KeyType::ECDSA_HASH160, Purpose::TRANSFER, second_hash),
+                    ],
+                }
+                .into_low_level_drive_operations(
+                    &drive,
+                    &mut estimated_costs,
+                    &BlockInfo::default(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected operations")
+                .len()
+            };
+            assert!(estimated_operations([0x9d; 20]) < estimated_operations([0x9c; 20]));
+        }
+
         /// A key whose hash is another identity's unique key hash is added without a non-unique
         /// key hash reference, at protocol version 14 and from 15 alike.
         #[test]
