@@ -79,6 +79,20 @@ impl ConfigurationForSystemContract for SystemDataContract {
                 config.set_sized_integer_types_enabled(true);
                 Ok(config)
             }
+            SystemDataContract::DecisionProposals => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(true);
+                Ok(config)
+            }
+            // Every integer of an order is a signed 8-byte value: the `depth` index of each
+            // order type sums one of them, which a summed property must be, and a partial fill
+            // rewrites `remaining` (and a bid's `escrow`) without changing the stored size of
+            // the order.
+            SystemDataContract::TokenMarket => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
         }
     }
 }
@@ -150,6 +164,82 @@ mod tests {
     use crate::data_contract::serialized_version::DataContractInSerializationFormat;
     use crate::serialization::PlatformSerializableWithPlatformVersion;
     use platform_version::TryIntoPlatformVersioned;
+    /// A system contract is written by genesis and protocol upgrades, which nothing refuses
+    /// before Drive does, so each must fit the contract size caps at every protocol version
+    /// that has it: its bytes in the format transitions carry under `max_serialized_size`
+    /// and, where contracts are stored compiled, its compiled bytes under
+    /// `max_compiled_contract_size`.
+    #[cfg(feature = "validation")]
+    #[test]
+    fn should_fit_every_system_contract_under_the_contract_size_caps() {
+        use crate::serialization::PlatformSerializableWithPlatformVersion;
+        use platform_version::version::PLATFORM_VERSIONS;
+
+        for platform_version in PLATFORM_VERSIONS.iter() {
+            let contract_versions = &platform_version.system_data_contracts;
+            for system_contract in SystemDataContract::ALL {
+                // Only the contracts a version has; any of them failing to load fails the test
+                let absent = match system_contract {
+                    // A reserved slot, with no contract at any version
+                    SystemDataContract::FeatureFlags => true,
+                    // Inserted by the upgrade to protocol version 13; earlier meta-schemas
+                    // refuse its schema
+                    SystemDataContract::DocumentHistory => platform_version.protocol_version < 13,
+                    SystemDataContract::AppConnect => contract_versions.app_connect == 0,
+                    SystemDataContract::ModerationCharters => {
+                        contract_versions.moderation_charters == 0
+                    }
+                    SystemDataContract::DecisionProposals => {
+                        contract_versions.decision_proposals == 0
+                    }
+                    SystemDataContract::TokenMarket => contract_versions.token_market == 0,
+                    SystemDataContract::Withdrawals
+                    | SystemDataContract::MasternodeRewards
+                    | SystemDataContract::DPNS
+                    | SystemDataContract::Dashpay
+                    | SystemDataContract::WalletUtils
+                    | SystemDataContract::TokenHistory
+                    | SystemDataContract::KeywordSearch => false,
+                };
+                if absent {
+                    continue;
+                }
+                let contract = load_system_data_contract(system_contract, platform_version)
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "{system_contract:?} does not load at protocol version {}: {error}",
+                            platform_version.protocol_version
+                        )
+                    });
+                let origin = format!(
+                    "{system_contract:?} at protocol version {}",
+                    platform_version.protocol_version
+                );
+                let carried_size = contract
+                    .serialize_to_bytes_with_platform_version(platform_version)
+                    .expect("expected the system contract to serialize")
+                    .len();
+                assert!(
+                    carried_size
+                        <= platform_version.dpp.contract_versions.max_serialized_size as usize,
+                    "{origin} serializes to {carried_size} bytes"
+                );
+                let stored_size = contract
+                    .serialize_to_storage_bytes(platform_version)
+                    .expect("expected the system contract to serialize for storage")
+                    .len();
+                if let Some(max_compiled_size) =
+                    platform_version.system_limits.max_compiled_contract_size
+                {
+                    assert!(
+                        stored_size <= max_compiled_size as usize,
+                        "{origin} is stored in {stored_size} bytes"
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn test_load_system_data_contract_v8_vs_v9() {
         let contract_1 = load_system_data_contract(
@@ -1376,6 +1466,117 @@ mod dpns_v3_tests {
                 .answering_index(&preorder)
                 .map(|index| index.name.as_str()),
             Some("nameHash")
+        );
+    }
+}
+
+#[cfg(all(test, feature = "token-market-contract", feature = "validation"))]
+mod token_market_tests {
+    use super::*;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::document_type::accessors::{
+        DocumentTypeV0Getters, DocumentTypeV2Getters,
+    };
+    use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
+    use crate::data_contract::document_type::DocumentPropertyType;
+    use crate::document::transfer::Transferable;
+    use crate::nft::TradeMode;
+    use crate::system_data_contracts::token_market_contract::v1::document_types::{ask, bid};
+
+    /// The order types are what the marketplace transitions rely on: only they create orders,
+    /// orders stay mutable and deletable so a partial fill can rewrite them and a close can
+    /// delete them with their storage flags, every integer is a signed 8-byte value, and the
+    /// `depth` index sums what the order holds in escrow.
+    #[test]
+    fn should_load_the_order_types_the_marketplace_writes() {
+        let contract =
+            load_system_data_contract(SystemDataContract::TokenMarket, PlatformVersion::latest())
+                .expect("the token market contract loads with full validation");
+        assert_eq!(contract.id(), token_market_contract::ID);
+        assert_eq!(contract.owner_id(), token_market_contract::OWNER_ID);
+        assert_eq!(contract.document_types().len(), 2);
+
+        for (name, summed) in [
+            (ask::NAME, ask::properties::REMAINING),
+            (bid::NAME, bid::properties::ESCROW),
+        ] {
+            let document_type = contract
+                .document_type_for_name(name)
+                .unwrap_or_else(|_| panic!("the {name} type"));
+            assert!(document_type.documents_mutable(), "{name} is mutable");
+            assert!(
+                document_type.documents_can_be_deleted(),
+                "{name} is deletable"
+            );
+            assert_eq!(
+                document_type.creation_restriction_mode(),
+                CreationRestrictionMode::NoCreationAllowed,
+                "only the marketplace transitions create {name} orders"
+            );
+            // The data trigger bindings refuse a user's replace and delete; these defaults
+            // refuse the remaining document transitions (transfer, purchase, price update and
+            // index-only delete), so a schema edit that enables one fails here.
+            assert_eq!(
+                document_type.documents_transferable(),
+                Transferable::Never,
+                "{name} orders cannot be transferred"
+            );
+            assert_eq!(
+                document_type.trade_mode(),
+                TradeMode::None,
+                "{name} orders cannot be priced or purchased as documents"
+            );
+            assert!(
+                !document_type.index_only(),
+                "{name} orders are not index-only"
+            );
+            for property in document_type.properties().values() {
+                if matches!(
+                    property.property_type,
+                    DocumentPropertyType::U8
+                        | DocumentPropertyType::U16
+                        | DocumentPropertyType::U32
+                        | DocumentPropertyType::U64
+                        | DocumentPropertyType::I8
+                        | DocumentPropertyType::I16
+                        | DocumentPropertyType::I32
+                ) {
+                    panic!("{name} stores an integer narrower than i64 or unsigned");
+                }
+            }
+            let depth = document_type
+                .indexes()
+                .get(ask::indexes::DEPTH)
+                .unwrap_or_else(|| panic!("{name} has a depth index"));
+            assert_eq!(depth.summable.as_deref(), Some(summed));
+            // Prices are per whole token at each order's decimals, so the book and the depth
+            // sums are kept apart per scale: a query names the token and the decimals.
+            let index_properties = |index_name: &str| -> Vec<String> {
+                document_type
+                    .indexes()
+                    .get(index_name)
+                    .unwrap_or_else(|| panic!("{name} has a {index_name} index"))
+                    .properties
+                    .iter()
+                    .map(|property| property.name.clone())
+                    .collect()
+            };
+            assert_eq!(
+                index_properties(ask::indexes::DEPTH),
+                ["tokenId", "decimals", "price"]
+            );
+            assert_eq!(
+                index_properties(ask::indexes::BOOK),
+                ["tokenId", "decimals", "price", "$createdAt"]
+            );
+        }
+    }
+
+    #[test]
+    fn should_not_exist_before_protocol_version_15() {
+        let platform_version = PlatformVersion::get(14).expect("protocol version 14");
+        assert!(
+            load_system_data_contract(SystemDataContract::TokenMarket, platform_version).is_err()
         );
     }
 }

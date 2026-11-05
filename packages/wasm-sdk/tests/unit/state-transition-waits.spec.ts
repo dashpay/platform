@@ -4,8 +4,8 @@ import vectors from '../fixtures/state-transition-waits/signed-responses.json' w
 
 const DAPI_URL = 'https://dapi.test:1443';
 const QUORUM_URL = 'https://quorums.test:22444';
-// The transport appends the RPC path to the address's trailing slash.
-const RPC_PATH = '//org.dash.platform.dapi.v0.Platform';
+// The transport joins the address and the RPC path with a single slash.
+const RPC_PATH = '/org.dash.platform.dapi.v0.Platform';
 
 function frame(flag: number, bytes: Uint8Array): Uint8Array {
   const result = new Uint8Array(5 + bytes.length);

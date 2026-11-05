@@ -56,6 +56,7 @@ pub const CONTRACT_VERSIONS_V3: DPPContractVersions = DPPContractVersions {
             parse_typed_array: None,
             parse_property_constraints: None,
             validation_schema: None,
+            parse_private_document: None,
             apply_generated_from: None,
             expand_property_type_shorthands: None,
             validate_max_depth: 0,

@@ -104,7 +104,7 @@
 //! ```
 
 use crate::documents::document_query::DocumentQuery;
-use crate::documents::having_proof_helpers::verify_having_query;
+use crate::documents::having_proof_helpers::{check_having_request, verify_having_query};
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::ContextProvider;
 use dpp::dashcore::Network;
@@ -114,6 +114,18 @@ use drive_proof_verifier::{DocumentHavingEntries, FromProof};
 impl FromProof<DocumentQuery> for DocumentHavingEntries {
     type Request = DocumentQuery;
     type Response = GetDocumentsResponse;
+
+    /// A request without a `having` clause is an ordinary grouped aggregate, which nodes
+    /// serve and the having verifier then refuses. The check resolves the pending window
+    /// selections as the verifier does, then runs the grammar and picks the covering index
+    /// with the verifier's own code, so it refuses a window that does not resolve, a resolved
+    /// shape no verifier accepts, and a query no index serves.
+    fn check_request(
+        request: &Self::Request,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), drive_proof_verifier::Error> {
+        check_having_request(request, platform_version)
+    }
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,

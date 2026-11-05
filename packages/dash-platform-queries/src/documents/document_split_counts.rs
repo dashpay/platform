@@ -38,7 +38,9 @@
 //!   a `nullSearchable: false` index's empty null-key group is counted
 //!   and left out when the range includes the empty key.
 
-use crate::documents::count_proof_helpers::{assert_select_is_count, verify_count_query};
+use crate::documents::count_proof_helpers::{
+    assert_select_is_count, check_count_request, verify_count_query,
+};
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::ContextProvider;
@@ -49,6 +51,13 @@ use drive_proof_verifier::{DocumentSplitCounts, FromProof};
 impl FromProof<DocumentQuery> for DocumentSplitCounts {
     type Request = DocumentQuery;
     type Response = GetDocumentsResponse;
+
+    fn check_request(
+        request: &Self::Request,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), drive_proof_verifier::Error> {
+        check_count_request(request, false, platform_version)
+    }
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,

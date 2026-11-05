@@ -855,6 +855,14 @@ pub(crate) struct InBroadcastPin {
 }
 
 impl InBroadcastPin {
+    /// Whether this pin was taken on `generation`. A cleanup that re-acquires
+    /// the manager guard after the build's own guard ended checks it before
+    /// touching wallet state: the wallet may since have been removed and
+    /// re-created from the same seed as a new generation.
+    pub(crate) fn is_on(&self, generation: &Arc<WalletGeneration>) -> bool {
+        Arc::ptr_eq(&self.generation, generation)
+    }
+
     /// End the dispatching phase and open the pending-spend fence, which then
     /// waits for [`WalletGeneration::observe_spent`] and for nothing else — it
     /// carries no deadline.

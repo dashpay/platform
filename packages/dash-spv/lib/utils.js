@@ -4,6 +4,23 @@ const dashcore = require('@dashevo/dashcore-lib');
 
 module.exports = {
 
+  /**
+   * Hash of the header's current fields, unlike the memoized header.hash
+   * @param {BlockHeader} header
+   * @return {string}
+   */
+  getHeaderHash(header) {
+    return Buffer.from(header._getHash()).reverse().toString('hex');
+  },
+  /**
+   * A BlockHeader of its own for the header in any format normalizeHeader
+   * takes. Always re-serialized: a BlockHeader read from a Buffer keeps slices
+   * of it, so changes to the caller's Buffer would reach the copy.
+   * @return {BlockHeader}
+   */
+  copyHeader(header) {
+    return new dashcore.BlockHeader(this.normalizeHeader(header).toBuffer());
+  },
   getCorrectedHash(reversedHashObj) {
     const clone = Buffer.alloc(32);
     reversedHashObj.copy(clone);
@@ -31,12 +48,6 @@ module.exports = {
       bits: parseInt(el.bits, 16),
       nonce: el.nonce,
     });
-  },
-  getDgwBlock(header) {
-    return {
-      timestamp: header.timestamp,
-      target: header.bits,
-    };
   },
   validProofOfWork(header) {
     const target = DashUtil.expandTarget(header.bits);

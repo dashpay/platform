@@ -1313,8 +1313,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     // same outpoint may confirm at any point after the
                     // pre-broadcast screen ran, and from that moment no proof
                     // for this transaction can ever arrive. Nothing inside the
-                    // wait would notice: it wakes on lock events and re-reads
-                    // the tracked funding transaction only, so an unbounded
+                    // wait would notice: it wakes on lock events, re-reads the
+                    // tracked funding transaction and looks up where that
+                    // transaction was mined, never the sibling, so an unbounded
                     // wait started before that sibling confirmed never ends.
                     // The bound costs nothing — the row is left at `Broadcast`,
                     // so a proof that lands after the expiry is returned by the
@@ -1325,7 +1326,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     } else {
                         timeout.or(Some(UNCONFIRMED_BROADCAST_PROOF_TIMEOUT))
                     };
-                    match self.wait_for_proof(out_point, bounded).await {
+                    match self.wait_for_resumed_proof(out_point, bounded).await {
                         Ok(proof) => {
                             if undispatched.is_some() {
                                 dispatch_claim
@@ -1647,8 +1648,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 //
                 // The bound costs nothing: the row is left at `Broadcast`, so
                 // a proof that lands after the expiry is picked up by the very
-                // next resume — `wait_for_proof` returns it on its first
-                // iteration, straight from the record, without waiting at all.
+                // next resume — `wait_for_resumed_proof` returns it on its
+                // first iteration, straight from the record, without waiting
+                // at all.
                 //
                 // Callers that supplied their own timeout keep their exact
                 // semantics, `FinalityTimeout` and all: `or` is the identity
@@ -1664,7 +1666,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     } else {
                         timeout.or(Some(UNCONFIRMED_BROADCAST_PROOF_TIMEOUT))
                     };
-                    match self.wait_for_proof(out_point, bounded).await {
+                    match self.wait_for_resumed_proof(out_point, bounded).await {
                         Ok(proof) => proof,
                         Err(expiry @ PlatformWalletError::FinalityTimeout(_)) => {
                             // Same reading as the `Built` arm: the wait gave
@@ -1727,12 +1729,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // holds only while the chain-locked record is still
                 // reachable — the same lost-state accident that produced a
                 // proof-less `RecoveredFromChain` row could equally have
-                // taken the record with it, and then the wait has nothing
-                // to resolve from and blocks forever on `Notify`. The bound
-                // is free where the argument holds (`wait_for_proof` returns
-                // from the record on its first iteration, before any deadline
-                // is consulted) and closes the case where it doesn't, so it
-                // is applied for uniformity with the two arms above. No
+                // taken the record with it, and then only the mined-height
+                // lookup `wait_for_resumed_proof` makes can still place the
+                // transaction; when it cannot either, the wait would block
+                // forever on `Notify`. The bound is free where the argument
+                // holds (the wait returns from the record on its first
+                // iteration, before any deadline is consulted) and closes the
+                // case where it doesn't, so it is applied for uniformity with
+                // the two arms above. No
                 // re-typing here: nothing was broadcast on this path, so
                 // `FinalityTimeout` is the honest verdict.
                 match existing_proof {
@@ -1741,12 +1745,17 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                             .await?
                     }
                     None => {
-                        let proof = self
-                            .wait_for_proof(
-                                out_point,
-                                timeout.or(Some(UNCONFIRMED_BROADCAST_PROOF_TIMEOUT)),
-                            )
-                            .await?;
+                        let bound = timeout.or(Some(UNCONFIRMED_BROADCAST_PROOF_TIMEOUT));
+                        // Chain-only: the status asserts a ChainLock proof, so
+                        // an InstantSend record does not settle it. It comes
+                        // straight from the record, so the ChainLock wait
+                        // still has the whole bound.
+                        let proof = match self.wait_for_resumed_proof(out_point, bound).await? {
+                            dpp::prelude::AssetLockProof::Instant(_) => {
+                                self.upgrade_to_chain_lock_proof(out_point, bound).await?
+                            }
+                            chain => chain,
+                        };
                         self.validate_or_upgrade_proof(proof, account_index, out_point)
                             .await?
                     }

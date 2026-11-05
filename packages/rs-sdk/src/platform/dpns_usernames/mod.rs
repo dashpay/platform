@@ -1,6 +1,8 @@
+mod contender_request;
 mod contested_queries;
 mod queries;
 
+pub use contender_request::{ContenderRequest, ContestRequests};
 pub use contested_queries::ContestedDpnsUsername;
 pub use dash_platform_queries::dpns_usernames::{
     convert_to_homograph_safe_chars, is_contested_username, is_valid_username,

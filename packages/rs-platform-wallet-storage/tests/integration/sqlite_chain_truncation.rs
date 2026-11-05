@@ -375,9 +375,18 @@ impl Chain {
 
     /// A payment from `coin` that returns the change to the wallet.
     fn spend(&self, coin: OutPoint, value: u64) -> Transaction {
-        transaction(
-            &[coin],
-            &[(&self.ours, value / 2), (&foreign(), value / 2 - FEE)],
+        let manager = self.manager.try_read().unwrap();
+        common::authorize(
+            manager.get_wallet(&self.wallet_id).unwrap(),
+            &manager
+                .get_wallet_info(&self.wallet_id)
+                .unwrap()
+                .core_wallet,
+            &self.ours,
+            transaction(
+                &[coin],
+                &[(&self.ours, value / 2), (&foreign(), value / 2 - FEE)],
+            ),
         )
     }
 

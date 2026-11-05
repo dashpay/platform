@@ -5,6 +5,7 @@ use crate::prelude::AddressNonce;
 use crate::serialization::JsonConvertible;
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 use crate::serialization::ValueConvertible;
+use crate::util::ecdsa;
 use crate::ProtocolError;
 use bech32::{Bech32m, Hrp};
 use bincode::{Decode, DecodeUntrusted, Encode};
@@ -564,7 +565,7 @@ impl PlatformAddress {
                         ProtocolError::AddressWitnessError(format!("Invalid public key: {}", e))
                     })?;
 
-                    if pub_key.inner.verify(&signable_bytes_hash, sig).is_ok() {
+                    if ecdsa::verify_digest(&pub_key.inner, &signable_bytes_hash, sig).is_ok() {
                         matched += 1;
                         sig_idx += 1;
                     }

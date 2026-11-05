@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use dpp::consensus::state::state_error::StateError;
@@ -7,11 +8,13 @@ use dpp::consensus::state::voting::masternode_voted_too_many_times::MasternodeVo
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
-use dpp::dashcore_rpc::dashcore_rpc_json::MasternodeType;
+use dpp::dashcore_rpc::dashcore_rpc_json::{MasternodeListItem, MasternodeType};
+use dpp::identifier::Identifier;
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use drive::drive::votes::PreviousVoteCount;
 use drive::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
 
 use crate::execution::validation::state_transition::ValidationMode;
@@ -57,65 +60,43 @@ impl MasternodeVoteStateTransitionTransformIntoActionValidationV0 for Masternode
                                     &mut vec![],
                                     platform_version,
                                 )?;
-                            if let Some((existing_resource_vote_choice, previous_vote_count)) =
-                                maybe_existing_resource_vote_choice
-                            {
-                                if existing_resource_vote_choice
-                                    == resource_vote.resource_vote_choice()
-                                {
-                                    // We are submitting a vote for something we already have
-                                    return Ok(ConsensusValidationResult::new_with_error(
-                                        ConsensusError::StateError(
-                                            StateError::MasternodeVoteAlreadyPresentError(
-                                                MasternodeVoteAlreadyPresentError::new(
-                                                    self.pro_tx_hash(),
-                                                    resource_vote.vote_poll().clone(),
-                                                ),
-                                            ),
-                                        ),
-                                    ));
-                                } else if previous_vote_count
-                                    >= platform_version
-                                        .dpp
-                                        .validation
-                                        .voting
-                                        .votes_allowed_per_masternode
-                                {
-                                    // We are submitting a vote for something we already have
-                                    return Ok(ConsensusValidationResult::new_with_error(
-                                        ConsensusError::StateError(
-                                            StateError::MasternodeVotedTooManyTimesError(
-                                                MasternodeVotedTooManyTimesError::new(
-                                                    self.pro_tx_hash(),
-                                                    previous_vote_count,
-                                                    platform_version
-                                                        .dpp
-                                                        .validation
-                                                        .voting
-                                                        .votes_allowed_per_masternode,
-                                                ),
-                                            ),
-                                        ),
-                                    ));
-                                } else {
-                                    previous_resource_vote_choice_to_remove =
-                                        Some((existing_resource_vote_choice, previous_vote_count));
+                            match previous_vote_to_replace_v0(
+                                self.pro_tx_hash(),
+                                maybe_existing_resource_vote_choice,
+                                &resource_vote.resource_vote_choice(),
+                                || resource_vote.vote_poll().clone(),
+                                platform_version,
+                            ) {
+                                Ok(previous_vote) => {
+                                    previous_resource_vote_choice_to_remove = previous_vote
+                                }
+                                Err(error) => {
+                                    return Ok(ConsensusValidationResult::new_with_error(error))
                                 }
                             }
                         }
+                        // Unreachable: this v0 is selected up to protocol version 14, where a
+                        // masternode vote that names a yes/no poll does not decode
+                        // (`StateTransition::active_version_range`).
+                        VotePoll::YesNoVotePoll(_) => {
+                            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                                "yes/no vote polls need transform_into_action version 1",
+                            )))
+                        }
                     }
+                }
+                // Unreachable for the same reason: no yes/no vote decodes before 15.
+                Vote::YesNoVote(_) => {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "yes/no votes need transform_into_action version 1",
+                    )))
                 }
             }
         }
 
-        let Some(masternode) = platform
-            .state
-            .full_masternode_list()
-            .get(&ProTxHash::from_byte_array(self.pro_tx_hash().to_buffer()))
-        else {
-            return Ok(ConsensusValidationResult::new_with_error(
-                MasternodeNotFoundError::new(self.pro_tx_hash()).into(),
-            ));
+        let masternode = match voting_masternode_v0(platform, self.pro_tx_hash()) {
+            Ok(masternode) => masternode,
+            Err(error) => return Ok(ConsensusValidationResult::new_with_error(error)),
         };
 
         let strength = match masternode.node_type {
@@ -135,4 +116,71 @@ impl MasternodeVoteStateTransitionTransformIntoActionValidationV0 for Masternode
             )?,
         ))
     }
+}
+
+/// What a masternode's earlier vote on a poll means for its new one, the same for both poll
+/// kinds: the same answer again is refused, a change once the masternode has voted
+/// `votes_allowed_per_masternode` times is refused, and any other change carries the earlier
+/// answer for registration to remove. `None` for a first vote.
+///
+/// Moved here unchanged from `transform_into_action_v0` (in place: the same checks, in the same
+/// order, with the same errors at every protocol version that selects it), so version 1 applies
+/// the rule to yes/no votes too. Shipped with protocol version 1 (version 0 runs it for every
+/// contested vote up to 14), so it must not change: a different rule for a later version is a
+/// new helper.
+pub(super) fn previous_vote_to_replace_v0<Choice: PartialEq>(
+    pro_tx_hash: Identifier,
+    existing_vote: Option<(Choice, PreviousVoteCount)>,
+    new_vote_choice: &Choice,
+    vote_poll: impl FnOnce() -> VotePoll,
+    platform_version: &PlatformVersion,
+) -> Result<Option<(Choice, PreviousVoteCount)>, ConsensusError> {
+    let Some((existing_vote_choice, previous_vote_count)) = existing_vote else {
+        return Ok(None);
+    };
+    if &existing_vote_choice == new_vote_choice {
+        // We are submitting a vote for something we already have
+        Err(ConsensusError::StateError(
+            StateError::MasternodeVoteAlreadyPresentError(MasternodeVoteAlreadyPresentError::new(
+                pro_tx_hash,
+                vote_poll(),
+            )),
+        ))
+    } else if previous_vote_count
+        >= platform_version
+            .dpp
+            .validation
+            .voting
+            .votes_allowed_per_masternode
+    {
+        // We are submitting a vote for something we already have
+        Err(ConsensusError::StateError(
+            StateError::MasternodeVotedTooManyTimesError(MasternodeVotedTooManyTimesError::new(
+                pro_tx_hash,
+                previous_vote_count,
+                platform_version
+                    .dpp
+                    .validation
+                    .voting
+                    .votes_allowed_per_masternode,
+            )),
+        ))
+    } else {
+        Ok(Some((existing_vote_choice, previous_vote_count)))
+    }
+}
+
+/// The voting masternode in the block's masternode list, or the error refusing a vote from one
+/// that is not in it. Moved here unchanged from `transform_into_action_v0` (in place, as
+/// [`previous_vote_to_replace_v0`]) for version 1. Shipped with protocol version 1, so it must
+/// not change.
+pub(super) fn voting_masternode_v0<'a, C>(
+    platform: &PlatformRef<'a, C>,
+    pro_tx_hash: Identifier,
+) -> Result<&'a MasternodeListItem, ConsensusError> {
+    platform
+        .state
+        .full_masternode_list()
+        .get(&ProTxHash::from_byte_array(pro_tx_hash.to_buffer()))
+        .ok_or_else(|| MasternodeNotFoundError::new(pro_tx_hash).into())
 }
