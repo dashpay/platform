@@ -6689,10 +6689,13 @@ dependencies = [
  "dashcore",
  "dashpay-contract",
  "dpp",
+ "hex",
  "jni 0.21.1",
  "log",
  "platform-wallet-ffi",
  "rs-sdk-ffi",
+ "serde",
+ "serde_json",
  "zeroize",
 ]
 
