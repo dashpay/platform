@@ -153,7 +153,7 @@ async fn resolve_current_epoch(
 
 /// First step of [`ExtendedEpochInfo::fetch_current`]: a proved query with an
 /// explicit start whose response metadata carries the current-epoch hint.
-fn current_epoch_probe_query() -> LimitQuery<EpochQuery> {
+pub(crate) fn current_epoch_probe_query() -> LimitQuery<EpochQuery> {
     LimitQuery {
         query: EpochQuery::genesis(),
         limit: Some(1),
@@ -164,7 +164,7 @@ fn current_epoch_probe_query() -> LimitQuery<EpochQuery> {
 /// Second step of [`ExtendedEpochInfo::fetch_current`]: fetch `candidate` and the
 /// epoch above it, so the proof shows whether `candidate` is the newest started
 /// epoch.
-fn current_epoch_confirmation_query(candidate: EpochIndex) -> LimitQuery<EpochQuery> {
+pub(crate) fn current_epoch_confirmation_query(candidate: EpochIndex) -> LimitQuery<EpochQuery> {
     LimitQuery {
         query: EpochQuery::ascending_from(candidate),
         limit: Some(2),
@@ -174,7 +174,7 @@ fn current_epoch_confirmation_query(candidate: EpochIndex) -> LimitQuery<EpochQu
 
 /// Extract the current-epoch hint from response metadata, clamped to the range
 /// Drive's epoch key encoding can express.
-fn epoch_hint_from_metadata(metadata: &ResponseMetadata) -> EpochIndex {
+pub(crate) fn epoch_hint_from_metadata(metadata: &ResponseMetadata) -> EpochIndex {
     metadata.epoch.min(MAX_EPOCH as u32) as EpochIndex
 }
 

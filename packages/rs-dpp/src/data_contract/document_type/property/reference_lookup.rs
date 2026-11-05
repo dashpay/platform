@@ -743,6 +743,14 @@ impl DocumentReferenceLookup {
         reference_property: Option<&str>,
         referenced: DocumentTypeRef,
     ) -> Option<String> {
+        // A private type has no index and its entries are encrypted: nothing a lookup could
+        // find. Reached only from protocol version 15, the first to parse a private type
+        if referenced.is_private() {
+            return Some(format!(
+                "\"{}\" is a private document type, which findBy cannot reference",
+                referenced.name()
+            ));
+        }
         let index_name = match self.resolve_index(referenced) {
             Ok(index_name) => index_name,
             Err(reason) => return Some(reason),

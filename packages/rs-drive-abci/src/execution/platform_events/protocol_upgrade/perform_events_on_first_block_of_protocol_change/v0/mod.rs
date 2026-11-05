@@ -327,6 +327,11 @@ impl<C> Platform<C> {
                     VotePoll::ContestedDocumentResourceVotePoll(contested) => {
                         contested.specialized_balance_id().map_err(Error::Protocol)
                     }
+                    // Unreachable: this runs once, on the block entering protocol version 8,
+                    // and yes/no polls exist from 15. The arm only keeps the match exhaustive.
+                    VotePoll::YesNoVotePoll(yes_no) => yes_no
+                        .specialized_balance_id(platform_version)
+                        .map_err(Error::Protocol),
                 }
             })
             .collect::<Result<HashSet<Identifier>, Error>>()?;
@@ -910,7 +915,9 @@ impl<C> Platform<C> {
 
     /// When transitioning to version 15 we re-store the DPNS contract whose v3
     /// schema checks a domain create with keywords instead of most of its data
-    /// trigger.
+    /// trigger, create the vote decisions trees that yes/no polls live in,
+    /// insert the decision proposals contract whose proposals open those polls, and add
+    /// the token marketplace: its escrow trees and the token market contract.
     fn transition_to_version_15(
         &self,
         block_info: &BlockInfo,
@@ -930,6 +937,53 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
+        // Vote decisions trees: the active yes/no polls and the identity votes index of the
+        // decisions branch. Fresh chains call the same helper from
+        // `create_initial_state_structure` v4, behind a `>= 15` check on the chain's initial
+        // protocol version, so both node populations build the decisions Merk from the same
+        // sequence of inserts.
+        self.drive
+            .insert_vote_decisions_trees(Some(transaction), platform_version)?;
+
+        // Decision proposals contract (v15 note 12): creating a proposal opens a yes/no poll on
+        // it. Fresh chains register it at genesis (`create_genesis_state` v1, behind a `>= 15`
+        // branch). Stored without storage flags, as genesis stores system contracts.
+        let decision_proposals_contract =
+            load_system_data_contract(SystemDataContract::DecisionProposals, platform_version)?;
+
+        self.drive.apply_contract(
+            &decision_proposals_contract,
+            *block_info,
+            true,
+            None,
+            Some(transaction),
+            platform_version,
+        )?;
+
+        // Token marketplace escrow trees (v15 note 17): the BigSumTree under the Tokens tree of
+        // the tokens open listings hold, and the SumTree under the prefunded specialized
+        // balances of the credits open offers hold. The same helper builds them at genesis
+        // (`create_initial_state_structure_v5`), last, so both node populations build the same
+        // `[Tokens]` and `[PreFundedSpecializedBalances]` subtrees.
+        self.drive
+            .insert_token_order_escrow_trees(Some(transaction), platform_version)?;
+
+        // Token market contract: the open listings and offers of the token marketplace, one
+        // system contract id on every network from this version. Fresh chains register it at
+        // genesis (`create_genesis_state` v1). Stored without storage flags, as genesis stores
+        // system contracts.
+        let token_market_contract =
+            load_system_data_contract(SystemDataContract::TokenMarket, platform_version)?;
+
+        self.drive.apply_contract(
+            &token_market_contract,
+            *block_info,
+            true,
+            None,
+            Some(transaction),
+            platform_version,
+        )?;
+
         Ok(())
     }
 }
@@ -941,6 +995,7 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
     use dpp::version::PlatformVersion;
     use drive::drive::credit_pools::epochs::epochs_root_tree_key_constants::KEY_LIFETIME_STORAGE_FEE_POOLS;
@@ -1816,6 +1871,93 @@ mod tests {
             .is_some());
     }
 
+    #[test]
+    fn should_insert_decision_proposals_on_transition_to_version_15() {
+        // A chain born at protocol version 14 has no decision proposals contract: it is
+        // neither in that genesis state nor active for the system contract cache.
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_version_14 = PlatformVersion::get(14).expect("expected platform version 14");
+        let platform_version = PlatformVersion::latest();
+        let decision_proposals_id = SystemDataContract::DecisionProposals.id();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        assert!(
+            platform
+                .drive
+                .fetch_contract(
+                    decision_proposals_id.to_buffer(),
+                    None,
+                    None,
+                    Some(&transaction),
+                    platform_version_14,
+                )
+                .value
+                .expect("expected to query the decision proposals contract")
+                .is_none(),
+            "the decision proposals contract must not exist before transition_to_version_15"
+        );
+        assert!(platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(decision_proposals_id, platform_version_14)
+            .expect("expected the pre-activation lookup to succeed")
+            .is_none());
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        platform
+            .transition_to_version_15(&block_info, &transaction, platform_version)
+            .expect("expected the transition to succeed");
+
+        let stored = platform
+            .drive
+            .fetch_contract(
+                decision_proposals_id.to_buffer(),
+                None,
+                None,
+                Some(&transaction),
+                platform_version,
+            )
+            .value
+            .expect("expected to fetch the decision proposals contract")
+            .expect("the decision proposals contract must exist after transition_to_version_15");
+
+        assert_eq!(stored.contract.id(), decision_proposals_id);
+        assert_eq!(stored.contract.owner_id(), Identifier::from([0u8; 32]));
+        assert!(stored.contract.document_type_for_name("proposal").is_ok());
+        assert_eq!(stored.contract.document_types().len(), 1);
+        assert_eq!(
+            platform
+                .drive
+                .fetch_contract_version(
+                    decision_proposals_id.to_buffer(),
+                    Some(&transaction),
+                    platform_version
+                )
+                .expect("expected to read the version item"),
+            Some(stored.contract.version()),
+            "the decision proposals contract has its version item after the transition"
+        );
+        assert!(platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(decision_proposals_id, platform_version)
+            .expect("expected the post-activation lookup to succeed")
+            .is_some());
+    }
+
     /// Reads the `status` enum of the stored withdrawals contract's `withdrawal` document
     /// type, the contract-level record of which statuses a withdrawal may carry.
     fn stored_withdrawal_status_enum(
@@ -2511,6 +2653,74 @@ mod tests {
         );
     }
 
+    /// The only way a running network gets the vote decisions trees is this upgrade hook.
+    /// They are absent at 14 and present after the transition, and the votes subtree is then
+    /// byte-identical to the one of a chain born at 15, so both node populations build the
+    /// same Merk when the first yes/no poll opens.
+    #[test]
+    fn should_create_the_vote_decisions_trees_on_transition_to_version_15() {
+        use drive::drive::votes::paths::{
+            vote_decisions_tree_path, ACTIVE_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY,
+        };
+        use drive::util::grove_operations::DirectQueryType;
+
+        let platform_version = PlatformVersion::latest();
+        let born_at_15 = TestPlatformBuilder::new()
+            .with_initial_protocol_version(15)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let upgraded = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = upgraded.drive.grove.start_transaction();
+
+        let decisions_tree_exists = |key: char, transaction: &Transaction| {
+            upgraded
+                .drive
+                .grove_has_raw(
+                    (&vote_decisions_tree_path()).into(),
+                    &[key as u8],
+                    DirectQueryType::StatefulDirectQuery,
+                    Some(transaction),
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected to query the decisions tree")
+        };
+        for key in [ACTIVE_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY] {
+            assert!(
+                !decisions_tree_exists(key, &transaction),
+                "protocol version 14 has no decisions {key} tree"
+            );
+        }
+
+        upgraded
+            .transition_to_version_15(&BlockInfo::default(), &transaction, platform_version)
+            .expect("expected version 15 transition to succeed");
+
+        for key in [ACTIVE_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY] {
+            assert!(
+                decisions_tree_exists(key, &transaction),
+                "the decisions {key} tree must exist after the transition"
+            );
+        }
+
+        let diffs = collect_subtree_diffs(
+            &born_at_15,
+            &upgraded,
+            &transaction,
+            vec![vec![RootTree::Votes as u8]],
+        );
+        assert!(
+            diffs.is_empty(),
+            "the votes subtree differs between a chain born at version 15 and one upgraded to \
+             it:\n{}",
+            diffs.join("\n")
+        );
+    }
+
     #[test]
     fn should_create_the_document_ttl_trees_on_transition_to_version_14() {
         let platform_version = PlatformVersion::latest();
@@ -2590,7 +2800,9 @@ mod tests {
         use drive::drive::votes::paths::vote_contested_resource_active_polls_tree_path_vec;
         use drive::util::grove_operations::DirectQueryType;
 
-        let platform_version = PlatformVersion::latest();
+        // The version the transition activates: from protocol version 15 contracts are stored
+        // compiled, which a chain born at 14 does not do
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let born_at_14 = TestPlatformBuilder::new()
             .with_initial_protocol_version(14)
             .build_with_mock_rpc()
@@ -2660,6 +2872,79 @@ mod tests {
                 diffs.join("\n"),
             );
         }
+    }
+
+    /// The decision proposals contract the upgrade to 15 registers is stored without storage
+    /// flags, as a chain born at 15 stores it at genesis. Both chains store it at protocol
+    /// version 15, so compiled, and its contract element and every tree created with it are
+    /// byte-identical on the two. It has no contested index, so nothing under the active polls.
+    #[test]
+    fn should_store_the_decision_proposals_contract_as_a_chain_born_at_15_does() {
+        // The version the transition activates, the one a chain born at 15 stores its genesis
+        // contracts with
+        let platform_version = PlatformVersion::latest();
+        let born_at_15 = TestPlatformBuilder::new()
+            .with_initial_protocol_version(15)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let upgraded = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = upgraded.drive.grove.start_transaction();
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+        upgraded
+            .transition_to_version_15(&block_info, &transaction, platform_version)
+            .expect("expected version 15 transition to succeed");
+
+        let element = |platform: &Platform<MockCoreRPCLike>,
+                       transaction: Option<&Transaction>,
+                       path: &[Vec<u8>],
+                       key: &[u8]| {
+            platform
+                .drive
+                .grove_get_raw(
+                    path.into(),
+                    key,
+                    DirectQueryType::StatefulDirectQuery,
+                    transaction,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected to read the element")
+                .expect("expected the element to exist")
+        };
+
+        let contracts = vec![vec![RootTree::DataContractDocuments as u8]];
+        let id = SystemDataContract::DecisionProposals.id().to_buffer();
+        let upgraded_element = element(&upgraded, Some(&transaction), &contracts, &id);
+        assert_eq!(
+            upgraded_element.get_flags(),
+            &None,
+            "the decision proposals contract is stored without storage flags"
+        );
+        assert_eq!(
+            element(&born_at_15, None, &contracts, &id),
+            upgraded_element,
+            "the decision proposals contract differs between a chain born at version 15 and one \
+             upgraded to it"
+        );
+
+        let mut root_path = contracts.clone();
+        root_path.push(id.to_vec());
+        let diffs = collect_subtree_diffs(&born_at_15, &upgraded, &transaction, root_path);
+        assert!(
+            diffs.is_empty(),
+            "the trees of the decision proposals contract differ between a chain born at \
+             version 15 and one upgraded to it:\n{}",
+            diffs.join("\n"),
+        );
     }
 
     /// Merk's shape depends on insertion order, and genesis builds the withdrawals tree's first
@@ -3902,6 +4187,206 @@ mod tests {
              node and an in-place-upgraded one, so their root hashes differ even though every \
              child matches"
         );
+    }
+
+    /// The token marketplace escrow trees are built by two paths that must coincide byte for
+    /// byte: `Drive::create_initial_state_structure_v5` at a v15 genesis and
+    /// `transition_to_version_15` on a chain upgraded from v14.
+    #[test]
+    fn test_genesis_v15_and_upgrade_to_v15_build_identical_token_order_escrow_trees() {
+        use drive::drive::prefunded_specialized_balances::PREFUNDED_BALANCES_FOR_TOKEN_ORDERS;
+        use drive::drive::tokens::paths::TOKEN_ORDER_ESCROW_KEY;
+
+        let platform_version_15 = PlatformVersion::get(15).expect("expected v15");
+
+        let platform_a = TestPlatformBuilder::new()
+            .with_initial_protocol_version(15)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_b = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        // A genuine v14 genesis has neither escrow tree yet.
+        {
+            let txn = platform_b.drive.grove.start_transaction();
+            for (root, key) in [
+                (RootTree::Tokens as u8, TOKEN_ORDER_ESCROW_KEY),
+                (
+                    RootTree::PreFundedSpecializedBalances as u8,
+                    PREFUNDED_BALANCES_FOR_TOKEN_ORDERS,
+                ),
+            ] {
+                let root_path: [&[u8]; 1] = [&[root]];
+                let escrow_root = platform_b.drive.grove.get(
+                    SubtreePath::from(&root_path[..]),
+                    &[key],
+                    Some(&txn),
+                    &platform_version_15.drive.grove_version,
+                );
+                assert!(
+                    escrow_root.value.is_err(),
+                    "v14 genesis must not contain the escrow tree {key} under root {root}; got {:?}",
+                    escrow_root.value
+                );
+            }
+        }
+
+        let txn_b = platform_b.drive.grove.start_transaction();
+        platform_b
+            .transition_to_version_15(&BlockInfo::default(), &txn_b, platform_version_15)
+            .expect("upgrade: transition_to_version_15 should succeed");
+
+        let roots = [
+            RootTree::Tokens as u8,
+            RootTree::PreFundedSpecializedBalances as u8,
+        ];
+        // `collect_subtree_diffs` walks one subtree from its path, so each root is compared on
+        // its own.
+        let mut diffs = Vec::new();
+        for root in roots {
+            diffs.extend(collect_subtree_diffs(
+                &platform_a,
+                &platform_b,
+                &txn_b,
+                vec![vec![root]],
+            ));
+        }
+        assert!(
+            diffs.is_empty(),
+            "CONSENSUS FORK: the [Tokens] or [PreFundedSpecializedBalances] subtree differs \
+             between a fresh genesis-v15 node and an in-place-upgraded v15 node.\n{}",
+            diffs.join("\n"),
+        );
+
+        // The children agree; the Merk of each root holds the new key itself, so compare the
+        // root elements too, which carry its root key and sum.
+        let root_element = |platform: &crate::platform_types::platform::Platform<
+            crate::rpc::core::MockCoreRPCLike,
+        >,
+                            root: u8,
+                            txn: drive::grovedb::TransactionArg| {
+            platform
+                .drive
+                .grove
+                .get_raw(
+                    drive::grovedb_path::SubtreePath::empty(),
+                    &[root],
+                    txn,
+                    &platform_version_15.drive.grove_version,
+                )
+                .unwrap()
+                .expect("expected to read the root element")
+        };
+        for root in roots {
+            assert_eq!(
+                root_element(&platform_a, root, None),
+                root_element(&platform_b, root, Some(&txn_b)),
+                "CONSENSUS FORK: the Merk of root {root} is shaped differently on a fresh \
+                 genesis-v15 node and an in-place-upgraded one"
+            );
+        }
+
+        // The walks above compare decoded keys and elements, which carry no Merk hash: two
+        // subtrees holding the same entries in a differently balanced tree would pass them.
+        // A tree element's value hash in its parent Merk commits to the root hash of the Merk
+        // below it, and so to everything that subtree holds and how it is arranged; a raw proof
+        // of the root element yields it. GroveDB proves only committed state, so the upgrade is
+        // committed first.
+        platform_b
+            .drive
+            .grove
+            .commit_transaction(txn_b)
+            .unwrap()
+            .expect("expected to commit the upgrade");
+        let subtree_hash = |platform: &crate::platform_types::platform::Platform<
+            crate::rpc::core::MockCoreRPCLike,
+        >,
+                            root: u8| {
+            let grove_version = &platform_version_15.drive.grove_version;
+            let query = drive::grovedb::PathQuery::new_single_key(vec![], vec![root]);
+            let proof = platform
+                .drive
+                .grove
+                .get_proved_path_query(&query, None, None, grove_version)
+                .unwrap()
+                .expect("expected to prove the root element");
+            let (_, proved) =
+                drive::grovedb::GroveDb::verify_query_raw(&proof, &query, grove_version)
+                    .expect("expected the proof of the root element to verify");
+            assert_eq!(proved.len(), 1, "expected the root element alone");
+            proved[0].proof
+        };
+        for root in roots {
+            assert_eq!(
+                subtree_hash(&platform_a, root),
+                subtree_hash(&platform_b, root),
+                "CONSENSUS FORK: root {root} authenticates to a different hash on a fresh \
+                 genesis-v15 node and an in-place-upgraded one"
+            );
+        }
+    }
+
+    #[test]
+    fn should_insert_the_token_market_contract_on_transition_to_version_15() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_version_14 = PlatformVersion::get(14).expect("expected platform version 14");
+        let platform_version = PlatformVersion::get(15).expect("expected platform version 15");
+        let token_market_id = SystemDataContract::TokenMarket.id();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        assert!(
+            platform
+                .drive
+                .fetch_contract(
+                    token_market_id.to_buffer(),
+                    None,
+                    None,
+                    Some(&transaction),
+                    platform_version_14,
+                )
+                .value
+                .expect("expected to query the token market contract")
+                .is_none(),
+            "the token market contract must not exist before transition_to_version_15"
+        );
+
+        platform
+            .transition_to_version_15(&BlockInfo::default(), &transaction, platform_version)
+            .expect("expected the transition to succeed");
+
+        let stored = platform
+            .drive
+            .fetch_contract(
+                token_market_id.to_buffer(),
+                None,
+                None,
+                Some(&transaction),
+                platform_version,
+            )
+            .value
+            .expect("expected to fetch the token market contract")
+            .expect("the token market contract must exist after transition_to_version_15");
+
+        assert_eq!(stored.contract.id(), token_market_id);
+        assert_eq!(stored.contract.owner_id(), Identifier::from([0u8; 32]));
+        assert_eq!(stored.contract.document_types().len(), 2);
+        assert!(platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(token_market_id, platform_version)
+            .expect("expected the post-activation lookup to succeed")
+            .is_some());
     }
 
     /// CONSENSUS-CRITICAL equivalence guard for the v11→v12 boundary.

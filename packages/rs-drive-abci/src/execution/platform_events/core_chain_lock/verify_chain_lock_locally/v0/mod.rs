@@ -58,11 +58,14 @@ where
 
         let window_width = quorum_config.window;
 
-        // The last block in the window where the quorums would be the same
-        let last_block_in_window = platform_state.last_committed_core_height()
-            - platform_state.last_committed_core_height() % window_width
-            + window_width
-            - 1;
+        // The last block in the window where the quorums would be the same. The window is a
+        // `NonZeroU32`, so the remainder cannot divide by zero, and a window ending past the
+        // largest core height wraps instead of overflowing where overflow is checked. For every
+        // window this equals the wrapping `u32` arithmetic of release builds, which the protocol
+        // versions selecting this method validate their chains with.
+        let last_block_in_window = (platform_state.last_committed_core_height()
+            - platform_state.last_committed_core_height() % window_width)
+            .wrapping_add(window_width.get() - 1);
 
         let verification_height = chain_lock_height.saturating_sub(SIGN_OFFSET);
 

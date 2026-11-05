@@ -2,6 +2,7 @@
 //! objects and the contract's `$defs`), and the element schemas of typed arrays.
 
 use super::*;
+use crate::data_contract::document_type::property::generated_from::SystemFunction;
 
 /// The regex size limit the meta-schema check read a `pattern` under, and the JSON Schema
 /// validator compiled the schema's patterns under at registration.
@@ -270,9 +271,25 @@ impl Checker<'_> {
             self.required(map, &["type"])?;
             self.member_constant(map, "type", json!("string"))?;
         }
-        if has("generatedFrom") {
+        if let Some(generated_from) = map.get("generatedFrom") {
+            // A function generating an integer (`sys.tokens.decimals`, protocol version 15,
+            // which the meta-schema predates) needs an integer property; every other one,
+            // and a name no function has, a string
+            let generates_an_integer = generated_from
+                .get("function")
+                .and_then(JsonValue::as_str)
+                .and_then(SystemFunction::from_wire_name)
+                .is_some_and(|function| function.generates_an_integer());
             self.required(map, &["type"])?;
-            self.member_constant(map, "type", json!("string"))?;
+            self.member_constant(
+                map,
+                "type",
+                json!(if generates_an_integer {
+                    "integer"
+                } else {
+                    "string"
+                }),
+            )?;
             if has("$ref") {
                 return Err(self.not_error(
                     json!({ "required": ["$ref"] }),
@@ -405,6 +422,7 @@ impl Checker<'_> {
                     "sys.stringTransformations.lowercase",
                     "sys.stringTransformations.snakeCase",
                     "sys.stringTransformations.uppercase",
+                    "sys.tokens.decimals",
                 ],
             )
         })?;

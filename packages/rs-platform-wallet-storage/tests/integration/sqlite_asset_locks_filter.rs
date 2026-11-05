@@ -497,6 +497,7 @@ async fn should_refuse_drain_after_swept_operation_is_removed_and_store_reopened
             0,
             None,
             None,
+            None,
         )
         .await
         .unwrap_err();

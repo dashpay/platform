@@ -7173,6 +7173,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 \.account,
                 // Read once per row by the asset-lock spend guard below.
                 \.spendingTransaction,
+                // Read once per row for the txid and the creating
+                // transaction's context in `buildUtxoRestoreBuffer`.
+                \.transaction,
             ]
             // Bail with `errored = true` on a SwiftData failure rather
             // than degrading to an empty bucket map. Without this, Rust
@@ -7762,6 +7765,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             utxo.is_confirmed = record.isConfirmed
             utxo.is_instantlocked = record.isInstantLocked
             utxo.is_locked = record.isLocked
+            // The creating transaction's row, copied as-is: the loader
+            // raises a coin that lags its own transaction's confirmation.
+            // A placeholder parent row carries context 0 and adds nothing.
+            utxo.parent_context = record.transaction?.context ?? 0
+            utxo.parent_block_height = record.transaction?.blockHeight ?? 0
             buf[written] = utxo
             written += 1
         }

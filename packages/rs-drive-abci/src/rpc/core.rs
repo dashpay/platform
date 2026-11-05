@@ -58,6 +58,13 @@ pub(crate) fn credit_pool_balance_from_coinbase(coinbase: &[u8]) -> Result<u64, 
     }
 }
 
+/// The coinbase payload version Dash Core requires while DEPLOYMENT_V24 is active
+/// (`MERKLE_ROOT_ASSETUNLOCKS`). Core requires it exactly at the blocks where V24 and V20 are
+/// active and refuses it at every other block; V20 is active on every chain Platform runs on.
+/// So [`CoreRPCLike::get_coinbase_payload_version`] at a chain locked height tells every node
+/// alike whether V24 is active there.
+pub(crate) const V24_COINBASE_PAYLOAD_VERSION: u16 = 4;
+
 /// Reads the version of a block's coinbase payload from the block's serialized coinbase
 /// transaction; `None` when it carries no payload. The version is the payload's first field,
 /// so a raw payload is read the same way as in [`credit_pool_balance_from_coinbase`].

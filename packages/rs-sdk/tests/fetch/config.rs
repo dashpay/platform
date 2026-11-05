@@ -8,6 +8,7 @@ use dpp::{
     dashcore::{hashes::Hash, ProTxHash},
     data_contracts::dpns_contract,
     prelude::Identifier,
+    version::PlatformVersion,
 };
 use rs_dapi_client::{Address, AddressList};
 use serde::Deserialize;
@@ -159,6 +160,24 @@ impl Config {
     ///
     /// When empty string is provided, expectations are stored in the root of the dump directory.
     pub async fn setup_api(&self, namespace: &str) -> dash_sdk::Sdk {
+        self.build_api(namespace, None).await
+    }
+
+    /// [`Config::setup_api`], with the SDK's protocol version seeded at `initial_version`
+    /// (see [`dash_sdk::SdkBuilder::with_initial_version`]) instead of the network default.
+    pub async fn setup_api_with_initial_version(
+        &self,
+        namespace: &str,
+        initial_version: &'static PlatformVersion,
+    ) -> dash_sdk::Sdk {
+        self.build_api(namespace, Some(initial_version)).await
+    }
+
+    async fn build_api(
+        &self,
+        namespace: &str,
+        initial_version: Option<&'static PlatformVersion>,
+    ) -> dash_sdk::Sdk {
         let dump_dir = match namespace.is_empty() {
             true => self.dump_dir.clone(),
             false => {
@@ -195,6 +214,9 @@ impl Config {
                     .with_ca_certificate_file(cert_file)
                     .expect("load CA cert");
             }
+            if let Some(version) = initial_version {
+                builder = builder.with_initial_version(version);
+            }
             #[cfg(feature = "generate-test-vectors")]
             let builder = {
                 // When we use namespaces, clean up the namespaced dump dir before starting
@@ -220,10 +242,13 @@ impl Config {
         // offline testing takes precedence over network testing
         #[cfg(feature = "offline-testing")]
         let sdk = {
-            dash_sdk::SdkBuilder::new_mock()
-                .with_dump_dir(&dump_dir)
-                .build()
-                .expect("initialize api")
+            let builder = dash_sdk::SdkBuilder::new_mock().with_dump_dir(&dump_dir);
+            match initial_version {
+                Some(version) => builder.with_initial_version(version),
+                None => builder,
+            }
+            .build()
+            .expect("initialize api")
         };
 
         sdk

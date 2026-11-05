@@ -10,7 +10,7 @@ use dpp::fee::Credits;
 use dpp::shielded::{
     compute_minimum_shielded_fee, compute_shielded_identity_create_fee,
     compute_shielded_identity_top_up_fee, compute_shielded_unshield_fee,
-    compute_shielded_withdrawal_fee,
+    compute_shielded_withdrawal_fee, is_allowed_identity_create_denomination,
 };
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
@@ -205,6 +205,36 @@ pub fn select_notes_with_fee<'a>(
     Ok((selected, total, exact_fee))
 }
 
+/// Reject a zero spend `amount`. Lock-free, so callers can run it before taking the store lock
+/// or `shield_guard`.
+pub(crate) fn ensure_positive_amount(amount: u64) -> Result<(), PlatformWalletError> {
+    if amount == 0 {
+        return Err(PlatformWalletError::ShieldedBuildError(
+            "amount must be > 0".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Reject a `denomination` outside the versioned `IdentityCreateFromShieldedPool` exit set.
+///
+/// Consensus only accepts members of that set, but rejects others at `validate_structure` — AFTER
+/// the (expensive) Orchard build/prove — so callers gate here first. Every member is positive, so
+/// this also rejects zero. Store-free, so callers can run it before taking the store lock.
+pub(crate) fn ensure_allowed_denomination(
+    denomination: u64,
+    platform_version: &PlatformVersion,
+) -> Result<(), PlatformWalletError> {
+    if !is_allowed_identity_create_denomination(denomination, platform_version) {
+        return Err(PlatformWalletError::ShieldedBuildError(format!(
+            "denomination {denomination} is not a member of the allowed exit-denomination set \
+             of protocol version {}",
+            platform_version.protocol_version
+        )));
+    }
+    Ok(())
+}
+
 /// Select notes for an `IdentityCreateFromShieldedPool` exit of exactly `denomination` credits.
 ///
 /// Unlike [`select_notes_with_fee`], this uses the EXACT-EQUALITY model: the whole `denomination`
@@ -227,19 +257,7 @@ pub fn select_notes_for_denomination<'a>(
     num_keys: usize,
     platform_version: &PlatformVersion,
 ) -> Result<(Vec<&'a ShieldedNote>, u64, u64), PlatformWalletError> {
-    // Reject a non-member denomination up-front: consensus only accepts the versioned exit set, so
-    // an unsupported value is rejected at `validate_structure` — but that happens AFTER the
-    // (expensive) Orchard build/prove in the current flow, so gating here avoids burning that work.
-    let allowed = platform_version
-        .drive_abci
-        .validation_and_processing
-        .event_constants
-        .shielded_identity_create_denominations;
-    if !allowed.contains(&denomination) {
-        return Err(PlatformWalletError::ShieldedBuildError(format!(
-            "denomination {denomination} is not a member of the allowed exit-denomination set {allowed:?}"
-        )));
-    }
+    ensure_allowed_denomination(denomination, platform_version)?;
 
     // Target the denomination exactly — no fee added on top (exact-equality model).
     let selected = select_notes(unspent, denomination, 0)?;

@@ -24,6 +24,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use dashcore::blockdata::script::Instruction;
 use dashcore::hashes::Hash;
 use dashcore::{Address, OutPoint, PubkeyHash, ScriptBuf, Transaction, TxIn, Txid};
+use key_wallet::account::AccountType;
 use key_wallet::managed_account::managed_account_ref::ManagedAccountRef;
 use key_wallet::managed_account::managed_core_funds_account::ManagedCoreFundsAccount;
 use key_wallet::managed_account::transaction_record::{
@@ -73,14 +74,36 @@ pub fn wallet_direction(
     }
 }
 
+/// A funding account's outgoing/internal direction requires owned inputs.
+/// Restore can retain that direction and held outputs without those inputs;
+/// keys-account markers carry no Core funding evidence either way.
+pub(crate) fn has_missing_accounting_inputs(record: &TransactionRecord) -> bool {
+    matches!(
+        record.account_type,
+        AccountType::Standard { .. }
+            | AccountType::CoinJoin { .. }
+            | AccountType::DashpayReceivingFunds { .. }
+    ) && record.input_details.is_empty()
+        && matches!(
+            record.direction,
+            TransactionDirection::Outgoing | TransactionDirection::Internal
+        )
+}
+
+fn has_accounting_evidence(record: &TransactionRecord) -> bool {
+    !(record.input_details.is_empty() && record.output_details.is_empty())
+        && !has_missing_accounting_inputs(record)
+}
+
 /// Recompute a record's wallet-level `net_amount` and `direction` from
 /// its input and output details, saturating a net that does not fit `i64`.
 ///
 /// A record with no details carries no accounting evidence (a keys-account
 /// marker that met no funding slice), so it is left as upstream emitted
-/// it. The SQLite repair skips such records for the same reason.
+/// it. A restored funding record without its owned inputs is also left
+/// alone: its held outputs prove coin ownership, not complete accounting.
 pub(crate) fn apply_wallet_accounting(record: &mut TransactionRecord) {
-    if record.input_details.is_empty() && record.output_details.is_empty() {
+    if !has_accounting_evidence(record) {
         return;
     }
     let (net, direction) = wallet_accounting(record);
@@ -96,9 +119,11 @@ pub(crate) fn apply_wallet_accounting(record: &mut TransactionRecord) {
 /// load path rebuilt from persisted bytes alone (an asset lock's funding
 /// transaction, a spender of its input) and re-emits when a chain lock
 /// promotes it. Such a record's `net_amount` is a placeholder, so the host
-/// keeps whatever accounting it already stored.
+/// keeps whatever accounting it already stored. Restored outgoing/internal
+/// funding records may name held outputs while still lacking their inputs;
+/// those outputs do not turn the incomplete funding record into a receipt.
 pub fn record_accounting(record: &TransactionRecord) -> Option<WalletAccounting> {
-    if record.input_details.is_empty() && record.output_details.is_empty() {
+    if !has_accounting_evidence(record) {
         return None;
     }
     let accounting = record_parts(record);
@@ -764,6 +789,72 @@ mod tests {
                 unresolved: Vec::new(),
             }
         );
+    }
+
+    #[test]
+    fn should_keep_stored_accounting_when_restored_change_is_folded() {
+        use key_wallet::managed_account::transaction_record::OutputDetail;
+
+        let tx = spend_of(&[outside(1)], vec![pay(5_000, &foreign_address(2))]);
+        let restored = TransactionRecord::new(
+            tx,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            block(10),
+            TransactionType::AssetLock,
+            TransactionDirection::Internal,
+            Vec::new(),
+            vec![OutputDetail {
+                index: 0,
+                role: OutputRole::Change,
+                address: Some(foreign_address(2)),
+                value: 5_000,
+            }],
+            0,
+        );
+        let mut receiving_slice = restored.clone();
+        receiving_slice.account_type = AccountType::Standard {
+            index: 1,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        receiving_slice.direction = TransactionDirection::Incoming;
+        receiving_slice.net_amount = 5_000;
+        receiving_slice.output_details[0].role = OutputRole::Received;
+        let mut restored_without_change = restored.clone();
+        restored_without_change.output_details.clear();
+        for mut records in [
+            vec![restored.clone()],
+            vec![restored.clone(), receiving_slice.clone()],
+            vec![receiving_slice.clone(), restored.clone()],
+            vec![receiving_slice.clone(), restored_without_change],
+        ] {
+            fold_same_txid_records(&mut records);
+            assert_eq!(records.len(), 1);
+            assert_eq!(
+                record_accounting(&records[0]),
+                None,
+                "a funding record missing its inputs cannot turn held change into income"
+            );
+            assert_eq!(records[0].output_details.len(), 1);
+            assert!(is_owned(records[0].output_details[0].role));
+        }
+
+        // A keys-only asset-lock marker says nothing about who funded it.
+        // It must not suppress a genuine receipt from another wallet.
+        let mut keys_marker = restored;
+        keys_marker.account_type = AccountType::IdentityRegistration;
+        keys_marker.output_details.clear();
+        for mut records in [
+            vec![keys_marker.clone(), receiving_slice.clone()],
+            vec![receiving_slice, keys_marker],
+        ] {
+            fold_same_txid_records(&mut records);
+            let accounting = record_accounting(&records[0]).expect("receipt accounting");
+            assert_eq!(accounting.direction, TransactionDirection::Incoming);
+            assert_eq!(accounting.net_amount, 5_000);
+        }
     }
 
     /// A record rebuilt at load from bytes alone (an asset lock's funding

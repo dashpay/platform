@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 
@@ -22,12 +23,15 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        // In place: this dispatcher read `cleanup.remove_specific_vote_references_given_by_identity`,
+        // which, like its own slot, is 0 in every table up to protocol version 14, so v0 still
+        // runs there.
         match platform_version
             .drive
             .methods
             .vote
             .cleanup
-            .remove_specific_vote_references_given_by_identity
+            .remove_all_votes_given_by_identities
         {
             0 => self.remove_all_votes_given_by_identities_v0(
                 identity_ids_as_byte_arrays,
@@ -37,9 +41,17 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.remove_all_votes_given_by_identities_v1(
+                identity_ids_as_byte_arrays,
+                block_height,
+                network,
+                chain_id,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_all_votes_given_by_identities".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

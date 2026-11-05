@@ -17,8 +17,9 @@ mod deletion_tests {
             // increases byte-billed contract-tree reads.
             // The app-connect and moderation charters contracts each add one sibling to the
             // genesis contracts tree, increasing the bytes billed when reading that tree
-            // (protocol 14 only).
-            1817440,
+            // (protocol 14 only). The decision proposals and token market contracts add two more
+            // at protocol 15, which reshape the tree so the contract read is billed fewer bytes (-47_280).
+            1770160,
         )
         .await;
     }

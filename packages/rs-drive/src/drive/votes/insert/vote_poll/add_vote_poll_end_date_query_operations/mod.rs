@@ -1,8 +1,8 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
-use grovedb::batch::KeyInfoPath;
-use std::collections::HashMap;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -12,7 +12,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::VotePoll;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 
 impl Drive {
     /// We add votes poll references by end date in order to be able to check on every new block if
@@ -24,9 +24,7 @@ impl Drive {
         vote_poll: VotePoll,
         end_date: TimestampMillis,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
@@ -50,9 +48,20 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.add_vote_poll_end_date_query_operations_v1(
+                creator_identity_id,
+                vote_poll,
+                end_date,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                previous_batch_operations,
+                batch_operations,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_vote_poll_end_date_query_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

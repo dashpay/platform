@@ -4,14 +4,12 @@ import XCTest
 @testable import SwiftDashSDK
 
 /// Regression tests for non-English BIP-39 mnemonics (dashwallet-ios field
-/// report, 2026-08-22): a French 12-word phrase validated fine
-/// (`mnemonic_validate` tries every wordlist) but `Mnemonic.toSeed` and
-/// `Wallet(mnemonic:)` failed with "Invalid Mnemonic: mnemonic contains an
-/// unknown word (word 0)" because the key-wallet FFI they bind to parsed with
-/// a hardcoded English wordlist. That broke the DashSync→SwiftDashSDK upgrade
-/// migration and "Import from Phrase" for every legacy localized wallet.
-/// Fixed upstream in rust-dashcore (#980/#981): every FFI parse path now
-/// auto-detects the wordlist; these tests pin that against the pinned FFI.
+/// report, 2026-08-22): a French 12-word phrase validated fine but seed
+/// derivation failed with "Invalid Mnemonic: mnemonic contains an unknown
+/// word (word 0)" because the FFI parse path used a hardcoded English
+/// wordlist. That broke the DashSync→SwiftDashSDK upgrade migration and
+/// "Import from Phrase" for every legacy localized wallet. These tests pin
+/// that the platform wallet's derivation auto-detects the wordlist.
 ///
 /// Expected seeds were generated with an independent oracle
 /// (Python: `hashlib.pbkdf2_hmac('sha512', NFKD(phrase), NFKD('mnemonic'+pass),
@@ -57,10 +55,6 @@ final class NonEnglishMnemonicTests: XCTestCase {
         "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e5349553" +
         "1f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04"
 
-    private func hex(_ data: Data) -> String {
-        data.map { String(format: "%02x", $0) }.joined()
-    }
-
     // MARK: - The two French fixtures must stay distinct encodings
 
     func testFrenchFixturesAreDistinctEncodingsOfTheSamePhrase() {
@@ -80,98 +74,140 @@ final class NonEnglishMnemonicTests: XCTestCase {
             Array(Self.frenchPhraseNFC.precomposedStringWithCanonicalMapping.utf8))
     }
 
-    // MARK: - Baseline: validation already accepts non-English phrases
+    // MARK: - Seed derivation must accept every language
+
+    func testFrenchMasterKeyMatchesReferenceSeed() throws {
+        try assertMasterKey(phrase: Self.frenchPhrase, matchesSeedHex: Self.frenchSeedHex)
+    }
+
+    func testFrenchNFCInputDerivesSameMasterKey() throws {
+        try assertMasterKey(phrase: Self.frenchPhraseNFC, matchesSeedHex: Self.frenchSeedHex)
+    }
+
+    func testFrenchWithPassphraseMatchesReferenceSeed() throws {
+        try assertMasterKey(
+            phrase: Self.frenchPhrase, passphrase: "TREZOR",
+            matchesSeedHex: Self.frenchSeedTrezorHex)
+    }
+
+    // MARK: - English fast path is unchanged
+
+    func testEnglishOfficialVectorUnchanged() throws {
+        try assertMasterKey(phrase: Self.englishPhrase, matchesSeedHex: Self.englishSeedHex)
+        try assertMasterKey(
+            phrase: Self.englishPhrase, passphrase: "TREZOR",
+            matchesSeedHex: Self.englishSeedTrezorHex)
+    }
+
+    // MARK: - Validation, wallet ids and addresses accept every language
 
     func testValidateAcceptsFrenchPhrase() {
         XCTAssertTrue(Mnemonic.validate(Self.frenchPhrase))
         XCTAssertTrue(Mnemonic.validate(Self.frenchPhraseNFC))
     }
 
-    // MARK: - Seed derivation must accept every language validation accepts
+    func testWalletIdMatchesPinnedVectors() throws {
+        // dashwallet-ios keys its wipe and recovery checks on these ids, so they must never drift.
+        // Pinned from `Wallet(mnemonic:network:).id` before the `KeyWallet` classes were removed.
+        let vectors: [(phrase: String, network: Network, id: String)] = [
+            (Self.frenchPhrase, .mainnet,
+             "446a4d98c6937d73ceb088f6800fddf4b8404734d7bb1946a130eb48aac02830"),
+            (Self.frenchPhrase, .testnet,
+             "b9dc02956dd9e3e65169d38b02cdd5a38d492f5171aab1420590297bfc4d382e"),
+            (Self.englishPhrase, .mainnet,
+             "0b91f36de2613a410303e8309b4f92a150738ae018695d2030b33e64ccea7b2e"),
+            (Self.englishPhrase, .testnet,
+             "0c9776ef403f2da80ef4cb3884a96d591805934effc0e014eadd2bb98a94ea6c"),
+        ]
+        for vector in vectors {
+            XCTAssertEqual(
+                try Mnemonic.walletId(for: vector.phrase, network: vector.network),
+                Data(vector.id.hexToBytes()), "\(vector.network)")
+        }
 
-    func testToSeedFrenchMatchesReferenceVector() throws {
-        let seed = try Mnemonic.toSeed(mnemonic: Self.frenchPhrase)
-        XCTAssertEqual(hex(seed), Self.frenchSeedHex)
+        let mainnet = try Mnemonic.walletId(for: Self.frenchPhrase, network: .mainnet)
+        XCTAssertEqual(try Mnemonic.walletId(for: Self.frenchPhraseNFC, network: .mainnet), mainnet)
+        XCTAssertNotEqual(try Mnemonic.walletId(for: Self.frenchPhrase, network: .devnet), mainnet)
     }
 
-    func testToSeedFrenchNFCInputMatchesSameSeed() throws {
-        let seed = try Mnemonic.toSeed(mnemonic: Self.frenchPhraseNFC)
-        XCTAssertEqual(hex(seed), Self.frenchSeedHex)
+    func testFirstReceiveAddressMatchesPinnedVectors() throws {
+        // The English address is the official vector. The French ones are pinned from
+        // key-wallet-ffi's seed derivation before it was removed.
+        let vectors: [(phrase: String, network: Network, address: String)] = [
+            (Self.englishPhrase, .mainnet, "XoJA8qE3N2Y3jMLEtZ3vcN42qseZ8LvFf5"),
+            (Self.frenchPhrase, .mainnet, "XvdJKc1Qf9QWHfHTp8rpiNZ3ZWLGcFnoqV"),
+            (Self.frenchPhrase, .testnet, "yiz7bBUGQUJ4cTfUWqwwPq7g8XTc7ynEEw"),
+        ]
+        for vector in vectors {
+            XCTAssertEqual(
+                try Mnemonic.firstReceiveAddress(for: vector.phrase, network: vector.network),
+                vector.address, "\(vector.network)")
+        }
     }
 
-    func testToSeedFrenchWithPassphrase() throws {
-        let seed = try Mnemonic.toSeed(mnemonic: Self.frenchPhrase, passphrase: "TREZOR")
-        XCTAssertEqual(hex(seed), Self.frenchSeedTrezorHex)
+    // MARK: - Invalid input still refused
+
+    func testValidateRefusesGibberish() throws {
+        XCTAssertFalse(Mnemonic.validate("definitely not a bip39 phrase at all zz"))
+        XCTAssertFalse(Mnemonic.validate(Self.englishPhrase + "\u{0}"))
+        XCTAssertThrowsError(
+            try Mnemonic.walletId(for: "definitely not a bip39 phrase at all zz", network: .mainnet))
+
+        // The FFI reads a C string, so an unguarded helper would answer for
+        // the valid prefix before the NUL.
+        let nulPhrase = Self.englishPhrase + "\u{0}junk"
+        XCTAssertThrowsError(try Mnemonic.walletId(for: nulPhrase, network: .mainnet))
+        XCTAssertThrowsError(try Mnemonic.firstReceiveAddress(for: nulPhrase, network: .mainnet))
+        XCTAssertThrowsError(
+            try Mnemonic.firstReceiveAddress(
+                for: "definitely not a bip39 phrase at all zz", network: .mainnet))
+        let validAddress = try Mnemonic.firstReceiveAddress(for: Self.englishPhrase, network: .mainnet)
+        XCTAssertTrue(Address.validate(validAddress, network: .mainnet))
+        XCTAssertFalse(Address.validate(validAddress + "\u{0}junk", network: .mainnet))
     }
 
-    // MARK: - Wallet construction must accept every language validation accepts
-
-    func testWalletFromFrenchMnemonicDerivesSeedConsistentIds() throws {
-        // `Wallet(mnemonic:)` threw KeyWalletError.invalidMnemonic ("unknown
-        // word (word 0)") for any non-English phrase before the FFI
-        // auto-detected wordlists. It must produce the same wallet as
-        // building from the phrase's BIP-39 seed.
-        let fromMnemonic = try Wallet(mnemonic: Self.frenchPhrase, network: .mainnet)
-        let fromSeed = try Wallet(
-            seed: Data(Self.frenchSeedHex.hexToBytes()), network: .mainnet)
-        XCTAssertEqual(try fromMnemonic.id, try fromSeed.id)
-
-        // The phrase must be retained as a mnemonic wallet, not degraded to a
-        // seed-only wallet (backup/capability code keys off this).
-        XCTAssertTrue(fromMnemonic.hasMnemonic)
-        XCTAssertFalse(fromSeed.hasMnemonic)
-
-        // Wallet ids are network-scoped: same phrase, distinct id per network.
-        let testnet = try Wallet(mnemonic: Self.frenchPhrase, network: .testnet)
-        XCTAssertNotEqual(try fromMnemonic.id, try testnet.id)
+    func testGibberishStillThrows() {
+        XCTAssertThrowsError(
+            try masterKey(phrase: "definitely not a bip39 phrase at all zz", passphrase: nil))
     }
 
-    func testWalletFromFrenchMnemonicNFCInputSameWallet() throws {
-        let nfc = try Wallet(mnemonic: Self.frenchPhraseNFC, network: .mainnet)
-        let nfkd = try Wallet(mnemonic: Self.frenchPhrase, network: .mainnet)
-        XCTAssertEqual(try nfc.id, try nfkd.id)
-    }
+    // MARK: - Helpers
 
-    // MARK: - English fast path is unchanged
-
-    func testToSeedEnglishOfficialVectorUnchanged() throws {
-        let seed = try Mnemonic.toSeed(mnemonic: Self.englishPhrase)
-        XCTAssertEqual(hex(seed), Self.englishSeedHex)
-
-        let trezor = try Mnemonic.toSeed(mnemonic: Self.englishPhrase, passphrase: "TREZOR")
-        XCTAssertEqual(hex(trezor), Self.englishSeedTrezorHex)
-    }
-
-    func testWalletFromEnglishMnemonicMatchesSeedWallet() throws {
-        let fromMnemonic = try Wallet(mnemonic: Self.englishPhrase, network: .mainnet)
-        let fromSeed = try Wallet(
-            seed: Data(Self.englishSeedHex.hexToBytes()), network: .mainnet)
-        XCTAssertEqual(try fromMnemonic.id, try fromSeed.id)
-    }
-
-    // MARK: - Cross-implementation agreement
-
-    func testRustMultiLanguageDerivationAgreesWithReferenceSeed() throws {
-        // The platform wallet manager creates wallets through Rust's
-        // language-auto-detecting parse (`parse_mnemonic_any_language`) and
-        // rust-bip39's `to_seed`, while `Wallet(mnemonic:)`/`Mnemonic.toSeed`
-        // go through key-wallet-ffi's own auto-detecting parse. If the two ever
-        // disagreed, wallet ids computed app-side would not match the wallets
-        // the manager creates. Derive the BIP-32 master key from the French
-        // phrase via the Rust path and compare with the master key computed
-        // directly from the reference seed (HMAC-SHA512 keyed "Bitcoin seed").
+    /// Derives the BIP-32 master key of `phrase` through the platform wallet's
+    /// language-auto-detecting parse, the path every wallet the manager
+    /// creates goes through.
+    private func masterKey(
+        phrase: String, passphrase: String?
+    ) throws -> (secretKey: [UInt8], chainCode: [UInt8]) {
         var secretKey = [UInt8](repeating: 0, count: 32)
         var chainCode = [UInt8](repeating: 0, count: 32)
-        let result = Self.frenchPhrase.withCString { mnemonicPtr in
-            "m".withCString { pathPtr in
-                platform_wallet_derive_ext_priv_key_from_mnemonic(
+        let result = phrase.withCString { mnemonicPtr -> PlatformWalletFFIResult in
+            "m".withCString { pathPtr -> PlatformWalletFFIResult in
+                if let passphrase {
+                    return passphrase.withCString { passphrasePtr in
+                        platform_wallet_derive_ext_priv_key_from_mnemonic(
+                            mnemonicPtr, passphrasePtr, Network.mainnet.ffiValue, pathPtr,
+                            &secretKey, &chainCode, nil)
+                    }
+                }
+                return platform_wallet_derive_ext_priv_key_from_mnemonic(
                     mnemonicPtr, nil, Network.mainnet.ffiValue, pathPtr,
                     &secretKey, &chainCode, nil)
             }
         }
         try result.check()
+        return (secretKey, chainCode)
+    }
 
-        let seed = Data(Self.frenchSeedHex.hexToBytes())
+    /// Asserts that `phrase` derives the master key computed directly from the
+    /// reference seed (HMAC-SHA512 keyed "Bitcoin seed").
+    private func assertMasterKey(
+        phrase: String, passphrase: String? = nil, matchesSeedHex seedHex: String,
+        file: StaticString = #filePath, line: UInt = #line
+    ) throws {
+        let derived = try masterKey(phrase: phrase, passphrase: passphrase)
+
+        let seed = Data(seedHex.hexToBytes())
         var hmac = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
         let key = Array("Bitcoin seed".utf8)
         seed.withUnsafeBytes { seedBytes in
@@ -180,20 +216,8 @@ final class NonEnglishMnemonicTests: XCTestCase {
                    seedBytes.baseAddress, seedBytes.count,
                    &hmac)
         }
-        XCTAssertEqual(Array(secretKey), Array(hmac[0..<32]))
-        XCTAssertEqual(Array(chainCode), Array(hmac[32..<64]))
-    }
-
-    // MARK: - Invalid input still refused
-
-    func testToSeedGibberishStillThrows() {
-        XCTAssertThrowsError(
-            try Mnemonic.toSeed(mnemonic: "definitely not a bip39 phrase at all zz"))
-    }
-
-    func testWalletFromGibberishStillThrows() {
-        XCTAssertThrowsError(
-            try Wallet(mnemonic: "definitely not a bip39 phrase at all zz", network: .mainnet))
+        XCTAssertEqual(derived.secretKey, Array(hmac[0..<32]), file: file, line: line)
+        XCTAssertEqual(derived.chainCode, Array(hmac[32..<64]), file: file, line: line)
     }
 }
 

@@ -17,7 +17,6 @@ use dpp::serialization::{
     PlatformSerializableWithPlatformVersion,
 };
 use dpp::version::PlatformVersion;
-use std::sync::OnceLock;
 
 /// Loads a stored contract the way Drive does: trusted bytes, no full validation.
 fn load(contract: &CorpusContract, platform_version: &PlatformVersion) -> DataContract {
@@ -112,30 +111,15 @@ fn should_reload_every_corpus_contract_reserialized_at_the_latest_protocol_versi
     }
 }
 
-/// The latest protocol version, but storing contracts in format version 2, their document types
-/// compiled.
-fn latest_storing_compiled_contracts() -> &'static PlatformVersion {
-    static VERSION: OnceLock<PlatformVersion> = OnceLock::new();
-    VERSION.get_or_init(|| {
-        let mut version = PlatformVersion::latest().clone();
-        version
-            .dpp
-            .contract_versions
-            .contract_storage_serialization_version = 2;
-        version
-    })
-}
-
 #[test]
 fn should_read_back_every_corpus_contract_from_its_compiled_stored_form() {
     let platform_version = PlatformVersion::latest();
-    let storing = latest_storing_compiled_contracts();
     let mut document_types = 0;
     for contract in contracts() {
         let origin = format!("{:?} contract {}", contract.network, contract.id);
         let loaded = load(&contract, platform_version);
         let stored = loaded
-            .serialize_to_storage_bytes(storing)
+            .serialize_to_storage_bytes(platform_version)
             .unwrap_or_else(|error| panic!("{origin} failed to compile: {error}"));
         assert_eq!(stored[0], 2, "{origin} is not stored in format version 2");
 
@@ -223,7 +207,7 @@ fn should_read_back_every_corpus_contract_from_its_compiled_stored_form() {
         // Stored again, the same bytes; in format version 1, the bytes the contract had
         assert_eq!(
             read_back
-                .serialize_to_storage_bytes(storing)
+                .serialize_to_storage_bytes(platform_version)
                 .expect("expected the contract to compile again"),
             stored,
             "{origin} compiles to other bytes the second time"
