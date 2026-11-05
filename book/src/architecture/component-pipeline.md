@@ -397,7 +397,7 @@ relative to `core_based_updates/`):
 | Read | Asked of Core | Code | Kept in |
 |---|---|---|---|
 | Core fork activations, from protocol version 15 | The coinbase payload version of the block at `c`, until the fork is recorded | `update_core_info/v1/` | GroveDB `Misc`; see [Core Fork Activations](core-fork-activations.md) |
-| Masternode list | `protx listdiff` from the previous block's `c` to `c`; also the coinbase payload version at `c` when a reported operator key may only be re-encoded | `update_masternode_list/` | Platform state, and masternode identities in GroveDB |
+| Masternode list | `protx listdiff` from the previous block's `c` to `c`; up to protocol version 14 also the coinbase payload version at `c` when a reported operator key may only be re-encoded (from 15 the Core fork record answers) | `update_masternode_list/` | Platform state, and masternode identities in GroveDB |
 | Quorums | `quorum listextended` at `c`, `quorum info` for each new quorum | `update_quorum_info/` | Platform state: the validator sets and the chain lock and instant lock quorums |
 
 Other steps read Core at `c` or below too. The paths in the first two rows are
@@ -408,6 +408,17 @@ under `packages/rs-drive-abci/src/execution/platform_events/withdrawals/`:
 | 14 | Core's credit pool balance (the Dash locked on Core that backs Platform credits), from protocol version 14 | The coinbase of each Core block up to `c` not yet recorded, back to the start of the withdrawal limit's window, at most 32 per block | `scan_core_blocks_for_withdrawals/`; `calculate_core_anchored_withdrawal_limit/` asks Core itself only for a height not yet recorded | GroveDB, `WithdrawalTransactions (80) / [6]`, one balance per core height |
 | 8 | The statuses of the asset unlocks Platform broadcast (the Core transactions that pay out withdrawals) | `getassetunlockstatuses` at `c`, in blocks that move `c` | `update_broadcasted_withdrawal_statuses/` | The withdrawal documents |
 | 11 | Chain asset lock proofs (Dash locked on Core to fund an identity, proven by the chain-locked height that includes it) | The asset lock transaction, which must be mined at or below the proof's core height, itself no higher than Platform's last committed core height | `packages/rs-drive-abci/src/execution/validation/state_transition/common/asset_lock/` | What the state transition writes |
+
+The first block of protocol version 15 reads Core once more, before step 1, in
+its protocol change events (`transition_to_version_15`, under
+`packages/rs-drive-abci/src/execution/platform_events/protocol_upgrade/`): Core's
+full masternode list, `protx listdiff` from the first block to the previous
+block's `c`, to reconcile the operator payouts Platform holds, and the operator
+identities' TRANSFER keys, with Core's (`reconcile_operator_payouts_with_core/`
+under `core_based_updates/`). That height is chain locked and an earlier block
+already read Core there, so every validator's Core holds it. Unlike the reads
+above, it runs whether or not the block moves `c`: a node whose Core cannot
+answer cannot execute that one block.
 
 ### When Core fails
 

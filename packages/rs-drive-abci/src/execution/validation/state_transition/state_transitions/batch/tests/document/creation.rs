@@ -1,6 +1,7 @@
 use super::*;
 
 mod creation_tests {
+    use crate::platform_types::platform_state::PlatformState;
     use super::*;
     use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse};
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
@@ -3938,6 +3939,7 @@ mod creation_tests {
         let mut platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(13)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
 
         let platform_state = platform.state.load();
@@ -3960,6 +3962,7 @@ mod creation_tests {
         platform
             .perform_events_on_first_block_of_protocol_change(
                 &platform_state,
+                &mut PlatformState::clone(&platform_state),
                 &BlockInfo::default_with_time(
                     platform_state
                         .last_committed_block_time_ms()

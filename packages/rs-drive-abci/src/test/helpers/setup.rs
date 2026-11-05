@@ -11,6 +11,7 @@ use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::{config::PlatformConfig, rpc::core::DefaultCoreRPC};
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
 use dpp::document::transfer::Transferable;
 use dpp::nft::TradeMode;
 use dpp::prelude::{CoreBlockHeight, DataContract, TimestampMillis};
@@ -198,6 +199,25 @@ impl TempPlatform<MockCoreRPCLike> {
             .expect("expected to apply contract successfully");
 
         (self, card_game_contract)
+    }
+
+    /// Has the mock Core list no masternodes at any height, which is the list of a platform that
+    /// never processed one. The first block of protocol version 15 reads Core's masternode list
+    /// to reconcile operator payouts.
+    pub fn with_no_core_masternodes(mut self) -> Self {
+        self.platform
+            .core_rpc
+            .expect_get_protx_diff_with_masternodes()
+            .returning(|base_block, block| {
+                Ok(MasternodeListDiff {
+                    base_height: base_block.unwrap_or_default(),
+                    block_height: block,
+                    added_mns: vec![],
+                    removed_mns: vec![],
+                    updated_mns: vec![],
+                })
+            });
+        self
     }
 
     /// Sets Platform to genesis state.

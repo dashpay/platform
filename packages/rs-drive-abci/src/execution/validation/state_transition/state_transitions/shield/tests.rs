@@ -1418,6 +1418,7 @@ mod tests {
             insert_anchor_into_state, serialize_authorized_bundle_u64,
         };
         use crate::platform_types::platform::PlatformRef;
+        use crate::platform_types::platform_state::PlatformState;
         use crate::platform_types::platform_state::PlatformStateV0Methods;
         use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::TempPlatform;
@@ -1623,6 +1624,7 @@ mod tests {
             platform
                 .perform_events_on_first_block_of_protocol_change(
                     &state,
+                    &mut PlatformState::clone(&state),
                     &BlockInfo::default(),
                     &tx,
                     13,
@@ -1737,6 +1739,7 @@ mod tests {
             platform
                 .perform_events_on_first_block_of_protocol_change(
                     &candidate_state,
+                    &mut PlatformState::clone(&candidate_state),
                     &BlockInfo::default(),
                     &candidate,
                     13,

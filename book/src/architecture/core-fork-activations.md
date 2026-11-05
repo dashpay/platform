@@ -186,11 +186,13 @@ Code that depends on a Core fork reads the record through
 follows the rule in
 [The window after a protocol upgrade](#the-window-after-a-protocol-upgrade).
 
-One piece of code still asks Core about V24 directly: the masternode list
-update's `drop_unchanged_operator_keys`, which keeps a masternode's operator key
-when Core re-encodes it after V24. It runs under every protocol version, and
-from protocol version 15 it runs after the record is updated, in blocks that
-move `c`, so it gets the same answer as the record.
+The masternode list update keeps a masternode's operator key when Core
+re-encodes it after V24. From protocol version 15, `update_masternode_list` 2
+reads V24 from the record. It runs inside `update_core_info` v1, after the
+record step at the same `c` and only in blocks that move `c`, so `None` there
+means Core reported V24 inactive at this very `c`. `update_masternode_list` 0
+and 1, up to protocol version 14, still ask Core directly
+(`drop_unchanged_operator_keys`), as the blocks they executed did.
 
 ## Adding a fork
 
