@@ -1950,7 +1950,8 @@ where
     type Request = Q;
     type Response = platform::GetDocumentsResponse;
 
-    /// The verifier rebuilds Drive's path query from the request alone before it reads the
+    /// The verifier refuses a query carrying composite sub-queries, which it would otherwise
+    /// ignore, and rebuilds Drive's path query from the request alone before it reads the
     /// proof: the where-clause shape, the route (by id, through an index, indexOnly) and the
     /// index it reads. It does so without the cursor document on every page, so a request whose
     /// path query cannot be built that way, such as one no index covers, can never verify; every
@@ -1972,6 +1973,11 @@ where
                 .map_err(|e: Q::Error| Error::RequestError {
                     error: e.to_string(),
                 })?;
+        request
+            .ensure_no_sub_queries("verify_proof")
+            .map_err(|e| Error::RequestError {
+                error: format!("no answer to this documents query can be verified: {e}"),
+            })?;
         request
             .construct_path_query(None, platform_version)
             .map(drop)
@@ -3172,6 +3178,57 @@ impl<L: Length> IntoOption for L {
 mod tests {
     use super::*;
     use platform_serialization::PLATFORM_BINCODE_CONFIG;
+
+    /// A plain documents page cannot verify the sub-queries a composite request carries: its
+    /// verifier refuses them rather than report them verified, so its check refuses them before
+    /// sending, and sends the page alone.
+    #[test]
+    fn should_refuse_sub_queries_before_sending_a_documents_page() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use drive::query::{DriveSubQuery, SubQueryKind};
+
+        let platform_version = PlatformVersion::latest();
+        let contract = dpp::tests::fixtures::get_data_contract_fixture(
+            None,
+            0,
+            platform_version.protocol_version,
+        )
+        .data_contract_owned();
+        let document_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("the fixture has this document type");
+        let mut page = DriveDocumentQuery {
+            contract: &contract,
+            document_type,
+            internal_clauses: Default::default(),
+            offset: None,
+            limit: Some(10),
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: false,
+            block_time_ms: None,
+            resolved_time_ranges: vec![],
+            sub_queries: vec![],
+        };
+        <Documents as FromProof<DriveDocumentQuery>>::check_request(&page, platform_version)
+            .expect("a plain page is sent");
+
+        page.sub_queries.push(DriveSubQuery {
+            contract: &contract,
+            document_type,
+            kind: SubQueryKind::Documents,
+            where_clauses: vec![],
+            order_by: vec![],
+            limit: Some(10),
+            binding: None,
+        });
+        match <Documents as FromProof<DriveDocumentQuery>>::check_request(&page, platform_version) {
+            Err(Error::RequestError { error }) => {
+                assert!(error.contains("sub-queries"), "{error}")
+            }
+            other => panic!("a page with sub-queries must be refused, got {other:?}"),
+        }
+    }
 
     #[test]
     fn try_u32_to_u16_succeeds_for_valid_values() {

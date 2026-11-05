@@ -1973,7 +1973,7 @@ impl<'a> DriveDocumentQuery<'a> {
     /// (page-only) surface, which would otherwise silently ignore them —
     /// on the verify side that would mean reporting the composition
     /// verified when only the page was.
-    pub(crate) fn ensure_no_sub_queries(&self, surface: &str) -> Result<(), Error> {
+    pub fn ensure_no_sub_queries(&self, surface: &str) -> Result<(), Error> {
         if self.sub_queries.is_empty() {
             return Ok(());
         }
