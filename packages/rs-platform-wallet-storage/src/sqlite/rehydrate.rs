@@ -549,18 +549,20 @@ fn owner_label(owner: &OwningAccount) -> String {
 }
 
 /// Restore `unspent` into the funds accounts whose pools derive each address,
-/// after marking `used` wherever the pools derive them. Returns
-/// the UTXOs no account reaches, and whether `restore_utxos` may run again:
-/// false once a refill was refused or a restore failed.
+/// after marking `used` and the coins' addresses wherever the pools derive
+/// them. Returns the UTXOs no account reaches, and whether `restore_utxos` may
+/// run again: false once a refill was refused or a restore failed.
 ///
-/// Used addresses extend the reach as a rescan's would: each round marks the
-/// ones the pools now hold and extends every pool to its gap limit past its
-/// highest used address, until a round marks nothing new, so a run of spent
-/// addresses longer than one gap window still leads to the coins past it.
-/// The first round looks up every address the pools hold; each later round
-/// only the ones the previous refill derived, so the rounds together look up
-/// each derived address once. Terminates: each round marks at least one more
-/// address of a finite set.
+/// Used addresses and the coins' own extend the reach as a rescan's would:
+/// each round marks the ones the pools now hold and extends every pool to its
+/// gap limit past its highest used address, until a round marks nothing new,
+/// so a run of spent addresses longer than one gap window still leads to the
+/// coins past it, and a coin's refill to the spent addresses past it. The
+/// final restore then marks no address the rounds left unused, so its refill
+/// derives nothing past them. The first round looks up every address the
+/// pools hold; each later round only the ones the previous refill derived, so
+/// the rounds together look up each derived address once. Terminates: each
+/// round marks at least one more address of a finite set.
 ///
 /// Every refill of the marking rounds is bounded first, as
 /// [`extend_pools_for_restored_addresses`] bounds its own
@@ -578,7 +580,9 @@ fn restore_owned_utxos(
     refused: &mut RefusedRefills,
 ) -> Result<(Vec<key_wallet::Utxo>, bool), WalletStorageError> {
     let all_unmatched = || unspent.iter().map(|u| (*u).clone()).collect();
-    let wanted: std::collections::HashSet<&key_wallet::Address> = used.iter().collect();
+    let wanted: std::collections::HashSet<&key_wallet::Address> = (used.iter())
+        .chain(unspent.iter().map(|u| &u.address))
+        .collect();
     // Per funds pool, in `all_funding_accounts_mut` x `address_pools_mut`
     // order, the highest index already looked up.
     let mut looked_up: Vec<Option<u32>> = Vec::new();
@@ -4303,6 +4307,85 @@ mod tests {
                     "{case}"
                 );
             }
+        }
+
+        /// Loads `coins` strictly with only the `spent` addresses as the used
+        /// set, none with a stored owner, then checks each coin is held once,
+        /// by its account, which signs for it; that every coin and spent
+        /// address comes back used in its account; that the total is exact;
+        /// and that nothing was left unresolved.
+        fn assert_live_and_spent(
+            wallet: &Wallet,
+            manifest: &[AccountRegistrationEntry],
+            coins: &[(Utxo, AccountType)],
+            spent: &[(Address, AccountType)],
+        ) {
+            let used: HashMap<Address, Option<OwningAccount>> =
+                spent.iter().map(|(a, _)| (a.clone(), None)).collect();
+            let utxos = coins.iter().map(|(coin, _)| coin.clone()).collect();
+            let mut info = ManagedWalletInfo::from_wallet(wallet, 1);
+            let ctx = LoadCtx::strict();
+            load_into(&mut info, manifest, utxos, &HashMap::new(), &used, &ctx).unwrap();
+            for (coin, account) in coins {
+                assert_eq!(holders(&info, &coin.outpoint), vec![*account]);
+                assert!(
+                    derives(&info, account, &coin.address),
+                    "{} is signable",
+                    coin.address
+                );
+                assert!(used_in(&info, account, &coin.address));
+            }
+            for (address, account) in spent {
+                assert!(
+                    used_in(&info, account, address),
+                    "{address} comes back used"
+                );
+            }
+            assert_eq!(info.balance.total(), VALUE * coins.len() as u64);
+            assert_eq!(
+                ctx.degradation()
+                    .by_site
+                    .get(&LoadSite::UnresolvedUtxoAddress),
+                None
+            );
+        }
+
+        /// A used set holding only a spent address (45) and not the live
+        /// coin's, as the API allows: the coin in the window (20) brings the
+        /// spent address into the pool, and it comes back used.
+        #[test]
+        fn a_live_coin_in_the_window_brings_a_spent_address_back_used() {
+            let (wallet, manifest) = fixture(42);
+            let spent = external_address(&wallet, &bip44(), 45);
+            let coin = utxo(1, &external_address(&wallet, &bip44(), 20));
+            assert_live_and_spent(&wallet, &manifest, &[(coin, bip44())], &[(spent, bip44())]);
+        }
+
+        /// The spent address a live coin brings in (45, from the coin at 20)
+        /// leads on to a deeper live coin (70), which restores signable.
+        #[test]
+        fn a_spent_address_a_live_coin_brings_in_leads_to_the_coin_past_it() {
+            let (wallet, manifest) = fixture(43);
+            let spent = external_address(&wallet, &bip44(), 45);
+            let coins =
+                [20, 70].map(|i| (utxo(i, &external_address(&wallet, &bip44(), i)), bip44()));
+            assert_live_and_spent(&wallet, &manifest, &coins, &[(spent, bip44())]);
+        }
+
+        /// The same in two accounts in one load: BIP44 (coin 20, spent 45)
+        /// and CoinJoin (coin 50, spent 140; gap 100).
+        #[test]
+        fn live_coins_in_two_accounts_bring_their_spent_addresses_back_used() {
+            let (wallet, manifest) = fixture(44);
+            let coins = [
+                (utxo(1, &external_address(&wallet, &bip44(), 20)), bip44()),
+                (utxo(2, &coinjoin_address(&wallet, 50)), cj()),
+            ];
+            let spent = [
+                (external_address(&wallet, &bip44(), 45), bip44()),
+                (coinjoin_address(&wallet, 140), cj()),
+            ];
+            assert_live_and_spent(&wallet, &manifest, &coins, &spent);
         }
     }
 }
