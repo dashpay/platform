@@ -45,9 +45,7 @@ pub struct ClientWalletStartState {
     /// runs — dropping the input from `utxos` and recording it in
     /// `spent_outpoints`. That call is async and needs the `Wallet` and
     /// the `ManagedWalletInfo` together, so the replay happens at the
-    /// async boundary in
-    /// [`load_from_persistor`](crate::manager::load), not while this
-    /// snapshot is being built.
+    /// common wallet replay before the backend commits its load effects.
     ///
     /// # Why the replay exists
     ///
@@ -70,9 +68,7 @@ pub struct ClientWalletStartState {
     /// wallet checker so confirmed and unconfirmed spends are guarded again —
     /// see [`RecordedHistory`]. Empty when the persister supplies none.
     ///
-    /// Like `unconfirmed_outgoing_txs`, applied at the async boundary in
-    /// [`load_from_persistor`](crate::manager::load), not while the snapshot
-    /// is built.
+    /// Applied by the common wallet replay inside the backend's load scope.
     pub recorded_history: RecordedHistory,
     /// Durable record of the DashPay coreHeight backfill, as the host last
     /// stored it — which receival contacts the historical rescan already

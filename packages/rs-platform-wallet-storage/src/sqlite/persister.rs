@@ -13,7 +13,7 @@ use platform_wallet::changeset::{
     PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::manager::history_replay::{
-    replay_recorded_history_blocking, HistoryReplay, HistoryReplayError, HistoryReplayLoad,
+    replay_wallet_history_blocking, HistoryReplay, HistoryReplayError, HistoryReplayLoad,
 };
 use platform_wallet::wallet::identity::ManagedIdentity;
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -1798,26 +1798,16 @@ fn load_one_wallet(
         .map_err(WalletStorageError::from)
         .map_err(PersistenceError::from)?;
     let mut state = load_wallet_snapshot(&tx, wallet_id, ctx)?;
-    let history = std::mem::take(&mut state.recorded_history);
-    let mut outcome = replay_recorded_history_blocking(
-        &mut state.wallet_info,
-        &mut state.wallet,
-        history,
-        evidence,
-    )
-    .map_err(replay_failure)?;
+    let mut outcome =
+        replay_wallet_history_blocking(&mut state, evidence).map_err(replay_failure)?;
     let mut claims =
         history_replay::load_spent_claims(&tx, &wallet_id).map_err(PersistenceError::from)?;
     if !outcome.sweeps.is_empty() || !outcome.authorization.rejected.is_empty() {
         history_replay::apply(&tx, &wallet_id, &mut outcome).map_err(PersistenceError::from)?;
         state = load_wallet_snapshot(&tx, wallet_id, ctx)?;
-        let remaining = replay_recorded_history_blocking(
-            &mut state.wallet_info,
-            &mut state.wallet,
-            std::mem::take(&mut state.recorded_history),
-            evidence,
-        )
-        .map_err(replay_failure)?;
+        let remaining =
+            replay_wallet_history_blocking(&mut state, evidence).map_err(replay_failure)?;
+        state.unconfirmed_outgoing_txs = outcome.resendable(state.unconfirmed_outgoing_txs);
         if !remaining.sweeps.is_empty() || !remaining.authorization.rejected.is_empty() {
             return Err(PersistenceError::backend(
                 HistoryReplayError::UnsettledAfterReplay,

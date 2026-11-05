@@ -35,14 +35,21 @@ use super::history_authorization::plan_history_authorization;
 pub use super::history_authorization::HistoryAuthorization;
 use crate::changeset::changeset::SweepBatch;
 use crate::changeset::recorded_history::ReplayEvidence;
-use crate::changeset::{is_owned, ClientStartState, RecordedHistory, StoredTransaction};
+use crate::changeset::{
+    is_owned, ClientStartState, ClientWalletStartState, RecordedHistory, StoredTransaction,
+};
+use crate::wallet::asset_lock::sync::recovery::{
+    add_tracked_instant_locks, detach_unconfirmed_records, final_lock_input_claims,
+    reattach_records, recorded_input_conflicts, withhold_chain_final_fundings,
+};
+use crate::wallet::platform_wallet::ObservedInputConflict;
 use crate::wallet::platform_wallet::WalletId;
 use key_wallet::transaction_checking::spend_authorization::SpendAuthorizationError;
 
 /// Backend snapshot and the replay verdict committed with each wallet.
 #[derive(Debug, Default)]
 pub struct HistoryReplayLoad {
-    /// Authoritative wallet snapshots, including conservative deferred views.
+    /// Authoritative wallet snapshots after successful replay.
     pub state: ClientStartState,
     /// Replay outcomes keyed by wallet; missing means the backend supplied raw history.
     pub outcomes: BTreeMap<WalletId, HistoryReplay>,
@@ -51,6 +58,8 @@ pub struct HistoryReplayLoad {
 /// What [`replay_recorded_history`] made of the stored history.
 #[derive(Debug, Default)]
 pub struct HistoryReplay {
+    /// Confirmed competing spends observed before replay can evict their records.
+    pub recorded_conflicts: BTreeMap<OutPoint, ObservedInputConflict>,
     /// Owner-authorized rejections and surviving claims for atomic backend repair.
     pub authorization: HistoryAuthorization,
     /// How many records went through the wallet checker.
@@ -129,6 +138,102 @@ pub enum HistoryReplayError {
     /// Applying the planned effects did not reconcile this wallet's history.
     #[error("wallet history still conflicts after atomic replay")]
     UnsettledAfterReplay,
+}
+
+/// Prepare every persisted source before the common replay settles any history.
+pub async fn replay_wallet_history(
+    state: &mut ClientWalletStartState,
+    evidence: &ReplayEvidence,
+) -> Result<HistoryReplay, HistoryReplayError> {
+    let mut history = state.recorded_history.clone();
+    let history_txids: HashSet<_> = history
+        .transactions
+        .iter()
+        .map(|stored| stored.txid)
+        .collect();
+    let recorded_conflicts = recorded_input_conflicts(
+        state.unused_asset_locks.values().flat_map(BTreeMap::values),
+        &history,
+    );
+    add_tracked_instant_locks(
+        &mut history,
+        &history_txids,
+        state.unused_asset_locks.values().flat_map(BTreeMap::values),
+    );
+    let withheld = withhold_chain_final_fundings(
+        &mut history,
+        state.unused_asset_locks.values().flat_map(BTreeMap::values),
+    );
+    let withheld_records = detach_unconfirmed_records(&mut state.wallet_info, &withheld);
+    let mut outcome = replay_recorded_history_with_evidence(
+        &mut state.wallet_info,
+        &mut state.wallet,
+        history,
+        evidence,
+    )
+    .await?;
+    reattach_records(&mut state.wallet_info, withheld_records);
+    outcome.recorded_conflicts = recorded_conflicts;
+    state.unconfirmed_outgoing_txs =
+        outcome.resendable(std::mem::take(&mut state.unconfirmed_outgoing_txs));
+    for transaction in state
+        .unconfirmed_outgoing_txs
+        .iter()
+        .filter(|tx| !history_txids.contains(&tx.txid()))
+    {
+        state
+            .wallet_info
+            .check_core_transaction(
+                transaction,
+                TransactionContext::Mempool,
+                &mut state.wallet,
+                true,
+                true,
+            )
+            .await;
+    }
+    state
+        .wallet_info
+        .restore_spent_outpoints(&final_lock_input_claims(
+            state
+                .unused_asset_locks
+                .values()
+                .flat_map(BTreeMap::values)
+                .filter(|lock| {
+                    let txid = lock.transaction.txid();
+                    !outcome.defeated.contains(&txid)
+                        && !outcome.authorization.rejected.contains(&txid)
+                }),
+        ));
+    state.recorded_history = RecordedHistory::default();
+    Ok(outcome)
+}
+
+/// Run wallet preparation and replay in the backend's synchronous atomic scope.
+pub fn replay_wallet_history_blocking(
+    state: &mut ClientWalletStartState,
+    evidence: &ReplayEvidence,
+) -> Result<HistoryReplay, HistoryReplayError> {
+    let original_wallet = state.wallet.clone();
+    let original_info = state.wallet_info.clone();
+    let original_history = state.recorded_history.clone();
+    let original_sends = state.unconfirmed_outgoing_txs.clone();
+    let result = {
+        let mut replay = std::pin::pin!(replay_wallet_history(state, evidence));
+        replay
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+    };
+    let error = match result {
+        Poll::Ready(Ok(outcome)) => return Ok(outcome),
+        Poll::Ready(Err(error)) => error,
+        Poll::Pending => HistoryReplayError::Suspended,
+    };
+    state.wallet = original_wallet;
+    state.wallet_info = original_info;
+    state.recorded_history = original_history;
+    state.unconfirmed_outgoing_txs = original_sends;
+    Err(error)
 }
 
 /// Run the common replay inside a synchronous backend's transaction.
@@ -617,6 +722,7 @@ pub async fn replay_recorded_history_with_evidence(
     swept.extend(set_aside.iter().map(|stored| stored.txid));
     swept.extend(authorization.rejected.iter().copied());
     Ok(HistoryReplay {
+        recorded_conflicts: BTreeMap::new(),
         authorization,
         replayed: replay.len(),
         retired: swept,

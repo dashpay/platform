@@ -540,8 +540,8 @@ pub(crate) fn final_lock_input_claims<'a>(
 /// while the lock's proof carries the real one. A lock is taken only when it,
 /// the proof's transaction and the tracked funding name one transaction the
 /// history holds (`recorded`, its txids), and a lock the store supplied itself
-/// stands. Its signature is not verified at load, like the locks a store keeps
-/// for its own records.
+/// stands. These bytes only nominate evidence: the common replay requires a
+/// matching SPV-verified token before using their finality.
 pub(crate) fn add_tracked_instant_locks<'a>(
     history: &mut RecordedHistory,
     recorded: &HashSet<Txid>,

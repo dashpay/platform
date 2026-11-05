@@ -4,8 +4,12 @@ use std::sync::Arc;
 use dash_spv::test_utils::{InstantLockFixture, MockNetworkManager};
 use dash_spv::{ClientConfig, DashSpvClient};
 use dashcore::{hashes::Hash, OutPoint};
+use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+use dpp::prelude::AssetLockProof;
 use key_wallet::transaction_checking::TransactionContext;
+use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use platform_wallet::changeset::recorded_history::ReplayEvidence;
+use platform_wallet::changeset::{AssetLockChangeSet, AssetLockEntry};
 use platform_wallet::changeset::{
     CoreChangeSet, PersistenceCapabilities, PlatformWalletPersistence,
 };
@@ -13,11 +17,13 @@ use platform_wallet::key_wallet_manager::test_utils::MockWallet;
 use platform_wallet::test_support::core_fixtures::{
     block, outside, pay, records_of, spend_of, stored_utxo, wallet_with_receive_address,
 };
+use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
 use platform_wallet_storage::sqlite::schema::blob;
 use tokio::sync::RwLock;
 
 use crate::common::{
-    authorize, fresh_persister, registration, LoadPolicy, SqlitePersister, SqlitePersisterConfig,
+    authorize, checked_instant_lock, fresh_persister, registration, LoadPolicy, SqlitePersister,
+    SqlitePersisterConfig,
 };
 
 #[tokio::test]
@@ -158,4 +164,84 @@ fn should_not_attest_operation_status_after_replay_cleanup() {
         !capabilities.contains(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS),
         "replay cleanup has no durable operation tombstone to distinguish absence from never sent"
     );
+}
+
+#[tokio::test]
+async fn should_verify_tracked_funding_before_atomic_history_settlement() {
+    let (mut wallet, mut info, address) = wallet_with_receive_address();
+    let funding = spend_of(&[outside(125)], vec![pay(100_000, &address)]);
+    let mut records = records_of(&mut info, &mut wallet, &funding, block(100)).await;
+    let coin = OutPoint::new(funding.txid(), 0);
+    let locked = authorize(
+        &wallet,
+        &info,
+        &address,
+        spend_of(&[coin], vec![pay(99_000, &address)]),
+    );
+    let competitor = spend_of(&[coin], vec![pay(98_000, &address)]);
+    let mut alternative = info.clone();
+    records.extend(records_of(&mut info, &mut wallet, &locked, TransactionContext::Mempool).await);
+    records.extend(records_of(&mut alternative, &mut wallet, &competitor, block(101)).await);
+    let (instant_lock, evidence) = checked_instant_lock(&locked).await;
+    let (persister, _directory, path) = fresh_persister();
+    let mut changes = registration(
+        &wallet,
+        Some(CoreChangeSet {
+            records,
+            new_utxos: vec![stored_utxo(&funding, 0, address)],
+            ..Default::default()
+        }),
+    );
+    let out_point = OutPoint::new(locked.txid(), 0);
+    changes.asset_locks = Some(AssetLockChangeSet {
+        asset_locks: BTreeMap::from([(
+            out_point,
+            AssetLockEntry {
+                out_point,
+                transaction: locked.clone(),
+                account_index: 0,
+                funding_type: AssetLockFundingType::IdentityTopUp,
+                identity_index: 0,
+                amount_duffs: 99_000,
+                status: AssetLockStatus::InstantSendLocked,
+                proof: Some(AssetLockProof::Instant(InstantAssetLockProof::new(
+                    instant_lock,
+                    locked.clone(),
+                    0,
+                ))),
+                operation_id: None,
+            },
+        )]),
+        ..Default::default()
+    });
+    persister.store(wallet.wallet_id, changes).unwrap();
+    assert!(
+        persister
+            .load_with_replay(&ReplayEvidence::default())
+            .is_err(),
+        "a tracked funding proof must be required before any SQL settlement"
+    );
+    assert!(persister
+        .get_core_tx_record(wallet.wallet_id, &locked.txid())
+        .unwrap()
+        .is_some());
+    let loaded = persister.load_with_replay(&evidence).unwrap();
+    assert!(!loaded.outcomes[&wallet.wallet_id]
+        .defeated
+        .contains(&locked.txid()));
+    assert!(persister
+        .get_core_tx_record(wallet.wallet_id, &locked.txid())
+        .unwrap()
+        .is_some());
+    drop(persister);
+    let reopened = SqlitePersister::open(SqlitePersisterConfig::new(path)).unwrap();
+    let loaded = reopened.load_with_replay(&evidence).unwrap();
+    assert!(loaded.state.wallets[&wallet.wallet_id]
+        .unused_asset_locks
+        .values()
+        .any(|locks| locks.contains_key(&out_point)));
+    assert!(reopened
+        .get_core_tx_record(wallet.wallet_id, &locked.txid())
+        .unwrap()
+        .is_some());
 }

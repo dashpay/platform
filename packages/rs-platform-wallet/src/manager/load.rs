@@ -1,6 +1,6 @@
 //! Hydrate a [`PlatformWalletManager`] from its persister.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use crate::changeset::{
@@ -8,11 +8,7 @@ use crate::changeset::{
     PersistenceCapabilities, PlatformWalletPersistence,
 };
 use crate::error::PlatformWalletError;
-use crate::wallet::asset_lock::sync::recovery::{
-    add_tracked_instant_locks, detach_unconfirmed_records, final_lock_input_claims,
-    reattach_records, recorded_input_conflicts, seed_observed_input_conflicts,
-    withhold_chain_final_fundings,
-};
+use crate::wallet::asset_lock::sync::recovery::seed_observed_input_conflicts;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -21,13 +17,10 @@ use crate::wallet::PlatformWallet;
 use std::time::Duration;
 
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
-use dashcore::Txid;
 use dpp::prelude::Identifier;
 use key_wallet::account::derivation::AccountDerivation;
 use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-use key_wallet::transaction_checking::transaction_context::TransactionContext;
-use key_wallet::transaction_checking::wallet_checker::WalletTransactionChecker;
 
 use super::{run_blocking_load, PlatformWalletManager};
 
@@ -205,149 +198,35 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 }
                 continue 'load;
             }
-            let ClientWalletStartState {
-                mut wallet,
-                mut wallet_info,
-                identity_manager,
-                unused_asset_locks,
-                mut unconfirmed_outgoing_txs,
-                mut recorded_history,
-                dashpay_backfill,
-            } = wallet_state;
-
-            // Read before the replay consumes the history: its finalization
-            // evicts a buried spender's record, where the seeding below looks.
-            let recorded_conflicts = recorded_input_conflicts(
-                unused_asset_locks.values().flat_map(BTreeMap::values),
-                &recorded_history,
-            );
-
-            // Replay the stored history first, in chain order, so every spend
-            // the wallet ever saw guards its outpoint again. The persisted
-            // UTXO set stays authoritative for credits; see
-            // `replay_recorded_history`.
-            let history_txids: HashSet<Txid> = recorded_history
-                .transactions
-                .iter()
-                .map(|stored| stored.txid)
-                .collect();
-            add_tracked_instant_locks(
-                &mut recorded_history,
-                &history_txids,
-                unused_asset_locks.values().flat_map(BTreeMap::values),
-            );
-            let withheld = withhold_chain_final_fundings(
-                &mut recorded_history,
-                unused_asset_locks.values().flat_map(BTreeMap::values),
-            );
-            // A record a host attached for a withheld funding sits the
-            // replay out as well, or the replay would plan it as unconfirmed.
-            let withheld_records = detach_unconfirmed_records(&mut wallet_info, &withheld);
-            let mut defeated = HashSet::new();
-            let backend_outcome = outcomes.remove(&expected_wallet_id).unwrap_or_default();
-            unconfirmed_outgoing_txs = backend_outcome.resendable(unconfirmed_outgoing_txs);
-            if !recorded_history.is_empty() {
-                let offered = recorded_history.transactions.len();
-                let outcome =
-                    crate::manager::history_replay::replay_recorded_history_with_evidence(
-                        &mut wallet_info,
-                        &mut wallet,
-                        recorded_history,
-                        &evidence,
-                    )
-                    .await;
-                let outcome = match outcome {
-                    Ok(outcome) => outcome,
-                    Err(error) => {
-                        load_error = Some(PlatformWalletError::from_load_failure(
-                            crate::changeset::PersistenceError::backend(error),
-                        ));
-                        break 'load;
-                    }
-                };
-                tracing::info!(
-                    wallet_id = %hex::encode(expected_wallet_id),
-                    offered,
-                    replayed = outcome.replayed,
-                    retired = outcome.retired.len(),
-                    "load: replayed stored transaction history"
-                );
-                // A send the replay retired is not dispatched again below.
-                unconfirmed_outgoing_txs = outcome.resendable(unconfirmed_outgoing_txs);
-                defeated = outcome.defeated;
-            }
-            reattach_records(&mut wallet_info, withheld_records);
-
-            // Replay the sends the host still holds as unconfirmed, before
-            // anything reads the restored balance.
-            //
-            // Their spend effect is never persisted: `isSpent` stays `false`
-            // on the input row until the spending transaction reaches a
-            // block, because a mempool-only sighting is reversible by
-            // eviction. So the UTXO restore above has just handed those
-            // inputs back as spendable. A live process was still correct —
-            // it held the effect in memory — and until now a restart
-            // recovered it only by re-observing the transaction on the
-            // network. A transaction that never reached the network cannot
-            // be re-observed, so its input stayed spendable for good and the
-            // balance re-counted the coin.
-            //
-            // Routing each record through the ordinary mempool check (rather
-            // than inserting it into `transactions_mut()` raw, the way the
-            // asset-lock record restore does) is the whole point: it runs
-            // `update_utxos`, which drops the input from `utxos` and records
-            // it in `spent_outpoints`, reproducing exactly the state the
-            // live process held. A raw insert would leave `spent_outpoints`
-            // empty AND make every later re-dispatch a no-op, because
-            // `has_transaction` would then report the record as not new.
-            //
-            // `update_state` and `update_balance` are both on: the balance
-            // this produces is what `generation.set(..)` mirrors a few lines
-            // below, and the UI reads that.
-            if !unconfirmed_outgoing_txs.is_empty() {
-                let mut replayed = 0usize;
-                // A send the history replay already applied is only
-                // re-dispatched below, never accounted twice.
-                for tx in unconfirmed_outgoing_txs
-                    .iter()
-                    .filter(|tx| !history_txids.contains(&tx.txid()))
-                {
-                    let result = wallet_info
-                        .check_core_transaction(
-                            tx,
-                            TransactionContext::Mempool,
-                            &mut wallet,
-                            true,
-                            true,
-                        )
-                        .await;
-                    if result.is_relevant {
-                        replayed += 1;
+            let mut wallet_state = wallet_state;
+            let outcome = match outcomes.remove(&expected_wallet_id) {
+                Some(outcome) => outcome,
+                None => {
+                    match super::history_replay::replay_wallet_history(&mut wallet_state, &evidence)
+                        .await
+                    {
+                        Ok(outcome) => outcome,
+                        Err(error) => {
+                            load_error = Some(PlatformWalletError::from_load_failure(
+                                crate::changeset::PersistenceError::backend(error),
+                            ));
+                            break 'load;
+                        }
                     }
                 }
-                tracing::info!(
-                    wallet_id = %hex::encode(expected_wallet_id),
-                    offered = unconfirmed_outgoing_txs.len(),
-                    replayed,
-                    "load: replayed unconfirmed outgoing sends"
-                );
-            }
-
-            // Flatten the (account → outpoint → lock) map into the flat
-            // OutPoint → TrackedAssetLock map that `PlatformWalletInfo`
-            // holds today.
-            let mut tracked_asset_locks = BTreeMap::new();
-            for (_account_index, account_locks) in unused_asset_locks {
-                tracked_asset_locks.extend(account_locks);
-            }
-            // A host may drop a final lock's inputs from the projection while
-            // the funding's own record guards nothing. A funding the replay
-            // defeated spends nothing any more, whatever its lock's status.
-            wallet_info.restore_spent_outpoints(&final_lock_input_claims(
-                tracked_asset_locks
-                    .values()
-                    .filter(|lock| !defeated.contains(&lock.transaction.txid())),
-            ));
+            };
+            let ClientWalletStartState {
+                wallet,
+                wallet_info,
+                identity_manager,
+                unused_asset_locks,
+                unconfirmed_outgoing_txs,
+                dashpay_backfill,
+                ..
+            } = wallet_state;
+            let unconfirmed_outgoing_txs = outcome.resendable(unconfirmed_outgoing_txs);
+            let recorded_conflicts = outcome.recorded_conflicts;
+            let tracked_asset_locks = unused_asset_locks.into_values().flatten().collect();
 
             // Canonical id recomputed from the wallet's own key material.
             // Computed up front — before `insert_wallet` consumes `wallet` —
