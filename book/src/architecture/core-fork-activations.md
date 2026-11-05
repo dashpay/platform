@@ -186,6 +186,18 @@ Code that depends on a Core fork reads the record through
 follows the rule in
 [The window after a protocol upgrade](#the-window-after-a-protocol-upgrade).
 
+Withdrawals leave Platform as asset unlock transactions on Core, and Core
+accepts asset unlock payload version 2 only once V24 is active. From protocol
+version 15, withdrawal pooling (step 14 of the block,
+`build_untied_withdrawal_transactions_from_documents` v1 under
+`packages/rs-drive-abci/src/execution/platform_events/withdrawals/`) builds
+version 2 once V24 is recorded. The exception is a withdrawal whose amount is
+below Core's dust threshold: Core can never relay it, so Platform may eventually
+mark it failed, which is safe only for version 1. Pooling runs after
+`update_core_info`, so a withdrawal pooled in the block that records V24 is
+already version 2. In the window before the record, withdrawals stay at version
+1, which Core always accepts. Pooling never asks Core about V24.
+
 One piece of code still asks Core about V24 directly: the masternode list
 update's `drop_unchanged_operator_keys`, which keeps a masternode's operator key
 when Core re-encodes it after V24. It runs under every protocol version, and
