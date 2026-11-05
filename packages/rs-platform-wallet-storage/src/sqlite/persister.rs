@@ -9,8 +9,8 @@ use rusqlite::{Connection, OptionalExtension, Transaction};
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::changeset::SweepBatch;
 use platform_wallet::changeset::{
-    ClientStartState, IdentityChangeSet, PersistenceCapabilities, PersistenceError,
-    PlatformWalletChangeSet, PlatformWalletPersistence,
+    ClientStartState, ClientWalletStartState, IdentityChangeSet, PersistenceCapabilities,
+    PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::wallet::identity::ManagedIdentity;
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -1533,46 +1533,26 @@ impl PlatformWalletPersistence for SqlitePersister {
                 .map_err(PersistenceError::from)?;
         }
 
-        let addrs_all = schema::platform_addrs::load_all(&conn).map_err(PersistenceError::from)?;
+        schema::platform_addrs::validate_wallet_ids(&conn).map_err(PersistenceError::from)?;
         let mut addresses_loaded: usize = 0;
-        // Wallets whose platform-address rows could not be read. They are
-        // already counted here, so the loop below skips them rather than
-        // rebuilding a wallet whose platform balance would be understated.
-        let mut unreadable: std::collections::BTreeSet<WalletId> =
-            std::collections::BTreeSet::new();
-        for (wallet_id, entry) in addrs_all {
-            let (addrs, count) = match entry {
-                Ok(entry) => entry,
-                Err(original) => {
-                    degrade_whole_wallet(&ctx, wallet_id, &original)
-                        .map_err(|_| PersistenceError::from(original))?;
-                    unreadable.insert(wallet_id);
-                    continue;
-                }
-            };
-            // Skip a wallet with no platform state at all (no addresses,
-            // no registrations, all sync watermarks zero).
-            if count > 0
-                || !addrs.per_account.is_empty()
-                || addrs.sync_height > 0
-                || addrs.sync_timestamp > 0
-                || addrs.last_known_recent_block > 0
-            {
-                addresses_loaded += count;
-                state.platform_addresses.insert(wallet_id, addrs);
-            }
-        }
 
         // Per-wallet keyless rehydration payload; the manager rebuilds each
         // wallet watch-only and derives signing keys later on demand.
         let wallet_ids = schema::wallets::list_ids(&conn).map_err(PersistenceError::from)?;
         let wallets_seen = wallet_ids.len();
         for wallet_id in wallet_ids {
-            if unreadable.contains(&wallet_id) {
-                continue;
-            }
             match load_one_wallet(&conn, wallet_id, &ctx, self.config.load_policy) {
-                Ok(wallet_state) => {
+                Ok((wallet_state, (addrs, count))) => {
+                    // Publish both halves only after the wallet's transaction succeeds.
+                    if count > 0
+                        || !addrs.per_account.is_empty()
+                        || addrs.sync_height > 0
+                        || addrs.sync_timestamp > 0
+                        || addrs.last_known_recent_block > 0
+                    {
+                        addresses_loaded += count;
+                        state.platform_addresses.insert(wallet_id, addrs);
+                    }
                     state.wallets.insert(wallet_id, wallet_state);
                 }
                 // The isolation boundary. One wallet's failure is recorded
@@ -1689,11 +1669,13 @@ fn load_one_wallet(
     wallet_id: WalletId,
     ctx: &LoadCtx,
     policy: LoadPolicy,
-) -> Result<platform_wallet::changeset::ClientWalletStartState, PersistenceError> {
+) -> Result<(ClientWalletStartState, schema::platform_addrs::LoadAllEntry), PersistenceError> {
     let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
         .map_err(WalletStorageError::from)
         .map_err(PersistenceError::from)?;
     let counted_before = ctx.counts_checkpoint();
+    let platform_state =
+        schema::platform_addrs::load_entry(&tx, &wallet_id).map_err(PersistenceError::from)?;
     let (mut state, sweeps) = load_wallet_snapshot(&tx, wallet_id, ctx)?;
     if !sweeps.is_empty() {
         schema::core_state::apply_replay_sweeps(&tx, &wallet_id, sweeps)
@@ -1722,7 +1704,7 @@ fn load_one_wallet(
     }
     .map_err(WalletStorageError::from)
     .map_err(PersistenceError::from)?;
-    Ok(state)
+    Ok((state, platform_state))
 }
 
 fn load_wallet_snapshot(
@@ -1972,16 +1954,6 @@ fn record_wallet_degradation(
     })?;
     ctx.note_wallet_degraded(wallet_id, cause);
     Ok(())
-}
-
-/// [`record_wallet_degradation`] for a failure that is already a typed
-/// storage error, so its own kind tag is the cause.
-fn degrade_whole_wallet(
-    ctx: &LoadCtx,
-    wallet_id: WalletId,
-    original: &WalletStorageError,
-) -> Result<(), WalletStorageError> {
-    record_wallet_degradation(ctx, wallet_id, original.error_kind_str(), original)
 }
 
 /// The kind tag of the typed storage error inside a persistence error.

@@ -7,14 +7,19 @@
 
 use crate::common;
 
+use std::sync::{Arc, Mutex};
+
 use common::{ensure_wallet_meta, fresh_persister, wid};
 use dash_sdk::platform::address_sync::AddressFunds;
 use key_wallet::PlatformP2PKHAddress;
 use platform_wallet::changeset::{
-    PlatformAddressBalanceEntry, PlatformAddressChangeSet, PlatformWalletChangeSet,
-    PlatformWalletPersistence,
+    AccountRegistrationEntry, CoreChangeSet, PersistenceError, PlatformAddressBalanceEntry,
+    PlatformAddressChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
-use platform_wallet_storage::WalletStorageError;
+use platform_wallet_storage::{
+    LoadPolicy, SqlitePersister, SqlitePersisterConfig, WalletStorageError,
+};
+use rusqlite::hooks::{AuthAction, Authorization};
 
 fn entry(
     wallet_id: [u8; 32],
@@ -76,6 +81,290 @@ fn test_xpub() -> key_wallet::bip32::ExtendedPubKey {
     key_wallet::bip32::ExtendedPubKey::decode(&hex::decode(
         "0488B21E000000000000000000873DFF81C02F525623FD1FE5167EAC3A55A049DE3D314BB42EE227FFED37D5080339A36013301597DAEF41FBE593A02CC513D0B55527EC2DF1050E2E8FF49C85C2",
     ).unwrap()).unwrap()
+}
+
+fn replace_snapshot_dataset(
+    conn: &rusqlite::Connection,
+    wallet: &[u8; 32],
+) -> rusqlite::Result<()> {
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
+    let registration = AccountRegistrationEntry {
+        account_type: key_wallet::account::AccountType::PlatformPayment {
+            account: 8,
+            key_class: 0,
+        },
+        account_xpub: test_xpub(),
+    };
+    let payload =
+        bincode::serde::encode_to_vec(&registration, bincode::config::standard()).unwrap();
+    tx.execute("UPDATE platform_address_sync SET sync_height = 200, sync_timestamp = 200, last_known_recent_block = 200 WHERE wallet_id = ?1", [wallet.as_slice()])?;
+    tx.execute("UPDATE platform_addresses SET account_index = 8, balance = 200, nonce = 2, as_of_height = 200 WHERE wallet_id = ?1", [wallet.as_slice()])?;
+    tx.execute("UPDATE account_registrations SET account_index = 8, account_xpub_bytes = ?2 WHERE wallet_id = ?1 AND account_type = 'platform_payment'", rusqlite::params![wallet.as_slice(), payload])?;
+    tx.execute(
+        "UPDATE core_sync_state SET synced_height = 200 WHERE wallet_id = ?1",
+        [wallet.as_slice()],
+    )?;
+    tx.commit()
+}
+
+fn platform_snapshot_with_external_writer(policy: LoadPolicy) {
+    let (persister, _tmp, path) = fresh_persister();
+    let wallet = wid(0x63);
+    ensure_wallet_meta(&persister, &wallet);
+    persister
+        .store(
+            wallet,
+            PlatformWalletChangeSet {
+                account_registrations: vec![AccountRegistrationEntry {
+                    account_type: key_wallet::account::AccountType::PlatformPayment {
+                        account: 7,
+                        key_class: 0,
+                    },
+                    account_xpub: test_xpub(),
+                }],
+                platform_addresses: Some(PlatformAddressChangeSet {
+                    addresses: vec![PlatformAddressBalanceEntry {
+                        wallet_id: wallet,
+                        account_index: 7,
+                        address_index: 0,
+                        address: PlatformP2PKHAddress::new([0x63; 20]),
+                        funds: AddressFunds {
+                            balance: 100,
+                            nonce: 1,
+                            as_of_height: 100,
+                        },
+                    }],
+                    sync_height: Some(100),
+                    sync_timestamp: Some(100),
+                    last_known_recent_block: Some(100),
+                }),
+                core: Some(CoreChangeSet {
+                    synced_height: Some(100),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+    let persister =
+        SqlitePersister::open(SqlitePersisterConfig::new(&path).with_load_policy(policy)).unwrap();
+    let writer = rusqlite::Connection::open(&path).unwrap();
+    writer.busy_timeout(std::time::Duration::ZERO).unwrap();
+    let attempt = Arc::new(Mutex::new(None));
+    let callback_attempt = Arc::clone(&attempt);
+    // This exact read follows the checkpoint read. No timing or production seam is needed.
+    persister
+        .lock_conn_for_test()
+        .authorizer(Some(move |ctx: rusqlite::hooks::AuthContext<'_>| {
+            if matches!(
+                ctx.action,
+                AuthAction::Read {
+                    table_name: "platform_addresses",
+                    column_name: "balance"
+                }
+            ) {
+                let mut attempted = callback_attempt.lock().unwrap();
+                if attempted.is_none() {
+                    *attempted = Some(replace_snapshot_dataset(&writer, &wallet));
+                }
+            }
+            Authorization::Allow
+        }))
+        .unwrap();
+    let state = persister.load().unwrap();
+    let platform = &state.platform_addresses[&wallet];
+    let account_indices: Vec<_> = platform.per_account.keys().copied().collect();
+    let balances: Vec<_> = platform
+        .per_account
+        .values()
+        .flat_map(|a| {
+            a.found()
+                .values()
+                .map(|f| (f.balance, f.nonce, f.as_of_height))
+        })
+        .collect();
+    assert_eq!(
+        (
+            platform.sync_height,
+            platform.sync_timestamp,
+            platform.last_known_recent_block,
+            account_indices,
+            balances,
+            state.wallets[&wallet].wallet_info.metadata.synced_height
+        ),
+        (100, 100, 100, vec![7], vec![(100, 1, 100)], 100),
+        "Platform and Core must come from the same wallet snapshot"
+    );
+    assert!(
+        matches!(attempt.lock().unwrap().as_ref().expect("Platform read must trigger writer"), Err(rusqlite::Error::SqliteFailure(e, _)) if e.code == rusqlite::ErrorCode::DatabaseBusy)
+    );
+    persister
+        .lock_conn_for_test()
+        .authorizer(None::<fn(rusqlite::hooks::AuthContext<'_>) -> Authorization>)
+        .unwrap();
+    replace_snapshot_dataset(&rusqlite::Connection::open(&path).unwrap(), &wallet).unwrap();
+    let state = persister.load().unwrap();
+    let platform = &state.platform_addresses[&wallet];
+    assert_eq!(
+        (
+            platform.sync_height,
+            platform.sync_timestamp,
+            platform.last_known_recent_block
+        ),
+        (200, 200, 200)
+    );
+    assert_eq!(
+        platform.per_account.keys().copied().collect::<Vec<_>>(),
+        vec![8]
+    );
+    assert_eq!(
+        platform.per_account[&8].found()[&PlatformP2PKHAddress::new([0x63; 20])],
+        AddressFunds {
+            balance: 200,
+            nonce: 2,
+            as_of_height: 200
+        }
+    );
+    assert_eq!(
+        state.wallets[&wallet].wallet_info.metadata.synced_height,
+        200
+    );
+}
+
+#[test]
+fn should_load_platform_and_core_from_one_snapshot_in_strict_mode() {
+    platform_snapshot_with_external_writer(LoadPolicy::Strict);
+}
+
+#[test]
+fn should_load_platform_and_core_from_one_snapshot_in_recovery_mode() {
+    platform_snapshot_with_external_writer(LoadPolicy::Recovery);
+}
+
+#[test]
+fn should_omit_platform_state_when_core_wallet_reconstruction_fails() {
+    let (persister, _tmp, path) = fresh_persister();
+    let healthy = wid(0x61);
+    let sick = wid(0x62);
+    for wallet in [healthy, sick] {
+        ensure_wallet_meta(&persister, &wallet);
+        persister
+            .store(
+                wallet,
+                PlatformWalletChangeSet {
+                    platform_addresses: Some(PlatformAddressChangeSet {
+                        sync_height: Some(100),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    }
+    drop(persister);
+    let persister = SqlitePersister::open(
+        SqlitePersisterConfig::new(&path).with_load_policy(LoadPolicy::Recovery),
+    )
+    .unwrap();
+    {
+        let conn = persister.lock_conn_for_test();
+        // Simulate persisted corruption without bypassing the production loader.
+        conn.execute_batch("PRAGMA ignore_check_constraints = ON")
+            .unwrap();
+        conn.execute(
+            "UPDATE wallets SET network = 'unknown' WHERE wallet_id = ?1",
+            [sick.as_slice()],
+        )
+        .unwrap();
+        conn.execute_batch("PRAGMA ignore_check_constraints = OFF")
+            .unwrap();
+    }
+    let state = persister.load().unwrap();
+    assert!(state.wallets.contains_key(&healthy));
+    assert!(state.platform_addresses.contains_key(&healthy));
+    assert!(!state.wallets.contains_key(&sick));
+    assert!(
+        !state.platform_addresses.contains_key(&sick),
+        "a failed wallet must not publish its other half"
+    );
+    assert!(persister
+        .last_load_degradation()
+        .wallets_degraded
+        .contains_key(&sick));
+}
+
+#[test]
+fn should_reject_unattributable_platform_wallet_ids_in_both_load_policies() {
+    for policy in [LoadPolicy::Strict, LoadPolicy::Recovery] {
+        for table in [
+            "platform_address_sync",
+            "platform_addresses",
+            "account_registrations",
+        ] {
+            let (persister, _tmp, path) = fresh_persister();
+            let wallet = wid(0x64);
+            ensure_wallet_meta(&persister, &wallet);
+            persister
+                .store(
+                    wallet,
+                    PlatformWalletChangeSet {
+                        account_registrations: vec![AccountRegistrationEntry {
+                            account_type: key_wallet::account::AccountType::PlatformPayment {
+                                account: 7,
+                                key_class: 0,
+                            },
+                            account_xpub: test_xpub(),
+                        }],
+                        platform_addresses: Some(PlatformAddressChangeSet {
+                            addresses: vec![entry(wallet, 7, 0, 0x64)],
+                            sync_height: Some(100),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            drop(persister);
+            let persister =
+                SqlitePersister::open(SqlitePersisterConfig::new(&path).with_load_policy(policy))
+                    .unwrap();
+            {
+                let conn = persister.lock_conn_for_test();
+                conn.execute_batch(
+                    "PRAGMA foreign_keys = OFF; PRAGMA ignore_check_constraints = ON",
+                )
+                .unwrap();
+                conn.execute(
+                    &format!("UPDATE {table} SET wallet_id = ?1"),
+                    [[0x64; 31].as_slice()],
+                )
+                .unwrap();
+                conn.execute_batch(
+                    "PRAGMA foreign_keys = ON; PRAGMA ignore_check_constraints = OFF",
+                )
+                .unwrap();
+            }
+            let PersistenceError::Backend { source, .. } = persister.load().unwrap_err() else {
+                panic!("typed storage error expected")
+            };
+            let error = source.downcast_ref::<WalletStorageError>().unwrap();
+            if table == "account_registrations" {
+                assert!(
+                    matches!(error, WalletStorageError::BlobDecode { .. }),
+                    "{error:?}"
+                );
+            } else {
+                assert!(
+                    matches!(
+                        error,
+                        WalletStorageError::InvalidWalletIdLength { actual: 31, .. }
+                    ),
+                    "{error:?}"
+                );
+            }
+        }
+    }
 }
 
 /// A `platform_payment` registration + platform_addresses for an account
@@ -1542,12 +1831,13 @@ fn tc_p4_012_load_query_count_bounded() {
          (N=1 → {count_one}, N=10 → {count_ten}, delta → {delta})"
     );
     let per_wallet = delta / 9;
+    // Three Platform readers share the wallet transaction with the Core readers.
     assert!(
-        (1..=20).contains(&per_wallet),
+        (1..=23).contains(&per_wallet),
         "per-wallet statement count must be small + bounded, got {per_wallet}"
     );
     // Shared (wallet-count-independent) overhead: the `list_ids` +
-    // `platform_addrs::load_all` scans. `count_one = shared + per_wallet`
+    // Platform wallet-ID validation. `count_one = shared + per_wallet`
     // ⇒ shared must itself be a small constant, not growing with N.
     let shared = count_one - per_wallet;
     assert!(
