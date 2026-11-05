@@ -394,6 +394,19 @@ fn should_reconcile_operator_payouts_with_core_in_the_first_block_of_protocol_ve
             [(vec![0x62; 20], false)],
             "{context}: the previous operator's identity keeps its payout key"
         );
+        assert_eq!(
+            transfer_keys(&platform, &transaction, 0x64, 0x64),
+            [(vec![0x64; 20], false)],
+            "{context}: an identity that already matches Core is left as it is"
+        );
+        assert_eq!(stored_payout(0x64), Some([0x64; 20]), "{context}");
+        assert!(
+            !block_state
+                .masternode_changes
+                .upserted
+                .contains(&ProTxHash::from_byte_array([0x64; 32])),
+            "{context}: a masternode whose payout matches Core's is not rewritten"
+        );
     }
 }
 

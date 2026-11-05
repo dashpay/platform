@@ -20,6 +20,7 @@ impl Drive {
     /// operator payout or a platform node id, so an operator identity can need two keys of
     /// different kinds with one hash, such as a payout equal to a platform node id it had
     /// before. Each key is still stored under its own id with its own purpose.
+    #[inline(always)]
     pub(super) fn add_new_keys_to_masternode_identity_operations_v1(
         &self,
         identity_id: [u8; 32],
@@ -51,14 +52,16 @@ impl Drive {
                     public_key_hash,
                     transaction,
                     &platform_version.drive,
-                )? && !referenced_hashes.contains(&public_key_hash)
-                    && !self.has_non_unique_public_key_hash_already_for_identity_operations(
-                        public_key_hash,
-                        identity_id,
-                        transaction,
-                        &mut vec![],
-                        &platform_version.drive,
-                    )?
+                )? && !self.has_non_unique_public_key_hash_already_for_identity_operations(
+                    public_key_hash,
+                    identity_id,
+                    transaction,
+                    &mut vec![],
+                    &platform_version.drive,
+                )?
+                    // False for a hash an earlier key of this call references: the batch holds
+                    // that reference already, and a second insert of it would be a duplicate
+                    // operation, which a batch checked for consistency refuses.
                     && referenced_hashes.insert(public_key_hash)
             };
 

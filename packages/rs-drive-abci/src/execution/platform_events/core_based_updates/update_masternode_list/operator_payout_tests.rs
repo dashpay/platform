@@ -492,8 +492,9 @@ fn should_add_an_operator_payout_or_node_id_key_that_repeats_another_keys_hash()
         ]
     );
     assert_eq!(
-        keys_with_purpose(&platform, &payout_is_node_id, key, Purpose::SYSTEM)[1..],
+        keys_with_purpose(&platform, &payout_is_node_id, key, Purpose::SYSTEM),
         [
+            (key.clone(), false),
             (node_id(&payout_is_node_id).to_vec(), true),
             (vec![0x7a; 20], false)
         ]
@@ -523,8 +524,9 @@ fn should_add_an_operator_payout_or_node_id_key_that_repeats_another_keys_hash()
         [(payout(&node_id_is_payout).to_vec(), false)]
     );
     assert_eq!(
-        keys_with_purpose(&platform, &node_id_is_payout, key, Purpose::SYSTEM)[1..],
+        keys_with_purpose(&platform, &node_id_is_payout, key, Purpose::SYSTEM),
         [
+            (key.clone(), false),
             (node_id(&node_id_is_payout).to_vec(), true),
             (payout(&node_id_is_payout).to_vec(), false)
         ]

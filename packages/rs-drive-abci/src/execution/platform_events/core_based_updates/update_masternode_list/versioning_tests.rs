@@ -195,3 +195,33 @@ fn should_keep_the_masternode_generations_protocol_versions_1_to_14_executed_wit
         );
     }
 }
+
+/// `update_operator_identity` 1 adds a key whose hash another key of the identity has, which
+/// Drive's `add_new_keys_to_masternode_identity` 0 refuses on every node, failing the block. So
+/// every protocol version selecting the first selects version 1 or later of the second.
+#[test]
+fn should_pair_update_operator_identity_1_with_a_drive_that_adds_keys_repeating_a_hash() {
+    for protocol_version in 1..=PlatformVersion::latest().protocol_version {
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected a protocol version");
+        if platform_version
+            .drive_abci
+            .methods
+            .core_based_updates
+            .masternode_updates
+            .update_operator_identity
+            >= 1
+        {
+            assert!(
+                platform_version
+                    .drive
+                    .methods
+                    .identity
+                    .update
+                    .add_new_keys_to_masternode_identity
+                    >= 1,
+                "protocol version {protocol_version}"
+            );
+        }
+    }
+}
