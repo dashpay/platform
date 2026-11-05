@@ -214,13 +214,23 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
 
             // An identity create's identity id must be the one its asset lock's outpoint
             // derives, and a block refuses one whose id is not. The id is outside the bytes the
-            // asset lock key signs, so it is compared here, before the asset lock proof is
-            // verified, and such a transition is refused without that verification. Basic
-            // structure has checked that the outpoint exists. Admission is not consensus, so
-            // every protocol version gets this.
+            // asset lock key signs, so it is compared before the asset lock proof is verified,
+            // and such a transition is refused without that verification. Identity create basic
+            // structure 1 (protocol version 15 onwards), just run, compares it; basic structure 0
+            // (protocol versions 1 to 14) does not, so it is compared here for those versions,
+            // which keep the admission they shipped with. Basic structure has checked that the
+            // outpoint exists.
             if let StateTransition::IdentityCreate(identity_create) = state_transition {
-                if identity_create.asset_lock_proof().create_identifier()?
-                    != identity_create.identity_id()
+                let basic_structure_leaves_identity_id_unchecked = platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .identity_create_state_transition
+                    .basic_structure
+                    == Some(0);
+                if basic_structure_leaves_identity_id_unchecked
+                    && identity_create.asset_lock_proof().create_identifier()?
+                        != identity_create.identity_id()
                 {
                     return Ok(
                         ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_error(

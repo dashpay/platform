@@ -9,6 +9,7 @@ use dpp::dashcore::Network;
 use crate::error::execution::ExecutionError;
 
 use crate::execution::validation::state_transition::identity_create::basic_structure::v0::IdentityCreateStateTransitionBasicStructureValidationV0;
+use crate::execution::validation::state_transition::identity_create::basic_structure::v1::IdentityCreateStateTransitionBasicStructureValidationV1;
 use crate::execution::validation::state_transition::identity_create::state::v0::IdentityCreateStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::identity_create::state::v1::IdentityCreateStateTransitionStateValidationV1;
 use crate::platform_types::platform::PlatformRef;
@@ -24,6 +25,7 @@ use dpp::version::PlatformVersion;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::identity_create::advanced_structure::v0::IdentityCreateStateTransitionAdvancedStructureValidationV0;
 use crate::execution::validation::state_transition::identity_create::advanced_structure::v1::IdentityCreateStateTransitionAdvancedStructureValidationV1;
+use crate::execution::validation::state_transition::identity_create::advanced_structure::v2::IdentityCreateStateTransitionAdvancedStructureValidationV2;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
@@ -95,14 +97,15 @@ impl StateTransitionBasicStructureValidationV0 for IdentityCreateTransition {
                 // There is nothing expensive to add as validation methods to the execution context
                 self.validate_basic_structure_v0(platform_version)
             }
+            Some(1) => self.validate_basic_structure_v1(platform_version),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity create transition: validate_basic_structure".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
             None => Err(Error::Execution(ExecutionError::VersionNotActive {
                 method: "identity create transition: validate_basic_structure".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
             })),
         }
     }
@@ -149,16 +152,22 @@ impl StateTransitionStructureKnownInStateValidationForIdentityCreateTransitionV0
                 execution_context,
                 platform_version,
             ),
+            Some(2) => self.validate_advanced_structure_from_state_v2(
+                action,
+                signable_bytes,
+                execution_context,
+                platform_version,
+            ),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity create transition: validate_advanced_structure_from_state"
                     .to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
             None => Err(Error::Execution(ExecutionError::VersionNotActive {
                 method: "identity create transition: validate_advanced_structure_from_state"
                     .to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
             })),
         }
     }
@@ -2589,11 +2598,13 @@ mod tests {
         use platform_version::version::LATEST_VERSION;
 
         /// The protocol versions the check_tx tests run at: 1 (the first), 13 (the last whose
-        /// identity create advanced structure charges these faults) and the latest (which
-        /// refuses them unpaid). This is a sample, not every version: protocol version 11 raises
-        /// an identity create's minimum asset lock balance and 14 also changes its state
-        /// validation, and the transitions these tests build meet both versions of each.
-        const CHECK_TX_PROTOCOL_VERSIONS: [ProtocolVersion; 3] = [1, 13, LATEST_VERSION];
+        /// identity create advanced structure charges these faults), 14 (the last whose basic
+        /// structure leaves the identity id to check_tx's own check) and the latest (which
+        /// refuses them unpaid and checks the identity id in basic structure). This is a sample,
+        /// not every version: protocol version 11 raises an identity create's minimum asset lock
+        /// balance and 14 also changes its state validation, and the transitions these tests
+        /// build meet both versions of each.
+        const CHECK_TX_PROTOCOL_VERSIONS: [ProtocolVersion; 4] = [1, 13, 14, LATEST_VERSION];
 
         #[derive(Clone, Copy, Debug)]
         enum Fault {
@@ -2935,7 +2946,8 @@ mod tests {
         /// check_tx refuses, at every protocol version, an identity create whose identity id is
         /// not the one its asset lock derives, while a transition with the same signable bytes
         /// and the derived identity id is still admitted. The identity id is checked before the
-        /// asset lock proof, so the refusal names the identity id even once the asset lock is
+        /// asset lock proof, by basic structure from protocol version 15 and by check_tx's own
+        /// check before it, so the refusal names the identity id even once the asset lock is
         /// spent.
         #[tokio::test]
         async fn should_refuse_at_check_tx_an_identity_create_whose_identity_id_does_not_match_its_asset_lock(
@@ -3466,6 +3478,52 @@ mod tests {
                 platform_version,
             )
             .await;
+        }
+
+        /// From protocol version 15 basic structure checks an identity create's identity id, so
+        /// a block refuses a wrong identity id before verifying the asset lock and names the
+        /// identity id even once the asset lock is spent. Protocol version 14 checks the
+        /// identity id in advanced structure, after the asset lock, and keeps naming the spent
+        /// asset lock so its history replays unchanged.
+        #[tokio::test]
+        async fn should_refuse_a_wrong_identity_id_before_verifying_the_asset_lock_from_protocol_version_15(
+        ) {
+            let fault = Fault::IdentityIdNotFromAssetLock;
+            for protocol_version in [14, LATEST_VERSION] {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("expected a platform version");
+                let platform = new_platform(protocol_version);
+                let registration = registration(Keys::Valid, platform_version).await;
+
+                let created = process_block(&platform, &[&registration.transition]);
+                assert_matches!(
+                    created.as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                    "at protocol version {protocol_version}: {created:?}"
+                );
+
+                let refused =
+                    process_block(&platform, &[&fault.applied_to(&registration.transition)]);
+                let [StateTransitionExecutionResult::UnpaidConsensusError(error)] =
+                    refused.as_slice()
+                else {
+                    panic!("at protocol version {protocol_version}: expected an unpaid refusal: {refused:?}");
+                };
+                if protocol_version == 14 {
+                    assert_matches!(
+                        error,
+                        ConsensusError::BasicError(
+                            BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(_)
+                        ),
+                        "at protocol version 14"
+                    );
+                } else {
+                    assert!(
+                        fault.is_reported_by(error),
+                        "at protocol version {protocol_version}: {error:?}"
+                    );
+                }
+            }
         }
     }
 }
