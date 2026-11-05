@@ -115,7 +115,7 @@ final class CoreTxoReconcilePrivacyTests: XCTestCase {
         let flipped = PersistentTxo.makeOutpoint(txid: flippedTxid, vout: 1)
         let engine = FakeCoreTxoEngine(inventory: [healed], verdicts: [flipped: .knownUncredited])
         let report = PlatformWalletManager.runCoreTxoReconcile(
-            walletId: walletId, tipHeight: 2_535_898, engine: engine, handler: handler,
+            walletId: walletId, engine: engine, handler: handler,
             isCancelled: { false }
         )
         XCTAssertEqual(report.inserted, 1)
@@ -132,6 +132,15 @@ final class CoreTxoReconcilePrivacyTests: XCTestCase {
             log.contains("amount_duffs="),
             "the value of an individual coin never leaves the store through these events"
         )
+        XCTAssertTrue(log.contains("event=persistence_txo_reconcile_summary"))
+        XCTAssertFalse(log.contains("value_duffs="), "nor does a total of them in the run's summary")
+        let reconcileLines = log.split(separator: "\n").filter { $0.contains("txo_reconcile") }
+        for amount in ["19549", "100001", "119550"] {
+            XCTAssertFalse(
+                reconcileLines.contains { $0.contains("=\(amount)") },
+                "no reconcile field may carry a coin's amount or a sum of them (\(amount))"
+            )
+        }
         XCTAssertTrue(log.contains("action=\"flipped_spent\""))
 
         let forbidden: [(String, String)] = [
