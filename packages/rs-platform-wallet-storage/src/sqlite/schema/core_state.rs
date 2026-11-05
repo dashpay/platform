@@ -2443,6 +2443,43 @@ mod tests {
         assert!(!loaded.is_confirmed);
     }
 
+    #[test]
+    fn should_bulk_load_historical_asset_unlock_without_rekeying_under_both_policies() {
+        let wallet_id = [0x78; 32];
+        let conn = wallet_db(&wallet_id);
+        let rows = historical_asset_unlock_rows();
+        assert_ne!(rows[0].0, rows[0].2.transaction.txid());
+        for (txid, bytes, _) in &rows {
+            conn.execute(
+                "INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) \
+                 VALUES (?1, ?2, 0, ?3)",
+                params![wallet_id.as_slice(), txid.as_byte_array().as_slice(), bytes],
+            )
+            .unwrap();
+        }
+        for ctx in [LoadCtx::strict(), LoadCtx::recovery()] {
+            let (state, _) =
+                load_state(&conn, &wallet_id, dashcore::Network::Testnet, &ctx).unwrap();
+            assert_eq!(state.records.len(), rows.len());
+            for (txid, bytes, original) in &rows {
+                let loaded = state.records.iter().find(|r| r.txid == *txid).unwrap();
+                assert_eq!(loaded.transaction, original.transaction);
+                assert_eq!(blob::encode(loaded).unwrap(), *bytes);
+                let stored: Vec<u8> = conn
+                    .query_row(
+                        "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+                        params![wallet_id.as_slice(), txid.as_byte_array().as_slice()],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(
+                    stored, *bytes,
+                    "bulk read preserves historical identity and bytes"
+                );
+            }
+        }
+    }
+
     fn assert_bulk_load_rejects_body_identity_mismatch(ctx: &LoadCtx) {
         let wallet_id = [0x72; 32];
         let conn = wallet_db(&wallet_id);
