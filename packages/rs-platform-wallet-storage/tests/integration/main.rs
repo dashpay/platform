@@ -94,3 +94,5 @@ mod sqlite_core_rescan;
 
 mod sqlite_replay_migration;
 mod sqlite_shared_history_replay;
+
+mod sqlite_unverified_lock_producer;
