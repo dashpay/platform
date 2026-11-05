@@ -35,7 +35,7 @@ pub use {
     // (`DocumentCountMode`). Available under either `server`
     // (executor input) or `verify` (proof-decode input).
     drive_document_count_query::{
-        CountMode, DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry,
+        CountMode, CountProofPlan, DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry,
     },
     // Having-range verifier-shareable types — same split as ranked:
     // `DocumentHavingMode` + `AxisRangeBounds` to re-run the same
@@ -59,7 +59,7 @@ pub use {
     // entry type the verifier returns, `SumMode` / `DriveDocumentSumQuery`
     // are shape inputs the verifier needs to rebuild the path query.
     // Parallels the count-side exports above.
-    drive_document_sum_query::{DriveDocumentSumQuery, SumEntry, SumMode},
+    drive_document_sum_query::{DriveDocumentSumQuery, SumEntry, SumMode, SumProofPlan},
     grovedb::{PathQuery, Query, QueryItem, SizedQuery},
     having::{
         HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
@@ -1696,6 +1696,32 @@ pub fn refuse_a_range_total_through_a_ranked_index(
             ))));
         }
         level = sub_level;
+    }
+    Ok(())
+}
+
+/// Refuses more than one window selection: a transform's source must be its
+/// index's first property, so one index buckets exactly one field and no
+/// index serves two resolved windows. Serving such a query would need a join
+/// across two bucketed indexes, which the engine has no shape for.
+/// `query_kind` names the query in the refusal ("query", "ranked query",
+/// "having-range query").
+///
+/// The documents index pick, the ranked dispatcher and the having dispatcher
+/// call it before they route a request, and a client calls it before sending
+/// one, so all of them refuse two windows by one rule in one text, which
+/// differs only by the query kind it names.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn refuse_several_window_selections(
+    resolved_time_ranges: &[ResolvedTimeRange],
+    query_kind: &'static str,
+) -> Result<(), Error> {
+    if resolved_time_ranges.len() > 1 {
+        return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+            "at most one window selection (IN_TIME_RANGE or IN_INTEGER_RANGE) is supported \
+             per {query_kind}; this one resolves {resolved_time_ranges:?}, and no single \
+             index can bucket more than one field"
+        ))));
     }
     Ok(())
 }
@@ -3410,19 +3436,9 @@ impl<'a> DriveDocumentQuery<'a> {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<BestIndexOutcome<'_>, Error> {
-        // A transform's source must be its index's first property, so one
-        // index buckets exactly one field and no index can carry two resolved
-        // equalities. Serving such a query would need a join across two
-        // bucketed indexes, which the engine has no shape for. This runs
-        // before any routing so the multiple-`In` path cannot bypass it.
-        if self.resolved_time_ranges.len() > 1 {
-            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                "at most one window selection (IN_TIME_RANGE or IN_INTEGER_RANGE) is \
-                 supported per query; this one resolves {:?}, and no single index can bucket \
-                 more than one field",
-                self.resolved_time_ranges
-            ))));
-        }
+        // No index can carry two resolved equalities. This runs before any
+        // routing so the multiple-`In` path cannot bypass it.
+        refuse_several_window_selections(&self.resolved_time_ranges, "query")?;
 
         // One shared source-shape guard for every selection route — see its
         // doc for the contract. Running it before routing keeps the single-
@@ -4146,6 +4162,9 @@ impl<'a> From<&DriveDocumentQuery<'a>> for BTreeMap<String, Value> {
 
 #[cfg(all(test, feature = "server"))]
 pub(crate) mod unsigned_index_key_order_tests;
+
+#[cfg(all(test, feature = "server"))]
+mod window_selection_cardinality_tests;
 
 #[cfg(feature = "server")]
 #[cfg(test)]

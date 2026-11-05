@@ -28,6 +28,9 @@
 
 #[cfg(feature = "server")]
 pub mod drive_dispatcher;
+// The request-only plan of a proved average, shared by the server's
+// dispatcher and the SDK's verifier.
+pub mod proof_plan;
 
 #[cfg(feature = "server")]
 use crate::query::{OrderClause, ResolvedTimeRange, WhereClause};
@@ -146,11 +149,10 @@ pub struct DocumentAverageRequest<'a> {
     ///   rather than clamped, so a tuned operator default or an
     ///   over-max request can't byte-differ the
     ///   `SizedQuery::limit` the SDK reconstructs for merk-root
-    ///   verification. See the
-    ///   [`drive_dispatcher`]'s `RangeDistinctProof` /
-    ///   `RangeAggregateCarrierProof` arms for the
-    ///   validate-don't-clamp policy, mirrored from count's
-    ///   prove-path arms.
+    ///   verification. See
+    ///   [`DriveDocumentSumQuery::average_proof_plan`](crate::query::drive_document_sum_query::DriveDocumentSumQuery::average_proof_plan)
+    ///   for the validate-don't-clamp policy, mirrored from count's
+    ///   proof plan.
     pub limit: Option<u32>,
     /// Whether to return a `Proof(Vec<u8>)` instead of materializing
     /// the (count, sum) pairs server-side.
