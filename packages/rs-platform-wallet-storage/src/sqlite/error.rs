@@ -11,8 +11,8 @@
 
 use std::path::PathBuf;
 
+use key_wallet::transaction_checking::spend_authorization::SpendAuthorizationError;
 use platform_wallet::changeset::{PersistenceError, PersistenceErrorKind};
-use platform_wallet::wallet::core::spend_authorization::SpendAuthorizationError;
 
 use crate::sqlite::util::safe_cast::SafeCastTarget;
 
@@ -39,10 +39,9 @@ pub enum AutoBackupOperation {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum WalletStorageError {
-    /// A pending spend requires authorization rules this wallet cannot verify.
+    /// Persisted authorization uses rules this wallet cannot verify.
     #[error("cannot verify pending spend authorization")]
     SpendAuthorization(#[from] SpendAuthorizationError),
-
     /// File-system I/O error reaching the database or backup files.
     #[error("io error")]
     Io(#[from] std::io::Error),
@@ -747,8 +746,7 @@ impl WalletStorageError {
             // `ToSqlConversionFailure`, `InvalidColumnIndex`) — is a
             // logic bug, not a contention failure.
             Self::Sqlite(_) => false,
-            Self::SpendAuthorization(_)
-            | Self::Io(_)
+            Self::Io(_)
             | Self::Migration(_)
             | Self::IntegrityCheckFailed { .. }
             | Self::IntegrityCheckRunFailed { .. }
@@ -812,7 +810,8 @@ impl WalletStorageError {
             | Self::UnownedIdentityHasRegistrationIndex { .. }
             | Self::EmptyUtxoScript { .. }
             | Self::EmptyPoolAddressScript { .. }
-            | Self::DatabasePathIsSymlink { .. } => false,
+            | Self::DatabasePathIsSymlink { .. }
+            | Self::SpendAuthorization(_) => false,
         }
     }
 
@@ -846,9 +845,9 @@ impl WalletStorageError {
             Self::IdentityKeyWalletMismatch { .. } => PersistenceErrorKind::Constraint,
             // History invariants checked in Rust on the write path: the incoming
             // record contradicts stored history, so the data is wrong, not the engine.
-            Self::SpendAuthorization(_)
-            | Self::TransactionBodyConflict { .. }
-            | Self::NetAmountOverflow { .. } => PersistenceErrorKind::Constraint,
+            Self::TransactionBodyConflict { .. } | Self::NetAmountOverflow { .. } => {
+                PersistenceErrorKind::Constraint
+            }
             // Refinery surfaces FK / constraint problems through rusqlite;
             // if that path leaks through here the typed variant lives in
             // `Self::Migration`, which we leave as `Fatal` since a
@@ -922,7 +921,8 @@ impl WalletStorageError {
             | Self::UnownedIdentityHasRegistrationIndex { .. }
             | Self::EmptyUtxoScript { .. }
             | Self::EmptyPoolAddressScript { .. }
-            | Self::DatabasePathIsSymlink { .. } => PersistenceErrorKind::Fatal,
+            | Self::DatabasePathIsSymlink { .. }
+            | Self::SpendAuthorization(_) => PersistenceErrorKind::Fatal,
         }
     }
 
@@ -990,7 +990,6 @@ impl WalletStorageError {
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
             Self::AssetLockStatusMismatch { .. } => "asset_lock_status_mismatch",
             Self::CoreTransactionEntryMismatch { .. } => "core_transaction_entry_mismatch",
-            Self::SpendAuthorization(_) => "spend_authorization",
             Self::TransactionBodyConflict { .. } => "transaction_body_conflict",
             Self::UnknownWalletNetwork { .. } => "unknown_wallet_network",
             Self::NetAmountOverflow { .. } => "net_amount_overflow",
@@ -1014,6 +1013,7 @@ impl WalletStorageError {
             Self::EmptyUtxoScript { .. } => "empty_utxo_script",
             Self::EmptyPoolAddressScript { .. } => "empty_pool_address_script",
             Self::DatabasePathIsSymlink { .. } => "database_path_is_symlink",
+            Self::SpendAuthorization(_) => "spend_authorization",
         }
     }
 }

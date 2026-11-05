@@ -11,6 +11,7 @@ pub(crate) mod buffer;
 pub mod config;
 pub(crate) mod conn;
 pub mod error;
+mod history_replay;
 #[cfg(feature = "kv")]
 pub mod kv;
 pub mod persister;

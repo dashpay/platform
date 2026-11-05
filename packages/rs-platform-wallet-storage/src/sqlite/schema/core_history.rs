@@ -94,7 +94,7 @@ pub(crate) fn index_record(
 }
 
 /// Repair changed records and consumers of newly materialized historical outputs.
-pub(super) fn apply(
+pub(crate) fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     cs: &CoreChangeSet,
@@ -219,26 +219,6 @@ fn repair_record(
                     address,
                 },
             );
-            // Stale mempool rows cannot overrule a later sweep's release.
-            if !matches!(record.context, TransactionContext::Mempool) {
-                // Record the spender so the mark stays attributable and
-                // reversible; an existing claim by another spender stands.
-                // TODO(release-repair-spends-after-reorg): release rows whose
-                // `spent_in_txid` spender is reorged out and never re-mined;
-                // needs verification of how upstream downgrades a stored
-                // record's context on reorg.
-                tx.execute(
-                    "UPDATE core_utxos SET spent = 1, \
-                         spent_in_txid = CASE WHEN spent = 1 AND spent_in_txid IS NOT NULL \
-                             THEN spent_in_txid ELSE ?3 END \
-                     WHERE wallet_id = ?1 AND outpoint = ?2",
-                    params![
-                        wallet_id.as_slice(),
-                        blob::encode_outpoint(&input.previous_output)?,
-                        txid.as_byte_array().as_slice()
-                    ],
-                )?;
-            }
         }
     }
     let mut outputs = BTreeMap::new();
@@ -291,7 +271,7 @@ fn repair_record(
     record.net_amount = match i64::try_from(net) {
         Ok(net) => net,
         // Nothing authenticates a mempool transaction: this is peer-supplied data,
-        // not corruption. The row stays as written and load sets it aside.
+        // not corruption. Keep its stored accounting until representable evidence arrives.
         Err(_) if matches!(record.context, TransactionContext::Mempool) => return Ok(()),
         Err(_) => {
             return Err(WalletStorageError::NetAmountOverflow {
@@ -523,10 +503,10 @@ mod tests {
         );
     }
 
-    /// Shared with the Swift SDK's `TransactionAccountingTests` direction
-    /// table; pins the rule repair takes from `platform_wallet`.
+    /// Direction case table; pins the rule repair takes from `platform_wallet`,
+    /// the same one the live projection and the host-history backfill use.
     #[test]
-    fn should_classify_repaired_direction_like_the_swift_sdk() {
+    fn should_classify_repaired_direction_like_the_live_projection() {
         use TransactionDirection::{CoinJoin, Incoming, Internal, Outgoing};
         use TransactionType::{AssetLock, Standard};
         // (type, spends ours, has owned output, has external output, expected)

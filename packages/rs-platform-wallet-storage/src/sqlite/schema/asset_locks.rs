@@ -10,6 +10,9 @@
 //! the surrounding fields on the serde encoder — mirroring `IdentityKeyWire`
 //! in `identity_keys.rs`.
 
+use dashcore::Txid;
+use std::collections::HashSet;
+
 use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 
@@ -24,11 +27,9 @@ use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::blob;
 
 use {
-    dashcore::{OutPoint, Txid},
-    platform_wallet::changeset::AssetLockEntry,
-    platform_wallet::wallet::asset_lock::tracked::TrackedAssetLock,
-    rusqlite::Connection,
-    std::collections::{BTreeMap, HashSet},
+    dashcore::OutPoint, platform_wallet::changeset::AssetLockEntry,
+    platform_wallet::wallet::asset_lock::tracked::TrackedAssetLock, rusqlite::Connection,
+    std::collections::BTreeMap,
 };
 
 use crate::sqlite::schema::blob::impl_persistable_blob;
@@ -240,7 +241,7 @@ pub fn apply(
     Ok(())
 }
 
-/// Remove replay losers from the resumable lifecycle in the Core repair transaction.
+/// Apply wallet-owned replay retirement to this storage domain.
 pub(crate) fn remove_swept(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,

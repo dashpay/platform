@@ -1,16 +1,20 @@
 //! [`SqlitePersister`] — the canonical `PlatformWalletPersistence` impl.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
-use rusqlite::{Connection, OptionalExtension, Transaction};
+use rusqlite::{Connection, OptionalExtension};
 
 use dpp::prelude::Identifier;
-use platform_wallet::changeset::changeset::SweepBatch;
+use key_wallet::transaction_checking::TransactionContext;
+use platform_wallet::changeset::recorded_history::ReplayEvidence;
 use platform_wallet::changeset::{
     ClientStartState, IdentityChangeSet, PersistenceCapabilities, PersistenceError,
     PlatformWalletChangeSet, PlatformWalletPersistence,
+};
+use platform_wallet::manager::history_replay::{
+    replay_recorded_history_blocking, HistoryReplay, HistoryReplayError, HistoryReplayLoad,
 };
 use platform_wallet::wallet::identity::ManagedIdentity;
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -22,12 +26,11 @@ use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
 use crate::sqlite::load_ctx::{LoadCtx, LoadDegradation, LoadSite};
 use crate::sqlite::rehydrate::{
     apply_persisted_core_state, build_wallet, restore_provider_platform_node_pool,
-    restore_recorded_transactions,
 };
 use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
-use crate::sqlite::schema;
 use crate::sqlite::util::permissions::{apply_secure_permissions, precreate_secure};
 use crate::sqlite::util::safe_cast;
+use crate::sqlite::{history_replay, schema};
 
 /// Persisted-but-not-rehydrated areas, surfaced in the structured
 /// `tracing::info!` summary on every `load()`.
@@ -1315,9 +1318,6 @@ impl PlatformWalletPersistence for SqlitePersister {
         // full restore remains lossy. Shielded viewing keys are native when
         // compiled in; notes, nullifiers, and sync state use ShieldedStore.
         // WALLET_DRAIN folds in WALLET_RESTORE, so it stays unattested too.
-        // Conflict cleanup can remove asset-lock operation evidence. Until it
-        // preserves that evidence, do not attest ASSET_LOCK_OPERATION_IDS:
-        // absence cannot safely mean NotSent, so wallet draining stays disabled.
         let capabilities = PersistenceCapabilities::ATOMIC_CHANGESETS
             .union(PersistenceCapabilities::INVITATIONS)
             .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
@@ -1325,6 +1325,7 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO)
             .union(PersistenceCapabilities::DPNS_NAME_STATES)
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
+            .union(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS)
             .union(PersistenceCapabilities::TRACKED_MASTERNODES)
             .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
             .union(PersistenceCapabilities::DASHPAY_PAYMENTS)
@@ -1478,10 +1479,9 @@ impl PlatformWalletPersistence for SqlitePersister {
     ///
     /// # Concurrency
     ///
-    /// Holds the connection mutex for the whole load, so concurrent
+    /// Holds the connection mutex for the whole read, so concurrent
     /// `store` / `flush` / `delete_wallet` block until it returns. Intended
     /// for one-shot startup use, not the hot write path.
-    /// Conflict repairs commit per wallet under Strict; Recovery rolls them back.
     ///
     /// # Examples
     ///
@@ -1524,12 +1524,38 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// # }
     /// ```
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
+        self.load_with_replay(&ReplayEvidence::default())
+            .map(|loaded| loaded.state)
+    }
+
+    fn replay_lock_candidates(&self) -> Result<Vec<dashcore::InstantLock>, PersistenceError> {
+        let conn = self.conn().map_err(PersistenceError::from)?;
+        let ctx = LoadCtx::new(self.config.load_policy);
+        let mut candidates = Vec::new();
+        for wallet_id in schema::wallets::list_ids(&conn).map_err(PersistenceError::from)? {
+            let state = load_wallet_snapshot(&conn, wallet_id, &ctx)?;
+            candidates.extend(state.recorded_history.instant_locks.into_values());
+            candidates.extend(state.recorded_history.transactions.into_iter().filter_map(
+                |record| match record.context {
+                    TransactionContext::InstantSend(lock) => Some(lock),
+                    _ => None,
+                },
+            ));
+        }
+        Ok(candidates)
+    }
+
+    fn load_with_replay(
+        &self,
+        evidence: &ReplayEvidence,
+    ) -> Result<HistoryReplayLoad, PersistenceError> {
         let conn = self.conn().map_err(PersistenceError::from)?;
         let ctx = LoadCtx::new(self.config.load_policy);
         // Cleared up front so a failed load never leaves the previous load's
         // snapshot behind, masquerading as this one's verdict.
         self.replace_load_degradation(LoadDegradation::default());
         let mut state = ClientStartState::default();
+        let mut outcomes = BTreeMap::new();
 
         #[cfg(feature = "shielded")]
         {
@@ -1575,9 +1601,10 @@ impl PlatformWalletPersistence for SqlitePersister {
             if unreadable.contains(&wallet_id) {
                 continue;
             }
-            match load_one_wallet(&conn, wallet_id, &ctx, self.config.load_policy) {
-                Ok(wallet_state) => {
+            match load_one_wallet(&conn, wallet_id, &ctx, self.config.load_policy, evidence) {
+                Ok((wallet_state, outcome)) => {
                     state.wallets.insert(wallet_id, wallet_state);
+                    outcomes.insert(wallet_id, outcome);
                 }
                 // The isolation boundary. One wallet's failure is recorded
                 // against that wallet and the walk continues; under Strict
@@ -1615,7 +1642,7 @@ impl PlatformWalletPersistence for SqlitePersister {
             "load() summary"
         );
         self.replace_load_degradation(degradation);
-        Ok(state)
+        Ok(HistoryReplayLoad { state, outcomes })
     }
 
     fn get_core_tx_record(
@@ -1693,48 +1720,67 @@ fn load_one_wallet(
     wallet_id: WalletId,
     ctx: &LoadCtx,
     policy: LoadPolicy,
-) -> Result<platform_wallet::changeset::ClientWalletStartState, PersistenceError> {
+    evidence: &ReplayEvidence,
+) -> Result<
+    (
+        platform_wallet::changeset::ClientWalletStartState,
+        HistoryReplay,
+    ),
+    PersistenceError,
+> {
     let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
         .map_err(WalletStorageError::from)
         .map_err(PersistenceError::from)?;
-    let (mut state, sweeps) = load_wallet_snapshot(&tx, wallet_id, ctx)?;
-    if !sweeps.is_empty() {
-        schema::core_state::apply_replay_sweeps(&tx, &wallet_id, sweeps)
+    let mut state = load_wallet_snapshot(&tx, wallet_id, ctx)?;
+    let history = std::mem::take(&mut state.recorded_history);
+    let mut outcome = replay_recorded_history_blocking(
+        &mut state.wallet_info,
+        &mut state.wallet,
+        history.clone(),
+        evidence,
+    )
+    .map_err(PersistenceError::backend)?;
+    let mut claims =
+        history_replay::load_spent_claims(&tx, &wallet_id).map_err(PersistenceError::from)?;
+    if outcome.deferred.is_empty() && !outcome.sweeps.is_empty() {
+        history_replay::apply(&tx, &wallet_id, &mut outcome, &claims)
             .map_err(PersistenceError::from)?;
-        // Rebuild from the repaired projection, including released materialized inputs.
-        let (repaired, remaining) = load_wallet_snapshot(&tx, wallet_id, ctx)?;
-        if !remaining.is_empty() {
-            return Err(PersistenceError::from(
-                WalletStorageError::WalletRehydrationFailed {
-                    wallet_id,
-                    cause: "conflicting transaction history remained after replay reconciliation"
-                        .to_string(),
-                },
+        state = load_wallet_snapshot(&tx, wallet_id, ctx)?;
+        let remaining = replay_recorded_history_blocking(
+            &mut state.wallet_info,
+            &mut state.wallet,
+            std::mem::take(&mut state.recorded_history),
+            evidence,
+        )
+        .map_err(PersistenceError::backend)?;
+        if !remaining.sweeps.is_empty() || !remaining.deferred.is_empty() {
+            return Err(PersistenceError::backend(
+                HistoryReplayError::UnsettledAfterReplay,
             ));
         }
-        state = repaired;
+        claims =
+            history_replay::load_spent_claims(&tx, &wallet_id).map_err(PersistenceError::from)?;
     }
-    if policy == LoadPolicy::Recovery {
+    state.wallet_info.restore_spent_outpoints(&claims);
+    if !outcome.deferred.is_empty() {
+        state.recorded_history = history;
+    }
+    outcome.read_only = policy == LoadPolicy::Recovery;
+    if outcome.read_only {
         tx.rollback()
     } else {
         tx.commit()
     }
     .map_err(WalletStorageError::from)
     .map_err(PersistenceError::from)?;
-    Ok(state)
+    Ok((state, outcome))
 }
 
 fn load_wallet_snapshot(
-    conn: &Transaction<'_>,
+    conn: &Connection,
     wallet_id: WalletId,
     ctx: &LoadCtx,
-) -> Result<
-    (
-        platform_wallet::changeset::ClientWalletStartState,
-        Vec<SweepBatch>,
-    ),
-    PersistenceError,
-> {
+) -> Result<platform_wallet::changeset::ClientWalletStartState, PersistenceError> {
     let (network_str, birth_height) = schema::wallets::fetch(conn, &wallet_id)
         .map_err(PersistenceError::from)?
         .ok_or_else(|| {
@@ -1753,22 +1799,9 @@ fn load_wallet_snapshot(
 
     let account_manifest =
         schema::accounts::load_state(conn, &wallet_id, ctx).map_err(PersistenceError::from)?;
-    let mut record_keys = HashMap::new();
-    let (mut core_state, mut utxo_accounts) = schema::core_state::load_state_with_record_keys(
-        conn,
-        &wallet_id,
-        network,
-        ctx,
-        &mut record_keys,
-    )
-    .map_err(PersistenceError::from)?;
-    if schema::core_spend_authorization::repair(conn, &wallet_id, &core_state, &record_keys)
-        .map_err(PersistenceError::from)?
-    {
-        (core_state, utxo_accounts) =
-            schema::core_state::load_state(conn, &wallet_id, network, ctx)
-                .map_err(PersistenceError::from)?;
-    }
+    let (core_state, utxo_accounts) =
+        schema::core_state::load_state(conn, &wallet_id, network, ctx)
+            .map_err(PersistenceError::from)?;
     // Pre-keyed rehydration: each `ManagedIdentity` leaves the loader
     // already carrying its own public keys + contact state (matching
     // the FFI persister), so signing works immediately post-load
@@ -1913,38 +1946,37 @@ fn load_wallet_snapshot(
                 ))
             })?;
     }
-    let mut wallet = wallet;
-    let sweeps = restore_recorded_transactions(
-        &mut wallet_info,
-        &mut wallet,
-        core_state.records,
-        &core_state.instant_locks_for_non_final_records,
-    )
-    .map_err(PersistenceError::from)?;
-    // Restore durable claims after replay/finality, including claims with no spend body.
-    let spent =
-        schema::core_state::load_spent_claims(conn, &wallet_id).map_err(PersistenceError::from)?;
-    wallet_info.restore_spent_outpoints(&spent);
-    Ok((
-        platform_wallet::changeset::ClientWalletStartState {
-            wallet,
-            wallet_info,
-            identity_manager,
-            unused_asset_locks,
-            // This backend does not stage unconfirmed outgoing sends for replay
-            // yet; the FFI persister is the only producer today. Empty leaves the
-            // replay inert here, which is the behaviour this path had before the
-            // field existed.
-            unconfirmed_outgoing_txs: Vec::new(),
-            // Replayed above, inside the load transaction that applies its
-            // conflict repairs; empty keeps the shared load from replaying
-            // the same records a second time.
-            recorded_history: Default::default(),
-            // This backend does not persist backfill coverage; rescan on each launch.
-            dashpay_backfill: Default::default(),
+    for mut account in wallet_info.accounts.all_accounts_mut() {
+        let owner = account.managed_account_type().to_account_type();
+        for record in core_state
+            .records
+            .iter()
+            .filter(|record| record.account_type == owner)
+        {
+            account
+                .transactions_mut()
+                .insert(record.txid, record.clone());
+        }
+    }
+    Ok(platform_wallet::changeset::ClientWalletStartState {
+        wallet,
+        wallet_info,
+        identity_manager,
+        unused_asset_locks,
+        // This backend does not stage unconfirmed outgoing sends for replay
+        // yet; the FFI persister is the only producer today. Empty leaves the
+        // replay inert here, which is the behaviour this path had before the
+        // field existed.
+        unconfirmed_outgoing_txs: Vec::new(),
+        recorded_history: platform_wallet::changeset::RecordedHistory {
+            transactions: core_state.records.into_iter().map(Into::into).collect(),
+            instant_locks: core_state.instant_locks_for_non_final_records,
         },
-        sweeps,
-    ))
+        // Not persisted by this backend yet: the backfill record rides the
+        // FFI hosts' wallet row only. Empty keeps the rescan sweep on its
+        // pre-record behaviour here (a rewind per launch, never lossy).
+        dashpay_backfill: Default::default(),
+    })
 }
 
 /// Count one wallet's whole loss and attribute it, or return so the caller
@@ -2487,7 +2519,7 @@ mod tests {
         // Not rehydrated by `load()`, but read on demand by a production
         // entry point, so the state is reachable rather than abandoned.
         const READ_BY_A_DEDICATED_API: &[&str] = &[
-            "core_transaction_inputs", // core_history::apply repairs indexed consumers
+            "core_transaction_inputs", // core_history::apply
             "dpns_name_states",        // get_dpns_name_state
             "meta_contact",            // the kv object store
             "meta_data_versions",      // schema::versions
@@ -2500,8 +2532,7 @@ mod tests {
             "tracked_masternodes",     // load_tracked_masternodes
         ];
         const INFRASTRUCTURE: &[&str] = &["refinery_schema_history"];
-        // Append-only archive of pre-repair history blobs. Never loaded: it
-        // exists so a wrong history repair can be undone by hand.
+        // First pre-repair bytes, retained for recovery.
         const RETAINED_FOR_RECOVERY: &[&str] = &["core_transaction_record_originals"];
         // `load()` rehydrates these only with the `shielded` feature on, so
         // the classification follows the build rather than claiming one.

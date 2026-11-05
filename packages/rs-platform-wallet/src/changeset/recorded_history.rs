@@ -6,12 +6,20 @@
 
 use std::collections::BTreeMap;
 
+use dash_spv::VerifiedInstantLock;
 use dashcore::ephemerealdata::instant_lock::InstantLock;
 use dashcore::{Transaction, Txid};
 use key_wallet::managed_account::transaction_record::{
     InputDetail, TransactionDirection, TransactionRecord,
 };
 use key_wallet::transaction_checking::TransactionContext;
+
+/// Network evidence prefetched before a backend opens its authoritative snapshot.
+#[derive(Debug, Clone, Default)]
+pub struct ReplayEvidence {
+    /// Only the SPV verifier can construct these proofs; stored contexts cannot.
+    pub instant_locks: BTreeMap<Txid, VerifiedInstantLock>,
+}
 
 /// Every stored transaction of one wallet, replayed at load to rebuild spend guards.
 ///

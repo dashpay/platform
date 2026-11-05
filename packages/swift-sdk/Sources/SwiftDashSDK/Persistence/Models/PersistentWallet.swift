@@ -118,6 +118,11 @@ public final class PersistentWallet {
     /// column, or never verified) means the full check runs at the next
     /// unlock.
     public var seedBindingVerifiedMarker: String?
+    /// Set once Rust's load-time accounting backfill has evaluated this
+    /// wallet's stored transactions (`on_persist_core_history_accounted_fn`).
+    /// Opaque to Swift: it only stops the history from being offered again.
+    /// `false` for rows predating the column, so they are backfilled once.
+    public var transactionAccountingBackfilled: Bool = false
     /// Record timestamps.
     public var createdAt: Date
     public var lastUpdated: Date

@@ -333,6 +333,8 @@ def render_baseline(root):
                 f"{OUT_DIR}/{freeze.schema}+{model}.swift",
                 render_model(freeze, sha, source, model, sibling),
             )
+    # Preserve the merged V4 model graph independently of release capture.
+    files.update(render_source_snapshot(root, "4.0.0", "292b5101f33b7b7a68f7ffd97df1520b2ff9ef67"))
     return files
 
 
@@ -662,13 +664,19 @@ def render_snapshot(root, version, entry, *, inventory=None):
     commit = entry["platform_sha"]
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise SystemExit("release source must be a full Git SHA")
-    namespace = "DashSchemaSnapshotV" + version.split(".")[0]
-    if entry["namespace"] != namespace:
+    inventory = read_inventory(root, commit) if inventory is None else validate_inventory(inventory)
+    if set(inventory["models"]) != set(entry["schema"]["entity_hashes"]):
+        raise SystemExit("historical inventory differs from captured model membership")
+    if entry["namespace"] != "DashSchemaSnapshotV" + version.split(".")[0]:
         raise SystemExit("unexpected snapshot namespace")
+    return render_source_snapshot(root, version, commit, inventory=inventory)
+
+
+def render_source_snapshot(root, version, commit, *, inventory=None):
+    """Freeze a source graph without asserting App Store release provenance."""
+    namespace = "DashSchemaSnapshotV" + version.split(".")[0]
     inventory = read_inventory(root, commit) if inventory is None else validate_inventory(inventory)
     models = inventory["models"]
-    if set(models) != set(entry["schema"]["entity_hashes"]):
-        raise SystemExit("historical inventory differs from captured model membership")
     sources = inventory_sources(root, inventory, commit)
     validate_storage_graph(inventory, sources)
     names = set(models) | {name for group in inventory["value_types"] for name in group["names"]}
