@@ -95,7 +95,7 @@ const MAX_FAILED_FETCHES: usize = 64;
 /// quorums could pile up; past it, new quorums are refused until one ends.
 const MAX_RUNNING_FETCHES: usize = 16;
 /// Verified states kept besides the checkpoint, to start later proofs from.
-const MAX_RECENT_STATES: usize = 16;
+pub(crate) const MAX_RECENT_STATES: usize = 16;
 /// The delay before asking a busy relay again doubles this many times.
 const MAX_RETRY_DOUBLINGS: u32 = 3;
 /// Answers a source may give that it cannot serve the quorum before a fetch
@@ -257,8 +257,11 @@ struct Ask {
 /// below `height`, from the newest state below that target, so a quorum that
 /// retired between that target and `height` is reached too. Any such target that opens the
 /// quorum serves `height`, even on the block where Drive still signs with a
-/// quorum Core has just retired. When no state is kept below that target,
-/// the lowest target above the newest state below `height` is asked for.
+/// quorum Core has just retired. When no state is kept below that target but
+/// the checkpoint is below `height`, the target just above the checkpoint is
+/// asked for, from the checkpoint: a later state may be past the quorum's
+/// retirement, and a recent custom checkpoint may still lead to a target
+/// that opens it, as it did before a restore.
 ///
 /// `extending` says the cache holds the quorum from a target at or below
 /// `height` that is more than one DKG interval old, so any target at or above
@@ -281,9 +284,15 @@ fn choose_ask(
 ) -> Option<Ask> {
     let below = states.range(..height).next_back();
     if alternate {
-        // A quorum retired since `lower` is in no quorum root above it.
+        // A quorum retired since `lower` is in no quorum root above it, so
+        // with no state below `lower` the oldest state below `height` is the
+        // one most likely to precede the retirement.
         let lower = height.saturating_sub(DKG_INTERVAL_BLOCKS);
-        if let Some((&from, state)) = states.range(..lower).next_back().or(below) {
+        let from_state = states
+            .range(..lower)
+            .next_back()
+            .or_else(|| states.range(..height).next());
+        if let Some((&from, state)) = from_state {
             return Some(Ask {
                 checkpoint: state.clone(),
                 height: lower.max(from + 1),
@@ -443,6 +452,33 @@ impl ProofFetches {
             .map_or_else(|| self.checkpoint.clone(), |(_, state)| state.clone())
     }
 
+    /// The checkpoint and the verified states kept besides it, lowest first.
+    pub(crate) fn states(&self) -> Vec<State> {
+        self.lock().states.values().cloned().collect()
+    }
+
+    /// Keep `states`, verified earlier from this checkpoint, as if proofs had
+    /// just verified them: later proofs start from them. Each must be above
+    /// the checkpoint; past the bound, the lowest are dropped.
+    pub(crate) fn resume(&self, states: Vec<State>) {
+        let mut proven = self.lock();
+        for state in states {
+            debug_assert!(state.height > self.checkpoint.height);
+            proven.states.insert(state.height, state);
+        }
+        while proven.states.len() > MAX_RECENT_STATES + 1 {
+            let Some(oldest) = proven
+                .states
+                .keys()
+                .copied()
+                .find(|height| *height != self.checkpoint.height)
+            else {
+                break;
+            };
+            proven.states.remove(&oldest);
+        }
+    }
+
     /// How many quorum keys are cached.
     pub(crate) fn cached_quorum_count(&self) -> usize {
         self.lock().keys.len()
@@ -482,6 +518,15 @@ impl ProofFetches {
                 hex::encode(quorum_hash)
             ))),
         }
+    }
+
+    /// Whether the cache holds the quorum and serves it for `height`, as a
+    /// [`lookup`](Self::lookup) would. Leaves the cache order alone.
+    pub(crate) fn serves(&self, quorum_type: u32, quorum_hash: [u8; 32], height: u32) -> bool {
+        self.lock()
+            .keys
+            .peek(&(quorum_type, quorum_hash))
+            .is_some_and(|cached| cached.serves(height))
     }
 
     /// Prove a quorum's key for `height`, or join the fetch already proving
@@ -1484,6 +1529,23 @@ mod tests {
                 ask(150, 200 - DKG_INTERVAL_BLOCKS),
                 "a quorum retired by 190",
             ),
+            // A checkpoint C = H - 23 and states L = H - 20, T = H - 10: none
+            // is below H - 24, so the lower ask goes from C, not from T,
+            // which may be past the quorum's retirement.
+            (
+                &[100, 103, 113],
+                123,
+                true,
+                ask(100, 101),
+                "recent checkpoint: from it",
+            ),
+            (
+                &[100, 103, 113],
+                128,
+                true,
+                ask(103, 104),
+                "a state below the lower target: the newest such",
+            ),
         ];
         for (heights, height, alternate, expected, why) in cases {
             assert_eq!(
@@ -1519,6 +1581,23 @@ mod tests {
             ),
             (&[100], 100, false, None, "nothing below"),
             (&[100], 50, true, None, "under the checkpoint"),
+            // As for the tip: with no state below H - 24, the lower ask goes
+            // from the oldest state below H, the checkpoint C = H - 23, not
+            // from T = H - 10.
+            (
+                &[100, 103, 113],
+                123,
+                true,
+                ask(100, 101),
+                "recent checkpoint: from it",
+            ),
+            (
+                &[100, 103, 113],
+                128,
+                true,
+                ask(103, 104),
+                "a state below the lower target: the newest such",
+            ),
         ];
         for (heights, height, alternate, expected, why) in cases {
             assert_eq!(

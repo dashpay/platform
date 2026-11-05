@@ -15,6 +15,8 @@ const CLIENT_ALREADY_CLOSED_ERROR_MESSAGE = 'Client already closed - cannot .clo
  * @property {number} [maxParallelStreams]
  * @property {number} [targetBatchSize]
  * @property {number} [maxRetries]
+ * @property {function(): number} [getConnectedHeight] - height up to which
+ *   headers joined the chain; bounds how far historical reads run ahead
  */
 
 class BlockHeadersReader extends EventEmitter {
@@ -32,12 +34,30 @@ class BlockHeadersReader extends EventEmitter {
     this.maxParallelStreams = options.maxParallelStreams;
     this.targetBatchSize = options.targetBatchSize;
     this.maxRetries = options.maxRetries;
+    this.getConnectedHeight = options.getConnectedHeight;
 
     /**
-     * Holds references to the historical streams
+     * Holds references to the running historical streams, in batch order
      * @type {Stream[]}
      */
     this.historicalStreams = [];
+
+    /**
+     * Batches of the current historical read that started and haven't
+     * settled yet, in height order; null when not reading
+     * @type {{
+     *   fromBlockHeight: number, count: number, stream: ?Stream, retry: ?Function, done: boolean
+     * }[]|null}
+     */
+    this.historicalBatches = null;
+
+    /**
+     * Where the current historical read's next batch starts, how large its
+     * batches are, and its last height
+     */
+    this.nextBatchHeight = 0;
+    this.historicalBatchSize = 0;
+    this.historicalToBlockHeight = 0;
 
     /**
      * Holds reference to the continuous sync stream
@@ -47,13 +67,17 @@ class BlockHeadersReader extends EventEmitter {
   }
 
   /**
-   * Reads historical block heights using multiple streams
+   * Reads historical block headers in batches of about targetBatchSize, with
+   * up to maxParallelStreams batches in flight. A batch starts only within
+   * maxParallelStreams batches of the first one not yet settled: finished and,
+   * with getConnectedHeight, joined to the chain. So headers waiting ahead of
+   * the chain stay bounded.
    * @param {number} fromBlockHeight
    * @param {number} toBlockHeight
    * @returns {Promise<void>}
    */
   async readHistorical(fromBlockHeight, toBlockHeight) {
-    if (this.historicalStreams.length) {
+    if (this.historicalBatches) {
       throw new Error('Historical streams are already running. Please stop them first.');
     }
 
@@ -66,37 +90,173 @@ class BlockHeadersReader extends EventEmitter {
       throw new Error(`Invalid total amount of headers to read: ${totalAmount}`);
     }
 
-    const numStreams = Math.min(
-      Math.max(Math.round(totalAmount / this.targetBatchSize), 1),
-      this.maxParallelStreams,
-    );
+    const batchCount = Math.max(Math.round(totalAmount / this.targetBatchSize), 1);
 
-    const actualBatchSize = Math.ceil(totalAmount / numStreams);
+    // Batches are made as the window reaches them: toBlockHeight comes from
+    // a DAPI node, so the read must not allocate per batch up front
+    this.historicalBatches = [];
+    this.historicalBatchSize = Math.ceil(totalAmount / batchCount);
+    this.historicalToBlockHeight = toBlockHeight;
+    this.nextBatchHeight = fromBlockHeight;
 
-    for (let batchIndex = 0; batchIndex < numStreams; batchIndex += 1) {
-      const startingHeight = (batchIndex * actualBatchSize) + fromBlockHeight;
-      const count = Math.min(actualBatchSize, toBlockHeight - startingHeight + 1);
-
-      const subscribeWithRetries = this.createSubscribeToHistoricalBatch(this.maxRetries);
-      // eslint-disable-next-line no-await-in-loop
-      const stream = await subscribeWithRetries(startingHeight, count);
-      this.historicalStreams.push(stream);
+    try {
+      await this.startHistoricalBatches();
+    } catch (e) {
+      this.stopReadingHistorical();
+      throw e;
     }
   }
 
-  stopReadingHistorical() {
-    while (this.historicalStreams.length) {
-      const stream = this.historicalStreams.shift();
-      this.cancelStream(stream);
+  /**
+   * @private
+   * Starts the batches the window allows
+   */
+  async startHistoricalBatches() {
+    const batches = this.historicalBatches;
+    while (batches === this.historicalBatches
+      && this.nextBatchHeight <= this.historicalToBlockHeight
+      && batches.length < this.maxParallelStreams) {
+      const batch = {
+        fromBlockHeight: this.nextBatchHeight,
+        count: Math.min(
+          this.historicalBatchSize,
+          this.historicalToBlockHeight - this.nextBatchHeight + 1,
+        ),
+        stream: null,
+        retry: null,
+        done: false,
+      };
+      batches.push(batch);
+      this.nextBatchHeight += batch.count;
+
+      const subscribeWithRetries = this.createSubscribeToHistoricalBatch(this.maxRetries, batch);
+      // eslint-disable-next-line no-await-in-loop
+      const stream = await subscribeWithRetries(batch.fromBlockHeight, batch.count);
+      if (batches === this.historicalBatches) {
+        batch.stream = stream;
+        this.updateHistoricalStreams();
+      } else {
+        // Stopped while subscribing
+        this.cancelStream(stream);
+      }
     }
+  }
+
+  /** @private */
+  updateHistoricalStreams() {
+    this.historicalStreams = (this.historicalBatches || [])
+      .filter(({ stream }) => stream)
+      .map(({ stream }) => stream);
+  }
+
+  /**
+   * @private
+   * @param {object} batch
+   * @param {Stream} stream
+   */
+  historicalBatchEnded(batch, stream) {
+    if (!batch) {
+      // A stream read on its own
+      this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
+      return;
+    }
+
+    if (batch.stream !== stream || !this.historicalBatches) {
+      // Ended after a retry replaced it or reading stopped
+      return;
+    }
+
+    /* eslint-disable no-param-reassign */
+    batch.stream = null;
+    batch.done = true;
+    /* eslint-enable no-param-reassign */
+    this.updateHistoricalStreams();
+
+    const batches = this.historicalBatches;
+    if (this.nextBatchHeight > this.historicalToBlockHeight && batches.every(({ done }) => done)) {
+      // Every batch arrived; did those not settled yet all join the chain?
+      const connectedHeight = this.getConnectedHeight ? this.getConnectedHeight() : Infinity;
+      const unconnected = batches.find(({ fromBlockHeight, count }) => (
+        connectedHeight < fromBlockHeight + count - 1));
+      if (unconnected) {
+        this.stopReadingHistorical();
+        this.emit(EVENTS.ERROR, new Error(`Headers from height ${unconnected.fromBlockHeight} don't connect to the chain`));
+        return;
+      }
+      this.historicalBatches = null;
+      this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
+      return;
+    }
+
+    this.advanceHistoricalWindow();
+  }
+
+  /**
+   * Lets historical reads run further ahead once headers join the chain
+   */
+  chainAdvanced() {
+    if (this.historicalBatches) {
+      this.advanceHistoricalWindow();
+    }
+  }
+
+  /** @private */
+  advanceHistoricalWindow() {
+    const batches = this.historicalBatches;
+    const connectedHeight = this.getConnectedHeight ? this.getConnectedHeight() : Infinity;
+    // Retire the batches that arrived and joined the chain
+    while (batches.length) {
+      const { done, fromBlockHeight, count } = batches[0];
+      if (!done || connectedHeight < fromBlockHeight + count - 1) {
+        break;
+      }
+      batches.shift();
+    }
+
+    const windowFull = batches.length >= this.maxParallelStreams;
+    const inFlight = batches.some(({ done }) => !done);
+    if (windowFull && !inFlight) {
+      // Everything in the window arrived, but the first batch didn't connect
+      const { fromBlockHeight } = batches[0];
+      this.stopReadingHistorical();
+      this.emit(EVENTS.ERROR, new Error(`Headers from height ${fromBlockHeight} don't connect to the chain`));
+      return;
+    }
+
+    this.startHistoricalBatches().catch((e) => {
+      if (batches !== this.historicalBatches) {
+        // A later read replaced this one
+        return;
+      }
+      this.stopReadingHistorical();
+      this.emit(EVENTS.ERROR, e);
+    });
+  }
+
+  stopReadingHistorical() {
+    const streams = this.historicalStreams;
+    // Detach the batches, so retries in flight cancel the streams they open
+    (this.historicalBatches || []).forEach((batch) => {
+      /* eslint-disable no-param-reassign */
+      batch.stream = null;
+      batch.retry = null;
+      /* eslint-enable no-param-reassign */
+    });
+    this.historicalBatches = null;
+    this.historicalStreams = [];
+    streams.forEach((stream) => this.cancelStream(stream));
   }
 
   /**
    * Subscribes to continuously arriving block headers
    * @param {number} fromBlockHeight
+   * @param {function(Error=): number} [getResumeHeight] - height to resubscribe
+   *   from after the stream drops or headers are rejected, given the error that
+   *   caused the retry if there was one; by default the height of the last
+   *   header received
    * @returns {Promise<ReconnectableStream>}
    */
-  async subscribeToNew(fromBlockHeight) {
+  async subscribeToNew(fromBlockHeight, getResumeHeight) {
     if (this.continuousSyncStream) {
       throw new Error('Continuous sync has already been started');
     }
@@ -147,13 +307,14 @@ class BlockHeadersReader extends EventEmitter {
       }
     };
 
-    const beforeReconnectHandler = (updateArguments) => {
+    const beforeReconnectHandler = (updateArguments, retryError) => {
+      const resumeHeight = getResumeHeight ? getResumeHeight(retryError) : lastKnownChainHeight;
       updateArguments({
-        fromBlockHeight: lastKnownChainHeight,
+        fromBlockHeight: resumeHeight,
         count: 0,
       });
 
-      lastKnownChainHeight -= 1;
+      lastKnownChainHeight = resumeHeight - 1;
     };
 
     const endHandler = () => {
@@ -189,9 +350,10 @@ class BlockHeadersReader extends EventEmitter {
    * and handles retry logic
    * @private
    * @param {number} [maxRetries] - maximum amount of retries
+   * @param {object} [batch] - the batch the stream reads, from readHistorical
    * @returns {function(*, *): Promise<Stream>}
    */
-  createSubscribeToHistoricalBatch(maxRetries = 0) {
+  createSubscribeToHistoricalBatch(maxRetries = 0, batch = null) {
     let currentRetries = 0;
 
     /**
@@ -205,28 +367,64 @@ class BlockHeadersReader extends EventEmitter {
 
       const stream = await this.createHistoricalSyncStream(fromBlockHeight, count);
 
+      // Events of a stream its batch no longer reads from (it failed and a
+      // retry replaced it, reading stopped, or it already delivered its batch)
+      // are ignored. The reader detaches a stream before it cancels it, so a
+      // CANCELLED error from a current stream came from the server and is
+      // retried like any other.
+      let finished = false;
+      const isCurrent = () => !finished && (!batch || batch.stream === stream);
+
       const errorHandler = (streamError) => {
-        if (streamError.code === GrpcErrorCodes.CANCELLED) {
-          // TODO: consider reworking with COMMANDS instead
-          // of producing a side effect that alters class state
-          const index = this.historicalStreams.indexOf(stream);
-          if (index >= 0) {
-            this.historicalStreams.splice(index, 1);
-          }
+        if (!isCurrent()) {
+          return;
+        }
+
+        if (headersObtained >= count) {
+          // It already delivered its whole batch
+          this.historicalBatchEnded(batch, stream);
+          return;
+        }
+
+        if (!batch && streamError.code === GrpcErrorCodes.CANCELLED) {
           return;
         }
 
         if (currentRetries < maxRetries) {
           const newFromBlockHeight = fromBlockHeight + headersObtained;
           const newCount = count - headersObtained;
+          currentRetries += 1;
 
-          // TODO: do not retry in case newCount is zero
+          // Detach the failed stream at once, so its late events can't end
+          // the batch while the retry connects
+          const retry = {};
+          if (batch) {
+            /* eslint-disable no-param-reassign */
+            batch.stream = null;
+            batch.retry = retry;
+            /* eslint-enable no-param-reassign */
+            this.updateHistoricalStreams();
+          }
+
           subscribeWithRetries(newFromBlockHeight, newCount)
             .then((newStream) => {
-              const index = this.historicalStreams.indexOf(stream);
-              this.historicalStreams[index] = newStream;
-              currentRetries += 1;
+              if (!batch) {
+                return;
+              }
+              if (batch.retry !== retry) {
+                // Reading stopped in the meantime
+                this.cancelStream(newStream);
+                return;
+              }
+              /* eslint-disable no-param-reassign */
+              batch.retry = null;
+              batch.stream = newStream;
+              /* eslint-enable no-param-reassign */
+              this.updateHistoricalStreams();
             }).catch((e) => {
+              if (batch && batch.retry !== retry) {
+                return;
+              }
               this.stopReadingHistorical();
               this.emit(EVENTS.ERROR, e);
             });
@@ -239,9 +437,16 @@ class BlockHeadersReader extends EventEmitter {
       const dataHandler = (data) => {
         const blockHeaders = data.getBlockHeaders();
 
-        if (blockHeaders) {
-          const headersList = blockHeaders.getHeadersList()
-            .map((header) => new BlockHeader(Buffer.from(header)));
+        if (blockHeaders && isCurrent()) {
+          const rawHeaders = blockHeaders.getHeadersList();
+          if (headersObtained + rawHeaders.length > count) {
+            // Never take more than was asked for: the rest would wait in memory
+            errorHandler(new Error(`Stream sent more than the ${count} headers asked for`));
+            this.cancelStream(stream);
+            return;
+          }
+
+          const headersList = rawHeaders.map((header) => new BlockHeader(Buffer.from(header)));
 
           let rejected = false;
 
@@ -251,10 +456,9 @@ class BlockHeadersReader extends EventEmitter {
            */
           const rejectHeaders = (e) => {
             rejected = true;
-            // Cancel stream and unsubscribe from all data events
-            // because they are going th be re-created in errorHandler
-            this.cancelStream(stream);
+            // Retry first, which detaches the stream, then cancel it
             errorHandler(e);
+            this.cancelStream(stream);
           };
 
           const batchHeadHeight = fromBlockHeight + headersObtained;
@@ -265,15 +469,27 @@ class BlockHeadersReader extends EventEmitter {
 
           if (!rejected) {
             headersObtained += headersList.length;
+
+            // Done without waiting for the server to end the stream: close it
+            // before releasing the batch's slot, so a server that never ends
+            // its streams can't keep more than the window open
+            if (headersObtained === count) {
+              finished = true;
+              this.cancelStream(stream);
+              this.historicalBatchEnded(batch, stream);
+            }
           }
         }
       };
 
       const endHandler = () => {
-        const index = this.historicalStreams.indexOf(stream);
-        this.historicalStreams.splice(index, 1);
-        if (this.historicalStreams.length === 0) {
-          this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
+        if (!isCurrent()) {
+          return;
+        }
+        if (headersObtained >= count) {
+          this.historicalBatchEnded(batch, stream);
+        } else {
+          errorHandler(new Error(`Stream ended after ${headersObtained} of ${count} headers`));
         }
       };
 
@@ -315,6 +531,10 @@ class BlockHeadersReader extends EventEmitter {
 
   cancelStream(stream) {
     stream.removeAllListeners();
+    // The CANCELLED error a cancelled stream emits must not go unheard
+    if (typeof stream.listenerCount === 'function' && stream.listenerCount('error') === 0) {
+      stream.on('error', () => {});
+    }
     this.cancelStreamTransport(stream);
   }
 }

@@ -129,7 +129,6 @@ but cannot make the SDK accept a forged key or ban an honest node.
 
 ```rust
 use dash_sdk::SdkBuilder;
-use dash_sdk::dapi_client::AddressList;
 use dpp::dashcore::Network;
 use rs_sdk_trusted_context_provider::VerifiedHttpContextProvider;
 use std::num::NonZeroUsize;
@@ -140,24 +139,42 @@ let provider = VerifiedHttpContextProvider::new(
     NonZeroUsize::new(100).expect("cache size"),
 )?;
 
-let sdk = SdkBuilder::new(AddressList::default())
+// The SDK refuses a provider for another network than its own.
+let sdk = SdkBuilder::new_testnet()
     .with_context_provider(provider)
     .build()?;
 ```
 
-Your own checkpoint and relays (1 to 8, `https` except on loopback):
+`with_options` takes the defaults (the embedded checkpoint, the network's
+public quorum service, a cache of `DEFAULT_QUORUM_KEY_CACHE_SIZE` keys) for
+every option it is not given: a starting point, relays (1 to 8, `https`
+except on loopback) and the cache size.
 
 ```rust
-let checkpoint = VerifiedHttpContextProvider::embedded_checkpoint(Network::Testnet)?;
-let provider = VerifiedHttpContextProvider::with_checkpoint(
+use rs_sdk_trusted_context_provider::{
+    Continuation, StartingPoint, VerifiedHttpContextProvider, VerifiedProviderOptions,
+};
+
+let provider = VerifiedHttpContextProvider::with_options(
     Network::Testnet,
-    checkpoint,
-    vec!["https://relay.example.org".to_string()],
-    NonZeroUsize::new(100).expect("cache size"),
+    VerifiedProviderOptions {
+        sources: Some(vec!["https://relay.example.org".to_string()]),
+        ..Default::default()
+    },
 )?;
 
-// Later: persist the newest verified state and start from it next time.
-let state_json = serde_json::to_string(&provider.latest_verified_state())?;
+// Later: persist where proofs got to...
+let saved = serde_json::to_string(&provider.continuation())?;
+
+// ...and resume from it on the next start.
+let continuation: Continuation = serde_json::from_str(&saved)?;
+let next = VerifiedHttpContextProvider::with_options(
+    Network::Testnet,
+    VerifiedProviderOptions {
+        start: Some(StartingPoint::Continuation(continuation)),
+        ..Default::default()
+    },
+)?;
 ```
 
 Behaviour:
@@ -197,7 +214,10 @@ Behaviour:
 - The public mainnet quorum service currently answers `/proofs` with HTTP 403.
   `VerifiedHttpContextProvider::new(Network::Mainnet, ..)` builds, but its
   fetches fail until the service serves proofs; pass working mainnet relays
-  to `with_checkpoint` meanwhile.
+  in `VerifiedProviderOptions::sources` meanwhile.
+- The SDK refuses the provider with proofs turned off (`with_proofs(false)`)
+  or on an SDK for another network: it reports both requirements through
+  `ContextProvider::requires_proofs` and `ContextProvider::network`.
 
 ### Trust model
 
@@ -231,8 +251,45 @@ response must be is the SDK's policy.
 A proof covers every ChainLock quorum rotation between its starting state and
 its target, so it grows as the checkpoint ages, and a relay has to keep the
 blocks back to it. Each release moves the embedded checkpoints forward, as
-below. A long-lived application should persist `latest_verified_state()` and
-pass it back to `with_checkpoint` on the next start, so its proofs stay short.
+below.
+A long-lived application should persist `continuation()` and resume from it
+on the next start (`StartingPoint::Continuation`), so its proofs stay short.
+
+A continuation is an anchor and the verified states above it. The anchor is
+the newest verified state strictly below one DKG interval (24 blocks) under
+the lowest Core height of a response the SDK verified with the provider's
+keys, or the provider's own checkpoint when none was verified or no state is
+kept below that height. The proof verifier reports that height, with the
+quorum that signed it, through `ContextProvider::core_height_verified` only
+after the response's Tenderdash signature verified, so the height was signed
+by a Platform quorum as part of the state it committed: Platform reached it.
+The provider counts it only when its own cache serves that quorum's key at
+that height, so it could have supplied the key; routing the height to the
+provider that did is the job of any provider combining others. The next
+session needs heights at or above Platform's Core height, which only rises,
+so the lowest height verified this session is at or below every height the
+next session needs. A key verified at a height `H`
+may rest on evidence up to one DKG interval below `H`: it is served up to
+24 blocks past the highest target that opened its quorum, for the block on
+which Drive still signs with a quorum Core has just retired, and that quorum
+is in no quorum root above its retirement. A proof starts from a state
+strictly below its target, so the continuation keeps a state below `H - 24`
+as its anchor, and every state above it, and the next session can prove such
+a key again by asking for a target at or above `H - 24`. The heights keys
+are looked up or fetched for come from responses not verified yet and never
+count, so a forged response, or one that fails verification, cannot move the
+anchor. Verified states above the heights verified, such as the relay's tip
+or a target above the height asked for, never become the anchor. A node
+answering from an older block can only make the anchor older, and proofs
+longer. The anchor advances when the SDK verifies responses at heights more
+than one DKG interval above the states verified before them.
+Persisting `latest_verified_state()` as the next checkpoint instead would
+strand the next session: that state is often the relay's tip, above the
+Core height Platform reports, so no key at or below it could be proven until
+Platform passes it. The states above the anchor keep later proofs short.
+Every state in a continuation is trust configuration, like the checkpoint:
+only resume from a continuation this provider produced, or one from a
+provider verified from a checkpoint you trust.
 
 ### Limitations
 
@@ -240,8 +297,8 @@ pass it back to `with_checkpoint` on the next start, so its proofs stay short.
   Platform halts, that height stops while Core moves on. A quorum not cached
   before the halt is still proven with a proof whose target is that height,
   as long as the relay's Core has that ChainLock.
-- A height at or below the checkpoint cannot be proven, since every proof
-  starts from it.
+- A height at or below the checkpoint (a continuation's anchor) cannot be
+  proven, since every proof starts from it.
 - If the Core height jumps by more than 24 blocks between two Platform blocks,
   for example on the first block after a long idle period or a halt, that one
   block's responses cannot be verified until the next Platform block. The
