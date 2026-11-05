@@ -279,16 +279,9 @@ pub(super) async fn wait_after_broadcast<T>(
             "checking the original submission after an uncertain acknowledgement"
         );
     }
-    wait.await.map_err(|error| {
-        // The existing wait path owns interpretation of a result-stream business verdict.
-        // Transport/proof/interpretation failures cannot establish that nothing executed.
-        if matches!(&error, Error::StateTransitionBroadcastError(result) if result.cause.is_some())
-        {
-            error
-        } else {
-            error.into_unconfirmed()
-        }
-    })
+    // Result-stream errors are decoded before proof/signature verification. Even a typed
+    // consensus cause does not authenticate failure of the original submission.
+    wait.await.map_err(Error::into_unconfirmed)
 }
 
 fn broadcast_may_have_been_accepted(error: &Error) -> bool {

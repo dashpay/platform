@@ -581,26 +581,32 @@ async fn should_check_original_transfer_after_ambiguous_send_and_reported_invali
 }
 
 #[tokio::test]
-async fn should_keep_business_result_and_avoid_double_wrapping_unknown_result() {
-    let result: Result<(), Error> = wait_after_broadcast(Ok(()), async {
-        Err(Error::StateTransitionBroadcastError(
-            StateTransitionBroadcastError {
-                code: 20000,
-                message: "owner missing".into(),
-                cause: Some(IdentityNotFoundError::new(Identifier::from([1; 32])).into()),
-            },
-        ))
-    })
-    .await;
-    assert!(matches!(
-        result,
-        Err(Error::StateTransitionBroadcastError(_))
-    ));
+async fn should_keep_unsigned_wait_errors_unconfirmed_without_double_wrapping() {
+    for broadcast in [
+        Ok(()),
+        Err(Error::Generic("lost acknowledgement".into()).into_unconfirmed()),
+    ] {
+        let result: Result<(), Error> = wait_after_broadcast(broadcast, async {
+            Err(Error::StateTransitionBroadcastError(
+                StateTransitionBroadcastError {
+                    code: 20000,
+                    message: "owner missing".into(),
+                    cause: Some(IdentityNotFoundError::new(Identifier::from([1; 32])).into()),
+                },
+            ))
+        })
+        .await;
+        assert!(matches!(result,
+            Err(Error::StateTransitionResultUnconfirmed(cause))
+                if matches!(*cause, Error::StateTransitionBroadcastError(_))
+        ));
+    }
     let result: Result<(), Error> = wait_after_broadcast(Ok(()), async {
         Err(Error::InvalidProvedResponse("bad proof".into()).into_unconfirmed())
     })
     .await;
-    assert!(
-        matches!(result, Err(Error::StateTransitionResultUnconfirmed(cause)) if matches!(*cause, Error::InvalidProvedResponse(_)))
-    );
+    assert!(matches!(result,
+        Err(Error::StateTransitionResultUnconfirmed(cause))
+            if matches!(*cause, Error::InvalidProvedResponse(_))
+    ));
 }

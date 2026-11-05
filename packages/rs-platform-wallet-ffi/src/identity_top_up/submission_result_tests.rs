@@ -107,10 +107,14 @@ fn response<R>(inner: R) -> ExecutionResponse<R> {
     }
 }
 
-fn transport_error(status: Status) -> ExecutionError<DapiClientError> {
+fn transport_error<R: TransportRequest>(
+    request: &R,
+    status: Status,
+) -> ExecutionError<DapiClientError> {
+    let transport = TransportError::Grpc(status);
     ExecutionError {
-        possibly_accepted: false,
-        inner: DapiClientError::Transport(TransportError::Grpc(status)),
+        possibly_accepted: request.classify_error(&transport).possibly_accepted,
+        inner: DapiClientError::Transport(transport),
         address: None,
         retries: 0,
     }
@@ -164,12 +168,16 @@ impl Fixture {
         save(
             &directory,
             &broadcast_request,
-            &broadcast.map(response).map_err(transport_error),
+            &broadcast
+                .map(response)
+                .map_err(|status| transport_error(&broadcast_request, status)),
         );
         save(
             &directory,
             &wait_request,
-            &wait.map(response).map_err(transport_error),
+            &wait
+                .map(response)
+                .map_err(|status| transport_error(&wait_request, status)),
         );
         sdk.mock().load_expectations_sync(directory.path()).unwrap();
         sdk.mock()
@@ -328,23 +336,32 @@ async fn should_keep_top_up_unconfirmed_after_wait_transport_failure() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn should_preserve_exact_transition_wait_nonce_verdict_after_lost_ack() {
-    // The result stream answers the original transition hash, unlike a later
-    // broadcast node's refusal. Its decoded business verdict is authoritative.
-    Fixture::new(
+async fn should_keep_unsigned_wait_nonce_verdict_out_of_replacement_recovery() {
+    // An answer to the original hash has no authority without proof/signature verification.
+    for broadcast in [
+        Ok(BroadcastStateTransitionResponse {}),
         Err(Status::unavailable("lost acknowledgement")),
-        Ok(wait_response(WaitResult::Error(
-            StateTransitionBroadcastError {
-                code: 40603,
-                message: "address nonce mismatch".into(),
-                data: nonce_error_bytes(),
-            },
-        ))),
-        true,
-    )
-    .await
-    .check(PlatformWalletFFIResultCode::ErrorAddressNonceMismatch, 1, 1)
-    .await;
+    ] {
+        let message = Fixture::new(
+            broadcast,
+            Ok(wait_response(WaitResult::Error(
+                StateTransitionBroadcastError {
+                    code: 40603,
+                    message: "address nonce mismatch".into(),
+                    data: nonce_error_bytes(),
+                },
+            ))),
+            true,
+        )
+        .await
+        .check(
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+            1,
+            1,
+        )
+        .await;
+        assert!(message.contains("address nonce mismatch"));
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
