@@ -25,9 +25,11 @@ use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 
 use crate::changeset::{
-    AccountAddressPoolEntry, AccountRegistrationEntry, AssetLockChangeSet, PlatformWalletChangeSet,
+    AccountAddressPoolEntry, AccountRegistrationEntry, AssetLockChangeSet, PersistenceCapabilities,
+    PlatformWalletChangeSet,
 };
 use crate::error::PlatformWalletError;
+use crate::wallet::core::InBroadcastPin;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 use crate::ASSET_LOCK_FUNDING_SOURCES;
 
@@ -254,7 +256,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             DerivationPath,
             Option<key_wallet::ReservationToken>,
             Vec<AccountType>,
-            crate::wallet::core::InBroadcastPin,
+            InBroadcastPin,
             Vec<AccountAddressPoolEntry>,
         ),
         PlatformWalletError,
@@ -1171,6 +1173,32 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         .await
     }
 
+    /// Settles a build that is abandoned before it reached the broadcaster:
+    /// the owner-guarded reservation is released across every contributing
+    /// account and the in-broadcast fence comes down after it. The released
+    /// verdict is recorded before the cleanup's first await, so a cancellation
+    /// inside it still settles released — nothing was sent, and a pending-spend
+    /// fence would wait for a spend that can never be observed. The caller
+    /// drops the build→persist gate first.
+    async fn abandon_unsent_build(
+        &self,
+        mut in_broadcast_pin: InBroadcastPin,
+        funding_accounts: &[AccountType],
+        tx: &Transaction,
+        reservation_token: Option<key_wallet::ReservationToken>,
+    ) {
+        in_broadcast_pin.settle_released_on_drop();
+        crate::wallet::reservations::release_reservation_after_rejected_broadcast(
+            &self.wallet_manager,
+            &self.wallet_id,
+            funding_accounts,
+            tx,
+            reservation_token,
+        )
+        .await;
+        in_broadcast_pin.settle_released();
+    }
+
     /// The build → persist → track → broadcast pipeline every funded lock
     /// goes through. `shielded_recipient` is the Orchard address a shielded
     /// funding (Type 18) will pay; it is recorded on the row created here,
@@ -1400,17 +1428,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // inputs that provably never went to the wire (same shape as
                 // the drain-floor branch).
                 drop(build_persist_guard);
-                let mut in_broadcast_pin = in_broadcast_pin;
-                in_broadcast_pin.settle_released_on_drop();
-                crate::wallet::reservations::release_reservation_after_rejected_broadcast(
-                    &self.wallet_manager,
-                    &self.wallet_id,
+                self.abandon_unsent_build(
+                    in_broadcast_pin,
                     &funding_accounts,
                     &tx,
                     reservation_token,
                 )
                 .await;
-                in_broadcast_pin.settle_released();
                 if operation.is_some() {
                     return Err(PlatformWalletError::Persistence(format!(
                         "drain funding indices could not be made durable before dispatch: {e}"
@@ -1424,6 +1448,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
         }
 
+        // Only where the backend can record a recipient at all: a host without
+        // the capability keeps the best-effort row every other funding has.
+        let recipient_must_be_durable = operation.is_none()
+            && shielded_recipient.is_some()
+            && self
+                .persister
+                .persistence_capabilities()
+                .contains(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS);
         let tracked = TrackedAssetLock {
             operation_id: operation.map(|context| context.operation_id),
             out_point,
@@ -1465,6 +1497,42 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 })?;
             self.track_asset_lock(tracked).await;
             operation.clear_checkpoint();
+        } else if recipient_must_be_durable {
+            // The recipient exists nowhere but this row: a lock recovered from
+            // the chain after a kill carries none, and a resume would then pay
+            // whatever address the caller names. So, like the drain above, the
+            // row is durable BEFORE it is visible or sent, and a backend that
+            // cannot record it stops the funding while nothing is on the wire.
+            if let Some(on_built) = on_built {
+                on_built(out_point);
+            }
+            let mut changeset = AssetLockChangeSet::default();
+            changeset.asset_locks.insert(out_point, (&tracked).into());
+            let durable = self
+                .persister
+                .store(PlatformWalletChangeSet {
+                    asset_locks: Some(changeset),
+                    ..Default::default()
+                })
+                .and_then(|()| self.persister.flush());
+            if let Err(error) = durable {
+                // The row may have committed (a store that succeeded before a
+                // failed flush). It is never tracked here, and a restart that
+                // loads it finds the right recipient on it. The funding index
+                // stays consumed, as for the pool gate above.
+                drop(build_persist_guard);
+                self.abandon_unsent_build(
+                    in_broadcast_pin,
+                    &funding_accounts,
+                    &tx,
+                    reservation_token,
+                )
+                .await;
+                return Err(PlatformWalletError::Persistence(format!(
+                    "shielded recipient was not made durable before dispatch: {error}"
+                )));
+            }
+            self.track_asset_lock(tracked).await;
         } else {
             let cs_built = self.track_asset_lock(tracked).await;
             // Hand the outpoint to the caller before the row is persisted, so a
