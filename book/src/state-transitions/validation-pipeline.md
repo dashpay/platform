@@ -335,9 +335,7 @@ left out of the signable bytes. From protocol version 14 an identity id or proof
 failure is therefore refused without a fee instead of charging the asset lock a penalty, and
 the asset lock is left as it was; a key structure failure is still charged. A block holding
 such a transition is refused, as for any unpaid result. `check_tx` runs this stage for
-`IdentityCreate` too, at every protocol version, so such a transition does not reach a block. It
-checks the identity id first, before verifying the asset lock proof: through basic structure
-from protocol version 15, and through a check of its own for protocol versions 1 to 14.
+`IdentityCreate` too, at every protocol version, so such a transition does not reach a block.
 
 ## Stage 10: State Validation
 

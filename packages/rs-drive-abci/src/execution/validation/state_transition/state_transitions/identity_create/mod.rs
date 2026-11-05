@@ -2598,8 +2598,8 @@ mod tests {
         use platform_version::version::LATEST_VERSION;
 
         /// The protocol versions the check_tx tests run at: 1 (the first), 13 (the last whose
-        /// identity create advanced structure charges these faults), 14 (the last whose basic
-        /// structure leaves the identity id to check_tx's own check) and the latest (which
+        /// identity create advanced structure charges these faults), 14 (the last whose advanced
+        /// structure checks the identity id, after the asset lock proof) and the latest (which
         /// refuses them unpaid and checks the identity id in basic structure). This is a sample,
         /// not every version: protocol version 11 raises an identity create's minimum asset lock
         /// balance and 14 also changes its state validation, and the transitions these tests
@@ -2945,10 +2945,11 @@ mod tests {
 
         /// check_tx refuses, at every protocol version, an identity create whose identity id is
         /// not the one its asset lock derives, while a transition with the same signable bytes
-        /// and the derived identity id is still admitted. The identity id is checked before the
-        /// asset lock proof, by basic structure from protocol version 15 and by check_tx's own
-        /// check before it, so the refusal names the identity id even once the asset lock is
-        /// spent.
+        /// and the derived identity id is still admitted; the wrong identity id is still refused
+        /// once the asset lock is spent. From protocol version 15 basic structure checks the
+        /// identity id before the asset lock proof is verified, so the refusal then names the
+        /// identity id; earlier versions check it in advanced structure, after the asset lock
+        /// proof, so the refusal may name the spent asset lock instead.
         #[tokio::test]
         async fn should_refuse_at_check_tx_an_identity_create_whose_identity_id_does_not_match_its_asset_lock(
         ) {
@@ -2983,11 +2984,18 @@ mod tests {
                     "at protocol version {protocol_version}: {created:?}"
                 );
                 let errors = check_tx(&platform, &faulty, CheckTxLevel::FirstTimeCheck);
-                assert_matches!(
-                    errors.as_slice(),
-                    [error] if fault.is_reported_by(error),
-                    "at protocol version {protocol_version} once the asset lock is spent: {errors:?}"
-                );
+                if protocol_version <= 14 {
+                    assert!(
+                        !errors.is_empty(),
+                        "at protocol version {protocol_version} once the asset lock is spent"
+                    );
+                } else {
+                    assert_matches!(
+                        errors.as_slice(),
+                        [error] if fault.is_reported_by(error),
+                        "at protocol version {protocol_version} once the asset lock is spent: {errors:?}"
+                    );
+                }
             }
         }
 
