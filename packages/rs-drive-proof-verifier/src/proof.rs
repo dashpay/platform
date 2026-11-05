@@ -54,7 +54,7 @@ use crate::from_request::TryFromRequest;
 use crate::verify::{
     document_query_proof_bytes, supported_grovedb_proof_bytes, require_supported_grovedb_proof_bytes, verify_page_drive_proves, verify_tenderdash_proof, verify_tenderdash_signature,
 };
-use crate::{types::*, ContextProvider, DataContractProvider, Error};
+use crate::{types::*, ContextProvider, ContextProviderError, Error};
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
 use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
 use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::{
@@ -112,9 +112,10 @@ use drive::query::vote_poll_vote_state_query::{
 use drive::query::vote_polls_by_document_type_query::{
     ResolvedVotePollsByDocumentTypeQuery, VotePollsByDocumentTypeQuery,
 };
-use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
+use drive::query::{ContractLookupFn, DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use indexmap::IndexMap;
 use std::array::TryFromSliceError;
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
 use crate::error::MapGroveDbError;
@@ -458,6 +459,36 @@ fn proof_query_platform_version(
             metadata.protocol_version
         ),
     })
+}
+
+/// Runs `verify` with a lookup of the data contracts it needs in `provider`.
+///
+/// Drive's errors cannot carry the provider's, so the lookup gives Drive a failed lookup as
+/// text, as [`crate::DataContractProvider::as_contract_lookup_fn`] does. A configuration
+/// error is also kept aside and returned in place of the failure it caused: the provider is
+/// set up so that it cannot serve the lookup, whichever node's answer is verified with it.
+fn with_contract_lookup<T>(
+    provider: &dyn ContextProvider,
+    platform_version: &PlatformVersion,
+    verify: impl FnOnce(&ContractLookupFn) -> Result<T, Error>,
+) -> Result<T, Error> {
+    let misconfigured = RefCell::new(None);
+    let lookup = |id: &Identifier| {
+        provider
+            .get_data_contract(id, platform_version)
+            .map_err(|error| {
+                let reason = error.to_string();
+                if matches!(error, ContextProviderError::Config(_)) {
+                    *misconfigured.borrow_mut() = Some(error);
+                }
+                drive::error::Error::Proof(ProofError::ErrorRetrievingContract(reason))
+            })
+    };
+    let result = verify(&lookup);
+    match (result, misconfigured.take()) {
+        (Err(_), Some(error)) => Err(Error::ContextProviderError(error)),
+        (result, _) => result,
+    }
 }
 
 impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identity {
@@ -1590,8 +1621,6 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
 
         let query_platform_version = proof_query_platform_version(mtd)?;
 
-        let contracts_provider_fn = provider.as_contract_lookup_fn(platform_version);
-
         // Transition families whose proof cannot be bound to execution
         // (balance top-ups, credit transfers/withdrawals, address funds
         // movements, shields, no-history token operations) yield a verified
@@ -1601,15 +1630,17 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
         // guarantee: strict waits reject snapshots, snapshot waits treat
         // them as height-pinned state, never as execution evidence.
         let (root_hash, outcome) =
-            Drive::verify_state_transition_was_executed_with_proof_for_query_version(
-                &state_transition,
-                &block_info,
-                supported_grovedb_proof_bytes(proof)?,
-                &contracts_provider_fn,
-                query_platform_version,
-                platform_version,
-            )
-            .map_drive_error(proof, mtd)?;
+            with_contract_lookup(provider, platform_version, |contracts_provider_fn| {
+                Drive::verify_state_transition_was_executed_with_proof_for_query_version(
+                    &state_transition,
+                    &block_info,
+                    supported_grovedb_proof_bytes(proof)?,
+                    contracts_provider_fn,
+                    query_platform_version,
+                    platform_version,
+                )
+                .map_drive_error(proof, mtd)
+            })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -2087,9 +2118,9 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
 
         // Decode request to get drive query
         let drive_query = VotePollsByDocumentTypeQuery::try_from_request(request)?;
-        let resolved_request = drive_query.resolve_with_known_contracts_provider(
-            &provider.as_contract_lookup_fn(platform_version),
-        )?;
+        let resolved_request = with_contract_lookup(provider, platform_version, |lookup| {
+            Ok(drive_query.resolve_with_known_contracts_provider(lookup)?)
+        })?;
 
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
@@ -2135,9 +2166,9 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
         let drive_query = ContestedDocumentVotePollDriveQuery::try_from_request(request)?;
 
         // Resolve request to get verify_*_proof
-        let contracts_provider = provider.as_contract_lookup_fn(platform_version);
-        let resolved_request =
-            drive_query.resolve_with_known_contracts_provider(&contracts_provider)?;
+        let resolved_request = with_contract_lookup(provider, platform_version, |lookup| {
+            Ok(drive_query.resolve_with_known_contracts_provider(lookup)?)
+        })?;
 
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
@@ -2193,10 +2224,9 @@ impl FromProof<GetContestedResourceVotersForIdentityRequest> for Voters {
         let drive_query = ContestedDocumentVotePollVotesDriveQuery::try_from_request(request)?;
 
         // Parse request to get resolved contract that implements verify_*_proof
-        let contracts_provider = provider.as_contract_lookup_fn(platform_version);
-
-        let resolved_request =
-            drive_query.resolve_with_known_contracts_provider(&contracts_provider)?;
+        let resolved_request = with_contract_lookup(provider, platform_version, |lookup| {
+            Ok(drive_query.resolve_with_known_contracts_provider(lookup)?)
+        })?;
 
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
@@ -2249,19 +2279,21 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for ResourceV
 
         let grovedb_proof = supported_grovedb_proof_bytes(proof)?;
 
-        let contract_provider_fn = provider.as_contract_lookup_fn(platform_version);
-        let (root_hash, voters) = verify_page_drive_proves(drive_query.limit, |limit| {
-            ContestedResourceVotesGivenByIdentityQuery {
-                limit,
-                ..drive_query.clone()
-            }
-            .verify_identity_votes_given_proof::<Vec<_>>(
-                grovedb_proof,
-                &contract_provider_fn,
-                platform_version,
-            )
-        })
-        .map_drive_error(proof, mtd)?;
+        let (root_hash, voters) =
+            with_contract_lookup(provider, platform_version, |contract_provider_fn| {
+                verify_page_drive_proves(drive_query.limit, |limit| {
+                    ContestedResourceVotesGivenByIdentityQuery {
+                        limit,
+                        ..drive_query.clone()
+                    }
+                    .verify_identity_votes_given_proof::<Vec<_>>(
+                        grovedb_proof,
+                        contract_provider_fn,
+                        platform_version,
+                    )
+                })
+                .map_drive_error(proof, mtd)
+            })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
