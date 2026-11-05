@@ -10,7 +10,6 @@ use dpp::dashcore::ProTxHash;
 use dpp::identifier::{Identifier, MasternodeIdentifiers};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::Purpose::TRANSFER;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
@@ -25,50 +24,13 @@ use drive::util::batch::DriveOperation::IdentityOperation;
 use drive::util::batch::IdentityOperationType::{
     AddNewIdentity, AddNewKeysToMasternodeIdentity, DisableIdentityKeys, ReEnableIdentityKeys,
 };
-use std::collections::BTreeSet;
 
 /// The key operations of one update of one operator identity.
+#[derive(Default)]
 struct KeyChanges {
     to_disable: Vec<KeyID>,
     to_re_enable: Vec<KeyID>,
     to_add: Vec<IdentityPublicKey>,
-    /// The public key hashes of the identity's keys, disabled ones included, and of the keys
-    /// queued to add.
-    held_hashes: BTreeSet<[u8; 20]>,
-}
-
-impl KeyChanges {
-    fn for_keys(keys: &KeyIDIdentityPublicKeyPairBTreeMap) -> Result<Self, Error> {
-        Ok(Self {
-            to_disable: vec![],
-            to_re_enable: vec![],
-            to_add: vec![],
-            held_hashes: keys
-                .values()
-                .map(|key| key.public_key_hash())
-                .collect::<Result<_, _>>()?,
-        })
-    }
-
-    /// Queues `key` and returns true, unless the identity already holds a key with the same
-    /// public key hash, of any kind and disabled or not, or one is already queued. Drive refuses
-    /// to add a key whose hash its identity already holds a reference for, on every node, which
-    /// would fail the block, and whether a key holds one depends on how it was added (not when
-    /// its identity was created with it). So no key repeats a hash. Payouts and platform node ids
-    /// are any 20 bytes Core accepts, so an operator can make one equal to another key's hash
-    /// (the platform node id, or the hash of the operator key), and that key is then left out.
-    fn add(&mut self, key: IdentityPublicKey) -> Result<bool, Error> {
-        if !self.held_hashes.insert(key.public_key_hash()?) {
-            tracing::warn!(
-                key_type = ?key.key_type(),
-                purpose = ?key.purpose(),
-                "a masternode operator identity already holds a key with this key's hash, so it is not added"
-            );
-            return Ok(false);
-        }
-        self.to_add.push(key);
-        Ok(true)
-    }
 }
 
 /// Whether `key` is an operator identity's platform node id key.
@@ -92,8 +54,9 @@ where
     /// identity left behind keeps its TRANSFER keys, so its operator can still withdraw what
     /// was sent to it. Platform node ids are handled as in version 0, except that each step
     /// touches only its own kind of key (the BLS operator key, the platform node id key, the
-    /// TRANSFER keys), so one key is never disabled or re-enabled twice in one update, and no key
-    /// is added whose hash the identity already holds (`KeyChanges::add`).
+    /// TRANSFER keys), so one key is never disabled or re-enabled twice in one update. A key whose
+    /// hash another key of the identity has, which Core's payouts and node ids allow, is added as
+    /// any other (`add_new_keys_to_masternode_identity` 1).
     #[allow(clippy::too_many_arguments)]
     pub(super) fn update_operator_identity_v1(
         &self,
@@ -144,7 +107,7 @@ where
                 .into());
             };
             let mut new_key_id = Self::next_operator_key_id_v1(last_key_id)?;
-            let mut changes = KeyChanges::for_keys(&old_identity_keys)?;
+            let mut changes = KeyChanges::default();
 
             if let Some(platform_node_id_change) = platform_node_id_change {
                 let mut old_operator_node_id_to_re_enable = None;
@@ -162,10 +125,11 @@ where
                 }
                 if let Some(key_id) = old_operator_node_id_to_re_enable {
                     changes.to_re_enable.push(key_id);
-                } else if changes.add(Self::platform_node_id_key_v1(
-                    new_key_id,
-                    platform_node_id_change,
-                ))? {
+                } else {
+                    changes.to_add.push(Self::platform_node_id_key_v1(
+                        new_key_id,
+                        platform_node_id_change,
+                    ));
                     new_key_id = Self::next_operator_key_id_v1(new_key_id)?;
                 }
             }
@@ -176,7 +140,7 @@ where
                     operator_payout_address,
                     new_key_id,
                     &mut changes,
-                )?;
+                );
             }
 
             Self::push_key_changes_v1(old_operator_identifier, changes, drive_operations);
@@ -224,18 +188,14 @@ where
         )?;
 
         let Some(last_key_id) = identity_keys.keys().max().copied() else {
-            let mut keys = KeyChanges::for_keys(&identity_keys)?;
-            for key in Self::get_operator_identity_keys(
+            let mut identity =
+                Identity::create_basic_identity(operator_identifier, platform_version)?;
+            identity.add_public_keys(Self::get_operator_identity_keys(
                 pub_key_operator_change.clone(),
                 new_payout_address,
                 new_platform_node_id,
                 platform_version,
-            )? {
-                keys.add(key)?;
-            }
-            let mut identity =
-                Identity::create_basic_identity(operator_identifier, platform_version)?;
-            identity.add_public_keys(keys.to_add);
+            )?);
             drive_operations.push(IdentityOperation(AddNewIdentity {
                 identity,
                 is_masternode_identity: true,
@@ -244,13 +204,13 @@ where
         };
 
         let mut new_key_id = Self::next_operator_key_id_v1(last_key_id)?;
-        let mut changes = KeyChanges::for_keys(&identity_keys)?;
+        let mut changes = KeyChanges::default();
         if Self::reconcile_operator_payout_keys_v1(
             &identity_keys,
             new_payout_address,
             new_key_id,
             &mut changes,
-        )? {
+        ) {
             new_key_id = Self::next_operator_key_id_v1(new_key_id)?;
         }
 
@@ -262,10 +222,10 @@ where
                     changes.to_re_enable.push(*key_id);
                 }
             } else {
-                changes.add(Self::platform_node_id_key_v1(
+                changes.to_add.push(Self::platform_node_id_key_v1(
                     new_key_id,
                     new_platform_node_id,
-                ))?;
+                ));
             }
         }
 
@@ -276,15 +236,14 @@ where
     /// Queues the changes that leave `operator_payout_address` the only enabled TRANSFER key
     /// among `keys`, or no TRANSFER key enabled when it is `None`: a key holding the payout is
     /// kept, an enabled one before a disabled one and lower ids first, and re-enabled if it is
-    /// disabled; otherwise a key with `new_key_id` is added, unless the identity already holds
-    /// a key with that hash (`KeyChanges::add`). Every other enabled TRANSFER key is disabled.
-    /// Returns whether a key was added.
+    /// disabled; otherwise a key with `new_key_id` is added. Every other enabled TRANSFER key is
+    /// disabled. Returns whether a key was added.
     fn reconcile_operator_payout_keys_v1(
         keys: &KeyIDIdentityPublicKeyPairBTreeMap,
         operator_payout_address: Option<[u8; 20]>,
         new_key_id: KeyID,
         changes: &mut KeyChanges,
-    ) -> Result<bool, Error> {
+    ) -> bool {
         let reusable_key = operator_payout_address.and_then(|address| {
             keys.iter()
                 .filter(|(_, key)| {
@@ -309,22 +268,25 @@ where
                 if key.is_disabled() {
                     changes.to_re_enable.push(*key_id);
                 }
-                Ok(false)
+                false
             }
-            (None, Some(address)) => changes.add(
-                IdentityPublicKeyV0 {
-                    id: new_key_id,
-                    key_type: KeyType::ECDSA_HASH160,
-                    purpose: TRANSFER,
-                    security_level: SecurityLevel::CRITICAL,
-                    read_only: true,
-                    data: BinaryData::new(address.to_vec()),
-                    disabled_at: None,
-                    contract_bounds: None,
-                }
-                .into(),
-            ),
-            (None, None) => Ok(false),
+            (None, Some(address)) => {
+                changes.to_add.push(
+                    IdentityPublicKeyV0 {
+                        id: new_key_id,
+                        key_type: KeyType::ECDSA_HASH160,
+                        purpose: TRANSFER,
+                        security_level: SecurityLevel::CRITICAL,
+                        read_only: true,
+                        data: BinaryData::new(address.to_vec()),
+                        disabled_at: None,
+                        contract_bounds: None,
+                    }
+                    .into(),
+                );
+                true
+            }
+            (None, None) => false,
         }
     }
 
@@ -379,7 +341,6 @@ where
             to_disable,
             to_re_enable,
             to_add,
-            ..
         } = changes;
         if !to_disable.is_empty() {
             drive_operations.push(IdentityOperation(DisableIdentityKeys {

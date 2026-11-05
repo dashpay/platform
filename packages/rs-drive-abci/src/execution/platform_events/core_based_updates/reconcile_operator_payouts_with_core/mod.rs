@@ -25,12 +25,15 @@ where
     /// Before protocol version 15 Platform took an operator payout only from a masternode's
     /// full state, when it first listed the masternode, so a payout set or changed in Core later
     /// never reached Platform, and a new operator inherited the previous operator's payout key.
-    /// From version 15 payouts follow Core's diffs; this fixes what earlier versions left. In
-    /// their history the enabled TRANSFER keys of a masternode's operator identity are exactly
-    /// its stored payout, so comparing the stored payout with Core's finds every identity to
-    /// fix. Each one goes through `update_operator_identity` with Core's payout, which reconciles
-    /// all of the identity's TRANSFER keys with it. An identity a masternode already left is
-    /// reconciled only if the masternode switches back to it.
+    /// From version 15 payouts follow Core's diffs; this fixes what earlier versions left. A
+    /// stored payout that differs from Core's is replaced. Every masternode's current operator
+    /// identity goes through `update_operator_identity` with Core's payout, which reconciles all
+    /// of the identity's TRANSFER keys with it and changes nothing where they already match:
+    /// the stored payout does not tell which identities need it, as earlier versions matched
+    /// platform node id keys by their data alone, so an evonode whose node id once had its
+    /// payout's bytes can have its payout key disabled while the stored payout and Core's agree.
+    /// An identity a masternode already left is reconciled only if the masternode switches back
+    /// to it.
     ///
     /// `block_platform_state` must hold Platform's copy of Core's list at `core_height`, a chain
     /// locked height every node agrees on, so every node reads the same list from its Core. A
@@ -122,18 +125,17 @@ where
             core_height,
             masternodes = core_payouts.len(),
             corrected = corrections.len(),
-            "reconciled the operator payouts of the masternode list with Dash Core"
+            "reconciling the operator payouts of the masternode list with Dash Core"
         );
-        if corrections.is_empty() {
-            return Ok(());
-        }
 
-        let mut updated_mns = Vec::with_capacity(corrections.len());
         for (mut masternode, core_payout) in corrections {
             masternode.state.operator_payout_address = core_payout;
-            updated_mns.push((masternode.pro_tx_hash, operator_payout_diff(core_payout)));
             block_platform_state.insert_masternode(masternode);
         }
+        let updated_mns = core_payouts
+            .into_iter()
+            .map(|(pro_tx_hash, core_payout)| (pro_tx_hash, operator_payout_diff(core_payout)))
+            .collect();
 
         // The corrected list is the state the identity updates read: its operator keys name the
         // current operator identities.

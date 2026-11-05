@@ -170,13 +170,27 @@ fn run_upgrade_events(
 fn platform_after_core_history(
     previous: ProtocolVersion,
 ) -> (TempPlatform<MockCoreRPCLike>, PlatformState, CoreCalls) {
+    let (listed, diff, at_committed) = core_history();
+    platform_after_history(previous, listed, vec![diff], at_committed)
+}
+
+/// A platform at `previous` that processed, through `update_core_info`, Core's list `listed` at
+/// init chain and then each of `diffs` in a block of its own, one Core height each, the last at
+/// `COMMITTED_AT`. Core lists `at_committed` at `COMMITTED_AT` and prints `upgrade_block_diff`
+/// after it. Returns the committed state and the masternode list calls Core gets after that.
+fn platform_after_history(
+    previous: ProtocolVersion,
+    listed: Vec<MasternodeListItem>,
+    diffs: Vec<MasternodeListDiff>,
+    at_committed: Vec<MasternodeListItem>,
+) -> (TempPlatform<MockCoreRPCLike>, PlatformState, CoreCalls) {
     let previous_version = PlatformVersion::get(previous).expect("expected the protocol version");
     let mut platform = TestPlatformBuilder::new()
         .with_config(PlatformConfig::default())
         .with_initial_protocol_version(previous)
         .build_with_mock_rpc()
         .set_genesis_state();
-    let (listed, diff, at_committed) = core_history();
+    let listed_at = COMMITTED_AT - diffs.len() as u32;
     let calls = CoreCalls::default();
     let recorded_calls = Arc::clone(&calls);
     let history_done = Arc::new(Mutex::new(false));
@@ -192,10 +206,12 @@ fn platform_after_core_history(
                     .push((base_block, block));
             }
             let added_mns = match (base_block, block) {
-                (None, LISTED_AT) => listed.clone(),
+                (None, block) if block == listed_at => listed.clone(),
                 (None, COMMITTED_AT) => at_committed.clone(),
-                (Some(LISTED_AT), COMMITTED_AT) => return Ok(diff.clone()),
                 (Some(COMMITTED_AT), UPGRADE_AT) => return Ok(upgrade_block_diff()),
+                (Some(base), block) if base >= listed_at && block == base + 1 => {
+                    return Ok(diffs[(base - listed_at) as usize].clone())
+                }
                 other => panic!("unexpected masternode list call {other:?}"),
             };
             Ok(MasternodeListDiff {
@@ -226,39 +242,26 @@ fn platform_after_core_history(
 
     let transaction = platform.drive.grove.start_transaction();
     let mut state = platform.state.load().as_ref().clone();
-    platform
-        .update_core_info(
-            None,
-            &mut state,
-            LISTED_AT,
-            true,
-            &BlockInfo {
-                height: 1,
-                core_height: LISTED_AT,
-                ..Default::default()
-            },
-            &transaction,
-            previous_version,
-        )
-        .expect("expected to list the masternodes");
-    state.set_last_committed_block_info(Some(committed_block(1, LISTED_AT)));
-    let committed = state.clone();
-    platform
-        .update_core_info(
-            Some(&committed),
-            &mut state,
-            COMMITTED_AT,
-            false,
-            &BlockInfo {
-                height: 2,
-                core_height: COMMITTED_AT,
-                ..Default::default()
-            },
-            &transaction,
-            previous_version,
-        )
-        .expect("expected to apply the diff");
-    state.set_last_committed_block_info(Some(committed_block(2, COMMITTED_AT)));
+    let mut committed: Option<PlatformState> = None;
+    for (height, core_height) in (1..).zip(listed_at..=COMMITTED_AT) {
+        platform
+            .update_core_info(
+                committed.as_ref(),
+                &mut state,
+                core_height,
+                committed.is_none(),
+                &BlockInfo {
+                    height,
+                    core_height,
+                    ..Default::default()
+                },
+                &transaction,
+                previous_version,
+            )
+            .expect("expected to process Core's masternode list");
+        state.set_last_committed_block_info(Some(committed_block(height, core_height)));
+        committed = Some(state.clone());
+    }
     state.mark_saved();
     platform
         .drive
@@ -545,5 +548,54 @@ fn should_reconcile_the_same_way_when_a_round_of_the_upgrade_block_is_retried() 
     assert_eq!(
         transfer_keys(&platform, &transaction, 0x62, 0x72),
         [(vec![0x62; 20], true)]
+    );
+}
+
+/// The enabled TRANSFER keys of a current operator identity are not always its stored payout: up
+/// to protocol version 14 a platform node id matched keys by data alone, so an evonode whose node
+/// id was set to its payout's bytes and then changed again had its payout key disabled, while the
+/// stored payout and Core's stayed the same. The first block of protocol version 15 reconciles
+/// every current operator identity with Core's payout, so that key is enabled again.
+#[test]
+fn should_re_enable_a_payout_key_an_earlier_node_id_change_disabled_in_the_first_block_of_protocol_version_15(
+) {
+    let mut evonode = masternode(0x66, 0x66, Some(0x66));
+    evonode.node_type = MasternodeType::Evo;
+    evonode.state.platform_node_id = Some([0x76; 20]);
+    #[allow(deprecated)]
+    {
+        evonode.state.legacy_platform_p2p_port = Some(26656);
+        evonode.state.legacy_platform_http_port = Some(443);
+    }
+    let node_id_change = |node_id: [u8; 20]| MasternodeListDiff {
+        base_height: 0,
+        block_height: 0,
+        added_mns: vec![],
+        removed_mns: vec![],
+        updated_mns: vec![(
+            evonode.pro_tx_hash,
+            diff_entry(serde_json::json!({ "platformNodeID": hex::encode(node_id) })),
+        )],
+    };
+    let mut at_committed = evonode.clone();
+    at_committed.state.platform_node_id = Some([0x86; 20]);
+    let (platform, committed, _calls) = platform_after_history(
+        14,
+        vec![evonode.clone()],
+        vec![node_id_change([0x66; 20]), node_id_change([0x86; 20])],
+        vec![at_committed],
+    );
+    let transaction = platform.drive.grove.start_transaction();
+    assert_eq!(
+        transfer_keys(&platform, &transaction, 0x66, 0x66),
+        [(vec![0x66; 20], true)],
+        "PV14 disabled the payout key when the node id left the payout's bytes"
+    );
+
+    run_upgrade_events(&platform, &committed, 14, &transaction);
+
+    assert_eq!(
+        transfer_keys(&platform, &transaction, 0x66, 0x66),
+        [(vec![0x66; 20], false)]
     );
 }

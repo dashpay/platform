@@ -389,15 +389,17 @@ fn keys_with_purpose(
 }
 
 /// An operator payout and a platform node id are any 20 bytes Core accepts, so an operator can
-/// make the payout equal the platform node id or the hash of the operator key, or the node id
-/// equal a payout. Drive refuses a second key with a hash the identity already holds, on every
-/// node, so adding one would fail the block. The update leaves that key out instead, and a later
-/// change of both the node id and the payout goes through.
+/// make the payout equal the platform node id or the hash of the operator key, make the node id
+/// equal the payout, or set as payout a hash that was the node id before. Each such key is added
+/// and holds the authority of its kind: the payout's TRANSFER key is enabled, so the operator can
+/// still withdraw, and the block does not fail on the identity already holding a key of that
+/// hash. A later change of both the node id and the payout goes through.
 #[test]
-fn should_not_halt_when_an_operator_payout_or_node_id_repeats_another_keys_hash() {
+fn should_add_an_operator_payout_or_node_id_key_that_repeats_another_keys_hash() {
     let payout_is_node_id = evonode(0x6a);
     let payout_is_operator_key_hash = evonode(0x6b);
     let node_id_is_payout = evonode(0x6c);
+    let payout_was_node_id = evonode(0x6f);
     let node_id = |masternode: &MasternodeListItem| {
         masternode
             .state
@@ -411,42 +413,69 @@ fn should_not_halt_when_an_operator_payout_or_node_id_repeats_another_keys_hash(
             .expect("expected an operator payout")
     };
     let operator_key_hash = ripemd160_sha256(&payout_is_operator_key_hash.state.pub_key_operator);
+    let earlier_node_id = [0x9f; 20];
+    let entry =
+        |masternode: &MasternodeListItem, diff: DMNStateDiff| (masternode.pro_tx_hash, diff);
     let (platform, state) = masternode_list_after_diffs(
         PlatformVersion::latest(),
         vec![
             payout_is_node_id.clone(),
             payout_is_operator_key_hash.clone(),
             node_id_is_payout.clone(),
+            payout_was_node_id.clone(),
         ],
         vec![
             vec![
-                (
-                    payout_is_node_id.pro_tx_hash,
+                entry(
+                    &payout_is_node_id,
                     DMNStateDiff {
                         operator_payout_address: Some(Some(node_id(&payout_is_node_id))),
                         ..empty_state_diff()
                     },
                 ),
-                (
-                    payout_is_operator_key_hash.pro_tx_hash,
+                entry(
+                    &payout_is_operator_key_hash,
                     DMNStateDiff {
                         operator_payout_address: Some(Some(operator_key_hash)),
                         ..empty_state_diff()
                     },
                 ),
-                (
-                    node_id_is_payout.pro_tx_hash,
+                entry(
+                    &node_id_is_payout,
                     DMNStateDiff {
                         platform_node_id: Some(payout(&node_id_is_payout)),
                         ..empty_state_diff()
                     },
                 ),
+                entry(
+                    &payout_was_node_id,
+                    DMNStateDiff {
+                        platform_node_id: Some(earlier_node_id),
+                        ..empty_state_diff()
+                    },
+                ),
             ],
-            vec![(
-                payout_is_node_id.pro_tx_hash,
+            vec![
+                entry(
+                    &payout_is_node_id,
+                    DMNStateDiff {
+                        platform_node_id: Some([0x7a; 20]),
+                        operator_payout_address: Some(Some([0x8a; 20])),
+                        ..empty_state_diff()
+                    },
+                ),
+                entry(
+                    &payout_was_node_id,
+                    DMNStateDiff {
+                        platform_node_id: Some([0x7f; 20]),
+                        ..empty_state_diff()
+                    },
+                ),
+            ],
+            vec![entry(
+                &payout_was_node_id,
                 DMNStateDiff {
-                    platform_node_id: Some([0x7a; 20]),
-                    operator_payout_address: Some(Some([0x8a; 20])),
+                    operator_payout_address: Some(Some(earlier_node_id)),
                     ..empty_state_diff()
                 },
             )],
@@ -458,12 +487,16 @@ fn should_not_halt_when_an_operator_payout_or_node_id_repeats_another_keys_hash(
         keys_with_purpose(&platform, &payout_is_node_id, key, Purpose::TRANSFER),
         [
             (payout(&payout_is_node_id).to_vec(), true),
+            (node_id(&payout_is_node_id).to_vec(), true),
             (vec![0x8a; 20], false)
         ]
     );
-    assert!(
-        keys_with_purpose(&platform, &payout_is_node_id, key, Purpose::SYSTEM)
-            .contains(&(vec![0x7a; 20], false))
+    assert_eq!(
+        keys_with_purpose(&platform, &payout_is_node_id, key, Purpose::SYSTEM)[1..],
+        [
+            (node_id(&payout_is_node_id).to_vec(), true),
+            (vec![0x7a; 20], false)
+        ]
     );
     assert_eq!(
         stored_operator_payout(&state, &payout_is_node_id),
@@ -478,7 +511,10 @@ fn should_not_halt_when_an_operator_payout_or_node_id_repeats_another_keys_hash(
             key,
             Purpose::TRANSFER
         ),
-        [(payout(&payout_is_operator_key_hash).to_vec(), true)]
+        [
+            (payout(&payout_is_operator_key_hash).to_vec(), true),
+            (operator_key_hash.to_vec(), false)
+        ]
     );
 
     let key = &node_id_is_payout.state.pub_key_operator;
@@ -487,16 +523,29 @@ fn should_not_halt_when_an_operator_payout_or_node_id_repeats_another_keys_hash(
         [(payout(&node_id_is_payout).to_vec(), false)]
     );
     assert_eq!(
-        state.full_masternode_list()[&node_id_is_payout.pro_tx_hash]
-            .state
-            .platform_node_id,
-        Some(payout(&node_id_is_payout))
+        keys_with_purpose(&platform, &node_id_is_payout, key, Purpose::SYSTEM)[1..],
+        [
+            (node_id(&node_id_is_payout).to_vec(), true),
+            (payout(&node_id_is_payout).to_vec(), false)
+        ]
+    );
+
+    let key = &payout_was_node_id.state.pub_key_operator;
+    assert_eq!(
+        keys_with_purpose(&platform, &payout_was_node_id, key, Purpose::TRANSFER),
+        [
+            (payout(&payout_was_node_id).to_vec(), true),
+            (earlier_node_id.to_vec(), false)
+        ]
+    );
+    assert_eq!(
+        stored_operator_payout(&state, &payout_was_node_id),
+        Some(earlier_node_id)
     );
 }
 
 /// A new operator whose payout Core reports equal to the platform node id gets an identity with
-/// the payout key and no second key of the same hash, so no key of the identity repeats a hash
-/// and a later added key never meets one Drive would refuse.
+/// both keys: the payout's TRANSFER key and the platform node id key.
 #[test]
 fn should_create_a_new_operator_identity_whose_payout_equals_the_platform_node_id() {
     let masternode = evonode(0x6d);
@@ -523,7 +572,7 @@ fn should_create_a_new_operator_identity_whose_payout_equals_the_platform_node_i
     );
     assert_eq!(
         keys_with_purpose(&platform, &masternode, &[0x7d; 48], Purpose::SYSTEM),
-        [(vec![0x7d; 48], false)]
+        [(vec![0x7d; 48], false), (node_id.to_vec(), false)]
     );
 }
 
