@@ -33,6 +33,7 @@ use key_wallet::Utxo;
 
 use super::history_authorization::plan_history_authorization;
 pub use super::history_authorization::HistoryAuthorization;
+pub use super::history_claims::{HistoryReplayEffects, ReplayClaimEffect, StoredReplayClaim};
 use crate::changeset::changeset::SweepBatch;
 use crate::changeset::recorded_history::ReplayEvidence;
 use crate::changeset::{
