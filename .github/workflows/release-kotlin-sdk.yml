@@ -91,7 +91,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          for pkg in build-essential cmake curl gh jq libgmp-dev libpulse0 libssl-dev libx11-xcb1 pkg-config python3 unzip zip; do
+          for pkg in build-essential cmake curl gh jq libpulse0 libssl-dev libx11-xcb1 pkg-config python3 unzip zip; do
             dpkg-query -W -f='${Status}' "$pkg" | grep -Fx 'install ok installed'
           done
           test -x "$HOME/.cargo/bin/rustup"

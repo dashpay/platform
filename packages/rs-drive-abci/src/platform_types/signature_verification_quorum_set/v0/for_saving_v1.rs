@@ -1,69 +1,41 @@
+//! Retired: quorum storage version 1, tag 1 of `SignatureVerificationQuorumSetForSaving`.
+//!
+//! The reader was removed in Platform v5.1.0 by #5323, to drop the C++ `bls-signatures`
+//! dependency from the default production node: the reader decoded this format's previous quorums
+//! through that crate. Platform v4.0.0 is the upgrade path, as it reads this format and writes a
+//! supported one. Only the placeholder remains, and it keeps the tag reserved, so the tags of the
+//! supported formats do not move. The quorum types below it are live: version 2 stores them.
+
 use super::public_key_for_saving::PublicKeyForSaving;
-#[cfg(feature = "bls-signatures")]
-use crate::platform_types::signature_verification_quorum_set::v0::for_saving_v0::PreviousPastQuorumsForSavingV0;
-use crate::platform_types::signature_verification_quorum_set::v0::quorum_config_for_saving_v0::QuorumConfigForSavingV0;
 use crate::platform_types::signature_verification_quorum_set::v0::quorum_set::PreviousPastQuorumsV0;
-use crate::platform_types::signature_verification_quorum_set::{
-    Quorums, SignatureVerificationQuorumSetForSaving, SignatureVerificationQuorumSetV0,
-    VerificationQuorum,
-};
+use crate::platform_types::signature_verification_quorum_set::{Quorums, VerificationQuorum};
+use crate::platform_types::unsupported_legacy_bls_storage::unsupported_legacy_bls_storage_error;
+use bincode::de::Decoder;
+use bincode::enc::Encoder;
+use bincode::error::{DecodeError, EncodeError};
 use bincode::{Decode, Encode};
 
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::QuorumHash;
 use dpp::platform_value::Bytes32;
 
-#[derive(Debug, Clone, Encode, Decode)]
-pub struct SignatureVerificationQuorumSetForSavingV1 {
-    config: QuorumConfigForSavingV0,
-    current_quorums: Vec<QuorumForSavingV1>,
-    #[cfg(feature = "bls-signatures")]
-    previous_quorums: Option<PreviousPastQuorumsForSavingV0>,
-}
+/// Has no values: nothing can write this format, and decoding it always fails.
+#[derive(Debug, Clone)]
+pub enum SignatureVerificationQuorumSetForSavingV1 {}
 
-impl From<SignatureVerificationQuorumSetForSavingV1> for SignatureVerificationQuorumSetForSaving {
-    fn from(value: SignatureVerificationQuorumSetForSavingV1) -> Self {
-        SignatureVerificationQuorumSetForSaving::V1(value)
+impl Encode for SignatureVerificationQuorumSetForSavingV1 {
+    fn encode<E: Encoder>(&self, _encoder: &mut E) -> Result<(), EncodeError> {
+        match *self {}
     }
 }
 
-impl From<SignatureVerificationQuorumSetV0> for SignatureVerificationQuorumSetForSavingV1 {
-    fn from(value: SignatureVerificationQuorumSetV0) -> Self {
-        #[allow(unused_variables)]
-        let SignatureVerificationQuorumSetV0 {
-            config,
-            current_quorums,
-            previous,
-        } = value;
-
-        Self {
-            config: config.into(),
-            current_quorums: current_quorums.into(),
-            #[cfg(feature = "bls-signatures")]
-            previous_quorums: previous.map(|previous| previous.into()),
-        }
+impl<Context> Decode<Context> for SignatureVerificationQuorumSetForSavingV1 {
+    fn decode<D: Decoder<Context = Context>>(_decoder: &mut D) -> Result<Self, DecodeError> {
+        Err(unsupported_legacy_bls_storage_error())
     }
 }
 
-impl From<SignatureVerificationQuorumSetForSavingV1> for SignatureVerificationQuorumSetV0 {
-    fn from(value: SignatureVerificationQuorumSetForSavingV1) -> Self {
-        let SignatureVerificationQuorumSetForSavingV1 {
-            config,
-            current_quorums,
-            #[cfg(feature = "bls-signatures")]
-            previous_quorums,
-        } = value;
-
-        Self {
-            config: config.into(),
-            current_quorums: current_quorums.into(),
-            #[cfg(feature = "bls-signatures")]
-            previous: previous_quorums.map(|previous| previous.into()),
-            #[cfg(not(feature = "bls-signatures"))]
-            previous: None,
-        }
-    }
-}
+bincode::impl_borrow_decode!(SignatureVerificationQuorumSetForSavingV1);
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct QuorumForSavingV1 {
