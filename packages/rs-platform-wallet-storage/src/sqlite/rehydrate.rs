@@ -578,10 +578,13 @@ fn owner_label(owner: &OwningAccount) -> String {
 ///
 /// Every refill of the marking rounds is bounded first, as
 /// [`extend_pools_for_restored_addresses`] bounds its own
-/// ([`gap_refills_bounded`]). A pool past those bounds stops the restore,
-/// returning every UTXO unmatched; so does a derivation error, which is
-/// reported at [`LoadSite::RehydrationMaintainGapLimit`]. The final placement
-/// grows each pool at most one gap past each stored coin's address.
+/// ([`gap_refills_bounded`]). A pool past those bounds stops the refills; so
+/// does a derivation error, which is reported at
+/// [`LoadSite::RehydrationMaintainGapLimit`]. Either way the coins whose
+/// script a pool already holds are still placed, without growing any pool
+/// ([`place_held_coins`]), and only the others are returned unmatched. The
+/// final placement grows each pool at most one gap past each stored coin's
+/// address.
 fn restore_owned_utxos(
     wallet_info: &mut ManagedWalletInfo,
     wallet: &Wallet,
@@ -591,7 +594,6 @@ fn restore_owned_utxos(
     ctx: &LoadCtx,
     refused: &mut RefusedRefills,
 ) -> Result<(Vec<key_wallet::Utxo>, bool), WalletStorageError> {
-    let all_unmatched = || unspent.iter().map(|u| (*u).clone()).collect();
     let wanted: std::collections::HashSet<&key_wallet::Address> = (used.iter())
         .chain(unspent.iter().map(|u| &u.address))
         .collect();
@@ -626,10 +628,11 @@ fn restore_owned_utxos(
             }
         }
         if !gap_refills_bounded(wallet_info, wallet_id, ctx, refused)? {
-            return Ok((all_unmatched(), false));
+            return place_held_coins(wallet_info, wallet, unspent, ctx).map(|left| (left, false));
         }
         if let Err(source) = wallet_info.restore_utxos(wallet, std::iter::empty()) {
-            return restore_failed(ctx, wallet_id, source).map(|()| (all_unmatched(), false));
+            restore_failed(ctx, wallet_id, source)?;
+            return place_held_coins(wallet_info, wallet, unspent, ctx).map(|left| (left, false));
         }
         if !marked_any && !derived_past(wallet_info, &looked_up) {
             break;
@@ -637,7 +640,32 @@ fn restore_owned_utxos(
     }
     match wallet_info.restore_utxos(wallet, unspent.iter().map(|u| (*u).clone())) {
         Ok(unmatched) => Ok((unmatched, true)),
-        Err(source) => restore_failed(ctx, wallet_id, source).map(|()| (all_unmatched(), false)),
+        Err(source) => {
+            restore_failed(ctx, wallet_id, source)?;
+            place_held_coins(wallet_info, wallet, unspent, ctx).map(|left| (left, false))
+        }
+    }
+}
+
+/// Places each of `unspent` whose script an account's pools already hold as
+/// `restore_utxos` does: in the first account holding it, in its order, with
+/// the address marked used and any copy in another account removed. Derives
+/// nothing: the restore runs against `wallet` without its accounts, so no
+/// pool has a key source and its refill skips every one. Returns the coins no
+/// account holds, or every coin if the placement fails, which is reported as
+/// a failed restore is.
+fn place_held_coins(
+    wallet_info: &mut ManagedWalletInfo,
+    wallet: &Wallet,
+    unspent: &[&key_wallet::Utxo],
+    ctx: &LoadCtx,
+) -> Result<Vec<key_wallet::Utxo>, WalletStorageError> {
+    let keyless =
+        Wallet::new_external_signable(wallet.network, wallet.wallet_id, AccountCollection::new());
+    let coins = || unspent.iter().map(|u| (*u).clone());
+    match wallet_info.restore_utxos(&keyless, coins()) {
+        Ok(unmatched) => Ok(unmatched),
+        Err(source) => restore_failed(ctx, wallet.wallet_id, source).map(|()| coins().collect()),
     }
 }
 
@@ -4207,6 +4235,253 @@ mod tests {
             );
             assert_eq!(holders(&info, &coin.outpoint), vec![bip44()]);
             assert_eq!(info.balance.total(), VALUE);
+        }
+
+        /// Every account holding `outpoint`, the DashPay contact accounts
+        /// included.
+        fn every_holder(info: &ManagedWalletInfo, outpoint: &OutPoint) -> Vec<AccountType> {
+            (info.accounts.all_funding_accounts().into_iter())
+                .chain(info.accounts.dashpay_external_accounts.values())
+                .filter(|a| a.utxos.contains_key(outpoint))
+                .map(|a| a.managed_account_type().to_account_type())
+                .collect()
+        }
+
+        /// The address `coin`'s script pays.
+        fn paid_address(coin: &Utxo) -> Address {
+            Address::from_script(&coin.txout.script_pubkey, Network::Testnet).unwrap()
+        }
+
+        /// Loads `coins` under recovery onto [`with_unrefillable_contact_pool`]
+        /// prepared by `prepare`, checking the contact pool's refusal was
+        /// counted once.
+        fn load_past_refused_refill(
+            wallet: &Wallet,
+            manifest: &[AccountRegistrationEntry],
+            coins: &[Utxo],
+            utxo_accounts: &HashMap<OutPoint, OwningAccount>,
+            used: &HashMap<Address, Option<OwningAccount>>,
+            prepare: impl FnOnce(&mut ManagedWalletInfo),
+        ) -> (ManagedWalletInfo, LoadCtx) {
+            let mut info = with_unrefillable_contact_pool(wallet);
+            prepare(&mut info);
+            let ctx = LoadCtx::recovery();
+            load_into(
+                &mut info,
+                manifest,
+                coins.to_vec(),
+                utxo_accounts,
+                used,
+                &ctx,
+            )
+            .expect("recovery tolerates the refusal");
+            assert_eq!(
+                ctx.degradation()
+                    .by_site
+                    .get(&LoadSite::RehydrationMaintainGapLimit),
+                Some(&1)
+            );
+            (info, ctx)
+        }
+
+        /// Checks `coin` is held by CoinJoin alone, which signs for the
+        /// address its script pays and has it marked used.
+        fn assert_held_by_coinjoin(info: &ManagedWalletInfo, coin: &Utxo) {
+            let address = paid_address(coin);
+            assert_eq!(every_holder(info, &coin.outpoint), vec![cj()]);
+            assert!(derives(info, &cj(), &address), "the coin is signable");
+            assert!(used_in(info, &cj(), &address), "{address} comes back used");
+        }
+
+        /// An ownerless CoinJoin coin whose script CoinJoin already holds
+        /// (50) stays in CoinJoin when an unrelated contact pool's refill is
+        /// refused, with or without its script in the used set.
+        #[test]
+        fn a_held_coin_keeps_its_account_past_a_refused_refill() {
+            let (wallet, manifest, _) = unrefillable_contact_fixture();
+            let coin = utxo(1, &coinjoin_address(&wallet, 50));
+            for used in [HashMap::new(), ownerless(&[&coin.address])] {
+                let (info, ctx) = load_past_refused_refill(
+                    &wallet,
+                    &manifest,
+                    std::slice::from_ref(&coin),
+                    &HashMap::new(),
+                    &used,
+                    |_| {},
+                );
+                assert_held_by_coinjoin(&info, &coin);
+                assert_eq!(info.balance.total(), VALUE);
+                assert_eq!(
+                    ctx.degradation()
+                        .by_site
+                        .get(&LoadSite::UnresolvedUtxoAddress),
+                    None
+                );
+            }
+        }
+
+        /// Past a refused refill, a held coin goes to the account holding
+        /// its script, not to the account its row names (BIP44).
+        #[test]
+        fn a_held_coin_goes_by_its_script_not_its_stored_owner_past_a_refused_refill() {
+            let (wallet, manifest, _) = unrefillable_contact_fixture();
+            let coin = utxo(1, &coinjoin_address(&wallet, 50));
+            let side = HashMap::from([(coin.outpoint, owner(&wallet, &bip44()))]);
+            for used in [HashMap::new(), ownerless(&[&coin.address])] {
+                let (info, _) = load_past_refused_refill(
+                    &wallet,
+                    &manifest,
+                    std::slice::from_ref(&coin),
+                    &side,
+                    &used,
+                    |_| {},
+                );
+                assert_held_by_coinjoin(&info, &coin);
+                assert_eq!(info.balance.total(), VALUE);
+            }
+        }
+
+        /// Past a refused refill, a coin is matched by the script it pays,
+        /// not by the address stored with it (here a BIP44 one).
+        #[test]
+        fn a_held_coin_goes_by_its_script_not_its_stored_address_past_a_refused_refill() {
+            let (wallet, manifest, _) = unrefillable_contact_fixture();
+            let mut coin = utxo(1, &coinjoin_address(&wallet, 50));
+            coin.address = external_address(&wallet, &bip44(), 5);
+            let (info, _) = load_past_refused_refill(
+                &wallet,
+                &manifest,
+                std::slice::from_ref(&coin),
+                &HashMap::new(),
+                &HashMap::new(),
+                |_| {},
+            );
+            assert_held_by_coinjoin(&info, &coin);
+            assert_eq!(info.balance.total(), VALUE);
+        }
+
+        /// Past a refused refill, only the coin no account holds (another
+        /// wallet's address) takes the fallback and is counted unresolved;
+        /// the held CoinJoin coin stays in CoinJoin.
+        #[test]
+        fn only_a_coin_no_account_holds_falls_back_past_a_refused_refill() {
+            let (wallet, manifest, _) = unrefillable_contact_fixture();
+            let (foreign_wallet, _) = fixture(99);
+            let held = utxo(1, &coinjoin_address(&wallet, 50));
+            let foreign = utxo(2, &external_address(&foreign_wallet, &bip44(), 0));
+            for used in [
+                HashMap::new(),
+                ownerless(&[&held.address, &foreign.address]),
+            ] {
+                let (info, ctx) = load_past_refused_refill(
+                    &wallet,
+                    &manifest,
+                    &[held.clone(), foreign.clone()],
+                    &HashMap::new(),
+                    &used,
+                    |_| {},
+                );
+                assert_held_by_coinjoin(&info, &held);
+                assert_eq!(every_holder(&info, &foreign.outpoint), vec![bip44()]);
+                assert_eq!(info.balance.total(), 2 * VALUE);
+                assert_eq!(
+                    ctx.degradation()
+                        .by_site
+                        .get(&LoadSite::UnresolvedUtxoAddress),
+                    Some(&1)
+                );
+            }
+        }
+
+        /// Past a refused refill, a script two accounts hold (CoinJoin's,
+        /// also put in the contact pool) goes to the first of them in
+        /// `restore_utxos` order: CoinJoin before the contact account.
+        #[test]
+        fn a_script_two_accounts_hold_goes_to_the_first_past_a_refused_refill() {
+            let (wallet, manifest, _) = unrefillable_contact_fixture();
+            let coin = utxo(1, &coinjoin_address(&wallet, 50));
+            let (info, _) = load_past_refused_refill(
+                &wallet,
+                &manifest,
+                std::slice::from_ref(&coin),
+                &HashMap::new(),
+                &HashMap::new(),
+                |info| {
+                    let funds = info.accounts.funds_account(&cj()).unwrap();
+                    let pools = funds.managed_account_type().address_pools();
+                    let mut held = (pools.iter())
+                        .find_map(|p| p.address_info(&coin.address))
+                        .unwrap()
+                        .clone();
+                    let contact = info.accounts.dashpay_external_accounts.values_mut().next();
+                    let mut pools = contact
+                        .unwrap()
+                        .managed_account_type_mut()
+                        .address_pools_mut();
+                    let pool = &mut pools[0];
+                    let index = pool.highest_generated.map_or(0, |h| h + 1);
+                    held.index = index;
+                    pool.address_index.insert(held.address.clone(), index);
+                    pool.script_pubkey_index
+                        .insert(held.script_pubkey.clone(), index);
+                    pool.addresses.insert(index, held);
+                    pool.highest_generated = Some(index);
+                },
+            );
+            assert_held_by_coinjoin(&info, &coin);
+            assert_eq!(info.balance.total(), VALUE);
+        }
+
+        /// Past a refused refill, a copy of a held coin that another account
+        /// (BIP44) holds is removed when the coin is placed.
+        #[test]
+        fn a_copy_another_account_holds_is_removed_past_a_refused_refill() {
+            let (wallet, manifest, _) = unrefillable_contact_fixture();
+            let coin = utxo(1, &coinjoin_address(&wallet, 50));
+            let (info, _) = load_past_refused_refill(
+                &wallet,
+                &manifest,
+                std::slice::from_ref(&coin),
+                &HashMap::new(),
+                &HashMap::new(),
+                |info| {
+                    let funds = info.accounts.funds_account_mut(&bip44()).unwrap();
+                    funds.utxos.insert(coin.outpoint, coin.clone());
+                },
+            );
+            assert_held_by_coinjoin(&info, &coin);
+            assert_eq!(info.balance.total(), VALUE);
+        }
+
+        /// Every pool's highest generated index, the contact pools included.
+        fn pool_heights(info: &ManagedWalletInfo) -> Vec<Option<u32>> {
+            (info.accounts.all_funding_accounts().into_iter())
+                .chain(info.accounts.dashpay_external_accounts.values())
+                .flat_map(|a| a.managed_account_type().address_pools())
+                .map(|p| p.highest_generated)
+                .collect()
+        }
+
+        /// The held-coin placement grows no pool, refused or not: the coin on
+        /// CoinJoin's last generated address (99), which a refill would grow
+        /// CoinJoin past, is placed in CoinJoin and every pool keeps its
+        /// height.
+        #[test]
+        fn placing_held_coins_grows_no_pool() {
+            let (wallet, _, _) = unrefillable_contact_fixture();
+            let coin = utxo(1, &coinjoin_address(&wallet, 99));
+            for refused in [false, true] {
+                let mut info = match refused {
+                    true => with_unrefillable_contact_pool(&wallet),
+                    false => ManagedWalletInfo::from_wallet(&wallet, 1),
+                };
+                let heights = pool_heights(&info);
+                let left =
+                    place_held_coins(&mut info, &wallet, &[&coin], &LoadCtx::strict()).unwrap();
+                assert!(left.is_empty());
+                assert_held_by_coinjoin(&info, &coin);
+                assert_eq!(pool_heights(&info), heights, "refused: {refused}");
+            }
         }
 
         /// A funds pool whose refill both its owner's extension and the
