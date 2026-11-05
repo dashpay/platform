@@ -4152,10 +4152,10 @@ mod tests {
             );
         }
 
-        /// Under recovery the same refusal is counted once, though the
-        /// preflight runs before every restore, and the coin stays counted.
+        /// Under recovery the same refusal is counted, and the coin stays
+        /// counted.
         #[test]
-        fn an_unrefillable_contact_pool_is_counted_once_under_recovery() {
+        fn an_unrefillable_contact_pool_is_counted_under_recovery() {
             let (wallet, manifest, coin) = unrefillable_contact_fixture();
             let mut info = with_unrefillable_contact_pool(&wallet);
             let ctx = LoadCtx::recovery();
@@ -4173,6 +4173,43 @@ mod tests {
                 degradation
                     .by_site
                     .get(&LoadSite::RehydrationMaintainGapLimit),
+                Some(&1),
+                "{:?}",
+                degradation.by_site
+            );
+            assert_eq!(holders(&info, &coin.outpoint), vec![bip44()]);
+            assert_eq!(info.balance.total(), VALUE);
+        }
+
+        /// A funds pool whose refill both its owner's extension and the
+        /// preflight before the restore refuse (a gap limit past
+        /// [`MAX_REHYDRATION_GAP_REFILL`]) is counted once under recovery,
+        /// and its coin stays in its account.
+        #[test]
+        fn a_refill_refused_by_the_extension_and_the_preflight_is_counted_once() {
+            let (wallet, manifest) = fixture(41);
+            let coin = utxo(1, &external_address(&wallet, &bip44(), 3));
+            let side = HashMap::from([(coin.outpoint, owner(&wallet, &bip44()))]);
+            let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+            let funds = info.accounts.funds_account_mut(&bip44()).unwrap();
+            for pool in funds.managed_account_type_mut().address_pools_mut() {
+                if pool.pool_type == AddressPoolType::External {
+                    pool.gap_limit = MAX_REHYDRATION_GAP_REFILL + 1_000;
+                }
+            }
+            let ctx = LoadCtx::recovery();
+            load_into(
+                &mut info,
+                &manifest,
+                vec![coin.clone()],
+                &side,
+                &HashMap::new(),
+                &ctx,
+            )
+            .expect("recovery tolerates the refusal");
+            let degradation = ctx.degradation();
+            assert_eq!(
+                degradation.by_site.get(&LoadSite::RehydrationGapLimit),
                 Some(&1),
                 "{:?}",
                 degradation.by_site
