@@ -110,6 +110,7 @@ final class DashReleasedSchemaTests: XCTestCase {
     /// without one and keep their stored amount, and a row written after the
     /// migration survives a reopen and cascades with its transaction.
     @MainActor
+    // TODO(macOS-validation): Run the V4-to-V5 SwiftData migration test on macOS.
     func testShouldMigrateV4ToPerWalletAccountingRows() throws {
         let fixture = try XCTUnwrap(DashReleasedSchemaRegistry.fixtures.first {
             $0.version.versionIdentifier == Schema.Version(3, 0, 0)
@@ -133,7 +134,7 @@ final class DashReleasedSchemaTests: XCTestCase {
             let row = try XCTUnwrap(container.mainContext.fetch(FetchDescriptor<PersistentTransaction>())
                 .first { $0.txid == txid })
             XCTAssertTrue(row.walletAccounting.isEmpty, "V4 rows carry no per-wallet accounting yet")
-            XCTAssertEqual(row.netAmount(for: walletId), row.netAmount)
+            XCTAssertNil(row.netAmount(for: walletId), "Global V4 accounting is not wallet-scoped")
             let accounting = PersistentTransactionAccounting(
                 walletId: walletId, txid: txid, netAmount: -1_234,
                 direction: CoreDirectionCode.outgoing, fee: 34, transaction: nil

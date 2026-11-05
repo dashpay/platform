@@ -288,7 +288,7 @@ public final class PersistentTransaction {
     public static let noAccounting = "—"
 
     /// Signed DASH text for a duff amount; `magnitude` cannot trap on `Int64.min`.
-    static func format(duffs: Int64) -> String {
+    public static func format(duffs: Int64) -> String {
         String(format: "%@%.8f DASH", duffs >= 0 ? "+" : "-", Double(duffs.magnitude) / 100_000_000)
     }
 
