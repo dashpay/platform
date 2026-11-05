@@ -16,6 +16,8 @@ use platform_wallet::manager::history_replay::{
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use super::FFIPersister;
+use crate::core_wallet_types::OutPointFFI;
+use crate::dashpay_payment::{build_payment_persist_entries, DashpayPaymentPersistEntryFFI};
 
 /// Scope-only callback. The host must invoke it once synchronously and never retain it.
 pub type ReplayOperationFn = unsafe extern "C" fn(operation_context: *mut c_void) -> i32;
@@ -82,6 +84,10 @@ pub struct HistoryReplayEffectsFFI {
     pub removed_evidence_count: usize,
     pub claims: *const ReplayClaimEffectFFI,
     pub claims_count: usize,
+    pub removed_asset_locks: *const OutPointFFI,
+    pub removed_asset_locks_count: usize,
+    pub payments: *const DashpayPaymentPersistEntryFFI,
+    pub payments_count: usize,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -292,6 +298,14 @@ impl FFIPersister {
                     }
                 })
                 .collect();
+            let operations = effects.operation_effects(wallet);
+            let asset_locks: Vec<_> = operations
+                .asset_locks
+                .removed
+                .iter()
+                .map(OutPointFFI::from)
+                .collect();
+            let (payments, _payment_strings) = build_payment_persist_entries(&operations.payments);
             let ffi = HistoryReplayEffectsFFI {
                 removed_records: slice_pointer(&removed_records),
                 removed_records_count: removed_records.len(),
@@ -299,6 +313,10 @@ impl FFIPersister {
                 removed_evidence_count: removed_evidence.len(),
                 claims: slice_pointer(&claim_effects),
                 claims_count: claim_effects.len(),
+                removed_asset_locks: slice_pointer(&asset_locks),
+                removed_asset_locks_count: asset_locks.len(),
+                payments: slice_pointer(&payments),
+                payments_count: payments.len(),
             };
             let code = unsafe { apply(self.callbacks.context, wallet_id.as_ptr(), &ffi) };
             if code != 0 {
@@ -454,6 +472,8 @@ mod tests {
     use platform_wallet::changeset::{PersistenceCapabilities, PlatformWalletPersistence};
     use std::cell::{Cell, RefCell};
 
+    type AppliedClaim = (OutPoint, u8, Option<Txid>, Option<u32>);
+
     #[derive(Default)]
     struct Host {
         scopes: Cell<usize>,
@@ -466,6 +486,9 @@ mod tests {
         claim_frees: Cell<usize>,
         claim_mode: Cell<u8>,
         effects: Cell<usize>,
+        additional: RefCell<Vec<(Transaction, u32)>>,
+        account_xpub: Vec<u8>,
+        applied_claims: RefCell<Vec<AppliedClaim>>,
     }
 
     unsafe extern "C" fn scope(
@@ -477,6 +500,7 @@ mod tests {
         let host = &*ctx.cast::<Host>();
         host.scopes.set(host.scopes.get() + 1);
         host.inside.set(true);
+        let saved = host.additional.borrow().clone();
         if let Some(replacement) = host.replacement.borrow_mut().take() {
             *host.transaction.borrow_mut() = Some(replacement);
         }
@@ -497,6 +521,9 @@ mod tests {
             let _ = operation(operation_ctx);
         }
         host.inside.set(false);
+        if first != 0 || host.mode.get() == 4 {
+            *host.additional.borrow_mut() = saved;
+        }
         match host.mode.get() {
             1..=3 => 0,
             4 => 71,
@@ -516,28 +543,53 @@ mod tests {
         if host.fail_read.get() {
             return 73;
         }
-        let history = host.transaction.borrow().as_ref().map(|transaction| {
-            let bytes = dashcore::consensus::serialize(transaction).into_boxed_slice();
-            let len = bytes.len();
-            Box::into_raw(Box::new(RecordedTransactionRestoreFFI {
-                txid: transaction.txid().to_byte_array(),
-                tx_bytes: Box::into_raw(bytes).cast(),
-                tx_bytes_len: len,
-                context: 1,
-                block_height: 0,
-                block_hash: [0; 32],
-                block_timestamp: 0,
-                block_position: 0,
-                has_block_position: false,
-                net_amount: 0,
-                direction: 0,
-            }))
+        let transactions: Vec<_> = host
+            .transaction
+            .borrow()
+            .iter()
+            .cloned()
+            .map(|tx| (tx, 1))
+            .chain(host.additional.borrow().iter().cloned())
+            .collect();
+        let history: Vec<_> = transactions
+            .iter()
+            .map(|(transaction, context)| {
+                let bytes = dashcore::consensus::serialize(transaction).into_boxed_slice();
+                let len = bytes.len();
+                RecordedTransactionRestoreFFI {
+                    txid: transaction.txid().to_byte_array(),
+                    tx_bytes: Box::into_raw(bytes).cast(),
+                    tx_bytes_len: len,
+                    context: *context,
+                    block_height: if *context >= 2 { 42 } else { 0 },
+                    block_hash: [1; 32],
+                    block_timestamp: 0,
+                    block_position: 0,
+                    has_block_position: false,
+                    net_amount: 0,
+                    direction: 0,
+                }
+            })
+            .collect();
+        let history_len = history.len();
+        let history = Box::into_raw(history.into_boxed_slice()).cast();
+        let account = (!host.account_xpub.is_empty()).then(|| {
+            let kind = key_wallet::account::AccountType::Standard {
+                index: 0,
+                standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+            };
+            Box::into_raw(Box::new(super::super::build_account_spec_ffi(
+                &kind,
+                &host.account_xpub,
+            )))
         });
         *rows = Box::into_raw(Box::new(WalletRestoreEntryFFI {
             wallet_id: [41; 32],
+            accounts: account.unwrap_or(std::ptr::null_mut()),
+            accounts_count: usize::from(account.is_some()),
             network: FFINetwork::Testnet,
-            recorded_transactions: history.unwrap_or(std::ptr::null_mut()),
-            recorded_transactions_count: usize::from(history.is_some()),
+            recorded_transactions: history,
+            recorded_transactions_count: history_len,
             ..Default::default()
         }));
         *count = 1;
@@ -546,12 +598,20 @@ mod tests {
     unsafe extern "C" fn free(_: *mut c_void, rows: *const WalletRestoreEntryFFI, _: usize) {
         if !rows.is_null() {
             let entry = Box::from_raw(rows.cast_mut());
+            if !entry.accounts.is_null() {
+                drop(Box::from_raw(entry.accounts.cast_mut()));
+            }
             if !entry.recorded_transactions.is_null() {
-                let record = Box::from_raw(entry.recorded_transactions.cast_mut());
-                drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
-                    record.tx_bytes,
-                    record.tx_bytes_len,
-                )));
+                let records = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                    entry.recorded_transactions.cast_mut(),
+                    entry.recorded_transactions_count,
+                ));
+                for record in &records {
+                    drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                        record.tx_bytes,
+                        record.tx_bytes_len,
+                    )));
+                }
             }
         }
     }
@@ -577,11 +637,95 @@ mod tests {
     unsafe extern "C" fn apply(
         ctx: *mut c_void,
         _: *const u8,
-        _: *const HistoryReplayEffectsFFI,
+        effects: *const HistoryReplayEffectsFFI,
     ) -> i32 {
         let host = &*ctx.cast::<Host>();
+        assert!(host.inside.get());
         host.effects.set(host.effects.get() + 1);
-        0
+        let effects = &*effects;
+        if effects.removed_records_count != 0 {
+            let removed =
+                std::slice::from_raw_parts(effects.removed_records, effects.removed_records_count);
+            host.additional
+                .borrow_mut()
+                .retain(|(tx, _)| !removed.contains(&tx.txid().to_byte_array()));
+        }
+        if effects.claims_count != 0 {
+            let claims = std::slice::from_raw_parts(effects.claims, effects.claims_count);
+            *host.applied_claims.borrow_mut() = claims
+                .iter()
+                .map(|claim| {
+                    (
+                        OutPoint::new(Txid::from_byte_array(claim.txid), claim.vout),
+                        claim.action,
+                        claim
+                            .has_claimant
+                            .then(|| Txid::from_byte_array(claim.claimant)),
+                        claim.has_mined_height.then_some(claim.mined_height),
+                    )
+                })
+                .collect();
+        }
+        if host.mode.get() == 6 {
+            81
+        } else {
+            0
+        }
+    }
+
+    fn host_with_funds_account() -> Host {
+        let wallet = key_wallet::Wallet::from_seed_bytes(
+            [0x51; 64],
+            dashcore::Network::Testnet,
+            key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        Host {
+            account_xpub: bincode::encode_to_vec(
+                wallet.get_bip44_account(0).unwrap().account_xpub,
+                bincode::config::standard(),
+            )
+            .unwrap(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn should_apply_exact_owner_claims_and_reread_inside_the_host_transaction() {
+        let winner = transaction(1);
+        let loser = transaction(2);
+        let host = host_with_funds_account();
+        *host.additional.borrow_mut() = vec![(winner.clone(), 3), (loser, 0)];
+        let loaded = persister(&host)
+            .load_with_replay(&ReplayEvidence::default())
+            .unwrap();
+        assert_eq!(loaded.state.wallets.len(), 1);
+        assert_eq!(host.effects.get(), 1);
+        assert_eq!(*host.additional.borrow(), vec![(winner.clone(), 3)]);
+        assert_eq!(
+            *host.applied_claims.borrow(),
+            vec![(
+                winner.input[0].previous_output,
+                2,
+                Some(winner.txid()),
+                Some(42)
+            )]
+        );
+        assert!(host.scoped_reads.get() >= 2);
+    }
+
+    #[test]
+    fn should_rollback_host_row_deletion_when_effect_application_fails() {
+        let original = vec![(transaction(1), 3), (transaction(2), 0)];
+        let host = host_with_funds_account();
+        *host.additional.borrow_mut() = original.clone();
+        host.mode.set(6);
+        let error = persister(&host)
+            .load_with_replay(&ReplayEvidence::default())
+            .unwrap_err();
+        assert!(format!("{error:?}").contains("81"), "{error:?}");
+        assert_eq!(host.effects.get(), 1);
+        assert_eq!(*host.additional.borrow(), original);
     }
 
     fn persister(host: &Host) -> FFIPersister {

@@ -10,9 +10,6 @@
 //! the surrounding fields on the serde encoder — mirroring `IdentityKeyWire`
 //! in `identity_keys.rs`.
 
-use dashcore::Txid;
-use std::collections::HashSet;
-
 use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 
@@ -247,30 +244,6 @@ pub fn apply(
         }
     }
     Ok(())
-}
-
-/// Apply wallet-owned replay retirement to this storage domain.
-pub(crate) fn remove_swept(
-    tx: &Transaction<'_>,
-    wallet_id: &WalletId,
-    txids: &HashSet<Txid>,
-) -> Result<(), WalletStorageError> {
-    let mut changes = AssetLockChangeSet::default();
-    {
-        let mut stmt = tx.prepare_cached(
-            "SELECT length(outpoint), outpoint FROM asset_locks WHERE wallet_id = ?1 AND status != 'consumed'",
-        )?;
-        let mut rows = stmt.query(params![wallet_id.as_slice()])?;
-        while let Some(row) = rows.next()? {
-            blob::check_size(row.get(0)?)?;
-            let bytes: Vec<u8> = row.get(1)?;
-            let outpoint = blob::decode_outpoint(&bytes)?;
-            if txids.contains(&outpoint.txid) {
-                changes.removed.insert(outpoint);
-            }
-        }
-    }
-    apply(tx, wallet_id, &changes)
 }
 
 /// Test-only drift guard for the `asset_locks.status` TEXT-column

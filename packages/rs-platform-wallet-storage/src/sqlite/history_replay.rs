@@ -9,7 +9,7 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use rusqlite::{params, Connection, Transaction};
 use std::collections::BTreeMap;
 
-use crate::sqlite::schema::{asset_locks, blob, dashpay};
+use crate::sqlite::schema::blob;
 use crate::WalletStorageError;
 
 /// Decode durable claim provenance from the same snapshot as wallet history.
@@ -100,9 +100,6 @@ pub(crate) fn apply_effects(
             key,
         )?;
     }
-    let removed = effects.removed_evidence.iter().copied().collect();
-    asset_locks::remove_swept(tx, wallet_id, &removed)?;
-    dashpay::settle_swept_payments(tx, wallet_id, &removed)?;
     // Row deletion can clear claimant links; exact owner effects restore them last.
     for (outpoint, effect) in &effects.claims {
         let key = blob::encode_outpoint(outpoint)?;

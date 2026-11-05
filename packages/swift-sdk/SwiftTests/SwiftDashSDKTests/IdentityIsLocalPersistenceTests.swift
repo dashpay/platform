@@ -255,10 +255,8 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
 
     // MARK: Startup heal
 
-    /// `loadWalletList()` promotes wallet-linked rows still carrying
-    /// the constant-`false` of the pre-fix persister; unlinked rows
-    /// (manual adds) are untouched in both directions.
-    func testLoadWalletListHealsWalletLinkedRows() throws {
+    /// Discovery is read-only; the atomic load owns the wallet-scoped metadata repair.
+    func testAtomicReplayHealsWalletLinkedRowsAfterReadOnlyDiscovery() throws {
         try insertWalletRow()
         let context = ModelContext(container)
         let wallet = try XCTUnwrap(
@@ -280,13 +278,15 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         try context.save()
 
         // The fixture wallet has no restorable accounts, so the
-        // returned list is empty — the heal runs regardless.
+        // returned list is empty; discovery itself must remain read-only.
         let result = handler.loadWalletList()
         XCTAssertNil(result.entries)
         XCTAssertFalse(result.errored)
 
+        XCTAssertFalse(try XCTUnwrap(try fetchIdentity(ownIdentityId)).isLocal)
+        XCTAssertEqual(handler.replayWallet(walletId: walletId) { 0 }, 0)
         let healed = try XCTUnwrap(try fetchIdentity(ownIdentityId))
-        XCTAssertTrue(healed.isLocal, "wallet-linked rows heal to local")
+        XCTAssertTrue(healed.isLocal, "wallet-linked rows heal inside the committed replay")
 
         let manual = try XCTUnwrap(try fetchIdentity(observedIdentityId))
         XCTAssertTrue(manual.isLocal, "manual adds are untouched by the heal")

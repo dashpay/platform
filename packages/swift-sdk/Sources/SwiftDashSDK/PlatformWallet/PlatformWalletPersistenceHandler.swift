@@ -18,6 +18,11 @@ protocol ModelFetching: Sendable {
     ) throws -> [T]
 }
 
+private enum HistoryReplayPersistenceError: Error {
+    case operationFailed(Int32)
+    case invalidEffects
+}
+
 private enum AssetLockPersistenceError: Error {
     case malformedRecord
     case duplicateOperationId
@@ -172,6 +177,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// entry points — both the FFI callback shims and the
     /// app-facing accessors — funnel through `onQueue` so the
     /// context is only ever touched on this queue.
+    private let serialQueueKey = DispatchSpecificKey<UInt8>()
+    private var replayWalletId: Data?
     private let serialQueue = DispatchQueue(
         label: "org.dash.platform-wallet.persistence",
         qos: .userInitiated
@@ -351,6 +358,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         self.backgroundContext.autosaveEnabled = false
         self.trackedMasternodeContext = ModelContext(modelContainer)
         self.trackedMasternodeContext.autosaveEnabled = false
+        self.serialQueue.setSpecific(key: serialQueueKey, value: 1)
     }
 
     /// Synchronously run `body` on `serialQueue`.
@@ -362,11 +370,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// turns the queue into the handler's de-facto actor: only
     /// one thread runs SwiftData operations at a time.
     ///
-    /// Do not call `onQueue` from another method that already
-    /// runs on the queue; `DispatchQueue.sync` will deadlock on
-    /// recursive entry. The internal helpers in this file all
-    /// assume they are already on the queue and call
-    /// `backgroundContext` directly.
+    /// A synchronous Rust replay thunk re-enters through callbacks on this queue.
+    /// Queue-specific dispatch keeps those nested calls inside the same transaction.
     /// Every caller arrives from a Rust-owned tokio worker thread, and such a
     /// thread has no autorelease pool: nothing on it ever drains, because the
     /// drain is normally done by the run loop or by GCD's own worker wrapper,
@@ -384,7 +389,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// The pool goes inside the `sync` so it wraps exactly one unit of work
     /// and is drained before the Rust caller is resumed.
     private func onQueue<T>(_ body: () throws -> T) rethrows -> T {
-        try serialQueue.sync {
+        if DispatchQueue.getSpecific(key: serialQueueKey) != nil {
+            return try body()
+        }
+        return try serialQueue.sync {
             try autoreleasepool { try body() }
         }
     }
@@ -3311,6 +3319,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         extensionCallbacks.on_persist_core_instant_lock_fn = persistCoreInstantLockCallback
         extensionCallbacks.on_load_core_instant_lock_fn = loadCoreInstantLockCallback
         extensionCallbacks.on_load_core_instant_lock_free_fn = freeCoreInstantLockCallback
+        extensionCallbacks.on_replay_wallet_fn = replayWalletCallback
+        extensionCallbacks.on_load_replay_claims_fn = loadReplayClaimsCallback
+        extensionCallbacks.on_load_replay_claims_free_fn = freeReplayClaimsCallback
+        extensionCallbacks.on_apply_replay_effects_fn = applyReplayEffectsCallback
         return extensionCallbacks
     }
 
@@ -5078,6 +5090,237 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             )
         }
         return (written, skipped, failed)
+    }
+
+    /// The Rust thunk reads, decides, applies and rereads synchronously in this scope.
+    // TODO(macOS-validation): run AtomicHistoryReplayTests against the generated FFI header and SwiftData store.
+    func replayWallet(walletId: Data, operation: () -> Int32) -> Int32 {
+        onQueue {
+            guard !inChangeset, replayWalletId == nil, !backgroundContext.hasChanges else {
+                return 1
+            }
+            replayWalletId = walletId
+            inChangeset = true
+            roundIndex = nil
+            defer {
+                roundIndex = nil
+                inChangeset = false
+                replayWalletId = nil
+            }
+            do {
+                try backgroundContext.transaction {
+                    try healIdentityIsLocalFlags(walletId: walletId)
+                    let result = operation()
+                    guard result == 0 else {
+                        throw HistoryReplayPersistenceError.operationFailed(result)
+                    }
+                }
+                return 0
+            } catch {
+                backgroundContext.rollback()
+                return 1
+            }
+        }
+    }
+
+    /// Raw material only; Rust validates ownership and chooses claim provenance.
+    func loadReplayClaims(walletId: Data) throws -> [ReplayClaimRestoreFFI] {
+        try onQueue {
+            guard replayWalletId == walletId else { throw HistoryReplayPersistenceError.invalidEffects }
+            let empty = Data()
+            let coins = try backgroundContext.fetch(FetchDescriptor<PersistentTxo>(
+                predicate: #Predicate { $0.walletId == walletId || $0.walletId == empty }
+            )).filter { Self.resolvedWalletId(of: $0) == walletId }
+            let pending = try backgroundContext.fetch(FetchDescriptor<PersistentPendingInput>(
+                predicate: #Predicate { $0.walletId == walletId }
+            ))
+            // Validate before allocating any nested buffers, so failure cannot leak them.
+            guard coins.allSatisfy({ $0.outpoint.count == 36
+                && $0.outpoint == PersistentTxo.makeOutpoint(txid: Data($0.outpoint.prefix(32)), vout: $0.vout)
+                && ($0.supersededByTxid ?? $0.spendingTransaction?.txid).map { $0.count == 32 } != false }),
+                pending.allSatisfy({ $0.outpoint.count == 36 && $0.spendingTxid.count == 32 })
+            else { throw HistoryReplayPersistenceError.invalidEffects }
+            let pendingByOutpoint = Dictionary(grouping: pending, by: \.outpoint)
+            var result: [ReplayClaimRestoreFFI] = []
+            for coin in coins {
+                var row = ReplayClaimRestoreFFI()
+                copyBytes(Data(coin.outpoint.prefix(32)), into: &row.txid)
+                row.vout = coin.vout
+                row.has_output = true
+                row.value = coin.amount
+                if !coin.scriptPubKey.isEmpty {
+                    let script = UnsafeMutablePointer<UInt8>.allocate(capacity: coin.scriptPubKey.count)
+                    coin.scriptPubKey.copyBytes(to: script, count: coin.scriptPubKey.count)
+                    row.script = UnsafePointer(script)
+                    row.script_len = UInt(coin.scriptPubKey.count)
+                }
+                let claimant = coin.supersededByTxid ?? coin.spendingTransaction?.txid
+                // A matching sidecar carries the lifetime absent from the TXO schema.
+                let hasSidecar = pendingByOutpoint[coin.outpoint]?.contains {
+                    $0.spendingTxid == claimant
+                } ?? false
+                row.is_held = coin.isSpent && !hasSidecar
+                if let claimant {
+                    row.has_claimant = true
+                    copyBytes(claimant, into: &row.claimant)
+                }
+                result.append(row)
+            }
+            for claim in pending {
+                var row = ReplayClaimRestoreFFI()
+                copyBytes(Data(claim.outpoint.prefix(32)), into: &row.txid)
+                row.vout = claim.outpoint.suffix(4).enumerated().reduce(UInt32(0)) {
+                    $0 | (UInt32($1.element) << (8 * $1.offset))
+                }
+                row.is_held = true
+                row.has_claimant = true
+                copyBytes(claim.spendingTxid, into: &row.claimant)
+                row.has_mined_height = claim.winnerMinedHeight != nil
+                row.mined_height = claim.winnerMinedHeight ?? 0
+                result.append(row)
+            }
+            return result
+        }
+    }
+
+    /// Apply the owner's exact verdicts. No save: the enclosing replay owns commit/rollback.
+    func applyReplayEffects(walletId: Data, effects: HistoryReplayEffectsFFI) throws {
+        try onQueue {
+            guard replayWalletId == walletId, inChangeset else {
+                throw HistoryReplayPersistenceError.invalidEffects
+            }
+            let records = try replayRows(effects.removed_records, count: effects.removed_records_count)
+                .map { dataFromTuple32($0) }
+            let evidence = try replayRows(effects.removed_evidence, count: effects.removed_evidence_count)
+                .map { dataFromTuple32($0) }
+            let claims = try replayRows(effects.claims, count: effects.claims_count)
+            let locks = try replayRows(effects.removed_asset_locks, count: effects.removed_asset_locks_count)
+            let payments = try replayRows(effects.payments, count: effects.payments_count)
+            guard claims.allSatisfy({ $0.action <= 2 }) else {
+                throw HistoryReplayPersistenceError.invalidEffects
+            }
+            for txid in records {
+                let matches = try backgroundContext.fetch(FetchDescriptor<PersistentTransaction>(
+                    predicate: #Predicate { $0.txid == txid }
+                ))
+                for transaction in matches {
+                    // History rows are shared: detach only this wallet's membership.
+                    for output in transaction.outputs.filter({ Self.resolvedWalletId(of: $0) == walletId }) {
+                        output.transaction = nil
+                        backgroundContext.delete(output)
+                    }
+                    for input in transaction.inputs.filter({ Self.resolvedWalletId(of: $0) == walletId }) {
+                        input.spendingTransaction = nil
+                    }
+                    for input in transaction.pendingInputs.filter({ $0.walletId == walletId }) {
+                        input.spendingTransaction = nil
+                        backgroundContext.delete(input)
+                    }
+                    for accounting in transaction.walletAccounting.filter({ $0.walletId == walletId }) {
+                        accounting.transaction = nil
+                        backgroundContext.delete(accounting)
+                    }
+                    transaction.involvedAccounts.removeAll { $0.wallet.walletId == walletId }
+                    if transaction.outputs.isEmpty && transaction.inputs.isEmpty
+                        && transaction.pendingInputs.isEmpty && transaction.walletAccounting.isEmpty
+                        && transaction.involvedAccounts.isEmpty {
+                        backgroundContext.delete(transaction)
+                    }
+                }
+            }
+            for txid in evidence {
+                for row in try backgroundContext.fetch(coreInstantLockDescriptor(walletId: walletId, txid: txid)) {
+                    backgroundContext.delete(row)
+                }
+            }
+            if !evidence.isEmpty {
+                let removed = Set(evidence)
+                let empty = Data()
+                let coins = try backgroundContext.fetch(FetchDescriptor<PersistentTxo>(
+                    predicate: #Predicate { $0.walletId == walletId || $0.walletId == empty }
+                ))
+                for coin in coins where Self.resolvedWalletId(of: coin) == walletId
+                    && removed.contains(Data(coin.outpoint.prefix(32))) {
+                    backgroundContext.delete(coin)
+                }
+                let pending = try backgroundContext.fetch(FetchDescriptor<PersistentPendingInput>(
+                    predicate: #Predicate { $0.walletId == walletId }
+                ))
+                for row in pending where removed.contains(Data(row.outpoint.prefix(32))) {
+                    backgroundContext.delete(row)
+                }
+            }
+            for effect in claims {
+                let outpoint = PersistentTxo.makeOutpoint(txid: dataFromTuple32(effect.txid), vout: effect.vout)
+                let coins = try backgroundContext.fetch(FetchDescriptor<PersistentTxo>(
+                    predicate: #Predicate { $0.outpoint == outpoint }
+                )).filter { Self.resolvedWalletId(of: $0) == walletId }
+                let pending = try backgroundContext.fetch(FetchDescriptor<PersistentPendingInput>(
+                    predicate: #Predicate { $0.walletId == walletId && $0.outpoint == outpoint }
+                ))
+                for row in pending { backgroundContext.delete(row) }
+                switch effect.action {
+                case 0:
+                    for coin in coins { backgroundContext.delete(coin) }
+                case 1:
+                    for coin in coins {
+                        coin.isSpent = false
+                        coin.supersededByTxid = nil
+                        coin.spendingTransaction = nil
+                    }
+                case 2:
+                    let claimant = effect.has_claimant ? dataFromTuple32(effect.claimant) : nil
+                    for coin in coins {
+                        coin.isSpent = true
+                        coin.supersededByTxid = claimant
+                        coin.spendingTransaction = nil
+                    }
+                    // Keep the exact lifetime separately: TXOs have no winner-height column.
+                    if let claimant, coins.isEmpty || effect.has_mined_height {
+                        let row = PersistentPendingInput(outpoint: outpoint, inputIndex: 0,
+                            spendingTxid: claimant, spendingTransaction: nil, walletId: walletId)
+                        row.isSweptTombstone = true
+                        row.winnerMinedHeight = effect.has_mined_height ? effect.mined_height : nil
+                        backgroundContext.insert(row)
+                    } else if coins.isEmpty || (claimant == nil && effect.has_mined_height) {
+                        // This schema cannot represent anonymous placeholder/stamp metadata.
+                        throw HistoryReplayPersistenceError.invalidEffects
+                    }
+                default:
+                    throw HistoryReplayPersistenceError.invalidEffects
+                }
+            }
+            for outpoint in locks {
+                let bytes = PersistentTxo.makeOutpoint(txid: dataFromTuple32(outpoint.txid), vout: outpoint.vout)
+                let encoded = PersistentAssetLock.encodeOutPoint(rawBytes: bytes)
+                for row in try backgroundContext.fetch(FetchDescriptor<PersistentAssetLock>(
+                    predicate: #Predicate { $0.walletId == walletId && $0.outPointHex == encoded }
+                )) { backgroundContext.delete(row) }
+            }
+            for entry in payments {
+                let ownerId = dataFromTuple32(entry.owner_identity_id)
+                guard let txidPointer = entry.txid,
+                    let direction = DashPayPaymentDirection(rawValue: entry.direction_raw),
+                    let status = DashPayPaymentStatus(rawValue: entry.status_raw),
+                    let owner = try backgroundContext.fetch(FetchDescriptor<PersistentIdentity>(
+                        predicate: #Predicate { $0.identityId == ownerId }
+                    )).first, owner.wallet?.walletId == walletId
+                else { throw HistoryReplayPersistenceError.invalidEffects }
+                let txid = String(cString: txidPointer)
+                let networkRaw = owner.networkRaw
+                guard let row = try backgroundContext.fetch(FetchDescriptor<PersistentDashpayPayment>(
+                    predicate: #Predicate {
+                        $0.networkRaw == networkRaw && $0.ownerIdentityId == ownerId && $0.txid == txid
+                    }
+                )).first else { throw HistoryReplayPersistenceError.invalidEffects }
+                row.counterpartyIdentityId = dataFromTuple32(entry.counterparty_id)
+                row.amountDuffs = entry.amount_duffs
+                row.directionRaw = direction.rawValue
+                row.statusRaw = status.rawValue
+                row.memo = entry.memo.map { String(cString: $0) }
+                row.lastUpdated = Date()
+            }
+        }
     }
 
     // MARK: - Raw InstantLock storage
@@ -7078,75 +7321,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// wallet_id, accounts)`; accounts come directly from the spec
     /// array, wallet id from the top-level struct.
     ///
-    /// One-shot upgrade heal: promote `isLocal` on wallet-linked rows
-    /// still carrying `false` — the persister used to write a
-    /// constant `false`, so a wallet's own identities (which are
-    /// always local) were mis-marked on stores from that era.
-    /// Promote-only and idempotent; a `true` on an unlinked row
-    /// (manual add) is never touched. Runs here because load is the
-    /// one guaranteed per-launch pass over the store, outside any
-    /// changeset round.
-    private func healIdentityIsLocalFlags() {
-        guard !inChangeset else { return }
-        guard let rows = try? backgroundContext.fetch(
-            FetchDescriptor<PersistentIdentity>()
-        ) else { return }
-        var healed = 0
-        for row in rows where row.wallet != nil && !row.isLocal {
+    /// Stage wallet-linked identity metadata only inside the atomic replay transaction.
+    private func healIdentityIsLocalFlags(walletId: Data) throws {
+        let rows = try backgroundContext.fetch(FetchDescriptor<PersistentIdentity>())
+        for row in rows where row.wallet?.walletId == walletId && !row.isLocal {
+            guard network == nil || row.networkRaw == network?.rawValue else { continue }
             row.isLocal = true
-            healed += 1
         }
-        guard healed > 0 else { return }
-        do {
-            try backgroundContext.save()
-            SDKLogger.event(
-                "persistence_identity_flags_healed",
-                category: .persistence,
-                fields: ["row_count": .integer(Int64(healed))]
-            )
-        } catch {
-            // Non-fatal: the next launch retries. Roll back so the
-            // failed heal can't bleed into the restore fetches below.
-            backgroundContext.rollback()
-            SDKLogger.event(
-                "persistence_identity_flags_heal_failed",
-                category: .persistence,
-                severity: .error,
-                fields: ["row_count": .integer(Int64(healed))],
-                error: error
-            )
-        }
-    }
-
-    /// Wire-order funding txids of every persisted asset lock whose
-    /// status is `InstantSendLocked` or beyond — the locks whose
-    /// funding TXOs are provably gone.
-    ///
-    /// Not scoped to a wallet: InstantSend / chain finality is a
-    /// property of the spending transaction, and that transaction can
-    /// consume inputs tracked by more than one wallet. Scoping would
-    /// leave a sibling wallet's input of the same lock stale.
-    ///
-    /// Throws rather than returning an empty set on a fetch failure. An
-    /// empty set is a positive claim — "no lock has finalized" — and the
-    /// caller acts on it by restoring every `isSpent == false` row,
-    /// exactly the phantom UTXOs this guard exists to withhold. A read
-    /// fault must reject the snapshot instead.
-    private func finalizedAssetLockFundingTxids() throws -> Set<Data> {
-        let finalized = Self.assetLockStatusInstantSendLocked
-        let descriptor = FetchDescriptor<PersistentAssetLock>(
-            predicate: #Predicate { $0.statusRaw >= finalized }
-        )
-        let rows = try modelFetcher.fetch(descriptor, in: backgroundContext)
-        var txids = Set<Data>()
-        txids.reserveCapacity(rows.count)
-        for row in rows {
-            guard let txid = Self.assetLockFundingTxid(outPointHex: row.outPointHex) else {
-                continue
-            }
-            txids.insert(txid)
-        }
-        return txids
     }
 
     /// Returns `(nil, 0)` if nothing is restorable.
@@ -7159,7 +7340,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             ]
         )
         return onQueue {
-        healIdentityIsLocalFlags()
         // Scope the fetch to the handler's bound network so a
         // per-network manager only sees its own wallets. If
         // `network` is `nil` (legacy callers that haven't threaded
@@ -7195,7 +7375,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             return (nil, 0, true)
         }
         let restorable = wallets.filter { wallet in
-            wallet.accounts.contains { ($0.accountExtendedPubKeyBytes?.isEmpty == false) }
+            (replayWalletId == nil || wallet.walletId == replayWalletId)
+                && wallet.accounts.contains { ($0.accountExtendedPubKeyBytes?.isEmpty == false) }
         }
         if restorable.isEmpty {
             SDKLogger.event(
@@ -7226,8 +7407,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             )
             unspentDescriptor.relationshipKeyPathsForPrefetching = [
                 \.account,
-                // Read once per row by the asset-lock spend guard below.
-                \.spendingTransaction,
                 // Read once per row for the txid and the creating
                 // transaction's context in `buildUtxoRestoreBuffer`.
                 \.transaction,
@@ -7251,84 +7430,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 )
                 return (nil, 0, true)
             }
-            // Finalized-asset-lock guard, and the one-shot heal for
-            // rows a missed callback left behind (mirror of Kotlin
-            // `buildUtxoRestoreData`). An asset-lock tx burns its value
-            // into the special-tx payload and often has no wallet-owned
-            // standard output, so SPV block matching can miss it: the
-            // spender's transaction row never leaves mempool context and
-            // the in-block flip in `resolveInputOutpoint` never runs,
-            // leaving its funding TXOs at `isSpent == false` — which this
-            // fetch hands straight back to Rust as spendable, on every
-            // launch. The lock's own status is the finality signal that
-            // did arrive; from `InstantSendLocked` on, the output is gone.
-            //
-            // The callback-time reconcile in `persistAssetLocks` cannot
-            // cover these: `Consumed` is terminal and never re-upserts, so
-            // a wallet whose lock finalized before that reconcile existed
-            // has no future callback to repair it. Load is the one
-            // guaranteed per-launch pass, so it repairs them here.
-            //
-            // Exclusion does not depend on the repair being durable: rows
-            // are dropped from the restore set first, and the heal is
-            // saved opportunistically afterwards.
-            let finalizedLockTxids: Set<Data>
-            do {
-                finalizedLockTxids = try finalizedAssetLockFundingTxids()
-            } catch {
-                // Same contract as the unspent fetch above: bail with
-                // `errored = true` rather than degrade. Treating an
-                // unreadable lock table as "no lock has finalized"
-                // rehydrates the phantom inputs the guard exists to
-                // withhold — the exact inverse of its safety claim.
-                NSLog(
-                    "[persistor-load:swift] PersistentAssetLock finalized fetch failed: %@",
-                    String(describing: error)
-                )
-                return (nil, 0, true)
-            }
-            var liveUnspent = unspent
-            if !finalizedLockTxids.isEmpty {
-                var kept: [PersistentTxo] = []
-                kept.reserveCapacity(unspent.count)
-                var healed = 0
-                for row in unspent {
-                    if let spendingTxid = row.spendingTransaction?.txid,
-                       finalizedLockTxids.contains(spendingTxid) {
-                        if !row.isSpent {
-                            row.isSpent = true
-                            row.lastUpdated = Date()
-                            healed += 1
-                        }
-                        continue
-                    }
-                    kept.append(row)
-                }
-                liveUnspent = kept
-                // Skip the write mid-round: saving inside a changeset
-                // bracket would commit the round's staged writes early.
-                // The exclusion above already holds for this launch.
-                if healed > 0 && !self.inChangeset {
-                    do {
-                        try backgroundContext.save()
-                        NSLog(
-                            "[persistor-load:swift] healed %d asset-lock-consumed UTXO row(s)",
-                            healed
-                        )
-                    } catch {
-                        // Non-fatal: the next launch retries. Roll back so
-                        // the failed heal can't bleed into the restore
-                        // marshalling below.
-                        backgroundContext.rollback()
-                        NSLog(
-                            "[persistor-load:swift] asset-lock UTXO heal save failed: %@",
-                            String(describing: error)
-                        )
-                    }
-                }
-            }
+            // This is raw storage input; Rust verifies proofs and decides which coins remain held.
             unspentBuckets.reserveCapacity(restorable.count)
-            for row in liveUnspent {
+            for row in unspent {
                 guard row.account != nil else { continue }
                 let key: Data
                 if !row.walletId.isEmpty {
@@ -12418,4 +12522,70 @@ private func freeCoreInstantLockCallback(
     context: UnsafeMutableRawPointer?, bytes: UnsafePointer<UInt8>?, len: UInt
 ) {
     if let bytes { UnsafeMutablePointer(mutating: bytes).deallocate() }
+}
+
+private func replayRows<T>(_ pointer: UnsafePointer<T>?, count: UInt) throws -> UnsafeBufferPointer<T> {
+    guard let length = Int(exactly: count), length == 0 || pointer != nil else {
+        throw HistoryReplayPersistenceError.invalidEffects
+    }
+    return UnsafeBufferPointer(start: pointer, count: length)
+}
+
+private func replayWalletCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    operation: (@convention(c) (UnsafeMutableRawPointer?) -> Int32)?,
+    operationContext: UnsafeMutableRawPointer?
+) -> Int32 {
+    guard let context, let walletId, let operation else { return 1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    return handler.replayWallet(walletId: Data(bytes: walletId, count: 32)) {
+        operation(operationContext)
+    }
+}
+
+private func loadReplayClaimsCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    outRows: UnsafeMutablePointer<UnsafePointer<ReplayClaimRestoreFFI>?>?,
+    outCount: UnsafeMutablePointer<UInt>?
+) -> Int32 {
+    guard let context, let walletId, let outRows, let outCount else { return 1 }
+    outRows.pointee = nil
+    outCount.pointee = 0
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        let rows = try handler.loadReplayClaims(walletId: Data(bytes: walletId, count: 32))
+        if !rows.isEmpty {
+            let buffer = UnsafeMutablePointer<ReplayClaimRestoreFFI>.allocate(capacity: rows.count)
+            rows.withUnsafeBufferPointer { source in
+                if let base = source.baseAddress { buffer.initialize(from: base, count: source.count) }
+            }
+            outRows.pointee = UnsafePointer(buffer)
+            outCount.pointee = UInt(rows.count)
+        }
+        return 0
+    } catch { return 1 }
+}
+
+private func freeReplayClaimsCallback(
+    context: UnsafeMutableRawPointer?, rows: UnsafePointer<ReplayClaimRestoreFFI>?, count: UInt
+) {
+    guard let rows else { return }
+    for row in UnsafeBufferPointer(start: rows, count: Int(count)) {
+        if let script = row.script { UnsafeMutablePointer(mutating: script).deallocate() }
+    }
+    let buffer = UnsafeMutablePointer(mutating: rows)
+    buffer.deinitialize(count: Int(count))
+    buffer.deallocate()
+}
+
+private func applyReplayEffectsCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    effects: UnsafePointer<HistoryReplayEffectsFFI>?
+) -> Int32 {
+    guard let context, let walletId, let effects else { return 1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        try handler.applyReplayEffects(walletId: Data(bytes: walletId, count: 32), effects: effects.pointee)
+        return 0
+    } catch { return 1 }
 }

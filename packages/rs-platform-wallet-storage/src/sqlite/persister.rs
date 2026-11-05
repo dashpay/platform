@@ -1810,7 +1810,12 @@ fn load_one_wallet(
         || !effects.removed_evidence.is_empty()
         || !effects.claims.is_empty()
     {
+        let operations = effects.operation_effects(&state);
         history_replay::apply_effects(&tx, &wallet_id, &effects).map_err(PersistenceError::from)?;
+        schema::asset_locks::apply(&tx, &wallet_id, &operations.asset_locks)
+            .map_err(PersistenceError::from)?;
+        schema::dashpay::apply(&tx, &wallet_id, None, Some(&operations.payments))
+            .map_err(PersistenceError::from)?;
         state = load_wallet_snapshot(&tx, wallet_id, ctx)?;
         let remaining =
             replay_wallet_history_blocking(&mut state, evidence).map_err(replay_failure)?;

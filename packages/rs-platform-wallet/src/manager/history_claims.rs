@@ -3,9 +3,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use dashcore::{OutPoint, Txid};
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::prelude::Identifier;
 
 use super::history_replay::{HistoryReplay, HistoryReplayError};
-use crate::changeset::StoredTransaction;
+use crate::changeset::{
+    swept_payment_status, AssetLockChangeSet, ClientWalletStartState, StoredTransaction,
+};
+use crate::wallet::asset_lock::tracked::AssetLockStatus;
+use crate::wallet::identity::PaymentEntry;
 
 /// One durable hold, independent of a backend's physical row representation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +49,225 @@ pub struct HistoryReplayEffects {
     pub removed_evidence: BTreeSet<Txid>,
     /// Apply after row deletion, whose storage cascades may clear old claimant links.
     pub claims: BTreeMap<OutPoint, ReplayClaimEffect>,
+}
+
+/// Operation retirement selected by the wallet, applied in the replay transaction.
+#[derive(Debug, Default, PartialEq)]
+pub struct HistoryReplayOperationEffects {
+    /// Exact nonterminal asset-lock removals.
+    pub asset_locks: AssetLockChangeSet,
+    /// Exact payment overlays, preserving unrelated payment history.
+    pub payments: BTreeMap<Identifier, BTreeMap<String, PaymentEntry>>,
+}
+
+impl HistoryReplayEffects {
+    /// Select operation changes from the same fresh wallet snapshot as these effects.
+    pub fn operation_effects(
+        &self,
+        state: &ClientWalletStartState,
+    ) -> HistoryReplayOperationEffects {
+        self.select_operations(
+            state
+                .unused_asset_locks
+                .values()
+                .flat_map(BTreeMap::values)
+                .map(|lock| (lock.out_point, &lock.status)),
+            state
+                .identity_manager
+                .wallet_identities
+                .get(&state.wallet.compute_wallet_id())
+                .into_iter()
+                .flat_map(BTreeMap::values)
+                .chain(
+                    state
+                        .identity_manager
+                        .out_of_wallet_identities
+                        .values()
+                        .filter(|identity| {
+                            identity.wallet_id == Some(state.wallet.compute_wallet_id())
+                        }),
+                )
+                .map(|identity| (identity.identity.id(), &identity.dashpay().payments)),
+        )
+    }
+
+    fn select_operations<'a>(
+        &self,
+        locks: impl Iterator<Item = (OutPoint, &'a AssetLockStatus)>,
+        payments: impl Iterator<Item = (Identifier, &'a BTreeMap<String, PaymentEntry>)>,
+    ) -> HistoryReplayOperationEffects {
+        let mut effects = HistoryReplayOperationEffects::default();
+        for (outpoint, status) in locks {
+            if self.removed_evidence.contains(&outpoint.txid) && !status.is_consumed() {
+                effects.asset_locks.removed.insert(outpoint);
+            }
+        }
+        let retired: BTreeSet<_> = self.removed_evidence.iter().map(Txid::to_string).collect();
+        for (identity, rows) in payments {
+            for (txid, payment) in rows.iter().filter(|(txid, _)| retired.contains(*txid)) {
+                if let Some(status) = swept_payment_status(payment) {
+                    effects.payments.entry(identity).or_default().insert(
+                        txid.clone(),
+                        PaymentEntry {
+                            status,
+                            ..payment.clone()
+                        },
+                    );
+                }
+            }
+        }
+        effects
+    }
+}
+
+#[cfg(test)]
+mod operation_tests {
+    use super::*;
+    use crate::wallet::identity::PaymentStatus;
+    use dashcore::hashes::Hash;
+
+    #[test]
+    fn should_settle_wallet_linked_payment_without_a_registration_index() {
+        use crate::changeset::IdentityManagerStartState;
+        use crate::wallet::identity::ManagedIdentity;
+        use dpp::identity::{v0::IdentityV0, Identity};
+        let wallet = key_wallet::Wallet::from_seed_bytes(
+            [6; 64],
+            dashcore::Network::Testnet,
+            key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let wallet_id = wallet.compute_wallet_id();
+        let txid = Txid::from_byte_array([7; 32]);
+        let mut identities = IdentityManagerStartState::default();
+        for (marker, owner) in [(8, Some(wallet_id)), (9, None)] {
+            let id = Identifier::from([marker; 32]);
+            let mut identity = ManagedIdentity::new_out_of_wallet(Identity::V0(IdentityV0 {
+                id,
+                public_keys: BTreeMap::new(),
+                balance: 0,
+                revision: 0,
+            }));
+            identity.wallet_id = owner;
+            identity
+                .dashpay_payments_mut()
+                .insert(txid.to_string(), PaymentEntry::new_sent(id, 42, None));
+            identities.out_of_wallet_identities.insert(id, identity);
+        }
+        let state = ClientWalletStartState {
+            wallet_info: key_wallet::wallet::ManagedWalletInfo::from_wallet(&wallet, 0),
+            wallet,
+            identity_manager: identities,
+            unused_asset_locks: BTreeMap::new(),
+            unconfirmed_outgoing_txs: Vec::new(),
+            recorded_history: Default::default(),
+            dashpay_backfill: Default::default(),
+        };
+        let effects = HistoryReplayEffects {
+            removed_evidence: [txid].into(),
+            ..Default::default()
+        };
+        let operations = effects.operation_effects(&state);
+        assert_eq!(operations.payments.len(), 1);
+        assert_eq!(
+            operations.payments[&Identifier::from([8; 32])][&txid.to_string()].status,
+            PaymentStatus::Failed
+        );
+    }
+
+    #[test]
+    fn should_retire_only_rejected_nonterminal_asset_lock_operations() {
+        let rejected = Txid::from_byte_array([1; 32]);
+        let effects = HistoryReplayEffects {
+            removed_evidence: [rejected].into(),
+            ..Default::default()
+        };
+        let locks = [
+            (
+                OutPoint {
+                    txid: rejected,
+                    vout: 0,
+                },
+                AssetLockStatus::Broadcast,
+            ),
+            (
+                OutPoint {
+                    txid: rejected,
+                    vout: 1,
+                },
+                AssetLockStatus::Consumed,
+            ),
+            (
+                OutPoint {
+                    txid: rejected,
+                    vout: 2,
+                },
+                AssetLockStatus::DrainCompleted,
+            ),
+            (
+                OutPoint {
+                    txid: Txid::from_byte_array([2; 32]),
+                    vout: 0,
+                },
+                AssetLockStatus::Broadcast,
+            ),
+        ];
+        let result = effects.select_operations(
+            locks.iter().map(|(key, status)| (*key, status)),
+            std::iter::empty(),
+        );
+        assert_eq!(result.asset_locks.removed, [locks[0].0].into());
+    }
+
+    #[test]
+    fn should_project_existing_payment_retirement_without_changing_received_rows() {
+        let owner = Identifier::from([3; 32]);
+        let ids: Vec<_> = (1..=4)
+            .map(|byte| Txid::from_byte_array([byte; 32]))
+            .collect();
+        let sent = PaymentEntry::new_sent(owner, 42, Some("memo".into()));
+        let mut confirmed = sent.clone();
+        confirmed.status = PaymentStatus::Confirmed;
+        let rows = [
+            (ids[0].to_string(), sent.clone()),
+            (ids[1].to_string(), confirmed),
+            (
+                ids[2].to_string(),
+                PaymentEntry::new_received(owner, 42, None),
+            ),
+            (ids[3].to_string(), sent.clone()),
+        ]
+        .into();
+        let effects = HistoryReplayEffects {
+            removed_evidence: ids[..3].iter().copied().collect(),
+            ..Default::default()
+        };
+        let result = effects.select_operations(std::iter::empty(), [(owner, &rows)].into_iter());
+        assert_eq!(
+            result.payments,
+            [(
+                owner,
+                [
+                    (
+                        ids[0].to_string(),
+                        PaymentEntry {
+                            status: PaymentStatus::Failed,
+                            ..sent.clone()
+                        }
+                    ),
+                    (
+                        ids[1].to_string(),
+                        PaymentEntry {
+                            status: PaymentStatus::Failed,
+                            ..sent
+                        }
+                    ),
+                ]
+                .into()
+            )]
+            .into()
+        );
+    }
 }
 
 impl HistoryReplay {

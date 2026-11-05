@@ -33,9 +33,7 @@
 //! here and propagates [`WalletStorageError::WalletIdMismatch`] on a
 //! mis-attributed caller.
 
-use dashcore::Txid;
-use platform_wallet::changeset::swept_payment_status;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 use rusqlite::{params, Transaction};
 
@@ -47,7 +45,6 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
 use crate::sqlite::schema::blob::impl_persistable_blob;
-use crate::sqlite::schema::wallet_id_to_param;
 
 // PUBLIC material only: DashPay overlay types reaching `_blob` columns.
 impl_persistable_blob!(DashPayProfile, PaymentEntry);
@@ -162,37 +159,4 @@ fn patch_payments_into_entry_blobs(
         write.execute(params![identity_id.as_slice(), patched])?;
     }
     Ok(())
-}
-
-/// Apply wallet-owned replay retirement to this storage domain.
-pub(crate) fn settle_swept_payments(
-    tx: &Transaction<'_>,
-    wallet_id: &WalletId,
-    swept: &HashSet<Txid>,
-) -> Result<(), WalletStorageError> {
-    let mut verdicts: BTreeMap<Identifier, BTreeMap<String, PaymentEntry>> = BTreeMap::new();
-    {
-        let mut stmt = tx.prepare_cached(
-            "SELECT length(entry_blob), entry_blob FROM identities WHERE wallet_id IS ?1",
-        )?;
-        let mut rows = stmt.query(params![wallet_id_to_param(wallet_id)])?;
-        while let Some(row) = rows.next()? {
-            blob::check_size(row.get(0)?)?;
-            let payload: Vec<u8> = row.get(1)?;
-            let entry: IdentityEntry = blob::decode(&payload)?;
-            for txid in swept.iter().map(Txid::to_string) {
-                let Some(payment) = entry.dashpay_payments.get(&txid) else {
-                    continue;
-                };
-                if let Some(status) = swept_payment_status(payment) {
-                    let payment = PaymentEntry {
-                        status,
-                        ..payment.clone()
-                    };
-                    verdicts.entry(entry.id).or_default().insert(txid, payment);
-                }
-            }
-        }
-    }
-    apply(tx, wallet_id, None, Some(&verdicts))
 }
