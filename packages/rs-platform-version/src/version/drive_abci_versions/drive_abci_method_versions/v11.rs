@@ -2,7 +2,8 @@ use super::v10::DRIVE_ABCI_METHOD_VERSIONS_V10;
 use super::{
     DkgMiningSchedule, DriveAbciCoreBasedUpdatesMethodVersions,
     DriveAbciCoreChainLockMethodVersionsAndConstants, DriveAbciEngineMethodVersions,
-    DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciMethodVersions,
+    DriveAbciIdentityCreditWithdrawalMethodVersions,
+    DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
     DriveAbciVotingMethodVersions,
 };
 
@@ -111,6 +112,15 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 ///   only safe together with this check.
 /// - `engine.consensus_params_update` 2 installs the full evidence policy when it changes.
 ///
+/// The operator payouts: `core_based_updates.update_masternode_list` is 2 rather than 1, which
+/// keeps the operator payout and the revived height of an updated masternode's Core diff, clears
+/// the payout on an operator key change Core prints without one, and reads whether Core's V24 is
+/// active from the record `update_core_info` 1 writes before it; and
+/// `core_based_updates.masternode_updates.update_operator_identity` is 1 rather than 0, which
+/// reconciles every TRANSFER key of the operator identity it updates with the payout. The two only
+/// work together: version 0 adds a second key with the data of a payout Core re-sends, which fails
+/// the block.
+///
 /// The asset unlocks: `withdrawals.build_untied_withdrawal_transactions_from_documents` is 1
 /// rather than 0: a withdrawal pooled once `update_core_info` 1 has recorded Dash Core's V24 as
 /// active gets asset unlock payload version 2, whose txid every re-signed instance shares,
@@ -128,6 +138,13 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMet
     },
     core_based_updates: DriveAbciCoreBasedUpdatesMethodVersions {
         update_core_info: 1, // changed in v15: records the chain locked Core height at which V24 is first seen active
+        update_masternode_list: 2, // changed in v15: keeps a diff's operator payouts and revived heights, clears the payout on an operator key change, reads V24 from the Core fork record
+        masternode_updates: DriveAbciMasternodeIdentitiesUpdatesMethodVersions {
+            update_operator_identity: 1, // changed in v15: reconciles the TRANSFER keys of the identity it updates with the operator payout, without fallbacks
+            ..DRIVE_ABCI_METHOD_VERSIONS_V10
+                .core_based_updates
+                .masternode_updates
+        },
         ..DRIVE_ABCI_METHOD_VERSIONS_V10.core_based_updates
     },
     voting: DriveAbciVotingMethodVersions {

@@ -168,3 +168,32 @@ fn should_use_nested_ports_only_after_the_protocol_upgrade() {
         );
     }
 }
+
+/// Operator payouts from Core's diffs apply through `update_masternode_list` 2 and
+/// `update_operator_identity` 1, selected from protocol version 15 only. Every earlier protocol
+/// version keeps the generations its blocks were executed with, so they replay unchanged.
+#[test]
+fn should_select_the_operator_payout_generations_only_from_protocol_version_15() {
+    for protocol_version in 1..=PlatformVersion::latest().protocol_version {
+        let core_based_updates = &PlatformVersion::get(protocol_version)
+            .expect("expected a protocol version")
+            .drive_abci
+            .methods
+            .core_based_updates;
+        let expected = match protocol_version {
+            ..=13 => (0, 0),
+            14 => (1, 0),
+            _ => (2, 1),
+        };
+        assert_eq!(
+            (
+                core_based_updates.update_masternode_list,
+                core_based_updates
+                    .masternode_updates
+                    .update_operator_identity
+            ),
+            expected,
+            "protocol version {protocol_version}"
+        );
+    }
+}

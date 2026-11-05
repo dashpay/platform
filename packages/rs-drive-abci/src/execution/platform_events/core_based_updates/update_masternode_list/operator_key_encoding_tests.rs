@@ -12,27 +12,32 @@
 use crate::config::PlatformConfig;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
-use crate::rpc::core::MockCoreRPCLike;
+use crate::rpc::core::{CoreRPCLike, MockCoreRPCLike, V24_COINBASE_PAYLOAD_VERSION};
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
 use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::bls::SecretKey as BlsSecretKey;
 use dpp::dashcore::address::NetworkUnchecked;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{Address, ProTxHash};
-use dpp::dashcore_rpc::json::{DMNStateDiff, MasternodeListDiff, MasternodeListItem};
+use dpp::dashcore_rpc::json::{
+    DMNStateDiff, ExtendedQuorumListResult, MasternodeListDiff, MasternodeListItem,
+};
 use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{KeyType, Purpose};
 use dpp::prelude::Identifier;
 use dpp::version::PlatformVersion;
+use drive::drive::system::core_fork_activations::CoreFork;
 use drive::grovedb::Transaction;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use serde_json::json;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::{Arc, Mutex};
 
 /// The first Core height of the recording where DEPLOYMENT_V24 is active.
 const V24_ACTIVATION_HEIGHT: u32 = 400;
@@ -170,10 +175,53 @@ fn recorded_steps() -> BTreeMap<u32, MasternodeListDiff> {
     steps
 }
 
+/// Records Dash Core's V24 as active at `core_height` when the coinbase there says so and it is
+/// not recorded yet, as `update_core_info` 1 does before it updates the masternode list. Only for
+/// the protocol versions selecting that generation, whose masternode list update reads the record
+/// instead of asking Core.
+fn record_v24_as_update_core_info_does(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    transaction: &Transaction,
+    platform_version: &PlatformVersion,
+    core_height: u32,
+) {
+    if platform_version
+        .drive_abci
+        .methods
+        .core_based_updates
+        .update_core_info
+        == 0
+        || platform
+            .drive
+            .fetch_core_fork_activation_height(CoreFork::V24, Some(transaction), platform_version)
+            .expect("expected to read the V24 record")
+            .is_some()
+    {
+        return;
+    }
+    let coinbase_payload_version = platform
+        .core_rpc
+        .get_coinbase_payload_version(core_height)
+        .expect("expected Core's coinbase")
+        .expect("expected a coinbase payload");
+    if coinbase_payload_version >= V24_COINBASE_PAYLOAD_VERSION {
+        platform
+            .drive
+            .store_core_fork_activation_height(
+                CoreFork::V24,
+                core_height,
+                Some(transaction),
+                platform_version,
+            )
+            .expect("expected to record V24");
+    }
+}
+
 /// Runs one masternode list update per Core height of `list_diffs`, in order, as Drive runs one
-/// per block, the first one from scratch as at init chain. With `reload_after`, the platform state
-/// is stored and fetched back after that height, as a restarted node continues. Returns the state
-/// after the last update.
+/// per block, the first one from scratch as at init chain, each after the Core fork record step
+/// of `update_core_info` (`record_v24_as_update_core_info_does`). With `reload_after`, the
+/// platform state is stored and fetched back after that height, as a restarted node continues.
+/// Returns the state after the last update.
 fn run_core_heights(
     platform: &TempPlatform<MockCoreRPCLike>,
     transaction: &Transaction,
@@ -185,6 +233,7 @@ fn run_core_heights(
     let mut block_state = platform.state.load().as_ref().clone();
     for (index, core_height) in core_heights.into_iter().enumerate() {
         let block_height = index as u64 + 1;
+        record_v24_as_update_core_info_does(platform, transaction, platform_version, core_height);
         platform
             .update_masternode_list(
                 committed.as_ref(),
@@ -275,6 +324,7 @@ fn voting_key_hash(address: &str) -> [u8; 20] {
 fn should_keep_the_operator_identity_of_a_legacy_key_core_re_encodes() {
     for platform_version in [
         PlatformVersion::get(13).expect("expected protocol version 13"),
+        PlatformVersion::get(14).expect("expected protocol version 14"),
         PlatformVersion::latest(),
     ] {
         let version = platform_version.protocol_version;
@@ -412,6 +462,7 @@ fn should_keep_the_operator_identity_of_a_legacy_key_core_re_encodes() {
 fn should_switch_the_operator_identity_on_a_re_encoded_key_while_v24_is_not_active() {
     for platform_version in [
         PlatformVersion::get(13).expect("expected protocol version 13"),
+        PlatformVersion::get(14).expect("expected protocol version 14"),
         PlatformVersion::latest(),
     ] {
         let version = platform_version.protocol_version;
@@ -489,6 +540,7 @@ fn should_reach_the_kept_operator_identity_after_a_re_encode_and_a_restart() {
     };
     for platform_version in [
         PlatformVersion::get(13).expect("expected protocol version 13"),
+        PlatformVersion::get(14).expect("expected protocol version 14"),
         PlatformVersion::latest(),
     ] {
         let version = platform_version.protocol_version;
@@ -566,7 +618,8 @@ fn should_reach_the_kept_operator_identity_after_a_re_encode_and_a_restart() {
 /// recorded ProUpRegTx step, here with an operator payout added. Platform drops both from the
 /// entry. MN_L2 keeps its legacy key bytes, the operator payout of its full state, and its
 /// operator identity with every key, the payout key included; and the blocks end exactly as they
-/// do without the diff's operator payout.
+/// do without the diff's operator payout. Protocol version 15 applies the payout instead
+/// (`should_apply_the_operator_payout_of_a_diff_that_re_encodes_the_operator_key`).
 #[test]
 fn should_ignore_the_operator_payout_of_a_diff_that_re_encodes_the_operator_key() {
     let mn_l2 = pro_tx_hash(MN_L2);
@@ -575,7 +628,7 @@ fn should_ignore_the_operator_payout_of_a_diff_that_re_encodes_the_operator_key(
     assert!(listed_payout.is_some_and(|payout| payout != diff_payout));
     for platform_version in [
         PlatformVersion::get(13).expect("expected protocol version 13"),
-        PlatformVersion::latest(),
+        PlatformVersion::get(14).expect("expected protocol version 14"),
     ] {
         let version = platform_version.protocol_version;
         let mut outcomes = vec![];
@@ -657,6 +710,78 @@ fn should_ignore_the_operator_payout_of_a_diff_that_re_encodes_the_operator_key(
     }
 }
 
+/// MN_L2's recorded ProUpRegTx step with an operator payout added: Platform drops the re-encoded
+/// key, so MN_L2 keeps its legacy key bytes and its operator identity, and applies the payout to
+/// that identity. The listed payout's key is disabled and the diff's added; the operator key stays
+/// enabled, and no identity is created for the basic bytes.
+#[test]
+fn should_apply_the_operator_payout_of_a_diff_that_re_encodes_the_operator_key() {
+    let platform_version = PlatformVersion::latest();
+    let mn_l2 = pro_tx_hash(MN_L2);
+    let diff_payout = [0x81; 20];
+    let listed_payout = recorded_masternodes()[&mn_l2]
+        .state
+        .operator_payout_address
+        .expect("expected MN_L2 to list an operator payout");
+    let mut list_diffs = recorded_steps();
+    let (_, entry) = list_diffs
+        .get_mut(&(V24_ACTIVATION_HEIGHT + 2))
+        .and_then(|diff| {
+            diff.updated_mns
+                .iter_mut()
+                .find(|(pro_tx_hash, _)| *pro_tx_hash == mn_l2)
+        })
+        .expect("expected MN_L2's recorded re-encode");
+    assert_eq!(entry.pub_key_operator, Some(bytes(MN_L2_BASIC_KEY)));
+    entry.operator_payout_address = Some(Some(diff_payout));
+    let core_heights: Vec<u32> = list_diffs.keys().copied().collect();
+    let platform = platform_with_core(platform_version, list_diffs, V24_ACTIVATION_HEIGHT);
+    let transaction = platform.drive.grove.start_transaction();
+    let state = run_core_heights(
+        &platform,
+        &transaction,
+        platform_version,
+        core_heights,
+        None,
+    );
+
+    let stored = &state.full_masternode_list()[&mn_l2].state;
+    assert_eq!(stored.pub_key_operator, bytes(MN_L2_LEGACY_KEY));
+    assert_eq!(stored.operator_payout_address, Some(diff_payout));
+    let operator_keys = identity_keys(
+        &platform,
+        &transaction,
+        platform_version,
+        operator_identifier(&mn_l2, &bytes(MN_L2_LEGACY_KEY)),
+    )
+    .expect("expected MN_L2's operator identity");
+    assert_eq!(
+        bls_key_disabled(&operator_keys, &bytes(MN_L2_LEGACY_KEY)),
+        Some(false)
+    );
+    let transfer_keys = operator_keys
+        .iter()
+        .filter(|(_, purpose, ..)| *purpose == Purpose::TRANSFER)
+        .map(|(_, _, data, disabled)| (data.clone(), *disabled))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        transfer_keys,
+        [
+            (listed_payout.to_vec(), true),
+            (diff_payout.to_vec(), false)
+        ]
+    );
+    assert_eq!(
+        identity_keys(
+            &platform,
+            &transaction,
+            platform_version,
+            operator_identifier(&mn_l2, &bytes(MN_L2_BASIC_KEY))
+        ),
+        None
+    );
+}
+
 /// The masternode for the synthetic steps: MN_L1 as recorded, with operator key `key`.
 fn masternode_with_key(key: Vec<u8>) -> MasternodeListItem {
     let mut masternode = recorded_masternodes()
@@ -728,6 +853,7 @@ fn run_operator_key_steps(
 fn should_apply_every_reported_operator_key_before_v24() {
     for platform_version in [
         PlatformVersion::get(13).expect("expected protocol version 13"),
+        PlatformVersion::get(14).expect("expected protocol version 14"),
         PlatformVersion::latest(),
     ] {
         let version = platform_version.protocol_version;
@@ -783,6 +909,7 @@ fn should_apply_every_reported_operator_key_before_v24() {
 fn should_keep_the_operator_identity_for_a_negated_key_once_v24_is_active() {
     for platform_version in [
         PlatformVersion::get(13).expect("expected protocol version 13"),
+        PlatformVersion::get(14).expect("expected protocol version 14"),
         PlatformVersion::latest(),
     ] {
         let version = platform_version.protocol_version;
@@ -821,5 +948,156 @@ fn should_keep_the_operator_identity_for_a_negated_key_once_v24_is_active() {
             None,
             "PV{version}"
         );
+    }
+}
+
+/// From protocol version 15 the masternode list update reads whether V24 is active from the Core
+/// fork record that `update_core_info` writes before it, at the same chain locked height, and
+/// never asks Core itself. MN_L2's recorded re-encode (402) keeps its operator identity and its
+/// payout when V24 was recorded in an earlier block or in this very block, and is a key change,
+/// which clears the payout, when Core reports V24 inactive. Core is asked about the coinbase only
+/// by the record step, once per block that moves the chain locked height until V24 is recorded.
+#[test]
+fn should_take_v24_from_the_core_fork_record() {
+    let platform_version = PlatformVersion::latest();
+    let mn_l2 = pro_tx_hash(MN_L2);
+    let listed_payout = recorded_masternodes()[&mn_l2].state.operator_payout_address;
+    assert!(listed_payout.is_some());
+    for (case, v24_from, kept, expected_reads) in [
+        ("recorded earlier", 400, true, vec![399, 400]),
+        (
+            "recorded in this block",
+            402,
+            true,
+            vec![399, 400, 401, 402],
+        ),
+        ("not active", u32::MAX, false, vec![399, 400, 401, 402]),
+    ] {
+        let list_diffs = BTreeMap::from(
+            [(1, 399), (399, 400), (400, 401), (401, 402)]
+                .map(|(base, core_height)| (core_height, recorded_list_diff(base, core_height))),
+        );
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig::default())
+            .with_initial_protocol_version(platform_version.protocol_version)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        // Without the default answers, which would shadow the ones set here.
+        platform.core_rpc.checkpoint();
+        platform
+            .core_rpc
+            .expect_get_protx_diff_with_masternodes()
+            .returning(move |_, core_height| Ok(list_diffs[&core_height].clone()));
+        let quorum_types = [
+            platform.config.validator_set.quorum_type,
+            platform.config.chain_lock.quorum_type,
+            platform.config.instant_lock.quorum_type,
+        ];
+        platform
+            .core_rpc
+            .expect_get_quorum_listextended()
+            .returning(move |_| {
+                Ok(ExtendedQuorumListResult {
+                    quorums_by_type: quorum_types
+                        .iter()
+                        .map(|quorum_type| (*quorum_type, Default::default()))
+                        .collect::<HashMap<_, _>>(),
+                })
+            });
+        let reads = Arc::new(Mutex::new(vec![]));
+        let recorded_reads = Arc::clone(&reads);
+        platform
+            .core_rpc
+            .expect_get_coinbase_payload_version()
+            .returning(move |core_height| {
+                recorded_reads
+                    .lock()
+                    .expect("expected the coinbase reads")
+                    .push(core_height);
+                Ok(Some(if core_height >= v24_from { 4 } else { 3 }))
+            });
+
+        let transaction = platform.drive.grove.start_transaction();
+        let mut committed: Option<PlatformState> = None;
+        let mut block_state = platform.state.load().as_ref().clone();
+        let mut previous_core_height = None;
+        for (height, core_height) in (1..).zip([399, 400, 401, 402]) {
+            if let Some(previous_core_height) = previous_core_height {
+                block_state.set_last_committed_block_info(Some(
+                    ExtendedBlockInfoV0 {
+                        basic_info: BlockInfo {
+                            height: height - 1,
+                            core_height: previous_core_height,
+                            ..Default::default()
+                        },
+                        app_hash: [0; 32],
+                        quorum_hash: [0; 32],
+                        block_id_hash: [0; 32],
+                        proposer_pro_tx_hash: [0; 32],
+                        signature: [0; 96],
+                        round: 0,
+                    }
+                    .into(),
+                ));
+            }
+            platform
+                .update_core_info(
+                    committed.as_ref(),
+                    &mut block_state,
+                    core_height,
+                    committed.is_none(),
+                    &BlockInfo {
+                        height,
+                        core_height,
+                        time_ms: height,
+                        ..Default::default()
+                    },
+                    &transaction,
+                    platform_version,
+                )
+                .expect("expected to update the core info");
+            committed = Some(block_state.clone());
+            previous_core_height = Some(core_height);
+        }
+
+        let stored = &block_state.full_masternode_list()[&mn_l2].state;
+        let legacy_identity = identity_keys(
+            &platform,
+            &transaction,
+            platform_version,
+            operator_identifier(&mn_l2, &bytes(MN_L2_LEGACY_KEY)),
+        )
+        .expect("expected MN_L2's operator identity");
+        let basic_identity = identity_keys(
+            &platform,
+            &transaction,
+            platform_version,
+            operator_identifier(&mn_l2, &bytes(MN_L2_BASIC_KEY)),
+        );
+        if kept {
+            assert_eq!(stored.pub_key_operator, bytes(MN_L2_LEGACY_KEY), "{case}");
+            assert_eq!(stored.operator_payout_address, listed_payout, "{case}");
+            assert!(
+                legacy_identity.iter().all(|(.., disabled)| !disabled),
+                "{case}: {legacy_identity:?}"
+            );
+            assert_eq!(basic_identity, None, "{case}");
+        } else {
+            assert_eq!(stored.pub_key_operator, bytes(MN_L2_BASIC_KEY), "{case}");
+            assert_eq!(stored.operator_payout_address, None, "{case}");
+            assert_eq!(
+                bls_key_disabled(&legacy_identity, &bytes(MN_L2_LEGACY_KEY)),
+                Some(true),
+                "{case}"
+            );
+            let basic_identity = basic_identity.expect("expected the basic bytes' identity");
+            assert!(
+                basic_identity
+                    .iter()
+                    .all(|(_, purpose, ..)| *purpose != Purpose::TRANSFER),
+                "{case}: {basic_identity:?}"
+            );
+        }
+        assert_eq!(*reads.lock().unwrap(), expected_reads, "{case}");
     }
 }
