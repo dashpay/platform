@@ -12,6 +12,7 @@ import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
@@ -7088,13 +7089,19 @@ class PlatformWalletPersistenceHandlerTest {
         txidHex: String = txid.toHex(),
         /** The DashPay identity halves, as hex; absent for every other account. */
         identities: Pair<String, String>? = null,
+        /** The engine's verdict on the row: whether the store may heal it. */
+        healVerdict: Int = healEligible,
     ): String =
         """{"typeTag":$typeTag,"standardTag":0,"index":0,"registrationIndex":0,"keyClass":0,""" +
             identities.let { if (it == null) "" else """"userIdentityId":"${it.first}","friendIdentityId":"${it.second}",""" } +
             """"txid":"$txidHex","vout":$vout,""" +
             """"amount":$amount,"address":"$address","scriptHex":"$scriptHex",""" +
             """"height":$height,"isConfirmed":$isConfirmed,"isInstantlocked":false,""" +
-            """"isCoinbase":$isCoinbase,"isLocked":false}"""
+            """"isCoinbase":$isCoinbase,"isLocked":false,"healVerdict":$healVerdict}"""
+
+    private val healEligible = PlatformWalletPersistenceHandler.TXO_HEAL_VERDICT_ELIGIBLE
+    private val healImmature = PlatformWalletPersistenceHandler.TXO_HEAL_VERDICT_IMMATURE
+    private val healInvalid = PlatformWalletPersistenceHandler.TXO_HEAL_VERDICT_INVALID
 
     /** A whole inventory for [FakeEngine]: the engine's coins, the outpoints
      *  it proves spent, and the ones it says the store misfiled. */
@@ -7167,27 +7174,38 @@ class PlatformWalletPersistenceHandlerTest {
     private fun restoredUtxoCount(h: PlatformWalletPersistenceHandler = handler): Int =
         h.onLoadWalletList().single { it.walletId.contentEquals(walletId) }.utxos.size
 
-    /** A reconcile of [walletId] at [reconcileTip] against [engine]; either
-     *  transport half can be replaced to fail, stall or race a round. */
+    /**
+     * One run of [walletId] against [engine], wired the way the manager
+     * wires the native side: [FakeEngine.begin] says where the run starts,
+     * and the reads, the applied reports, the release and the stale-page
+     * rule are the engine's own. [healPage] / [classifyOutpoints] swap the
+     * answer of a read (the fake still does its bookkeeping: the budget,
+     * the page it names, the guard), to fail it, stall it, or race a round
+     * against it; null leaves the fake's answer.
+     */
     private suspend fun PlatformWalletPersistenceHandler.reconcileWith(
         engine: FakeEngine = FakeEngine(inventoryJson()),
         pageSize: Int = 2,
-        pageBudget: Int = PlatformWalletPersistenceHandler.TXO_RECONCILE_PAGE_BUDGET,
-        checkpointScope: Long = 0L,
         isCancelled: () -> Boolean = { false },
-        engineUtxoPage: suspend (String?, Int) -> String? = engine::page,
-        classifyOutpoints: suspend (String) -> ByteArray? = engine::classify,
-    ): PlatformWalletPersistenceHandler.TxoReconcileReport =
-        reconcileTxos(
-            walletId = walletId,
-            tipHeight = reconcileTip,
-            pageSize = pageSize,
-            pageBudget = pageBudget,
-            checkpointScope = checkpointScope,
-            isCancelled = isCancelled,
-            engineUtxoPage = engineUtxoPage,
-            classifyOutpoints = classifyOutpoints,
-        )
+        healPage: (suspend (served: String) -> String?)? = null,
+        classifyOutpoints: (suspend (queriesJson: String, verdicts: ByteArray) -> ByteArray?)? = null,
+    ): PlatformWalletPersistenceHandler.TxoReconcileReport {
+        engine.healAnswer = healPage
+        engine.classifyAnswer = classifyOutpoints
+        return try {
+            reconcileTxos(
+                walletId = walletId,
+                start = engine.begin(),
+                engine = engine,
+                pageSize = pageSize,
+                isCancelled = isCancelled,
+            )
+        } finally {
+            engine.healAnswer = null
+            engine.classifyAnswer = null
+            assertFalse("a run ends holding no engine guard", engine.held)
+        }
+    }
 
     /** Every TXO row of [wallet], spent or not — what these tests count
      *  and attribute, through the DAO's whole-wallet query. */
@@ -7246,6 +7264,12 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(0, query["typeTag"]!!.jsonPrimitive.int)
         assertEquals(0, query["index"]!!.jsonPrimitive.int)
         assertEquals(reconcileScript.toHex(), query["scriptHex"]!!.jsonPrimitive.content)
+        // Each page's guard is released after its store step and before the
+        // page is reported applied; the store's last page ends the cycle.
+        assertEquals(
+            listOf("heal", "release", "heal applied", "classify", "release", "classify applied null"),
+            engine.events,
+        )
     }
 
     @Test
@@ -7260,9 +7284,11 @@ class PlatformWalletPersistenceHandlerTest {
         val txid = ByteArray(32) { 0x72 }
         seedUnspentTxo(txid)
         var classifyCalls = 0
+        val engine = FakeEngine(inventoryJson())
 
         val report = handler.reconcileWith(
-            classifyOutpoints = {
+            engine,
+            classifyOutpoints = { _, _ ->
                 classifyCalls++
                 if (classifyCalls == 1) {
                     commitARound()
@@ -7276,6 +7302,12 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(report.completed)
         assertEquals("the first verdict was read before the round and refused", 1, report.staleRetries)
         assertEquals("the page is classified again after the refusal", 2, classifyCalls)
+        assertEquals("the engine's stale-page rule was asked once", listOf(1), engine.staleAsks)
+        assertEquals(
+            "the stale page is released and read again, never reported",
+            listOf("classify", "release", "classify", "release", "classify applied null"),
+            engine.events.drop(3),
+        )
         assertEquals(0, report.flipped)
         assertEquals(1, report.unspent)
         assertEquals(1, report.storeRows)
@@ -7288,27 +7320,31 @@ class PlatformWalletPersistenceHandlerTest {
     @Test
     fun aPageThatKeepsGoingStaleStopsTheRunIncomplete() = runTest {
         // A round commits between every read and apply: the page is
-        // re-classified a bounded number of times, then the run gives up
-        // without having written anything.
+        // re-classified for as long as the engine's stale-page rule allows,
+        // then the run gives up without having written anything.
         seedReconcileWallet()
         val txid = ByteArray(32) { 0x73 }
         seedUnspentTxo(txid)
         var classifyCalls = 0
+        val engine = FakeEngine(inventoryJson()).apply { staleRetryLimit = 2 }
 
         val report = handler.reconcileWith(
-            classifyOutpoints = {
+            engine,
+            classifyOutpoints = { _, _ ->
                 classifyCalls++
                 commitARound()
                 byteArrayOf(PlatformWalletPersistenceHandler.OUTPOINT_CLASS_KNOWN_UNCREDITED)
             },
         )
 
-        val limit = PlatformWalletPersistenceHandler.TXO_RECONCILE_MAX_STALE_RETRIES + 1
         assertFalse(report.completed)
-        assertEquals(limit, report.staleRetries)
-        assertEquals(limit, classifyCalls)
+        assertFalse("a stale stop is not a budget stop", report.stoppedOnBudget)
+        assertEquals("the host stops where the engine says", listOf(1, 2, 3), engine.staleAsks)
+        assertEquals(3, report.staleRetries)
+        assertEquals(3, classifyCalls)
         assertEquals(0, report.flipped)
         assertFalse(db.txoDao().getByOutpoint(makeOutpoint(txid, 0))!!.isSpent)
+        assertFalse("a page never applied is never reported", engine.events.any { it.startsWith("classify applied") })
     }
 
     @Test
@@ -7334,9 +7370,11 @@ class PlatformWalletPersistenceHandlerTest {
         assertFalse("sanity: a mempool spender does not mark the coin spent", linkedBefore.isSpent)
         assertEquals(2, restoredUtxoCount())
         var classifyCalls = 0
+        val engine = FakeEngine(inventoryJson())
 
         val report = handler.reconcileWith(
-            classifyOutpoints = {
+            engine,
+            classifyOutpoints = { _, _ ->
                 classifyCalls++
                 if (classifyCalls == 1) {
                     // A reorg of the spenders hands both coins back: the
@@ -7366,15 +7404,17 @@ class PlatformWalletPersistenceHandlerTest {
             spender.contentEquals(db.txoDao().getByOutpoint(makeOutpoint(linked, 0))!!.spendingTxid),
         )
         assertEquals("both coins are still handed back at the next load", 2, restoredUtxoCount())
-        val limit = PlatformWalletPersistenceHandler.TXO_RECONCILE_MAX_STALE_RETRIES + 1
         assertFalse("the run stops rather than apply under an open round", report.completed)
-        assertEquals(limit, report.staleRetries)
+        assertEquals(engine.staleRetryLimit + 1, report.staleRetries)
         assertEquals(0, report.flipped)
 
         // Once the round has closed, the next run classifies both rows
         // again against the engine as it is now.
         val after = handler.reconcileWith(
-            classifyOutpoints = { ByteArray(2) { PlatformWalletPersistenceHandler.OUTPOINT_CLASS_UNSPENT } },
+            engine,
+            classifyOutpoints = { _, verdicts ->
+                ByteArray(verdicts.size) { PlatformWalletPersistenceHandler.OUTPOINT_CLASS_UNSPENT }
+            },
         )
         assertTrue(after.completed)
         assertEquals(0, after.staleRetries)
@@ -7491,7 +7531,7 @@ class PlatformWalletPersistenceHandlerTest {
     @Test
     fun aConsistentStoreYieldsZeroMutationsAndSpentRowsAreNeverAsked() = runTest {
         // Rows the engine also holds unspent — including a YOUNG coin the
-        // heal pass skips as immature — are consistent, not divergence; a
+        // engine's verdict calls immature — are consistent, not divergence; a
         // spent row is never even asked about; and the run logs one
         // "mirror consistent" summary line and nothing else.
         seedReconcileWallet()
@@ -7504,7 +7544,12 @@ class PlatformWalletPersistenceHandlerTest {
         markStoredSpent(spent)
         // The engine holds exactly the store's unspent coins, and says so.
         val engine = FakeEngine(
-            inventoryJson(rows = listOf(engineRowJson(unspent), engineRowJson(young, height = reconcileTip - 3))),
+            inventoryJson(
+                rows = listOf(
+                    engineRowJson(unspent),
+                    engineRowJson(young, height = reconcileTip - 3, healVerdict = healImmature),
+                ),
+            ),
         )
         org.robolectric.shadows.ShadowLog.clear()
 
@@ -7622,35 +7667,39 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun theHealPassRefusesImmatureUnconfirmedUnresolvedAndMalformedCoins() = runTest {
+    fun theHealPassFollowsTheEnginesVerdictAndRefusesUnresolvedAndUndecodableCoins() = runTest {
+        // Confirmations, maturity and well-formedness are the engine's call
+        // (its heal verdict); the host only follows it, and adds what needs
+        // its store: the account the coin is filed under, and fields it can
+        // decode at all.
         seedReconcileWallet() // BIP44 only: no CoinJoin account row
         fun txid(b: Int) = ByteArray(32) { b.toByte() }
         val engine = FakeEngine(
             inventoryJson(
                 rows = listOf(
-                    engineRowJson(txid(0x76), height = reconcileTip - 50), // immature
-                    engineRowJson(txid(0x77), height = reconcileTip - 99), // exactly 100 confirmations
-                    // Deep enough, but the engine itself does not call it confirmed.
-                    engineRowJson(txid(0x78), isConfirmed = false),
+                    engineRowJson(txid(0x76), healVerdict = healImmature),
+                    // The host does not second-guess an eligible verdict, even
+                    // for a coin it would have called young.
+                    engineRowJson(txid(0x77), height = reconcileTip - 3),
+                    engineRowJson(txid(0x78), healVerdict = healInvalid),
                     engineRowJson(txid(0x79), typeTag = 1), // CoinJoin: no store account
-                    engineRowJson(txid(0x7a), scriptHex = ""), // no script
-                    engineRowJson(txid(0x7b), address = ""), // no address
-                    engineRowJson(txid(0x7c), height = 0), // unconfirmed height
+                    engineRowJson(txid(0x7a), scriptHex = "76a"), // a script that is not hex
+                    engineRowJson(txid(0x7b), healVerdict = 9), // a verdict this build does not know
                     engineRowJson(txid(0x7d), txidHex = "7d".repeat(31)), // 31-byte txid
                 ),
             ),
         )
 
-        val report = handler.reconcileWith(engine)
+        val report = handler.reconcileWith(engine, pageSize = 8)
 
         assertTrue(report.completed)
-        assertEquals(8, report.engineRows)
+        assertEquals(7, report.engineRows)
         assertEquals(1, report.inserted)
-        assertEquals(3, report.skippedImmature)
+        assertEquals(1, report.skippedImmature)
         assertEquals(1, report.skippedUnresolvedAccount)
-        assertEquals(3, report.skippedInvalid)
+        assertEquals(4, report.skippedInvalid)
         assertNotNull(db.txoDao().getByOutpoint(makeOutpoint(txid(0x77), 0)))
-        for (b in listOf(0x76, 0x78, 0x79, 0x7a, 0x7b, 0x7c)) {
+        for (b in listOf(0x76, 0x78, 0x79, 0x7a, 0x7b)) {
             assertNull("coin $b must not be healed", db.txoDao().getByOutpoint(makeOutpoint(txid(b), 0)))
         }
         assertEquals(1, walletTxos().size)
@@ -8024,41 +8073,50 @@ class PlatformWalletPersistenceHandlerTest {
     )
 
     @Test
-    fun aRunStopsAtItsPageBudgetAndTheNextRunsResumeWhereItStopped() = runTest {
-        // Dust sent to a watched address grows the inventory with no action
-        // from the owner, so one run reads a bounded number of pages and the
-        // wallet's later runs carry on from there instead of starting over.
-        // 5 coins at 2 per page: 3 heal pages, then 3 classify pages.
+    fun aRunStopsWhereTheEnginesBudgetSaysAndTheNextRunsStartWhereItSays() = runTest {
+        // How much one run reads and where the next starts are the engine's
+        // decisions: every read is one page of its budget, each applied
+        // report answers whether budget is left, and begin says where a run
+        // starts. The host stops when told and starts where told; it keeps
+        // no place of its own. 5 coins at 2 per page: 3 heal pages, then 3
+        // store pages.
         saveReconcileAddress(attributeUnownedTxos(walletId))
-        val engine = fiveCoinEngine(firstVout = 60)
+        val engine = fiveCoinEngine(firstVout = 60).apply { budget = 2 }
 
-        // Run 1: two heal pages, then the budget is spent mid-pass.
-        val first = handler.reconcileWith(engine, pageSize = 2, pageBudget = 2)
+        // Run 1: two heal pages; the second's report leaves no budget.
+        val first = handler.reconcileWith(engine, pageSize = 2)
         assertTrue(first.stoppedOnBudget)
         assertFalse("a budget stop has not reached the end of the cycle", first.completed)
         assertFalse(first.resumedFromCheckpoint)
         assertEquals(0, first.transportFailures + first.storeFailures)
-        assertEquals(listOf(null, "2"), engine.cursors)
+        assertEquals(listOf(0, 2), engine.healStarts)
         assertEquals(4, first.engineRows)
-        assertEquals("both finished pages landed", 4, first.inserted)
+        assertEquals("both applied pages landed", 4, first.inserted)
         assertEquals("the classify pass waits for the heal pass", 0, engine.batches)
 
-        // Run 2: the heal pass resumes at the saved engine cursor, reaches
-        // its end, and the classify pass starts at the first row.
-        val second = handler.reconcileWith(engine, pageSize = 2, pageBudget = 2)
+        // Run 2: the engine resumes the heal pass after the last applied
+        // page; it reaches its end, and the classify pass starts at the
+        // store's first row.
+        val second = handler.reconcileWith(engine, pageSize = 2)
         assertTrue(second.resumedFromCheckpoint)
         assertTrue(second.stoppedOnBudget)
         assertFalse(second.completed)
-        assertEquals("only the page run 1 did not read", listOf(null, "2", "4"), engine.cursors)
+        assertEquals("only the page run 1 did not apply", listOf(0, 2, 4), engine.healStarts)
         assertEquals(1, second.engineRows)
         assertEquals(1, second.inserted)
         assertEquals(2, second.storeRows)
         assertEquals(1, engine.batches)
         assertEquals(listOf(60, 61), engine.queries.map { it["vout"]!!.jsonPrimitive.int })
+        assertEquals(
+            "the page was reported with its last outpoint as the store cursor",
+            "classify applied ${makeOutpoint(changeTxid, 61).toHex()}",
+            engine.events.last(),
+        )
 
-        // Run 3: the classify pass resumes after the saved outpoint and
-        // reaches its end. Every row is classified once across the runs.
-        val third = handler.reconcileWith(engine, pageSize = 2, pageBudget = 2)
+        // Run 3: the engine hands that cursor back; the classify pass
+        // resumes after it and reaches the store's last page. Every row is
+        // classified once across the runs.
+        val third = handler.reconcileWith(engine, pageSize = 2)
         assertTrue(third.resumedFromCheckpoint)
         assertFalse(third.stoppedOnBudget)
         assertTrue(third.completed)
@@ -8066,23 +8124,18 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(3, third.storeRows)
         assertEquals(3, third.unspent)
         assertEquals((60 until 65).toList(), engine.queries.map { it["vout"]!!.jsonPrimitive.int })
+        assertEquals("the store's last page ends the cycle", "classify applied null", engine.events.last())
 
-        // Run 4: the finished cycle cleared its checkpoint, so this run
-        // starts a new one at the first heal page and walks everything.
+        // Run 4: a new cycle, at the first heal page, walks everything.
+        engine.budget = 16
         val fourth = handler.reconcileWith(engine, pageSize = 2)
         assertFalse(fourth.resumedFromCheckpoint)
         assertTrue(fourth.completed)
-        assertEquals(null, engine.cursors[3])
+        assertEquals(0, engine.healStarts[3])
         assertEquals(5, fourth.engineRows)
         assertEquals(5, fourth.alreadyPresent)
         assertEquals(5, fourth.storeRows)
         assertEquals(0, fourth.mutations)
-
-        // Run 5: the budget alone still bounds a run that starts over.
-        val fifth = handler.reconcileWith(engine, pageSize = 2, pageBudget = 1)
-        assertFalse(fifth.resumedFromCheckpoint)
-        assertTrue(fifth.stoppedOnBudget)
-        assertEquals("one page read", 7, engine.pages)
     }
 
     @Test
@@ -8092,7 +8145,8 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(5, handler.reconcileWith(engine, pageSize = 8).inserted)
         org.robolectric.shadows.ShadowLog.clear()
 
-        val report = handler.reconcileWith(engine, pageSize = 2, pageBudget = 1)
+        engine.budget = 1
+        val report = handler.reconcileWith(engine, pageSize = 2)
         assertTrue(report.stoppedOnBudget)
         assertEquals(0, report.mutations)
         val summary = org.robolectric.shadows.ShadowLog.getLogs()
@@ -8103,25 +8157,78 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun aFailedHealPageDoesNotMoveTheCheckpointPastIt() = runTest {
+    fun aStalePageThatOutlastsTheBudgetStopsOnTheBudget() = runTest {
+        // A stale page is read again, and every read is a page of the
+        // budget: a read past it comes back budget-spent with nothing held,
+        // and the run stops there, counting none of the page as walked.
+        seedReconcileWallet()
+        val txid = ByteArray(32) { 0x86.toByte() }
+        seedUnspentTxo(txid)
+        val engine = FakeEngine(inventoryJson()).apply {
+            budget = 3
+            staleRetryLimit = 10
+        }
+
+        val report = handler.reconcileWith(
+            engine,
+            classifyOutpoints = { _, verdicts ->
+                commitARound()
+                verdicts
+            },
+        )
+
+        assertTrue(report.stoppedOnBudget)
+        assertFalse(report.completed)
+        assertEquals(2, report.staleRetries)
+        assertEquals("the unclassified page is not counted as walked", 0, report.storeRows)
+        assertEquals(
+            listOf(
+                "heal", "release", "heal applied",
+                "classify", "release", "classify", "release", "budget spent",
+            ),
+            engine.events,
+        )
+    }
+
+    @Test
+    fun aStorePageWithNothingToAskIsStillClassifiedAndReported() = runTest {
+        // Each classification is one page of the run's budget and names the
+        // page the applied report moves the engine past, so a store page
+        // with nothing to ask — here the empty store — is classified too.
+        seedReconcileWallet()
+        val engine = FakeEngine(inventoryJson())
+
+        val report = handler.reconcileWith(engine)
+
+        assertTrue(report.completed)
+        assertEquals(0, report.storeRows)
+        assertEquals(
+            listOf("heal", "release", "heal applied", "classify []", "release", "classify applied null"),
+            engine.events,
+        )
+    }
+
+    @Test
+    fun aFailedHealPageIsNotReportedSoTheNextRunReadsItAgain() = runTest {
         // The next run must read the page that failed, not the one after it,
         // and the classify pass must not start until the heal pass ends.
         saveReconcileAddress(attributeUnownedTxos(walletId))
         val engine = fiveCoinEngine(firstVout = 70)
         val failed = handler.reconcileWith(
             engine,
-            engineUtxoPage = { cursor, limit -> if (cursor == null) engine.page(cursor, limit) else null },
+            healPage = { served -> if (engine.pages == 1) served else null },
         )
         assertFalse(failed.completed)
         assertFalse("a failure is not a budget stop", failed.stoppedOnBudget)
         assertEquals(1, failed.transportFailures)
         assertEquals(2, failed.inserted)
         assertEquals(0, engine.batches)
+        assertEquals(1, engine.events.count { it == "heal applied" })
 
         val next = handler.reconcileWith(engine, pageSize = 2)
         assertTrue(next.resumedFromCheckpoint)
         assertTrue(next.completed)
-        assertEquals("resumed at the failed page, after the finished one", listOf(null, "2", "4"), engine.cursors)
+        assertEquals("resumed at the failed page, after the applied one", listOf(0, 2, 2, 4), engine.healStarts)
         assertEquals(3, next.inserted)
         assertEquals("the classify pass covered every row once", 5, next.storeRows)
         for (vout in 70 until 75) {
@@ -8130,45 +8237,39 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun aResumedHealPageThatDoesNotDecodeIsReadAgainByTheNextRun() = runTest {
-        // The strict page decode throws; the page that threw is not
-        // finished, so the place stays at the cursor before it. A page that
-        // says more follow with no cursor is refused by the decode, so it
-        // can never leave a place that ends the walk early.
+    fun aHealPageThatDoesNotDecodeIsReleasedAndReadAgainByTheNextRun() = runTest {
+        // The strict page decode throws; the page's guard is released on the
+        // way out, and the page is not reported, so the engine serves it
+        // again.
         saveReconcileAddress(attributeUnownedTxos(walletId))
-        val engine = fiveCoinEngine(firstVout = 100)
-        assertTrue(handler.reconcileWith(engine, pageSize = 2, pageBudget = 1).stoppedOnBudget)
+        val engine = fiveCoinEngine(firstVout = 100).apply { budget = 1 }
+        assertTrue(handler.reconcileWith(engine, pageSize = 2).stoppedOnBudget)
+        engine.budget = 16
 
         for (
             malformed in listOf(
-                """{"utxos":[],"cursor":null}""",
-                """{"utxos":[],"cursor":null,"hasMore":true}""",
+                """{"utxos":[],"hasMore":false}""",
+                """{"utxos":[],"hasMore":true,"budgetSpent":true}""",
             )
         ) {
-            val asked = ArrayList<String?>()
-            val thrown = runCatching {
-                handler.reconcileWith(
-                    engine,
-                    engineUtxoPage = { cursor, _ ->
-                        asked += cursor
-                        malformed
-                    },
-                )
-            }.exceptionOrNull()
+            val reads = engine.pages
+            val thrown = runCatching { handler.reconcileWith(engine, healPage = { malformed }) }.exceptionOrNull()
             assertTrue("$malformed must fail the decode, got $thrown", thrown is IllegalArgumentException)
-            assertEquals("the resumed run asked for the saved page", listOf<String?>("2"), asked)
+            assertEquals("the resumed run read the page after the applied one", 2, engine.healStarts.last())
+            assertEquals(reads + 1, engine.pages)
+            assertEquals(listOf("heal", "release"), engine.events.takeLast(2))
         }
 
         val next = handler.reconcileWith(engine, pageSize = 2)
         assertTrue(next.resumedFromCheckpoint)
         assertTrue(next.completed)
-        assertEquals(listOf(null, "2", "4"), engine.cursors)
+        assertEquals(listOf(0, 2, 2, 2, 4), engine.healStarts)
         assertEquals(3, next.inserted)
         assertEquals("the classify pass started only once the heal pass ended", 5, next.storeRows)
     }
 
     @Test
-    fun aFailedOrStaleClassifyPageDoesNotMoveTheCheckpointPastIt() = runTest {
+    fun aFailedOrStaleClassifyPageIsNotReportedSoTheNextRunReadsItAgain() = runTest {
         seedReconcileWallet()
         val txids = (0 until 6).map { i -> ByteArray(32) { (0xa0 + i).toByte() } }
         txids.forEach { seedUnspentTxo(it) }
@@ -8179,101 +8280,114 @@ class PlatformWalletPersistenceHandlerTest {
         var batch = 0
         val failed = handler.reconcileWith(
             engine,
-            classifyOutpoints = { queries -> if (++batch == 2) null else engine.classify(queries) },
+            classifyOutpoints = { _, verdicts -> if (++batch == 2) null else verdicts },
         )
         assertFalse(failed.completed)
         assertEquals(1, failed.transportFailures)
-        assertEquals(listOf("a0", "a1"), firstBytes())
+        assertEquals(listOf("a0", "a1", "a2", "a3"), firstBytes())
 
-        // The second page stays stale past the retry limit: a round
+        // The second page stays stale past the engine's retry limit: a round
         // commits between every read and its apply.
         val stale = handler.reconcileWith(
             engine,
-            classifyOutpoints = { queries ->
+            classifyOutpoints = { _, verdicts ->
                 commitARound()
-                engine.classify(queries)
+                verdicts
             },
         )
         assertTrue(stale.resumedFromCheckpoint)
         assertFalse(stale.completed)
         assertFalse(stale.stoppedOnBudget)
-        assertEquals(PlatformWalletPersistenceHandler.TXO_RECONCILE_MAX_STALE_RETRIES + 1, stale.staleRetries)
+        assertEquals(engine.staleRetryLimit + 1, stale.staleRetries)
         assertEquals("the heal pass already ended in this cycle", 1, engine.pages)
 
-        // A clean run picks up at the page that never finished.
+        // A clean run picks up at the page that never applied.
         val next = handler.reconcileWith(engine, pageSize = 2)
         assertTrue(next.resumedFromCheckpoint)
         assertTrue(next.completed)
         assertEquals(4, next.storeRows)
-        val staleReads = List(PlatformWalletPersistenceHandler.TXO_RECONCILE_MAX_STALE_RETRIES + 1) {
-            listOf("a2", "a3")
-        }.flatten()
+        val staleReads = List(engine.staleRetryLimit + 1) { listOf("a2", "a3") }.flatten()
         assertEquals(
-            "a0, a1 from the first run, the stale page's a2, a3 each try, then a2 to a5",
-            listOf("a0", "a1") + staleReads + listOf("a2", "a3", "a4", "a5"),
+            "a0, a1 then the failed a2, a3; the stale page's a2, a3 each try; then a2 to a5",
+            listOf("a0", "a1", "a2", "a3") + staleReads + listOf("a2", "a3", "a4", "a5"),
             firstBytes(),
         )
     }
 
     @Test
-    fun deletingTheWalletDropsItsReconcileCheckpoint() = runTest {
-        saveReconcileAddress(attributeUnownedTxos(walletId))
-        val engine = fiveCoinEngine(firstVout = 80)
-        assertTrue(handler.reconcileWith(engine, pageSize = 2, pageBudget = 1).stoppedOnBudget)
+    fun aClassifyStartWithACursorThisStoreDidNotWriteStartsAtTheFirstRow() = runTest {
+        // The store cursor is this side's own 36-byte outpoint, handed back
+        // as it was given. Anything else starts the walk at the first row
+        // rather than at an arbitrary BLOB position; the passes are
+        // idempotent, so that costs only the walk.
+        seedReconcileWallet()
+        val txids = (0 until 3).map { i -> ByteArray(32) { (0xc0 + i).toByte() } }
+        txids.forEach { seedUnspentTxo(it) }
+        val engine = FakeEngine(inventoryJson())
 
-        handler.deleteWalletData(walletId)
-        saveReconcileAddress(attributeUnownedTxos(walletId))
+        val report = handler.reconcileTxos(
+            walletId = walletId,
+            start = PlatformWalletPersistenceHandler.TxoReconcileStart.Classify(ByteArray(8) { 0xff.toByte() }),
+            engine = engine.also { it.begin() },
+            pageSize = 8,
+        )
 
-        val report = handler.reconcileWith(engine, pageSize = 2)
-        assertFalse("a re-added wallet starts a new cycle", report.resumedFromCheckpoint)
         assertTrue(report.completed)
-        assertEquals(listOf(null, null, "2", "4"), engine.cursors)
-        assertEquals(5, report.inserted)
+        assertTrue(report.resumedFromCheckpoint)
+        assertEquals(3, report.storeRows)
+        assertEquals("no heal page is read for a classify start", 0, engine.pages)
     }
 
     @Test
-    fun aCheckpointIsResumedOnlyUnderTheScopeThatWroteIt() = runTest {
-        // The manager scopes a place to its reconcile epoch, which moves on
-        // every wallet removal and on close: a wallet removed and added
-        // again (or any place left from before the move) starts a new cycle
-        // even if the handler never saw the deletion.
-        saveReconcileAddress(attributeUnownedTxos(walletId))
-        val engine = fiveCoinEngine(firstVout = 110)
-        assertTrue(handler.reconcileWith(engine, pageSize = 2, pageBudget = 1, checkpointScope = 1L).stoppedOnBudget)
-
-        val otherScope = handler.reconcileWith(engine, pageSize = 2, pageBudget = 1, checkpointScope = 2L)
-        assertFalse("another scope's place is not resumed", otherScope.resumedFromCheckpoint)
-        assertEquals(listOf(null, null), engine.cursors)
-
-        // That run replaced the place with its own; the old scope no longer
-        // finds one, and the new scope resumes its own.
-        val sameScope = handler.reconcileWith(engine, pageSize = 2, pageBudget = 1, checkpointScope = 2L)
-        assertTrue(sameScope.resumedFromCheckpoint)
-        assertEquals(listOf(null, null, "2"), engine.cursors)
-        val oldScope = handler.reconcileWith(engine, pageSize = 2, pageBudget = 1, checkpointScope = 1L)
-        assertFalse(oldScope.resumedFromCheckpoint)
-        assertEquals(listOf(null, null, "2", null), engine.cursors)
-    }
-
-    @Test
-    fun aCancelledRunLeavesNoCheckpoint() = runTest {
-        // A run that a wallet deletion cancelled must not record a place
-        // after the deletion dropped the wallet's: the save re-checks the
-        // cancellation under the callback lock.
+    fun aCancelledPageIsNeverReportedApplied() = runTest {
+        // A run that a wallet deletion or a close cancelled stops between
+        // pages; the page it read is not written and not reported, so the
+        // engine does not move past it.
         saveReconcileAddress(attributeUnownedTxos(walletId))
         val engine = fiveCoinEngine(firstVout = 120)
         var cancelled = false
         val report = handler.reconcileWith(
             engine,
             isCancelled = { cancelled },
-            engineUtxoPage = { cursor, limit -> engine.page(cursor, limit).also { cancelled = true } },
+            healPage = { served -> served.also { cancelled = true } },
         )
         assertFalse(report.completed)
         assertEquals("the cancelled step wrote nothing", 0, report.inserted)
+        assertEquals(listOf("heal", "release"), engine.events)
 
         val next = handler.reconcileWith(engine, pageSize = 2)
         assertFalse(next.resumedFromCheckpoint)
-        assertEquals(listOf(null, null, "2", "4"), engine.cursors)
+        assertEquals(listOf(0, 0, 2, 4), engine.healStarts)
+        assertEquals(5, next.inserted)
+    }
+
+    @Test
+    fun aCancelledCallerStillReleasesTheHeldPage() = runTest {
+        // The caller's coroutine is cancelled while a classification it
+        // holds a guard for is in flight: the guard is released on the way
+        // out all the same, and the page is not reported.
+        seedReconcileWallet()
+        seedUnspentTxo(ByteArray(32) { 0x87.toByte() })
+        val engine = FakeEngine(inventoryJson())
+        val parked = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val run = launch {
+            handler.reconcileWith(
+                engine,
+                classifyOutpoints = { _, _ ->
+                    parked.complete(Unit)
+                    kotlinx.coroutines.awaitCancellation()
+                },
+            )
+        }
+        parked.await()
+        assertTrue("sanity: the classification holds its guard", engine.held)
+
+        run.cancel()
+        run.join()
+
+        assertFalse("released despite the cancellation", engine.held)
+        assertEquals(listOf("classify", "release"), engine.events.takeLast(2))
+        assertFalse(engine.events.any { it.startsWith("classify applied") })
     }
 
     @Test
@@ -8282,10 +8396,12 @@ class PlatformWalletPersistenceHandlerTest {
         // than guessing at rows it could not ask the engine about.
         seedReconcileWallet()
         for (vout in 50 until 53) seedUnspentTxo(changeTxid, vout)
-        val report = handler.reconcileWith(pageSize = 1, classifyOutpoints = { null })
+        val engine = FakeEngine(inventoryJson())
+        val report = handler.reconcileWith(engine, pageSize = 1, classifyOutpoints = { _, _ -> null })
 
         assertFalse(report.completed)
         assertEquals(1, report.transportFailures)
+        assertFalse("a failed batch is never reported", engine.events.any { it.startsWith("classify applied") })
         assertEquals(0, report.unknown)
         assertEquals(0, report.flipped)
     }
@@ -8300,11 +8416,17 @@ class PlatformWalletPersistenceHandlerTest {
         seedReconcileWallet()
         val txid = ByteArray(32) { 0x84.toByte() }
         faults.armed = true
-        val report = handler.reconcileWith(FakeEngine(inventoryJson(rows = listOf(engineRowJson(txid)))))
+        val engine = FakeEngine(inventoryJson(rows = listOf(engineRowJson(txid))))
+        val report = handler.reconcileWith(engine)
         faults.armed = false
 
         assertFalse(report.completed)
         assertEquals(1, report.storeFailures)
+        assertEquals(
+            "the guard is released and the failed page never reported",
+            listOf("heal", "release"),
+            engine.events,
+        )
         assertEquals("a failed read is not a hit either", 0, report.alreadyPresent)
         assertEquals(0, report.inserted)
         assertNull(db.txoDao().getByOutpoint(makeOutpoint(txid, 0)))
@@ -8360,15 +8482,17 @@ class PlatformWalletPersistenceHandlerTest {
 
         val report = handler.reconcileWith(
             engine,
-            // The run checks once for the account read, once before each
-            // engine read and once more before each store step: the first
-            // three admit the account read, page one and its heal; the
-            // fourth (before page two) reports the epoch bumped.
-            isCancelled = { ++checks >= 4 },
+            // The run checks once for the account read, then before each
+            // engine read, before each store step and before each applied
+            // report: the first four admit the account read, page one, its
+            // heal and its report; the fifth (before page two) reports the
+            // epoch bumped.
+            isCancelled = { ++checks >= 5 },
         )
 
         assertFalse(report.completed)
         assertEquals(1, engine.pages)
+        assertEquals(listOf("heal", "release", "heal applied"), engine.events)
         assertEquals("the page that landed stays", 2, report.inserted)
         assertEquals(2, walletTxos().size)
     }
@@ -8389,12 +8513,13 @@ class PlatformWalletPersistenceHandlerTest {
             engine,
             pageSize = 1,
             isCancelled = { cancelled },
-            engineUtxoPage = { cursor, limit -> engine.page(cursor, limit).also { cancelled = true } },
+            healPage = { served -> served.also { cancelled = true } },
         )
 
         assertFalse(report.completed)
         assertEquals("no second engine read may start", 1, engine.pages)
         assertEquals("the old page must not reach the store", 0, report.mutations)
+        assertEquals("released, and not reported applied", listOf("heal", "release"), engine.events)
         assertEquals(0, walletTxos().size)
     }
 
@@ -8421,7 +8546,7 @@ class PlatformWalletPersistenceHandlerTest {
                 rows = listOf(
                     engineRowJson(healedTxid, amount = 100_001L, address = address, height = 1_434_986),
                     // Refused (immature), so the skip path renders too.
-                    engineRowJson(ByteArray(32) { 0x66 }, address = address, height = reconcileTip),
+                    engineRowJson(ByteArray(32) { 0x66 }, address = address, height = reconcileTip, healVerdict = healImmature),
                 ),
                 spent = listOf(flippedTxid to 1),
             ),
@@ -8430,12 +8555,7 @@ class PlatformWalletPersistenceHandlerTest {
 
         val report = handler.reconcileWith(engine)
         // A second, failing run renders the incomplete summary as well.
-        handler.reconcileTxos(
-            walletId = walletId,
-            tipHeight = reconcileTip,
-            engineUtxoPage = engine::page,
-            classifyOutpoints = { null },
-        )
+        handler.reconcileWith(engine, classifyOutpoints = { _, _ -> null })
 
         assertEquals(1, report.inserted)
         assertEquals(1, report.flipped)
@@ -8518,11 +8638,17 @@ class PlatformWalletPersistenceHandlerTest {
         // the mirror the engine reloads from.
         val malformed = """{"utxos":[{"typeTag":0,"txid":"${changeTxid.toHex()}",""" +
             """"vout":40,"address":"yStxXHHzhAx58JhaPBNhn3xsH93UwBM2nd","height":1400000}],""" +
-            """"cursor":null,"hasMore":false}"""
-        val thrown = runCatching { handler.reconcileWith(engineUtxoPage = { _, _ -> malformed }) }.exceptionOrNull()
+            """"hasMore":false,"budgetSpent":false}"""
+        val engine = FakeEngine(inventoryJson())
+        val thrown = runCatching { handler.reconcileWith(engine, healPage = { malformed }) }.exceptionOrNull()
         assertTrue(
             "strict decode must throw, got $thrown",
             thrown is kotlinx.serialization.SerializationException,
+        )
+        assertEquals(
+            "the page's guard is released on the way out, and the page is not reported",
+            listOf("heal", "release"),
+            engine.events,
         )
         assertNull(
             "nothing was healed from the malformed page",
@@ -8542,7 +8668,7 @@ class PlatformWalletPersistenceHandlerTest {
             engineRowJson(changeTxid, vout = 41),
         ).jsonObject
         fun page(row: Map<String, kotlinx.serialization.json.JsonElement>) =
-            """{"utxos":[${kotlinx.serialization.json.JsonObject(row)}],"cursor":null,"hasMore":false}"""
+            """{"utxos":[${kotlinx.serialization.json.JsonObject(row)}],"hasMore":false,"budgetSpent":false}"""
         assertEquals(
             1,
             PlatformWalletPersistenceHandler.decodeEngineUtxoPage(page(complete)).utxos.size,
@@ -8552,6 +8678,7 @@ class PlatformWalletPersistenceHandlerTest {
             key in listOf(
                 "typeTag", "standardTag", "index", "registrationIndex", "keyClass", "txid", "vout", "amount",
                 "address", "scriptHex", "height", "isConfirmed", "isInstantlocked", "isCoinbase", "isLocked",
+                "healVerdict",
             )
         ) {
             val thrown = runCatching {
@@ -8565,21 +8692,26 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun anInventoryPageWithoutItsContinuationFailsTheDecode() {
-        // A page that lost a key, or says more follow with nowhere to
-        // resume from, must not read as the last page: the heal walk would
-        // end early and leave later engine coins unrepaired.
+    fun anInventoryPageMissingAKeyOrClaimingAReadPastItsBudgetFailsTheDecode() {
+        // A page that lost a key must not read as the last page (the heal
+        // walk would end early and leave later engine coins unrepaired) or
+        // as no budget stop; a budget-spent page that carries a read is one
+        // the native side says it did not make; and the page carries no
+        // cursor any more — the engine keeps the run's place.
         val row = engineRowJson(changeTxid, vout = 42)
         fun decodes(page: String) =
             runCatching { PlatformWalletPersistenceHandler.decodeEngineUtxoPage(page) }
-        assertTrue(decodes("""{"utxos":[$row],"cursor":null,"hasMore":false}""").isSuccess)
-        assertTrue(decodes("""{"utxos":[$row],"cursor":"c","hasMore":true}""").isSuccess)
+        assertTrue(decodes("""{"utxos":[$row],"hasMore":false,"budgetSpent":false}""").isSuccess)
+        assertTrue(decodes("""{"utxos":[$row],"hasMore":true,"budgetSpent":false}""").isSuccess)
+        assertTrue(decodes("""{"utxos":[],"hasMore":false,"budgetSpent":true}""").isSuccess)
         for (
             (label, page) in listOf(
-                "no utxos" to """{"cursor":null,"hasMore":false}""",
-                "no cursor" to """{"utxos":[$row],"hasMore":false}""",
-                "no hasMore" to """{"utxos":[$row],"cursor":null}""",
-                "more to come with no cursor" to """{"utxos":[$row],"cursor":null,"hasMore":true}""",
+                "no utxos" to """{"hasMore":false,"budgetSpent":false}""",
+                "no hasMore" to """{"utxos":[$row],"budgetSpent":false}""",
+                "no budgetSpent" to """{"utxos":[$row],"hasMore":false}""",
+                "a budget stop with rows" to """{"utxos":[$row],"hasMore":false,"budgetSpent":true}""",
+                "a budget stop with more to come" to """{"utxos":[],"hasMore":true,"budgetSpent":true}""",
+                "a cursor" to """{"utxos":[],"cursor":null,"hasMore":false,"budgetSpent":false}""",
             )
         ) {
             val thrown = decodes(page).exceptionOrNull()
@@ -8592,8 +8724,8 @@ class PlatformWalletPersistenceHandlerTest {
     /**
      * The checked-in TXO-reconcile transport payloads. The Rust
      * `wallet_manager::tests` read the SAME file (`include_str!` of this
-     * resource): they serialize the real `UtxoPage` for four accessor
-     * entries and require `inventoryPage` exactly, and they deserialize
+     * resource): they serialize the real `UtxoPage` for four heal-page
+     * rows and require `inventoryPage` exactly, and they deserialize
      * `outpointQueries` through the real `OutpointQuery` conversion. Here
      * the page is decoded by the production decoder and the queries are
      * built by the production encoder, so neither codec can drift from the
@@ -8619,34 +8751,34 @@ class PlatformWalletPersistenceHandlerTest {
         )
 
         assertTrue(page.hasMore)
-        assertNotNull("a page with more to come carries its cursor", page.cursor)
+        assertFalse(page.budgetSpent)
         assertEquals(
             listOf(
                 // BIP44 account 0: every account field zero, and present.
                 PlatformWalletPersistenceHandler.EngineUtxoRow(
                     0, 0, 0, 0, 0, null, null, goldenTxid(0x00).toHex(), 0, 19_549L,
                     reconcileAddress, goldenScript(0x5b).toHex(), 1_534_921,
-                    true, false, false, false,
+                    true, false, false, false, healEligible,
                 ),
                 // Non-default account fields, every flag set, and an amount
                 // past 32 bits.
                 PlatformWalletPersistenceHandler.EngineUtxoRow(
                     0, 1, 2, 0, 0, null, null, goldenTxid(0x20).toHex(), 7, 5_000_000_000L,
                     "yGoldenFixtureBip32Addr", goldenScript(0xc3).toHex(), 1_400_000,
-                    true, true, true, true,
+                    true, true, true, true, healEligible,
                 ),
                 // A registration index, and a script with no address form.
                 PlatformWalletPersistenceHandler.EngineUtxoRow(
                     3, 0, 0, 4, 0, null, null, goldenTxid(0x40).toHex(), 1, 100_000L,
                     "", "", 0,
-                    false, false, false, false,
+                    false, false, false, false, healInvalid,
                 ),
                 // DashPay: both identity halves, as lower hex.
                 PlatformWalletPersistenceHandler.EngineUtxoRow(
                     12, 0, 1, 0, 0, goldenUserIdentity.toHex(), goldenFriendIdentity.toHex(),
                     goldenTxid(0x60).toHex(), 3, 250_000L,
                     "yGoldenFixtureDashPayAddr", goldenScript(0xd4).toHex(), 1_534_000,
-                    true, true, false, false,
+                    true, true, false, false, healImmature,
                 ),
             ),
             page.utxos,
@@ -8699,7 +8831,7 @@ class PlatformWalletPersistenceHandlerTest {
      * Drive the paged reconcile from one whole-inventory JSON blob — the
      * shape these tests describe an engine in — served through [FakeEngine]
      * in pages of 2, so a test describing more than a couple of rows walks
-     * the real cursor loop rather than a single page. Every
+     * the real page loop rather than a single page. Every
      * still-unattributed TXO is filed under a default BIP44 account first
      * (see [attributeUnownedTxos]), which is also the account the
      * inventory's `typeTag 0 / index 0` rows resolve to.
@@ -8746,23 +8878,34 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     /**
-     * A stand-in for the engine's paged inventory transport, built from the
-     * whole-inventory JSON a test writes out. Pages come back behind an
-     * opaque ordinal cursor — the real cursor is opaque too, the handler
-     * only ever hands back what it was given — and classification answers
-     * positionally out of the same inventories: 1 unspent, 2
-     * known-uncredited (the blob's `spent` list: the engine holds a mined
-     * record spending the coin), 3 not-owned (its optional `notOwned`
-     * list), 0 neither.
+     * A stand-in for the native reconciler of one wallet, built from the
+     * whole-inventory JSON a test writes out — the run bookkeeping
+     * `platform_wallet::manager::txo_reconcile` keeps, reduced to what the
+     * host can observe: a page budget per run ([budget]), the run's place in
+     * the heal pass and the wallet's checkpoint (moved only by a page
+     * reported applied), the page last read until it is reported, and the
+     * guard each read holds until [releaseVerdicts]. Heal rows carry the
+     * `healVerdict` the test wrote (the verdict is the engine's, never the
+     * host's); classifications answer positionally out of the same
+     * inventory: 1 unspent, 2 known-uncredited (the blob's `spent` list), 3
+     * not-owned (its optional `notOwned` list), 0 neither. [retryStalePage]
+     * answers from [staleRetryLimit], a number the fake picks, so a test
+     * shows the host follows the engine's answer rather than a constant of
+     * its own.
+     *
+     * The guard rules the host must keep are asserted on every call: no
+     * read and no applied report while the last page's guard is held.
      */
-    private class FakeEngine(inventoryJson: String) {
+    private class FakeEngine(inventoryJson: String, var budget: Int = 16) :
+        PlatformWalletPersistenceHandler.TxoReconcileEngine {
         private val utxos: List<kotlinx.serialization.json.JsonObject>
         private val unspentKeys: Set<String>
         private val spentKeys: Set<String>
         private val notOwnedKeys: Set<String>
 
-        /** Inventory pages served, classification batches answered, and
-         *  outpoints classified across those batches. */
+        /** Heal pages served, classification batches answered, and
+         *  outpoints classified across those batches. Reads past the budget
+         *  serve nothing and are not counted. */
         var pages = 0
             private set
         var batches = 0
@@ -8773,8 +8916,44 @@ class PlatformWalletPersistenceHandlerTest {
         /** Every classification query received, in order. */
         val queries = ArrayList<kotlinx.serialization.json.JsonObject>()
 
-        /** The cursor of every inventory page asked for, in order. */
-        val cursors = ArrayList<String?>()
+        /** The inventory row each heal page started at, in order. */
+        val healStarts = ArrayList<Int>()
+
+        /** Every read, release and applied report, in order: `heal`,
+         *  `classify []` / `classify`, `budget spent`, `release`,
+         *  `heal applied`, and `classify applied <hex>` (`null` for the
+         *  store's last page). */
+        val events = ArrayList<String>()
+
+        /** The stale counts the host asked [retryStalePage] about. */
+        val staleAsks = ArrayList<Int>()
+        var staleRetryLimit = 3
+
+        /** Swap a read's answer: [healAnswer] gets the page the fake would
+         *  serve, [classifyAnswer] the verdicts it would give. Either may
+         *  return null (a failed call, which holds nothing). */
+        var healAnswer: (suspend (served: String) -> String?)? = null
+        var classifyAnswer: (suspend (queriesJson: String, verdicts: ByteArray) -> ByteArray?)? = null
+
+        /** The guard of the last page read, until [releaseVerdicts]. */
+        var held = false
+            private set
+
+        private var checkpoint: Checkpoint? = null
+        private var healAfter = 0
+        private var pagesLeft = 0
+        private var pending: Pending? = null
+
+        private sealed class Checkpoint {
+            class Heal(val after: Int) : Checkpoint()
+            class Classify(val after: ByteArray) : Checkpoint()
+        }
+
+        private sealed class Pending {
+            /** A heal page; the row after it, or null for the last page. */
+            class Heal(val next: Int?) : Pending()
+            object Classify : Pending()
+        }
 
         init {
             val root = kotlinx.serialization.json.Json
@@ -8787,21 +8966,76 @@ class PlatformWalletPersistenceHandlerTest {
             notOwnedKeys = keys("notOwned")
         }
 
-        fun page(cursor: String?, limit: Int): String {
-            pages++
-            cursors += cursor
-            val start = cursor?.toInt() ?: 0
-            val slice = utxos.drop(start).take(limit)
-            val next = start + slice.size
-            val hasMore = next < utxos.size
-            return """{"utxos":[${slice.joinToString(",") { it.toString() }}],""" +
-                """"cursor":${if (hasMore) "\"$next\"" else "null"},"hasMore":$hasMore}"""
+        /** Claim a run: a fresh budget, and where the wallet's checkpoint
+         *  says it starts — what the native begin hands the manager. */
+        fun begin(): PlatformWalletPersistenceHandler.TxoReconcileStart {
+            pagesLeft = budget
+            pending = null
+            return when (val at = checkpoint) {
+                null -> {
+                    healAfter = 0
+                    PlatformWalletPersistenceHandler.TxoReconcileStart.NewCycle
+                }
+                is Checkpoint.Heal -> {
+                    healAfter = at.after
+                    PlatformWalletPersistenceHandler.TxoReconcileStart.HealResumed
+                }
+                is Checkpoint.Classify -> PlatformWalletPersistenceHandler.TxoReconcileStart.Classify(at.after)
+            }
         }
 
-        fun classify(queriesJson: String): ByteArray {
+        /** Take one page from the run's budget; false past it. */
+        private fun takePage(): Boolean {
+            assertFalse("a page is read while the last page's guard is held", held)
+            if (pagesLeft == 0) {
+                events += "budget spent"
+                return false
+            }
+            pagesLeft--
+            return true
+        }
+
+        override suspend fun healPage(limit: Int): String? {
+            if (!takePage()) return """{"utxos":[],"hasMore":false,"budgetSpent":true}"""
+            pages++
+            healStarts += healAfter
+            events += "heal"
+            val slice = utxos.drop(healAfter).take(limit)
+            val next = healAfter + slice.size
+            val hasMore = slice.isNotEmpty() && next < utxos.size
+            pending = Pending.Heal(if (hasMore) next else null)
+            held = true
+            val served = """{"utxos":[${slice.joinToString(",") { it.toString() }}],""" +
+                """"hasMore":$hasMore,"budgetSpent":false}"""
+            val answer = healAnswer.let { if (it == null) served else it(served) }
+            if (answer == null) {
+                // A failed read holds nothing, and names no page.
+                held = false
+                pending = null
+            }
+            return answer
+        }
+
+        override suspend fun healPageApplied(): Boolean? {
+            assertFalse("a heal page is reported while its guard is held", held)
+            events += "heal applied"
+            (pending as? Pending.Heal)?.let { page ->
+                page.next?.let { healAfter = it }
+                checkpoint = page.next?.let { Checkpoint.Heal(it) } ?: Checkpoint.Classify(ByteArray(0))
+            }
+            pending = null
+            return pagesLeft > 0
+        }
+
+        override suspend fun classify(queriesJson: String): PlatformWalletPersistenceHandler.OutpointVerdicts? {
+            val batch = kotlinx.serialization.json.Json.parseToJsonElement(queriesJson).jsonArray
+            if (!takePage()) {
+                return PlatformWalletPersistenceHandler.OutpointVerdicts(ByteArray(batch.size), budgetSpent = true)
+            }
             batches++
-            val batch = kotlinx.serialization.json.Json
-                .parseToJsonElement(queriesJson).jsonArray
+            events += if (batch.isEmpty()) "classify []" else "classify"
+            pending = Pending.Classify
+            held = true
             classified += batch.size
             val verdicts = ByteArray(batch.size)
             for ((i, query) in batch.withIndex()) {
@@ -8824,7 +9058,33 @@ class PlatformWalletPersistenceHandlerTest {
                     else -> 0
                 }
             }
-            return verdicts
+            val answer = classifyAnswer.let { if (it == null) verdicts else it(queriesJson, verdicts) }
+            if (answer == null) {
+                held = false
+                pending = null
+                return null
+            }
+            return PlatformWalletPersistenceHandler.OutpointVerdicts(answer)
+        }
+
+        override suspend fun classifyPageApplied(nextAfter: ByteArray?): Boolean? {
+            assertFalse("a store page is reported while its guard is held", held)
+            events += "classify applied ${nextAfter?.toHex()}"
+            if (pending == Pending.Classify) {
+                checkpoint = nextAfter?.let { Checkpoint.Classify(it) }
+            }
+            pending = null
+            return pagesLeft > 0
+        }
+
+        override suspend fun releaseVerdicts() {
+            if (held) events += "release"
+            held = false
+        }
+
+        override fun retryStalePage(staleInARow: Int): Boolean {
+            staleAsks += staleInARow
+            return staleInARow <= staleRetryLimit
         }
 
         private fun key(txidHex: String, vout: Int) = "$txidHex:$vout"

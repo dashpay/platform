@@ -2666,43 +2666,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
     })
 }
 
-/// The wallet's core scan watermark as the ENGINE holds it
-/// (`platform_wallet_core_wallet_state`'s `synced_height`) — the value the
-/// TXO-store reconcile gates on, as Swift's does. The persisted copy in the
-/// host store trails it by up to one persistence round, which is exactly
-/// the window the SYNCED transition lands in. Throws `NotFound` when the
-/// manager does not hold the wallet. Backs
-/// `PlatformWalletManager.reconcileTxoStore`.
-#[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerCoreWalletSyncedHeight(
-    mut env: JNIEnv,
-    _class: JClass,
-    manager_handle: jlong,
-    wallet_id: JByteArray,
-) -> jlong {
-    guard(&mut env, -1, |env| {
-        let Some(wid) = read_id32(env, &wallet_id) else {
-            return -1;
-        };
-        let mut state = platform_wallet_ffi::CoreWalletStateFFI {
-            synced_height: 0,
-            last_processed_height: 0,
-            monitor_revision: 0,
-        };
-        let result = unsafe {
-            platform_wallet_ffi::platform_wallet_core_wallet_state(
-                manager_handle as Handle,
-                wid.as_ptr(),
-                &mut state as *mut platform_wallet_ffi::CoreWalletStateFFI,
-            )
-        };
-        if take_pwffi_error(env, result) {
-            return -1;
-        }
-        jlong::from(state.synced_height)
-    })
-}
-
 #[cfg(feature = "shielded")]
 sync_start_stop!(
     Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_shieldedSyncStart,
@@ -3261,15 +3224,20 @@ fn core_selection_strategy(
     }
 }
 
-// ── TXO-store reconcile transport ─────────────────────────────────────
+// ── TXO-store reconcile ───────────────────────────────────────────────
 //
-// Two exports, each a serialization shim over exactly ONE platform-wallet
-// call: `platform_wallet_wallet_utxos_page` and
-// `platform_wallet_classify_outpoints`. The account ordering, the cursor
-// semantics, the page bound and every classification rule live in
-// `platform-wallet`, so the Swift host walks the identical inventory and
-// gets the identical verdicts. Nothing here decides anything; it moves
-// serde-shaped JSON in and out.
+// Each export bridges exactly ONE platform-wallet call over the reconcile
+// policy in `platform_wallet::manager::txo_reconcile`: the schedule
+// (`platform_wallet_manager_txo_reconcile_due_wallets`), the start gate and
+// its release (`…_txo_reconcile_begin` / `…_finish`), the held heal page
+// (`platform_wallet_txo_reconcile_heal_page`), the held spend verdicts
+// (`platform_wallet_txo_reconcile_classify_outpoints`), the release of the
+// engine guard either is held under (`…_held_verdicts_free`), the two
+// applied reports (`…_heal_page_applied` / `…_classify_page_applied`) and
+// the stale-page retry (`platform_wallet_txo_reconcile_retry_stale_page`).
+// The cadence, the gates, the heal verdicts, every classification rule, the
+// page budget and where a run resumes live there. Nothing here decides
+// anything; it moves values and serde-shaped JSON in and out.
 
 /// The account tuple that owns one inventory row — the raw `AccountSpecFFI`
 /// tag layout minus the xpub, in the field names the Kotlin `EngineUtxoRow`
@@ -3343,12 +3311,14 @@ fn hex32(s: &str) -> Option<[u8; 32]> {
     hex::decode(s).ok()?.try_into().ok()
 }
 
-/// One row of an inventory page — the typed contract the Kotlin
-/// `EngineUtxoRow` decodes, strictly (an unknown or missing key throws
-/// there rather than healing a defaulted row). `txid` is lower hex in the
-/// same byte order the changeset path hands Kotlin, so hex→bytes
-/// reproduces the `txos.txid` blob; `address` is the engine's own
-/// Base58Check rendering, empty when the script has no address form.
+/// One row of a heal page — the typed contract the Kotlin `EngineUtxoRow`
+/// decodes, strictly (an unknown or missing key throws there rather than
+/// healing a defaulted row). `txid` is lower hex in the same byte order the
+/// changeset path hands Kotlin, so hex→bytes reproduces the `txos.txid`
+/// blob; `address` is the engine's own Base58Check rendering, empty when
+/// the script has no address form; `healVerdict` is the engine's
+/// `TXO_HEAL_VERDICT_*` for the row, the only thing that says whether the
+/// store may heal it in.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UtxoPageRow {
@@ -3364,26 +3334,27 @@ struct UtxoPageRow {
     is_instantlocked: bool,
     is_coinbase: bool,
     is_locked: bool,
+    heal_verdict: u8,
 }
 
 impl UtxoPageRow {
-    /// The row for one accessor entry, carrying the engine's own address
-    /// and flags.
+    /// The row for one heal-page entry, carrying the engine's own address,
+    /// flags and verdict.
     ///
     /// # Safety
     ///
-    /// `e.address` must be null or a valid NUL-terminated string, and
-    /// `e.script_pubkey` null or valid for `e.script_pubkey_len` bytes —
-    /// the accessor's contract for every entry it returns.
-    unsafe fn from_entry(e: &platform_wallet_ffi::WalletUtxoEntryFFI) -> Self {
+    /// `r.utxo.address` must be null or a valid NUL-terminated string, and
+    /// `r.utxo.script_pubkey` null or valid for `r.utxo.script_pubkey_len`
+    /// bytes — the heal page's contract for every row it returns.
+    unsafe fn from_heal_row(r: &platform_wallet_ffi::TxoHealRowFFI) -> Self {
+        let e = &r.utxo;
         let script: &[u8] = if e.script_pubkey.is_null() || e.script_pubkey_len == 0 {
             &[]
         } else {
             std::slice::from_raw_parts(e.script_pubkey, e.script_pubkey_len)
         };
         // Never null per the accessor's contract; treated as empty if it
-        // ever is, which the Kotlin heal skips rather than filing a row it
-        // cannot key an address by.
+        // ever is (the engine's verdict on such a row is `invalid`).
         let address = cstr_opt(e.address).unwrap_or_default();
         UtxoPageRow {
             account: UtxoAccountTuple::from_entry(e),
@@ -3397,79 +3368,41 @@ impl UtxoPageRow {
             is_instantlocked: e.is_instantlocked,
             is_coinbase: e.is_coinbase,
             is_locked: e.is_locked,
+            heal_verdict: r.verdict,
         }
     }
 }
 
-/// One page: the rows, the opaque resume cursor (serialized as `null` on
-/// the last page, never omitted) and whether more pages follow. The Kotlin
-/// `EngineUtxoPage` requires all three keys.
+/// One heal page: the rows, whether more pages follow, and whether the run
+/// had already used its page budget, in which case nothing was read. The
+/// run keeps its own place in the inventory, so the page carries no
+/// cursor. The Kotlin `EngineUtxoPage` requires all three keys.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UtxoPage {
     utxos: Vec<UtxoPageRow>,
-    cursor: Option<String>,
     has_more: bool,
+    budget_spent: bool,
 }
 
 impl UtxoPage {
-    /// The page for `utxos`. The cursor is the last row itself; a page with
-    /// no rows has nowhere to resume from, and the accessor reports no more
-    /// in that case. Fails only if the cursor cannot be encoded.
-    fn new(utxos: Vec<UtxoPageRow>, has_more: bool) -> serde_json::Result<Self> {
-        let cursor = match utxos.last() {
-            Some(last) if has_more => Some(serde_json::to_string(&UtxoPageCursor::after(last))?),
-            _ => None,
-        };
-        Ok(UtxoPage {
-            // `cursor` is set exactly when `has_more` is and a row exists.
-            has_more: cursor.is_some(),
-            cursor,
+    /// The page for `utxos`. A page with no rows reports no more, whatever
+    /// the accessor said: there is nothing after it to read.
+    fn new(utxos: Vec<UtxoPageRow>, has_more: bool) -> Self {
+        UtxoPage {
+            has_more: has_more && !utxos.is_empty(),
             utxos,
-        })
-    }
-}
-
-/// Where a paged inventory sweep left off — the last row's account tuple
-/// and outpoint, which is exactly what `platform_wallet_wallet_utxos_page`
-/// resumes from. Serialized as JSON and handed to the host as an opaque
-/// string; the host only ever gives back what a previous page returned.
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct UtxoPageCursor {
-    #[serde(flatten)]
-    account: UtxoAccountTuple,
-    txid: String,
-    vout: u32,
-}
-
-impl UtxoPageCursor {
-    /// The cursor that resumes the sweep after `last`.
-    fn after(last: &UtxoPageRow) -> Self {
-        UtxoPageCursor {
-            account: last.account.clone(),
-            txid: last.txid.clone(),
-            vout: last.vout,
+            budget_spent: false,
         }
     }
 
-    /// The resume point a cursor string names, or `None` when it is not
-    /// one a previous page returned (unparseable, or a malformed identity
-    /// half or txid).
-    fn decode(raw: &str) -> Option<platform_wallet_ffi::WalletUtxoCursorFFI> {
-        let c = serde_json::from_str::<UtxoPageCursor>(raw).ok()?;
-        let (user_identity_id, friend_identity_id, outpoint) =
-            c.account.keyed_outpoint(&c.txid, c.vout).ok()?;
-        Some(platform_wallet_ffi::WalletUtxoCursorFFI {
-            type_tag: c.account.type_tag,
-            standard_tag: c.account.standard_tag,
-            index: c.account.index,
-            registration_index: c.account.registration_index,
-            key_class: c.account.key_class,
-            user_identity_id,
-            friend_identity_id,
-            outpoint,
-        })
+    /// No page: the run had used its budget.
+    fn budget_spent() -> Self {
+        UtxoPage {
+            utxos: Vec::new(),
+            has_more: false,
+            budget_spent: true,
+        }
     }
 }
 
@@ -3517,43 +3450,301 @@ impl OutpointQuery {
     }
 }
 
-/// One bounded page of the engine's UTXO inventory across every funds
-/// account of one wallet — the source of truth
-/// `PlatformWalletManager.reconcileTxoStore` diffs against the Room `txos`
-/// mirror (dropped change outputs of CoinJoin-funded sends leave the
-/// mirror short; the engine reloads from that mirror on restart, so an
-/// un-reconciled hole becomes a fund loss).
-///
-/// Paged rather than swept whole because inventory size is
-/// chain-controlled: anyone who knows a watched address can keep sending
-/// dust outputs to it, and a periodic full-inventory read would let them
-/// decide how much a phone allocates at every SYNCED transition and every
-/// 30-minute pass. Nothing bigger than one page is ever formatted, copied
-/// across JNI, or parsed.
-///
-/// Returns a JSON object `{"utxos":[...],"cursor":<string|null>,"hasMore":<bool>}`.
-/// `cursor` is opaque: hand it back verbatim on the next call
-/// (`null`/absent starts from the beginning) and keep going while
-/// `hasMore` is true. A cursor this export did not produce is rejected
-/// with an SDK exception rather than silently restarting the sweep.
-/// `limit` caps the rows in one page; non-positive passes 0, which means
-/// the engine's own default, and the engine clamps its own maximum — this
-/// layer holds no copy of either bound.
-///
-/// Rows carry the engine's own address and flags. Nothing is derived
-/// here: an address computed in this shim could disagree with the one the
-/// engine credited the coin under, and the store keys its address rows by
-/// that string.
+/// The wallets whose TXO-store reconcile is due now, as a flat `byte[]` of
+/// concatenated 32-byte ids. Bridges
+/// `platform_wallet_manager_txo_reconcile_due_wallets`: the steady-state
+/// edge and the cadence live there. Reporting a wallet consumes none of its
+/// cadence, so one the host skips is reported again. Called on every SPV
+/// progress poll, running or not. Backs `PlatformWalletManager`'s progress
+/// poll.
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerUtxosPageJson(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerTxoReconcileDueWallets(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let mut out = IdentifierArray {
+            items: ptr::null_mut(),
+            count: 0,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_txo_reconcile_due_wallets(
+                manager_handle as Handle,
+                &mut out as *mut IdentifierArray,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        identifier_array_to_flat(env, out)
+    })
+}
+
+/// Claim one wallet for a TXO-store reconcile run and check that it may
+/// start. Returns `TXO_RECONCILE_GATE_RUN` (0) or a `TXO_RECONCILE_SKIP_*`
+/// reason; on 0, `outTipHeight[0]` is the scan tip the run is measured
+/// against (the claim keeps it; the host only reports it), and the claim
+/// holds until `walletManagerTxoReconcileFinish`. Bridges
+/// `platform_wallet_manager_txo_reconcile_begin`, where every gate lives.
+///
+/// On 0 `outStart[0]` is where the run starts, a `TXO_RECONCILE_START_*`
+/// (0 a new cycle at the heal pass, 1 the heal pass where the last run
+/// stopped, 2 the classify pass), and for 2 `outStoreAfter[0]` is the
+/// store cursor to start after, as the host handed it to
+/// `walletManagerTxoReconcileClassifyPageApplied` (empty: the first row);
+/// otherwise it is null. The out-arrays are checked before the claim is
+/// taken, and a claim this export could not hand to Kotlin is released
+/// before it returns.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerTxoReconcileBegin(
     mut env: JNIEnv,
     _class: JClass,
     manager_handle: jlong,
     wallet_id: JByteArray,
-    cursor: JString,
-    limit: jni::sys::jint,
-) -> jni::sys::jstring {
+    out_tip_height: jni::sys::jintArray,
+    out_start: jni::sys::jintArray,
+    out_store_after: jni::sys::jobjectArray,
+) -> jint {
+    guard(&mut env, -1, |env| {
+        let Some(wid) = read_id32(env, &wallet_id) else {
+            return -1;
+        };
+        const OUTS: &str =
+            "outTipHeight and outStart must be IntArray(1), outStoreAfter an Array<ByteArray?>(1)";
+        if out_tip_height.is_null() || out_start.is_null() || out_store_after.is_null() {
+            throw_sdk_exception(env, 1, OUTS);
+            return -1;
+        }
+        // SAFETY: non-null arrays from the Kotlin caller.
+        let out_tip = unsafe { jni::objects::JIntArray::from_raw(out_tip_height) };
+        let out_start = unsafe { jni::objects::JIntArray::from_raw(out_start) };
+        let out_store_after = unsafe { JObjectArray::from_raw(out_store_after) };
+        // Checked before the claim is taken: a wrong-sized array would
+        // otherwise fail a write below with the wallet already claimed.
+        if !has_out_slot(env.get_array_length(&out_tip))
+            || !has_out_slot(env.get_array_length(&out_start))
+            || !has_out_slot(env.get_array_length(&out_store_after))
+        {
+            throw_sdk_exception(env, 1, OUTS);
+            return -1;
+        }
+        let mut gate = 0u8;
+        let mut tip_height = 0u32;
+        let mut start = platform_wallet_ffi::TXO_RECONCILE_START_HEAL;
+        let mut store_after = [0u8; platform_wallet_ffi::TXO_RECONCILE_STORE_CURSOR_MAX];
+        let mut store_after_len = 0usize;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_txo_reconcile_begin(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                &mut gate as *mut u8,
+                &mut tip_height as *mut u32,
+                &mut start as *mut u8,
+                store_after.as_mut_ptr(),
+                &mut store_after_len as *mut usize,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return -1;
+        }
+        if gate != platform_wallet_ffi::TXO_RECONCILE_GATE_RUN {
+            // A skip holds no claim.
+            return jint::from(gate);
+        }
+        // Kotlin releases the claim only after a RUN reaches it. Until then
+        // every exit — a failed write, a panic `guard` catches — finishes
+        // the run as one that did not go ahead. The finish resolves the
+        // manager in the native handle registry, which is safe here: begin
+        // holds no engine guard, so this cannot join the registry/engine
+        // lock cycle a held-verdicts release must stay out of.
+        let claim = UntilHandedOver::new(move || unsafe {
+            let _ = platform_wallet_ffi::platform_wallet_manager_txo_reconcile_finish(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                false,
+            );
+        });
+        // A tip past i32::MAX cannot cross as a jint; no Dash height is near it.
+        let tip = jint::try_from(tip_height).unwrap_or(jint::MAX);
+        if env.set_int_array_region(&out_tip, 0, &[tip]).is_err()
+            || env
+                .set_int_array_region(&out_start, 0, &[jint::from(start)])
+                .is_err()
+        {
+            return -1;
+        }
+        let after = if start == platform_wallet_ffi::TXO_RECONCILE_START_CLASSIFY {
+            let len = store_after_len.min(store_after.len());
+            match env.byte_array_from_slice(&store_after[..len]) {
+                Ok(bytes) => JObject::from(bytes),
+                Err(_) => return -1,
+            }
+        } else {
+            JObject::null()
+        };
+        if env
+            .set_object_array_element(&out_store_after, 0, after)
+            .is_err()
+        {
+            return -1;
+        }
+        claim.hand_over();
+        jint::from(gate)
+    })
+}
+
+/// Whether a Kotlin out-array of `length` (as `get_array_length` returned
+/// it) has the one slot an export writes.
+fn has_out_slot(length: jni::errors::Result<jni::sys::jsize>) -> bool {
+    matches!(length, Ok(n) if n >= 1)
+}
+
+/// Something a JNI export obtained natively and has not handed to Kotlin
+/// yet. Dropped before [`Self::hand_over`] — an early return, or a panic
+/// unwinding into `guard` — it runs `release` once.
+struct UntilHandedOver<F: FnOnce()> {
+    release: Option<F>,
+}
+
+impl<F: FnOnce()> UntilHandedOver<F> {
+    fn new(release: F) -> Self {
+        Self {
+            release: Some(release),
+        }
+    }
+
+    /// Kotlin owns it now.
+    fn hand_over(mut self) {
+        self.release = None;
+    }
+}
+
+impl<F: FnOnce()> Drop for UntilHandedOver<F> {
+    fn drop(&mut self) {
+        if let Some(release) = self.release.take() {
+            release();
+        }
+    }
+}
+
+/// Release the claim a 0 from `walletManagerTxoReconcileBegin` granted,
+/// and, as a backstop, any engine guard the run still holds; `ran` is
+/// whether the run went ahead, which restarts the wallet's cadence. Bridges
+/// `platform_wallet_manager_txo_reconcile_finish`. Resolves the manager
+/// handle, so Kotlin frees the last page's guard first
+/// (`txoReconcileHeldVerdictsFree`).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerTxoReconcileFinish(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    ran: jboolean,
+) {
+    guard(&mut env, (), |env| {
+        let Some(wid) = read_id32(env, &wallet_id) else {
+            return;
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_txo_reconcile_finish(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                ran != JNI_FALSE,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// Release the engine guard `walletManagerTxoHealPageJson` or
+/// `walletManagerTxoReconcileClassifyOutpoints` handed out as `outHeld[0]`,
+/// once its page is applied. Takes no manager handle and touches no handle
+/// registry, so it completes whatever is queued there. 0 is a no-op; each
+/// value is released once. Bridges
+/// `platform_wallet_txo_reconcile_held_verdicts_free`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_txoReconcileHeldVerdictsFree(
+    mut env: JNIEnv,
+    _class: JClass,
+    held: jlong,
+) {
+    guard(&mut env, (), |_env| unsafe {
+        platform_wallet_ffi::platform_wallet_txo_reconcile_held_verdicts_free(
+            held as *mut platform_wallet_ffi::TxoReconcileHeldVerdictsFFI,
+        )
+    })
+}
+
+/// Whether a TXO-store reconcile run classifies a page again after it came
+/// back stale for the `staleInARow`-th time in a row (counting this one).
+/// Bridges `platform_wallet_txo_reconcile_retry_stale_page`, which holds the
+/// limit. A negative count is no count at all and reads as 0.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_txoReconcileRetryStalePage(
+    mut env: JNIEnv,
+    _class: JClass,
+    stale_in_a_row: jint,
+) -> jboolean {
+    guard(&mut env, JNI_FALSE, |_env| {
+        let count = u32::try_from(stale_in_a_row).unwrap_or(0);
+        if platform_wallet_ffi::platform_wallet_txo_reconcile_retry_stale_page(count) {
+            JNI_TRUE
+        } else {
+            JNI_FALSE
+        }
+    })
+}
+
+/// One bounded page of the engine's UTXO inventory across every funds
+/// account of one wallet, each row with the engine's heal verdict, for the
+/// wallet's claimed reconcile run. Bridges
+/// `platform_wallet_txo_reconcile_heal_page`.
+///
+/// Paged rather than swept whole because inventory size is
+/// chain-controlled: anyone who knows a watched address can keep sending
+/// dust outputs to it, and a periodic full-inventory read would let them
+/// decide how much a phone allocates at every steady-state transition and
+/// every cadence pass. Nothing bigger than one page is ever formatted,
+/// copied across JNI, or parsed.
+///
+/// Returns a JSON object `{"utxos":[...],"hasMore":<bool>,"budgetSpent":<bool>}`.
+/// The run keeps its own place in the inventory: each page starts after
+/// the last one reported with `walletManagerTxoReconcileHealPageApplied`,
+/// or where the wallet's last run stopped, so the host passes no cursor;
+/// a page read again before it is reported is the same page. Keep going
+/// while `hasMore` is true. `budgetSpent` is true, with no rows and
+/// nothing held, once the run has read its budget of pages: stop the run;
+/// the wallet's next run picks up where it stopped. `limit` caps the rows
+/// in one page; non-positive passes 0, which means the engine's own
+/// default, and the engine clamps its own maximum — this layer holds no
+/// copy of either bound. The verdicts are measured against the run's own
+/// tip, which the engine keeps; the caller passes no height.
+///
+/// The page comes back with the engine's wallet-manager read lock still
+/// held, so no fork can drop a coin it offers before the page is written.
+/// The guard is `outHeld[0]` (0 when nothing is held), written last, only
+/// once the page is ready to return, and released with
+/// `txoReconcileHeldVerdictsFree` under the rules
+/// `walletManagerTxoReconcileClassifyOutpoints` gives.
+///
+/// Rows carry the engine's own address, flags and verdict. Nothing is
+/// derived here: an address computed in this shim could disagree with the
+/// one the engine credited the coin under, and the store keys its address
+/// rows by that string.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerTxoHealPageJson(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    limit: jint,
+    out_held: jlongArray,
+) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
+        let Some(out) = clear_out_held(env, out_held) else {
+            return ptr::null_mut();
+        };
         let Some(wid) = read_id32(env, &wallet_id) else {
             return ptr::null_mut();
         };
@@ -3561,88 +3752,75 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         // own maximum, so a host asking for more simply gets less.
         let page_limit = if limit <= 0 { 0usize } else { limit as usize };
 
-        // Resume point, decoded from the opaque cursor. Kept alive across
-        // the FFI call — it is passed by pointer.
-        let resume: Option<platform_wallet_ffi::WalletUtxoCursorFFI> = if cursor.is_null() {
-            None
-        } else {
-            let raw = match env.get_string(&cursor) {
-                Ok(s) => String::from(s),
-                Err(_) => {
-                    throw_sdk_exception(env, 1, "inventory cursor must be a String");
-                    return ptr::null_mut();
-                }
-            };
-            match UtxoPageCursor::decode(&raw) {
-                Some(r) => Some(r),
-                None => {
-                    throw_sdk_exception(
-                        env,
-                        1,
-                        "malformed inventory cursor: only a cursor returned by a previous page may be handed back",
-                    );
-                    return ptr::null_mut();
-                }
-            }
-        };
-
-        let mut entries: *const platform_wallet_ffi::WalletUtxoEntryFFI = ptr::null();
+        let mut entries: *const platform_wallet_ffi::TxoHealRowFFI = ptr::null();
         let mut count: usize = 0;
         let mut has_more = false;
+        let mut budget_spent = false;
+        let mut held: *mut platform_wallet_ffi::TxoReconcileHeldVerdictsFFI = ptr::null_mut();
         let result = unsafe {
-            platform_wallet_ffi::platform_wallet_wallet_utxos_page(
+            platform_wallet_ffi::platform_wallet_txo_reconcile_heal_page(
                 manager_handle as Handle,
                 wid.as_ptr(),
-                resume.as_ref().map_or(ptr::null(), |c| c as *const _),
                 page_limit,
                 &mut entries,
                 &mut count,
                 &mut has_more,
+                &mut budget_spent,
+                &mut held,
             )
         };
+        // Every exit before the hand-over frees the guard — see
+        // `walletManagerTxoReconcileClassifyOutpoints`.
+        let held = UnsentHeldVerdicts::new(
+            held,
+            platform_wallet_ffi::platform_wallet_txo_reconcile_held_verdicts_free,
+        );
         if take_pwffi_error(env, result) {
             return ptr::null_mut();
         }
         let mut rows: Vec<UtxoPageRow> = Vec::with_capacity(count);
         if !entries.is_null() && count > 0 {
             let items = unsafe { std::slice::from_raw_parts(entries, count) };
-            for e in items {
-                // SAFETY: every entry the accessor returns satisfies the
-                // pointer contract `from_entry` documents.
-                rows.push(unsafe { UtxoPageRow::from_entry(e) });
+            for r in items {
+                // SAFETY: every row the heal page returns satisfies the
+                // pointer contract `from_heal_row` documents.
+                rows.push(unsafe { UtxoPageRow::from_heal_row(r) });
             }
             unsafe {
-                platform_wallet_ffi::platform_wallet_wallet_utxos_page_free(
-                    entries as *mut platform_wallet_ffi::WalletUtxoEntryFFI,
+                platform_wallet_ffi::platform_wallet_txo_reconcile_heal_page_free(
+                    entries as *mut platform_wallet_ffi::TxoHealRowFFI,
                     count,
                 )
             };
         }
-        let page = match UtxoPage::new(rows, has_more) {
-            Ok(p) => p,
+        let page = if budget_spent {
+            UtxoPage::budget_spent()
+        } else {
+            UtxoPage::new(rows, has_more)
+        };
+        let json = match serde_json::to_string(&page) {
+            Ok(json) => json,
             Err(e) => {
-                throw_sdk_exception(env, 1, &format!("inventory cursor encode failed: {e}"));
+                throw_sdk_exception(env, 1, &format!("inventory page encode failed: {e}"));
                 return ptr::null_mut();
             }
         };
-        match serde_json::to_string(&page) {
-            Ok(json) => env
-                .new_string(json)
-                .map(|s| s.into_raw())
-                .unwrap_or(ptr::null_mut()),
-            Err(e) => {
-                throw_sdk_exception(env, 1, &format!("inventory page encode failed: {e}"));
-                ptr::null_mut()
-            }
+        let Ok(page) = env.new_string(json).map(|s| s.into_raw()) else {
+            return ptr::null_mut();
+        };
+        if !held.send(env, &out) {
+            return ptr::null_mut();
         }
+        page
     })
 }
 
-/// Classify a batch of store rows against the engine's live state — the
-/// reverse half of the reconcile transport, and the reason the paged
-/// inventory carries no spent-outpoint list. The host pages its OWN mirror
-/// rows and asks about them a batch at a time, so neither side builds a
-/// set over the whole engine inventory.
+/// Classify a batch of store rows against the engine's live state for the
+/// wallet's claimed reconcile run — the reverse half of the reconcile
+/// transport, and the reason the heal page carries no spent-outpoint list.
+/// The host pages its OWN mirror rows and asks about them a batch at a
+/// time, so neither side builds a set over the whole engine inventory.
+/// Bridges `platform_wallet_txo_reconcile_classify_outpoints`.
 ///
 /// `queriesJson` is a JSON array of store rows: the account tuple the
 /// store files each coin under, its `txid` (lower hex, wire order) and
@@ -3655,15 +3833,51 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
 /// `OUTPOINT_CLASS_*` constants (0 unknown, 1 unspent, 2 known-uncredited,
 /// 3 not-owned). A query whose account tag this build cannot map keeps
 /// `unknown` and the rest are still answered.
+///
+/// The answers come back with the engine's wallet-manager read lock still
+/// held, so no fork can drop a spender they name before the page is
+/// applied. The guard is `outHeld[0]` (0 when nothing is held), written
+/// last, only once the answers are ready to return; release it with
+/// `txoReconcileHeldVerdictsFree` once the page is applied and before the
+/// next call that takes this manager handle — those resolve the handle in
+/// the native registry, which must never be waited for while the guard is
+/// held. Call outside the persistence callback exclusion and never from a
+/// persistence callback: the engine calls those under its write lock.
+///
+/// Classify every store page the run reads, an empty one (`[]`) too: each
+/// call is one page of the run's budget, and names the page
+/// `walletManagerTxoReconcileClassifyPageApplied` reports. Once the run
+/// has used its budget, `outBudgetSpent[0]` is true, every answer is
+/// unknown and nothing is held.
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerClassifyOutpoints(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerTxoReconcileClassifyOutpoints(
     mut env: JNIEnv,
     _class: JClass,
     manager_handle: jlong,
     wallet_id: JByteArray,
     queries_json: JString,
+    out_budget_spent: jni::sys::jbooleanArray,
+    out_held: jlongArray,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
+        let Some(out) = clear_out_held(env, out_held) else {
+            return ptr::null_mut();
+        };
+        const BUDGET_OUT: &str = "outBudgetSpent must be a BooleanArray(1)";
+        if out_budget_spent.is_null() {
+            throw_sdk_exception(env, 1, BUDGET_OUT);
+            return ptr::null_mut();
+        }
+        // SAFETY: a non-null `jbooleanArray` from the Kotlin caller.
+        let out_budget_spent = unsafe { jni::objects::JBooleanArray::from_raw(out_budget_spent) };
+        if !has_out_slot(env.get_array_length(&out_budget_spent))
+            || env
+                .set_boolean_array_region(&out_budget_spent, 0, &[JNI_FALSE])
+                .is_err()
+        {
+            throw_sdk_exception(env, 1, BUDGET_OUT);
+            return ptr::null_mut();
+        }
         let Some(wid) = read_id32(env, &wallet_id) else {
             return ptr::null_mut();
         };
@@ -3681,12 +3895,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 return ptr::null_mut();
             }
         };
-        if parsed.is_empty() {
-            return env
-                .byte_array_from_slice(&[])
-                .map(|a| a.into_raw())
-                .unwrap_or(ptr::null_mut());
-        }
         // Scripts are owned here for the duration of the call — the query
         // struct borrows them by pointer.
         let mut scripts: Vec<Vec<u8>> = Vec::with_capacity(parsed.len());
@@ -3717,26 +3925,203 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
 
         // Caller-allocated answers, one byte per query.
         let mut classes = vec![platform_wallet_ffi::OUTPOINT_CLASS_UNKNOWN; queries.len()];
+        let mut budget_spent = false;
+        let mut held: *mut platform_wallet_ffi::TxoReconcileHeldVerdictsFFI = ptr::null_mut();
         let result = unsafe {
-            platform_wallet_ffi::platform_wallet_classify_outpoints(
+            platform_wallet_ffi::platform_wallet_txo_reconcile_classify_outpoints(
                 manager_handle as Handle,
                 wid.as_ptr(),
                 queries.as_ptr(),
                 queries.len(),
                 classes.as_mut_ptr(),
+                &mut budget_spent,
+                &mut held,
             )
         };
+        // From here every exit — an error, a failed write, a panic that
+        // `guard` catches — frees the guard, until Kotlin owns it.
+        let held = UnsentHeldVerdicts::new(
+            held,
+            platform_wallet_ffi::platform_wallet_txo_reconcile_held_verdicts_free,
+        );
         // `scripts` must outlive the call above; this keeps that explicit
         // against a future reorder.
         drop(scripts);
         if take_pwffi_error(env, result) {
             return ptr::null_mut();
         }
-        env.byte_array_from_slice(&classes)
-            .map(|a| a.into_raw())
-            .unwrap_or(ptr::null_mut())
+        if budget_spent
+            && env
+                .set_boolean_array_region(&out_budget_spent, 0, &[JNI_TRUE])
+                .is_err()
+        {
+            return ptr::null_mut();
+        }
+        let Ok(answers) = env.byte_array_from_slice(&classes).map(|a| a.into_raw()) else {
+            return ptr::null_mut();
+        };
+        if !held.send(env, &out) {
+            return ptr::null_mut();
+        }
+        answers
     })
 }
+
+/// The host has applied (and released the guard of) the heal page it last
+/// read: the run's next heal page starts after it, and so does the
+/// wallet's next run if this one stops here. Returns whether the run has
+/// budget left for another page. Bridges
+/// `platform_wallet_txo_reconcile_heal_page_applied`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerTxoReconcileHealPageApplied(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+) -> jboolean {
+    guard(&mut env, JNI_FALSE, |env| {
+        let Some(wid) = read_id32(env, &wallet_id) else {
+            return JNI_FALSE;
+        };
+        let mut may_continue = false;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_txo_reconcile_heal_page_applied(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                &mut may_continue,
+            )
+        };
+        if take_pwffi_error(env, result) || !may_continue {
+            return JNI_FALSE;
+        }
+        JNI_TRUE
+    })
+}
+
+/// The host has applied (and released the guard of) the store page it last
+/// classified. `nextAfter` is the host's own store cursor past that page,
+/// at most `TXO_RECONCILE_STORE_CURSOR_MAX` bytes, which
+/// `walletManagerTxoReconcileBegin` hands back to the wallet's next run;
+/// null when that was the store's last page, which ends the cycle.
+/// Returns whether the run has budget left for another page. Bridges
+/// `platform_wallet_txo_reconcile_classify_page_applied`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerTxoReconcileClassifyPageApplied(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    next_after: JByteArray,
+) -> jboolean {
+    guard(&mut env, JNI_FALSE, |env| {
+        let Some(wid) = read_id32(env, &wallet_id) else {
+            return JNI_FALSE;
+        };
+        let after = if next_after.is_null() {
+            None
+        } else {
+            match env.convert_byte_array(&next_after) {
+                Ok(bytes) => Some(bytes),
+                Err(_) => return JNI_FALSE,
+            }
+        };
+        let mut may_continue = false;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_txo_reconcile_classify_page_applied(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                after.as_ref().map_or(ptr::null(), |bytes| bytes.as_ptr()),
+                after.as_ref().map_or(0, Vec::len),
+                after.is_none(),
+                &mut may_continue,
+            )
+        };
+        if take_pwffi_error(env, result) || !may_continue {
+            return JNI_FALSE;
+        }
+        JNI_TRUE
+    })
+}
+
+/// Validate `outHeld` as a `LongArray(1)` and write "nothing held" to it,
+/// before any other check of a held read can return, so a reused array
+/// never carries a token from an earlier call into this one, whichever way
+/// this call ends. Throws and returns `None` on a null or short array.
+fn clear_out_held<'local>(
+    env: &mut JNIEnv<'local>,
+    out_held: jlongArray,
+) -> Option<jni::objects::JLongArray<'local>> {
+    const HELD_OUT: &str = "outHeld must be a LongArray(1)";
+    if out_held.is_null() {
+        throw_sdk_exception(env, 1, HELD_OUT);
+        return None;
+    }
+    // SAFETY: a non-null `jlongArray` from the Kotlin caller.
+    let out = unsafe { jni::objects::JLongArray::from_raw(out_held) };
+    if !has_out_slot(env.get_array_length(&out))
+        || env.set_long_array_region(&out, 0, &[0]).is_err()
+    {
+        throw_sdk_exception(env, 1, HELD_OUT);
+        return None;
+    }
+    Some(out)
+}
+
+/// A held-verdicts guard `walletManagerTxoHealPageJson` or
+/// `walletManagerTxoReconcileClassifyOutpoints` has not handed to Kotlin
+/// yet. Dropped before [`Self::hand_over`] — an early return, or a panic
+/// unwinding into `guard` — it frees the guard at once. Left to
+/// `walletManagerTxoReconcileFinish` instead, it would be released only by
+/// a call that resolves the manager handle in the native registry while
+/// the guard is still held, the registry/engine lock cycle the token exists
+/// to avoid.
+struct UnsentHeldVerdicts<T> {
+    held: *mut T,
+    free: unsafe extern "C" fn(*mut T),
+}
+
+impl<T> UnsentHeldVerdicts<T> {
+    fn new(held: *mut T, free: unsafe extern "C" fn(*mut T)) -> Self {
+        Self { held, free }
+    }
+
+    fn as_ptr(&self) -> *mut T {
+        self.held
+    }
+
+    /// Kotlin owns the guard now and frees it with
+    /// `txoReconcileHeldVerdictsFree`.
+    fn hand_over(mut self) {
+        self.held = ptr::null_mut();
+    }
+}
+
+impl UnsentHeldVerdicts<platform_wallet_ffi::TxoReconcileHeldVerdictsFFI> {
+    /// Write the guard to `outHeld[0]`, last, once the call's answer is
+    /// ready to return, and hand it to Kotlin. `false` — the guard freed
+    /// here — when the write failed.
+    fn send(self, env: &mut JNIEnv, out: &jni::objects::JLongArray) -> bool {
+        if env
+            .set_long_array_region(out, 0, &[self.as_ptr() as jlong])
+            .is_err()
+        {
+            return false;
+        }
+        self.hand_over();
+        true
+    }
+}
+
+impl<T> Drop for UnsentHeldVerdicts<T> {
+    fn drop(&mut self) {
+        if !self.held.is_null() {
+            // SAFETY: `held` came from the native held read and was never
+            // handed over, so nothing else frees it.
+            unsafe { (self.free)(self.held) };
+        }
+    }
+}
+
 /// Read a 32-byte id from a Java `byte[]`; throws + returns None on the
 /// wrong length or a JNI error.
 fn read_id32(env: &mut JNIEnv, arr: &JByteArray) -> Option<[u8; 32]> {
@@ -4528,7 +4913,10 @@ mod tests {
     //! silently.
 
     use super::*;
-    use platform_wallet_ffi::{AccountTypeTagFFI, StandardAccountTypeTagFFI, WalletUtxoEntryFFI};
+    use platform_wallet_ffi::{
+        AccountTypeTagFFI, StandardAccountTypeTagFFI, TxoHealRowFFI, WalletUtxoEntryFFI,
+        TXO_HEAL_VERDICT_ELIGIBLE, TXO_HEAL_VERDICT_IMMATURE, TXO_HEAL_VERDICT_INVALID,
+    };
     use std::ffi::CString;
 
     /// The checked-in transport payloads, shared byte-for-byte with the
@@ -4556,11 +4944,17 @@ mod tests {
         script
     }
 
-    /// One accessor entry plus the buffers it points into, kept alive with it.
+    /// One heal-page row plus the buffers it points into, kept alive with it.
     struct Coin {
-        entry: WalletUtxoEntryFFI,
+        row: TxoHealRowFFI,
         _address: CString,
         script: Vec<u8>,
+    }
+
+    impl Coin {
+        fn entry(&self) -> &WalletUtxoEntryFFI {
+            &self.row.utxo
+        }
     }
 
     struct CoinSpec {
@@ -4578,6 +4972,7 @@ mod tests {
         height: u32,
         /// confirmed, instantlocked, coinbase, locked.
         flags: [bool; 4],
+        heal_verdict: u8,
     }
 
     impl CoinSpec {
@@ -4612,7 +5007,10 @@ mod tests {
                 is_locked: self.flags[3],
             };
             Coin {
-                entry,
+                row: TxoHealRowFFI {
+                    utxo: entry,
+                    verdict: self.heal_verdict,
+                },
                 _address: address,
                 script,
             }
@@ -4641,6 +5039,7 @@ mod tests {
                 script: p2pkh(0x5b),
                 height: 1_534_921,
                 flags: [true, false, false, false],
+                heal_verdict: TXO_HEAL_VERDICT_ELIGIBLE,
             }
             .build(),
             CoinSpec {
@@ -4657,6 +5056,7 @@ mod tests {
                 script: p2pkh(0xc3),
                 height: 1_400_000,
                 flags: [true, true, true, true],
+                heal_verdict: TXO_HEAL_VERDICT_ELIGIBLE,
             }
             .build(),
             CoinSpec {
@@ -4673,6 +5073,7 @@ mod tests {
                 script: Vec::new(),
                 height: 0,
                 flags: [false, false, false, false],
+                heal_verdict: TXO_HEAL_VERDICT_INVALID,
             }
             .build(),
             CoinSpec {
@@ -4689,6 +5090,7 @@ mod tests {
                 script: p2pkh(0xd4),
                 height: 1_534_000,
                 flags: [true, true, false, false],
+                heal_verdict: TXO_HEAL_VERDICT_IMMATURE,
             }
             .build(),
         ]
@@ -4699,7 +5101,7 @@ mod tests {
             .iter()
             // SAFETY: every pointer in a `Coin` entry points into that coin's
             // own live buffers.
-            .map(|c| unsafe { UtxoPageRow::from_entry(&c.entry) })
+            .map(|c| unsafe { UtxoPageRow::from_heal_row(&c.row) })
             .collect()
     }
 
@@ -4707,7 +5109,7 @@ mod tests {
 
     #[test]
     fn inventory_page_serializes_to_the_golden_page() {
-        let page = UtxoPage::new(rows(&golden_coins()), true).expect("page encodes");
+        let page = UtxoPage::new(rows(&golden_coins()), true);
         assert_eq!(
             serde_json::to_value(&page).expect("page serializes"),
             golden()["inventoryPage"],
@@ -4716,120 +5118,52 @@ mod tests {
     }
 
     #[test]
-    fn a_last_or_empty_page_carries_no_cursor() {
-        let last = UtxoPage::new(rows(&golden_coins()), false).expect("page encodes");
-        assert!(!last.has_more);
-        assert!(last.cursor.is_none());
-        let value = serde_json::to_value(&last).expect("page serializes");
-        assert_eq!(value["cursor"], serde_json::Value::Null);
-        assert_eq!(value["hasMore"], serde_json::Value::Bool(false));
-
-        // An empty page has nowhere to resume from, whatever the accessor said.
-        let empty = UtxoPage::new(Vec::new(), true).expect("page encodes");
-        assert!(!empty.has_more);
-        assert!(empty.cursor.is_none());
-    }
-
-    #[test]
-    fn the_golden_cursor_resumes_after_the_last_row() {
-        let coins = golden_coins();
-        let last = &coins.last().expect("golden coins").entry;
-        let raw = golden()["inventoryPage"]["cursor"]
-            .as_str()
-            .expect("golden cursor is a string")
-            .to_owned();
-
-        let resume = UtxoPageCursor::decode(&raw).expect("golden cursor decodes");
-
-        assert_eq!(resume.type_tag, last.type_tag as u8);
-        assert_eq!(resume.standard_tag, last.standard_tag as u8);
-        assert_eq!(resume.index, last.index);
-        assert_eq!(resume.registration_index, last.registration_index);
-        assert_eq!(resume.key_class, last.key_class);
-        assert_eq!(resume.user_identity_id, last.user_identity_id);
-        assert_eq!(resume.friend_identity_id, last.friend_identity_id);
-        assert_eq!(resume.outpoint.txid, last.outpoint.txid);
-        assert_eq!(resume.outpoint.vout, last.outpoint.vout);
-    }
-
-    #[test]
-    fn a_cursor_round_trips_every_account_field() {
-        let coin = CoinSpec {
-            type_tag: AccountTypeTagFFI::PlatformPayment,
-            standard_tag: StandardAccountTypeTagFFI::Bip32,
-            index: 7,
-            registration_index: 9,
-            key_class: 2,
-            identities: [[0x0c; 32], [0x0d; 32]],
-            txid: txid(0x80),
-            vout: 65_535,
-            value: 1,
-            address: "yGoldenFixtureCursorAddr",
-            script: p2pkh(0x01),
-            height: 2,
-            flags: [false, true, false, true],
-        }
-        .build();
-        let row = rows(std::slice::from_ref(&coin)).remove(0);
-        let raw = serde_json::to_string(&UtxoPageCursor::after(&row)).expect("cursor encodes");
-
-        let resume = UtxoPageCursor::decode(&raw).expect("own cursor decodes");
-
-        let e = &coin.entry;
+    fn each_row_carries_the_engines_heal_verdict_unchanged() {
+        let value = serde_json::to_value(UtxoPage::new(rows(&golden_coins()), true))
+            .expect("page serializes");
+        let verdicts: Vec<u64> = value["utxos"]
+            .as_array()
+            .expect("utxos is an array")
+            .iter()
+            .map(|row| {
+                row["healVerdict"]
+                    .as_u64()
+                    .expect("healVerdict is a number")
+            })
+            .collect();
         assert_eq!(
-            (
-                resume.type_tag,
-                resume.standard_tag,
-                resume.index,
-                resume.registration_index,
-                resume.key_class
-            ),
-            (14, 1, 7, 9, 2)
+            verdicts,
+            [
+                TXO_HEAL_VERDICT_ELIGIBLE,
+                TXO_HEAL_VERDICT_ELIGIBLE,
+                TXO_HEAL_VERDICT_INVALID,
+                TXO_HEAL_VERDICT_IMMATURE
+            ]
+            .map(u64::from),
+            "the shim passes the verdict through; it never decides one"
         );
-        assert_eq!(resume.user_identity_id, e.user_identity_id);
-        assert_eq!(resume.friend_identity_id, e.friend_identity_id);
-        assert_eq!(resume.outpoint.txid, e.outpoint.txid);
-        assert_eq!(resume.outpoint.vout, e.outpoint.vout);
     }
 
     #[test]
-    fn a_cursor_this_layer_did_not_emit_is_rejected() {
-        let good: serde_json::Value = serde_json::from_str(
-            golden()["inventoryPage"]["cursor"]
-                .as_str()
-                .expect("golden cursor is a string"),
-        )
-        .expect("golden cursor is JSON");
-        let tampered = |key: &str, value: serde_json::Value| {
-            let mut c = good.clone();
-            c[key] = value;
-            c.to_string()
-        };
-        let mut missing_index = good.clone();
-        missing_index
-            .as_object_mut()
-            .expect("cursor is an object")
-            .remove("index");
+    fn a_last_or_empty_page_reports_no_more_and_carries_no_cursor() {
+        let last = UtxoPage::new(rows(&golden_coins()), false);
+        let value = serde_json::to_value(&last).expect("page serializes");
+        assert_eq!(value["hasMore"], serde_json::Value::Bool(false));
+        assert_eq!(value["budgetSpent"], serde_json::Value::Bool(false));
+        assert!(value.get("cursor").is_none(), "the run keeps its own place");
 
-        for (label, raw) in [
-            ("not a cursor object", "7".to_owned()),
-            ("missing index", missing_index.to_string()),
-            ("short txid", tampered("txid", "00".repeat(31).into())),
-            ("non-hex txid", tampered("txid", "zz".repeat(32).into())),
-            (
-                "short identity",
-                tampered("userIdentityId", "a1".repeat(31).into()),
-            ),
-            (
-                "odd-length identity",
-                tampered("friendIdentityId", "b".repeat(63).into()),
-            ),
-        ] {
-            assert!(
-                UtxoPageCursor::decode(&raw).is_none(),
-                "{label} must be rejected"
-            );
-        }
+        // An empty page has nothing after it, whatever the accessor said.
+        let empty = UtxoPage::new(Vec::new(), true);
+        assert!(!empty.has_more);
+    }
+
+    #[test]
+    fn a_budget_spent_page_carries_no_rows() {
+        let value = serde_json::to_value(UtxoPage::budget_spent()).expect("page serializes");
+        assert_eq!(
+            value,
+            serde_json::json!({"utxos": [], "hasMore": false, "budgetSpent": true})
+        );
     }
 
     // ── Classification queries (Kotlin → Rust) ────────────────────────
@@ -4846,7 +5180,7 @@ mod tests {
         assert_eq!(parsed.len(), coins.len());
 
         for (q, coin) in parsed.iter().zip(&coins) {
-            let e = &coin.entry;
+            let e = coin.entry();
             // The tuple the store sends is the tuple the inventory emitted.
             assert_eq!(q.account, UtxoAccountTuple::from_entry(e));
             let (ffi, script) = q.to_ffi().expect("golden query converts");
@@ -4940,6 +5274,113 @@ mod tests {
                 Some(expected),
                 "{key} must be rejected"
             );
+        }
+    }
+
+    mod until_handed_over {
+        use std::cell::Cell;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        use super::super::{has_out_slot, UntilHandedOver};
+
+        #[test]
+        fn an_unreturned_claim_is_released_once_on_drop() {
+            let released = Cell::new(0);
+            drop(UntilHandedOver::new(|| released.set(released.get() + 1)));
+            assert_eq!(released.get(), 1);
+        }
+
+        #[test]
+        fn a_claim_handed_to_kotlin_is_not_released() {
+            let released = Cell::new(0);
+            UntilHandedOver::new(|| released.set(released.get() + 1)).hand_over();
+            assert_eq!(released.get(), 0);
+        }
+
+        #[test]
+        fn a_panic_before_the_hand_over_releases_the_claim() {
+            let released = AtomicUsize::new(0);
+            let unwound = std::panic::catch_unwind(|| {
+                let _claim = UntilHandedOver::new(|| {
+                    released.fetch_add(1, Ordering::SeqCst);
+                });
+                panic!("writing outTipHeight failed");
+            });
+            assert!(unwound.is_err());
+            assert_eq!(
+                released.load(Ordering::SeqCst),
+                1,
+                "released while unwinding"
+            );
+        }
+
+        #[test]
+        fn an_out_array_needs_one_slot() {
+            assert!(has_out_slot(Ok(1)));
+            assert!(has_out_slot(Ok(2)));
+            assert!(
+                !has_out_slot(Ok(0)),
+                "an empty array is refused before the claim"
+            );
+            assert!(!has_out_slot(Err(jni::errors::Error::NullPtr("array"))));
+        }
+    }
+
+    mod unsent_held_verdicts {
+        use std::ptr::NonNull;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        use super::super::UnsentHeldVerdicts;
+
+        /// A stand-in guard: the frees below only count, never dereference.
+        fn token() -> *mut u8 {
+            NonNull::<u8>::dangling().as_ptr()
+        }
+
+        #[test]
+        fn an_unsent_guard_is_freed_once_on_drop() {
+            static FREED: AtomicUsize = AtomicUsize::new(0);
+            unsafe extern "C" fn free(_: *mut u8) {
+                FREED.fetch_add(1, Ordering::SeqCst);
+            }
+            drop(UnsentHeldVerdicts::new(token(), free));
+            assert_eq!(FREED.load(Ordering::SeqCst), 1);
+        }
+
+        #[test]
+        fn a_guard_handed_to_kotlin_is_not_freed() {
+            static FREED: AtomicUsize = AtomicUsize::new(0);
+            unsafe extern "C" fn free(_: *mut u8) {
+                FREED.fetch_add(1, Ordering::SeqCst);
+            }
+            let held = UnsentHeldVerdicts::new(token(), free);
+            assert_eq!(held.as_ptr(), token());
+            held.hand_over();
+            assert_eq!(FREED.load(Ordering::SeqCst), 0);
+        }
+
+        #[test]
+        fn a_panic_before_the_hand_over_frees_the_guard() {
+            static FREED: AtomicUsize = AtomicUsize::new(0);
+            unsafe extern "C" fn free(_: *mut u8) {
+                FREED.fetch_add(1, Ordering::SeqCst);
+            }
+            let unwound = std::panic::catch_unwind(|| {
+                let _held = UnsentHeldVerdicts::new(token(), free);
+                panic!("writing outHeld failed");
+            });
+            assert!(unwound.is_err());
+            assert_eq!(FREED.load(Ordering::SeqCst), 1, "freed while unwinding");
+        }
+
+        #[test]
+        fn nothing_held_is_nothing_freed() {
+            static FREED: AtomicUsize = AtomicUsize::new(0);
+            unsafe extern "C" fn free(_: *mut u8) {
+                FREED.fetch_add(1, Ordering::SeqCst);
+            }
+            drop(UnsentHeldVerdicts::new(std::ptr::null_mut(), free));
+            assert_eq!(FREED.load(Ordering::SeqCst), 0);
         }
     }
 }
