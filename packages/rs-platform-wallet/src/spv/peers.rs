@@ -1,11 +1,11 @@
 //! Connected-peer tracking and masternode-list classification.
 //!
 //! dash-spv does not expose the addresses of currently connected peers as
-//! a query; it pushes each change as `NetworkEvent::PeerConnected` or
-//! `NetworkEvent::PeerDisconnected`. [`PeerTracker`] mirrors the resulting
-//! set so [`SpvRuntime`](super::SpvRuntime) can answer "who are we
-//! connected to?" at any time, and classification against the masternode
-//! list turns each address into Evonode / Masternode / Normal for display.
+//! a query; it pushes them through `NetworkEvent::PeersUpdated` after every
+//! connect/disconnect. [`PeerTracker`] mirrors the latest snapshot so
+//! [`SpvRuntime`](super::SpvRuntime) can answer "who are we connected to?"
+//! at any time, and classification against the masternode list turns each
+//! address into Evonode / Masternode / Normal for display.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -40,15 +40,15 @@ pub struct SpvPeerInfo {
     pub node_type: SpvPeerNodeType,
 }
 
-/// [`EventHandler`] that mirrors the connected peers from dash-spv's peer events.
+/// [`EventHandler`] that mirrors the most recent `PeersUpdated` snapshot.
 ///
 /// Registered alongside the platform event manager on the SPV client's
 /// handler list; every other event uses the trait's no-op default.
 #[derive(Debug, Default)]
 pub(crate) struct PeerTracker {
     connected: Mutex<Vec<SocketAddr>>,
-    /// Woken (`notify_waiters`) after every peer event is applied, so a
-    /// readiness wait learns about peers without polling.
+    /// Woken (`notify_waiters`) after every `PeersUpdated` snapshot is
+    /// stored, so a readiness wait learns about peers without polling.
     updated: Arc<Notify>,
 }
 
@@ -62,15 +62,14 @@ impl PeerTracker {
     }
 
     /// Lock the snapshot, recovering from poisoning: it is only cloned,
-    /// cleared or changed by one push or removal, so a panicking holder
-    /// cannot tear it.
+    /// cleared or replaced whole, so a panicking holder cannot tear it.
     fn connected(&self) -> MutexGuard<'_, Vec<SocketAddr>> {
         self.connected
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Addresses of the currently connected peers.
+    /// Addresses from the latest `PeersUpdated` event.
     pub(crate) fn snapshot(&self) -> Vec<SocketAddr> {
         self.connected().clone()
     }
@@ -84,23 +83,12 @@ impl PeerTracker {
 
 impl EventHandler for PeerTracker {
     fn on_network_event(&self, event: &NetworkEvent) {
-        match event {
-            NetworkEvent::PeerConnected(address) => {
-                let mut connected = self.connected();
-                // dash-spv can reconnect an address before the old
-                // connection's departure, which it then leaves unannounced.
-                if !connected.contains(address) {
-                    connected.push(*address);
-                }
-            }
-            NetworkEvent::PeerDisconnected(address) => {
-                self.connected().retain(|connected| connected != address);
-            }
-            NetworkEvent::PeersUpdated { .. } => return,
+        if let NetworkEvent::PeersUpdated { addresses, .. } = event {
+            *self.connected() = addresses.clone();
+            // After the store (guard dropped above): a woken waiter must see
+            // the new snapshot.
+            self.updated.notify_waiters();
         }
-        // After the store (guard dropped above): a woken waiter must see
-        // the new snapshot.
-        self.updated.notify_waiters();
     }
 }
 
@@ -241,28 +229,19 @@ mod tests {
     }
 
     #[test]
-    fn peer_events_update_snapshot_and_clear_empties_it() {
-        let first = socket([1, 1, 1, 1], 9999);
-        let second = socket([2, 2, 2, 2], 9999);
+    fn peers_updated_replaces_snapshot_and_clear_empties_it() {
         let tracker = PeerTracker::default();
-        tracker.on_network_event(&NetworkEvent::PeerConnected(first));
-        assert_eq!(tracker.snapshot(), vec![first]);
-
-        tracker.on_network_event(&NetworkEvent::PeerConnected(second));
-        tracker.on_network_event(&NetworkEvent::PeerConnected(first));
-        assert_eq!(tracker.snapshot(), vec![first, second]);
-
         tracker.on_network_event(&NetworkEvent::PeersUpdated {
-            connected_count: 0,
+            addresses: vec![socket([1, 1, 1, 1], 9999)],
             best_height: 100,
         });
-        assert_eq!(tracker.snapshot(), vec![first, second]);
+        assert_eq!(tracker.snapshot(), vec![socket([1, 1, 1, 1], 9999)]);
 
-        tracker.on_network_event(&NetworkEvent::PeerDisconnected(first));
-        assert_eq!(tracker.snapshot(), vec![second]);
-
-        tracker.on_network_event(&NetworkEvent::PeerDisconnected(first));
-        assert_eq!(tracker.snapshot(), vec![second]);
+        tracker.on_network_event(&NetworkEvent::PeersUpdated {
+            addresses: vec![socket([2, 2, 2, 2], 9999)],
+            best_height: 100,
+        });
+        assert_eq!(tracker.snapshot(), vec![socket([2, 2, 2, 2], 9999)]);
 
         tracker.clear();
         assert!(tracker.snapshot().is_empty());
@@ -281,7 +260,10 @@ mod tests {
         .join();
         assert!(tracker.connected.is_poisoned());
 
-        tracker.on_network_event(&NetworkEvent::PeerConnected(socket([1, 1, 1, 1], 9999)));
+        tracker.on_network_event(&NetworkEvent::PeersUpdated {
+            addresses: vec![socket([1, 1, 1, 1], 9999)],
+            best_height: 100,
+        });
         assert_eq!(tracker.snapshot(), vec![socket([1, 1, 1, 1], 9999)]);
 
         tracker.clear();

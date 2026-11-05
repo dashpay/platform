@@ -87,7 +87,7 @@ pub struct SpvRuntime {
     peer_tracker: Arc<PeerTracker>,
     /// Woken (`notify_waiters`) on every transition that can make
     /// [`Self::is_broadcast_ready`] true: a client stored by `start`, and a
-    /// peer event applied by `peer_tracker`. Losing readiness
+    /// `PeersUpdated` snapshot stored by `peer_tracker`. Losing readiness
     /// wakes no one; waiters only care about gaining it.
     readiness_changed: Arc<Notify>,
 }
@@ -246,8 +246,8 @@ impl SpvRuntime {
         let network_manager = PeerNetworkManager::new(&config).await;
 
         // PlatformEventManager implements `EventHandler`; the peer tracker
-        // rides alongside it so `connected_peers` can answer from the peer
-        // events it mirrors without a dash-spv query API.
+        // rides alongside it so `connected_peers` can answer from the latest
+        // `PeersUpdated` snapshot without a dash-spv query API.
         let event_handlers: Vec<Arc<dyn EventHandler>> = vec![
             Arc::clone(&self.event_manager) as Arc<dyn EventHandler>,
             Arc::clone(&self.peer_tracker) as Arc<dyn EventHandler>,
@@ -366,7 +366,7 @@ impl SpvRuntime {
     /// un-broadcast for the whole session.
     ///
     /// Readiness is pushed, not polled: the wait re-checks only when
-    /// `start` stores a client or the peer tracker applies a peer event. While
+    /// `start` stores a client or a `PeersUpdated` snapshot lands. While
     /// neither happens it stays parked — including the "peers listed but
     /// client gone" window `stop` leaves until it clears the tracker. It
     /// registers for the wake-up before each check, so a transition racing
@@ -2207,10 +2207,13 @@ mod tests {
         // The event dash-spv pushes to its handlers on the first connection.
         runtime
             .peer_tracker
-            .on_network_event(&NetworkEvent::PeerConnected(SocketAddr::new(
-                IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
-                19999,
-            )));
+            .on_network_event(&NetworkEvent::PeersUpdated {
+                addresses: vec![SocketAddr::new(
+                    IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
+                    19999,
+                )],
+                best_height: 1_100_000,
+            });
 
         assert!(
             runtime.wait_until_ready(Duration::from_secs(30)).await,
@@ -2225,14 +2228,17 @@ mod tests {
         let _ = std::fs::remove_dir_all(&storage);
     }
 
-    /// The `PeerConnected` event dash-spv pushes when a peer connects.
+    /// The `PeersUpdated` event dash-spv pushes after a connection change.
     fn one_peer_connected() -> dash_spv::network::NetworkEvent {
         use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-        dash_spv::network::NetworkEvent::PeerConnected(SocketAddr::new(
-            IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
-            19999,
-        ))
+        dash_spv::network::NetworkEvent::PeersUpdated {
+            addresses: vec![SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
+                19999,
+            )],
+            best_height: 1_100_000,
+        }
     }
 
     /// Spawn a readiness wait and prove it parked: it is still pending
@@ -2249,11 +2255,11 @@ mod tests {
         waiter
     }
 
-    /// Readiness is pushed, not polled: the first `PeerConnected` of a
+    /// Readiness is pushed, not polled: the first `PeersUpdated` of a
     /// started client resolves a parked wait without any virtual time
     /// passing. A sleep-poll would only notice on its next tick.
     #[tokio::test(start_paused = true)]
-    async fn should_resolve_a_parked_wait_on_the_first_peer_connected_event() {
+    async fn should_resolve_a_parked_wait_on_the_first_peers_updated_event() {
         use dash_spv::EventHandler;
 
         let (runtime, _storage) = offline_runtime().await;
