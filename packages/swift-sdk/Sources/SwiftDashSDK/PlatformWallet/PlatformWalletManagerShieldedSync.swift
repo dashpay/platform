@@ -321,11 +321,15 @@ extension PlatformWalletManager {
 
     /// Stop the shielded sync loop, waiting on the calling thread.
     ///
-    /// The native stop cancels the loop, then waits up to 10 s (the Rust
-    /// coordinator's drain budget) for a pass in flight to finish. On the
-    /// main actor that freezes the UI for as long; the async overload runs
-    /// the same stop off the main thread. If the pass does not drain in time
-    /// this throws `shutdownIncomplete`, before bumping the generation.
+    /// The native stop cancels the loop and the pass in flight, then waits
+    /// up to 10 s (the Rust coordinator's drain budget) for that pass to
+    /// stop at its next checkpoint; a scan cut short publishes nothing and
+    /// the next pass re-walks from the last completed watermark. On the
+    /// main actor the wait freezes the UI for as long; the async overload
+    /// runs the same stop off the main thread. If the pass does not drain
+    /// in time (it is wedged in a host persister, or in a broadcast the
+    /// SDK is still retrying) this throws `shutdownIncomplete`, before
+    /// bumping the generation.
     ///
     /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
     /// flight: this stop would wait on the same drain on the calling thread.
@@ -348,11 +352,13 @@ extension PlatformWalletManager {
     /// context overload resolution prefers this variant; sync contexts keep
     /// the blocking one.
     ///
-    /// The native stop cancels the loop at once, so no new pass starts, then
-    /// waits up to 10 s for a pass in flight to finish; a running pass cannot
-    /// be interrupted. If it does not drain in time this throws
-    /// `shutdownIncomplete`, and the pass keeps running: it can still persist
-    /// what it finds and deliver its events after this returns.
+    /// The native stop cancels the loop at once, so no new pass starts, and
+    /// cancels the pass in flight, which stops at its next checkpoint and
+    /// publishes nothing; the stop waits up to 10 s for it to do so. If it
+    /// does not drain in time (wedged in a host persister, or in a broadcast
+    /// the SDK is still retrying) this throws `shutdownIncomplete`, and the
+    /// pass keeps running: it can still persist what it finds and deliver
+    /// its events after this returns.
     ///
     /// Events: while the stop is in flight, progress events that reach the
     /// main actor are dropped, and a completion is held

@@ -14,6 +14,7 @@ use dpp::bls::SecretKey;
 use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
 use dpp::dashcore::{BlockHash, ChainLock, QuorumHash, QuorumSigningRequestId};
 use dpp::dashcore_rpc::json::QuorumType;
+use std::num::{NonZeroU16, NonZeroU32};
 
 /// The chain lock quorum type of local networks (llmq_test): a 24 block DKG interval whose
 /// commitment is mined at offsets 10 to 18, with two quorums active.
@@ -21,8 +22,8 @@ pub fn llmq_test_chain_lock_config() -> ChainLockConfig {
     ChainLockConfig {
         quorum_type: QuorumType::LlmqTest,
         quorum_size: 3,
-        quorum_window: 24,
-        quorum_active_signers: 2,
+        quorum_window: NonZeroU32::new(24).unwrap(),
+        quorum_active_signers: NonZeroU16::new(2).unwrap(),
         quorum_rotation: false,
     }
 }

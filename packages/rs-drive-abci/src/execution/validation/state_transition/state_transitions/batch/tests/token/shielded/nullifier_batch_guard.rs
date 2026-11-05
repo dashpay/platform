@@ -734,7 +734,7 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 .value
                 .unwrap()
         ),
-        "0ed48425e10d0aa37b68f4f1e52c773a667304f9b510a4151b1dbc323f350076"
+        "fb76e051fe936ae3e39265a9cddf3d3297e901ca2c6048c1dcf85b82a92d8778"
     );
     assert_eq!(
         pool.platform
@@ -1867,11 +1867,13 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
             "SINGLE SPONSORED PAYMENT shielded={shielded}: {:?}",
             result.execution_results()
         );
+        // Both estimates are apply_drive_operations 2's (protocol version 15), which resolves
+        // the batch's estimate (protocol v15 note 14).
         let (estimated_storage, estimated_processing, actual_storage, actual_processing) =
             if shielded {
-                (171_126_000, 213_217_600, 155_142_000, 92_739_560)
+                (171_126_000, 213_389_040, 155_142_000, 92_739_560)
             } else {
-                (138_024_000, 117_541_680, 126_468_000, 3_870_440)
+                (138_024_000, 117_713_120, 126_468_000, 3_870_440)
             };
         assert_eq!(
             result.execution_results().as_slice(),
@@ -2158,39 +2160,39 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
         let (expected_validation, expected_settled) = match case {
             "shield" => (
                 "6a823c2db94612652926e6b9c1ae7feec9c2547dfd4cfc4e474318da1c16d59c",
-                "5ec2378c4d9015a2b5ad8552797497e7c53f3a80b31b6491db88e43e27972060",
+                "eb7e34a02f156dbe1d9c9609b41bd67a033d1cd3fe81c5f2e6fcef575fc88459",
             ),
             "valid-payment" => (
-                "a1308c6fe05b0a60cfee4fa0d43f7bda5856b02f7d11f3499fd1acd866328aa3",
-                "90439b1b17e8d5a003958e2cb256f4bc47c7d08afaf3d18f0e36b668c00ac9df",
+                "9388d5cf63c4a571b9fb009679e2e34d0b681acc88f0f5195e7287c7efbd92f7",
+                "44684cf51317f0e60bc836e7bd671798145bb69bc7605241ebbc659028d50070",
             ),
             "failed-payment" => (
                 "d9b5fe191841bea952494f2a45e3833f925f4d367a1937b2ef1235a1aa01f51e",
-                "cbccba78463e46aaab22351f696d704651d76095d8d09cb820d7d3d901d0b0da",
+                "365a97c4e20ae4ee695505a8d5dbb0dea5584c14eb4c6b223a3ae4f0b2f8b668",
             ),
             "within-bundle-repeat" => (
                 "8023e03a697a20f6a78396a05503a4bc583ca8f69e19bd7ee07a6ae0ce7be478",
-                "fa77338960e55ad5ce67a338127a0ae77fcae262f1a23bc237b1d9a15dcc61fa",
+                "b9cfc7cafbeafb436917f0b35bfa97df6be58b73a25e0159038558fdc9a2751c",
             ),
             "stored-repeat" => (
                 "05652ac85c972902e8c09d20a7d8586e17e9434a478b335da136ad85f73def01",
-                "575b104c33a9a4425b3fbb58a6a6d5b3d5790ba04c84ac11f4bb432e8c58f3fd",
+                "9e1d6b0bc9097d817f4ca0ac952611f69398d8f201b6eb36556059b166488393",
             ),
             "open-mint-group" => (
                 "5c68381297c9bf68c5e85ebe6bb9e0f1289e2c07718eecfb5e6773d6009455bb",
-                "8f312783271abade3cd47d38981225a72477cb7b1cd3812028d514119eca1517",
+                "b96b1e9b643552413c2e5049f9f9b6ae92357a6ad462e2d3a673d239a355cfd9",
             ),
             "closing-mint-group" => (
                 "2cedc16732c76e0605b5f46085db3d69c12936a5af55a2a82f52ec9e9ca67e38",
-                "5dac51fdee8bb00560d035496286d8ca5703bdffbf444d3fb82af5f2d050803c",
+                "78fd3bdabed41d31082162dfc95158872108872c79f3041ef3d71c7fa48dd905",
             ),
             "open-burn-group" => (
                 "e664a045f020ff84de1ca98f364fbabccfc141ad46aa82c79491a340bb0db5f8",
-                "45d313dd0b30e5875b4c207c272d08b23241cd8d22df976ef3abe5fab00a04d5",
+                "38b6b6d2d77fb41c4262adaa6bbbd581dbb2c5d3195e3d11cec16411464e2758",
             ),
             "closing-burn-group" => (
                 "93e1732286f168c4a91d2765931e181c5721bfca1bfd5f93b8baacca03e00b2b",
-                "a89f568a0068341804b030000219994a544a48ef5f2591085ee98820c75923cb",
+                "6a4f89129b2bd16b078b1165a46775e20deb1808bfd239fd49e5f4e89e45453c",
             ),
             _ => unreachable!("enumerated characterization case"),
         };

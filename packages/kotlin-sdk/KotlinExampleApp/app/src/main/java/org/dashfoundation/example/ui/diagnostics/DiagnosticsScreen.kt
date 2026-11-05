@@ -183,7 +183,7 @@ fun DiagnosticsScreen(navController: NavHostController) {
                         results = emptyList()
                         progress = 0f
                         val runnable = QUERY_REGISTRY.filter { query ->
-                            query.inputs.filter { it.required }
+                            query.runsInDiagnostics && query.inputs.filter { it.required }
                                 .all { query.diagnosticInputs.containsKey(it.name) }
                         }
                         val collected = ArrayList<QueryRunResult>(runnable.size)

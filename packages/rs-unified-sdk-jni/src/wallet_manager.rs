@@ -64,7 +64,7 @@ use std::ptr;
 
 #[cfg(feature = "shielded")]
 use rs_sdk_ffi::MnemonicResolverHandle;
-use rs_sdk_ffi::{dash_sdk_get_inner_sdk_ptr, SDKHandle};
+use rs_sdk_ffi::{dash_sdk_get_inner_sdk_ptr, FFINetwork, SDKHandle};
 
 // ── Manager bundle ────────────────────────────────────────────────────
 
@@ -2032,6 +2032,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 signer_handle as *mut rs_sdk_ffi::SignerHandle,
                 core_signer_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
                 &mut changeset as *mut platform_wallet_ffi::PlatformAddressChangeSetFFI,
+                // Kotlin hosts do not take the callback.
+                None,
+                std::ptr::null_mut(),
             )
         };
 
@@ -3175,12 +3178,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
 
 /// Map the Kotlin `Network.ffiValue` int (0=Mainnet,1=Testnet,2=Devnet,
 /// 3=Regtest) to `FFINetwork`.
-fn ffi_network(value: jni::sys::jint) -> dash_network::ffi::FFINetwork {
+fn ffi_network(value: jni::sys::jint) -> FFINetwork {
     match value {
-        0 => dash_network::ffi::FFINetwork::Mainnet,
-        2 => dash_network::ffi::FFINetwork::Devnet,
-        3 => dash_network::ffi::FFINetwork::Regtest,
-        _ => dash_network::ffi::FFINetwork::Testnet,
+        0 => FFINetwork::Mainnet,
+        2 => FFINetwork::Devnet,
+        3 => FFINetwork::Regtest,
+        _ => FFINetwork::Testnet,
     }
 }
 

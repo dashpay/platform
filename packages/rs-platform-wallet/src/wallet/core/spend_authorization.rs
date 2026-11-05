@@ -265,10 +265,7 @@ mod tests {
             borrow = first_borrow || second_borrow;
         }
         let high = EcdsaSignature::from_bytes(&compact).unwrap();
-        assert!(key
-            .public_key()
-            .verify(&hash.to_byte_array(), high)
-            .is_err());
+        assert!(!high.is_low_s());
         let mut signature = high.with_der(|der| der.to_vec());
         signature.push(1);
         tx.input[0].script_sig = Builder::new()
