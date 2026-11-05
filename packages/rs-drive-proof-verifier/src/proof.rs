@@ -461,34 +461,55 @@ fn proof_query_platform_version(
     })
 }
 
+/// A context provider's configuration error, kept aside while Drive, whose errors cannot
+/// carry it, verifies a proof with what the provider answers.
+///
+/// The provider is set up so that it cannot serve what Drive asked for, whichever node's
+/// answer is verified with it, so the error replaces the verification failure it caused.
+#[derive(Default)]
+struct ProviderMisconfiguration(RefCell<Option<ContextProviderError>>);
+
+impl ProviderMisconfiguration {
+    /// The text Drive is given of the provider's `error`; a configuration error is kept.
+    fn describe(&self, error: ContextProviderError) -> String {
+        let reason = error.to_string();
+        if matches!(error, ContextProviderError::Config(_)) {
+            *self.0.borrow_mut() = Some(error);
+        }
+        reason
+    }
+
+    /// `result`, or the kept configuration error in place of the failure it caused.
+    fn in_place_of_failure<T>(self, result: Result<T, Error>) -> Result<T, Error> {
+        match (result, self.0.into_inner()) {
+            (Err(_), Some(error)) => Err(Error::ContextProviderError(error)),
+            (result, _) => result,
+        }
+    }
+}
+
 /// Runs `verify` with a lookup of the data contracts it needs in `provider`.
 ///
-/// Drive's errors cannot carry the provider's, so the lookup gives Drive a failed lookup as
-/// text, as [`crate::DataContractProvider::as_contract_lookup_fn`] does. A configuration
-/// error is also kept aside and returned in place of the failure it caused: the provider is
-/// set up so that it cannot serve the lookup, whichever node's answer is verified with it.
+/// The lookup gives Drive a failed lookup as text, as
+/// [`crate::DataContractProvider::as_contract_lookup_fn`] does, and a configuration error
+/// is reported in place of the failure it caused ([`ProviderMisconfiguration`]).
 fn with_contract_lookup<T>(
     provider: &dyn ContextProvider,
     platform_version: &PlatformVersion,
     verify: impl FnOnce(&ContractLookupFn) -> Result<T, Error>,
 ) -> Result<T, Error> {
-    let misconfigured = RefCell::new(None);
+    let misconfiguration = ProviderMisconfiguration::default();
     let lookup = |id: &Identifier| {
         provider
             .get_data_contract(id, platform_version)
             .map_err(|error| {
-                let reason = error.to_string();
-                if matches!(error, ContextProviderError::Config(_)) {
-                    *misconfigured.borrow_mut() = Some(error);
-                }
-                drive::error::Error::Proof(ProofError::ErrorRetrievingContract(reason))
+                drive::error::Error::Proof(ProofError::ErrorRetrievingContract(
+                    misconfiguration.describe(error),
+                ))
             })
     };
     let result = verify(&lookup);
-    match (result, misconfigured.take()) {
-        (Err(_), Some(error)) => Err(Error::ContextProviderError(error)),
-        (result, _) => result,
-    }
+    misconfiguration.in_place_of_failure(result)
 }
 
 impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identity {
@@ -2483,18 +2504,23 @@ impl FromProof<platform::GetTotalCreditsInPlatformRequest> for TotalCreditsInPla
 
         let core_subsidy_halving_interval = network.core_subsidy_halving_interval();
 
-        let (root_hash, credits) = Drive::verify_total_credits_in_system(
+        // Drive asks for the activation height only when the unpaid epoch is the first one.
+        let misconfiguration = ProviderMisconfiguration::default();
+        let verified = Drive::verify_total_credits_in_system(
             supported_grovedb_proof_bytes(proof)?,
             core_subsidy_halving_interval,
             || {
                 provider.get_platform_activation_height().map_err(|e| {
-                    drive::error::Error::Proof(ProofError::MissingContextRequirement(e.to_string()))
+                    drive::error::Error::Proof(ProofError::MissingContextRequirement(
+                        misconfiguration.describe(e),
+                    ))
                 })
             },
             mtd.core_chain_locked_height,
             platform_version,
         )
-        .map_drive_error(proof, mtd)?;
+        .map_drive_error(proof, mtd);
+        let (root_hash, credits) = misconfiguration.in_place_of_failure(verified)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -3565,6 +3591,93 @@ mod tests {
         {
             panic!("platform activation height should not be requested")
         }
+    }
+
+    /// Answers every data contract lookup with the error its function makes.
+    struct FailingContractProvider(fn() -> ContextProviderError);
+
+    impl dash_context_provider::ContextProvider for FailingContractProvider {
+        fn get_data_contract(
+            &self,
+            _id: &dpp::prelude::Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<std::sync::Arc<DataContract>>, ContextProviderError> {
+            Err((self.0)())
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &dpp::prelude::Identifier,
+        ) -> Result<Option<dpp::data_contract::TokenConfiguration>, ContextProviderError> {
+            panic!("token configuration should not be requested")
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            panic!("quorum public key should not be requested")
+        }
+
+        fn get_platform_activation_height(
+            &self,
+        ) -> Result<dpp::prelude::CoreBlockHeight, ContextProviderError> {
+            panic!("platform activation height should not be requested")
+        }
+    }
+
+    fn no_contract_source() -> ContextProviderError {
+        ContextProviderError::Config("no contract source".to_string())
+    }
+
+    /// Drive verifies some proofs without the contract a failed lookup could not give, such
+    /// as a deletion a removal record proves. A configuration error then changes nothing:
+    /// the verification's own result is kept.
+    #[test]
+    fn should_keep_a_verification_that_succeeds_after_a_failed_contract_lookup() {
+        let provider = FailingContractProvider(no_contract_source);
+        let result = with_contract_lookup(&provider, PlatformVersion::latest(), |lookup| {
+            assert!(lookup(&Identifier::new([1; 32])).is_err());
+            Ok(7)
+        });
+        assert!(matches!(result, Ok(7)), "{result:?}");
+    }
+
+    /// A verification that fails after the provider refused a lookup with a configuration
+    /// error fails with that error, which the SDK attributes to its own setup. Any other
+    /// provider failure stays the Drive error it was.
+    #[test]
+    fn should_report_only_a_configuration_error_in_place_of_the_failure_it_caused() {
+        let verify = |provider: &dyn ContextProvider| {
+            with_contract_lookup(provider, PlatformVersion::latest(), |lookup| {
+                lookup(&Identifier::new([1; 32]))?;
+                Ok(())
+            })
+        };
+
+        let misconfigured = verify(&FailingContractProvider(no_contract_source));
+        assert!(
+            matches!(
+                &misconfigured,
+                Err(Error::ContextProviderError(ContextProviderError::Config(reason)))
+                    if reason == "no contract source"
+            ),
+            "{misconfigured:?}"
+        );
+
+        let unavailable = verify(&FailingContractProvider(|| {
+            ContextProviderError::Generic("timed out".to_string())
+        }));
+        assert!(
+            matches!(
+                &unavailable,
+                Err(Error::DriveError { error })
+                    if error.contains("could not be retrieved") && error.contains("timed out")
+            ),
+            "{unavailable:?}"
+        );
     }
 
     /// Build a fully-populated `GetIdentityResponse` shell so that
