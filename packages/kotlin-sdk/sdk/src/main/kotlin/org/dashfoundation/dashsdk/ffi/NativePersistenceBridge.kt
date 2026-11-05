@@ -1117,7 +1117,9 @@ class ProviderSpecialTxRestoreData(
  * `onWalletChangesetUtxoAdded`); [scriptPubKey] is the output script —
  * the Rust side reconstructs the address from `(script, network)`, so
  * no address string crosses the FFI. `isTrusted` is runtime-only and
- * recomputed on the next SPV pass (not carried).
+ * recomputed on the next SPV pass (not carried). [parentContext] /
+ * [parentBlockHeight] carry the creating transaction's row so the loader
+ * can raise a coin that lags its own transaction's confirmation.
  */
 class UtxoRestoreData(
     @JvmField val typeTag: Byte,
@@ -1136,6 +1138,14 @@ class UtxoRestoreData(
     @JvmField val isConfirmed: Boolean,
     @JvmField val isInstantLocked: Boolean,
     @JvmField val isLocked: Boolean,
+    /**
+     * The stored context of the coin's creating transaction, copied as-is
+     * (0=mempool, 1=instantSend, 2=inBlock, 3=inChainLockedBlock; 0 when
+     * there is no row). The Rust loader decides what it means for the coin.
+     */
+    @JvmField val parentContext: Int,
+    /** The stored block height of the coin's creating transaction; 0 when none. */
+    @JvmField val parentBlockHeight: Int,
 )
 
 /**

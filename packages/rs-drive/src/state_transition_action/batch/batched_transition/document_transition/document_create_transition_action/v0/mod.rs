@@ -24,6 +24,7 @@ use crate::state_transition_action::batch::batched_transition::document_transiti
 use crate::state_transition_action::batch::batched_transition::document_transition::drop_transient_values;
 
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+use crate::util::storage_flags::StorageFlags;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
 
@@ -67,19 +68,47 @@ pub struct DocumentCreateTransitionActionV0 {
     /// reading them again. `None` when the action is built and on a type declaring none, and
     /// boxed, since only such a create holds any and the action is one variant of a large enum.
     pub derived_index_values: Option<Box<BTreeMap<String, Value>>>,
+    /// Set for the create of a decision proposal (protocol version 15), a `proposal` of the
+    /// decision proposals contract, and `None` for any other create: the fund it states. Boxed,
+    /// since only such a create holds one.
+    pub decision_proposal: Option<Box<DecisionProposalCreate>>,
+}
+
+/// What a decision proposal's create carries beside its document (protocol version 15).
+#[derive(Debug, Clone, PartialEq)]
+pub struct DecisionProposalCreate {
+    /// The fund the create states, as the name and the amount of its prefunded voting
+    /// balance; `None` when it states none. Structure validation requires exactly the decision
+    /// proposal fund under the proposal's name.
+    pub stated_fund: Option<(String, Credits)>,
 }
 
 /// A document of the create's own contract that the create deletes because it revealed it:
 /// the commitment a `refersTo` lookup with a computed key found, the reference declaring
-/// `consume`. Its
+/// `consume`. Registration refuses `consume` beside a `findBy` into another contract, so the
+/// lookup always read the create's own contract. Its
 /// owner is the writer (registration demands the `$ownerId` agreement pair), so the delete is
 /// the one that owner could have made, and its storage is refunded the same way.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ConsumedDocument {
     /// The consumed document's id.
     pub document_id: Identifier,
     /// The consumed document's type, in the create's contract.
     pub document_type_name: String,
+    /// What the lookup read of the consumed document, kept by document reference validation 1
+    /// (protocol version 15) so the create conversion 1 deletes it without reading it again.
+    /// `None` from document reference validation 0, whose conversion deletes it by id.
+    pub read: Option<ConsumedDocumentRead>,
+}
+
+/// A consumed document as its `refersTo` lookup read it: the document and the storage flags
+/// of its stored element, which the delete refunds by.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConsumedDocumentRead {
+    /// The consumed document.
+    pub document: Document,
+    /// The storage flags of the consumed document's stored element.
+    pub storage_flags: Option<StorageFlags>,
 }
 
 /// document create transition action accessors v0
@@ -143,6 +172,9 @@ pub trait DocumentCreateTransitionActionAccessorsV0 {
     /// The documents this create consumes, deleted in the same state transition.
     fn consumed_documents(&self) -> &[ConsumedDocument];
 
+    /// Takes the documents this create consumes, leaving none.
+    fn take_consumed_documents(&mut self) -> Vec<ConsumedDocument>;
+
     /// Sets the documents this create consumes.
     fn set_consumed_documents(&mut self, consumed_documents: Vec<ConsumedDocument>);
 
@@ -153,6 +185,10 @@ pub trait DocumentCreateTransitionActionAccessorsV0 {
     /// Records the values of the document type's derived index properties, once the
     /// reference validation has fetched the documents they are read from
     fn set_derived_index_values(&mut self, values: BTreeMap<String, Value>);
+
+    /// What a decision proposal's create carries beside its document; `None` for any other
+    /// create
+    fn decision_proposal(&self) -> Option<&DecisionProposalCreate>;
 }
 
 /// documents from create transition v0

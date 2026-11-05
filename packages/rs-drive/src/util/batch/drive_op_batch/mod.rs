@@ -12,9 +12,11 @@ mod prefunded_specialized_balance;
 mod shielded;
 mod system;
 mod token;
+mod vote_poll;
 mod withdrawals;
 
 use crate::util::batch::GroveDbOpBatch;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::drive::contract::moderation::types::ContractTeamActionWrite;
 use crate::drive::document::preallocation_bindings_targeting;
@@ -39,14 +41,15 @@ pub use prefunded_specialized_balance::PrefundedSpecializedBalanceOperationType;
 pub use shielded::ShieldedPoolOperationType;
 pub use system::SystemOperationType;
 pub use token::TokenOperationType;
+pub use vote_poll::VotePollOperationType;
 pub use withdrawals::WithdrawalOperationType;
 
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
+use grovedb::batch::QualifiedGroveDbOp;
 
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
@@ -60,7 +63,7 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A converter that will get Drive Operations from High Level Operations
 pub trait DriveLowLevelOperationConverter {
@@ -68,9 +71,7 @@ pub trait DriveLowLevelOperationConverter {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -116,6 +117,8 @@ pub enum DriveOperation<'a> {
     AddressFundsOperation(AddressFundsOperationType),
     /// A shielded pool operation
     ShieldedPoolOperation(ShieldedPoolOperationType),
+    /// A vote poll operation: the opening of a yes/no vote poll
+    VotePollOperation(VotePollOperationType),
     /// A single low level groveDB operation
     GroveDBOperation(QualifiedGroveDbOp),
     /// Multiple low level groveDB operations
@@ -128,9 +131,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -196,6 +197,14 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                     platform_version,
                 )
             }
+            DriveOperation::VotePollOperation(vote_poll_operation_type) => vote_poll_operation_type
+                .into_low_level_drive_operations(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                    platform_version,
+                ),
             DriveOperation::GroveDBOperation(op) => Ok(vec![GroveOperation(op)]),
             DriveOperation::GroveDBOpBatch(operations) => Ok(operations
                 .operations
@@ -300,9 +309,7 @@ impl DriveOperation<'_> {
     pub(crate) fn into_low_level_drive_operations_after_ttl_drain(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -360,7 +367,7 @@ impl Drive {
     /// (`max_transitions_in_documents_batch`) and only transitions write
     /// indexOnly documents, so no consensus batch moves a counter twice; this
     /// keeps it so for every caller of the batch methods, estimation
-    /// included. Only protocol version 14's batch methods call it.
+    /// included. `apply_drive_operations` 1 and 2 (protocol versions 14 and 15) call it.
     pub(crate) fn refuse_repeated_counter_moves(
         &self,
         operations: &[DriveOperation],
@@ -767,7 +774,6 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::DataContract;
-    use dpp::serialization::PlatformSerializableWithPlatformVersion;
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
     use dpp::util::cbor_serializer;
     use rand::Rng;
@@ -873,7 +879,7 @@ mod tests {
             element,
             Element::Item(
                 contract
-                    .serialize_to_bytes_with_platform_version(platform_version)
+                    .serialize_to_storage_bytes(platform_version)
                     .expect("expected to serialize contract"),
                 None
             )
@@ -1104,7 +1110,7 @@ mod tests {
             element,
             Element::Item(
                 contract
-                    .serialize_to_bytes_with_platform_version(platform_version)
+                    .serialize_to_storage_bytes(platform_version)
                     .expect("expected to serialize contract"),
                 None
             )

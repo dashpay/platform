@@ -3011,6 +3011,12 @@ fn build_utxo_restore_entries(
                 let is_confirmed = env.get_field(&h, "isConfirmed", "Z")?.z()?;
                 let is_instantlocked = env.get_field(&h, "isInstantLocked", "Z")?.z()?;
                 let is_locked = env.get_field(&h, "isLocked", "Z")?.z()?;
+                // Kotlin carries the store's unsigned columns as `Int`; a
+                // negative value is a corrupt row, read as "no evidence".
+                let parent_context =
+                    u32::try_from(env.get_field(&h, "parentContext", "I")?.i()?).unwrap_or(0);
+                let parent_block_height =
+                    u32::try_from(env.get_field(&h, "parentBlockHeight", "I")?.i()?).unwrap_or(0);
                 Ok(UtxoRestoreStaged {
                     entry: UtxoRestoreEntryFFI {
                         type_tag,
@@ -3030,6 +3036,8 @@ fn build_utxo_restore_entries(
                         is_confirmed,
                         is_instantlocked,
                         is_locked,
+                        parent_context,
+                        parent_block_height,
                     },
                     script,
                 })

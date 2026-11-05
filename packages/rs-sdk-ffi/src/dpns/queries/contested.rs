@@ -1,20 +1,25 @@
 //! FFI bindings for contested DPNS username queries
 
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dash_sdk::dpp::document::DocumentV0Getters;
 use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::time::Duration;
 
+use crate::contested_resource::contender_document::ffi_contender;
 use crate::sdk::SDKWrapper;
 use crate::types::{
     DashSDKContender, DashSDKContestInfo, DashSDKContestedName, DashSDKContestedNamesList,
     DashSDKNameTimestamp, DashSDKNameTimestampList, SDKHandle,
 };
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
+use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;
 use dash_sdk::dpp::identifier::Identifier;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
+use dash_sdk::dpp::version::PlatformVersion;
+use dash_sdk::dpp::voting::contender_structs::ContenderWithSerializedDocument;
+use dash_sdk::platform::dpns_usernames::ContestRequests;
+use dash_sdk::query_types::Contenders;
 use serde_json::json; // Still used by other functions
 
 /// A list query fans out to the vote state of every current contest. Keep one
@@ -514,87 +519,12 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_non_resolved_contests_for_identity(
                     Err(_) => continue,
                 };
 
-                // Convert contenders
-                let contender_count = contest_info.contenders.contenders.len();
-                let mut contenders = Vec::with_capacity(contender_count);
-
-                for (contender_id, votes) in contest_info.contenders.contenders {
-                    let id_str = contender_id.to_string(Encoding::Base58);
-                    let c_id = match CString::new(id_str) {
-                        Ok(s) => s.into_raw(),
-                        Err(_) => continue,
-                    };
-
-                    // Extract actual vote tally from ContenderWithSerializedDocument
-                    let vote_count = votes.vote_tally().unwrap_or(0);
-
-                    // The requester's own spelling ("pizza"), which the
-                    // normalized contest name ("p1zza") does not preserve.
-                    // Null when the document can't be decoded — callers fall
-                    // back to the normalized name rather than guessing.
-                    let c_label = dpns_domain_type
-                        .as_ref()
-                        .and_then(|doc_type| {
-                            let decoded = votes
-                                .try_to_contender(doc_type.as_ref(), platform_version)
-                                .ok()?;
-                            let label = decoded.document().as_ref()?.get("label")?.as_str()?;
-                            CString::new(label).ok().map(|s| s.into_raw())
-                        })
-                        .unwrap_or(std::ptr::null_mut());
-
-                    contenders.push(DashSDKContender {
-                        identity_id: c_id,
-                        vote_count,
-                        label: c_label,
-                    });
-                }
-
-                // Ordered, de-duplicated requested labels. Derived here so the
-                // display policy lives in one place rather than being
-                // re-implemented by each language binding.
-                let mut requested_labels: Vec<*mut c_char> = Vec::new();
-                let mut seen_labels: Vec<String> = Vec::new();
-                for contender in &contenders {
-                    if contender.label.is_null() {
-                        continue;
-                    }
-                    let label = CStr::from_ptr(contender.label)
-                        .to_string_lossy()
-                        .into_owned();
-                    if label.is_empty() || seen_labels.contains(&label) {
-                        continue;
-                    }
-                    if let Ok(c_label) = CString::new(label.clone()) {
-                        seen_labels.push(label);
-                        requested_labels.push(c_label.into_raw());
-                    }
-                }
-                let requested_label_count = requested_labels.len();
-                let requested_labels_ptr = if requested_labels.is_empty() {
-                    std::ptr::null_mut()
-                } else {
-                    Box::into_raw(requested_labels.into_boxed_slice()) as *mut *mut c_char
-                };
-
-                let contender_count = contenders.len();
-                let contenders_ptr = if contenders.is_empty() {
-                    std::ptr::null_mut()
-                } else {
-                    let boxed = contenders.into_boxed_slice();
-                    Box::into_raw(boxed) as *mut DashSDKContender
-                };
-
-                let contest_info_c = DashSDKContestInfo {
-                    contenders: contenders_ptr,
-                    contender_count,
-                    requested_labels: requested_labels_ptr,
-                    requested_label_count,
-                    abstain_votes: contest_info.contenders.abstain_vote_tally.unwrap_or(0),
-                    lock_votes: contest_info.contenders.lock_vote_tally.unwrap_or(0),
-                    end_time: contest_info.end_time,
-                    has_winner: contest_info.contenders.winner.is_some(),
-                };
+                let contest_info_c = contest_info_to_ffi(
+                    contest_info.contenders,
+                    contest_info.end_time,
+                    dpns_domain_type.as_ref().map(|doc_type| doc_type.as_ref()),
+                    platform_version,
+                );
 
                 names.push(DashSDKContestedName {
                     name: c_name,
@@ -676,87 +606,12 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_contested_non_resolved_usernames(
                     Err(_) => continue,
                 };
 
-                // Convert contenders
-                let contender_count = contest_info.contenders.contenders.len();
-                let mut contenders = Vec::with_capacity(contender_count);
-
-                for (contender_id, votes) in contest_info.contenders.contenders {
-                    let id_str = contender_id.to_string(Encoding::Base58);
-                    let c_id = match CString::new(id_str) {
-                        Ok(s) => s.into_raw(),
-                        Err(_) => continue,
-                    };
-
-                    // Extract actual vote tally from ContenderWithSerializedDocument
-                    let vote_count = votes.vote_tally().unwrap_or(0);
-
-                    // The requester's own spelling ("pizza"), which the
-                    // normalized contest name ("p1zza") does not preserve.
-                    // Null when the document can't be decoded — callers fall
-                    // back to the normalized name rather than guessing.
-                    let c_label = dpns_domain_type
-                        .as_ref()
-                        .and_then(|doc_type| {
-                            let decoded = votes
-                                .try_to_contender(doc_type.as_ref(), platform_version)
-                                .ok()?;
-                            let label = decoded.document().as_ref()?.get("label")?.as_str()?;
-                            CString::new(label).ok().map(|s| s.into_raw())
-                        })
-                        .unwrap_or(std::ptr::null_mut());
-
-                    contenders.push(DashSDKContender {
-                        identity_id: c_id,
-                        vote_count,
-                        label: c_label,
-                    });
-                }
-
-                // Ordered, de-duplicated requested labels. Derived here so the
-                // display policy lives in one place rather than being
-                // re-implemented by each language binding.
-                let mut requested_labels: Vec<*mut c_char> = Vec::new();
-                let mut seen_labels: Vec<String> = Vec::new();
-                for contender in &contenders {
-                    if contender.label.is_null() {
-                        continue;
-                    }
-                    let label = CStr::from_ptr(contender.label)
-                        .to_string_lossy()
-                        .into_owned();
-                    if label.is_empty() || seen_labels.contains(&label) {
-                        continue;
-                    }
-                    if let Ok(c_label) = CString::new(label.clone()) {
-                        seen_labels.push(label);
-                        requested_labels.push(c_label.into_raw());
-                    }
-                }
-                let requested_label_count = requested_labels.len();
-                let requested_labels_ptr = if requested_labels.is_empty() {
-                    std::ptr::null_mut()
-                } else {
-                    Box::into_raw(requested_labels.into_boxed_slice()) as *mut *mut c_char
-                };
-
-                let contender_count = contenders.len();
-                let contenders_ptr = if contenders.is_empty() {
-                    std::ptr::null_mut()
-                } else {
-                    let boxed = contenders.into_boxed_slice();
-                    Box::into_raw(boxed) as *mut DashSDKContender
-                };
-
-                let contest_info_c = DashSDKContestInfo {
-                    contenders: contenders_ptr,
-                    contender_count,
-                    requested_labels: requested_labels_ptr,
-                    requested_label_count,
-                    abstain_votes: contest_info.contenders.abstain_vote_tally.unwrap_or(0),
-                    lock_votes: contest_info.contenders.lock_vote_tally.unwrap_or(0),
-                    end_time: contest_info.end_time,
-                    has_winner: contest_info.contenders.winner.is_some(),
-                };
+                let contest_info_c = contest_info_to_ffi(
+                    contest_info.contenders,
+                    contest_info.end_time,
+                    dpns_domain_type.as_ref().map(|doc_type| doc_type.as_ref()),
+                    platform_version,
+                );
 
                 names.push(DashSDKContestedName {
                     name: c_name,
@@ -780,5 +635,172 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_contested_non_resolved_usernames(
             Box::into_raw(list)
         }
         Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// One contest in its C shape, shared by both list queries.
+///
+/// The SDK decodes the contenders' requests and derives the contest's
+/// requested labels (`ContestRequests`); this only allocates their C shapes.
+fn contest_info_to_ffi(
+    contenders: Contenders,
+    end_time: u64,
+    dpns_domain_type: Option<DocumentTypeRef>,
+    platform_version: &PlatformVersion,
+) -> DashSDKContestInfo {
+    // A contender whose id cannot be represented as a C string is left out
+    // before its request is decoded, so it contributes no label either.
+    let kept: Vec<(CString, ContenderWithSerializedDocument)> = contenders
+        .contenders
+        .into_iter()
+        .filter_map(|(contender_id, votes)| {
+            let c_id = CString::new(contender_id.to_string(Encoding::Base58)).ok()?;
+            Some((c_id, votes))
+        })
+        .collect();
+    let contest = ContestRequests::decode(
+        kept.iter().map(|(_, votes)| votes),
+        dpns_domain_type,
+        platform_version,
+    );
+
+    let requested_labels: Vec<*mut c_char> = contest
+        .requested_labels
+        .into_iter()
+        .filter_map(|label| CString::new(label).ok())
+        .map(CString::into_raw)
+        .collect();
+
+    // `ContestRequests::decode` keeps one request per contender, in order.
+    let ffi_contenders: Vec<DashSDKContender> = kept
+        .into_iter()
+        .zip(contest.requests)
+        .map(|((c_id, votes), request)| {
+            ffi_contender(request, c_id.into_raw(), votes.vote_tally().unwrap_or(0))
+        })
+        .collect();
+
+    let requested_label_count = requested_labels.len();
+    let requested_labels_ptr = if requested_labels.is_empty() {
+        std::ptr::null_mut()
+    } else {
+        Box::into_raw(requested_labels.into_boxed_slice()) as *mut *mut c_char
+    };
+
+    let contender_count = ffi_contenders.len();
+    let contenders_ptr = if ffi_contenders.is_empty() {
+        std::ptr::null_mut()
+    } else {
+        Box::into_raw(ffi_contenders.into_boxed_slice()) as *mut DashSDKContender
+    };
+
+    DashSDKContestInfo {
+        contenders: contenders_ptr,
+        contender_count,
+        requested_labels: requested_labels_ptr,
+        requested_label_count,
+        abstain_votes: contenders.abstain_vote_tally.unwrap_or(0),
+        lock_votes: contenders.lock_vote_tally.unwrap_or(0),
+        end_time,
+        has_winner: contenders.winner.is_some(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::contested_resource::contender_document::test_support::{
+        requester_document, serialized_contender, CREATED_AT_MS,
+    };
+    use crate::types::dash_sdk_contest_info_free;
+    use dash_sdk::dpp::document::DocumentV0Getters;
+    use dash_sdk::dpp::voting::contender_structs::{
+        ContenderWithSerializedDocument, ContenderWithSerializedDocumentV0,
+    };
+    use std::collections::BTreeMap;
+
+    /// A contest whose requests are `(owner, label, $createdAt)`; a `None`
+    /// label stands for a contender whose document does not decode.
+    fn contest(requests: &[(u8, Option<&str>, u64)]) -> DashSDKContestInfo {
+        let contenders = requests
+            .iter()
+            .map(|(owner, label, created_at)| match label {
+                Some(label) => {
+                    let document = requester_document(*owner, label, Some(*created_at));
+                    (document.owner_id(), serialized_contender(document))
+                }
+                None => {
+                    let identity_id = Identifier::from([*owner; 32]);
+                    let contender =
+                        ContenderWithSerializedDocument::V0(ContenderWithSerializedDocumentV0 {
+                            identity_id,
+                            serialized_document: Some(vec![0xde, 0xad]),
+                            vote_tally: Some(1),
+                        });
+                    (identity_id, contender)
+                }
+            })
+            .collect::<BTreeMap<_, _>>();
+        let platform_version = PlatformVersion::latest();
+        let dpns_domain_type =
+            load_system_data_contract(SystemDataContract::DPNS, platform_version)
+                .expect("DPNS system contract")
+                .document_type_cloned_for_name("domain")
+                .expect("domain");
+        contest_info_to_ffi(
+            Contenders {
+                winner: None,
+                contenders,
+                abstain_vote_tally: Some(2),
+                lock_vote_tally: Some(5),
+            },
+            42,
+            Some(dpns_domain_type.as_ref()),
+            platform_version,
+        )
+    }
+
+    unsafe fn c_str(ptr: *mut c_char) -> String {
+        CStr::from_ptr(ptr).to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn should_carry_each_contenders_label_and_date() {
+        let info = contest(&[(1, Some("pizza"), CREATED_AT_MS), (2, None, 0)]);
+        unsafe {
+            assert_eq!(info.contender_count, 2);
+            let contenders = std::slice::from_raw_parts(info.contenders, 2);
+            let first = &contenders[0];
+            assert_eq!(c_str(first.label), "pizza");
+            assert!(first.has_created_at);
+            assert_eq!(first.created_at, CREATED_AT_MS);
+            let second = &contenders[1];
+            assert!(second.label.is_null());
+            assert!(!second.has_created_at);
+            assert_eq!(info.requested_label_count, 1);
+            assert_eq!(
+                (info.abstain_votes, info.lock_votes, info.end_time),
+                (2, 5, 42)
+            );
+            dash_sdk_contest_info_free(Box::into_raw(Box::new(info)));
+        }
+    }
+
+    #[test]
+    fn should_list_requested_labels_once_in_contender_order() {
+        let info = contest(&[
+            (1, Some("pizza"), CREATED_AT_MS),
+            (2, Some("p1zza"), CREATED_AT_MS + 1),
+            (3, Some("pizza"), CREATED_AT_MS + 2),
+        ]);
+        unsafe {
+            let labels =
+                std::slice::from_raw_parts(info.requested_labels, info.requested_label_count)
+                    .iter()
+                    .map(|label| c_str(*label))
+                    .collect::<Vec<_>>();
+            assert_eq!(labels, ["pizza", "p1zza"]);
+            dash_sdk_contest_info_free(Box::into_raw(Box::new(info)));
+        }
     }
 }

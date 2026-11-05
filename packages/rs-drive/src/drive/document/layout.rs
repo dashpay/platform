@@ -25,13 +25,17 @@ use crate::drive::document::index_level_tree_types::{
     terminal_member_tree_type, zero_contribution_wrapper,
 };
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
+use crate::drive::document::private_document_store::{
+    private_document_store_chunk_power, private_document_stored_entry_size,
+    PRIVATE_DOCUMENT_ENTRY_HEADER_SIZE, PRIVATE_DOCUMENT_STORE_KEY,
+};
 use crate::drive::document::sdk_value::{map, number, text, texts};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
     is_flat_level_key, DocumentTypeRef, Index, IndexBucketing, IndexLevel, IndexLevelTypeInfo,
-    IndexType,
+    IndexType, PrivateDocumentConfig,
 };
 use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
@@ -352,6 +356,19 @@ pub enum LayoutNote {
         /// The index whose entries the counter counts.
         source: String,
     },
+    /// The store of a private document type (protocol version 15), in place
+    /// of the primary-key tree: fixed-size encrypted entries in append order,
+    /// each the client's entry behind Drive's header, kept in the store's own
+    /// data rather than as keys under it.
+    PrivateDocumentStore {
+        /// The bytes of a client's entry (`private.entrySize`).
+        entry_size: u32,
+        /// The bytes each entry takes stored, with Drive's header.
+        stored_entry_size: u32,
+        /// The store's chunk power: a compacted chunk holds `2^chunk_power`
+        /// entries.
+        chunk_power: u8,
+    },
 }
 
 impl LayoutNote {
@@ -369,6 +386,7 @@ impl LayoutNote {
             LayoutNote::IntegerRangeOverlap { .. } => "integerRangeOverlap",
             LayoutNote::ArrayElements { .. } => "arrayElements",
             LayoutNote::SummableOffCountIndex { .. } => "summableOffCountIndex",
+            LayoutNote::PrivateDocumentStore { .. } => "privateDocumentStore",
         }
     }
 
@@ -423,6 +441,17 @@ impl LayoutNote {
                 "summableOffCountIndex: one sum item per value, holding how many entries \
                  {source} keeps for it; a create adds one and a delete takes one away"
             ),
+            LayoutNote::PrivateDocumentStore {
+                entry_size,
+                stored_entry_size,
+                chunk_power,
+            } => format!(
+                "a private document type's store: encrypted entries of {entry_size} bytes in \
+                 append order, each stored behind Drive's {PRIVATE_DOCUMENT_ENTRY_HEADER_SIZE}-byte \
+                 header ({stored_entry_size} bytes), {} to a compacted chunk; no documents and \
+                 no index levels",
+                1u64 << chunk_power
+            ),
         }
     }
 }
@@ -455,7 +484,12 @@ pub fn document_type_layout(
     let index_paths = index_paths(document_type);
     let mut children = Vec::new();
 
-    if !document_type.index_only() {
+    if let Some(private_document) = document_type.private_document() {
+        children.push(private_document_store_node(
+            private_document,
+            platform_version,
+        )?);
+    } else if !document_type.index_only() {
         children.push(primary_key_node(document_type, platform_version)?);
     }
 
@@ -533,6 +567,30 @@ pub(crate) fn index_ending_at(
         .filter(|(_, index_path)| index_path.as_slice() == path)
         .map(|(name, _)| name.clone())
         .collect()
+}
+
+/// A private type's store at `[0]`, in place of the primary-key tree, sized as
+/// the store's creation sizes it. Its entries are not keys under it, so the
+/// node has no children.
+fn private_document_store_node(
+    private_document: PrivateDocumentConfig,
+    platform_version: &PlatformVersion,
+) -> Result<LayoutNode, Error> {
+    let stored_entry_size = private_document_stored_entry_size(private_document)?;
+    let chunk_power = private_document_store_chunk_power(stored_entry_size, platform_version)?;
+    Ok(LayoutNode {
+        key: fixed(vec![PRIVATE_DOCUMENT_STORE_KEY], "PrimaryKey"),
+        role: LayoutRole::PrimaryKey,
+        element: tree(TreeType::PrivateDocumentStore(chunk_power)),
+        alternative: None,
+        indexes: vec![],
+        notes: vec![LayoutNote::PrivateDocumentStore {
+            entry_size: private_document.entry_size(),
+            stored_entry_size,
+            chunk_power,
+        }],
+        children: vec![],
+    })
 }
 
 fn primary_key_node(
@@ -1065,6 +1123,7 @@ mod tests {
     };
     use crate::util::test_helpers::setup_contract;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::DataContract;
     use grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType;
@@ -1220,7 +1279,11 @@ mod tests {
                 self.buckets +=
                     usize::from(matches!(chosen.key, LayoutKey::TimeRangeBucket { .. }));
                 self.members += usize::from(matches!(chosen.role, LayoutRole::Member));
-                if matches!(chosen.element.kind, LayoutElementKind::Tree(_)) {
+                // A private document store keeps its entries in its own data,
+                // not as keys under it
+                if matches!(chosen.element.kind, LayoutElementKind::Tree(tree_type)
+                    if !matches!(tree_type, TreeType::PrivateDocumentStore(_)))
+                {
                     let mut below = path.clone();
                     below.push(key);
                     self.layer(drive, below, chosen);
@@ -1417,6 +1480,88 @@ mod tests {
             document.children.iter().map(|c| c.role).collect::<Vec<_>>(),
             vec![LayoutRole::LatestRevision, LayoutRole::Revision]
         );
+    }
+
+    /// A private type (protocol version 15) keeps a private document store at
+    /// `[0]`, sized as its creation sizes it, with nothing laid out under it,
+    /// and Drive writes exactly that.
+    #[test]
+    fn should_lay_out_the_store_of_a_private_type() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = DataContract::from_value(
+            dpp::platform_value::to_value(serde_json::json!({
+                "$formatVersion": "1",
+                "id": dpp::platform_value::Identifier::from([9; 32]).to_string(
+                    dpp::platform_value::string_encoding::Encoding::Base58
+                ),
+                "ownerId": dpp::platform_value::Identifier::from([8; 32]).to_string(
+                    dpp::platform_value::string_encoding::Encoding::Base58
+                ),
+                "version": 1,
+                "documentSchemas": {
+                    "secret": {
+                        "type": "object",
+                        "private": { "entrySize": 585 },
+                        "documentsMutable": false,
+                        "canBeDeleted": false,
+                        "properties": {
+                            "note": { "type": "string", "maxLength": 63, "position": 0 }
+                        },
+                        "additionalProperties": false
+                    }
+                }
+            }))
+            .expect("the contract converts"),
+            true,
+            platform_version,
+        )
+        .expect("the contract registers");
+        drive
+            .apply_contract(
+                &contract,
+                dpp::block::block_info::BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected to register the contract");
+
+        let secret = contract.document_type_for_name("secret").expect("secret");
+        let layout = document_type_layout(secret, platform_version).expect("layout");
+        let [store] = layout.root.children.as_slice() else {
+            panic!("expected only the store, got {:?}", layout.root.children);
+        };
+        assert_eq!(store.role, LayoutRole::PrimaryKey);
+        assert_eq!(
+            store.element.kind,
+            LayoutElementKind::Tree(TreeType::PrivateDocumentStore(9))
+        );
+        assert!(store.children.is_empty());
+        assert_eq!(
+            store.notes,
+            vec![LayoutNote::PrivateDocumentStore {
+                entry_size: 585,
+                stored_entry_size: 601,
+                chunk_power: 9,
+            }]
+        );
+
+        let mut walk = Walk::default();
+        let type_path = vec![
+            vec![RootTree::DataContractDocuments as u8],
+            contract.id().to_vec(),
+            vec![1],
+            b"secret".to_vec(),
+        ];
+        walk.layer(&drive, type_path, &layout.root);
+        assert!(
+            walk.mismatches.is_empty(),
+            "the layout disagrees with what Drive wrote:\n{}",
+            walk.mismatches.join("\n")
+        );
+        assert!(walk.roles.contains("primaryKey"));
     }
 
     #[test]

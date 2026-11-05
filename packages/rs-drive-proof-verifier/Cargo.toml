@@ -34,7 +34,7 @@ dash-context-provider = { path = "../rs-context-provider", features = [
 bincode = { workspace = true, features = ["serde"] }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive", optional = true }
 platform-serialization = { path = "../rs-platform-serialization" }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", tag = "v1.8.0", features = [
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", tag = "v1.8.1", features = [
   "crypto",
 ], default-features = false }
 tracing = { version = "0.1.41" }
@@ -46,8 +46,6 @@ derive_more = { version = "1.0", features = ["from"] }
 [dev-dependencies]
 dpp = { path = "../rs-dpp", features = [
   "fixtures-and-mocks",
-  "random-identities",
-  "random-documents",
 ], default-features = false }
 dapi-grpc = { path = "../dapi-grpc", default-features = false, features = [
   "platform",
@@ -55,7 +53,6 @@ dapi-grpc = { path = "../dapi-grpc", default-features = false, features = [
 ] }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
-  "fixtures-and-mocks",
 ] }
 hex = { version = "0.4.3" }
 indexmap = { version = "2.6.0" }

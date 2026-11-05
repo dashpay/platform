@@ -5,6 +5,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
 };
@@ -13,10 +14,8 @@ use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 use integer_encoding::VarInt;
-use std::collections::HashMap;
 
 impl Drive {
     /// Re-enables a set of identity keys for a specific identity in version 0.
@@ -47,9 +46,7 @@ impl Drive {
         identity_id: [u8; 32],
         key_ids: Vec<KeyID>,
         epoch: &Epoch,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

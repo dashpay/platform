@@ -103,6 +103,14 @@ interface TransactionDao {
     suspend fun getByTxids(txids: List<ByteArray>): List<TransactionEntity>
 
     /**
+     * The confirmation columns of the given transactions, without their
+     * raw bytes — what the wallet load needs for each coin's creating
+     * transaction. Chunked by the caller like [getByTxids].
+     */
+    @Query("SELECT txid, context, blockHeight FROM transactions WHERE txid IN (:txids)")
+    suspend fun getConfirmationsByTxids(txids: List<ByteArray>): List<TransactionConfirmation>
+
+    /**
      * Delete a sweep batch's losers in one statement, after every hold on
      * their inputs is in place: the FK cascade takes any still-attached
      * pending row and any remaining own output with it, and `SET NULL`
@@ -159,3 +167,11 @@ interface TransactionDao {
         }
     }
 }
+
+/** The confirmation columns of one [TransactionEntity] row. */
+class TransactionConfirmation(
+    val txid: ByteArray,
+    /** 0=mempool, 1=instantSend, 2=inBlock, 3=inChainLockedBlock. */
+    val context: Int,
+    val blockHeight: Int,
+)

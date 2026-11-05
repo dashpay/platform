@@ -1,23 +1,21 @@
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::identity::Purpose;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerInformation;
-use std::collections::HashMap;
 
 mod v0;
 
 impl Drive {
     /// Adds estimation costs for a given purpose in key reference tree for a given identity id.
     ///
-    /// This method operates on the provided HashMap, `estimated_costs_only_with_layer_info`, and adds
+    /// This method operates on the provided `EstimatedLayers`, `estimated_costs_only_with_layer_info`, and adds
     /// new entries to it, representing the estimated costs for different layers of the identity tree related to the specified identity id and purpose.
     ///
     /// # Parameters
     /// - `identity_id`: An array of 32 bytes representing the unique identity id.
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a HashMap storing the `KeyInfoPath` and `EstimatedLayerInformation`.
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` storing the `KeyInfoPath` and `EstimatedLayerInformation`.
     /// - `purpose`: A Purpose enum representing the purpose of the identity key.
     ///
     /// # Returns
@@ -28,7 +26,7 @@ impl Drive {
     /// This function will return an error if the method version doesn't match any known versions.
     pub(crate) fn add_estimation_costs_for_purpose_in_key_reference_tree(
         identity_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         purpose: Purpose,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {

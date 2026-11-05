@@ -3,8 +3,8 @@ pub use dash_async::{block_on, AsyncError};
 use crate::error::Error;
 use dash_context_provider::ContextProviderError;
 use rs_dapi_client::{
-    transport::sleep, update_address_ban_status, AddressList, CanRetry, ExecutionResult,
-    RequestSettings,
+    transport::sleep, update_address_ban_status, AddressList, CanRetry, DapiClientError,
+    ExecutionResult, RequestSettings,
 };
 use std::future::Future;
 use std::time::Duration;
@@ -28,6 +28,11 @@ impl From<AsyncError> for crate::Error {
 /// It takes [`RequestSettings`] as an argument and returns [`ExecutionResult`].
 /// Retry mechanism can change [`RequestSettings`] between invocations of the `future_factory_fn` closure
 /// to limit the number of retries for lower layers.
+///
+/// A retryable failure bans the node that caused it when banning is enabled, except a
+/// [`StaleNodeError::ProtocolVersion`](crate::error::StaleNodeError::ProtocolVersion): that
+/// node leaves the rotation without a ban, and a request whose every attempt ends with it
+/// fails with [`Error::Config`].
 ///
 /// ## Parameters
 ///
@@ -129,11 +134,28 @@ where
     // so we can return it if we exhaust all addresses
     let mut last_meaningful_error: Option<rs_dapi_client::ExecutionError<Error>> = None;
 
+    // Whether every attempt so far failed with an answer that spares its node. Only then
+    // does the request report the error such answers end in (`Error::into_exhausted_error`),
+    // bare whether its retries or its nodes ran out, so that callers and bindings classify it
+    // by that error rather than as a lack of nodes.
+    let mut every_attempt_spared = true;
+
     loop {
         let result = future_factory_fn(current_settings).await;
 
-        // Ban or unban the address based on the result
-        update_address_ban_status(address_list, &result, &current_settings.finalize());
+        // Ban or unban the address based on the result. A retryable failure that does not
+        // show the node at fault moves the request off the node without banning it, as
+        // every retryable failure does when banning is disabled. Unlike the brief exclusion
+        // below, this leaves the node's ban state untouched: when the SDK is set ahead of its
+        // network every node answers this way, and none of them is to be marked as banned.
+        let mut applied_settings = current_settings.finalize();
+        if result
+            .as_ref()
+            .is_err_and(|error| error.inner.spares_responder())
+        {
+            applied_settings.ban_failed_address = false;
+        }
+        update_address_ban_status(address_list, &result, &applied_settings);
 
         match result {
             Ok(response) => return Ok(response),
@@ -147,9 +169,20 @@ where
                             error = ?prev_error,
                             "no addresses available to retry"
                         );
-                        // Wrap the last meaningful error in NoAvailableAddresses
+                        // Wrap the last meaningful error in NoAvailableAddresses, unless
+                        // every attempt was spared, this one included: it reached no node,
+                        // rather than failing on the nodes it reached
+                        let inner = if every_attempt_spared
+                            && matches!(
+                                error.inner,
+                                Error::DapiClientError(DapiClientError::NoAvailableAddresses)
+                            ) {
+                            prev_error.inner.into_exhausted_error()
+                        } else {
+                            Error::NoAvailableAddressesToRetry(Box::new(prev_error.inner))
+                        };
                         return Err(rs_dapi_client::ExecutionError {
-                            inner: Error::NoAvailableAddressesToRetry(Box::new(prev_error.inner)),
+                            inner,
                             retries: total_retries,
                             address: prev_error.address,
                         });
@@ -157,6 +190,8 @@ where
                     // No previous error, return the "no available addresses" error as-is
                     return Err(error);
                 }
+
+                every_attempt_spared &= error.inner.spares_responder();
 
                 // Count requests sent in this attempt
                 let requests_sent = error.retries + 1;
@@ -180,6 +215,9 @@ where
                     );
                     let mut final_error = error;
                     final_error.retries = total_retries;
+                    if every_attempt_spared {
+                        final_error.inner = final_error.inner.into_exhausted_error();
+                    }
                     return Err(final_error);
                 }
 
@@ -360,6 +398,186 @@ mod test {
             2,
             "should have called twice"
         );
+    }
+
+    /// An answer at an older protocol version that leaves its node unbanned still reads as a
+    /// configuration error when the request then finds no node left to ask. It is the same bare
+    /// error as when the retries run out: wrapped in the no-addresses error, the bindings would
+    /// report it as a network failure.
+    #[tokio::test]
+    async fn should_report_a_spared_answer_as_a_configuration_error_when_no_address_is_left() {
+        let mut address_list = AddressList::default();
+        let node: rs_dapi_client::Address = "http://localhost:1".parse().unwrap();
+        address_list.add(node.clone());
+        let settings = RequestSettings {
+            retries: Some(5),
+            ban_failed_address: Some(true),
+            ..Default::default()
+        };
+        let call_count = AtomicUsize::new(0);
+        let closure = |_settings: RequestSettings| {
+            let count = call_count.fetch_add(1, Ordering::Relaxed);
+            let node = node.clone();
+            async move {
+                Err::<rs_dapi_client::ExecutionResponse<()>, _>(if count == 0 {
+                    ExecutionError {
+                        inner: Error::StaleNode(StaleNodeError::ProtocolVersion {
+                            expected_protocol_version: 14,
+                            received_protocol_version: 13,
+                        }),
+                        retries: 0,
+                        address: Some(node),
+                    }
+                } else {
+                    ExecutionError {
+                        inner: Error::DapiClientError(DapiClientError::NoAvailableAddresses),
+                        retries: 0,
+                        address: None,
+                    }
+                })
+            }
+        };
+
+        let error = retry(&address_list, settings, closure)
+            .await
+            .expect_err("no node answers at the SDK's version");
+
+        assert!(matches!(error.inner, Error::Config(_)), "{:?}", error.inner);
+        assert_eq!(call_count.load(Ordering::Relaxed), 2);
+        assert!(!address_list.is_banned(&node), "the node is not banned");
+    }
+
+    /// A request that also failed in other ways does not end as a configuration error: only
+    /// a request whose every attempt was answered at an older protocol version does.
+    #[tokio::test]
+    async fn should_report_a_spared_answer_as_is_when_other_attempts_failed_otherwise() {
+        let address_list = AddressList::default();
+        let settings = RequestSettings {
+            retries: Some(1),
+            ..Default::default()
+        };
+        let call_count = AtomicUsize::new(0);
+        let closure = |_settings: RequestSettings| {
+            let count = call_count.fetch_add(1, Ordering::Relaxed);
+            async move {
+                Err::<rs_dapi_client::ExecutionResponse<()>, _>(ExecutionError {
+                    inner: if count == 0 {
+                        Error::StaleNode(StaleNodeError::Height {
+                            expected_height: 100,
+                            received_height: 50,
+                            tolerance_blocks: 1,
+                        })
+                    } else {
+                        Error::StaleNode(StaleNodeError::ProtocolVersion {
+                            expected_protocol_version: 14,
+                            received_protocol_version: 13,
+                        })
+                    },
+                    retries: 0,
+                    address: Some(format!("http://localhost:{}", 1 + count).parse().unwrap()),
+                })
+            }
+        };
+
+        let error = retry(&address_list, settings, closure)
+            .await
+            .expect_err("no attempt succeeds");
+
+        assert!(
+            matches!(
+                error.inner,
+                Error::StaleNode(StaleNodeError::ProtocolVersion { .. })
+            ),
+            "{:?}",
+            error.inner
+        );
+        assert_eq!(call_count.load(Ordering::Relaxed), 2);
+    }
+
+    fn protocol_version_answer() -> Error {
+        Error::StaleNode(StaleNodeError::ProtocolVersion {
+            expected_protocol_version: 14,
+            received_protocol_version: 13,
+        })
+    }
+
+    /// Runs `retry` over attempts that fail with `errors` in turn, each answer from its own node.
+    async fn retry_failing_with(errors: Vec<Error>) -> Error {
+        let address_list = AddressList::default();
+        let settings = RequestSettings {
+            retries: Some(5),
+            ..Default::default()
+        };
+        let errors = std::sync::Mutex::new(errors.into_iter().enumerate());
+        let closure = |_settings: RequestSettings| {
+            let (index, inner) = errors
+                .lock()
+                .expect("errors lock")
+                .next()
+                .expect("an error for every attempt");
+            async move {
+                let address = (!inner.is_no_available_addresses()).then(|| {
+                    format!("http://localhost:{}", 1 + index)
+                        .parse()
+                        .expect("address")
+                });
+                Err::<rs_dapi_client::ExecutionResponse<()>, _>(ExecutionError {
+                    inner,
+                    retries: 0,
+                    address,
+                })
+            }
+        };
+
+        retry(&address_list, settings, closure)
+            .await
+            .expect_err("no attempt succeeds")
+            .inner
+    }
+
+    fn is_wrapped_protocol_version_answer(error: &Error) -> bool {
+        matches!(
+            error,
+            Error::NoAvailableAddressesToRetry(inner)
+                if matches!(**inner, Error::StaleNode(StaleNodeError::ProtocolVersion { .. }))
+        )
+    }
+
+    /// Running out of nodes after attempts that also failed in other ways keeps the
+    /// no-addresses wrapper around the last answer, as is: only a request whose every attempt
+    /// was answered at an older protocol version ends as a configuration error.
+    #[tokio::test]
+    async fn should_keep_the_no_addresses_wrapper_when_an_earlier_attempt_failed_otherwise() {
+        let error = retry_failing_with(vec![
+            Error::StaleNode(StaleNodeError::Height {
+                expected_height: 100,
+                received_height: 50,
+                tolerance_blocks: 1,
+            }),
+            protocol_version_answer(),
+            Error::DapiClientError(DapiClientError::NoAvailableAddresses),
+        ])
+        .await;
+
+        assert!(is_wrapped_protocol_version_answer(&error), "{error:?}");
+    }
+
+    /// The attempt that ran out of nodes after failing on the nodes it reached, at the
+    /// transport level, was not answered at an older protocol version either, so the request
+    /// does not end as a configuration error.
+    #[tokio::test]
+    async fn should_keep_the_no_addresses_wrapper_when_the_last_attempt_failed_on_its_nodes() {
+        let error = retry_failing_with(vec![
+            protocol_version_answer(),
+            Error::DapiClientError(DapiClientError::NoAvailableAddressesToRetry(Box::new(
+                rs_dapi_client::transport::TransportError::Grpc(
+                    dapi_grpc::tonic::Status::unavailable("node unreachable"),
+                ),
+            ))),
+        ])
+        .await;
+
+        assert!(is_wrapped_protocol_version_answer(&error), "{error:?}");
     }
 
     fn quorum_source_unavailable(address: &rs_dapi_client::Address) -> ExecutionError<Error> {

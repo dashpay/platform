@@ -332,13 +332,8 @@ fn should_check_the_documents_of_a_type_read_back_from_its_stored_form_against_i
             "position": 2,
         },
     }));
-    let mut storing = latest.clone();
-    storing
-        .dpp
-        .contract_versions
-        .contract_storage_serialization_version = 2;
     let bytes = contract
-        .serialize_to_storage_bytes(&storing)
+        .serialize_to_storage_bytes(latest)
         .expect("expected the contract to compile");
     let read_back = DataContract::versioned_deserialize_trusted(&bytes, false, latest)
         .expect("expected the contract to read back");
@@ -392,12 +387,7 @@ fn should_keep_refusing_the_documents_of_a_type_stored_without_a_validation_sche
     let contract = item_contract(platform_value!({
         "name": { "type": "string", "maxLength": 4, "position": 0 },
     }));
-    let mut storing = latest.clone();
-    storing
-        .dpp
-        .contract_versions
-        .contract_storage_serialization_version = 2;
-    let mut storing_without_builder = storing.clone();
+    let mut storing_without_builder = latest.clone();
     storing_without_builder
         .dpp
         .contract_versions
@@ -431,10 +421,114 @@ fn should_keep_refusing_the_documents_of_a_type_stored_without_a_validation_sche
     refused(&read_back);
 
     let stored_again = read_back
-        .serialize_to_storage_bytes(&storing)
+        .serialize_to_storage_bytes(latest)
         .expect("expected the contract to compile again");
     refused(
         &DataContract::versioned_deserialize_trusted(&stored_again, false, latest)
             .expect("expected the contract to read back again"),
     );
+}
+
+/// An `order` contract whose `decimals` are generated from the token `tokenId` names
+/// (`sys.tokens.decimals`, protocol version 15), both required.
+fn order_contract() -> DataContract {
+    let platform_version = PlatformVersion::latest();
+    let mut contract =
+        get_data_contract_fixture(None, 0, platform_version.protocol_version).data_contract_owned();
+    contract
+        .set_document_schema(
+            "order",
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "tokenId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0
+                    },
+                    "decimals": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 255,
+                        "generatedFrom": { "function": "sys.tokens.decimals", "params": ["tokenId"] },
+                        "position": 1
+                    }
+                },
+                "required": ["tokenId", "decimals"],
+                "additionalProperties": false,
+            }),
+            true,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("expected the document type to register");
+    contract
+}
+
+/// A client leaves out decimals generated from state, which the platform writes before it
+/// checks the document: the client's full check passes such a document although its type
+/// requires them, and still checks decimals it holds, and refuses a document without its
+/// token. Consensus, which checks the document once the value is written, refuses it without.
+#[test]
+fn should_pass_a_client_document_leaving_out_required_state_generated_decimals() {
+    use crate::document::{Document, DocumentV0};
+    let contract = order_contract();
+    let latest = PlatformVersion::latest();
+    let token = Value::Identifier([5; 32]);
+    let errors = |properties: Value, system: &DocumentSystemValues| {
+        contract
+            .validate_document_properties("order", properties, system, latest)
+            .expect("expected document validation to run")
+            .errors
+    };
+    let client = DocumentSystemValues::default();
+    let missing = |errors: &[ConsensusError], property: &str| {
+        matches!(
+            errors,
+            [ConsensusError::BasicError(BasicError::JsonSchemaError(error))]
+                if error.keyword() == "required" && error.property_name() == property
+        )
+    };
+
+    let left_out = errors(platform_value!({ "tokenId": token.clone() }), &client);
+    assert!(left_out.is_empty(), "{left_out:?}");
+    let held = errors(
+        platform_value!({ "tokenId": token.clone(), "decimals": 6 }),
+        &client,
+    );
+    assert!(held.is_empty(), "{held:?}");
+    let out_of_bounds = errors(
+        platform_value!({ "tokenId": token.clone(), "decimals": 300 }),
+        &client,
+    );
+    assert!(
+        matches!(
+            out_of_bounds.as_slice(),
+            [ConsensusError::BasicError(BasicError::JsonSchemaError(error))]
+                if error.keyword() == "maximum"
+        ),
+        "{out_of_bounds:?}"
+    );
+    let without_token = errors(platform_value!({}), &client);
+    assert!(missing(&without_token, "tokenId"), "{without_token:?}");
+
+    // The whole-document check a client calls reads the document the same way
+    let document = Document::V0(DocumentV0 {
+        properties: [("tokenId".to_string(), token.clone())].into(),
+        ..Default::default()
+    });
+    let whole = contract
+        .validate_document("order", &document, latest)
+        .expect("expected document validation to run");
+    assert!(whole.is_valid(), "{:?}", whole.errors);
+
+    let consensus = DocumentSystemValues {
+        consensus: true,
+        ..DocumentSystemValues::default()
+    };
+    let in_consensus = errors(platform_value!({ "tokenId": token }), &consensus);
+    assert!(missing(&in_consensus, "decimals"), "{in_consensus:?}");
 }

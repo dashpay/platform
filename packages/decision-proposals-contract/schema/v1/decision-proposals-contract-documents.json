@@ -1,0 +1,190 @@
+{
+  "proposal": {
+    "type": "object",
+    "documentsMutable": true,
+    "documentsKeepHistory": true,
+    "canBeDeleted": false,
+    "indices": [
+      {
+        "name": "byEndDate",
+        "properties": [
+          {
+            "endDate": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byOwner",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byCreatedAt",
+        "properties": [
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "maxBytes": 512,
+        "description": "The question, in one line",
+        "position": 0
+      },
+      "description": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096,
+        "maxBytes": 4096,
+        "description": "What a yes and a no mean",
+        "position": 1
+      },
+      "url": {
+        "type": "string",
+        "format": "uri",
+        "minLength": 1,
+        "maxLength": 512,
+        "maxBytes": 512,
+        "description": "Where the proposal is discussed",
+        "position": 2
+      },
+      "passPercent": {
+        "type": "integer",
+        "minimum": 50,
+        "maximum": 80,
+        "description": "The proposal passes when the yes voting power is strictly more than this percent of the yes plus no voting power",
+        "position": 3
+      },
+      "minimumTurnoutPercent": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 50,
+        "description": "The least yes plus no voting power the proposal needs, as a percent of the masternode list's total voting power when it closes, rounded up",
+        "position": 4
+      },
+      "endDate": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "When voting closes, in milliseconds since the Unix epoch",
+        "position": 5
+      }
+    },
+    "required": [
+      "$createdAt",
+      "$updatedAt",
+      "title",
+      "description",
+      "passPercent",
+      "minimumTurnoutPercent",
+      "endDate"
+    ],
+    "immutable": [
+      "passPercent",
+      "minimumTurnoutPercent",
+      "endDate",
+      {
+        "property": "title",
+        "when": {
+          "greaterThan": [
+            {
+              "subtract": [
+                "$updatedAt",
+                "$createdAt"
+              ]
+            },
+            {
+              "min": [
+                86400000,
+                {
+                  "divide": [
+                    {
+                      "subtract": [
+                        "endDate",
+                        "$createdAt"
+                      ]
+                    },
+                    5
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "property": "description",
+        "when": {
+          "greaterThan": [
+            {
+              "subtract": [
+                "$updatedAt",
+                "$createdAt"
+              ]
+            },
+            {
+              "min": [
+                86400000,
+                {
+                  "divide": [
+                    {
+                      "subtract": [
+                        "endDate",
+                        "$createdAt"
+                      ]
+                    },
+                    5
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "property": "url",
+        "when": {
+          "greaterThan": [
+            {
+              "subtract": [
+                "$updatedAt",
+                "$createdAt"
+              ]
+            },
+            {
+              "min": [
+                86400000,
+                {
+                  "divide": [
+                    {
+                      "subtract": [
+                        "endDate",
+                        "$createdAt"
+                      ]
+                    },
+                    5
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "additionalProperties": false,
+    "description": "A yes/no question put to the masternodes. Creating one opens its vote poll, funded by its owner. Its title, description and url may be edited for a day after it is created, or a fifth of the time it runs if that is shorter; its rule never changes"
+  }
+}
