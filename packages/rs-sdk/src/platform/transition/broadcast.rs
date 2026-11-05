@@ -10,8 +10,6 @@ use dapi_grpc::platform::v0::{
     WaitForStateTransitionResultResponse,
 };
 use dash_context_provider::ContextProviderError;
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::ConsensusError;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
@@ -23,7 +21,6 @@ use dpp::state_transition::StateTransition;
 use dpp::system_data_contracts::SystemDataContract;
 use dpp::util::hash::hash_single;
 use dpp::version::PlatformVersion;
-use dpp::ProtocolError;
 use rs_dapi_client::AddressList;
 use rs_dapi_client::CanRetry;
 use rs_dapi_client::ExecutionResult;
@@ -275,9 +272,8 @@ pub(super) async fn wait_after_broadcast<T>(
         if !broadcast_may_have_been_accepted(&error) {
             return Err(error);
         }
-        if permanent_submission_refusal(&error) {
-            return Err(submission_cause(error));
-        }
+        // A later node's reported refusal cannot erase an earlier possible delivery.
+        // Its error metadata does not prove that the signed bytes were never accepted.
         debug!(
             ?error,
             "checking the original submission after an uncertain acknowledgement"
@@ -302,35 +298,6 @@ fn broadcast_may_have_been_accepted(error: &Error) -> bool {
         | Error::TimeoutReached(..) => true,
         Error::NoAvailableAddressesToRetry(inner) => broadcast_may_have_been_accepted(inner),
         _ => false,
-    }
-}
-
-/// Only byte-intrinsic contradictions rule out these bytes despite an earlier ambiguous send.
-/// State, signature-key lookup, version and schema-dependent errors are deliberately excluded.
-fn permanent_submission_refusal(error: &Error) -> bool {
-    match error {
-        Error::StateTransitionResultUnconfirmed(inner)
-        | Error::NoAvailableAddressesToRetry(inner) => permanent_submission_refusal(inner),
-        Error::Protocol(ProtocolError::ConsensusError(consensus))
-            if matches!(
-                consensus.as_ref(),
-                ConsensusError::BasicError(
-                    BasicError::DuplicatedIdentityPublicKeyIdBasicError(_)
-                        | BasicError::DuplicateDocumentTransitionsWithIdsError(_)
-                )
-            ) =>
-        {
-            true
-        }
-        _ => false,
-    }
-}
-
-fn submission_cause(error: Error) -> Error {
-    match error {
-        Error::StateTransitionResultUnconfirmed(inner)
-        | Error::NoAvailableAddressesToRetry(inner) => submission_cause(*inner),
-        error => error,
     }
 }
 
@@ -635,7 +602,9 @@ mod address_nonce_tests;
 mod tests {
     use super::*;
     use dapi_grpc::tonic::Status;
+    use dpp::consensus::basic::BasicError;
     use dpp::consensus::signature::IdentityNotFoundError;
+    use dpp::consensus::ConsensusError;
     use dpp::prelude::Identifier;
     use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
     use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
@@ -643,6 +612,7 @@ mod tests {
     use dpp::state_transition::batch_transition::BatchTransition;
     use dpp::state_transition::batch_transition::BatchTransitionV0;
     use dpp::version::PlatformVersion;
+    use dpp::ProtocolError;
     use rs_dapi_client::transport::TransportError;
     use rs_dapi_client::DapiClientError;
     use rs_dapi_client::ExecutionResponse;

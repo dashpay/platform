@@ -1,19 +1,31 @@
 //! Real DAPI and SDK retry loops over an in-memory transport, without sockets.
 
 use super::*;
+use crate::platform::transition::validation::ensure_valid_state_transition_structure;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::metadata::MetadataValue;
 use dapi_grpc::tonic::{Code, ConnectError, Status};
+use dpp::address_funds::{AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress};
+use dpp::consensus::basic::document::DuplicateDocumentTransitionsWithIdsError;
+use dpp::consensus::basic::identity::DuplicatedIdentityPublicKeyIdBasicError;
 use dpp::consensus::signature::{IdentityNotFoundError, SignatureError};
+use dpp::consensus::ConsensusError;
+use dpp::dashcore::signer;
 use dpp::prelude::Identifier;
+use dpp::secp256k1::{PublicKey, SecretKey};
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
+use dpp::serialization::Signable;
+use dpp::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
 use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+use dpp::util::hash::ripemd160_sha256;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportClient, TransportError, TransportRequest,
 };
 use rs_dapi_client::DapiRequestExecutor;
 use rs_dapi_client::{ConnectionPool, DapiClient, Uri};
+use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::io;
 use std::sync::Arc;
@@ -469,28 +481,82 @@ fn should_keep_read_classification_independent_from_broadcast() {
     }
 }
 
-#[tokio::test]
-async fn should_distinguish_permanent_invalidity_from_state_dependent_refusal() {
-    use dpp::consensus::basic::identity::DuplicatedIdentityPublicKeyIdBasicError;
-    let permanent: ConsensusError = DuplicatedIdentityPublicKeyIdBasicError::new(vec![1, 1]).into();
-    let error =
-        Error::Protocol(ProtocolError::ConsensusError(Box::new(permanent))).into_unconfirmed();
-    let result: Result<(), Error> = wait_after_broadcast(Err(error), async {
-        panic!("intrinsic duplicate ids cannot execute")
-    })
-    .await;
-    assert!(matches!(
-        result,
-        Err(Error::Protocol(ProtocolError::ConsensusError(_)))
-    ));
-    let stale: ConsensusError = IdentityNotFoundError::new(Identifier::from([1; 32])).into();
-    let error = Error::Protocol(ProtocolError::ConsensusError(Box::new(stale))).into_unconfirmed();
-    assert_eq!(
-        wait_after_broadcast(Err(error), async { Ok(5) })
-            .await
-            .unwrap(),
-        5
-    );
+/// A real signed transfer with no identity keys or document transitions to duplicate.
+fn signed_address_transfer() -> StateTransition {
+    let private_key = [7; 32];
+    let secret = SecretKey::from_secret_bytes(private_key).unwrap();
+    let public_key = PublicKey::from_secret_key(&secret);
+    let input = PlatformAddress::P2pkh(ripemd160_sha256(&public_key.serialize()));
+    let mut transfer = AddressFundsTransferTransitionV0 {
+        inputs: BTreeMap::from([(input, (1, 1_000_000_000))]),
+        outputs: BTreeMap::from([(PlatformAddress::P2pkh([8; 20]), 1_000_000_000)]),
+        fee_strategy: vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+        user_fee_increase: 0,
+        input_witnesses: vec![],
+    };
+    let unsigned: StateTransition = transfer.clone().into();
+    let bytes = unsigned.signable_bytes().unwrap();
+    let witness = AddressWitness::P2pkh {
+        signature: signer::sign(&bytes, &private_key).unwrap().to_vec().into(),
+    };
+    input
+        .verify_bytes_against_witness(&witness, &bytes)
+        .unwrap();
+    transfer.input_witnesses.push(witness);
+    let transition = transfer.into();
+    ensure_valid_state_transition_structure(&transition, PlatformVersion::latest()).unwrap();
+    transition
+}
+
+#[tokio::test(start_paused = true)]
+async fn should_check_original_transfer_after_ambiguous_send_and_reported_invalidity() {
+    let transition = signed_address_transfer();
+    let reported_errors: [ConsensusError; 2] = [
+        DuplicatedIdentityPublicKeyIdBasicError::new(vec![1, 1]).into(),
+        DuplicateDocumentTransitionsWithIdsError::new(vec![("note".into(), [1; 32])]).into(),
+    ];
+    for reported in reported_errors {
+        for earlier_uncertainty in [false, true] {
+            let bytes = reported
+                .serialize_to_bytes_with_platform_version(PlatformVersion::latest())
+                .unwrap();
+            let mut refusal = Status::invalid_argument("reported invalidity");
+            refusal.metadata_mut().insert_bin(
+                "dash-serialized-consensus-error-bin",
+                MetadataValue::from_bytes(&bytes),
+            );
+            let mut attempts = vec![];
+            if earlier_uncertainty {
+                attempts.push(Attempt::Error(Status::unavailable("acknowledgement lost")));
+            }
+            attempts.push(Attempt::Error(refusal));
+            let (broadcast, sent, _) = retrying_broadcast(&transition, attempts, 3).await;
+            assert_eq!(sent.len(), if earlier_uncertainty { 2 } else { 1 });
+            assert_eq!(
+                broadcast
+                    .as_ref()
+                    .unwrap_err()
+                    .is_state_transition_result_unconfirmed(),
+                earlier_uncertainty,
+            );
+            let mut waited = false;
+            let result = wait_after_broadcast(broadcast, async {
+                waited = true;
+                assert_eq!(transition.transaction_id().unwrap(), hash_single(&sent[0]));
+                Ok(())
+            })
+            .await;
+            assert_eq!(waited, earlier_uncertainty);
+            if earlier_uncertainty {
+                result.expect("the original transfer's outcome must be checked");
+            } else {
+                assert!(matches!(result,
+                    Err(Error::Protocol(ProtocolError::ConsensusError(error)))
+                        if *error == reported
+                ));
+            }
+        }
+    }
 }
 
 #[tokio::test]
