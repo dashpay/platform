@@ -510,7 +510,8 @@ mod tests {
                 metadata.height + 10,
             ));
         }
-        sdk.set_context_provider(provider.clone());
+        sdk.set_context_provider(provider.clone())
+            .expect("the test provider states no requirements");
         let settings = PutSettings {
             request_settings: RequestSettings {
                 ban_failed_address: Some(true),
