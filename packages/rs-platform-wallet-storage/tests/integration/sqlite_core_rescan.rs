@@ -100,18 +100,29 @@ async fn rescan(
     wallet_id: WalletId,
     blocks: &[(Transaction, u32)],
 ) -> ClientStartState {
+    rescan_with_evidence(path, wallet_id, blocks, &Default::default()).await
+}
+
+async fn rescan_with_evidence(
+    path: &std::path::Path,
+    wallet_id: WalletId,
+    blocks: &[(Transaction, u32)],
+    evidence: &platform_wallet::changeset::recorded_history::ReplayEvidence,
+) -> ClientStartState {
     let persister = Arc::new(SqlitePersister::open(SqlitePersisterConfig::new(path)).unwrap());
     let loaded = persister
-        .load()
+        .load_with_replay(evidence)
         .unwrap()
+        .state
         .wallets
         .remove(&wallet_id)
         .unwrap();
     assert!(
         loaded.wallet_info.accounts.standard_bip44_accounts[&0]
             .transactions()
-            .is_empty(),
-        "the wiped wallet loads without history"
+            .values()
+            .all(|record| record.context.block_info().is_none()),
+        "the wiped wallet has only its still-active outgoing history"
     );
     let mut manager = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let mut events = manager.take_persistence_receiver().unwrap();
@@ -127,8 +138,9 @@ async fn rescan(
     drop((manager, events, persister));
     SqlitePersister::open(SqlitePersisterConfig::new(path))
         .unwrap()
-        .load()
+        .load_with_replay(evidence)
         .unwrap()
+        .state
 }
 
 /// Undo V020 on the store at `path`, so its next open replays V020 over the
@@ -381,13 +393,25 @@ async fn should_keep_unconsumed_asset_locks_when_a_wiped_wallet_loads_and_rescan
         (out_point, entry)
     };
     let other = |byte| spend_of(&[outside(byte)], vec![]);
-    let locks: BTreeMap<_, _> = [
+    let instant = other(32);
+    let (lock, evidence) = common::checked_instant_lock(&instant).await;
+    let mut locks: BTreeMap<_, _> = [
         entry(&other(31), AssetLockStatus::Built),
         entry(&chain.lock, AssetLockStatus::Broadcast),
-        entry(&other(32), AssetLockStatus::InstantSendLocked),
+        entry(&instant, AssetLockStatus::InstantSendLocked),
         entry(&other(33), AssetLockStatus::ChainLocked),
     ]
     .into();
+    locks
+        .get_mut(&OutPoint::new(instant.txid(), 0))
+        .unwrap()
+        .proof = Some(dpp::prelude::AssetLockProof::Instant(
+        dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof::new(
+            lock,
+            instant.clone(),
+            0,
+        ),
+    ));
     let round = PlatformWalletChangeSet {
         asset_locks: Some(AssetLockChangeSet {
             asset_locks: locks.clone(),
@@ -402,8 +426,9 @@ async fn should_keep_unconsumed_asset_locks_when_a_wiped_wallet_loads_and_rescan
 
     let loaded = SqlitePersister::open(SqlitePersisterConfig::new(&path))
         .unwrap()
-        .load()
-        .unwrap();
+        .load_with_replay(&evidence)
+        .unwrap()
+        .state;
     let restored: BTreeMap<_, _> = loaded.wallets[&wallet_id]
         .unused_asset_locks
         .values()
@@ -421,7 +446,7 @@ async fn should_keep_unconsumed_asset_locks_when_a_wiped_wallet_loads_and_rescan
         "the load leaves the rows untouched"
     );
 
-    let state = rescan(&path, wallet_id, &chain.blocks()).await;
+    let state = rescan_with_evidence(&path, wallet_id, &chain.blocks(), &evidence).await;
 
     assert_eq!(
         stored(&path, &wallet_id, &chain.lock).direction,

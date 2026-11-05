@@ -803,7 +803,6 @@ async fn should_settle_a_persisted_conflict_on_restart() {
 }
 
 async fn assert_conflict_restart(case: ConflictCase) {
-    use dashcore::ephemerealdata::instant_lock::InstantLock;
     use ConflictCase::*;
 
     let record_funding = !matches!(case, HeightOnlyFunding);
@@ -853,19 +852,16 @@ async fn assert_conflict_restart(case: ConflictCase) {
         surviving_txid = Some(extra_spender.txid());
         records.extend(records_of(&mut other_spender, &mut wallet, &extra_spender, MEMPOOL).await);
     }
-    let lock = |txid, inputs| InstantLock {
-        inputs,
-        txid,
-        ..Default::default()
-    };
-    let mut locks = BTreeMap::new();
+    let locked = if chainlocked { &loser } else { &winner };
+    let (lock, evidence) = common::checked_instant_lock(locked).await;
     if chainlocked {
-        let record = records.iter_mut().find(|r| r.txid == winner.txid());
-        record.unwrap().context = block(101);
-        locks.insert(loser.txid(), lock(loser.txid(), vec![shared, extra]));
-    } else {
-        locks.insert(winner.txid(), lock(winner.txid(), vec![shared]));
+        records
+            .iter_mut()
+            .find(|r| r.txid == winner.txid())
+            .unwrap()
+            .context = block(101);
     }
+    let locks = [(locked.txid(), lock)].into();
     let (persister, _dir, path) = common::fresh_persister();
     let loser_coin = Utxo::new(
         OutPoint::new(loser.txid(), 0),
@@ -927,7 +923,12 @@ async fn assert_conflict_restart(case: ConflictCase) {
             &[&wallet_key, &extra_key],
         );
         assert!(matches!(
-            typed_error(persister.load().unwrap_err()),
+            typed_error(
+                persister
+                    .load_with_replay(&evidence)
+                    .map(|loaded| loaded.state)
+                    .unwrap_err()
+            ),
             WalletStorageError::BlobDecode { .. }
         ));
         assert!(loser_kept());
@@ -1026,7 +1027,10 @@ async fn assert_conflict_restart(case: ConflictCase) {
         persister.lock_conn_for_test().execute_batch(
             "CREATE TRIGGER fail_replay_repair BEFORE UPDATE OF spent ON core_utxos WHEN NEW.spent = 0 BEGIN SELECT RAISE(ABORT, 'injected replay repair failure'); END;",
         ).unwrap();
-        assert!(persister.load().is_err());
+        assert!(persister
+            .load_with_replay(&evidence)
+            .map(|loaded| loaded.state)
+            .is_err());
         if assets {
             assert_eq!(
                 asset_lock_rows(&persister),
@@ -1040,10 +1044,13 @@ async fn assert_conflict_restart(case: ConflictCase) {
     }
     if matches!(case, Unconverged) {
         persister.lock_conn_for_test().execute_batch("CREATE TRIGGER preserve_history BEFORE DELETE ON core_transactions BEGIN SELECT RAISE(IGNORE); END;").unwrap();
-        let error = persister.load().unwrap_err();
-        assert!(
-            matches!(typed_error(error), WalletStorageError::WalletRehydrationFailed { wallet_id, .. } if wallet_id == wallet.wallet_id)
-        );
+        let error = persister
+            .load_with_replay(&evidence)
+            .map(|loaded| loaded.state)
+            .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("still conflicts after atomic replay"));
         assert!(loser_kept());
         return;
     }
@@ -1057,7 +1064,10 @@ async fn assert_conflict_restart(case: ConflictCase) {
         let persister =
             SqlitePersister::open(SqlitePersisterConfig::new(&path).with_load_policy(policy))
                 .unwrap();
-        let mut state = persister.load().unwrap();
+        let mut state = persister
+            .load_with_replay(&evidence)
+            .map(|loaded| loaded.state)
+            .unwrap();
         if assets {
             assert!(
                 state.wallets[&wallet.wallet_id]
@@ -1362,12 +1372,16 @@ async fn should_reject_overflowing_replay_amounts_with_fitting_net() {
             .persister
             .load()
             .expect_err("unsafe checker operands must return a typed error");
+        let platform_wallet::changeset::PersistenceError::Backend { source, .. } = error else {
+            panic!("expected typed backend error");
+        };
         assert!(
             matches!(
-                typed_error(error),
-                WalletStorageError::IntegerOverflow { .. }
+                source.downcast_ref::<platform_wallet::manager::history_replay::HistoryReplayError>(),
+                Some(platform_wallet::manager::history_replay::HistoryReplayError::UnsafeMinedAmounts { txids })
+                    if txids.contains(&fixture.recorded_txid())
             ),
-            "{label}: unsafe checker arithmetic must be rejected before replay"
+            "{label}: unsafe mined operands must fail before committed replay effects"
         );
     }
 }
@@ -2680,11 +2694,7 @@ async fn should_preserve_instant_send_replacement_when_stale_branch_has_lower_he
         let mut records = records_of(&mut info, &mut wallet, &funding, block(100)).await;
         let mut fork = info.clone();
         records.extend(records_of(&mut fork, &mut wallet, &stale, block(101)).await);
-        let lock = dashcore::InstantLock {
-            txid: replacement.txid(),
-            inputs: vec![coin],
-            ..Default::default()
-        };
+        let (lock, evidence) = common::checked_instant_lock(&replacement).await;
         records.extend(
             records_of(
                 &mut info,
@@ -2708,7 +2718,7 @@ async fn should_preserve_instant_send_replacement_when_stale_branch_has_lower_he
             },
         );
         for _ in 0..2 {
-            let loaded = persister.load().unwrap();
+            let loaded = persister.load_with_replay(&evidence).unwrap().state;
             let restored = &loaded.wallets[&wallet.wallet_id].wallet_info;
             let account = &restored.accounts.standard_bip44_accounts[&0];
             assert!(

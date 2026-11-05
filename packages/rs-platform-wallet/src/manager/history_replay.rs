@@ -16,7 +16,7 @@ use std::task::{Context, Poll, Waker};
 
 use dashcore::ephemerealdata::instant_lock::InstantLock;
 use dashcore::transaction::TransactionPayload;
-use dashcore::{OutPoint, Transaction, TxOut, Txid};
+use dashcore::{Address, OutPoint, Transaction, TxOut, Txid};
 use key_wallet::account::AccountType;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::managed_account::transaction_record::{
@@ -105,6 +105,9 @@ pub enum HistoryReplayError {
     /// The snapshot requires evidence the running SPV verifier cannot yet provide.
     #[error("wallet history requires verified finality evidence for {txids:?}; synchronize SPV and retry load")]
     MissingFinalityEvidence { txids: BTreeSet<Txid> },
+    /// A surviving mined record has operands no valid transaction can carry.
+    #[error("stored mined transactions have unsafe accounting amounts: {txids:?}")]
+    UnsafeMinedAmounts { txids: BTreeSet<Txid> },
     /// Stored input authorization cannot be checked with supported rules.
     #[error("cannot verify stored input authorization")]
     SpendAuthorization(#[from] SpendAuthorizationError),
@@ -290,10 +293,9 @@ pub fn replay_recorded_history_blocking(
 /// nor are its unconfirmed descendants, and their persisted outputs are dropped.
 ///
 /// A record whose amounts would overflow the checker's signed arithmetic
-/// ([`unsafe_replay_amounts`]) is left out rather than failing the load. No
-/// valid transaction carries such amounts: an unconfirmed one is unverified
-/// peer data, a settled one is store corruption, and this path has no recovery
-/// mode to fall back on. The restored coins it spends stay reserved, and an
+/// ([`unsafe_replay_amounts`]) is left out when unmined. A surviving mined
+/// record with such operands fails load as corrupt storage, after required
+/// proofs and conflict precedence have been resolved. Restored coins stay reserved, and an
 /// unconfirmed one stays on record, unchecked, so that a settled conflict
 /// still sweeps it and releases them. A coin several such records spend is
 /// held as [`reservation_claimant`] decides.
@@ -597,6 +599,18 @@ pub async fn replay_recorded_history_with_evidence(
     let mut swept = plan.removed;
     let mut sweeps = plan.effects;
     replay.retain(|stored| !swept.contains(&stored.txid));
+    let corrupt_mined: BTreeSet<_> = replay
+        .iter()
+        .filter(|stored| {
+            stored.context.block_info().is_some() && unsafe_txids.contains(&stored.txid)
+        })
+        .map(|stored| stored.txid)
+        .collect();
+    if !corrupt_mined.is_empty() {
+        return Err(HistoryReplayError::UnsafeMinedAmounts {
+            txids: corrupt_mined,
+        });
+    }
     // Verified IS evidence survives a mining-block reorg independently of the
     // record's block context. Records are detached here, so this cannot sweep
     // outside the common planner. Only surviving transactions retain the metadata.
@@ -613,23 +627,12 @@ pub async fn replay_recorded_history_with_evidence(
         .into_iter()
         .partition(|stored| !unsafe_txids.contains(&stored.txid));
     if !set_aside.is_empty() {
-        let settled = set_aside
-            .iter()
-            .filter(|stored| stored.context.block_info().is_some())
-            .count();
         // Counts only: the txids of unconfirmed records are peer-supplied.
         tracing::warn!(
             wallet_id = %hex::encode(wallet_info.wallet_id),
             skipped = set_aside.len(),
             "stored transaction records with unsafe amounts left out of the shared load replay; the coins they spend stay reserved"
         );
-        if settled > 0 {
-            tracing::error!(
-                wallet_id = %hex::encode(wallet_info.wallet_id),
-                settled,
-                "stored confirmed transaction records carry amounts no valid transaction can; the wallet store is corrupt"
-            );
-        }
     }
     // Reserve restored coins and recorded owned inputs absent from the
     // projection: unsafe stored amounts do not prove the transaction invalid.
@@ -761,7 +764,11 @@ pub async fn replay_recorded_history_with_evidence(
                     .is_some()
                     && account.contains_address(&detail.address)
             });
-            if owners.contains(&owner) || owns_recorded_input {
+            let owns_output = stored.transaction.output.iter().any(|output| {
+                Address::from_script(&output.script_pubkey, wallet.network)
+                    .is_ok_and(|address| account.contains_address(&address))
+            });
+            if owners.contains(&owner) || owns_recorded_input || owns_output {
                 account
                     .transactions_mut()
                     .entry(stored.txid)
@@ -2999,9 +3006,18 @@ mod tests {
                     instant_locks: BTreeMap::new(),
                 },
             )
-            .await
-            .unwrap()
-            .replayed;
+            .await;
+            if settled {
+                assert!(
+                    matches!(replayed,
+                        Err(HistoryReplayError::UnsafeMinedAmounts { txids })
+                            if txids.contains(&unsafe_spend.txid())
+                    ),
+                    "mined unsafe operands must fail load"
+                );
+                continue;
+            }
+            let replayed = replayed.unwrap().replayed;
             restored
                 .check_core_transaction(&funding, block(100), &mut wallet, true, true)
                 .await;

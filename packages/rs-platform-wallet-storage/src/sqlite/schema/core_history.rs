@@ -99,6 +99,24 @@ pub(crate) fn apply(
     wallet_id: &WalletId,
     cs: &CoreChangeSet,
 ) -> Result<(), WalletStorageError> {
+    apply_records(tx, wallet_id, cs, false)
+}
+
+/// Project live producer spends; V020 accounting backfill never calls this path.
+pub(super) fn apply_live(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    cs: &CoreChangeSet,
+) -> Result<(), WalletStorageError> {
+    apply_records(tx, wallet_id, cs, true)
+}
+
+fn apply_records(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    cs: &CoreChangeSet,
+    attribute_spends: bool,
+) -> Result<(), WalletStorageError> {
     let mut affected: HashSet<Txid> = cs.records.iter().map(|r| r.txid).collect();
     let mut consumers = tx.prepare_cached(
         "SELECT txid FROM core_transaction_inputs WHERE wallet_id = ?1 AND outpoint = ?2",
@@ -119,7 +137,7 @@ pub(crate) fn apply(
     }
     let network = network(tx, wallet_id)?;
     for txid in affected {
-        repair_record(tx, wallet_id, &txid, network)?;
+        repair_record(tx, wallet_id, &txid, network, attribute_spends)?;
     }
     Ok(())
 }
@@ -196,6 +214,7 @@ fn repair_record(
     wallet_id: &WalletId,
     txid: &Txid,
     network: dashcore::Network,
+    attribute_spends: bool,
 ) -> Result<(), WalletStorageError> {
     let Some(mut record) = prior_record(tx, wallet_id, txid)? else {
         return Ok(());
@@ -219,6 +238,21 @@ fn repair_record(
                     address,
                 },
             );
+            // Only the live projection attributes confirmed spends; accounting
+            // backfill stays read-only with respect to coins and reservations.
+            if attribute_spends && !matches!(record.context, TransactionContext::Mempool) {
+                tx.execute(
+                    "UPDATE core_utxos SET spent = 1, \
+                         spent_in_txid = CASE WHEN spent = 1 AND spent_in_txid IS NOT NULL \
+                             THEN spent_in_txid ELSE ?3 END \
+                     WHERE wallet_id = ?1 AND outpoint = ?2",
+                    params![
+                        wallet_id.as_slice(),
+                        blob::encode_outpoint(&input.previous_output)?,
+                        txid.as_byte_array().as_slice()
+                    ],
+                )?;
+            }
         }
     }
     let mut outputs = BTreeMap::new();
@@ -488,8 +522,14 @@ mod tests {
             .unwrap();
         let tx = conn.transaction().unwrap();
 
-        let err =
-            repair_record(&tx, &WALLET_ID, &stored.txid, dashcore::Network::Testnet).unwrap_err();
+        let err = repair_record(
+            &tx,
+            &WALLET_ID,
+            &stored.txid,
+            dashcore::Network::Testnet,
+            false,
+        )
+        .unwrap_err();
 
         assert!(
             matches!(
@@ -702,7 +742,14 @@ mod tests {
             let mut conn = wallet_db("testnet");
             store(&conn, live);
             let tx = conn.transaction().unwrap();
-            repair_record(&tx, &WALLET_ID, &live.txid, dashcore::Network::Testnet).unwrap();
+            repair_record(
+                &tx,
+                &WALLET_ID,
+                &live.txid,
+                dashcore::Network::Testnet,
+                false,
+            )
+            .unwrap();
             let repaired = prior_record(&tx, &WALLET_ID, &live.txid).unwrap().unwrap();
 
             assert_eq!(
