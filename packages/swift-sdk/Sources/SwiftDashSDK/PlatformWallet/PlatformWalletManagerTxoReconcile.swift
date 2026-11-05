@@ -412,6 +412,7 @@ extension PlatformWalletManager {
                 report.healedSpent += counts.healedSpent
                 report.skippedImmature += counts.skippedImmature
                 report.skippedUnresolvedAccount += counts.skippedUnresolvedAccount
+                report.skippedMissingAddress += counts.skippedMissingAddress
                 report.skippedInvalid += counts.skippedInvalid
             }
             report.engineRows += page.rows.count
@@ -689,6 +690,7 @@ extension PlatformWalletManager {
                 "stale_retry_count": .integer(Int64(report.staleRetries)),
                 "skipped_immature_count": .integer(Int64(report.skippedImmature)),
                 "skipped_invalid_count": .integer(Int64(report.skippedInvalid)),
+                "skipped_missing_address_count": .integer(Int64(report.skippedMissingAddress)),
                 "skipped_unresolved_account_count": .integer(Int64(report.skippedUnresolvedAccount)),
                 "store_failure_count": .integer(Int64(report.storeFailures)),
                 "stopped_on_budget": .boolean(report.stoppedOnBudget),

@@ -262,6 +262,7 @@ final class CoreTxoReconcileTests: XCTestCase {
     private let walletId = Data(repeating: 0x31, count: 32)
     private let otherWalletId = Data(repeating: 0x32, count: 32)
     private let fixtureAddress = "yReconcileFixtureAddr"
+    private let coinJoinAddress = "yReconcileCoinJoinAddr"
     private let fixtureScript = Data([0x76, 0xa9, 0x14] + [UInt8](repeating: 0x5a, count: 20) + [0x88, 0xac])
 
     private var bip44: CoreAccountKey {
@@ -330,6 +331,38 @@ final class CoreTxoReconcileTests: XCTestCase {
         }
         try context.save()
         return wallet
+    }
+
+    /// Files the address row of `address` (the fixture address unless
+    /// given) under `walletId`'s account of `accountType`, or under no
+    /// account when `accountType` is `nil` — inserting the row if the store
+    /// lacks it, re-filing it otherwise. The heal pass inserts a coin only
+    /// once its address is saved under the coin's own account.
+    private func fileAddress(
+        in container: ModelContainer,
+        walletId: Data? = nil,
+        address: String? = nil,
+        underAccountType accountType: UInt32? = 0
+    ) throws {
+        let walletId = walletId ?? self.walletId
+        let address = address ?? fixtureAddress
+        let context = ModelContext(container)
+        var account: PersistentAccount?
+        if let accountType {
+            let accounts = try context.fetch(FetchDescriptor<PersistentAccount>(
+                predicate: #Predicate { $0.wallet.walletId == walletId && $0.accountType == accountType }
+            ))
+            account = try XCTUnwrap(accounts.first)
+        }
+        let existing = try context.fetch(FetchDescriptor<PersistentCoreAddress>(
+            predicate: #Predicate { $0.address == address }
+        )).first
+        let row = existing ?? PersistentCoreAddress(
+            address: address, poolTypeTag: 0, addressIndex: 0, derivationPath: "m/44'/1'/0'/0/0"
+        )
+        if existing == nil { context.insert(row) }
+        row.account = account
+        try context.save()
     }
 
     /// An unspent, confirmed TXO row of `walletId` under its BIP44 account.
@@ -729,8 +762,10 @@ final class CoreTxoReconcileTests: XCTestCase {
     func testAnEngineCoinMissingFromTheStoreIsInsertedWhenValid() throws {
         let (handler, container) = try makeHandler()
         try seedWallet(in: container, withCoinJoinAccount: true)
+        try fileAddress(in: container)
+        try fileAddress(in: container, address: coinJoinAddress, underAccountType: 1)
         let valid = engineUtxo(txid: txid(0x74))
-        let coinJoinValid = engineUtxo(account: coinJoin, txid: txid(0x75), amount: 100_001)
+        let coinJoinValid = engineUtxo(account: coinJoin, txid: txid(0x75), amount: 100_001, address: coinJoinAddress)
         let engine = FakeCoreTxoEngine(inventory: [valid, coinJoinValid])
 
         let report = run(handler, engine: engine)
@@ -748,10 +783,12 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertEqual(coin.height, 2_391_743)
         XCTAssertEqual(coin.walletId, walletId)
         XCTAssertEqual(coin.account?.accountType, 0)
+        XCTAssertEqual(coin.coreAddress?.address, fixtureAddress, "linked to its address row")
         XCTAssertEqual(coin.transaction?.txid, txid(0x74), "a stub parent row holds the relationship")
         XCTAssertEqual(coin.transaction?.transactionData, Data())
         let mixed = try XCTUnwrap(txo(container, txid: txid(0x75)))
         XCTAssertEqual(mixed.account?.accountType, 1, "filed under the account the engine named")
+        XCTAssertEqual(mixed.coreAddress?.address, coinJoinAddress)
         XCTAssertEqual(try restoredUtxoCount(handler), 2)
     }
 
@@ -762,6 +799,7 @@ final class CoreTxoReconcileTests: XCTestCase {
     func testTheHealPassFollowsTheEnginesVerdicts() throws {
         let (handler, container) = try makeHandler()
         try seedWallet(in: container) // BIP44 only: no CoinJoin account row
+        try fileAddress(in: container)
         let eligible = engineUtxo(txid: txid(0x76), height: 2_535_890, isConfirmed: false)
         let immature = engineUtxo(txid: txid(0x77))
         let invalid = engineUtxo(txid: txid(0x78))
@@ -780,6 +818,7 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertEqual(report.skippedImmature, 1)
         XCTAssertEqual(report.skippedInvalid, 2, "the engine's invalid verdict, and a txid that does not decode")
         XCTAssertEqual(report.skippedUnresolvedAccount, 1)
+        XCTAssertEqual(report.skippedMissingAddress, 0)
         let healed = try XCTUnwrap(txo(container, txid: txid(0x76)))
         XCTAssertTrue(healed.isConfirmed, "an eligible coin is engine-confirmed")
         for byte: UInt8 in [0x77, 0x78, 0x79] {
@@ -817,6 +856,7 @@ final class CoreTxoReconcileTests: XCTestCase {
     func testAHealTheDrainWritesSpentIsReportedAsAMutation() throws {
         let (handler, container) = try makeHandler()
         try seedWallet(in: container)
+        try fileAddress(in: container)
         // The spender is already a confirmed row of the store; only the coin
         // it consumed is missing (the funding record never reached the
         // store), so its input claim is still pending.
@@ -875,6 +915,93 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertEqual(engine.checkpoint, nil)
         XCTAssertNil(try txo(container, txid: txid(0x83)))
         XCTAssertTrue(injector.observedReads.contains("PersistentAccount"))
+    }
+
+    /// A coin whose address has no store row is not healed: the restore
+    /// loader rebuilds each account's address pool from its own address
+    /// rows, so the coin would come back with no derivation path and fail
+    /// every send that selects it. It is counted, and a later run heals it
+    /// once the address is saved under the coin's account.
+    func testReconcileSkipsHealWhenAddressRowMissing() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        let engine = FakeCoreTxoEngine(inventory: [engineUtxo(txid: txid(0x86))])
+
+        let first = run(handler, engine: engine)
+
+        XCTAssertTrue(first.completed)
+        XCTAssertEqual(first.engineRows, 1)
+        XCTAssertEqual(first.skippedMissingAddress, 1)
+        XCTAssertEqual(first.skippedUnresolvedAccount, 0)
+        XCTAssertEqual(first.inserted, 0)
+        XCTAssertEqual(first.mutations, 0)
+        XCTAssertNil(try txo(container, txid: txid(0x86)))
+        XCTAssertEqual(try txoCount(container), 0)
+
+        try fileAddress(in: container)
+        let second = run(handler, engine: engine)
+
+        XCTAssertTrue(second.completed)
+        XCTAssertEqual(second.skippedMissingAddress, 0)
+        XCTAssertEqual(second.inserted, 1)
+        let coin = try XCTUnwrap(txo(container, txid: txid(0x86)))
+        XCTAssertEqual(coin.account?.accountType, 0)
+        XCTAssertEqual(coin.coreAddress?.address, fixtureAddress)
+        XCTAssertEqual(coin.coreAddress?.account?.accountType, 0, "the address row the restore pool is built from")
+    }
+
+    /// The address row must be filed under the coin's own account: a row
+    /// under no account, or under another account, is not in the pool the
+    /// restore loader rebuilds for the coin's account.
+    func testReconcileSkipsHealWhenAddressRowUnderAnotherAccount() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container, withCoinJoinAccount: true)
+        let engine = FakeCoreTxoEngine(inventory: [engineUtxo(txid: txid(0x87))])
+
+        try fileAddress(in: container, underAccountType: nil)
+        let unfiled = run(handler, engine: engine)
+        XCTAssertTrue(unfiled.completed)
+        XCTAssertEqual(unfiled.skippedMissingAddress, 1, "an address row under no account")
+        XCTAssertEqual(unfiled.inserted, 0)
+        XCTAssertNil(try txo(container, txid: txid(0x87)))
+
+        try fileAddress(in: container, underAccountType: 1)
+        let elsewhere = run(handler, engine: engine)
+        XCTAssertTrue(elsewhere.completed)
+        XCTAssertEqual(elsewhere.skippedMissingAddress, 1, "an address row under the CoinJoin account")
+        XCTAssertEqual(elsewhere.inserted, 0)
+        XCTAssertNil(try txo(container, txid: txid(0x87)))
+
+        try fileAddress(in: container, underAccountType: 0)
+        let healed = run(handler, engine: engine)
+        XCTAssertTrue(healed.completed)
+        XCTAssertEqual(healed.skippedMissingAddress, 0)
+        XCTAssertEqual(healed.inserted, 1)
+        let coin = try XCTUnwrap(txo(container, txid: txid(0x87)))
+        XCTAssertEqual(coin.account?.accountType, 0)
+        XCTAssertEqual(coin.coreAddress?.address, fixtureAddress)
+        XCTAssertEqual(try txoCount(container), 1)
+    }
+
+    /// The address lookup cannot tell "no row" from "could not read", so a
+    /// failed read must not be counted as a missing address: the step fails
+    /// and the run stops before any insert.
+    func testTheRunStopsWhenTheAddressLookupCannotRead() throws {
+        let injector = FetchFaultInjector(faulting: PersistentCoreAddress.self)
+        let (handler, container) = try makeHandler(modelFetcher: injector)
+        try seedWallet(in: container)
+        try fileAddress(in: container)
+        let engine = FakeCoreTxoEngine(inventory: [engineUtxo(txid: txid(0x88))])
+
+        let report = run(handler, engine: engine)
+
+        XCTAssertFalse(report.completed)
+        XCTAssertEqual(report.storeFailures, 1)
+        XCTAssertEqual(report.skippedMissingAddress, 0, "a failed read is not a missing address")
+        XCTAssertEqual(report.inserted, 0)
+        XCTAssertEqual(engine.healApplied, 0, "a failed page is never reported applied")
+        XCTAssertNil(try txo(container, txid: txid(0x88)))
+        XCTAssertTrue(injector.observedReads.contains("PersistentCoreAddress"))
     }
 
     /// The heal pass asks the store whether it already holds each engine
@@ -953,6 +1080,7 @@ final class CoreTxoReconcileTests: XCTestCase {
     func testASecondRunChangesNothing() throws {
         let (handler, container) = try makeHandler()
         try seedWallet(in: container)
+        try fileAddress(in: container)
         try seedUnspentTxo(in: container, txid: txid(0x81))
         let flipped = PersistentTxo.makeOutpoint(txid: txid(0x81), vout: 0)
         let healed = engineUtxo(txid: txid(0x82))
@@ -1069,6 +1197,7 @@ final class CoreTxoReconcileTests: XCTestCase {
     func testTheRunStopsAtTheFirstFailedEngineReadAndKeepsWhatLanded() throws {
         let (handler, container) = try makeHandler()
         try seedWallet(in: container)
+        try fileAddress(in: container)
         try seedUnspentTxo(in: container, txid: txid(0xd1))
         let engine = FakeCoreTxoEngine(inventory: [engineUtxo(txid: txid(0xd2))])
         engine.failClassify = true
@@ -1086,6 +1215,7 @@ final class CoreTxoReconcileTests: XCTestCase {
     func testTheHealPassWalksEveryPageOfTheInventory() throws {
         let (handler, container) = try makeHandler()
         try seedWallet(in: container)
+        try fileAddress(in: container)
         let inventory = (0..<5).map { engineUtxo(txid: txid(0xe0 + UInt8($0))) }
         let engine = FakeCoreTxoEngine(inventory: inventory)
 
@@ -1103,6 +1233,7 @@ final class CoreTxoReconcileTests: XCTestCase {
     func testEachHealPageIsWrittenUnderItsGuardAndReleasedBeforeTheNext() throws {
         let (handler, container) = try makeHandler()
         try seedWallet(in: container)
+        try fileAddress(in: container)
         let inventory = (0..<5).map { engineUtxo(txid: txid(0x90 + UInt8($0))) }
         let engine = FakeCoreTxoEngine(inventory: inventory)
         let rowsAtRelease = Recorder()
@@ -1131,6 +1262,7 @@ final class CoreTxoReconcileTests: XCTestCase {
     func testADeferredHealStepReleasesItsGuardBeforeWaiting() throws {
         let (handler, container) = try makeHandler()
         try seedWallet(in: container)
+        try fileAddress(in: container)
         let engine = FakeCoreTxoEngine(inventory: [engineUtxo(txid: txid(0x9a))])
         let walletId = self.walletId
         let releases = Counter()
@@ -1247,6 +1379,7 @@ final class CoreTxoReconcileTests: XCTestCase {
     func testADeferredHealPageIsNeverReportedApplied() throws {
         let (handler, container) = try makeHandler()
         try seedWallet(in: container)
+        try fileAddress(in: container)
         let engine = FakeCoreTxoEngine(inventory: [engineUtxo(txid: txid(0x42))], budget: 2)
         let walletId = self.walletId
         handler.beginChangeset(walletId: walletId)
@@ -1271,6 +1404,7 @@ final class CoreTxoReconcileTests: XCTestCase {
     func testARunStopsWhenAnAppliedReportLeavesNoBudgetMidPass() throws {
         let (handler, container) = try makeHandler()
         try seedWallet(in: container)
+        try fileAddress(in: container)
         let inventory = (0..<5).map { engineUtxo(txid: txid(0x50 + UInt8($0))) }
         let engine = FakeCoreTxoEngine(inventory: inventory, budget: 2)
 
@@ -1293,6 +1427,7 @@ final class CoreTxoReconcileTests: XCTestCase {
     func testAHealPassThatEndsWithNoBudgetLeftStopsBeforeTheClassifyPass() throws {
         let (handler, container) = try makeHandler()
         try seedWallet(in: container)
+        try fileAddress(in: container)
         try seedUnspentTxo(in: container, txid: txid(0x58))
         let outpoint = PersistentTxo.makeOutpoint(txid: txid(0x58), vout: 0)
         let engine = FakeCoreTxoEngine(
@@ -1435,6 +1570,7 @@ final class CoreTxoReconcileTests: XCTestCase {
     func testEachPageIsReportedAppliedAfterItsStepAndItsRelease() throws {
         let (handler, container) = try makeHandler()
         try seedWallet(in: container)
+        try fileAddress(in: container)
         try seedUnspentTxo(in: container, txid: txid(0x80))
         let outpoint = PersistentTxo.makeOutpoint(txid: txid(0x80), vout: 0)
         let inventory = (1...3).map { engineUtxo(txid: txid(0x80 + UInt8($0))) }

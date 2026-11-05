@@ -2543,6 +2543,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     /// Resolve a `PersistentCoreAddress` by its unique `address`.
     private func coreAddressRow(address: String) -> PersistentCoreAddress? {
+        try? coreAddressRowChecked(address: address)
+    }
+
+    /// Throwing core of `coreAddressRow`: `nil` is a successful miss, a
+    /// read that fails throws. The heal pass skips a coin whose address
+    /// has no row, so for it a failed read must stop the step instead of
+    /// reading as that skip.
+    private func coreAddressRowChecked(address: String) throws -> PersistentCoreAddress? {
         if let known = roundIndex?.coreAddressesByAddress[address] {
             return known.isDeleted ? nil : known
         }
@@ -2551,7 +2559,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         )
         descriptor.fetchLimit = 1
         if roundIndex != nil { descriptor.includePendingChanges = false }
-        guard let row = (try? modelFetcher.fetch(descriptor, in: backgroundContext))?.first,
+        guard let row = try modelFetcher.fetch(descriptor, in: backgroundContext).first,
               !row.isDeleted else { return nil }
         roundIndex?.coreAddressesByAddress[address] = row
         return row
@@ -11513,6 +11521,8 @@ struct CoreTxoHealCounts: Sendable {
     var alreadyPresent = 0
     var skippedImmature = 0
     var skippedUnresolvedAccount = 0
+    /// Coins whose address has no row under the resolved account.
+    var skippedMissingAddress = 0
     var skippedInvalid = 0
     /// Outpoints written, logged once the step saved.
     var healedOutpoints: [Data] = []
@@ -11551,11 +11561,16 @@ extension PlatformWalletPersistenceHandler {
     /// outpoint the store holds is already present; a coin whose owning
     /// account has no store row is skipped and counted rather than filed
     /// unowned, because the restore loader routes by account and an unowned
-    /// row would be dropped at the next launch, recreating the loss.
-    /// Inserted rows are `isConfirmed == true` — an eligible coin is
-    /// engine-confirmed. A store read that fails is not a skip: the step
-    /// fails and the run stops, like the unspent-page read in the classify
-    /// pass. `isCancelled` is checked on the queue before anything is read:
+    /// row would be dropped at the next launch, recreating the loss; a coin
+    /// whose address has no store row, or whose address row is not filed
+    /// under that same account, is skipped and counted as a missing
+    /// address, because the restore loader rebuilds each account's address
+    /// pool from its own address rows and the coin would come back with no
+    /// derivation path, unspendable — a later run heals it once the address
+    /// is saved under the account. Inserted rows are `isConfirmed == true`
+    /// — an eligible coin is engine-confirmed. A store read that fails is
+    /// not a skip: the step fails and the run stops, like the unspent-page
+    /// read in the classify pass. `isCancelled` is checked on the queue before anything is read:
     /// wallet deletion moves the run's epoch before its cascade runs here.
     func reconcileHealMissingTxos(
         walletId: Data,
@@ -11606,6 +11621,25 @@ extension PlatformWalletPersistenceHandler {
                     counts.skippedUnresolvedAccount += 1
                     continue
                 }
+                // The restore loader rebuilds each account's address pool
+                // from its own address rows only, so a coin whose address
+                // is not saved under this account would come back with no
+                // derivation path and fail every send that selects it. Wait
+                // until the address row exists under the account. Compared
+                // by `persistentModelID`: object identity is not stable
+                // across fetches within a context.
+                let addressRow: PersistentCoreAddress?
+                do {
+                    addressRow = try coreAddressRowChecked(address: row.address)
+                } catch {
+                    return reconcileReadFailed(walletId: walletId, error: error)
+                }
+                guard let coreAddr = addressRow,
+                      coreAddr.account?.persistentModelID == account.persistentModelID
+                else {
+                    counts.skippedMissingAddress += 1
+                    continue
+                }
                 let parentTx: PersistentTransaction
                 if let existing = fetchTransactionRow(txid: row.txid) {
                     parentTx = existing
@@ -11632,9 +11666,7 @@ extension PlatformWalletPersistenceHandler {
                 record.isInstantLocked = row.isInstantLocked
                 record.isLocked = row.isLocked
                 backgroundContext.insert(record)
-                if let coreAddr = coreAddressRow(address: row.address) {
-                    record.coreAddress = coreAddr
-                }
+                record.coreAddress = coreAddr
                 drainPendingInputs(into: record, resolvedWalletId: walletId)
                 if record.isSpent {
                     // A pending-input claim or a swept tombstone already

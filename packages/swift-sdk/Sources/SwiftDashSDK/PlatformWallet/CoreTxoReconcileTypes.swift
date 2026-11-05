@@ -259,6 +259,11 @@ public struct CoreTxoReconcileReport: Equatable, Sendable {
     public var skippedImmature = 0
     /// Engine rows whose account has no store row to file them under.
     public var skippedUnresolvedAccount = 0
+    /// Engine rows whose address has no store row under the resolved
+    /// account: inserting them would leave a coin the restored address
+    /// pool has no derivation path for. A later run heals them once the
+    /// address is saved under the account.
+    public var skippedMissingAddress = 0
     /// Engine rows the engine calls invalid (no script, no address), or
     /// whose txid is not 32 bytes.
     public var skippedInvalid = 0
