@@ -1,0 +1,123 @@
+{
+  "_about": "Golden TXO-reconcile transport payloads, read by rs-unified-sdk-jni (wallet_manager::tests) and the Kotlin PlatformWalletPersistenceHandlerTest. inventoryPage is exactly what walletManagerUtxosPageJson emits for the four accessor entries the Rust test builds; outpointQueries is exactly what the Kotlin reconcile sends walletManagerClassifyOutpoints for the same four coins. Change both sides together.",
+  "inventoryPage": {
+    "utxos": [
+      {
+        "typeTag": 0,
+        "standardTag": 0,
+        "index": 0,
+        "registrationIndex": 0,
+        "keyClass": 0,
+        "txid": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "vout": 0,
+        "amount": 19549,
+        "address": "yStxXHHzhAx58JhaPBNhn3xsH93UwBM2nd",
+        "scriptHex": "76a9145b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b88ac",
+        "height": 1534921,
+        "isConfirmed": true,
+        "isInstantlocked": false,
+        "isCoinbase": false,
+        "isLocked": false
+      },
+      {
+        "typeTag": 0,
+        "standardTag": 1,
+        "index": 2,
+        "registrationIndex": 0,
+        "keyClass": 0,
+        "txid": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+        "vout": 7,
+        "amount": 5000000000,
+        "address": "yGoldenFixtureBip32Addr",
+        "scriptHex": "76a914c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c388ac",
+        "height": 1400000,
+        "isConfirmed": true,
+        "isInstantlocked": true,
+        "isCoinbase": true,
+        "isLocked": true
+      },
+      {
+        "typeTag": 3,
+        "standardTag": 0,
+        "index": 0,
+        "registrationIndex": 4,
+        "keyClass": 0,
+        "txid": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+        "vout": 1,
+        "amount": 100000,
+        "address": "",
+        "scriptHex": "",
+        "height": 0,
+        "isConfirmed": false,
+        "isInstantlocked": false,
+        "isCoinbase": false,
+        "isLocked": false
+      },
+      {
+        "typeTag": 12,
+        "standardTag": 0,
+        "index": 1,
+        "registrationIndex": 0,
+        "keyClass": 0,
+        "userIdentityId": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+        "friendIdentityId": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+        "txid": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+        "vout": 3,
+        "amount": 250000,
+        "address": "yGoldenFixtureDashPayAddr",
+        "scriptHex": "76a914d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d488ac",
+        "height": 1534000,
+        "isConfirmed": true,
+        "isInstantlocked": true,
+        "isCoinbase": false,
+        "isLocked": false
+      }
+    ],
+    "cursor": "{\"typeTag\":12,\"standardTag\":0,\"index\":1,\"registrationIndex\":0,\"keyClass\":0,\"userIdentityId\":\"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"friendIdentityId\":\"b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\",\"txid\":\"606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f\",\"vout\":3}",
+    "hasMore": true
+  },
+  "outpointQueries": [
+    {
+      "typeTag": 0,
+      "standardTag": 0,
+      "index": 0,
+      "registrationIndex": 0,
+      "keyClass": 0,
+      "txid": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "vout": 0,
+      "scriptHex": "76a9145b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b88ac"
+    },
+    {
+      "typeTag": 0,
+      "standardTag": 1,
+      "index": 2,
+      "registrationIndex": 0,
+      "keyClass": 0,
+      "txid": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+      "vout": 7,
+      "scriptHex": "76a914c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c388ac"
+    },
+    {
+      "typeTag": 3,
+      "standardTag": 0,
+      "index": 0,
+      "registrationIndex": 4,
+      "keyClass": 0,
+      "txid": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "vout": 1,
+      "scriptHex": ""
+    },
+    {
+      "typeTag": 12,
+      "standardTag": 0,
+      "index": 1,
+      "registrationIndex": 0,
+      "keyClass": 0,
+      "userIdentityId": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "friendIdentityId": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+      "txid": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+      "vout": 3,
+      "scriptHex": "76a914d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d488ac"
+    }
+  ]
+}
