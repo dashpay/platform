@@ -1,285 +1,101 @@
 package org.dashfoundation.dashsdk.wallet
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The manager-side gates and trigger of the TXO-store reconcile — port of
- * the steady-state and scheduling cases of Swift's `CoreTxoReconcileTests`
- * / `CoreTxoReconcileShutdownTests` (dashpay/platform#4638). Pure: no
- * native manager is needed.
+ * The Kotlin side of the TXO-store reconcile's start gate and trigger. The
+ * gates, the schedule and their thresholds live in
+ * `platform_wallet::manager::txo_reconcile` and are tested there; what
+ * Kotlin owns is reading the gate's answer and not launching a second run
+ * of a wallet while its first has not ended.
  */
 class TxoReconcileTest {
 
-    private fun progress(
-        state: SpvSyncState,
-        filters: Pair<Long, Long>?,
-        headers: Long = 2_535_898,
-    ) = SpvSyncProgressData(
-        overallState = state,
-        overallPercentage = 0.0,
-        headers = SpvSubProgress(state, headers, headers, 1.0),
-        filterHeaders = null,
-        filters = filters?.let { (current, target) -> SpvSubProgress(state, current, target, 0.0) },
-        masternodes = null,
-    )
-
-    /** [TxoReconcileCoordinator.walletsDue] for a schedule whose every
-     *  launched run ends before the next tick — the cases that are about
-     *  the edge and the cadence, not about a launch still pending. */
-    private fun TxoReconcileCoordinator.dueWithLaunchesEnded(
-        progress: SpvSyncProgressData,
-        walletKeys: Collection<String>,
-        nowMs: Long,
-    ): List<String> = walletsDue(progress, walletKeys, nowMs).onEach { launchEnded(it) }
-
-    private val steady = progress(SpvSyncState.WAIT_FOR_EVENTS, filters = 2_535_898L to 2_535_898L)
-    private val syncing = progress(SpvSyncState.SYNCING, filters = 199_999L to 2_535_898L)
-
     @Test
-    fun theSteadyStateGateRefusesAnUnfinishedScan() {
-        assertFalse(TxoReconcileGates.isSteadySyncState(syncing))
-        assertFalse(TxoReconcileGates.isSteadySyncState(progress(SpvSyncState.WAITING_FOR_CONNECTIONS, filters = null)))
-        assertFalse(
-            TxoReconcileGates.isSteadySyncState(progress(SpvSyncState.ERROR, filters = 2_535_898L to 2_535_898L)),
+    fun everyNativeSkipCodeMapsToItsReason() {
+        // rs-platform-wallet-ffi `TXO_RECONCILE_SKIP_*`, in code order.
+        val expected = mapOf(
+            1 to TxoReconcileSkipReason.WALLET_UNKNOWN,
+            2 to TxoReconcileSkipReason.ALREADY_RUNNING,
+            3 to TxoReconcileSkipReason.NOT_STEADY_STATE,
+            4 to TxoReconcileSkipReason.TIP_UNAVAILABLE,
+            5 to TxoReconcileSkipReason.SYNC_FAULT_DETECTED,
+            6 to TxoReconcileSkipReason.WALLET_BEHIND_TIP,
         )
-        assertFalse(
-            "waiting for events with the filter phase behind its target is a scan still running",
-            TxoReconcileGates.isSteadySyncState(progress(SpvSyncState.WAIT_FOR_EVENTS, filters = 2_535_800L to 2_535_898L)),
-        )
-        assertFalse(
-            "no filter phase at all proves nothing",
-            TxoReconcileGates.isSteadySyncState(progress(SpvSyncState.WAIT_FOR_EVENTS, filters = null)),
-        )
-        assertFalse(
-            "a filter phase with no target proves nothing",
-            TxoReconcileGates.isSteadySyncState(progress(SpvSyncState.WAIT_FOR_EVENTS, filters = 0L to 0L)),
-        )
-        assertFalse(
-            "the poll's not-running placeholder is not steady",
-            TxoReconcileGates.isSteadySyncState(SpvSyncProgressData.EMPTY),
-        )
-        assertTrue(TxoReconcileGates.isSteadySyncState(progress(SpvSyncState.SYNCED, filters = 2_535_898L to 2_535_898L)))
-        assertTrue("dash-spv's fully synced steady state", TxoReconcileGates.isSteadySyncState(steady))
-    }
-
-    @Test
-    fun theTipIsTheFilterHeightFallingBackToTheHeaderTip() {
-        assertEquals(2_535_898, TxoReconcileGates.scanTipHeight(steady))
+        for ((code, reason) in expected) {
+            assertEquals(reason, TxoReconcileSkipReason.fromGateCode(code))
+        }
         assertEquals(
-            "falls back to the header tip",
-            2_535_898,
-            TxoReconcileGates.scanTipHeight(progress(SpvSyncState.SYNCED, filters = null)),
-        )
-        assertEquals(
-            "a filter phase at height 0 falls back too",
-            2_535_000,
-            TxoReconcileGates.scanTipHeight(progress(SpvSyncState.SYNCED, filters = 0L to 0L, headers = 2_535_000)),
-        )
-        assertNull(TxoReconcileGates.scanTipHeight(SpvSyncProgressData.EMPTY))
-    }
-
-    @Test
-    fun everyLoadedWalletRunsOnTheRisingEdgeIntoSteadyState() {
-        val coordinator = TxoReconcileCoordinator(cadenceMs = 1_000)
-        val wallets = listOf("a", "b")
-
-        assertEquals(emptyList<String>(), coordinator.dueWithLaunchesEnded(syncing, wallets, nowMs = 0))
-        assertEquals(wallets, coordinator.dueWithLaunchesEnded(steady, wallets, nowMs = 10))
-        assertEquals(
-            "the next tick inside the cadence schedules nothing",
-            emptyList<String>(),
-            coordinator.dueWithLaunchesEnded(steady, wallets, nowMs = 20),
+            "only the manager's own closed check has no native code",
+            listOf(TxoReconcileSkipReason.MANAGER_CLOSED),
+            TxoReconcileSkipReason.entries.filter { it.gateCode == null },
         )
     }
 
     @Test
-    fun aSteadyClientRunsEachWalletAgainOnItsOwnCadence() {
-        val coordinator = TxoReconcileCoordinator(cadenceMs = 1_000)
-        assertEquals(listOf("a"), coordinator.dueWithLaunchesEnded(steady, listOf("a"), nowMs = 0))
-        // A wallet loaded while steady never ran: it is due at once, on its
-        // own clock.
-        assertEquals(listOf("b"), coordinator.dueWithLaunchesEnded(steady, listOf("a", "b"), nowMs = 500))
-        assertEquals(listOf("a"), coordinator.dueWithLaunchesEnded(steady, listOf("a", "b"), nowMs = 1_000))
-        assertEquals(listOf("b"), coordinator.dueWithLaunchesEnded(steady, listOf("a", "b"), nowMs = 1_500))
-        // A completed run restarts that wallet's cadence.
-        assertTrue(coordinator.markRun("a", nowMs = 1_900, runEpoch = coordinator.currentEpoch))
-        assertEquals(emptyList<String>(), coordinator.dueWithLaunchesEnded(steady, listOf("a", "b"), nowMs = 2_000))
-        assertEquals(listOf("a", "b"), coordinator.dueWithLaunchesEnded(steady, listOf("a", "b"), nowMs = 2_900))
+    fun aCodeThisBuildDoesNotKnowIsAContractBreakNotASkip() {
+        for (code in listOf(0, 7, -1)) {
+            val thrown = runCatching { TxoReconcileSkipReason.fromGateCode(code) }.exceptionOrNull()
+            assertTrue("code $code must not map to a reason, got $thrown", thrown is IllegalStateException)
+        }
     }
 
     @Test
-    fun aWalletWithARunInFlightIsNeverScheduledOrStartedAgain() {
-        val coordinator = TxoReconcileCoordinator(cadenceMs = 1_000)
-        assertTrue(coordinator.tryBegin("a"))
-        assertFalse("a second run for the same wallet is refused", coordinator.tryBegin("a"))
-        assertEquals(
-            "not even on the rising edge",
-            listOf("b"),
-            coordinator.walletsDue(steady, listOf("a", "b"), nowMs = 0),
-        )
-        coordinator.end("a")
-        assertTrue(coordinator.tryBegin("a"))
+    fun aWalletWhoseLaunchedRunHasNotEndedIsNotLaunchedAgain() = runTest {
+        // The native schedule reports a wallet due on every tick until a run
+        // claims it; a run still queued must not get a second one behind it.
+        val launches = TxoReconcileLaunches()
+        val release = CompletableDeferred<Unit>()
+        var runs = 0
+        suspend fun run() {
+            runs++
+            release.await()
+        }
+
+        assertTrue(launches.launch(this, "a") { run() })
+        assertFalse("a launch of the same wallet is pending", launches.launch(this, "a") { run() })
+        assertTrue("another wallet launches on its own", launches.launch(this, "b") { runs++ })
+        advanceUntilIdle()
+        assertEquals(2, runs)
+        assertTrue("a" in launches)
+        assertFalse("b" in launches)
+
+        release.complete(Unit)
+        advanceUntilIdle()
+        assertFalse("an ended run releases its wallet", "a" in launches)
+        assertTrue(launches.launch(this, "a") { runs++ })
+        advanceUntilIdle()
+        assertEquals(3, runs)
     }
 
     @Test
-    fun aLaunchedRunThatHasNotClaimedYetIsNotScheduledAgain() {
-        // The run is launched but its coroutine has not reached tryBegin
-        // yet, and a new block takes the client out of steady state and
-        // back: that rising edge must not launch the wallet a second time.
-        val coordinator = TxoReconcileCoordinator(cadenceMs = 1_000_000)
-        assertEquals(listOf("a"), coordinator.walletsDue(steady, listOf("a"), nowMs = 0))
-        assertEquals(emptyList<String>(), coordinator.walletsDue(syncing, listOf("a"), nowMs = 10))
-        assertEquals(
-            "a rising edge while the launch is pending skips it",
-            emptyList<String>(),
-            coordinator.walletsDue(steady, listOf("a"), nowMs = 20),
-        )
+    fun aRunThatThrowsOrIsCancelledBeforeItStartsStillReleasesItsWallet() {
+        val launches = TxoReconcileLaunches()
+        val scope = TestScope(StandardTestDispatcher())
 
-        // The launched run starts, claims, and ends.
-        assertTrue(coordinator.tryBegin("a"))
-        coordinator.end("a")
-        coordinator.launchEnded("a")
-        assertEquals(emptyList<String>(), coordinator.walletsDue(syncing, listOf("a"), nowMs = 30))
-        assertEquals(
-            "the next rising edge after the launch ended schedules it again",
-            listOf("a"),
-            coordinator.walletsDue(steady, listOf("a"), nowMs = 40),
-        )
-    }
+        // A scope whose job is already cancelled: the body never runs, but
+        // the job completes, and the wallet is released with it.
+        val cancelled = CoroutineScope(scope.coroutineContext + Job().apply { cancel() })
+        var ran = false
+        assertTrue(launches.launch(cancelled, "a") { ran = true })
+        scope.advanceUntilIdle()
+        assertFalse(ran)
+        assertFalse("a launch that never ran releases its wallet", "a" in launches)
 
-    @Test
-    fun aRefusedClaimSkipsAndNeverQueues() {
-        // A host call racing a scheduled run: the loser's tryBegin is
-        // refused (reconcileTxoStore then skips with ALREADY_RUNNING, it does
-        // not wait), and nothing is left behind to run later.
-        val coordinator = TxoReconcileCoordinator(cadenceMs = 1_000_000)
-        assertEquals(listOf("a"), coordinator.walletsDue(steady, listOf("a"), nowMs = 0))
-        assertTrue("the scheduled run claims", coordinator.tryBegin("a"))
-        assertFalse("the host call is refused", coordinator.tryBegin("a"))
-        coordinator.end("a")
-        coordinator.launchEnded("a")
-        assertEquals(
-            "inside the cadence, with no edge, nothing runs again",
-            emptyList<String>(),
-            coordinator.walletsDue(steady, listOf("a"), nowMs = 10),
-        )
-        assertTrue("and the wallet can be claimed afresh", coordinator.tryBegin("a"))
-    }
-
-    @Test
-    fun leavingSteadyStateArmsTheNextRisingEdge() {
-        val coordinator = TxoReconcileCoordinator(cadenceMs = 1_000_000)
-        assertEquals(listOf("a"), coordinator.dueWithLaunchesEnded(steady, listOf("a"), nowMs = 0))
-        assertEquals(emptyList<String>(), coordinator.dueWithLaunchesEnded(syncing, listOf("a"), nowMs = 10))
-        assertEquals(
-            "back in steady state: due again, cadence or not",
-            listOf("a"),
-            coordinator.dueWithLaunchesEnded(steady, listOf("a"), nowMs = 20),
-        )
-    }
-
-    @Test
-    fun stoppingSpvArmsTheNextRisingEdgeWithoutASyncingRead() {
-        // SPV stops and restarts straight into steady state: the poll feeds
-        // no progress while SPV is down and the first read after the
-        // restart is already steady, so no syncing read ever lowers the
-        // edge. The stop itself must, or every wallet waits out the cadence.
-        val coordinator = TxoReconcileCoordinator(cadenceMs = 1_000_000)
-        val wallets = listOf("a", "b")
-        assertEquals(wallets, coordinator.dueWithLaunchesEnded(steady, wallets, nowMs = 0))
-        assertEquals(emptyList<String>(), coordinator.dueWithLaunchesEnded(steady, wallets, nowMs = 10))
-
-        coordinator.spvStopped()
-
-        assertEquals(
-            "the first steady read after the restart is a new steady state",
-            wallets,
-            coordinator.dueWithLaunchesEnded(steady, wallets, nowMs = 20),
-        )
-        assertEquals(
-            "and only the first",
-            emptyList<String>(),
-            coordinator.dueWithLaunchesEnded(steady, wallets, nowMs = 30),
-        )
-    }
-
-    @Test
-    fun aRunOvertakenByARemovalDoesNotStampTheReaddedWalletsCadence() {
-        // A run captured the epoch and was still going when its wallet was
-        // removed (epoch bumped, cadence forgotten) and the same id added
-        // back. Its finish must not stamp the cadence: the re-added wallet
-        // has never been reconciled and is due on the next tick.
-        val coordinator = TxoReconcileCoordinator(cadenceMs = 1_000_000)
-        assertEquals(listOf("a"), coordinator.walletsDue(steady, listOf("a"), nowMs = 0))
-        assertTrue(coordinator.tryBegin("a"))
-        val runEpoch = coordinator.currentEpoch
-
-        // removeWallet: bump first, then forget; addWallet puts "a" back.
-        coordinator.bumpEpoch()
-        coordinator.forget("a")
-        assertEquals(
-            "in flight, so not scheduled yet",
-            emptyList<String>(),
-            coordinator.walletsDue(steady, listOf("a"), nowMs = 10),
-        )
-
-        assertFalse(coordinator.markRun("a", nowMs = 20, runEpoch = runEpoch))
-        coordinator.end("a")
-        coordinator.launchEnded("a")
-        assertEquals(
-            "the re-added wallet is due at once, not a cadence later",
-            listOf("a"),
-            coordinator.walletsDue(steady, listOf("a"), nowMs = 30),
-        )
-    }
-
-    @Test
-    fun aRunStampedBeforeTheRemovalIsClearedByIt() {
-        // The other order: the run finished and stamped before the removal.
-        // The removal's forget clears that stamp, so the re-added wallet is
-        // still due at once.
-        val coordinator = TxoReconcileCoordinator(cadenceMs = 1_000_000)
-        assertEquals(listOf("a"), coordinator.walletsDue(steady, listOf("a"), nowMs = 0))
-        assertTrue(coordinator.markRun("a", nowMs = 5, runEpoch = coordinator.currentEpoch))
-        coordinator.launchEnded("a")
-        coordinator.bumpEpoch()
-        coordinator.forget("a")
-        assertEquals(listOf("a"), coordinator.walletsDue(steady, listOf("a"), nowMs = 10))
-    }
-
-    @Test
-    fun closeAndDeletionStaleTheEpochAndDeletionForgetsTheCadence() {
-        val coordinator = TxoReconcileCoordinator(cadenceMs = 1_000)
-        val before = coordinator.currentEpoch
-        coordinator.bumpEpoch()
-        assertTrue("an in-flight run sees its epoch move", coordinator.currentEpoch != before)
-
-        assertEquals(listOf("a"), coordinator.dueWithLaunchesEnded(steady, listOf("a"), nowMs = 0))
-        coordinator.forget("a")
-        assertEquals(
-            "a re-added wallet is due at once",
-            listOf("a"),
-            coordinator.dueWithLaunchesEnded(steady, listOf("a"), nowMs = 10),
-        )
-    }
-
-    @Test
-    fun theWalletGateUsesTheEnginesWatermarkWithinTheTipMargin() {
-        // Swift's `synced_height + margin >= tip`. The value passed is the
-        // ENGINE's watermark: the persisted Room copy trails it by a round,
-        // and gating on that skipped the run at the SYNCED edge of a restore
-        // (2026-10-02 device run: WALLET_BEHIND_TIP at the transition, the
-        // next attempt 30 minutes later).
-        assertTrue(TxoReconcileGates.walletCaughtUp(walletSyncedHeight = 1_565_211L, tipHeight = 1_565_211))
-        assertTrue(TxoReconcileGates.walletCaughtUp(walletSyncedHeight = 1_565_205L, tipHeight = 1_565_211))
-        assertFalse(TxoReconcileGates.walletCaughtUp(walletSyncedHeight = 1_565_204L, tipHeight = 1_565_211))
-        // A wallet added behind the tip is still being scanned.
-        assertFalse(TxoReconcileGates.walletCaughtUp(walletSyncedHeight = 0L, tipHeight = 1_565_211))
-        // The native "no value" sentinel never passes.
-        assertFalse(TxoReconcileGates.walletCaughtUp(walletSyncedHeight = -1L, tipHeight = 3))
+        val handler = kotlinx.coroutines.CoroutineExceptionHandler { _, _ -> }
+        val failing = CoroutineScope(scope.coroutineContext + Job() + handler)
+        assertTrue(launches.launch(failing, "b") { error("run failed") })
+        scope.advanceUntilIdle()
+        assertFalse("a run that threw releases its wallet", "b" in launches)
     }
 }
