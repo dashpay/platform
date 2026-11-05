@@ -1295,18 +1295,6 @@ class ManagedPlatformWallet internal constructor(
         cleanable.clean()
     }
 
-    /** Split a flat `byte[]` of concatenated 32-byte ids into per-id rows. */
-    private fun splitIds(flat: ByteArray): List<ByteArray> {
-        if (flat.size < 32) return emptyList()
-        val out = ArrayList<ByteArray>(flat.size / 32)
-        var offset = 0
-        while (offset + 32 <= flat.size) {
-            out.add(flat.copyOfRange(offset, offset + 32))
-            offset += 32
-        }
-        return out
-    }
-
     /**
      * Encode [outputs] to the credit-outputs blob the transfer FFI reads:
      * `u32 rowCount` then per row `u8 addressType, u8[20] hash, u64 credits`.
@@ -1408,4 +1396,17 @@ class ManagedPlatformWallet internal constructor(
             }
         }
     }
+}
+
+/** Split a flat `byte[]` of concatenated 32-byte ids into per-id rows; a
+ *  ragged tail shorter than one id is dropped. */
+internal fun splitIds(flat: ByteArray): List<ByteArray> {
+    if (flat.size < 32) return emptyList()
+    val out = ArrayList<ByteArray>(flat.size / 32)
+    var offset = 0
+    while (offset + 32 <= flat.size) {
+        out.add(flat.copyOfRange(offset, offset + 32))
+        offset += 32
+    }
+    return out
 }

@@ -180,12 +180,6 @@ internal object WalletManagerNative {
      *  [walletManagerTxoReconcileBegin] hands back in `outStoreAfter[0]`. */
     const val TXO_RECONCILE_START_CLASSIFY = 2
 
-    /** The longest store cursor
-     *  [walletManagerTxoReconcileClassifyPageApplied] keeps for the
-     *  wallet's next run (rs-platform-wallet-ffi
-     *  `TXO_RECONCILE_STORE_CURSOR_MAX`). */
-    const val TXO_RECONCILE_STORE_CURSOR_MAX = 64
-
     /**
      * The wallets whose reconcile is due now, as concatenated 32-byte ids
      * (`platform_wallet_manager_txo_reconcile_due_wallets`). Called on every
@@ -202,9 +196,9 @@ internal object WalletManagerNative {
      * (`platform_wallet_manager_txo_reconcile_begin`). Returns
      * [TXO_RECONCILE_GATE_RUN] or a `TXO_RECONCILE_SKIP_*` reason (see
      * [org.dashfoundation.dashsdk.wallet.TxoReconcileSkipReason.fromGateCode]);
-     * on [TXO_RECONCILE_GATE_RUN] `outTipHeight[0]` is the scan tip the run
-     * is measured against (the native claim keeps it), and the claim holds
-     * until [walletManagerTxoReconcileFinish].
+     * on [TXO_RECONCILE_GATE_RUN] the claim holds until
+     * [walletManagerTxoReconcileFinish]. The native claim keeps the scan tip
+     * the run is measured against; the host never sees it.
      *
      * On [TXO_RECONCILE_GATE_RUN] `outStart[0]` is where the run starts, as
      * the native reconciler decides it from the wallet's checkpoint:
@@ -212,14 +206,13 @@ internal object WalletManagerNative {
      * [TXO_RECONCILE_START_CLASSIFY]. For the last, `outStoreAfter[0]` is
      * the store cursor to start after, the bytes the host last passed to
      * [walletManagerTxoReconcileClassifyPageApplied] (empty: the first
-     * row); otherwise it is null. [outTipHeight] and [outStart] are
-     * `IntArray(1)`, [outStoreAfter] an `arrayOfNulls<ByteArray>(1)`,
-     * checked before the claim is taken.
+     * row); otherwise it is null. [outStart] is an `IntArray(1)`,
+     * [outStoreAfter] an `arrayOfNulls<ByteArray>(1)`, both checked before
+     * the claim is taken.
      */
     external fun walletManagerTxoReconcileBegin(
         managerHandle: Long,
         walletId: ByteArray,
-        outTipHeight: IntArray,
         outStart: IntArray,
         outStoreAfter: Array<ByteArray?>,
     ): Int
@@ -258,7 +251,8 @@ internal object WalletManagerNative {
      * cursor: each page starts after the last one reported with
      * [walletManagerTxoReconcileHealPageApplied] (or where the wallet's last
      * run stopped), and a page read again before it is reported is the same
-     * page. Keep going while `hasMore` is true. Each call is one page of the
+     * page. Keep going while `hasMore` is true; it is false on an empty
+     * page. Each call is one page of the
      * run's budget; `budgetSpent` true means nothing was read and nothing
      * is held: the run has used its budget and stops. [limit] caps the rows
      * in one page; non-positive asks for the engine's own default, and the
@@ -361,8 +355,8 @@ internal object WalletManagerNative {
      * Report that the store page [walletManagerTxoReconcileClassifyOutpoints]
      * last classified was applied and its guard released
      * (`platform_wallet_txo_reconcile_classify_page_applied`). [nextAfter] is
-     * the host's store cursor past that page, at most
-     * [TXO_RECONCILE_STORE_CURSOR_MAX] bytes, which
+     * the host's store cursor past that page, at most rs-platform-wallet-ffi
+     * `TXO_RECONCILE_STORE_CURSOR_MAX` (64) bytes, which
      * [walletManagerTxoReconcileBegin] hands back to the wallet's next run;
      * null when that was the store's last page, which ends the cycle (the
      * next run starts at the heal pass again). Returns whether the run has

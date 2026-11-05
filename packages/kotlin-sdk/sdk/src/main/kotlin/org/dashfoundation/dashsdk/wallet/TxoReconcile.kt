@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.wallet
 
+import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler
@@ -113,5 +114,6 @@ internal class TxoReconcileLaunches {
     }
 
     /** Whether a launch of [walletKey] has not ended. */
+    @VisibleForTesting
     operator fun contains(walletKey: String): Boolean = walletKey in launched
 }

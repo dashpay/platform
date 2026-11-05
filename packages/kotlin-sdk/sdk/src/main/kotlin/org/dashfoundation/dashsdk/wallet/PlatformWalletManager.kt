@@ -36,6 +36,7 @@ import org.dashfoundation.dashsdk.persistence.hexToByteArray
 import org.dashfoundation.dashsdk.persistence.logReference
 import org.dashfoundation.dashsdk.persistence.toBase58String
 import org.dashfoundation.dashsdk.persistence.toHex
+import org.dashfoundation.dashsdk.persistence.txoReconcileOrNull
 import org.json.JSONArray
 import org.dashfoundation.dashsdk.security.BiometricGate
 import org.dashfoundation.dashsdk.security.IdentityKeyPrivateKeyDeriver
@@ -1488,7 +1489,6 @@ class PlatformWalletManager(
         return try {
             teardownGate.withOp {
                 if (isCancelled()) return@withOp stale()
-                val tipOut = IntArray(1)
                 val startOut = IntArray(1)
                 val storeAfterOut = arrayOfNulls<ByteArray>(1)
                 // NonCancellable: a RUN return holds a native claim that only
@@ -1499,7 +1499,7 @@ class PlatformWalletManager(
                 val gate = withContext(NonCancellable + Dispatchers.IO) {
                     mapNativeErrors {
                         WalletManagerNative.walletManagerTxoReconcileBegin(
-                            managerHandle, walletId, tipOut, startOut, storeAfterOut,
+                            managerHandle, walletId, startOut, storeAfterOut,
                         )
                     }
                 }
@@ -1529,7 +1529,7 @@ class PlatformWalletManager(
                     withContext(NonCancellable + Dispatchers.IO) {
                         endTxoReconcileRun(
                             walletRef = walletRef,
-                            freeHeldVerdicts = engine::freeHeldVerdicts,
+                            freeHeldVerdicts = engine::releaseVerdicts,
                             finish = {
                                 mapNativeErrors {
                                     WalletManagerNative.walletManagerTxoReconcileFinish(managerHandle, walletId, ran)
@@ -1619,8 +1619,6 @@ class PlatformWalletManager(
             WalletManagerNative.walletManagerTxoReconcileClassifyPageApplied(managerHandle, walletId, nextAfter)
         }
 
-        override suspend fun releaseVerdicts() = freeHeldVerdicts()
-
         override fun retryStalePage(staleInARow: Int): Boolean =
             // A failed call stops the run: retrying is the engine's call,
             // and an engine that cannot answer has not allowed it.
@@ -1634,7 +1632,7 @@ class PlatformWalletManager(
          * read that waits on the engine behind a writer that waits on this
          * guard.
          */
-        fun freeHeldVerdicts() {
+        override fun releaseVerdicts() {
             val token = held.getAndSet(0L)
             if (token != 0L) WalletManagerNative.txoReconcileHeldVerdictsFree(token)
         }
@@ -1646,17 +1644,11 @@ class PlatformWalletManager(
 
         private suspend fun <T> call(what: String, read: () -> T): T? =
             withContext(Dispatchers.IO) {
-                try {
-                    mapNativeErrors { read() }
-                } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
-                    throw cancellation
-                } catch (t: Throwable) {
-                    android.util.Log.w(
-                        "PlatformWalletManager",
-                        "txos reconcile: $what failed error=${t.javaClass.simpleName} wallet=$walletRef",
-                    )
-                    null
-                }
+                txoReconcileOrNull(
+                    onFailure = { android.util.Log.w("PlatformWalletManager", it) },
+                    what = "$what failed",
+                    walletRef = walletRef,
+                ) { mapNativeErrors { read() } }
             }
     }
 
@@ -2765,21 +2757,15 @@ class PlatformWalletManager(
             }
         }.getOrNull() ?: return
         val loaded = wallets.value
-        for (offset in 0 until due.size - due.size % 32 step 32) {
-            val key = due.copyOfRange(offset, offset + 32).toHex()
+        for (id in splitIds(due)) {
+            val key = id.toHex()
             val walletId = loaded[key]?.walletId ?: continue
             txoReconcileLaunches.launch(scope, key) {
-                try {
-                    reconcileTxoStore(walletId)
-                } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
-                    throw cancellation
-                } catch (t: Throwable) {
-                    android.util.Log.w(
-                        "PlatformWalletManager",
-                        "txos reconcile: run failed error=${t.javaClass.simpleName} " +
-                            "wallet=${logReference(walletId)}",
-                    )
-                }
+                txoReconcileOrNull(
+                    onFailure = { android.util.Log.w("PlatformWalletManager", it) },
+                    what = "run failed",
+                    walletRef = logReference(walletId),
+                ) { reconcileTxoStore(walletId) }
             }
         }
     }

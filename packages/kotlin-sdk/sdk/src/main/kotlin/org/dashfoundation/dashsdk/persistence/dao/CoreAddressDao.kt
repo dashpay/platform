@@ -21,6 +21,11 @@ interface CoreAddressDao {
     @Query("SELECT * FROM core_addresses WHERE address = :address")
     suspend fun getByAddress(address: String): CoreAddressEntity?
 
+    /** The saved rows of [addresses] (absent ones are left out). Callers
+     *  chunk the list under the 999-variable ceiling. */
+    @Query("SELECT * FROM core_addresses WHERE address IN (:addresses)")
+    suspend fun getByAddresses(addresses: List<String>): List<CoreAddressEntity>
+
     @Query("SELECT * FROM core_addresses WHERE accountId = :accountId ORDER BY poolTypeTag, addressIndex")
     fun observeByAccount(accountId: Long): Flow<List<CoreAddressEntity>>
 
