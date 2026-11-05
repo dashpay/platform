@@ -3,6 +3,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 mod browser_storage;
 pub mod context_provider;
 mod contract_store;
+pub mod decision_proposals;
 pub mod document_create_cost;
 pub mod document_type_layout;
 pub mod dpns;
@@ -16,6 +17,7 @@ pub mod sdk;
 pub mod serialization;
 pub mod settings;
 pub mod state_transitions;
+pub mod verified_context;
 pub mod wallet;
 
 // Re-export commonly used items

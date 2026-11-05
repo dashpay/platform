@@ -26,7 +26,7 @@ use crate::changeset::{
 use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
 use crate::spv::SpvRuntime;
-use crate::test_support::funded_wallet_manager;
+use crate::test_support::{funded_wallet_manager, WalletSigner};
 use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 use crate::wallet::asset_lock::{
     AssetLockFunding, AssetLockOperationContext, AssetLockOperationState,
@@ -197,7 +197,23 @@ async fn wallet_fixture(
     NetworkShieldedCoordinator,
     TestDirectory,
 ) {
-    let (manager, id, generation, _) =
+    let (wallet, persistence, coordinator, dir, _) = signed_wallet_fixture(lock, keys).await;
+    (wallet, persistence, coordinator, dir)
+}
+
+/// [`wallet_fixture`] plus a signer over the fixture wallet's own seed, for
+/// tests whose funding has to build and sign a fresh Core lock.
+async fn signed_wallet_fixture(
+    lock: &TrackedAssetLock,
+    keys: BTreeMap<u32, AccountViewingKeys>,
+) -> (
+    PlatformWallet,
+    Arc<RecoveryPersistence>,
+    NetworkShieldedCoordinator,
+    TestDirectory,
+    WalletSigner,
+) {
+    let (manager, id, generation, signer) =
         funded_wallet_manager(StandardAccountType::BIP44Account).await;
     let (stored_wallet, info) = {
         let manager = manager.read().await;
@@ -251,7 +267,7 @@ async fn wallet_fixture(
     let path = dir.0.join("shielded.sqlite");
     let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
     let coordinator = NetworkShieldedCoordinator::new(sdk, Network::Testnet, path, store);
-    (wallet, persistence, coordinator, dir)
+    (wallet, persistence, coordinator, dir, signer)
 }
 
 /// A fresh wallet handle whose live tracked locks come from `persistence`'s
@@ -332,6 +348,7 @@ async fn should_release_registration_after_returned_prebuild_load_failure() {
                 0,
                 None,
                 None,
+                None,
             )
             .await;
         if failed_load {
@@ -379,6 +396,7 @@ async fn should_release_cancelled_drain_waiting_for_the_shield_guard() {
         &prover,
         None,
         0,
+        None,
         None,
         None,
     ));
@@ -439,6 +457,7 @@ async fn should_refuse_drain_without_viewing_keys_before_core_funding() {
                 &prover,
                 None,
                 0,
+                None,
                 None,
                 None,
             )
@@ -680,6 +699,7 @@ async fn should_refuse_drain_on_a_buffered_persistence_backend() {
                 lock.funding_type,
                 0,
                 &signer,
+                None,
             )
             .await
             .map(|_| ()),
@@ -791,4 +811,94 @@ async fn status_reads_durable_state_without_network_or_guards() {
             .state,
         AssetLockOperationState::Completed
     );
+}
+
+/// `shielded_fund_from_asset_lock` hands its `on_asset_lock_built` to the
+/// lock builder: the caller hears the outpoint of a fresh lock from the
+/// wallet balance, here one the never-started SPV client refuses to send, so
+/// the lock is untracked again when the call fails.
+#[tokio::test]
+async fn should_report_a_fresh_shield_lock_to_the_caller() {
+    let (mut lock, keys) = drain_lock_fixture();
+    lock.operation_id = None;
+    let recipient = dpp::address_funds::OrchardAddress::from(keys[&0].default_address);
+    let (wallet, _persistence, coordinator, _dir, signer) =
+        signed_wallet_fixture(&lock, keys).await;
+    let coordinator = Arc::new(coordinator);
+    let prover = super::prover::CachedOrchardProver::new();
+    let seen = Mutex::new(Vec::new());
+    let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+
+    wallet
+        .shielded_fund_from_asset_lock(
+            &coordinator,
+            AssetLockFunding::FromWalletBalance {
+                amount_duffs: 5_000_000,
+                account_index: 0,
+            },
+            vec![(recipient, None)],
+            &signer,
+            &prover,
+            None,
+            0,
+            None,
+            None,
+            Some(&observer),
+        )
+        .await
+        .expect_err("a lock the SPV client refuses to send must fail the call");
+
+    let seen = seen.into_inner().unwrap();
+    assert_eq!(seen.len(), 1);
+    assert!(!wallet
+        .asset_locks
+        .list_tracked_locks()
+        .await
+        .iter()
+        .any(|tracked| tracked.out_point == seen[0]));
+}
+
+/// The pooled wallet drain reaches the observer through
+/// `create_wallet_drain_asset_lock_proof`, before its row is stored: the
+/// caller hears the drained lock's outpoint even when the broadcast is then
+/// refused.
+#[tokio::test]
+async fn should_report_a_wallet_drain_lock_to_the_caller() {
+    let (mut lock, keys) = drain_lock_fixture();
+    lock.operation_id = None;
+    let recipient = dpp::address_funds::OrchardAddress::from(keys[&0].default_address);
+    let (wallet, _persistence, coordinator, _dir, signer) =
+        signed_wallet_fixture(&lock, keys).await;
+    let coordinator = Arc::new(coordinator);
+    let prover = super::prover::CachedOrchardProver::new();
+    let operation = Arc::new(AssetLockOperationContext::new([0x5a; 16]));
+    let seen = Mutex::new(Vec::new());
+    let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+
+    wallet
+        .shielded_fund_from_asset_lock(
+            &coordinator,
+            AssetLockFunding::DrainWalletBalance {
+                account_index: 0,
+                minimum_lock_duffs: None,
+                operation: operation.clone(),
+            },
+            vec![(recipient, None)],
+            &signer,
+            &prover,
+            None,
+            0,
+            None,
+            None,
+            Some(&observer),
+        )
+        .await
+        .expect_err("a lock the SPV client refuses to send must fail the call");
+
+    // A definite rejection removed the lock again, so the operation records
+    // that nothing was sent.
+    assert_eq!(seen.into_inner().unwrap().len(), 1);
+    let snapshot = operation.snapshot();
+    assert_eq!(snapshot.state, AssetLockOperationState::NotSent);
+    assert!(snapshot.out_point.is_none());
 }

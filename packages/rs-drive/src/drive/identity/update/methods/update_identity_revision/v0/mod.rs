@@ -1,20 +1,19 @@
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
 
 use crate::drive::Drive;
 
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use grovedb::batch::KeyInfoPath;
 
 use dpp::fee::fee_result::FeeResult;
 
 use dpp::prelude::Revision;
 
 use dpp::version::PlatformVersion;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-use std::collections::HashMap;
 
 impl Drive {
     /// Update revision for specific identity
@@ -30,11 +29,7 @@ impl Drive {
         platform_version: &PlatformVersion,
         previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
         let batch_operations = vec![self.update_identity_revision_operation_v0(
             identity_id,

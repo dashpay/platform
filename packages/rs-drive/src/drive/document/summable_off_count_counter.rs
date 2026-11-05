@@ -30,6 +30,7 @@ use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::CalculatedCostOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::pending_grove_operations::pending_grove_operations;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::grove_operations::{
@@ -48,7 +49,6 @@ use grovedb::{
 };
 use grovedb_merk::tree_type::SUM_ITEM_COST_SIZE;
 use grovedb_storage::worst_case_costs::WorstKeyLength;
-use std::collections::HashMap;
 
 /// How a write moves a `summableOffCountIndex` index's counter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,7 +76,7 @@ pub(crate) enum CounterChange {
 /// property's values, `estimated_key_size` bytes at most. The insert and
 /// delete walkers and preallocation all register it here.
 pub(crate) fn insert_summable_off_count_counter_layer(
-    estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+    estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     counter_path: KeyInfoPath,
     counter_tree_type: TreeType,
     estimated_key_size: u16,
@@ -155,9 +155,7 @@ impl Drive {
         change: CounterChange,
         storage_flags: Option<&StorageFlags>,
         estimated_key_size: impl FnOnce() -> Result<u16, Error>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
@@ -207,9 +205,7 @@ impl Drive {
         counter_tree_type: TreeType,
         change: CounterChange,
         storage_flags: Option<&StorageFlags>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
@@ -425,9 +421,7 @@ impl Drive {
         storage_flags: Option<&StorageFlags>,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_key_size: impl FnOnce() -> Result<u16, Error>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,

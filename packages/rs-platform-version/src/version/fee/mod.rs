@@ -34,10 +34,25 @@ pub mod storage;
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
 pub mod vote_resolution_fund_fees;
 
 pub type FeeVersionNumber = u32;
 
+/// The fee versions a node can resolve from a `fee_version_number` stored in platform state.
+///
+/// Entries must be numbered contiguously from 1, in order: the entry at index `i` carries
+/// `fee_version_number` `i + 1`. [`FeeVersion::get`] and [`FeeVersion::get_optional`] look a
+/// number up by that position, which is correct exactly while this holds, so a new entry is
+/// appended with the next number and never skips or reuses one.
+///
+/// A new number is needed only when a value the fee history serves changes (the storage,
+/// processing, hashing or signature costs), because saved state keeps only the number and
+/// reloads the entry registered here. Schedules that change other groups keep the previous
+/// number, which is why `FEE_VERSION2` to `FEE_VERSION4` all carry 1 and are not listed.
+/// Registering different storage rates also requires refunds priced at the rate active when the
+/// bytes were stored; `calculate_fee` generation 0 prices them at the removal epoch's rate
+/// (dashpay/platform#4703 has a version of that rule).
 pub const FEE_VERSIONS: &[FeeVersion] = &[FEE_VERSION1];
 
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
@@ -67,6 +82,7 @@ impl FeeVersion {
     pub fn as_static(&self) -> &'static FeeVersion {
         FeeVersion::get(self.fee_version_number).expect("expected fee version to exist")
     }
+    /// Looks `version` up by position in [`FEE_VERSIONS`], which is numbered contiguously from 1.
     pub fn get<'a>(version: FeeVersionNumber) -> Result<&'a Self, PlatformVersionError> {
         if version > 0 {
             FEE_VERSIONS.get(version as usize - 1).ok_or_else(|| {
@@ -79,6 +95,7 @@ impl FeeVersion {
         }
     }
 
+    /// Looks `version` up by position in [`FEE_VERSIONS`], which is numbered contiguously from 1.
     pub fn get_optional<'a>(version: FeeVersionNumber) -> Option<&'a Self> {
         if version > 0 {
             FEE_VERSIONS.get(version as usize - 1)

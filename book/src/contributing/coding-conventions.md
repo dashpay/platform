@@ -193,6 +193,17 @@ set through `PlatformVersionCurrentVersion::set_current`. Tests that build
 platforms at different protocol versions race on it. Prefer the explicit
 `to_value(platform_version)` style API wherever a version is in hand.
 
+### Consensus code reads Core at the chain-locked height
+
+Every validator asks its own Dash Core, so a read is deterministic only when it
+asks about the block's chain-locked core height (`block_info.core_height`),
+never Core's tip, and a Core error is never read as a default such as "not
+active". [Syncing with Dash
+Core](../architecture/component-pipeline.md#syncing-with-dash-core) explains why
+and lists the rules for a new read, and [Core Fork
+Activations](../architecture/core-fork-activations.md) describes the record that
+code depending on a Core fork reads.
+
 ### Dispatcher shape
 
 The [Versioned Dispatch](../versioning/versioned-dispatch.md) chapter shows the
@@ -442,7 +453,7 @@ and the [WASM](../wasm/binding-patterns.md) chapters.
 
 ### FFI and mobile SDKs hold no business logic
 
-The FFI crates (`rs-sdk-ffi`, `rs-platform-wallet-ffi`, `key-wallet-ffi`) and
+The FFI crates (`rs-sdk-ffi`, `rs-platform-wallet-ffi`) and
 the Swift and Kotlin SDKs do three things: persist Rust-emitted state, load it
 for views, and call a function that already exists in a Rust library. If the
 wrapper is deciding anything (an index, a derivation path, which key, how

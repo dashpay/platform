@@ -1,3 +1,4 @@
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::drive::tokens::paths::token_perpetual_distributions_identity_last_claimed_time_path_vec;
 use crate::drive::Drive;
 use crate::error::Error;
@@ -6,7 +7,6 @@ use crate::util::object_size_info::{PathKeyElementInfo};
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TreeType};
-use std::collections::HashMap;
 use grovedb::EstimatedLayerCount::EstimatedLevel;
 use grovedb::EstimatedLayerSizes::AllItems;
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
@@ -18,9 +18,7 @@ impl Drive {
         token_id: [u8; 32],
         recipient_id: [u8; 32],
         current_moment: RewardDistributionMoment,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations = vec![];

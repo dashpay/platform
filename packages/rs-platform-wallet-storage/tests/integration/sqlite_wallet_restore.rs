@@ -460,6 +460,7 @@ async fn should_refuse_wallet_drain_without_durable_operation_evidence() {
                 0,
                 None,
                 None,
+                None,
             )
             .await
             .unwrap_err(),

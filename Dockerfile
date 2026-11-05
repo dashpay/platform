@@ -164,6 +164,9 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else e
 # Note that CC / CXX can be updated later on (eg. when configuring sccache)
 RUN rm /usr/bin/cc && \
     ln -s /usr/bin/clang /usr/bin/cc
+# rs-x11-hash archives its wasm32 build with `llvm-ar`, which Alpine keeps off PATH
+RUN ln -s "$(ls -d /usr/lib/llvm*/bin | sort -V | tail -n 1)/llvm-ar" /usr/local/bin/llvm-ar && \
+    llvm-ar --version
 RUN <<EOS
 echo "export CXX='clang++'" >> /root/env
 echo "export CC='clang'" >> /root/env
@@ -405,6 +408,8 @@ COPY --parents \
     packages/keyword-search-contract \
     packages/app-connect-contract \
     packages/moderation-charters-contract \
+    packages/decision-proposals-contract \
+    packages/token-market-contract \
     packages/data-contracts \
     packages/strategy-tests \
     packages/simple-signer \
@@ -412,6 +417,7 @@ COPY --parents \
     # TODO: We don't need those. Maybe dynamically remove them from workspace or move outside of monorepo?
     packages/rs-drive-proof-verifier \
     packages/rs-context-provider \
+    packages/rs-core-proof \
     packages/rs-sdk-trusted-context-provider \
     packages/rs-platform-wallet \
     packages/rs-platform-wallet-storage \
@@ -422,6 +428,7 @@ COPY --parents \
     packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-sdk-cxx \
     packages/rs-unified-sdk-ffi \
     packages/rs-unified-sdk-jni \
     packages/check-features \
@@ -529,6 +536,8 @@ COPY --parents \
     packages/keyword-search-contract \
     packages/app-connect-contract \
     packages/moderation-charters-contract \
+    packages/decision-proposals-contract \
+    packages/token-market-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
     packages/dpns-contract \
@@ -541,6 +550,7 @@ COPY --parents \
     # TODO: We don't need those. Maybe dynamically remove them from workspace or move outside of monorepo?
     packages/rs-drive-proof-verifier \
     packages/rs-context-provider \
+    packages/rs-core-proof \
     packages/rs-sdk-trusted-context-provider \
     packages/rs-platform-wallet \
     packages/rs-platform-wallet-storage \
@@ -551,6 +561,7 @@ COPY --parents \
     packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-sdk-cxx \
     packages/rs-unified-sdk-ffi \
     packages/rs-unified-sdk-jni \
     packages/check-features \
@@ -694,6 +705,7 @@ COPY --parents \
     packages/rs-json-schema-compatibility-validator \
     # rs-sdk stack (needed to build wasm-sdk / evo-sdk for the test suite)
     packages/rs-context-provider \
+    packages/rs-core-proof \
     packages/rs-dapi-client \
     packages/rs-dash-platform-macros \
     packages/rs-drive \
@@ -713,6 +725,8 @@ COPY --parents \
     packages/keyword-search-contract \
     packages/app-connect-contract \
     packages/moderation-charters-contract \
+    packages/decision-proposals-contract \
+    packages/token-market-contract \
     packages/masternode-reward-shares-contract \
     packages/dpns-contract \
     packages/data-contracts \
@@ -860,6 +874,8 @@ COPY --from=build-dashmate-helper /platform/packages/document-history-contract p
 COPY --from=build-dashmate-helper /platform/packages/keyword-search-contract packages/keyword-search-contract
 COPY --from=build-dashmate-helper /platform/packages/app-connect-contract packages/app-connect-contract
 COPY --from=build-dashmate-helper /platform/packages/moderation-charters-contract packages/moderation-charters-contract
+COPY --from=build-dashmate-helper /platform/packages/decision-proposals-contract packages/decision-proposals-contract
+COPY --from=build-dashmate-helper /platform/packages/token-market-contract packages/token-market-contract
 COPY --from=build-dashmate-helper /platform/packages/withdrawals-contract packages/withdrawals-contract
 COPY --from=build-dashmate-helper /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
 COPY --from=build-dashmate-helper /platform/packages/dpns-contract packages/dpns-contract
@@ -965,6 +981,8 @@ COPY --parents \
     packages/keyword-search-contract \
     packages/app-connect-contract \
     packages/moderation-charters-contract \
+    packages/decision-proposals-contract \
+    packages/token-market-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
     packages/dpns-contract \
@@ -975,6 +993,7 @@ COPY --parents \
     packages/rs-json-schema-compatibility-validator \
     packages/rs-drive-proof-verifier \
     packages/rs-context-provider \
+    packages/rs-core-proof \
     packages/rs-sdk-trusted-context-provider \
     packages/wasm-dpp \
     packages/wasm-dpp2 \
@@ -983,6 +1002,7 @@ COPY --parents \
     packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-sdk-cxx \
     packages/rs-unified-sdk-ffi \
     packages/rs-unified-sdk-jni \
     packages/rs-platform-wallet \

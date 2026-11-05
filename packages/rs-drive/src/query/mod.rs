@@ -215,6 +215,14 @@ pub mod vote_polls_by_end_date_query;
 /// Vote polls by document type query
 pub mod vote_polls_by_document_type_query;
 
+/// Yes/no vote poll state query
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod yes_no_vote_poll_state_query;
+
+/// A masternode's answer on a yes/no vote poll
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod masternode_yes_no_vote_query;
+
 /// Function type for looking up a contract by identifier
 ///
 /// This function is used to look up a contract by its identifier.
@@ -1798,6 +1806,25 @@ pub struct DriveDocumentQuery<'a> {
     pub sub_queries: Vec<DriveSubQuery<'a>>,
 }
 
+/// Refuses a read of the documents of a private document type (protocol version 15): its key
+/// `[0]` holds the type's private document store, fixed-size encrypted entries read by their
+/// position, not documents a query could find by id, by an index (it has none) or by their
+/// history. Every document query, and the document history query, call it before building a
+/// path.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn refuse_a_private_document_type(
+    document_type: DocumentTypeRef,
+) -> Result<(), QuerySyntaxError> {
+    if document_type.is_private() {
+        return Err(QuerySyntaxError::Unsupported(format!(
+            "\"{}\" is a private document type: it holds encrypted entries, read by their \
+             position in its store, not documents a query can find",
+            document_type.name()
+        )));
+    }
+    Ok(())
+}
+
 impl<'a> DriveDocumentQuery<'a> {
     /// Gets a document by their primary key
     #[cfg(any(feature = "server", feature = "verify"))]
@@ -2685,6 +2712,11 @@ impl<'a> DriveDocumentQuery<'a> {
             .collect()
     }
 
+    /// Refuses a query on a private document type, as [`refuse_a_private_document_type`].
+    fn refuse_a_private_document_type(&self) -> Result<(), Error> {
+        refuse_a_private_document_type(self.document_type).map_err(Error::Query)
+    }
+
     #[cfg(feature = "server")]
     /// Operations to construct a path query.
     pub fn construct_path_query_operations(
@@ -2696,6 +2728,7 @@ impl<'a> DriveDocumentQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         self.validate_where_clause_shape(platform_version)?;
+        self.refuse_a_private_document_type()?;
         // indexOnly documents have no primary-key tree: nothing is ever
         // addressed by document id, so a by-id query has no tree to land on.
         {
@@ -2936,6 +2969,7 @@ impl<'a> DriveDocumentQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         self.validate_where_clause_shape(platform_version)?;
+        self.refuse_a_private_document_type()?;
         // indexOnly documents have no primary-key tree: nothing is ever
         // addressed by document id, so a by-id query has no tree to land on.
         {
