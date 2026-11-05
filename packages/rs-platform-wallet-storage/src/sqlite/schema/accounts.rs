@@ -84,7 +84,6 @@ fn decode_platform_payment_row(
 
 /// Every `platform_payment` registration for one wallet, decoded into
 /// `(account_index, xpub)`.
-#[cfg(any(test, feature = "__test-helpers"))]
 pub(crate) fn list_platform_payment_registrations(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -109,8 +108,7 @@ pub(crate) fn list_platform_payment_registrations(
 
 /// Bulk variant of [`list_platform_payment_registrations`]: every
 /// wallet's `platform_payment` registrations in one scan, grouped by
-/// `wallet_id`. Used by `load()` to avoid a per-wallet registrations
-/// query.
+/// `wallet_id`.
 pub(crate) fn all_platform_payment_registrations(
     conn: &Connection,
 ) -> Result<

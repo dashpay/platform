@@ -112,36 +112,28 @@ pub struct PlatformAddressRow {
     pub funds: AddressFunds,
 }
 
-#[cfg(any(test, feature = "__test-helpers"))]
+/// Decode every address row for one wallet, including unregistered accounts.
 pub fn list_per_wallet(
     conn: &Connection,
     wallet_id: &WalletId,
 ) -> Result<Vec<PlatformAddressRow>, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT account_index, address_index, address, balance, nonce, as_of_height \
+        "SELECT account_index, address_index, length(address), address, balance, nonce, as_of_height \
          FROM platform_addresses WHERE wallet_id = ?1 \
          ORDER BY account_index, address_index, address",
     )?;
-    let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
-        Ok((
-            row.get::<_, i64>(0)?,
-            row.get::<_, i64>(1)?,
-            row.get::<_, Vec<u8>>(2)?,
-            row.get::<_, i64>(3)?,
-            row.get::<_, i64>(4)?,
-            row.get::<_, i64>(5)?,
-        ))
-    })?;
+    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     let mut out = Vec::new();
-    for r in rows {
-        let (account_index, address_index, address_bytes, balance, nonce, as_of_height) = r?;
+    while let Some(row) = rows.next()? {
+        blob::check_fixed_width(row.get::<_, i64>(2)?, 20, "platform_addresses.address")?;
+        let address_bytes: Vec<u8> = row.get(3)?;
         out.push(decode_address_row(
-            account_index,
-            address_index,
+            row.get(0)?,
+            row.get(1)?,
             &address_bytes,
-            balance,
-            nonce,
-            as_of_height,
+            row.get(4)?,
+            row.get(5)?,
+            row.get(6)?,
         )?);
     }
     Ok(out)
@@ -196,14 +188,19 @@ fn account_state_from_rows(
 /// Build `PlatformAddressSyncStartState` for one wallet: the
 /// network-scoped sync watermark plus the per-account committed state
 /// reconstructed from registrations + address rows.
-///
-/// `load()` uses the grouped [`load_all`] path; this per-wallet form is
-/// retained for this crate's integration tests.
 #[cfg(any(test, feature = "__test-helpers"))]
 pub fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,
 ) -> Result<PlatformAddressSyncStartState, WalletStorageError> {
+    load_entry(conn, wallet_id).map(|(state, _)| state)
+}
+
+/// Read one wallet inside the caller's snapshot, retaining the raw address count.
+pub(crate) fn load_entry(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<LoadAllEntry, WalletStorageError> {
     let row: Option<(i64, i64, i64)> = conn
         .query_row(
             "SELECT sync_height, sync_timestamp, last_known_recent_block \
@@ -222,12 +219,54 @@ pub fn load_state(
     };
     let registrations = accounts::list_platform_payment_registrations(conn, wallet_id)?;
     let address_rows = list_per_wallet(conn, wallet_id)?;
-    Ok(PlatformAddressSyncStartState {
-        per_account: build_per_account(&registrations, &address_rows),
-        sync_height: h,
-        sync_timestamp: t,
-        last_known_recent_block: r,
-    })
+    Ok((
+        PlatformAddressSyncStartState {
+            per_account: build_per_account(&registrations, &address_rows),
+            sync_height: h,
+            sync_timestamp: t,
+            last_known_recent_block: r,
+        },
+        address_rows.len(),
+    ))
+}
+
+/// Reject unattributable corrupt IDs before per-wallet isolation skips them.
+pub(crate) fn validate_wallet_ids(conn: &Connection) -> Result<(), WalletStorageError> {
+    for (sql, column) in [
+        (
+            "SELECT length(wallet_id), wallet_id FROM platform_address_sync \
+             WHERE length(wallet_id) != 32 OR typeof(wallet_id) != 'blob' LIMIT 1",
+            "platform_addresses.wallet_id",
+        ),
+        (
+            "SELECT length(wallet_id), wallet_id FROM platform_addresses \
+             WHERE length(wallet_id) != 32 OR typeof(wallet_id) != 'blob' LIMIT 1",
+            "platform_addresses.wallet_id",
+        ),
+        (
+            "SELECT length(wallet_id), wallet_id FROM account_registrations \
+             WHERE account_type = 'platform_payment' \
+             AND (length(wallet_id) != 32 OR typeof(wallet_id) != 'blob') LIMIT 1",
+            "account_registrations.wallet_id",
+        ),
+    ] {
+        let mut stmt = conn.prepare(sql)?;
+        let mut rows = stmt.query([])?;
+        if let Some(row) = rows.next()? {
+            let length: i64 = row.get(0)?;
+            if column == "account_registrations.wallet_id" {
+                blob::check_fixed_width(length, 32, column)?;
+            } else if length != 32 {
+                return Err(WalletStorageError::InvalidWalletIdLength {
+                    column,
+                    actual: usize::try_from(length).unwrap_or(usize::MAX),
+                });
+            }
+            let bytes: Vec<u8> = row.get(1)?;
+            super::id32(column, &bytes)?;
+        }
+    }
+    Ok(())
 }
 
 /// Total `platform_addresses` row count per wallet — used by tests
@@ -279,7 +318,7 @@ fn fail_wallet<T>(out: &mut PerWallet<T>, wallet_id: WalletId, err: WalletStorag
     }
 }
 
-/// Bulk reader for `load()`. Cost is a fixed number of grouped scans —
+/// Bulk reader. Cost is a fixed number of grouped scans —
 /// one over `platform_address_sync`, one over `platform_addresses`, and
 /// one over the `platform_payment` `account_registrations` — regardless
 /// of wallet count, rather than a per-wallet fan-out.
