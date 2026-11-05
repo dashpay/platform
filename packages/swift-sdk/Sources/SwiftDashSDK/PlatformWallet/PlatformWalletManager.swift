@@ -1650,6 +1650,10 @@ public class PlatformWalletManager: ObservableObject {
 
     /// Rehydrate wallets from SwiftData on app launch.
     ///
+    /// Start SPV before restoring history with InstantLocks. Missing verified
+    /// quorum evidence throws; callers may retry after synchronization while
+    /// SPV continues running. A started client does not imply evidence readiness.
+    ///
     /// Calls `platform_wallet_manager_load_from_persistor` which fires
     /// the Swift-side `on_load_wallet_list_fn` callback. For each
     /// persisted wallet, Rust reconstructs an **external-signable**

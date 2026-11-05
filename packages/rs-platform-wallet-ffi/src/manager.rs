@@ -689,6 +689,10 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic_wit
 /// [`platform_wallet_manager_get_wallet`] per `wallet_id` it knows
 /// about.
 ///
+/// History requiring InstantLock evidence needs a started SPV client. Missing
+/// evidence returns a load error with transaction IDs; keep SPV running and
+/// retry explicitly after synchronization. Startup alone does not prove readiness.
+///
 /// On error the handle stays valid and the manager is unchanged: fix the
 /// store and call again, or destroy the manager and reconstruct it. Reopening
 /// the same store path requires all persister references to be released.

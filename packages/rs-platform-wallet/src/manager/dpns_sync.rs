@@ -316,14 +316,7 @@ impl DpnsSyncManager {
 
         let snapshot: Vec<(WalletId, Arc<PlatformWallet>)> = {
             let wallets = self.wallets.load();
-            wallets
-                .iter()
-                .filter(|(_, wallet)| {
-                    wallet.history_readiness()
-                        == crate::wallet::platform_wallet::HistoryReadiness::Ready
-                })
-                .map(|(id, w)| (*id, Arc::clone(w)))
-                .collect()
+            wallets.iter().map(|(id, w)| (*id, Arc::clone(w))).collect()
         };
 
         let mut summary = DpnsSyncPassSummary::default();

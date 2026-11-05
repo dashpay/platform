@@ -65,8 +65,6 @@ pub struct HistoryReplay {
     pub defeated: HashSet<Txid>,
     /// Conflict effects for the backend to apply in its load transaction.
     pub sweeps: Vec<SweepBatch>,
-    /// Stored finality observations awaiting proof from the SPV verifier.
-    pub deferred: BTreeSet<Txid>,
     /// Recovery views cannot settle or resend even when proof is available.
     pub read_only: bool,
 }
@@ -106,7 +104,7 @@ impl HistoryReplay {
     /// sighting: a retired loser would be recorded again, and a record with
     /// unsafe amounts would reach the checker the replay kept it from.
     pub fn resendable(&self, sends: Vec<Transaction>) -> Vec<Transaction> {
-        if self.read_only || !self.deferred.is_empty() {
+        if self.read_only {
             return Vec::new();
         }
         sends
@@ -119,6 +117,9 @@ impl HistoryReplay {
 /// A blocking backend cannot commit a replay that suspended part-way through.
 #[derive(Debug, thiserror::Error)]
 pub enum HistoryReplayError {
+    /// The snapshot requires evidence the running SPV verifier cannot yet provide.
+    #[error("wallet history requires verified finality evidence for {txids:?}; synchronize SPV and retry load")]
+    MissingFinalityEvidence { txids: BTreeSet<Txid> },
     /// Stored input authorization cannot be checked with supported rules.
     #[error("cannot verify stored input authorization")]
     SpendAuthorization(#[from] SpendAuthorizationError),
@@ -239,40 +240,7 @@ pub async fn replay_recorded_history_with_evidence(
         }
     }
     if !deferred.is_empty() {
-        // No checker, settlement or resend can run before this wallet is ready.
-        let mut claims = BTreeMap::<OutPoint, BTreeSet<Txid>>::new();
-        for stored in &history.transactions {
-            for input in &stored.transaction.input {
-                claims
-                    .entry(input.previous_output)
-                    .or_default()
-                    .insert(stored.txid);
-            }
-        }
-        for account in wallet_info.accounts.all_funding_accounts_mut() {
-            account
-                .utxos
-                .retain(|outpoint, _| !claims.contains_key(outpoint));
-        }
-        let claims: Vec<_> = claims
-            .into_iter()
-            .map(|(outpoint, claimants)| {
-                (
-                    outpoint,
-                    if claimants.len() == 1 {
-                        claimants.first().copied()
-                    } else {
-                        None
-                    },
-                )
-            })
-            .collect();
-        wallet_info.restore_spent_outpoints(&claims);
-        wallet_info.update_balance();
-        return Ok(HistoryReplay {
-            deferred,
-            ..Default::default()
-        });
+        return Err(HistoryReplayError::MissingFinalityEvidence { txids: deferred });
     }
     let RecordedHistory {
         mut owned_prevouts,
@@ -651,7 +619,6 @@ pub async fn replay_recorded_history_with_evidence(
         retired: swept,
         defeated,
         sweeps,
-        deferred,
         read_only: false,
     })
 }
@@ -1550,7 +1517,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn should_defer_resend_until_a_persisted_lock_is_verified() {
+    async fn should_fail_before_resend_without_persisted_lock_verification() {
         let (mut wallet, mut info, _, records, _) = confirmed_spend_fixture().await;
         let mut spender = records[1].clone();
         spender.context = TransactionContext::Mempool;
@@ -1564,18 +1531,16 @@ mod tests {
                 .collect(),
             ..Default::default()
         };
-        let sends = vec![spender.transaction.clone()];
+        let txid = spender.txid;
         let outcome = replay_recorded_history(
             &mut info,
             &mut wallet,
             history(vec![spender], BTreeMap::from([(lock.txid, lock)])),
         )
         .await
-        .unwrap();
-        assert!(outcome.defeated.is_empty());
+        .unwrap_err();
         assert!(
-            outcome.resendable(sends).is_empty(),
-            "persisted lock bytes are not verified finality"
+            matches!(outcome, HistoryReplayError::MissingFinalityEvidence { txids } if txids.contains(&txid))
         );
     }
 
@@ -1623,12 +1588,10 @@ mod tests {
             &ReplayEvidence::default(),
         )
         .await
-        .unwrap();
-        assert!(pending.deferred.contains(&locked.txid));
-        assert!(pending.sweeps.is_empty());
-        assert!(pending
-            .resendable(vec![locked.transaction.clone()])
-            .is_empty());
+        .unwrap_err();
+        assert!(
+            matches!(pending, HistoryReplayError::MissingFinalityEvidence { txids } if txids.contains(&locked.txid))
+        );
 
         fixture.install(&client).await.unwrap();
         let proof = client
@@ -1647,7 +1610,6 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(ready.deferred.is_empty());
         assert!(
             !ready.defeated.contains(&locked.txid),
             "unsafe stored arithmetic cannot let a plain block defeat verified InstantSend"
@@ -1671,14 +1633,15 @@ mod tests {
                 &evidence,
             )
             .await
-            .unwrap();
-            assert!(deferred.deferred.contains(&locked.txid));
-            assert!(deferred.sweeps.is_empty());
+            .unwrap_err();
+            assert!(
+                matches!(deferred, HistoryReplayError::MissingFinalityEvidence { txids } if txids.contains(&locked.txid))
+            );
         }
     }
 
     #[tokio::test]
-    async fn should_defer_history_proven_on_another_network() {
+    async fn should_reject_history_proven_on_another_network() {
         use dash_spv::test_utils::{InstantLockFixture, MockNetworkManager};
         use dash_spv::{ClientConfig, DashSpvClient};
         use key_wallet_manager::test_utils::MockWallet;
@@ -1720,10 +1683,10 @@ mod tests {
             },
         )
         .await
-        .unwrap();
-        assert!(outcome.deferred.contains(&locked.txid));
-        assert!(outcome.sweeps.is_empty());
-        assert!(outcome.resendable(vec![locked.transaction]).is_empty());
+        .unwrap_err();
+        assert!(
+            matches!(outcome, HistoryReplayError::MissingFinalityEvidence { txids } if txids.contains(&locked.txid))
+        );
     }
 
     #[tokio::test]
@@ -1754,7 +1717,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let outcome = replay_recorded_history_with_evidence(
+        replay_recorded_history_with_evidence(
             &mut info,
             &mut wallet,
             history(
@@ -1767,7 +1730,6 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(outcome.deferred.is_empty());
         assert!(info.instant_send_locks().contains(&locked.txid));
         let before = info.accounts.standard_bip44_accounts[&0].transactions()[&locked.txid].clone();
         assert_eq!(

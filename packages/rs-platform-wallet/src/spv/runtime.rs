@@ -343,7 +343,7 @@ impl SpvRuntime {
                 }
                 Ok(None) => {}
                 Err(error) => {
-                    tracing::debug!(%error, txid = %lock.txid, "stored InstantLock failed SPV verification; wallet remains read-only")
+                    tracing::debug!(%error, txid = %lock.txid, "stored InstantLock failed SPV verification; history load will fail")
                 }
             }
         }

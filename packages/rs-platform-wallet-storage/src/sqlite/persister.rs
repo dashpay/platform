@@ -1733,6 +1733,11 @@ impl SqlitePersister {
                 // rather than the boundary's own wrapper, so a caller
                 // matching on a specific cause still sees it.
                 Err(original) => {
+                    if matches!(&original, PersistenceError::Backend { source, .. }
+                        if matches!(source.downcast_ref::<HistoryReplayError>(), Some(HistoryReplayError::MissingFinalityEvidence { .. })))
+                    {
+                        return Err(original);
+                    }
                     let cause = wallet_storage_kind(&original);
                     record_wallet_degradation(&ctx, wallet_id, cause, &original)
                         .map_err(|_| original)?;
@@ -1797,15 +1802,13 @@ fn load_one_wallet(
     let mut outcome = replay_recorded_history_blocking(
         &mut state.wallet_info,
         &mut state.wallet,
-        history.clone(),
+        history,
         evidence,
     )
     .map_err(replay_failure)?;
     let mut claims =
         history_replay::load_spent_claims(&tx, &wallet_id).map_err(PersistenceError::from)?;
-    if outcome.deferred.is_empty()
-        && (!outcome.sweeps.is_empty() || !outcome.authorization.rejected.is_empty())
-    {
+    if !outcome.sweeps.is_empty() || !outcome.authorization.rejected.is_empty() {
         history_replay::apply(&tx, &wallet_id, &mut outcome).map_err(PersistenceError::from)?;
         state = load_wallet_snapshot(&tx, wallet_id, ctx)?;
         let remaining = replay_recorded_history_blocking(
@@ -1815,10 +1818,7 @@ fn load_one_wallet(
             evidence,
         )
         .map_err(replay_failure)?;
-        if !remaining.sweeps.is_empty()
-            || !remaining.deferred.is_empty()
-            || !remaining.authorization.rejected.is_empty()
-        {
+        if !remaining.sweeps.is_empty() || !remaining.authorization.rejected.is_empty() {
             return Err(PersistenceError::backend(
                 HistoryReplayError::UnsettledAfterReplay,
             ));
@@ -1827,9 +1827,6 @@ fn load_one_wallet(
             history_replay::load_spent_claims(&tx, &wallet_id).map_err(PersistenceError::from)?;
     }
     state.wallet_info.restore_spent_outpoints(&claims);
-    if !outcome.deferred.is_empty() {
-        state.recorded_history = history;
-    }
     outcome.read_only = policy == LoadPolicy::Recovery;
     if outcome.read_only {
         tx.rollback()

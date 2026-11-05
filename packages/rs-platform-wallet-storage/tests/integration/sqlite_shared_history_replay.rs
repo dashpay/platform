@@ -16,7 +16,9 @@ use platform_wallet::test_support::core_fixtures::{
 use platform_wallet_storage::sqlite::schema::blob;
 use tokio::sync::RwLock;
 
-use crate::common::{authorize, fresh_persister, registration};
+use crate::common::{
+    authorize, fresh_persister, registration, LoadPolicy, SqlitePersister, SqlitePersisterConfig,
+};
 
 #[tokio::test]
 async fn should_retry_sqlite_history_with_verified_lock_before_unsafe_amount_filter() {
@@ -35,7 +37,7 @@ async fn should_retry_sqlite_history_with_verified_lock_before_unsafe_amount_fil
     records.extend(records_of(&mut info, &mut wallet, &locked, TransactionContext::Mempool).await);
     records.extend(records_of(&mut alternative, &mut wallet, &competitor, block(101)).await);
     let fixture = InstantLockFixture::new(&locked).unwrap();
-    let (persister, _directory, _path) = fresh_persister();
+    let (persister, _directory, path) = fresh_persister();
     persister
         .store(
             wallet.wallet_id,
@@ -70,14 +72,12 @@ async fn should_retry_sqlite_history_with_verified_lock_before_unsafe_amount_fil
         )
         .unwrap();
 
-    let pending = persister
-        .load_with_replay(&ReplayEvidence::default())
-        .unwrap();
-    assert!(pending.state.wallets.contains_key(&wallet.wallet_id));
-    assert!(pending.outcomes[&wallet.wallet_id]
-        .deferred
-        .contains(&locked.txid()));
-    assert!(pending.outcomes[&wallet.wallet_id].sweeps.is_empty());
+    assert!(
+        persister
+            .load_with_replay(&ReplayEvidence::default())
+            .is_err(),
+        "missing proof must fail before SQL effects"
+    );
     assert!(persister
         .get_core_tx_record(wallet.wallet_id, &locked.txid())
         .unwrap()
@@ -109,7 +109,6 @@ async fn should_retry_sqlite_history_with_verified_lock_before_unsafe_amount_fil
         instant_locks: BTreeMap::from([(proof.txid(), proof)]),
     };
     let ready = persister.load_with_replay(&evidence).unwrap();
-    assert!(ready.outcomes[&wallet.wallet_id].deferred.is_empty());
     assert!(!ready.outcomes[&wallet.wallet_id]
         .defeated
         .contains(&locked.txid()));
@@ -131,11 +130,23 @@ async fn should_retry_sqlite_history_with_verified_lock_before_unsafe_amount_fil
             ],
         )
         .unwrap();
-    let changed = persister.load_with_replay(&evidence).unwrap();
-    assert!(changed.outcomes[&wallet.wallet_id]
-        .deferred
-        .contains(&locked.txid()));
-    assert!(changed.outcomes[&wallet.wallet_id].sweeps.is_empty());
+    assert!(
+        persister.load_with_replay(&evidence).is_err(),
+        "prefetched proof must be rebound to the authoritative snapshot"
+    );
+    drop(persister);
+    let recovery = SqlitePersister::open(
+        SqlitePersisterConfig::new(path).with_load_policy(LoadPolicy::Recovery),
+    )
+    .unwrap();
+    assert!(
+        recovery.load_with_replay(&evidence).is_err(),
+        "Recovery must not hide a missing required proof"
+    );
+    assert!(recovery
+        .get_core_tx_record(wallet.wallet_id, &locked.txid())
+        .unwrap()
+        .is_some());
 }
 
 #[test]

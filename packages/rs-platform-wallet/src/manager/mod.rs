@@ -32,8 +32,9 @@ use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet_manager::WalletManager;
 
 use crate::changeset::{
-    spawn_wallet_event_adapter_with_durable_cursors, DashPayBackfillRecord, DurableCursor,
-    DurableCursors, PlatformWalletPersistence,
+    persists_backfill_coverage, spawn_wallet_event_adapter_with_durable_cursors, CoreChangeSet,
+    DashPayBackfillRecord, DurableCursor, DurableCursors, PlatformWalletChangeSet,
+    PlatformWalletPersistence,
 };
 use crate::error::PlatformWalletError;
 use crate::events::{PlatformEventHandler, PlatformEventManager};
@@ -60,8 +61,6 @@ use crate::wallet::PlatformWallet;
 /// surfacing a panicked loop — before the host drops the tokio runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum WalletWorker {
-    /// Retries quarantined history after SPV proof readiness changes.
-    HistoryReplay,
     /// Platform-address (BLAST / DIP-17) balance sync coordinator.
     PlatformAddressSync,
     /// Per-identity token-state sync coordinator.
@@ -474,8 +473,6 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// is torn down.
     pub(super) event_adapter_cancel: CancellationToken,
     pub(super) event_adapter_join: tokio::sync::Mutex<Option<JoinHandle<()>>>,
-    pub(super) history_retry_cancel: CancellationToken,
-    pub(super) history_retry_join: tokio::sync::Mutex<Option<JoinHandle<()>>>,
     /// Shared lifecycle registry for the periodic coordinator threads.
     /// Each coordinator spawns its loop through `registry.start_thread` at
     /// `start`, handing the registry ownership of the OS thread and its
@@ -517,10 +514,8 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     ///
     /// A `std::sync::Mutex`: touched only at wallet registration and load, for
     /// one map lookup, and never held across an await.
-    pub(super) in_broadcast_fences: Arc<
-        std::sync::Mutex<
-            std::collections::BTreeMap<WalletId, Arc<crate::wallet::core::InBroadcastFences>>,
-        >,
+    pub(super) in_broadcast_fences: std::sync::Mutex<
+        std::collections::BTreeMap<WalletId, Arc<crate::wallet::core::InBroadcastFences>>,
     >,
 }
 
@@ -698,12 +693,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             tracked_masternodes: std::sync::Arc::new(Default::default()),
             event_adapter_cancel,
             event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
-            history_retry_cancel: CancellationToken::new(),
-            history_retry_join: tokio::sync::Mutex::new(None),
             registry,
             sync_fault,
             durable_cursors,
-            in_broadcast_fences: Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::new())),
+            in_broadcast_fences: std::sync::Mutex::new(std::collections::BTreeMap::new()),
         }
     }
 
@@ -719,7 +712,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         wm: &mut WalletManager<PlatformWalletInfo>,
         wallet_id: &WalletId,
     ) -> Result<(), key_wallet_manager::WalletError> {
-        load::LoadDriver::new(self).remove_from_wallet_manager(wm, wallet_id)
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+        let (_, info) = wm.remove_wallet(wallet_id)?;
+        let retiring = info
+            .rewind_barrier
+            .retire(WalletInfoInterface::account_generation(&info));
+        let mut retired = self.durable_cursors.retired();
+        let entry = retired.entry(*wallet_id).or_default();
+        entry.in_flight = entry.in_flight.saturating_add(retiring.in_flight);
+        entry.epoch = entry.epoch.max(retiring.epoch);
+        entry.account_generation = entry.account_generation.max(retiring.account_generation);
+        Ok(())
     }
 
     /// Settle the host's DashPay backfill record for a wallet about to be
@@ -763,14 +766,74 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         own_cursor: u32,
         snapshot_cursor: u32,
     ) -> Result<DashPayBackfillRecord, PlatformWalletError> {
-        load::LoadDriver::new(self).settle_published_backfill(
-            durable_cursors,
-            wallet_id,
-            record,
+        let inline = self.persister.store_commits_inline();
+        let durable = persists_backfill_coverage(&*self.persister);
+        let predecessor = durable_cursors.contains_key(&wallet_id);
+        let held_on_host = !record.is_empty() || dropped;
+        let record = if durable {
+            record
+        } else {
+            DashPayBackfillRecord::default()
+        };
+        // A backend that cannot hold the record durably never had one
+        // written by this process, so only a record it handed back can need
+        // invalidating; one that can is replaced when the snapshot's record
+        // may disagree with what the wallet carries.
+        let replace = if durable {
+            dropped || predecessor
+        } else {
+            held_on_host
+        };
+        if !replace {
+            return Ok(record);
+        }
+        let host_cursor = durable_cursors
+            .get(&wallet_id)
+            .map_or(snapshot_cursor, |entry| entry.height);
+        let cursor = (!record.is_empty() && own_cursor < host_cursor).then_some(own_cursor);
+        tracing::info!(
+            wallet_id = %hex::encode(wallet_id),
+            covered = record.covered().len(),
             dropped,
-            own_cursor,
-            snapshot_cursor,
-        )
+            predecessor,
+            durable,
+            cursor = ?cursor,
+            "the host's DashPay backfill record is replaced with the one this wallet \
+             carries before the wallet is published"
+        );
+        let changeset = PlatformWalletChangeSet {
+            core: cursor.map(|cursor| CoreChangeSet {
+                synced_height: Some(cursor),
+                synced_height_is_rewind: true,
+                ..CoreChangeSet::default()
+            }),
+            dashpay_backfill: Some(record.clone()),
+            ..PlatformWalletChangeSet::default()
+        };
+        self.persister.store(wallet_id, changeset).map_err(|e| {
+            tracing::error!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "failed to replace the host's DashPay backfill record; \
+                 the wallet was not published"
+            );
+            PlatformWalletError::from_store_failure(&*self.persister, e)
+        })?;
+        if !inline {
+            self.persister.flush(wallet_id).map_err(|e| {
+                tracing::error!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %e,
+                    "failed to commit the replaced DashPay backfill record; \
+                     the wallet was not published"
+                );
+                PlatformWalletError::from_flush_failure(e)
+            })?;
+        }
+        if let Some(cursor) = cursor {
+            durable_cursors.insert(wallet_id, DurableCursor::at(cursor));
+        }
+        Ok(record)
     }
 
     /// Hand a newly published wallet the barrier state a removed wallet of
@@ -783,7 +846,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         wm: &mut WalletManager<PlatformWalletInfo>,
         wallet_id: &WalletId,
     ) {
-        load::LoadDriver::new(self).inherit_rewind_barrier(wm, wallet_id)
+        let retired = self.durable_cursors.retired().remove(wallet_id);
+        if let (Some(retired), Some(info)) = (retired, wm.get_wallet_info_mut(wallet_id)) {
+            info.rewind_barrier.inherit(retired);
+        }
     }
 
     /// The in-broadcast fence map for `wallet_id`, creating it on first use.
@@ -797,7 +863,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         &self,
         wallet_id: &WalletId,
     ) -> Arc<crate::wallet::core::InBroadcastFences> {
-        load::LoadDriver::new(self).in_broadcast_fences_for(wallet_id)
+        Arc::clone(
+            self.in_broadcast_fences
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .entry(*wallet_id)
+                .or_default(),
+        )
     }
 
     /// Whether the wallet-event adapter has frozen a durable sync
@@ -1100,26 +1172,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// [`WorkerStatus`]: dash_async::WorkerStatus
     pub async fn shutdown(&self) -> ShutdownReport<WalletWorker> {
-        self.history_retry_cancel.cancel();
-        let history_status = {
-            let mut slot = self.history_retry_join.lock().await;
-            match slot.take() {
-                None => WorkerStatus::NotRunning,
-                Some(mut handle) => {
-                    match tokio::time::timeout(EVENT_ADAPTER_JOIN_BUDGET, &mut handle).await {
-                        Ok(Ok(())) => WorkerStatus::Ok,
-                        Ok(Err(error)) if error.is_panic() => {
-                            WorkerStatus::Panicked(error.to_string())
-                        }
-                        Ok(Err(error)) => WorkerStatus::Stopped(Some(error.to_string())),
-                        Err(_) => {
-                            *slot = Some(handle);
-                            WorkerStatus::Timeout
-                        }
-                    }
-                }
-            }
-        };
         // SPV first: it is the event source feeding everything below. Its
         // `stop` bounds the wait for teardown but never aborts it, so a
         // timeout means SPV work is still live. Its outcome lands in the
@@ -1181,9 +1233,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // it waits for the actual OS thread to terminate before the host
         // drops the runtime.
         let mut report = self.registry.shutdown().await;
-        report
-            .per_worker
-            .insert(WalletWorker::HistoryReplay, history_status);
 
         // Fold drain timeouts in. A timed-out drain means a pass —
         // possibly a *direct* `sync_now` running on a host FFI thread the
@@ -1224,7 +1273,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // not a registry worker; on a join timeout the live handle is
         // re-parked so a destroy retry can re-join it rather than
         // silently detaching the task.
-        self.history_retry_cancel.cancel();
         self.event_adapter_cancel.cancel();
         let adapter_status = {
             let mut slot = self.event_adapter_join.lock().await;
@@ -1281,7 +1329,6 @@ impl<P: PlatformWalletPersistence + 'static> Drop for PlatformWalletManager<P> {
         // next `recv` and exits after committing whatever its drain claimed the
         // persister for. Aborting stops it at whatever await it is parked on,
         // dropping a claimed batch mid-commit.
-        self.history_retry_cancel.cancel();
         self.event_adapter_cancel.cancel();
     }
 }
