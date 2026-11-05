@@ -280,6 +280,16 @@ impl From<FFIError> for DashSDKError {
                     // answer, so a proof could not be checked: transient and
                     // network-side, whatever words its message happens to hold.
                     (DashSDKErrorCode::NetworkError, error_str)
+                } else if matches!(
+                    sdk_err,
+                    dash_sdk::Error::ContextProviderError(
+                        dash_sdk::error::ContextProviderError::Config(_)
+                    )
+                ) {
+                    // The SDK has no context provider, or one set up so that it cannot
+                    // serve: the host has to configure the SDK differently, and no node
+                    // or retry changes that, whatever words the message holds.
+                    (DashSDKErrorCode::InvalidState, error_str)
                 } else if matches!(sdk_err, dash_sdk::Error::TimeoutReached(_, _))
                     || error_str.contains("timeout")
                     || error_str.contains("Timeout")
@@ -392,6 +402,24 @@ mod tests {
             }
         }
         code
+    }
+
+    /// An SDK without a context provider cannot verify any proof. The host has to set the
+    /// SDK up differently, so it reads an invalid state that says what is missing, not a
+    /// proof failure it might blame on the network.
+    #[test]
+    fn should_map_a_missing_context_provider_to_invalid_state() {
+        let err = dash_sdk::Error::from(dash_sdk::ProofVerifierError::ContextProviderNotSet);
+        let dash_sdk_error: DashSDKError = FFIError::SDKError(err).into();
+        let message = unsafe {
+            let message = CStr::from_ptr(dash_sdk_error.message)
+                .to_string_lossy()
+                .into_owned();
+            let _ = CString::from_raw(dash_sdk_error.message);
+            message
+        };
+        assert_eq!(dash_sdk_error.code, DashSDKErrorCode::InvalidState);
+        assert!(message.contains("context provider is not set"), "{message}");
     }
 
     /// The quorum service that vouches for quorum keys gave no answer: a

@@ -166,6 +166,38 @@ impl ContextProvider for NoQuorumKeys {
     }
 }
 
+/// Configured so that it can never give a quorum key, as wasm-sdk's context without a
+/// trusted quorum source.
+struct NoQuorumSource;
+impl ContextProvider for NoQuorumSource {
+    fn get_data_contract(
+        &self,
+        _: &Identifier,
+        _: &PlatformVersion,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        Ok(None)
+    }
+    fn get_token_configuration(
+        &self,
+        _: &Identifier,
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        Ok(None)
+    }
+    fn get_quorum_public_key(
+        &self,
+        _: u32,
+        _: [u8; 32],
+        _: u32,
+    ) -> Result<[u8; 48], ContextProviderError> {
+        Err(ContextProviderError::Config(
+            "no quorum source is configured".to_string(),
+        ))
+    }
+    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+        Ok(1)
+    }
+}
+
 /// The node every answer comes from. It is in the SDK's address list, so a ban shows.
 fn node() -> Address {
     "http://127.0.0.1:9000".parse().unwrap()
@@ -497,8 +529,8 @@ async fn should_refuse_without_asking_when_pinned_below_the_version() {
     assert_eq!(sent(&sdk, &fee_pots()).await, 0);
 }
 
-/// Without a context provider the answer to the probe cannot be verified, and an answer the
-/// SDK cannot verify bans the node that sent it: refuse without asking.
+/// Without a context provider the answer to the probe cannot be verified, so asking cannot
+/// show the network's version: refuse without asking.
 #[tokio::test]
 async fn should_refuse_without_asking_when_answers_cannot_be_verified() {
     let mut sdk = mock_sdk(V13, false, 0);
@@ -514,6 +546,45 @@ async fn should_refuse_without_asking_when_answers_cannot_be_verified() {
     );
     assert_eq!(probes(&sdk).await, 0);
     assert_eq!(sent(&sdk, &fee_pots()).await, 0);
+}
+
+/// A proved fetch the node answered fails with a configuration error naming `reason`, after
+/// one attempt, and bans no node.
+async fn assert_fails_on_the_sdk_setup(sdk: &Sdk, reason: &str) {
+    let result = ExtendedEpochInfo::fetch_with_metadata(sdk, probe_request(), None).await;
+    let sent = probes(sdk).await;
+    let banned = sdk.address_list().is_banned(&node());
+    assert!(
+        matches!(
+            &result,
+            Err(Error::ContextProviderError(ContextProviderError::Config(message)))
+                if message.contains(reason)
+        ),
+        "{result:?}, sent {sent} times, node banned: {banned}"
+    );
+    assert_eq!(sent, 1, "sent once, never retried");
+    assert!(!banned);
+}
+
+/// Without a context provider the SDK cannot check any answer, whichever node sent it. The
+/// fault is the SDK's own setup: a proved fetch fails on its first answer with a
+/// configuration error, is not sent to another node, and bans no node.
+#[tokio::test]
+async fn should_fail_a_proved_fetch_once_and_ban_no_node_without_a_context_provider() {
+    let sdk = mock_sdk(V13, false, 0);
+    answer_probe(&sdk, "pv13").await;
+    sdk.context_provider.store(None);
+    assert_fails_on_the_sdk_setup(&sdk, "context provider is not set").await;
+}
+
+/// A context provider set up so that it can never give a quorum key cannot check any answer
+/// either, so another node's answer would fail alike: the fetch fails with the provider's
+/// configuration error, is not sent to another node, and bans no node.
+#[tokio::test]
+async fn should_fail_a_proved_fetch_once_and_ban_no_node_when_the_provider_has_no_quorum_source() {
+    let sdk = sdk_with_provider(V13, false, 0, true, NoQuorumSource);
+    answer_probe(&sdk, "pv13").await;
+    assert_fails_on_the_sdk_setup(&sdk, "no quorum source is configured").await;
 }
 
 /// An SDK without proofs still learns the network's version from a proved probe.
