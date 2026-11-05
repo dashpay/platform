@@ -168,80 +168,95 @@ fn should_not_attest_operation_status_after_replay_cleanup() {
 
 #[tokio::test]
 async fn should_verify_tracked_funding_before_atomic_history_settlement() {
-    let (mut wallet, mut info, address) = wallet_with_receive_address();
-    let funding = spend_of(&[outside(125)], vec![pay(100_000, &address)]);
-    let mut records = records_of(&mut info, &mut wallet, &funding, block(100)).await;
-    let coin = OutPoint::new(funding.txid(), 0);
-    let locked = authorize(
-        &wallet,
-        &info,
-        &address,
-        spend_of(&[coin], vec![pay(99_000, &address)]),
-    );
-    let competitor = spend_of(&[coin], vec![pay(98_000, &address)]);
-    let mut alternative = info.clone();
-    records.extend(records_of(&mut info, &mut wallet, &locked, TransactionContext::Mempool).await);
-    records.extend(records_of(&mut alternative, &mut wallet, &competitor, block(101)).await);
-    let (instant_lock, evidence) = checked_instant_lock(&locked).await;
-    let (persister, _directory, path) = fresh_persister();
-    let mut changes = registration(
-        &wallet,
-        Some(CoreChangeSet {
-            records,
-            new_utxos: vec![stored_utxo(&funding, 0, address)],
-            ..Default::default()
-        }),
-    );
-    let out_point = OutPoint::new(locked.txid(), 0);
-    changes.asset_locks = Some(AssetLockChangeSet {
-        asset_locks: BTreeMap::from([(
-            out_point,
-            AssetLockEntry {
+    for recorded in [true, false] {
+        let (mut wallet, mut info, address) = wallet_with_receive_address();
+        let funding = spend_of(&[outside(125)], vec![pay(100_000, &address)]);
+        let mut records = records_of(&mut info, &mut wallet, &funding, block(100)).await;
+        let coin = OutPoint::new(funding.txid(), 0);
+        let locked = authorize(
+            &wallet,
+            &info,
+            &address,
+            spend_of(&[coin], vec![pay(99_000, &address)]),
+        );
+        let competitor = spend_of(&[coin], vec![pay(98_000, &address)]);
+        let mut alternative = info.clone();
+        let locked_records =
+            records_of(&mut info, &mut wallet, &locked, TransactionContext::Mempool).await;
+        if recorded {
+            records.extend(locked_records);
+        }
+        records.extend(records_of(&mut alternative, &mut wallet, &competitor, block(101)).await);
+        let (instant_lock, evidence) = checked_instant_lock(&locked).await;
+        let (persister, _directory, path) = fresh_persister();
+        let mut changes = registration(
+            &wallet,
+            Some(CoreChangeSet {
+                records,
+                new_utxos: vec![stored_utxo(&funding, 0, address)],
+                ..Default::default()
+            }),
+        );
+        let out_point = OutPoint::new(locked.txid(), 0);
+        changes.asset_locks = Some(AssetLockChangeSet {
+            asset_locks: BTreeMap::from([(
                 out_point,
-                transaction: locked.clone(),
-                account_index: 0,
-                funding_type: AssetLockFundingType::IdentityTopUp,
-                identity_index: 0,
-                amount_duffs: 99_000,
-                status: AssetLockStatus::InstantSendLocked,
-                proof: Some(AssetLockProof::Instant(InstantAssetLockProof::new(
-                    instant_lock,
-                    locked.clone(),
-                    0,
-                ))),
-                operation_id: None,
-            },
-        )]),
-        ..Default::default()
-    });
-    persister.store(wallet.wallet_id, changes).unwrap();
-    assert!(
-        persister
-            .load_with_replay(&ReplayEvidence::default())
-            .is_err(),
-        "a tracked funding proof must be required before any SQL settlement"
-    );
-    assert!(persister
-        .get_core_tx_record(wallet.wallet_id, &locked.txid())
-        .unwrap()
-        .is_some());
-    let loaded = persister.load_with_replay(&evidence).unwrap();
-    assert!(!loaded.outcomes[&wallet.wallet_id]
-        .defeated
-        .contains(&locked.txid()));
-    assert!(persister
-        .get_core_tx_record(wallet.wallet_id, &locked.txid())
-        .unwrap()
-        .is_some());
-    drop(persister);
-    let reopened = SqlitePersister::open(SqlitePersisterConfig::new(path)).unwrap();
-    let loaded = reopened.load_with_replay(&evidence).unwrap();
-    assert!(loaded.state.wallets[&wallet.wallet_id]
-        .unused_asset_locks
-        .values()
-        .any(|locks| locks.contains_key(&out_point)));
-    assert!(reopened
-        .get_core_tx_record(wallet.wallet_id, &locked.txid())
-        .unwrap()
-        .is_some());
+                AssetLockEntry {
+                    out_point,
+                    transaction: locked.clone(),
+                    account_index: 0,
+                    funding_type: AssetLockFundingType::IdentityTopUp,
+                    identity_index: 0,
+                    amount_duffs: 99_000,
+                    status: AssetLockStatus::InstantSendLocked,
+                    proof: Some(AssetLockProof::Instant(InstantAssetLockProof::new(
+                        instant_lock,
+                        locked.clone(),
+                        0,
+                    ))),
+                    operation_id: None,
+                },
+            )]),
+            ..Default::default()
+        });
+        persister.store(wallet.wallet_id, changes).unwrap();
+        assert!(
+            persister
+                .load_with_replay(&ReplayEvidence::default())
+                .is_err(),
+            "a tracked funding proof must be required before any SQL settlement"
+        );
+        assert!(
+            persister
+                .get_core_tx_record(wallet.wallet_id, &locked.txid())
+                .unwrap()
+                .is_some()
+                == recorded
+        );
+        let loaded = persister.load_with_replay(&evidence).unwrap();
+        assert!(!loaded.outcomes[&wallet.wallet_id]
+            .defeated
+            .contains(&locked.txid()));
+        assert!(
+            persister
+                .get_core_tx_record(wallet.wallet_id, &locked.txid())
+                .unwrap()
+                .is_some()
+                == recorded
+        );
+        drop(persister);
+        let reopened = SqlitePersister::open(SqlitePersisterConfig::new(path)).unwrap();
+        let loaded = reopened.load_with_replay(&evidence).unwrap();
+        assert!(loaded.state.wallets[&wallet.wallet_id]
+            .unused_asset_locks
+            .values()
+            .any(|locks| locks.contains_key(&out_point)));
+        assert!(
+            reopened
+                .get_core_tx_record(wallet.wallet_id, &locked.txid())
+                .unwrap()
+                .is_some()
+                == recorded
+        );
+    }
 }

@@ -470,10 +470,11 @@ pub trait PlatformWalletPersistence: Send + Sync {
         })
     }
 
-    /// Restore only one wallet during a deferred-load retry.
+    /// Restore one wallet under the manager's publication fence, including explicit retries.
     ///
-    /// The default reads a raw snapshot without applying replay effects. Transactional
-    /// backends override this to ensure no other wallet can be mutated by the retry.
+    /// The default reads raw history without applying effects. The manager rejects
+    /// histories requiring durable repair unless this method returns a committed outcome.
+    /// Transactional backends override this method as well as `load_with_replay`.
     fn load_wallet_with_replay(
         &self,
         wallet_id: WalletId,

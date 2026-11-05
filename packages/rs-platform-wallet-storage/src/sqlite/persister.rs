@@ -1798,9 +1798,9 @@ fn load_one_wallet(
         .map_err(WalletStorageError::from)
         .map_err(PersistenceError::from)?;
     let mut state = load_wallet_snapshot(&tx, wallet_id, ctx)?;
-    let records = state.recorded_history.transactions.clone();
     let mut outcome =
         replay_wallet_history_blocking(&mut state, evidence).map_err(replay_failure)?;
+    let records = state.recorded_history.transactions.clone();
     let mut claims =
         history_replay::load_spent_claims(&tx, &wallet_id).map_err(PersistenceError::from)?;
     let effects = outcome

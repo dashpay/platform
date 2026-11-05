@@ -243,9 +243,9 @@ impl FFIPersister {
             });
         };
         let mut claims = self.load_replay_claims(wallet_id, &mut wallet.recorded_history)?;
-        let records = wallet.recorded_history.transactions.clone();
         let outcome =
             replay_wallet_history_blocking(wallet, evidence).map_err(PersistenceError::backend)?;
+        let records = wallet.recorded_history.transactions.clone();
         let effects = outcome
             .storage_effects(&records, &claims)
             .map_err(PersistenceError::backend)?;

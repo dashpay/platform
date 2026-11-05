@@ -7,8 +7,8 @@
 //! redelivered funding transaction re-credits an output a confirmed spend
 //! already consumed.
 //!
-//! A persister that must repair its own rows while it replays does so inside
-//! its `load` and hands back an empty history; the SQLite one does.
+//! Backends apply typed repair effects in their atomic load scope and return
+//! the replay outcome with the snapshot; raw legacy loads cannot claim a repair.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::future::Future;
@@ -45,6 +45,7 @@ use crate::wallet::asset_lock::sync::recovery::{
     add_tracked_instant_locks, detach_unconfirmed_records, final_lock_input_claims,
     reattach_records, recorded_input_conflicts, withhold_chain_final_fundings,
 };
+use crate::wallet::asset_lock::tracked::AssetLockStatus;
 use crate::wallet::platform_wallet::ObservedInputConflict;
 use crate::wallet::platform_wallet::WalletId;
 use key_wallet::transaction_checking::spend_authorization::SpendAuthorizationError;
@@ -107,6 +108,9 @@ pub enum HistoryReplayError {
     /// Stored input authorization cannot be checked with supported rules.
     #[error("cannot verify stored input authorization")]
     SpendAuthorization(#[from] SpendAuthorizationError),
+    /// A legacy backend cannot persist the repair required by the common replay.
+    #[error("wallet history requires an atomic persistence replay before it can be loaded")]
+    AtomicPersistenceRequired,
     /// The wallet checker requested asynchronous work during local restoration.
     #[error("wallet history replay requires asynchronous work")]
     Suspended,
@@ -115,12 +119,46 @@ pub enum HistoryReplayError {
     UnsettledAfterReplay,
 }
 
-/// Prepare every persisted source before the common replay settles any history.
+/// Prepare every active persisted source before the common replay settles history.
+/// On success, `recorded_history` retains the prepared identities for storage effects.
 pub async fn replay_wallet_history(
     state: &mut ClientWalletStartState,
     evidence: &ReplayEvidence,
 ) -> Result<HistoryReplay, HistoryReplayError> {
     let mut history = state.recorded_history.clone();
+    let mut bodies: HashSet<_> = history
+        .transactions
+        .iter()
+        .map(|row| row.transaction.txid())
+        .collect();
+    // Every active persisted body enters the same authorization/finality pipeline.
+    // Terminal tracked proofs stay archival and do not create replay candidates.
+    for transaction in state.unconfirmed_outgoing_txs.iter().chain(
+        state
+            .unused_asset_locks
+            .values()
+            .flat_map(BTreeMap::values)
+            .filter(|lock| !lock.status.is_consumed())
+            .map(|lock| &lock.transaction),
+    ) {
+        if bodies.insert(transaction.txid()) {
+            history.transactions.push(StoredTransaction {
+                txid: transaction.txid(),
+                transaction: transaction.clone(),
+                context: TransactionContext::Mempool,
+                stored_net_amount: None,
+                stored_direction: None,
+                owned_inputs: Vec::new(),
+            });
+        }
+    }
+    for lock in state.unused_asset_locks.values().flat_map(BTreeMap::values) {
+        if lock.status == AssetLockStatus::InstantSendLocked {
+            history
+                .required_instant_locks
+                .insert(lock.transaction.txid());
+        }
+    }
     let history_txids: HashSet<_> = history
         .transactions
         .iter()
@@ -135,6 +173,7 @@ pub async fn replay_wallet_history(
         &history_txids,
         state.unused_asset_locks.values().flat_map(BTreeMap::values),
     );
+    let prepared_history = history.clone();
     let withheld = withhold_chain_final_fundings(
         &mut history,
         state.unused_asset_locks.values().flat_map(BTreeMap::values),
@@ -148,25 +187,10 @@ pub async fn replay_wallet_history(
     )
     .await?;
     reattach_records(&mut state.wallet_info, withheld_records);
+    state.recorded_history = prepared_history;
     outcome.recorded_conflicts = recorded_conflicts;
     state.unconfirmed_outgoing_txs =
         outcome.resendable(std::mem::take(&mut state.unconfirmed_outgoing_txs));
-    for transaction in state
-        .unconfirmed_outgoing_txs
-        .iter()
-        .filter(|tx| !history_txids.contains(&tx.txid()))
-    {
-        state
-            .wallet_info
-            .check_core_transaction(
-                transaction,
-                TransactionContext::Mempool,
-                &mut state.wallet,
-                true,
-                true,
-            )
-            .await;
-    }
     state
         .wallet_info
         .restore_spent_outpoints(&final_lock_input_claims(
@@ -180,7 +204,6 @@ pub async fn replay_wallet_history(
                         && !outcome.authorization.rejected.contains(&txid)
                 }),
         ));
-    state.recorded_history = RecordedHistory::default();
     Ok(outcome)
 }
 
@@ -530,7 +553,7 @@ pub async fn replay_recorded_history_with_evidence(
     // load; bounding it to records above the last chain lock needs care so
     // finality and spend guards for older records are not lost.
     // TODO(expire-unconfirmed-spend-reservations): mempool records are replayed
-    // on every load with no expiry, so a forged or never-mined spend of a wallet
+    // on every load with no expiry, so an authorized never-mined spend of a wallet
     // outpoint keeps its reservation across load and rescan; only a conflicting
     // IS-locked or confirmed spend releases it. Sibling of
     // TODO(release-repair-spends-after-reorg) in the SQLite `core_history`.
