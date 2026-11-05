@@ -1950,6 +1950,36 @@ where
     type Request = Q;
     type Response = platform::GetDocumentsResponse;
 
+    /// The verifier rebuilds Drive's path query from the request alone before it reads the
+    /// proof: the where-clause shape, the route (by id, through an index, indexOnly) and the
+    /// index it reads. It does so without the cursor document on every page, so a request whose
+    /// path query cannot be built that way, such as one no index covers, can never verify; every
+    /// node refuses it too. The path query is built at `platform_version`, the version the
+    /// request is encoded with: a shape only a later version serves carries a protocol feature,
+    /// and the SDK's protocol gate encodes such a request at the network's version before this
+    /// check runs, so the check never refuses what that later version serves.
+    fn check_request(
+        request: &Self::Request,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error>
+    where
+        Self: Sized,
+    {
+        let request: DriveDocumentQuery<'dq> =
+            request
+                .clone()
+                .try_into()
+                .map_err(|e: Q::Error| Error::RequestError {
+                    error: e.to_string(),
+                })?;
+        request
+            .construct_path_query(None, platform_version)
+            .map(drop)
+            .map_err(|e| Error::RequestError {
+                error: format!("no answer to this documents query can be verified: {e}"),
+            })
+    }
+
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,

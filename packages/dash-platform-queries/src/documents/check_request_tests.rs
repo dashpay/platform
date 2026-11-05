@@ -10,12 +10,14 @@
 
 use crate::documents::composite_document_query::CompositeSubQuery;
 use crate::documents::document_query::{DocumentQuery, RankingDirection};
+use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start;
 use dapi_grpc::platform::v0::get_documents_response::{
     self, get_documents_response_v0, GetDocumentsResponseV0,
 };
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::{ContextProvider, ContextProviderError};
 use dpp::dashcore::Network;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::{DataContract, DataContractFactory, TokenConfiguration};
 use dpp::document::Document;
 use dpp::platform_value::{platform_value, Identifier, Value};
@@ -23,7 +25,8 @@ use dpp::prelude::CoreBlockHeight;
 use dpp::tests::fixtures::get_data_contract_fixture;
 use dpp::version::PlatformVersion;
 use drive::query::{
-    HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
+    resolve_integer_range_bucket_clause, resolve_time_range_bucket_clause, HavingAggregate,
+    HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand, OrderClause,
     SelectFunction, SelectProjection, TimeRangeSelector, WhereClause, WhereOperator,
 };
 use drive_proof_verifier::types::Documents;
@@ -42,11 +45,9 @@ fn check<T: FromProof<DocumentQuery, Request = DocumentQuery>>(
     T::check_request(query, PlatformVersion::latest())
 }
 
-/// The count, sum and average views check shapes only, so the fixture's
-/// document type serves them; whether an index covers the query is the server's
-/// call, and the server refuses a query no index covers. The ranked and
-/// having-range views also check that an index serves the query, so their
-/// queries use [`ranked_contract`].
+/// A contract whose `niceDocument` has no index: a documents select over it reads the
+/// primary-key tree, and a count, sum or average over it is served by nothing, so the views of
+/// those use [`ranked_contract`].
 fn contract() -> Arc<DataContract> {
     Arc::new(
         get_data_contract_fixture(None, 0, PlatformVersion::latest().protocol_version)
@@ -59,10 +60,14 @@ fn query() -> DocumentQuery {
 }
 
 /// A `review` whose indexes rank restaurants by their average grade and hashtags by how many
-/// reviews carry them, so ranked and having-range queries over it are served.
+/// reviews carry them, so ranked and having-range queries over it are served. Its documents are
+/// counted and summed by grade, and its restaurant index sums and counts grades, so counts, sums
+/// and averages over it, in total or per restaurant, are served too.
 fn ranked_contract() -> Arc<DataContract> {
     let schemas = platform_value!({"review": {
         "type": "object",
+        "documentsCountable": true,
+        "documentsSummable": "grade",
         "properties": {
             "restaurantId": {"type": "string", "minLength": 1, "maxLength": 59, "position": 0},
             "grade": {"type": "integer", "minimum": 0, "maximum": 100, "position": 1},
@@ -149,12 +154,12 @@ fn plain_views() -> Vec<(&'static str, Check, DocumentQuery)> {
         (
             "DocumentCount",
             check::<DocumentCount>,
-            query().with_select(SelectProjection::count_star()),
+            reviews().with_select(SelectProjection::count_star()),
         ),
         (
             "DocumentSplitCounts",
             check::<DocumentSplitCounts>,
-            query()
+            reviews()
                 .with_select(SelectProjection::count_star())
                 .with_where(restaurants_in())
                 .with_group_by("restaurantId"),
@@ -162,12 +167,12 @@ fn plain_views() -> Vec<(&'static str, Check, DocumentQuery)> {
         (
             "DocumentSum",
             check::<DocumentSum>,
-            query().with_select(SelectProjection::sum("grade")),
+            reviews().with_select(SelectProjection::sum("grade")),
         ),
         (
             "DocumentSplitSums",
             check::<DocumentSplitSums>,
-            query()
+            reviews()
                 .with_select(SelectProjection::sum("grade"))
                 .with_where(restaurants_in())
                 .with_group_by("restaurantId"),
@@ -175,12 +180,12 @@ fn plain_views() -> Vec<(&'static str, Check, DocumentQuery)> {
         (
             "DocumentAverage",
             check::<DocumentAverage>,
-            query().with_select(SelectProjection::avg("grade")),
+            reviews().with_select(SelectProjection::avg("grade")),
         ),
         (
             "DocumentSplitAverages",
             check::<DocumentSplitAverages>,
-            query()
+            reviews()
                 .with_select(SelectProjection::avg("grade"))
                 .with_where(restaurants_in())
                 .with_group_by("restaurantId"),
@@ -241,24 +246,41 @@ fn should_refuse_a_view_of_a_query_that_selects_something_else() {
     let count = SelectProjection::count_star();
     let sum = SelectProjection::sum("grade");
     let avg = SelectProjection::avg("grade");
-    let views: [(&str, Check, &SelectProjection); 8] = [
-        ("Document", check::<Document>, &documents),
-        ("Documents", check::<Documents>, &documents),
-        ("DocumentCount", check::<DocumentCount>, &count),
-        ("DocumentSplitCounts", check::<DocumentSplitCounts>, &count),
-        ("DocumentSum", check::<DocumentSum>, &sum),
-        ("DocumentSplitSums", check::<DocumentSplitSums>, &sum),
-        ("DocumentAverage", check::<DocumentAverage>, &avg),
+    let documents_words = "require the documents projection";
+    let count_words = "require `SelectProjection::count_star()`";
+    let sum_words = "require `SelectProjection::sum(";
+    let avg_words = "require `SelectProjection::avg(";
+    let views: [(&str, Check, &SelectProjection, &str); 8] = [
+        ("Document", check::<Document>, &documents, documents_words),
+        ("Documents", check::<Documents>, &documents, documents_words),
+        ("DocumentCount", check::<DocumentCount>, &count, count_words),
+        (
+            "DocumentSplitCounts",
+            check::<DocumentSplitCounts>,
+            &count,
+            count_words,
+        ),
+        ("DocumentSum", check::<DocumentSum>, &sum, sum_words),
+        (
+            "DocumentSplitSums",
+            check::<DocumentSplitSums>,
+            &sum,
+            sum_words,
+        ),
+        ("DocumentAverage", check::<DocumentAverage>, &avg, avg_words),
         (
             "DocumentSplitAverages",
             check::<DocumentSplitAverages>,
             &avg,
+            avg_words,
         ),
     ];
-    for (view, check, own) in views {
+    // Over a type that serves every one of these selects, so the refusal is the view's own.
+    for (view, check, own, words) in views {
         for select in [&documents, &count, &sum, &avg] {
             if select != own {
-                refusal(view, check, &query().with_select(select.clone()));
+                let error = refusal(view, check, &reviews().with_select(select.clone()));
+                assert!(error.contains(words), "{view} {select:?}: {error}");
             }
         }
     }
@@ -667,7 +689,8 @@ fn should_keep_a_window_that_does_not_resolve_at_the_answers_block_time_a_reques
     );
 }
 
-/// A `post` whose `hashtags` is a typed array of strings.
+/// A `post` whose `hashtags` is a typed array of strings, with an index that counts posts and
+/// sums their `grade` per hashtag.
 fn post_contract() -> Arc<DataContract> {
     let schemas = platform_value!({"post": {
         "type": "object",
@@ -677,13 +700,17 @@ fn post_contract() -> Arc<DataContract> {
                 "maxItems": 10,
                 "items": {"type": "string", "minLength": 1, "maxLength": 61},
                 "position": 0
-            }
+            },
+            "grade": {"type": "integer", "minimum": 0, "maximum": 100, "position": 1}
         },
-        "required": ["$createdAt"],
+        "required": ["grade", "$createdAt"],
         "indices": [
             {"name": "byHashtagTime",
              "properties": [{"hashtags": "asc"}, {"$createdAt": "asc"}],
-             "countable": "countable"}
+             "countable": "countable"},
+            {"name": "byHashtag",
+             "properties": [{"hashtags": "asc"}],
+             "averageable": "grade"}
         ],
         "additionalProperties": false
     }});
@@ -795,24 +822,26 @@ fn should_leave_a_documents_projection_field_to_the_encoder_and_the_server() {
 }
 
 /// A `listing` whose `price` is bucketed in windows of 100 and whose `$createdAt` is bucketed
-/// in daily windows, each under a countable index, so window selections on it resolve.
+/// in daily windows, each under an index that counts listings and sums their `quantity`, so
+/// window selections on it resolve. Nothing sums `price`.
 fn windowed_contract() -> Arc<DataContract> {
     let schemas = platform_value!({"listing": {
         "type": "object",
         "properties": {
             "price": {"type": "integer", "minimum": 0, "maximum": 1_000_000, "position": 0},
-            "category": {"type": "string", "minLength": 1, "maxLength": 63, "position": 1}
+            "category": {"type": "string", "minLength": 1, "maxLength": 63, "position": 1},
+            "quantity": {"type": "integer", "minimum": 0, "maximum": 1_000_000, "position": 2}
         },
-        "required": ["price", "category", "$createdAt"],
+        "required": ["price", "category", "quantity", "$createdAt"],
         "indices": [
             {"name": "byPriceBand",
              "properties": [{"price": "asc"}, {"category": "asc"}],
              "integerRange": {"on": "price", "range": 100u64, "step": 100u64},
-             "countable": "countable"},
+             "averageable": "quantity"},
             {"name": "byDay",
              "properties": [{"$createdAt": "asc"}, {"category": "asc"}],
              "timeRange": {"on": "$createdAt", "range": 86400, "step": 86400},
-             "countable": "countable"}
+             "averageable": "quantity"}
         ],
         "additionalProperties": false
     }});
@@ -885,7 +914,7 @@ fn should_refuse_a_documents_select_whose_window_every_verifier_refuses_before_s
 
 /// An index buckets one field, so no index serves windows on two fields, even when each
 /// window resolves: every node refuses such a query, and so does every verifier's index pick.
-/// It is refused before sending.
+/// It is refused before sending, in Drive's own words.
 #[test]
 fn should_refuse_windows_on_two_fields_before_sending() {
     let two_windows = listings()
@@ -913,13 +942,426 @@ fn should_refuse_windows_on_two_fields_before_sending() {
             SelectProjection::avg("price"),
         ),
     ];
+    // The windows as a check resolves them: time-range selections first, at the block time it
+    // checks at.
+    let document_type = windowed_contract();
+    let document_type = document_type
+        .document_type_for_name("listing")
+        .expect("the contract has this document type");
+    let (_, created_at) = resolve_time_range_bucket_clause(
+        "$createdAt",
+        TimeRangeSelector::Newest,
+        None,
+        document_type,
+        1_700_000_000_000,
+    )
+    .expect("a day window resolves");
+    let (_, price) =
+        resolve_integer_range_bucket_clause("price", &Value::U64(200), None, document_type)
+            .expect("a price window resolves");
+    // Drive's words for a query, naming both windows, as the node refuses a documents query.
+    let drives_words = format!(
+        "at most one window selection (IN_TIME_RANGE or IN_INTEGER_RANGE) is supported per \
+         query; this one resolves {:?}, and no single index can bucket more than one field",
+        [created_at, price]
+    );
     for (view, check, select) in views {
         let error = refusal(view, check, &two_windows.clone().with_select(select));
+        assert!(error.contains(&drives_words), "{view}: {error}");
+    }
+    for (view, check, query) in [
+        (
+            "DocumentRankedEntries",
+            check::<DocumentRankedEntries> as Check,
+            windowed_ranked(),
+        ),
+        (
+            "DocumentHavingEntries",
+            check::<DocumentHavingEntries>,
+            windowed_having(),
+        ),
+    ] {
+        let error = refusal(
+            view,
+            check,
+            &query
+                .with_integer_range("price", Value::U64(200))
+                .with_time_range("$createdAt", TimeRangeSelector::Newest),
+        );
+        assert!(error.contains(&drives_words), "{view}: {error}");
+    }
+}
+
+/// `SELECT COUNT(*) FROM listing GROUP BY category ORDER BY COUNT(*) DESC LIMIT 5`.
+fn windowed_ranked() -> DocumentQuery {
+    listings()
+        .with_select(SelectProjection::count_star())
+        .with_group_by("category")
+        .order_by_selected_aggregate(RankingDirection::Descending)
+        .with_limit(5)
+}
+
+/// `SELECT COUNT(*) FROM listing GROUP BY category HAVING COUNT(*) > 1 LIMIT 5`.
+fn windowed_having() -> DocumentQuery {
+    listings()
+        .with_select(SelectProjection::count_star())
+        .with_group_by("category")
+        .with_having(vec![HavingClause {
+            aggregate: HavingAggregate {
+                function: HavingAggregateFunction::Count,
+                field: String::new(),
+            },
+            operator: HavingOperator::GreaterThan,
+            right: HavingRightOperand::Value(Value::U64(1)),
+        }])
+        .with_limit(5)
+}
+
+/// The equality on `$createdAt` a caller writes, as opposed to one a window resolves to.
+fn created_at_equal() -> WhereClause {
+    WhereClause {
+        field: "$createdAt".to_string(),
+        operator: WhereOperator::Equal,
+        value: Value::U64(1_700_000_000_000),
+    }
+}
+
+/// A documents select is rebuilt by its verifier into Drive's path query, from the request
+/// alone, before the proof is read; that path query reads one index. A query no index covers,
+/// here a window on `price` beside an equality on `$createdAt`, is refused by every node and by
+/// every verifier for every answer, so it is refused before sending.
+#[test]
+fn should_refuse_a_documents_select_no_index_covers_before_sending() {
+    let uncovered = listings()
+        .with_integer_range("price", Value::U64(200))
+        .with_where(created_at_equal());
+    let views: [(&str, Check); 2] = [
+        ("Document", check::<Document>),
+        ("Documents", check::<Documents>),
+    ];
+    for (view, check) in views {
+        let error = refusal(view, check, &uncovered);
         assert!(
-            error.contains("at most one window selection"),
+            error.contains("no answer to this documents query can be verified"),
             "{view}: {error}"
         );
     }
+}
+
+/// A window's resolved equality reads as an ordinary equality, and no index may bind a raw
+/// value to the bucket keys of the index that buckets the field. The check hands the
+/// resolution's provenance to the index pick, as the verifier does, so a windowed query every
+/// node serves is sent; a check that dropped it would refuse these.
+#[test]
+fn should_send_a_documents_select_pinned_to_a_window_its_index_buckets() {
+    let category_equal = WhereClause {
+        field: "category".to_string(),
+        operator: WhereOperator::Equal,
+        value: Value::Text("tools".to_string()),
+    };
+    let views: [(&str, Check); 2] = [
+        ("Document", check::<Document>),
+        ("Documents", check::<Documents>),
+    ];
+    for (view, check) in views {
+        for window in [
+            listings().with_integer_range("price", Value::U64(200)),
+            listings()
+                .with_integer_range("price", Value::U64(200))
+                .with_where(category_equal.clone()),
+            listings().with_time_range("$createdAt", TimeRangeSelector::Newest),
+        ] {
+            assert!(
+                check(&window).is_ok(),
+                "{view} {window:?}: {:?}",
+                check(&window)
+            );
+        }
+        // The same equality written by the caller binds to no index, which is what the
+        // provenance changes.
+        let raw_price = listings().with_where(WhereClause {
+            field: "price".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::U64(200),
+        });
+        let error = refusal(view, check, &raw_price);
+        assert!(
+            error.contains("no answer to this documents query can be verified"),
+            "{view}: {error}"
+        );
+    }
+}
+
+/// The verifier rebuilds a cursor page's path query without the cursor document, too, to read
+/// its walk direction, so the check's lowering without a cursor document refuses nothing a
+/// cursor page is served for, and refuses a cursor where the verifier does.
+#[test]
+fn should_send_a_documents_select_with_a_cursor() {
+    let with_cursor = |query: DocumentQuery| DocumentQuery {
+        start: Some(Start::StartAfter([1u8; 32].to_vec())),
+        ..query
+    };
+    let by_restaurant = || {
+        reviews()
+            .with_where(restaurants_in())
+            .with_order_by(OrderClause {
+                field: "restaurantId".to_string(),
+                ascending: true,
+            })
+            .with_limit(10)
+    };
+    type VersionedCheck = fn(&DocumentQuery, &PlatformVersion) -> Result<(), Error>;
+    let views: [(&str, VersionedCheck); 2] = [
+        (
+            "Document",
+            <Document as FromProof<DocumentQuery>>::check_request,
+        ),
+        (
+            "Documents",
+            <Documents as FromProof<DocumentQuery>>::check_request,
+        ),
+    ];
+    let v13 = PlatformVersion::get(13).expect("protocol version 13");
+    for (view, check) in views {
+        // The primary-key and single-index routes, at the oldest version still on a network and
+        // at the latest.
+        for version in [v13, PlatformVersion::latest()] {
+            for query in [query().with_limit(10), by_restaurant()] {
+                let query = with_cursor(query);
+                assert!(
+                    check(&query, version).is_ok(),
+                    "{view} at {}: {:?}",
+                    version.protocol_version,
+                    check(&query, version)
+                );
+            }
+        }
+        // A bucketed index, which the latest version serves with a cursor.
+        let windowed = with_cursor(
+            listings()
+                .with_integer_range("price", Value::U64(200))
+                .with_limit(10),
+        );
+        assert!(
+            check(&windowed, PlatformVersion::latest()).is_ok(),
+            "{view}: {:?}",
+            check(&windowed, PlatformVersion::latest())
+        );
+        // Two `In`s on a compound index are served without a cursor; the multiple-`In` route has
+        // no cursor position, so the lowering, which reads the cursor, refuses one.
+        assert!(
+            check(&two_ins(), PlatformVersion::latest()).is_ok(),
+            "{view}: {:?}",
+            check(&two_ins(), PlatformVersion::latest())
+        );
+        let error = match check(&with_cursor(two_ins()), PlatformVersion::latest()) {
+            Err(Error::RequestError { error }) => error,
+            other => panic!("{view} must refuse a cursor over two `In`s, got {other:?}"),
+        };
+        assert!(
+            error.contains("not supported with multiple in clauses"),
+            "{view}: {error}"
+        );
+        // An indexOnly position has no document id a cursor can address, so the lowering, which
+        // reads the cursor, refuses it as the verifier does.
+        let error = match check(
+            &with_cursor(index_only_entries().with_limit(10)),
+            PlatformVersion::latest(),
+        ) {
+            Err(Error::RequestError { error }) => error,
+            other => panic!("{view} must refuse an indexOnly cursor, got {other:?}"),
+        };
+        assert!(
+            error.contains("cannot address an indexOnly"),
+            "{view}: {error}"
+        );
+    }
+}
+
+/// A `shirt` with a compound index on `color` and `size`, queried with an `In` on each, in
+/// index order.
+fn two_ins() -> DocumentQuery {
+    let schemas = platform_value!({"shirt": {
+        "type": "object",
+        "properties": {
+            "color": {"type": "string", "minLength": 1, "maxLength": 31, "position": 0},
+            "size": {"type": "string", "minLength": 1, "maxLength": 7, "position": 1}
+        },
+        "required": ["color", "size"],
+        "indices": [
+            {"name": "byColorSize", "properties": [{"color": "asc"}, {"size": "asc"}]}
+        ],
+        "additionalProperties": false
+    }});
+    let contract = DataContractFactory::new(PlatformVersion::latest().protocol_version)
+        .expect("factory")
+        .create_with_value_config(Identifier::new([13u8; 32]), 0, schemas, None, None)
+        .expect("the shirt contract is well-formed")
+        .data_contract_owned();
+    DocumentQuery::new(Arc::new(contract), "shirt")
+        .expect("the contract has this document type")
+        .with_where(WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::In,
+            value: platform_value!(["red", "blue"]),
+        })
+        .with_where(WhereClause {
+            field: "size".to_string(),
+            operator: WhereOperator::In,
+            value: platform_value!(["s", "m"]),
+        })
+        .with_order_by(OrderClause {
+            field: "color".to_string(),
+            ascending: true,
+        })
+        .with_order_by(OrderClause {
+            field: "size".to_string(),
+            ascending: true,
+        })
+        .with_limit(10)
+}
+
+/// An indexOnly `entry`: its documents exist only as positions of its index.
+fn index_only_entries() -> DocumentQuery {
+    let schemas = platform_value!({"entry": {
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "indices": [
+            {"name": "byNormalizedName",
+             "properties": [{"normalizedName": "asc"}, {"name": "asc"}],
+             "terminal": "$ownerId"}
+        ],
+        "properties": {
+            "name": {"type": "string", "maxLength": 32, "position": 0},
+            "normalizedName": {"type": "string", "maxLength": 32, "position": 1}
+        },
+        "required": ["name", "normalizedName"],
+        "additionalProperties": false
+    }});
+    let contract = DataContractFactory::new(PlatformVersion::latest().protocol_version)
+        .expect("factory")
+        .create_with_value_config(Identifier::new([14u8; 32]), 0, schemas, None, None)
+        .expect("the entry contract is well-formed")
+        .data_contract_owned();
+    DocumentQuery::new(Arc::new(contract), "entry")
+        .expect("the contract has this document type")
+        .with_where(WhereClause {
+            field: "normalizedName".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("alice".to_string()),
+        })
+}
+
+/// A count, sum or average proof reads a tree that an index or the document type keeps, picked
+/// from the request alone by the node and again by the verifier. A sum or an average of a
+/// property no index sums, or a count over a type that counts nothing, is refused by every node
+/// and every verifier, so it is refused before sending.
+#[test]
+fn should_refuse_an_aggregate_no_index_serves_before_sending() {
+    let categories_in = WhereClause {
+        field: "category".to_string(),
+        operator: WhereOperator::In,
+        value: platform_value!(["tools", "toys"]),
+    };
+    let names_in = WhereClause {
+        field: "name".to_string(),
+        operator: WhereOperator::In,
+        value: platform_value!(["a", "b"]),
+    };
+    let split = |query: DocumentQuery, clause: &WhereClause, field: &str| {
+        query.with_where(clause.clone()).with_group_by(field)
+    };
+    let cases: Vec<(&str, Check, DocumentQuery, &str)> = vec![
+        (
+            "DocumentSum",
+            check::<DocumentSum>,
+            listings().with_select(SelectProjection::sum("price")),
+            "no answer to this sum can be verified",
+        ),
+        (
+            "DocumentSplitSums",
+            check::<DocumentSplitSums>,
+            split(
+                listings().with_select(SelectProjection::sum("price")),
+                &categories_in,
+                "category",
+            ),
+            "no answer to this sum can be verified",
+        ),
+        (
+            "DocumentAverage",
+            check::<DocumentAverage>,
+            listings().with_select(SelectProjection::avg("price")),
+            "no answer to this average can be verified",
+        ),
+        (
+            "DocumentSplitAverages",
+            check::<DocumentSplitAverages>,
+            split(
+                listings().with_select(SelectProjection::avg("price")),
+                &categories_in,
+                "category",
+            ),
+            "no answer to this average can be verified",
+        ),
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            query().with_select(SelectProjection::count_star()),
+            "no answer to this count can be verified",
+        ),
+        (
+            "DocumentSplitCounts",
+            check::<DocumentSplitCounts>,
+            split(
+                query().with_select(SelectProjection::count_star()),
+                &names_in,
+                "name",
+            ),
+            "no answer to this count can be verified",
+        ),
+    ];
+    for (view, check, query, words) in cases {
+        let error = refusal(view, check, &query);
+        assert!(error.contains(words), "{view} {query:?}: {error}");
+        assert!(
+            error.contains("index"),
+            "{view}: refused for the index it lacks: {error}"
+        );
+    }
+}
+
+/// The verifier rebuilds a distinct walk's limit byte for byte and leaves the cap on it to the
+/// node's configuration, which a client cannot know: a limit any node may serve is sent, and
+/// one no path query can carry is refused.
+#[test]
+fn should_send_a_distinct_walk_limit_only_a_path_query_can_carry() {
+    let distinct = |limit: u32| {
+        reviews()
+            .with_select(SelectProjection::count_star())
+            .with_where(WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Text("a".to_string()),
+            })
+            .with_group_by("hashtag")
+            .with_limit(limit)
+    };
+    for limit in [1, 500, u16::MAX as u32] {
+        let query = distinct(limit);
+        assert!(
+            check::<DocumentSplitCounts>(&query).is_ok(),
+            "limit {limit}: {:?}",
+            check::<DocumentSplitCounts>(&query)
+        );
+    }
+    let error = refusal(
+        "DocumentSplitCounts",
+        check::<DocumentSplitCounts>,
+        &distinct(u16::MAX as u32 + 1),
+    );
+    assert!(error.contains("exceeds u16::MAX"), "{error}");
 }
 
 /// A query whose contract lacks its document type is refused by the verifier for every answer,
@@ -997,8 +1439,8 @@ fn should_refuse_a_having_clause_in_an_aggregate_view_before_sending() {
         ),
     ];
     for (view, check, select) in views {
-        let ungrouped = query().with_select(select.clone());
-        let grouped_by_in = query()
+        let ungrouped = reviews().with_select(select.clone());
+        let grouped_by_in = reviews()
             .with_select(select)
             .with_where(restaurants_in())
             .with_group_by("restaurantId");
@@ -1011,6 +1453,24 @@ fn should_refuse_a_having_clause_in_an_aggregate_view_before_sending() {
             let error = refusal(view, check, &aggregate.with_having(having.clone()));
             assert!(error.contains("DocumentHavingEntries"), "{view}: {error}");
         }
+        // The `having` clause is named even when no index serves the aggregate: it is checked
+        // before the proof plan, whose refusal would only say that.
+        let unserved = query()
+            .with_select(select_of(view))
+            .with_having(having.clone());
+        let error = refusal(view, check, &unserved);
+        assert!(error.contains("DocumentHavingEntries"), "{view}: {error}");
+    }
+}
+
+/// The select each aggregate view is verified from.
+fn select_of(view: &str) -> SelectProjection {
+    if view.contains("Count") {
+        SelectProjection::count_star()
+    } else if view.contains("Sum") {
+        SelectProjection::sum("grade")
+    } else {
+        SelectProjection::avg("grade")
     }
 }
 
@@ -1079,12 +1539,12 @@ fn should_refuse_an_in_or_range_beside_a_window_on_the_same_field_before_sending
         (
             "DocumentSum",
             check::<DocumentSum>,
-            SelectProjection::sum("price"),
+            SelectProjection::sum("quantity"),
         ),
         (
             "DocumentAverage",
             check::<DocumentAverage>,
-            SelectProjection::avg("price"),
+            SelectProjection::avg("quantity"),
         ),
     ];
     for (window, field) in windows {
@@ -1101,9 +1561,19 @@ fn should_refuse_an_in_or_range_beside_a_window_on_the_same_field_before_sending
                     "{view} {field} {operator:?}: {error}"
                 );
             }
+            // The window with the rest of its index pinned is served by the index.
+            let served = window
+                .clone()
+                .with_where(WhereClause {
+                    field: "category".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Text("tools".to_string()),
+                })
+                .with_select(select.clone());
             assert!(
-                check(&window.clone().with_select(select.clone())).is_ok(),
-                "{view} {field}: the window alone is sent"
+                check(&served).is_ok(),
+                "{view} {field}: the window is sent: {:?}",
+                check(&served)
             );
         }
     }
@@ -1442,6 +1912,69 @@ fn should_refuse_before_sending_only_what_the_verifier_refuses_at_any_block_time
                 .with_time_range("$createdAt", TimeRangeSelector::Newest),
         ),
     ];
+    // An aggregate no index serves is refused before sending, as the verifier's proof plan
+    // refuses it; its siblings an index serves are sent. Each is pinned both ways here, so a
+    // check that skipped the plan cannot pass by sending the refused ones.
+    let aggregates: [(&str, Check, Verifies, DocumentQuery, bool); 5] = [
+        (
+            "DocumentSum",
+            check::<DocumentSum>,
+            verifier_refuses::<DocumentSum>,
+            listings().with_select(SelectProjection::sum("price")),
+            true,
+        ),
+        (
+            "DocumentAverage",
+            check::<DocumentAverage>,
+            verifier_refuses::<DocumentAverage>,
+            listings().with_select(SelectProjection::avg("price")),
+            true,
+        ),
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            verifier_refuses::<DocumentCount>,
+            query().with_select(SelectProjection::count_star()),
+            true,
+        ),
+        (
+            "DocumentSum",
+            check::<DocumentSum>,
+            verifier_refuses::<DocumentSum>,
+            listings()
+                .with_select(SelectProjection::sum("quantity"))
+                .with_integer_range("price", Value::U64(200))
+                .with_where(WhereClause {
+                    field: "category".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Text("tools".to_string()),
+                }),
+            false,
+        ),
+        (
+            "DocumentAverage",
+            check::<DocumentAverage>,
+            verifier_refuses::<DocumentAverage>,
+            reviews().with_select(SelectProjection::avg("grade")),
+            false,
+        ),
+    ];
+    for (view, check, _, query, refused_before_sending) in &aggregates {
+        assert_eq!(
+            check(query).is_err(),
+            *refused_before_sending,
+            "{view} {query:?}: {:?}",
+            check(query)
+        );
+    }
+    let shapes = shapes
+        .into_iter()
+        .chain(
+            aggregates
+                .into_iter()
+                .map(|(view, check, verifies, query, _)| (view, check, verifies, query)),
+        )
+        .collect::<Vec<_>>();
     let (mut refused, mut accepted_by_both) = (0, 0);
     for (view, check, verifier_refuses, query) in &shapes {
         if check(query).is_ok() {
@@ -1463,7 +1996,7 @@ fn should_refuse_before_sending_only_what_the_verifier_refuses_at_any_block_time
         }
     }
     assert!(
-        refused >= 3 && accepted_by_both >= 2,
+        refused >= 6 && accepted_by_both >= 4,
         "{refused} refused, {accepted_by_both} accepted by both"
     );
 }
