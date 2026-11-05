@@ -482,12 +482,8 @@ fn tc046_v014_purges_legacy_empty_script_spent_utxos() {
         "expected AddressDecode from the empty script, got {err:?}"
     );
 
-    // 4. Upgrade through V018 (applies V013's purge; V020 then drops mined Core
-    //    history for a rescan).
-    mig::runner()
-        .set_target(refinery::Target::Version(18))
-        .run(&mut conn)
-        .expect("migrate to V018");
+    // 4. Upgrade to the latest schema (applies V013's purge).
+    mig::run(&mut conn).expect("migrate to latest");
 
     // 5. The poisoned row is gone...
     let poisoned_rows: i64 = conn
@@ -559,13 +555,6 @@ fn tc046_v014_purges_legacy_empty_script_spent_utxos() {
 /// must survive untouched.
 #[test]
 fn tc047_v013_drops_orphans_instead_of_aborting_the_rebuild() {
-    use dashcore::hashes::Hash;
-    use key_wallet::account::AccountType;
-    use key_wallet::managed_account::transaction_record::{
-        TransactionDirection, TransactionRecord,
-    };
-    use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
-    use platform_wallet_storage::sqlite::schema::blob::encode;
     use rusqlite::params;
 
     let mut conn = rusqlite::Connection::open_in_memory().expect("open in-memory db");
@@ -583,28 +572,11 @@ fn tc047_v013_drops_orphans_instead_of_aborting_the_rebuild() {
         params![wallet_id.as_slice()],
     )
     .expect("insert wallet");
-    let record = TransactionRecord::new(
-        dashcore::Transaction {
-            version: 3,
-            lock_time: 0,
-            input: vec![],
-            output: vec![],
-            special_transaction_payload: None,
-        },
-        AccountType::IdentityRegistration,
-        TransactionContext::InBlock(BlockInfo::new(100, dashcore::BlockHash::all_zeros(), 123)),
-        TransactionType::Standard,
-        TransactionDirection::Incoming,
-        vec![],
-        vec![],
-        0,
-    );
-    let live_txid = record.txid.to_byte_array();
-    let live_blob = encode(&record).expect("encode valid historical record");
+    let live_txid = [7u8; 32];
     conn.execute(
         "INSERT INTO core_transactions (wallet_id, txid, height, block_hash, block_time, \
-         finalized, record_blob) VALUES (?1, ?2, 100, NULL, NULL, 1, ?3)",
-        params![wallet_id.as_slice(), live_txid.as_slice(), &live_blob],
+         finalized, record_blob) VALUES (?1, ?2, 100, NULL, NULL, 1, X'AA')",
+        params![wallet_id.as_slice(), live_txid.as_slice()],
     )
     .expect("insert live transaction");
     let live_outpoint = [0x20u8; 37];
@@ -635,12 +607,8 @@ fn tc047_v013_drops_orphans_instead_of_aborting_the_rebuild() {
     conn.pragma_update(None, "foreign_keys", true)
         .expect("re-enable foreign keys");
 
-    // 4. The rebuild must complete rather than abort on the orphans (checked
-    //    at V018: V020 then drops mined Core history for a rescan).
-    mig::runner()
-        .set_target(refinery::Target::Version(18))
-        .run(&mut conn)
-        .expect("migrate to V018 despite the orphan rows");
+    // 4. The rebuild must complete rather than abort on the orphans.
+    mig::run(&mut conn).expect("migrate to latest despite the orphan rows");
 
     // 5. Both orphans are gone — the same outcome the declared cascade would
     //    have produced had enforcement been on when the wallet was deleted.
@@ -662,7 +630,7 @@ fn tc047_v013_drops_orphans_instead_of_aborting_the_rebuild() {
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .expect("live transaction survives");
-    assert_eq!((height, finalized, blob), (100, 1, live_blob));
+    assert_eq!((height, finalized, blob), (100, 1, vec![0xAA]));
 
     // 7. The live UTXO survived, and its confirmation height was backfilled
     //    onto a height-only `core_transactions` row.

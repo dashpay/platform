@@ -653,10 +653,6 @@ pub(crate) const ACCOUNT_TYPE_LABELS: &[&str] = &[
     "platform_payment",
 ];
 
-/// Database label of `AccountType::DashpayExternalAccount`; SQL that
-/// singles out contact watch-only rows binds this instead of a literal.
-pub(crate) const DASHPAY_EXTERNAL_LABEL: &str = "dashpay_external";
-
 /// Stable database label for an `AccountType` variant (the `Debug` impl is not
 /// a stable format; this match is the contract). An added upstream variant
 /// fails this match's exhaustiveness check at compile time.
@@ -719,7 +715,7 @@ pub(crate) fn account_type_db_label(at: &key_wallet::account::AccountType) -> &'
         AccountType::ProviderOperatorKeys => "provider_operator",
         AccountType::ProviderPlatformKeys => "provider_platform",
         AccountType::DashpayReceivingFunds { .. } => "dashpay_receiving",
-        AccountType::DashpayExternalAccount { .. } => DASHPAY_EXTERNAL_LABEL,
+        AccountType::DashpayExternalAccount { .. } => "dashpay_external",
         AccountType::PlatformPayment { .. } => "platform_payment",
     }
 }
