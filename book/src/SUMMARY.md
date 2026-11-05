@@ -134,7 +134,7 @@
 
 - [Overview](evo-sdk/overview.md)
 - [Getting Started](evo-sdk/getting-started.md)
-- [Trusted Mode and Proofs](evo-sdk/trusted-mode.md)
+- [Trusted and Verified Mode](evo-sdk/trusted-mode.md)
 - [State Transitions](evo-sdk/state-transitions.md)
 - [Wallet Utilities](evo-sdk/wallet-utilities.md)
 - [DashPay Contact Requests](evo-sdk/dashpay-contact-requests.md)
