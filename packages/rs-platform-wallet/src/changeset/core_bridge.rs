@@ -1776,9 +1776,13 @@ async fn build_core_changeset(
             coalesce_account_records(&mut cs.account_records);
             // The wallet-level row folds every slice the manager holds for
             // the transaction, not only the ones this block re-emitted (see
-            // `with_held_sibling_slices`).
-            cs.records =
-                with_held_sibling_slices(wallet_manager, wallet_id, &cs.account_records).await;
+            // `with_held_sibling_slices_and_verdicts`).
+            (cs.records, cs.utxo_credit_verdicts) = with_held_sibling_slices_and_verdicts(
+                wallet_manager,
+                wallet_id,
+                &cs.account_records,
+            )
+            .await;
             fold_same_txid_records(&mut cs.records);
             cs.last_processed_height = Some(*height);
             // Pool extensions triggered by any record in this block.
@@ -1799,17 +1803,6 @@ async fn build_core_changeset(
                 collect_usage_deltas(wallet_manager, wallet_id, records).await;
             cs.addresses_marked_used = addresses_marked_used;
             cs.account_highest_used = account_highest_used;
-            // The engine's verdict on the outputs the persister is about to
-            // materialise from these records — see
-            // `CoreChangeSet::utxo_credit_verdicts`. Over the owned slices
-            // only (`account_records` is already filtered): a contact's
-            // watch-only chain never defines the wallet's TXOs.
-            cs.utxo_credit_verdicts = utxo_credit_verdicts(
-                wallet_manager,
-                wallet_id,
-                &cs.account_records.iter().collect::<Vec<_>>(),
-            )
-            .await;
             cs
         }
         WalletEvent::TransactionsSwept {
@@ -2213,36 +2206,7 @@ async fn collect_usage_deltas(
     collect_usage_deltas_from_accounts(&info.core_wallet.accounts, &records)
 }
 
-/// The engine's credit verdict for every `Received` / `Change` output of
-/// `records` that the owning account does NOT hold — see
-/// [`CoreChangeSet::utxo_credit_verdicts`] for what a persister does with
-/// it. Empty when every output is credited, when the wallet is unknown
-/// (raced a removal — the next round re-emits), or when `records` is empty.
-///
-/// One read of the wallet lock per event, like [`collect_usage_deltas`];
-/// the walk itself is [`utxo_credit_verdicts_from_wallet`], factored so
-/// tests can drive it against a bare `ManagedWalletInfo`. `BlockProcessed`
-/// uses this over the event's own records (block records carry their
-/// block context and cannot read `Doomed`); `TransactionDetected` reads its
-/// slices and verdicts under one guard through
-/// [`wallet_slices_and_verdicts_for_txid`], and `TransactionInstantLocked`
-/// under its own guard through [`slices_and_verdicts_for_txid`].
-async fn utxo_credit_verdicts(
-    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    wallet_id: &WalletId,
-    records: &[&TransactionRecord],
-) -> BTreeMap<OutPoint, UtxoCreditVerdict> {
-    if records.is_empty() {
-        return BTreeMap::new();
-    }
-    let guard = wallet_manager.read().await;
-    let Some(info) = guard.get_wallet_info(wallet_id) else {
-        return BTreeMap::new();
-    };
-    utxo_credit_verdicts_from_wallet(&info.core_wallet, records)
-}
-
-/// Synchronous core of [`utxo_credit_verdicts`].
+/// Judge owned outputs against the same wallet snapshot as their account slices.
 ///
 /// For each record (a contact's watch-only slice excluded — its outputs
 /// are the contact's coins and never become this wallet's TXOs) and each
@@ -2500,6 +2464,7 @@ async fn wallet_slices_and_verdicts_for_txid(
     Some(slices_and_verdicts_for_txid(info, txid))
 }
 
+/// Complete slices and their credit verdicts from one wallet snapshot.
 /// `slices` plus every slice the manager still holds, for the same
 /// transactions, under an account `slices` does not carry.
 ///
@@ -2518,18 +2483,21 @@ async fn wallet_slices_and_verdicts_for_txid(
 /// accounts it lacks are filled in. Contact watch-only slices stay out, as
 /// everywhere else in the projection. An unknown wallet (removed mid-flight,
 /// or a bare test manager) leaves `slices` as they are.
-async fn with_held_sibling_slices(
+async fn with_held_sibling_slices_and_verdicts(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: &WalletId,
     slices: &[TransactionRecord],
-) -> Vec<TransactionRecord> {
+) -> (
+    Vec<TransactionRecord>,
+    BTreeMap<OutPoint, UtxoCreditVerdict>,
+) {
     let mut complete = slices.to_vec();
     if slices.is_empty() {
-        return complete;
+        return (complete, BTreeMap::new());
     }
     let guard = wallet_manager.read().await;
     let Some(info) = guard.get_wallet_info(wallet_id) else {
-        return complete;
+        return (complete, BTreeMap::new());
     };
     let carried: HashSet<(Txid, AccountType)> = slices
         .iter()
@@ -2547,7 +2515,9 @@ async fn with_held_sibling_slices(
             }
         }
     }
-    complete
+    let verdicts =
+        utxo_credit_verdicts_from_wallet(&info.core_wallet, &complete.iter().collect::<Vec<_>>());
+    (complete, verdicts)
 }
 
 /// The slices `info` holds of `txid` and the verdicts of their owned outputs.
@@ -9615,6 +9585,120 @@ mod utxo_credit_verdict_tests {
 
         let unknown = build_core_changeset(&manager, &event([0xEEu8; 32])).await;
         assert!(unknown.utxo_credit_verdicts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn should_preserve_held_sibling_verdict_through_buffered_block_projection() {
+        use crate::wallet::core::WalletGeneration;
+        use crate::wallet::identity::IdentityManager;
+
+        for credited in [false, true] {
+            let mut ctx = TestWalletContext::new_random();
+            let funding = funding_of(ctx.receive_address.script_pubkey(), 71);
+            let coin = OutPoint::new(funding.txid(), 0);
+            let burn = ctx
+                .check_transaction(&collateral_burn(coin), in_block(100_001))
+                .await;
+            assert!(
+                !burn.is_relevant,
+                "there is no spender record to repair a lost verdict"
+            );
+            let result = ctx.check_transaction(&funding, in_block(100_000)).await;
+            let sibling = result.new_records[0].clone();
+            let mut marker = sibling.clone();
+            marker.account_type = AccountType::IdentityRegistration;
+            marker.input_details.clear();
+            marker.output_details.clear();
+            marker.net_amount = 0;
+            marker.context = in_block(100_002);
+            let info = PlatformWalletInfo {
+                core_wallet: ctx.managed_wallet,
+                generation: Arc::new(WalletGeneration::new()),
+                identity_manager: IdentityManager::new(),
+                tracked_asset_locks: BTreeMap::new(),
+                dpns_name_states: BTreeMap::new(),
+                dashpay_backfill: Default::default(),
+                rewind_barrier: Default::default(),
+                observed_input_conflicts: Default::default(),
+            };
+            let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
+            let wallet_id = wm.insert_wallet(ctx.wallet, info).unwrap();
+            let manager = Arc::new(RwLock::new(wm));
+            let block = |record| WalletEvent::BlockProcessed {
+                wallet_id,
+                height: 100_002,
+                chain_lock: None,
+                inserted: vec![],
+                updated: vec![record],
+                matured: vec![],
+                balance: WalletCoreBalance::default(),
+                account_balances: BTreeMap::new(),
+                addresses_derived: vec![],
+            };
+            let durable = DurableCursors::default();
+            let mut batch = BTreeMap::new();
+            project_event_into_batch(&manager, &durable, &block(sibling.clone()), &mut batch).await;
+            assert_eq!(
+                batch[&wallet_id].core.utxo_credit_verdicts.get(&coin),
+                Some(&UtxoCreditVerdict::ObservedSpent { height: 100_001 })
+            );
+            if credited {
+                manager
+                    .write()
+                    .await
+                    .get_wallet_info_mut(&wallet_id)
+                    .unwrap()
+                    .core_wallet
+                    .accounts
+                    .standard_bip44_accounts
+                    .get_mut(&0)
+                    .unwrap()
+                    .utxos
+                    .insert(
+                        coin,
+                        key_wallet::Utxo::new(
+                            coin,
+                            funding.output[0].clone(),
+                            ctx.receive_address.clone(),
+                            100_000,
+                            false,
+                        ),
+                    );
+            }
+            project_event_into_batch(&manager, &durable, &block(marker), &mut batch).await;
+            let merged = &batch[&wallet_id].core;
+            assert_eq!(merged.records.len(), 1);
+            assert_eq!(merged.records[0].net_amount, sibling.net_amount);
+            let outputs = |record: &TransactionRecord| {
+                record
+                    .output_details
+                    .iter()
+                    .map(|detail| {
+                        (
+                            detail.index,
+                            detail.role,
+                            detail.address.clone(),
+                            detail.value,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(outputs(&merged.records[0]), outputs(&sibling));
+            assert_eq!(merged.records[0].context, in_block(100_002));
+            assert!(
+                merged
+                    .account_records
+                    .iter()
+                    .any(|r| r.account_type == sibling.account_type
+                        && outputs(r) == outputs(&sibling)),
+                "the callback still carries the owned sibling output"
+            );
+            assert_eq!(
+                merged.utxo_credit_verdicts.get(&coin),
+                (!credited).then_some(&UtxoCreditVerdict::ObservedSpent { height: 100_001 }),
+                "only genuine current credit clears the buffered withholding verdict"
+            );
+        }
     }
 
     /// `TransactionDetected` judges the outputs of the records it READS,
