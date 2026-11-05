@@ -408,6 +408,7 @@ pub fn classify_outpoints(
     queries: &[OutpointOwnershipQuery],
 ) -> Vec<OutpointClass> {
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
     let Some(info) = wm.get_wallet_info(wallet_id) else {
         return vec![OutpointClass::Unknown; queries.len()];
@@ -478,13 +479,7 @@ pub fn classify_outpoints(
     if rest.is_empty() {
         return classes;
     }
-    let Some(chain_locked) = info
-        .core_wallet
-        .metadata
-        .last_applied_chain_lock
-        .as_ref()
-        .map(|lock| lock.block_height)
-    else {
+    let Some(chain_locked) = info.last_applied_chain_lock().map(|lock| lock.block_height) else {
         // No record is final before the wallet's first ChainLock.
         return classes;
     };

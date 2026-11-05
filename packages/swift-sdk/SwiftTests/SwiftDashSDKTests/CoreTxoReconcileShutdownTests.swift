@@ -21,7 +21,7 @@ final class FakeReconcileNative: @unchecked Sendable {
     init(
         engine: any CoreTxoReconcileEngine,
         holding: @escaping @Sendable () -> Bool,
-        gate: CoreTxoReconcileGate = .run(tipHeight: 2_535_898, start: .heal(resumed: false))
+        gate: CoreTxoReconcileGate = .run(start: .heal(resumed: false))
     ) {
         self.engine = engine
         self.holding = holding
@@ -30,7 +30,7 @@ final class FakeReconcileNative: @unchecked Sendable {
 
     convenience init(
         engine: FakeCoreTxoEngine,
-        gate: CoreTxoReconcileGate = .run(tipHeight: 2_535_898, start: .heal(resumed: false))
+        gate: CoreTxoReconcileGate = .run(start: .heal(resumed: false))
     ) {
         self.init(engine: engine, holding: { engine.isHoldingVerdicts }, gate: gate)
     }
@@ -342,7 +342,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
         let (handler, container) = try makeHandler()
         try seedUnspentTxos(in: container, [0x62, 0x63])
         let engine = FakeCoreTxoEngine(inventory: [engineUtxo(0x13)])
-        let native = FakeReconcileNative(engine: engine, gate: .run(tipHeight: 2_400_001, start: .heal(resumed: false)))
+        let native = FakeReconcileNative(engine: engine, gate: .run(start: .heal(resumed: false)))
         let classifies = Counter()
         // The second page's classification fails, after the first page's
         // guard was released.
@@ -379,7 +379,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
         let engine = FakeCoreTxoEngine(inventory: [engineUtxo(0x18)])
         let after = PlatformWalletManager.coreTxoStoreCursor(offset: 1)
         let native = FakeReconcileNative(
-            engine: engine, gate: .run(tipHeight: 2_400_002, start: .classify(after: after)))
+            engine: engine, gate: .run(start: .classify(after: after)))
 
         let outcome = try PlatformWalletManager.performCoreTxoReconcileRun(
             handle: 42, walletId: walletId, calls: native.calls(), handler: handler, pageSize: 4,

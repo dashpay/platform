@@ -96,6 +96,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use arc_swap::ArcSwap;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet_manager::WalletManager;
 use tokio::sync::{OwnedRwLockReadGuard, RwLock};
 
@@ -130,11 +131,12 @@ pub const TXO_RECONCILE_MAX_STALE_RETRIES: u32 = 5;
 /// pass's store pages together (a page read again counts again). Anyone
 /// can send dust to a watched address, so the inventory can grow without
 /// the owner doing anything; a run that always walked all of it would turn
-/// that growth into work on every automatic run. With
-/// [`crate::manager::accessors::WALLET_UTXO_PAGE_MAX`]-sized pages a wallet
-/// of a few thousand coins still finishes a whole cycle in one run; a
-/// larger one is covered over several, one budget per
-/// [`TXO_RECONCILE_CADENCE`].
+/// that growth into work on every automatic run. Pages are whatever size
+/// the host asks for (a heal page at most
+/// [`crate::manager::accessors::WALLET_UTXO_PAGE_MAX`] rows), so one run
+/// covers at most this many of them: a wallet whose heal and classify
+/// passes fit in that finishes a whole cycle in one run, and a larger one
+/// is covered over several, one budget per [`TXO_RECONCILE_CADENCE`].
 pub const TXO_RECONCILE_PAGE_BUDGET: u32 = 16;
 
 /// The longest store cursor a host may hand
@@ -159,8 +161,6 @@ pub enum TxoReconcileStart {
 /// A run's claim, as [`TxoReconciler::begin`] grants it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TxoReconcileRun {
-    /// The scan tip the run's gate measured.
-    pub tip: u32,
     /// Where the run starts.
     pub start: TxoReconcileStart,
 }
@@ -181,6 +181,17 @@ pub enum TxoReconcileRead<T> {
 enum Checkpoint {
     Heal(WalletUtxoCursor),
     Classify(Vec<u8>),
+}
+
+/// What an applied page does to its wallet's checkpoint.
+enum CheckpointMove {
+    /// The page was not the kind the host reported (or its cursor is too
+    /// long to keep): nothing moves.
+    Ignore,
+    /// The wallet's next run starts here.
+    Set(Checkpoint),
+    /// The cycle is over: the wallet's next run starts a new one.
+    Clear,
 }
 
 /// What a held read sees of its run's claim, copied out before the read
@@ -381,6 +392,19 @@ pub fn txo_heal_page(
     (rows, has_more)
 }
 
+/// The cursor after one heal page, or `None` when it is the heal pass's
+/// last. An empty page is the last whatever the walk reported: it moves no
+/// cursor, so another read would return it again. The page's `has_more`
+/// is whether this is `Some`, so a host can stop at an empty page.
+fn heal_page_next(
+    rows: &[(WalletUtxoRow, TxoHealVerdict)],
+    has_more: bool,
+) -> Option<WalletUtxoCursor> {
+    rows.last()
+        .filter(|_| has_more)
+        .map(|(row, _)| (row.account_type, row.outpoint))
+}
+
 /// The height one heal page's confirmations are counted to: the scan tip
 /// the run's start gate measured, or the wallet's last processed height in
 /// `wm` when that is lower. The tip is the run's, never the host's, so a
@@ -396,7 +420,7 @@ pub fn txo_heal_reference_height(
     run_tip: u32,
 ) -> u32 {
     wm.get_wallet_info(wallet_id)
-        .map_or(0, |info| info.core_wallet.metadata.last_processed_height)
+        .map_or(0, |info| info.last_processed_height())
         .min(run_tip)
 }
 
@@ -657,7 +681,7 @@ impl<'a> ProvisionalClaim<'a> {
             claim.pages_left = TXO_RECONCILE_PAGE_BUDGET;
             claim.heal_after = heal_after;
         }
-        TxoReconcileRun { tip, start }
+        TxoReconcileRun { start }
     }
 }
 
@@ -708,11 +732,11 @@ impl TxoReconciler {
     /// Claim `wallet_id` for one run and check that it may start, in order:
     /// no run already in flight, SPV in steady state with a scan tip, no
     /// latched sync fault, and the wallet's scan watermark within
-    /// [`TXO_RECONCILE_TIP_MARGIN`] blocks of the tip. Returns that scan
-    /// tip, which the claim keeps: the run's heal verdicts are measured
-    /// against it ([`Self::heal_page_held`]), so the host only reports it.
-    /// Also returns where the run starts ([`TxoReconcileStart`]), from the
-    /// wallet's checkpoint, and gives the run [`TXO_RECONCILE_PAGE_BUDGET`]
+    /// [`TXO_RECONCILE_TIP_MARGIN`] blocks of the tip. The claim keeps that
+    /// scan tip: the run's heal verdicts are measured against it
+    /// ([`Self::heal_page_held`]), and the host never sees it. Returns
+    /// where the run starts ([`TxoReconcileStart`]), from the wallet's
+    /// checkpoint, and gives the run [`TXO_RECONCILE_PAGE_BUDGET`]
     /// pages. On `Ok` the claim holds until [`Self::finish`]; a refusal
     /// releases it, and so does dropping this future before it completes.
     pub async fn begin(&self, wallet_id: &WalletId) -> Result<TxoReconcileRun, TxoReconcileSkip> {
@@ -804,7 +828,8 @@ impl TxoReconciler {
     /// wallet's checkpoint left an earlier run. A page read again before it
     /// is reported applied is the same page. Each call is one page of the
     /// run's budget; a run that has used it gets
-    /// [`TxoReconcileRead::BudgetSpent`].
+    /// [`TxoReconcileRead::BudgetSpent`]. The page's `bool` is whether
+    /// another heal page follows; it is false on an empty page.
     ///
     /// `None` — nothing read, nothing held — when the wallet holds no run
     /// claim, or its claim was released while this waited.
@@ -817,11 +842,8 @@ impl TxoReconciler {
             let height = txo_heal_reference_height(wm, wallet_id, run.tip);
             let (rows, has_more) =
                 txo_heal_page(wm, wallet_id, run.heal_after.as_ref(), limit, height);
-            let next = rows
-                .last()
-                .filter(|_| has_more)
-                .map(|(row, _)| (row.account_type, row.outpoint));
-            ((rows, has_more), PendingPage::Heal(next))
+            let next = heal_page_next(&rows, has_more);
+            ((rows, next.is_some()), PendingPage::Heal(next))
         })
         .await
     }
@@ -835,12 +857,12 @@ impl TxoReconciler {
         self.page_applied(wallet_id, |claim| match claim.pending {
             Some(PendingPage::Heal(next)) => {
                 claim.heal_after = next;
-                Some(Some(match next {
+                CheckpointMove::Set(match next {
                     Some(after) => Checkpoint::Heal(after),
                     None => Checkpoint::Classify(Vec::new()),
-                }))
+                })
             }
-            _ => None,
+            _ => CheckpointMove::Ignore,
         })
     }
 
@@ -853,22 +875,22 @@ impl TxoReconciler {
     pub fn classify_page_applied(&self, wallet_id: &WalletId, next_after: Option<&[u8]>) -> bool {
         self.page_applied(wallet_id, |claim| match claim.pending {
             Some(PendingPage::Classify) => match next_after {
-                Some(after) if after.len() > TXO_RECONCILE_STORE_CURSOR_MAX => None,
-                Some(after) => Some(Some(Checkpoint::Classify(after.to_vec()))),
-                None => Some(None),
+                Some(after) if after.len() > TXO_RECONCILE_STORE_CURSOR_MAX => {
+                    CheckpointMove::Ignore
+                }
+                Some(after) => CheckpointMove::Set(Checkpoint::Classify(after.to_vec())),
+                None => CheckpointMove::Clear,
             },
-            _ => None,
+            _ => CheckpointMove::Ignore,
         })
     }
 
     /// The body of the two `*_page_applied` calls: `advance` turns the
-    /// claim's pending page into the wallet's new checkpoint — `Some(None)`
-    /// ends the cycle, `None` means the page was not of that kind and
-    /// nothing moves.
+    /// claim's pending page into a [`CheckpointMove`] for the wallet.
     fn page_applied(
         &self,
         wallet_id: &WalletId,
-        advance: impl FnOnce(&mut ReconcileClaim) -> Option<Option<Checkpoint>>,
+        advance: impl FnOnce(&mut ReconcileClaim) -> CheckpointMove,
     ) -> bool {
         let mut schedule = lock_schedule(&self.schedule);
         let Some(claim) = schedule.in_flight.get_mut(wallet_id) else {
@@ -877,14 +899,15 @@ impl TxoReconciler {
         let moved = advance(claim);
         claim.pending = None;
         let (forgotten, may_continue) = (claim.forgotten, claim.pages_left > 0);
-        match moved.filter(|_| !forgotten) {
-            Some(Some(checkpoint)) => {
+        match moved {
+            _ if forgotten => {}
+            CheckpointMove::Set(checkpoint) => {
                 schedule.checkpoints.insert(*wallet_id, checkpoint);
             }
-            Some(None) => {
+            CheckpointMove::Clear => {
                 schedule.checkpoints.remove(wallet_id);
             }
-            None => {}
+            CheckpointMove::Ignore => {}
         }
         may_continue
     }
@@ -956,7 +979,7 @@ impl TxoReconciler {
         let synced_height = {
             let wm = self.wallet_manager.read().await;
             wm.get_wallet_info(wallet_id)
-                .map(|info| info.core_wallet.metadata.synced_height)
+                .map(|info| info.synced_height())
         };
         txo_reconcile_wallet_gate(synced_height, tip)?;
         Ok(tip)
@@ -1238,6 +1261,35 @@ mod tests {
         let (rows, has_more) = txo_heal_page(&wm, &[0xEE; 32], None, 10, TIP);
         assert!(rows.is_empty());
         assert!(!has_more);
+    }
+
+    #[test]
+    fn an_empty_heal_page_is_always_the_last() {
+        assert_eq!(heal_page_next(&[], true), None);
+        assert_eq!(heal_page_next(&[], false), None);
+        let rows = [(row(TIP, true), TxoHealVerdict::Eligible)];
+        assert_eq!(heal_page_next(&rows, false), None);
+        assert_eq!(
+            heal_page_next(&rows, true),
+            Some((rows[0].0.account_type, rows[0].0.outpoint))
+        );
+    }
+
+    /// A run's empty heal page reports no more pages and moves the wallet
+    /// on to the classify pass.
+    #[tokio::test]
+    async fn an_empty_heal_page_ends_the_heal_pass() {
+        let reconciler = reconciler();
+        assert!(reconciler.claim_without_gate(&A, TIP).is_some());
+        let ((rows, has_more), held) = page(reconciler.heal_page_held(&A, 10).await);
+        drop(held);
+        assert!(rows.is_empty());
+        assert!(!has_more);
+        assert!(reconciler.heal_page_applied(&A));
+        assert_eq!(
+            lock_schedule(&reconciler.schedule).checkpoints.get(&A),
+            Some(&Checkpoint::Classify(Vec::new()))
+        );
     }
 
     #[test]
@@ -1537,30 +1589,29 @@ mod tests {
                 .await,
             Err(TxoReconcileSkip::WalletBehindTip)
         );
-        assert_eq!(
-            reconciler
-                .claim_across(&A, async { Ok(TIP) })
-                .await
-                .map(|run| run.tip),
-            Ok(TIP),
+        let claim_tip = || {
+            lock_schedule(&reconciler.schedule)
+                .in_flight
+                .get(&A)
+                .map(|claim| claim.tip)
+        };
+        assert!(
+            reconciler.claim_across(&A, async { Ok(TIP) }).await.is_ok(),
             "the refusal released its claim"
         );
+        assert_eq!(claim_tip(), Some(TIP), "the claim keeps the gate's tip");
         assert_eq!(
-            reconciler
-                .claim_across(&A, async { Ok(TIP) })
-                .await
-                .map(|run| run.tip),
+            reconciler.claim_across(&A, async { Ok(TIP + 1) }).await,
             Err(TxoReconcileSkip::AlreadyRunning),
             "the granted claim outlives the begin that took it"
         );
+        assert_eq!(claim_tip(), Some(TIP), "a refused claim leaves the tip");
         reconciler.finish(&A, true);
-        assert_eq!(
-            reconciler
-                .claim_across(&A, async { Ok(TIP) })
-                .await
-                .map(|run| run.tip),
-            Ok(TIP)
-        );
+        assert!(reconciler
+            .claim_across(&A, async { Ok(TIP + 1) })
+            .await
+            .is_ok());
+        assert_eq!(claim_tip(), Some(TIP + 1));
     }
 
     /// A run reads at most its budget of pages, heal and classify pages

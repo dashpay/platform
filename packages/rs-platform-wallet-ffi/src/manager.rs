@@ -1583,7 +1583,6 @@ mod tests {
     #[test]
     fn classify_outpoints_answers_unknown_for_an_unmappable_account_tag() {
         use crate::core_wallet_types::{OutPointFFI, OutpointOwnershipQueryFFI};
-        use crate::manager_diagnostics::platform_wallet_classify_outpoints;
         use crate::txo_reconcile::{
             platform_wallet_txo_reconcile_classify_outpoints,
             platform_wallet_txo_reconcile_held_verdicts_free, TxoReconcileHeldVerdictsFFI,
@@ -1621,28 +1620,8 @@ mod tests {
         // An identity-key account tag, a mappable BIP44 tag, and a tag from
         // the future, in one batch.
         let queries = [query(15), query(0), query(200)];
-        let mut out = [0xFFu8; 3];
-        let result = unsafe {
-            platform_wallet_classify_outpoints(
-                handle,
-                wallet_id.as_ptr(),
-                queries.as_ptr(),
-                queries.len(),
-                out.as_mut_ptr(),
-            )
-        };
-        assert_eq!(
-            result.code,
-            PlatformWalletFFIResultCode::Success,
-            "an unmappable tag degrades that query to Unknown, it does not fail the batch"
-        );
-        assert_eq!(
-            out,
-            [0, 0, 0],
-            "every slot is answered, Unknown where nothing can be said"
-        );
-        // The reconcile's classifier shares the marshalling; it answers only
-        // a wallet that holds a run claim, and holds nothing otherwise.
+        // The classifier answers only a wallet that holds a run claim, and
+        // holds nothing otherwise; every slot still reads Unknown.
         let mut out = [0xFFu8; 3];
         let mut held: *mut TxoReconcileHeldVerdictsFFI = std::ptr::null_mut();
         let result = unsafe {
@@ -1663,7 +1642,9 @@ mod tests {
         assert_eq!(out, [0, 0, 0]);
         assert!(held.is_null());
 
-        // With a run claim, every slot is answered and the guard comes back.
+        // With a run claim, an unmappable tag degrades that query to
+        // Unknown rather than failing the batch, every slot is answered and
+        // the guard comes back.
         let reconciler = PLATFORM_WALLET_MANAGER_STORAGE
             .with_item(handle, |m| m.txo_reconciler())
             .expect("manager");

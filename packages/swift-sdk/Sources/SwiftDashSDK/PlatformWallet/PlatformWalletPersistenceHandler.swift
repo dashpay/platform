@@ -11524,9 +11524,6 @@ struct CoreTxoHealCounts: Sendable {
     /// Coins whose address has no row under the resolved account.
     var skippedMissingAddress = 0
     var skippedInvalid = 0
-    /// Outpoints written, logged once the step saved.
-    var healedOutpoints: [Data] = []
-    var healedSpentOutpoints: [Data] = []
 }
 
 /// Counts from one classify-apply step.
@@ -11541,8 +11538,6 @@ struct CoreTxoFlipCounts: Sendable {
     /// A round committed between the read and the apply, or one is open at
     /// the apply: nothing written, the page is classified again.
     var staleGeneration = false
-    /// Outpoints flipped, logged once the step saved.
-    var flippedOutpoints: [Data] = []
 }
 
 extension PlatformWalletPersistenceHandler {
@@ -11581,6 +11576,9 @@ extension PlatformWalletPersistenceHandler {
             guard !isCancelled() else { return .stopped }
             guard !inChangeset else { return .retryLater }
             var counts = CoreTxoHealCounts()
+            // Outpoints written, logged once the step saved.
+            var healedOutpoints: [Data] = []
+            var healedSpentOutpoints: [Data] = []
             for healRow in rows {
                 let row = healRow.utxo
                 guard row.txid.count == 32 else {
@@ -11676,12 +11674,12 @@ extension PlatformWalletPersistenceHandler {
                     // now says spent, and nothing un-marks a spent row — so it
                     // is counted on its own for the operator to see.
                     counts.healedSpent += 1
-                    counts.healedSpentOutpoints.append(outpoint)
+                    healedSpentOutpoints.append(outpoint)
                     continue
                 }
                 counts.inserted += 1
                 counts.insertedDuffs = counts.insertedDuffs.addingReportingOverflow(row.amount).0
-                counts.healedOutpoints.append(outpoint)
+                healedOutpoints.append(outpoint)
             }
             guard counts.inserted + counts.healedSpent == 0
                 || reconcileSave(operation: "txo_reconcile_heal", walletId: walletId)
@@ -11690,8 +11688,8 @@ extension PlatformWalletPersistenceHandler {
             }
             // Logged once the step saved, so a rolled-back step never claims
             // a row it did not write.
-            counts.healedOutpoints.forEach { logReconcileItem("healed", outpoint: $0, walletId: walletId) }
-            counts.healedSpentOutpoints.forEach { logReconcileItem("healed_spent", outpoint: $0, walletId: walletId) }
+            healedOutpoints.forEach { logReconcileItem("healed", outpoint: $0, walletId: walletId) }
+            healedSpentOutpoints.forEach { logReconcileItem("healed_spent", outpoint: $0, walletId: walletId) }
             return .done(counts)
         }
     }
@@ -11814,6 +11812,8 @@ extension PlatformWalletPersistenceHandler {
                 return .done(stale)
             }
             var counts = CoreTxoFlipCounts()
+            // Outpoints flipped, logged once the step saved.
+            var flippedOutpoints: [Data] = []
             for (row, verdict) in zip(rows, classes) {
                 switch verdict {
                 case .unspent:
@@ -11838,13 +11838,13 @@ extension PlatformWalletPersistenceHandler {
                     removePendingInputs(for: row.outpoint)
                     counts.flipped += 1
                     counts.flippedDuffs = counts.flippedDuffs.addingReportingOverflow(txo.amount).0
-                    counts.flippedOutpoints.append(row.outpoint)
+                    flippedOutpoints.append(row.outpoint)
                 }
             }
             guard counts.flipped == 0 || reconcileSave(operation: "txo_reconcile_flip", walletId: walletId) else {
                 return .failed
             }
-            counts.flippedOutpoints.forEach { logReconcileItem("flipped_spent", outpoint: $0, walletId: walletId) }
+            flippedOutpoints.forEach { logReconcileItem("flipped_spent", outpoint: $0, walletId: walletId) }
             return .done(counts)
         }
     }

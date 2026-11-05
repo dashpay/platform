@@ -163,8 +163,9 @@ final class FakeCoreTxoEngine: CoreTxoReconcileEngine, @unchecked Sendable {
             let start = min(_healAfter, _inventory.count)
             let end = min(start + limit, _inventory.count)
             let rows = start < end ? Array(_inventory[start..<end]) : []
-            let hasMore = end < _inventory.count
-            _pending = .heal(hasMore && !rows.isEmpty ? end : nil)
+            // As the native engine: an empty page is always the last.
+            let hasMore = end < _inventory.count && !rows.isEmpty
+            _pending = .heal(hasMore ? end : nil)
             return .page((
                 rows.map { CoreTxoHealRow(utxo: $0, verdict: _healVerdicts[$0.outpoint] ?? .eligible) },
                 hasMore

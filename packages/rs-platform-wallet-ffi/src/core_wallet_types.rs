@@ -2306,9 +2306,9 @@ mod tests {
 /// `AccountBalanceEntryFFI` use, so a store that keys rows by account can
 /// file a healed row under the right one.
 ///
-/// Returned by `platform_wallet_wallet_utxos_page`; every row's `address`
-/// and `script_pubkey` allocations belong to Rust and are released by
-/// `platform_wallet_wallet_utxos_page_free`.
+/// Returned in `platform_wallet_txo_reconcile_heal_page`'s rows; every
+/// row's `address` and `script_pubkey` allocations belong to Rust and are
+/// released by `platform_wallet_txo_reconcile_heal_page_free`.
 #[repr(C)]
 #[derive(Debug)]
 pub struct WalletUtxoEntryFFI {
@@ -2334,23 +2334,8 @@ pub struct WalletUtxoEntryFFI {
     pub is_locked: bool,
 }
 
-/// Cursor for `platform_wallet_wallet_utxos_page`: the owning account (the
-/// raw tag layout of `AccountSpecFFI`, validated on the Rust side) and
-/// outpoint of the LAST row of the previous page. Pass null to start.
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct WalletUtxoCursorFFI {
-    pub type_tag: u8,
-    pub standard_tag: u8,
-    pub index: u32,
-    pub registration_index: u32,
-    pub key_class: u32,
-    pub user_identity_id: [u8; 32],
-    pub friend_identity_id: [u8; 32],
-    pub outpoint: OutPointFFI,
-}
-
-/// One store row handed to `platform_wallet_classify_outpoints`: the
+/// One store row handed to
+/// `platform_wallet_txo_reconcile_classify_outpoints`: the
 /// account the store files the coin under (raw `AccountSpecFFI` tag
 /// layout), the outpoint, and the script the store recorded for it. Every
 /// pointer is valid for the duration of the call only.
@@ -2369,18 +2354,18 @@ pub struct OutpointOwnershipQueryFFI {
     pub script_pubkey_len: usize,
 }
 
-/// `platform_wallet_classify_outpoints` answer: the engine has no opinion
+/// `platform_wallet_txo_reconcile_classify_outpoints` answer: the engine has no opinion
 /// (a funding transaction this session never processed — after a restart
 /// the finalized set is empty, so absence proves nothing).
 pub const OUTPOINT_CLASS_UNKNOWN: u8 = 0;
-/// `platform_wallet_classify_outpoints` answer: the coin is in a funds
+/// `platform_wallet_txo_reconcile_classify_outpoints` answer: the coin is in a funds
 /// account's live UTXO set.
 pub const OUTPOINT_CLASS_UNSPENT: u8 = 1;
-/// `platform_wallet_classify_outpoints` answer: the owning account knows
+/// `platform_wallet_txo_reconcile_classify_outpoints` answer: the owning account knows
 /// the funding txid, owns the script, and does not hold the coin — the
 /// engine skipped it for a spent reason or consumed it. The one class a
 /// reconciler may act on.
 pub const OUTPOINT_CLASS_KNOWN_UNCREDITED: u8 = 2;
-/// `platform_wallet_classify_outpoints` answer: the owning account's pools
+/// `platform_wallet_txo_reconcile_classify_outpoints` answer: the owning account's pools
 /// do not monitor the script; the engine could never have credited it.
 pub const OUTPOINT_CLASS_NOT_OWNED: u8 = 3;

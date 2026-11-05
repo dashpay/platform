@@ -197,7 +197,7 @@ protocol CoreTxoReconcileEngine: Sendable {
     /// The run's next page of the wallet's UTXO inventory — after the last
     /// heal page reported applied, or where the wallet's last run stopped —
     /// at most `limit` rows, each with its heal verdict, and whether more
-    /// follow. The engine keeps its wallet lock held for reading when this
+    /// follow (never on an empty page). The engine keeps its wallet lock held for reading when this
     /// returns a page, so no fork can drop a coin the page offers before
     /// the store has written it; `releaseVerdicts()` lets it go. A page
     /// asked for while a previous guard is still held frees that one first.
@@ -407,10 +407,10 @@ enum CoreTxoReconcileStart: Equatable, Sendable {
 
 /// What `platform_wallet_manager_txo_reconcile_begin` answered.
 enum CoreTxoReconcileGate: Equatable, Sendable {
-    /// The run may start, measured against `tipHeight` (the native claim
-    /// keeps it; the host only reports it), at `start`; the wallet is
-    /// claimed until `platform_wallet_manager_txo_reconcile_finish`.
-    case run(tipHeight: UInt32, start: CoreTxoReconcileStart)
+    /// The run may start at `start`; the wallet is claimed until
+    /// `platform_wallet_manager_txo_reconcile_finish`. The native claim
+    /// keeps the scan tip the run is measured against.
+    case run(start: CoreTxoReconcileStart)
     /// The gate's `TXO_RECONCILE_SKIP_*` code. Nothing is claimed.
     case skip(code: UInt8)
 }
@@ -448,11 +448,7 @@ enum CoreTxoReconcileFFI {
     /// (`platform_wallet_manager_txo_reconcile_due_wallets`). Called on every
     /// progress poll, running or not: the poll is the schedule's clock.
     static func dueWallets(_ handle: Handle) throws -> [Data] {
-        var array = IdentifierArray()
-        try platform_wallet_manager_txo_reconcile_due_wallets(handle, &array).check()
-        defer { platform_wallet_identifier_array_free(&array) }
-        guard array.items != nil, array.count > 0 else { return [] }
-        return (0..<Int(array.count)).map { identifierFromFFIArray(array, at: $0) }
+        try readIdentifierArray { platform_wallet_manager_txo_reconcile_due_wallets(handle, &$0) }
     }
 
     /// The start gate. On `RUN` the wallet is claimed; a start code this
@@ -464,7 +460,6 @@ enum CoreTxoReconcileFFI {
             return .skip(code: UInt8(TXO_RECONCILE_SKIP_WALLET_UNKNOWN))
         }
         var gate = UInt8(TXO_RECONCILE_SKIP_WALLET_UNKNOWN)
-        var tipHeight: UInt32 = 0
         var startCode = UInt8(TXO_RECONCILE_START_HEAL)
         var storeAfter = [UInt8](repeating: 0, count: storeCursorMax)
         var storeAfterLength: UInt = 0
@@ -474,7 +469,6 @@ enum CoreTxoReconcileFFI {
                     handle,
                     raw.baseAddress?.assumingMemoryBound(to: UInt8.self),
                     &gate,
-                    &tipHeight,
                     &startCode,
                     afterPtr.baseAddress,
                     &storeAfterLength
@@ -488,7 +482,7 @@ enum CoreTxoReconcileFFI {
             try? finish(handle, walletId: walletId, ran: false)
             throw PlatformWalletError.walletOperation("unknown TXO reconcile start code \(startCode)")
         }
-        return .run(tipHeight: tipHeight, start: start)
+        return .run(start: start)
     }
 
     static func finish(_ handle: Handle, walletId: Data, ran: Bool) throws {

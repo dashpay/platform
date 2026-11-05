@@ -185,7 +185,7 @@ extension PlatformWalletManager {
                 throw PlatformWalletError.walletOperation("unknown TXO reconcile gate code \(code)")
             }
             return .skipped(reason)
-        case .run(_, let granted):
+        case .run(let granted):
             start = granted
         }
 
@@ -428,7 +428,7 @@ extension PlatformWalletManager {
                 stopOnBudget(&report)
                 return false
             }
-            if !page.hasMore || page.rows.isEmpty { return true }
+            if !page.hasMore { return true }
         }
     }
 
@@ -471,10 +471,20 @@ extension PlatformWalletManager {
                 handler.reconcileUnspentTxoPage(
                     walletId: walletId, offset: offset, limit: limit, isCancelled: isCancelled)
             }) else { return }
-            report.storeRows += page.rows.count
-            report.unresolvedAccount += page.unresolvedAccount
             var flippedThisPage = 0
             do {
+                // The page counts as walked on every way out of its step but
+                // the two that hand it to a later read: no budget left to
+                // classify it, and a stale apply that reads it again. Counted
+                // once, as the step ends — before the page is reported
+                // applied.
+                var handedBack = false
+                defer {
+                    if !handedBack {
+                        report.storeRows += page.rows.count
+                        report.unresolvedAccount += page.unresolvedAccount
+                    }
+                }
                 defer { engine.releaseVerdicts() }
                 let read: CoreTxoReconcileRead<[CoreOutpointClass]>
                 do {
@@ -487,8 +497,7 @@ extension PlatformWalletManager {
                 guard case .page(let classes) = read else {
                     // Not classified: this run walked none of the page, and
                     // the next run reads it.
-                    report.storeRows -= page.rows.count
-                    report.unresolvedAccount -= page.unresolvedAccount
+                    handedBack = true
                     stopOnBudget(&report)
                     return
                 }
@@ -540,8 +549,7 @@ extension PlatformWalletManager {
                         // Same offset, not reported applied: nothing was
                         // written, so the page is read again and classified
                         // against the store as it is now.
-                        report.storeRows -= page.rows.count
-                        report.unresolvedAccount -= page.unresolvedAccount
+                        handedBack = true
                         continue
                     }
                     report.flipped += counts.flipped
