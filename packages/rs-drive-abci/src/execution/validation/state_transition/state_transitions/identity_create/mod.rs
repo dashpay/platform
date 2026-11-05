@@ -2549,11 +2549,10 @@ mod tests {
     mod fields_outside_the_asset_lock_signature {
         use super::*;
         use crate::execution::check_tx::CheckTxLevel;
+        use crate::execution::validation::state_transition::state_transitions::tests::process_state_transitions_with_results;
         use crate::platform_types::platform::PlatformRef;
         use crate::platform_types::platform_state::PlatformStateV0Methods;
-        use crate::platform_types::state_transitions_processing_result::{
-            StateTransitionExecutionResult, StateTransitionsProcessingResult,
-        };
+        use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
         use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::TempPlatform;
         use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
@@ -2565,7 +2564,9 @@ mod tests {
         use dpp::dashcore::hashes::Hash;
         use dpp::dashcore::{BlockHash, OutPoint, Transaction};
         use dpp::dashcore_rpc::json::GetRawTransactionResult;
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::fee::Credits;
+        use dpp::identity::contract_bounds::ContractBounds;
         use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
         use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
         use dpp::identity::state_transition::asset_lock_proof::{
@@ -2574,6 +2575,7 @@ mod tests {
         use dpp::identity::KeyType::ECDSA_HASH160;
         use dpp::identity::{Purpose, SecurityLevel};
         use dpp::platform_value::Bytes36;
+        use dpp::prelude::UserFeeIncrease;
         use dpp::serialization::Signable;
         use dpp::state_transition::public_key_in_creation::accessors::{
             IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
@@ -2581,7 +2583,9 @@ mod tests {
         use dpp::tests::fixtures::{
             instant_asset_lock_is_lock_fixture, instant_asset_lock_proof_transaction_fixture,
         };
+        use dpp::tests::json_document::json_document_to_contract;
         use dpp::version::ProtocolVersion;
+        use drive::util::storage_flags::StorageFlags;
         use platform_version::version::LATEST_VERSION;
 
         /// The protocol versions the check_tx tests run at: 1 (the first), 13 (the last whose
@@ -2691,6 +2695,8 @@ mod tests {
             /// The valid keys, except that the hash key's data has this many bytes instead of
             /// the 20 bytes of a hash
             WithAHashKeyOfSize(usize),
+            /// The valid keys, except that the critical key is bound to this contract
+            WithAKeyBoundToContract(Identifier),
         }
 
         /// How an identity create proves its asset lock.
@@ -2726,21 +2732,24 @@ mod tests {
 
         /// An identity create funded by an instant asset lock, with every signature valid.
         async fn registration(keys: Keys, platform_version: &PlatformVersion) -> Registration {
-            registration_proved_by(keys, AssetLockProofKind::Instant, platform_version).await
+            registration_proved_by(keys, AssetLockProofKind::Instant, 0, platform_version).await
         }
 
-        /// An identity create whose asset lock is proved by `proof_kind`, with every signature
-        /// valid.
+        /// An identity create whose asset lock is proved by `proof_kind`, signed with
+        /// `user_fee_increase`, with every signature valid. The keys and the asset lock depend
+        /// on `keys` and `proof_kind` alone, so two registrations that differ only in
+        /// `user_fee_increase` are the same keys signed again.
         async fn registration_proved_by(
             keys: Keys,
             proof_kind: AssetLockProofKind,
+            user_fee_increase: UserFeeIncrease,
             platform_version: &PlatformVersion,
         ) -> Registration {
             let mut signer = SimpleSigner::default();
             let mut rng = StdRng::seed_from_u64(567);
 
             let (first_key, first_private_key) = match keys {
-                Keys::Valid | Keys::WithAHashKeyOfSize(_) => {
+                Keys::Valid | Keys::WithAHashKeyOfSize(_) | Keys::WithAKeyBoundToContract(_) => {
                     IdentityPublicKey::random_ecdsa_master_authentication_key(
                         0,
                         Some(58),
@@ -2758,13 +2767,20 @@ mod tests {
             .expect("expected to get key pair");
             signer.add_identity_public_key(first_key.clone(), first_private_key);
 
-            let (second_key, second_private_key) =
+            let (mut second_key, second_private_key) =
                 IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
                     1,
                     Some(999),
                     platform_version,
                 )
                 .expect("expected to get key pair");
+            if let Keys::WithAKeyBoundToContract(contract_id) = keys {
+                let IdentityPublicKey::V0(second_key_v0) = &mut second_key else {
+                    panic!("expected a version 0 key");
+                };
+                second_key_v0.contract_bounds =
+                    Some(ContractBounds::SingleContract { id: contract_id });
+            }
             signer.add_identity_public_key(second_key.clone(), second_private_key);
 
             let (mut hash_key, _) = IdentityPublicKey::random_key_with_known_attributes(
@@ -2821,7 +2837,7 @@ mod tests {
                     pk.as_slice(),
                     &signer,
                     &NativeBlsModule,
-                    0,
+                    user_fee_increase,
                     platform_version,
                 )
                 .await
@@ -2863,41 +2879,23 @@ mod tests {
                 .errors
         }
 
-        /// Processes the transitions as one block and commits it.
+        /// Runs the transitions through a whole block at the platform's protocol version and
+        /// commits it; the block-end sum tree check panics on a credit imbalance.
         fn process_block(
             platform: &TempPlatform<MockCoreRPCLike>,
             transitions: &[&StateTransition],
-            platform_version: &PlatformVersion,
-        ) -> StateTransitionsProcessingResult {
-            let raw_transitions: Vec<Vec<u8>> = transitions
+        ) -> Vec<StateTransitionExecutionResult> {
+            let transitions: Vec<StateTransition> = transitions
                 .iter()
-                .map(|transition| {
-                    transition
-                        .serialize_to_bytes()
-                        .expect("expected to serialize")
-                })
+                .map(|transition| (*transition).clone())
                 .collect();
-            let platform_state = platform.state.load();
-            let transaction = platform.drive.grove.start_transaction();
-            let result = platform
-                .platform
-                .process_raw_state_transitions(
-                    &raw_transitions,
-                    &platform_state,
-                    &BlockInfo::default(),
-                    &transaction,
-                    platform_version,
-                    false,
-                    None,
-                )
-                .expect("expected to process state transitions");
-            platform
-                .drive
-                .grove
-                .commit_transaction(transaction)
-                .unwrap()
-                .expect("expected to commit");
-            result
+            let (results, _) = process_state_transitions_with_results(
+                platform,
+                &transitions,
+                BlockInfo::default(),
+                &platform.state.load(),
+            );
+            results
         }
 
         fn asset_lock_info(
@@ -2966,13 +2964,11 @@ mod tests {
                     "at protocol version {protocol_version}"
                 );
 
-                let created =
-                    process_block(&platform, &[&registration.transition], platform_version);
-                assert_eq!(
-                    created.valid_count(),
-                    1,
-                    "{:?}",
-                    created.execution_results()
+                let created = process_block(&platform, &[&registration.transition]);
+                assert_matches!(
+                    created.as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                    "at protocol version {protocol_version}: {created:?}"
                 );
                 let errors = check_tx(&platform, &faulty, CheckTxLevel::FirstTimeCheck);
                 assert_matches!(
@@ -3063,6 +3059,7 @@ mod tests {
                 let registration = registration_proved_by(
                     Keys::Valid,
                     AssetLockProofKind::Chain,
+                    0,
                     platform_version,
                 )
                 .await;
@@ -3120,24 +3117,22 @@ mod tests {
             let faulty = fault.applied_to(&registration.transition);
 
             let platform = new_platform(platform_version.protocol_version);
-            let created = process_block(&platform, &[&registration.transition], platform_version);
-            assert_eq!(
-                created.valid_count(),
-                1,
-                "{:?}",
-                created.execution_results()
+            let created = process_block(&platform, &[&registration.transition]);
+            assert_matches!(
+                created.as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "{created:?}"
             );
             let expected_balance = identity_balance(&platform, &registration, platform_version)
                 .expect("expected the identity to exist");
 
             let platform = new_platform(platform_version.protocol_version);
-            let refused = process_block(&platform, &[&faulty], platform_version);
+            let refused = process_block(&platform, &[&faulty]);
             assert_matches!(
-                refused.execution_results().as_slice(),
+                refused.as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(error)]
                     if fault.is_reported_by(error),
-                "{:?}",
-                refused.execution_results()
+                "{refused:?}"
             );
             assert_eq!(
                 asset_lock_info(&platform, &registration, platform_version),
@@ -3151,12 +3146,11 @@ mod tests {
                 check_tx(&platform, &registration.transition, CheckTxLevel::Recheck),
                 vec![]
             );
-            let created = process_block(&platform, &[&registration.transition], platform_version);
-            assert_eq!(
-                created.valid_count(),
-                1,
-                "{:?}",
-                created.execution_results()
+            let created = process_block(&platform, &[&registration.transition]);
+            assert_matches!(
+                created.as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "{created:?}"
             );
             assert_eq!(
                 identity_balance(&platform, &registration, platform_version),
@@ -3164,19 +3158,14 @@ mod tests {
             );
 
             let platform = new_platform(platform_version.protocol_version);
-            let block = process_block(
-                &platform,
-                &[&faulty, &registration.transition],
-                platform_version,
-            );
+            let block = process_block(&platform, &[&faulty, &registration.transition]);
             assert_matches!(
-                block.execution_results().as_slice(),
+                block.as_slice(),
                 [
                     StateTransitionExecutionResult::UnpaidConsensusError(error),
                     StateTransitionExecutionResult::SuccessfulExecution { .. }
                 ] if fault.is_reported_by(error),
-                "{:?}",
-                block.execution_results()
+                "{block:?}"
             );
             assert_eq!(
                 identity_balance(&platform, &registration, platform_version),
@@ -3216,17 +3205,16 @@ mod tests {
             let platform = new_platform(platform_version.protocol_version);
             let registration = registration(Keys::WithoutAMasterKey, platform_version).await;
 
-            let charged = process_block(&platform, &[&registration.transition], platform_version);
-            assert_matches!(
-                charged.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError {
-                    error: ConsensusError::BasicError(BasicError::MissingMasterPublicKeyError(_)),
-                    ..
-                }],
-                "{:?}",
-                charged.execution_results()
-            );
-            let charged_credits = charged.aggregated_fees().processing_fee;
+            let charged = process_block(&platform, &[&registration.transition]);
+            let [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::BasicError(BasicError::MissingMasterPublicKeyError(_)),
+                actual_fees,
+                ..
+            }] = charged.as_slice()
+            else {
+                panic!("expected a charged key structure failure: {charged:?}");
+            };
+            let charged_credits = actual_fees.processing_fee;
             assert!(
                 charged_credits
                     > platform_version
@@ -3273,20 +3261,17 @@ mod tests {
                     "{size} bytes: {errors:?}"
                 );
 
-                let charged =
-                    process_block(&platform, &[&registration.transition], platform_version);
-                assert_matches!(
-                    charged.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError {
-                        error: ConsensusError::BasicError(
-                            BasicError::InvalidIdentityPublicKeyDataError(_)
-                        ),
-                        ..
-                    }],
-                    "{size} bytes: {:?}",
-                    charged.execution_results()
-                );
-                let charged_credits = charged.aggregated_fees().processing_fee;
+                let charged = process_block(&platform, &[&registration.transition]);
+                let [StateTransitionExecutionResult::PaidConsensusError {
+                    error:
+                        ConsensusError::BasicError(BasicError::InvalidIdentityPublicKeyDataError(_)),
+                    actual_fees,
+                    ..
+                }] = charged.as_slice()
+                else {
+                    panic!("{size} bytes: expected a charged key structure failure: {charged:?}");
+                };
+                let charged_credits = actual_fees.processing_fee;
                 assert!(
                     charged_credits
                         > platform_version
@@ -3324,12 +3309,11 @@ mod tests {
             let platform = new_platform(platform_version.protocol_version);
             let registration = registration(Keys::WithAHashKeyOfSize(19), platform_version).await;
 
-            let failed = process_block(&platform, &[&registration.transition], platform_version);
+            let failed = process_block(&platform, &[&registration.transition]);
             assert_matches!(
-                failed.execution_results().as_slice(),
+                failed.as_slice(),
                 [StateTransitionExecutionResult::InternalError(_)],
-                "{:?}",
-                failed.execution_results()
+                "{failed:?}"
             );
             assert_eq!(
                 asset_lock_info(&platform, &registration, platform_version),
@@ -3337,9 +3321,63 @@ mod tests {
             );
         }
 
+        /// After a charge to the asset lock of an identity create registering `keys`, the asset
+        /// lock is partially consumed by exactly what was charged and the transition's signable
+        /// bytes are recorded as used. The same keys signed again with the same user fee
+        /// increase have the same signable bytes, a replay refused without a fee. Signed with a
+        /// higher user fee increase they are not a replay, and create the identity from the
+        /// credits left in the asset lock.
+        async fn assert_created_re_signed_with_a_higher_user_fee_increase_after_a_charge(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            keys: Keys,
+            charged_credits: Credits,
+            platform_version: &PlatformVersion,
+        ) {
+            let registration = registration(keys, platform_version).await;
+            let StoredAssetLockInfo::PartiallyConsumed(asset_lock_value) =
+                asset_lock_info(platform, &registration, platform_version)
+            else {
+                panic!("expected the asset lock to be partially consumed");
+            };
+            assert_eq!(
+                asset_lock_value.remaining_credit_value(),
+                asset_lock_value.initial_credit_value() - charged_credits
+            );
+
+            let replayed = process_block(platform, &[&registration.transition]);
+            assert_matches!(
+                replayed.as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(
+                        BasicError::IdentityAssetLockStateTransitionReplayError(_)
+                    )
+                )],
+                "{replayed:?}"
+            );
+
+            let re_signed =
+                registration_proved_by(keys, AssetLockProofKind::Instant, 1, platform_version)
+                    .await;
+            let created = process_block(platform, &[&re_signed.transition]);
+            let [StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. }] =
+                created.as_slice()
+            else {
+                panic!("expected the re-signed identity create to succeed: {created:?}");
+            };
+            assert_eq!(
+                identity_balance(platform, &registration, platform_version),
+                Some(asset_lock_value.remaining_credit_value() - fee_result.total_base_fee())
+            );
+            assert_eq!(
+                asset_lock_info(platform, &registration, platform_version),
+                StoredAssetLockInfo::FullyConsumed
+            );
+        }
+
         /// Before protocol version 14 these faults are charged to the asset lock and the
         /// transition's signable bytes are recorded as used, as advanced structure v0 does;
-        /// those protocol versions keep this so their history replays unchanged.
+        /// those protocol versions keep this so their history replays unchanged. The same keys
+        /// re-signed with a higher user fee increase then create the identity.
         #[tokio::test]
         async fn should_charge_the_asset_lock_for_an_identity_id_or_key_proof_fault_before_protocol_version_14(
         ) {
@@ -3350,47 +3388,84 @@ mod tests {
                     let platform = new_platform(protocol_version);
                     let registration = registration(Keys::Valid, platform_version).await;
 
-                    let charged = process_block(
-                        &platform,
-                        &[&fault.applied_to(&registration.transition)],
-                        platform_version,
+                    let charged =
+                        process_block(&platform, &[&fault.applied_to(&registration.transition)]);
+                    let [StateTransitionExecutionResult::PaidConsensusError {
+                        error,
+                        actual_fees,
+                        ..
+                    }] = charged.as_slice()
+                    else {
+                        panic!("{fault:?} at protocol version {protocol_version}: expected a charged failure: {charged:?}");
+                    };
+                    assert!(
+                        fault.is_reported_by(error),
+                        "{fault:?} at protocol version {protocol_version}: {error:?}"
                     );
-                    assert_matches!(
-                        charged.execution_results().as_slice(),
-                        [StateTransitionExecutionResult::PaidConsensusError { error, .. }]
-                            if fault.is_reported_by(error),
-                        "{fault:?} at protocol version {protocol_version}: {:?}",
-                        charged.execution_results()
-                    );
-                    let charged_credits = charged.aggregated_fees().processing_fee;
+                    let charged_credits = actual_fees.processing_fee;
                     assert!(
                         charged_credits > fault.penalty(platform_version),
                         "{fault:?} at protocol version {protocol_version}: charged {charged_credits}"
                     );
-                    let StoredAssetLockInfo::PartiallyConsumed(asset_lock_value) =
-                        asset_lock_info(&platform, &registration, platform_version)
-                    else {
-                        panic!("{fault:?} at protocol version {protocol_version}: expected the asset lock to be partially consumed");
-                    };
-                    assert_eq!(
-                        asset_lock_value.remaining_credit_value(),
-                        asset_lock_value.initial_credit_value() - charged_credits,
-                        "{fault:?} at protocol version {protocol_version}"
-                    );
 
-                    let replayed =
-                        process_block(&platform, &[&registration.transition], platform_version);
-                    assert_matches!(
-                        replayed.execution_results().as_slice(),
-                        [StateTransitionExecutionResult::UnpaidConsensusError(
-                            ConsensusError::BasicError(
-                                BasicError::IdentityAssetLockStateTransitionReplayError(_)
-                            )
-                        )],
-                        "{fault:?} at protocol version {protocol_version}"
-                    );
+                    assert_created_re_signed_with_a_higher_user_fee_increase_after_a_charge(
+                        &platform,
+                        Keys::Valid,
+                        charged_credits,
+                        platform_version,
+                    )
+                    .await;
                 }
             }
+        }
+
+        /// A key bound to a contract that is not in state fails state validation, which charges
+        /// the asset lock. Once the contract exists, the same keys re-signed with a higher user
+        /// fee increase create the identity.
+        #[tokio::test]
+        async fn should_create_the_identity_re_signed_with_a_higher_user_fee_increase_after_a_charged_failure(
+        ) {
+            let platform_version = PlatformVersion::latest();
+            let platform = new_platform(platform_version.protocol_version);
+            let contract = json_document_to_contract(
+                "tests/supporting_files/contract/crypto-card-game/crypto-card-game-all-transferable.json",
+                true,
+                platform_version,
+            )
+            .expect("expected the contract");
+            let keys = Keys::WithAKeyBoundToContract(contract.id());
+            let registration = registration(keys, platform_version).await;
+
+            let charged = process_block(&platform, &[&registration.transition]);
+            let [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::BasicError(BasicError::DataContractNotPresentError(_)),
+                actual_fees,
+                ..
+            }] = charged.as_slice()
+            else {
+                panic!("expected a charged failure: {charged:?}");
+            };
+            let charged_credits = actual_fees.processing_fee;
+
+            platform
+                .drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply the contract");
+
+            assert_created_re_signed_with_a_higher_user_fee_increase_after_a_charge(
+                &platform,
+                keys,
+                charged_credits,
+                platform_version,
+            )
+            .await;
         }
     }
 }
