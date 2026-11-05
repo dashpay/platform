@@ -1266,12 +1266,6 @@ unsafe fn shielded_identity_create_from_one_time_key_inner(
     check_ptr!(send_to_address_on_creation_failure_bytes);
     check_ptr!(signer_identity_handle);
     check_ptr!(out_identity_id);
-    if identity_pubkeys_count == 0 {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            "`identity_pubkeys_count` must be >= 1",
-        );
-    }
 
     // REQUIRED 21-byte fallback PlatformAddress (bound into the sighash).
     let send_to_address_on_creation_failure = match parse_required_platform_address(

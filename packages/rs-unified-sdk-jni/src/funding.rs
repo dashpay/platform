@@ -1116,8 +1116,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
             throw_sdk_exception(env, 1, "identityIndex must be non-negative");
             return ptr::null_mut();
         }
-        if denomination <= 0 {
-            throw_sdk_exception(env, 1, "denomination must be positive");
+        // Sign check only: the Rust operation owns the denomination rules.
+        if denomination < 0 {
+            throw_sdk_exception(env, 1, "denomination must be non-negative");
             return ptr::null_mut();
         }
         if signer_handle == 0 {
