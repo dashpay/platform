@@ -3996,24 +3996,30 @@ mod coalesce_account_records_tests {
     use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
 
     fn record(net_amount: i64, context: TransactionContext) -> TransactionRecord {
-        let address = Address::new(
-            Network::Testnet,
-            dashcore::address::Payload::PubkeyHash(PubkeyHash::from_byte_array(
-                [net_amount as u8; 20],
-            )),
-        );
+        let addresses = [5, 9].map(|tag| {
+            Address::new(
+                Network::Testnet,
+                dashcore::address::Payload::PubkeyHash(PubkeyHash::from_byte_array([tag; 20])),
+            )
+        });
+        let detail_index = usize::from(net_amount == 900);
+        let address = addresses[detail_index].clone();
         let mut tx = crate::test_support::core_fixtures::spend_of(
-            &[OutPoint::new(
-                Txid::from_byte_array([net_amount as u8; 32]),
-                1,
-            )],
-            vec![TxOut {
-                value: net_amount as u64,
-                script_pubkey: address.script_pubkey(),
-            }],
+            &[
+                OutPoint::new(Txid::from_byte_array([5; 32]), 1),
+                OutPoint::new(Txid::from_byte_array([9; 32]), 1),
+            ],
+            addresses
+                .iter()
+                .zip([500, 900])
+                .map(|(address, value)| TxOut {
+                    value,
+                    script_pubkey: address.script_pubkey(),
+                })
+                .collect(),
         );
         tx.version = 2;
-        tx.lock_time = net_amount as u32;
+        tx.lock_time = 1;
         let mut record = TransactionRecord::new(
             tx,
             key_wallet::account::AccountType::Standard {
@@ -4028,12 +4034,12 @@ mod coalesce_account_records_tests {
                 TransactionDirection::Internal
             },
             vec![InputDetail {
-                index: 0,
+                index: detail_index as u32,
                 value: net_amount as u64 + 100,
                 address: address.clone(),
             }],
             vec![OutputDetail {
-                index: 0,
+                index: detail_index as u32,
                 role: if net_amount == 500 {
                     OutputRole::Received
                 } else {
@@ -4044,9 +4050,7 @@ mod coalesce_account_records_tests {
             }],
             net_amount,
         );
-        // Synthetic grouping key deliberately puts different bodies in the same bucket.
-        record.txid = Txid::from_byte_array([7; 32]);
-        record.fee = Some(net_amount as u64 / 10);
+        record.fee = (net_amount == 900).then_some(200);
         record.label = format!("snapshot {net_amount}");
         record
     }
@@ -4073,6 +4077,9 @@ mod coalesce_account_records_tests {
         ] {
             let earlier = record(500, earlier);
             let later = record(900, later);
+            assert_eq!(earlier.transaction, later.transaction, "{case}: same body");
+            assert_eq!(earlier.txid, earlier.transaction.txid());
+            assert_eq!(later.txid, earlier.txid, "{case}: same computed identity");
             let expected = if kept.0 == 500 {
                 earlier.clone()
             } else {
