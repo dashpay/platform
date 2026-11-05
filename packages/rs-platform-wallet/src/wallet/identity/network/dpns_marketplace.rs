@@ -862,9 +862,9 @@ impl IdentityWallet {
     /// and is repopulated by the first
     /// [`sync_dpns_marketplace`](Self::sync_dpns_marketplace) pass; the
     /// wallet load path does not rehydrate it. That mirrors the
-    /// invitations store — `SqlitePersister` does not attest
-    /// `WALLET_RESTORE` and `load()` still reports
-    /// `ClientStartState::wallets` in `LOAD_UNIMPLEMENTED`. The durable
+    /// invitations store — `SqlitePersister`'s `WALLET_RESTORE` attests
+    /// the Core wallet snapshot only, and its `load()` rebuilds neither
+    /// this map nor invitations. The durable
     /// copy a host should render after a restart is the persister mirror
     /// (Swift `PersistentDPNSName`), which the changeset feeds; treat an
     /// empty return here as "not synced yet", never as "no names".
