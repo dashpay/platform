@@ -3308,6 +3308,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         extensionCallbacks.on_load_core_history_for_accounting_free_fn =
             loadCoreHistoryForAccountingFreeCallback
         extensionCallbacks.on_persist_core_history_accounted_fn = persistCoreHistoryAccountedCallback
+        extensionCallbacks.on_persist_core_instant_lock_fn = persistCoreInstantLockCallback
+        extensionCallbacks.on_load_core_instant_lock_fn = loadCoreInstantLockCallback
+        extensionCallbacks.on_load_core_instant_lock_free_fn = freeCoreInstantLockCallback
         return extensionCallbacks
     }
 
@@ -5077,6 +5080,44 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         return (written, skipped, failed)
     }
 
+    // MARK: - Raw InstantLock storage
+
+    private func coreInstantLockDescriptor(walletId: Data, txid: Data) throws
+        -> FetchDescriptor<PersistentCoreInstantLock> {
+        guard let network = self.network ?? walletNetwork(walletId: walletId) else {
+            throw PlatformWalletError.walletOperation("Raw InstantLock storage requires the wallet network")
+        }
+        let networkRaw = network.rawValue
+        return FetchDescriptor(predicate: #Predicate {
+            $0.networkRaw == networkRaw && $0.walletId == walletId && $0.txid == txid
+        })
+    }
+
+    func persistCoreInstantLock(walletId: Data, txid: Data, bytes: Data) throws {
+        try onQueue {
+            guard inChangeset else {
+                throw PlatformWalletError.walletOperation("Raw InstantLock storage requires a changeset")
+            }
+            let descriptor = try coreInstantLockDescriptor(walletId: walletId, txid: txid)
+            if let row = try backgroundContext.fetch(descriptor).first {
+                row.consensusBytes = bytes
+            } else {
+                guard let network = self.network ?? walletNetwork(walletId: walletId) else {
+                    throw PlatformWalletError.walletOperation("Raw InstantLock storage requires the wallet network")
+                }
+                backgroundContext.insert(PersistentCoreInstantLock(
+                    networkRaw: network.rawValue, walletId: walletId, txid: txid, consensusBytes: bytes))
+            }
+        }
+    }
+
+    func loadCoreInstantLock(walletId: Data, txid: Data) throws -> Data? {
+        try onQueue {
+            try backgroundContext.fetch(coreInstantLockDescriptor(walletId: walletId, txid: txid))
+                .first?.consensusBytes
+        }
+    }
+
     // MARK: - Identity balance freshness (additive persistence extension)
 
     private func balanceMetadataDescriptor(walletId: Data, identityId: Data)
@@ -6662,6 +6703,19 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     claimedNetworks = Set(try backgroundContext.fetch(owners).compactMap(\.networkRaw))
                 }
                 for row in try backgroundContext.fetch(metadata)
+                    where !claimedNetworks.contains(row.networkRaw) {
+                    backgroundContext.delete(row)
+                }
+
+                let rawLocks: FetchDescriptor<PersistentCoreInstantLock>
+                if let raw = metadataNetwork?.rawValue {
+                    rawLocks = FetchDescriptor(predicate: #Predicate {
+                        $0.walletId == walletId && $0.networkRaw == raw
+                    })
+                } else {
+                    rawLocks = FetchDescriptor(predicate: #Predicate { $0.walletId == walletId })
+                }
+                for row in try backgroundContext.fetch(rawLocks)
                     where !claimedNetworks.contains(row.networkRaw) {
                     backgroundContext.delete(row)
                 }
@@ -12324,4 +12378,44 @@ private func loadIdentityBalanceBlockTimeCallback(
         }
         return 0
     } catch { return -1 }
+}
+
+private func persistCoreInstantLockCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?, txid: UnsafePointer<UInt8>?,
+    bytes: UnsafePointer<UInt8>?, len: UInt
+) -> Int32 {
+    guard let context, let walletId, let txid, let bytes, len > 0 else { return -1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        try handler.persistCoreInstantLock(walletId: Data(bytes: walletId, count: 32),
+                                          txid: Data(bytes: txid, count: 32),
+                                          bytes: Data(bytes: bytes, count: Int(len)))
+        return 0
+    } catch { return -1 }
+}
+
+private func loadCoreInstantLockCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?, txid: UnsafePointer<UInt8>?,
+    outBytes: UnsafeMutablePointer<UnsafePointer<UInt8>?>?, outLen: UnsafeMutablePointer<UInt>?
+) -> Int32 {
+    guard let context, let walletId, let txid, let outBytes, let outLen else { return -1 }
+    outBytes.pointee = nil
+    outLen.pointee = 0
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        guard let bytes = try handler.loadCoreInstantLock(walletId: Data(bytes: walletId, count: 32),
+                                                        txid: Data(bytes: txid, count: 32)) else { return 0 }
+        guard !bytes.isEmpty else { return -1 }
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bytes.count)
+        bytes.copyBytes(to: buffer, count: bytes.count)
+        outBytes.pointee = UnsafePointer(buffer)
+        outLen.pointee = UInt(bytes.count)
+        return 0
+    } catch { return -1 }
+}
+
+private func freeCoreInstantLockCallback(
+    context: UnsafeMutableRawPointer?, bytes: UnsafePointer<UInt8>?, len: UInt
+) {
+    if let bytes { UnsafeMutablePointer(mutating: bytes).deallocate() }
 }

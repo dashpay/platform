@@ -4,7 +4,7 @@
 //! [`history_replay`](crate::manager::history_replay); this module only
 //! carries the persister-agnostic input shape.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::ClientWalletStartState;
 use dash_spv::VerifiedInstantLock;
@@ -40,6 +40,8 @@ pub struct ReplayEvidence {
 /// already attached to the restored wallet, which it puts back afterwards.
 #[derive(Debug, Clone, Default)]
 pub struct RecordedHistory {
+    /// Persisted InstantSend observations requiring proof, even when the host lost the payload.
+    pub required_instant_locks: BTreeSet<Txid>,
     /// Stored coin material, including spent rows; ownership is checked by the wallet.
     pub owned_prevouts: BTreeMap<OutPoint, TxOut>,
     /// Stored transactions, in any order; the replay orders them.

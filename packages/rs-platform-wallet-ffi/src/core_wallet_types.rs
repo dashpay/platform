@@ -522,15 +522,8 @@ impl WalletChangeSetFFI {
     /// snapshots delivered through the `BalanceUpdateHandler`, not as
     /// a delta on the persistence path.
     ///
-    /// TODO(events): wire `instant_locks_for_non_final_records` through
-    /// the FFI surface. Today the Swift side learns about IS-lock state
-    /// only when a re-emitted `TransactionRecord` flows through `records`
-    /// with `context = InstantSend(..)`. The standalone IS-lock map is
-    /// dropped here. Acceptable as long as the event adapter re-emits
-    /// affected records (it does for `TransactionDetected`,
-    /// `BlockProcessed` and `TransactionInstantLocked`).
-    /// When the standalone IS-lock event needs to flow to Swift, add
-    /// a `BTreeMap`-shaped FFI field here and populate it.
+    /// Raw InstantLocks ride the size-gated persistence extension callback;
+    /// they do not change this legacy struct's allocation or array stride.
     pub fn from_changeset(cs: &platform_wallet::changeset::CoreChangeSet) -> Self {
         use key_wallet::account::AccountType;
         use std::ffi::CString;

@@ -8,14 +8,14 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, FreeCoreHistoryForAccountingFn, FreeTrackedMasternodesFn,
-    LoadAssetLockOperationIdFn, LoadCoreHistoryForAccountingFn, LoadIdentityBalanceBlockTimeFn,
-    LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn, PersistCoreHistoryAccountedFn,
-    PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn,
-    PersistTransactionAccountingFn, PersistWalletChangesetChainLockHeightFn,
-    PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn,
-    PersistWalletDashPayBackfillFn, PersistenceCallbacks, PersistenceCallbacksExtension,
-    PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
+    FFIPersister, FreeCoreHistoryForAccountingFn, FreeCoreInstantLockFn, FreeTrackedMasternodesFn,
+    LoadAssetLockOperationIdFn, LoadCoreHistoryForAccountingFn, LoadCoreInstantLockFn,
+    LoadIdentityBalanceBlockTimeFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
+    PersistCoreHistoryAccountedFn, PersistCoreInstantLockFn, PersistDpnsNameStatesFn,
+    PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn, PersistTransactionAccountingFn,
+    PersistWalletChangesetChainLockHeightFn, PersistWalletChangesetSweepsFn,
+    PersistWalletChangesetUtxoVerdictsFn, PersistWalletDashPayBackfillFn, PersistenceCallbacks,
+    PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
     PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::runtime;
@@ -308,6 +308,9 @@ unsafe fn persistence_extension_callbacks(
             on_persist_core_history_accounted_fn,
             PersistCoreHistoryAccountedFn
         ),
+        persist_core_instant_lock: slot!(on_persist_core_instant_lock_fn, PersistCoreInstantLockFn),
+        load_core_instant_lock: slot!(on_load_core_instant_lock_fn, LoadCoreInstantLockFn),
+        free_core_instant_lock: slot!(on_load_core_instant_lock_free_fn, FreeCoreInstantLockFn),
     }
 }
 
@@ -1392,6 +1395,55 @@ mod tests {
         let parsed = unsafe { persistence_extension_callbacks(&ext) };
         assert!(parsed.persist_identity_balance_block_time.is_none());
         assert!(parsed.load_identity_balance_block_time.is_none());
+    }
+
+    #[test]
+    fn should_size_gate_raw_instant_lock_callbacks_after_accounting() {
+        unsafe extern "C" fn persist(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            _: *const u8,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            _: *mut *const u8,
+            _: *mut usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn free(_: *mut c_void, _: *const u8, _: usize) {}
+        let mut ext = PersistenceCallbacksExtension {
+            on_persist_core_instant_lock_fn: Some(persist),
+            on_load_core_instant_lock_fn: Some(load),
+            on_load_core_instant_lock_free_fn: Some(free),
+            ..Default::default()
+        };
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_core_instant_lock.is_some());
+        assert!(parsed.load_core_instant_lock.is_some());
+        assert!(parsed.free_core_instant_lock.is_some());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_core_instant_lock_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_core_instant_lock.is_none());
+        assert!(parsed.load_core_instant_lock.is_none());
+        assert!(parsed.free_core_instant_lock.is_none());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_load_core_instant_lock_free_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_core_instant_lock.is_some());
+        assert!(parsed.load_core_instant_lock.is_some());
+        assert!(parsed.free_core_instant_lock.is_none());
     }
 
     #[test]

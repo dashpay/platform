@@ -634,7 +634,7 @@ pub struct RecordedTransactionRestoreFFI {
     pub tx_bytes: *mut u8,
     pub tx_bytes_len: usize,
     /// Stored context: `0` mempool, `1` InstantSend, `2` in a block, `3` in a
-    /// chain-locked block. `1` replays as mempool (no lock bytes are carried);
+    /// chain-locked block. `1` requires SPV-verified lock evidence before replay;
     /// any other value drops the record.
     pub context: u32,
     /// Block fields, read only for contexts `2` and `3`.

@@ -2021,6 +2021,7 @@ fn load_wallet_snapshot(
         // field existed.
         unconfirmed_outgoing_txs: Vec::new(),
         recorded_history: platform_wallet::changeset::RecordedHistory {
+            required_instant_locks: Default::default(),
             owned_prevouts: history_replay::load_prevouts(conn, &wallet_id)
                 .map_err(PersistenceError::from)?,
             transactions: core_state.records.into_iter().map(Into::into).collect(),

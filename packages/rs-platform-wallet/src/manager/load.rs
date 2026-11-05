@@ -1481,6 +1481,7 @@ mod idempotent_load_tests {
         let wallet_id = ctx.wallet.compute_wallet_id();
         let fixture = InstantLockFixture::new(&funding).unwrap();
         let history = RecordedHistory {
+            required_instant_locks: Default::default(),
             owned_prevouts: Default::default(),
             transactions: vec![StoredTransaction {
                 txid: funding.txid(),
@@ -1630,6 +1631,7 @@ mod idempotent_load_tests {
             wallet: ctx.wallet,
             managed: projection,
             history: RecordedHistory {
+                required_instant_locks: Default::default(),
                 owned_prevouts: Default::default(),
                 transactions: vec![stored(spend), stored(funding)],
                 instant_locks: BTreeMap::new(),
@@ -1715,6 +1717,7 @@ mod idempotent_load_tests {
                 wallet: ctx.wallet,
                 managed: projection,
                 history: RecordedHistory {
+                    required_instant_locks: Default::default(),
                     owned_prevouts: Default::default(),
                     transactions,
                     instant_locks: BTreeMap::new(),
@@ -1853,6 +1856,7 @@ mod idempotent_load_tests {
                 wallet: ctx.wallet,
                 managed: projection,
                 history: RecordedHistory {
+                    required_instant_locks: Default::default(),
                     owned_prevouts: Default::default(),
                     // The funding's row never left the mempool context.
                     transactions: vec![StoredTransaction {
@@ -2203,6 +2207,7 @@ mod idempotent_load_tests {
                 wallet: ctx.wallet,
                 managed: projection,
                 history: RecordedHistory {
+                    required_instant_locks: Default::default(),
                     owned_prevouts: Default::default(),
                     transactions: vec![
                         stored(&asset_lock, TransactionContext::Mempool),
@@ -2365,6 +2370,7 @@ mod idempotent_load_tests {
             wallet: ctx.wallet,
             managed: projection,
             history: RecordedHistory {
+                required_instant_locks: Default::default(),
                 owned_prevouts: Default::default(),
                 transactions: vec![
                     stored(&asset_lock, TransactionContext::Mempool),
@@ -2464,6 +2470,7 @@ mod idempotent_load_tests {
             managed: ManagedWalletInfo::from_wallet(&ctx.wallet, 0),
             wallet: ctx.wallet,
             history: RecordedHistory {
+                required_instant_locks: Default::default(),
                 owned_prevouts: Default::default(),
                 transactions: vec![StoredTransaction {
                     txid: asset_lock.txid(),
@@ -2567,6 +2574,7 @@ mod idempotent_load_tests {
             wallet: ctx.wallet,
             managed: projection,
             history: RecordedHistory {
+                required_instant_locks: Default::default(),
                 owned_prevouts: Default::default(),
                 transactions: vec![stored(unsafe_spend), stored(funding)],
                 instant_locks: BTreeMap::new(),

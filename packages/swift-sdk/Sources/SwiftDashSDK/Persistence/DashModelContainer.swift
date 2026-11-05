@@ -95,7 +95,8 @@ public enum DashModelContainer {
             PersistentMasternode.self,
             PersistentTrackedMasternode.self,
             PersistentIdentityBalanceMetadata.self,
-            PersistentTransactionAccounting.self
+            PersistentTransactionAccounting.self,
+            PersistentCoreInstantLock.self
         ]
     }
 
@@ -404,7 +405,7 @@ public enum DashSchemaV4: VersionedSchema {
 }
 
 /// Current schema: per-wallet transaction accounting (`PersistentTransactionAccounting`)
-/// and the wallet's accounting-backfill marker.
+/// the wallet's accounting-backfill marker, and raw InstantLock sidecars.
 public enum DashSchemaV5: VersionedSchema {
     public static var versionIdentifier: Schema.Version { Schema.Version(5, 0, 0) }
     public static var models: [any PersistentModel.Type] { DashModelContainer.modelTypes }

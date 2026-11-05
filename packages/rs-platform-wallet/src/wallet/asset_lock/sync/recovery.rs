@@ -4017,6 +4017,7 @@ mod tests {
         ];
         let spender = spending(contested, 1);
         let history = RecordedHistory {
+            required_instant_locks: Default::default(),
             owned_prevouts: Default::default(),
             transactions: vec![
                 stored(spender.clone(), chain_locked_at(100)),
@@ -4122,6 +4123,7 @@ mod tests {
             ),
         ];
         let mut history = RecordedHistory {
+            required_instant_locks: Default::default(),
             owned_prevouts: Default::default(),
             transactions: [
                 &matching,
@@ -4211,6 +4213,7 @@ mod tests {
             &foreign,
         ];
         let mut history = RecordedHistory {
+            required_instant_locks: Default::default(),
             owned_prevouts: Default::default(),
             transactions: unconfirmed
                 .map(|transaction| stored(transaction, TransactionContext::Mempool))

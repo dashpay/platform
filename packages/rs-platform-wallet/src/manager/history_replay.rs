@@ -319,6 +319,23 @@ pub async fn replay_recorded_history_with_evidence(
     evidence: &ReplayEvidence,
 ) -> Result<HistoryReplay, HistoryReplayError> {
     let mut deferred = BTreeSet::new();
+    let mut history = history;
+    deferred.extend(history.required_instant_locks.iter().copied());
+    for stored in &history.transactions {
+        if history.required_instant_locks.contains(&stored.txid) {
+            if let Some(proof) = evidence.instant_locks.get(&stored.txid).filter(|proof| {
+                proof.network() == wallet_info.network()
+                    && proof.txid() == stored.txid
+                    && proof.matches_transaction(&stored.transaction)
+            }) {
+                deferred.remove(&stored.txid);
+                history
+                    .instant_locks
+                    .entry(stored.txid)
+                    .or_insert_with(|| proof.instant_lock().clone());
+            }
+        }
+    }
     for stored in &history.transactions {
         let locks =
             history
@@ -348,6 +365,7 @@ pub async fn replay_recorded_history_with_evidence(
         return Err(HistoryReplayError::MissingFinalityEvidence { txids: deferred });
     }
     let RecordedHistory {
+        required_instant_locks: _,
         mut owned_prevouts,
         mut transactions,
         instant_locks,
@@ -1421,6 +1439,7 @@ mod tests {
         instant_locks: BTreeMap<Txid, InstantLock>,
     ) -> RecordedHistory {
         RecordedHistory {
+            required_instant_locks: Default::default(),
             owned_prevouts: Default::default(),
             transactions: records.into_iter().map(StoredTransaction::from).collect(),
             instant_locks,
@@ -1609,6 +1628,7 @@ mod tests {
             100,
         ));
         let replay = |transactions| RecordedHistory {
+            required_instant_locks: Default::default(),
             owned_prevouts: Default::default(),
             transactions,
             instant_locks: BTreeMap::new(),
@@ -1790,6 +1810,29 @@ mod tests {
             !ready.defeated.contains(&locked.txid),
             "unsafe stored arithmetic cannot let a plain block defeat verified InstantSend"
         );
+
+        let mut observation = raw.clone();
+        observation.required_instant_locks.insert(locked.txid);
+        observation.instant_locks.clear();
+        assert!(matches!(
+            replay_recorded_history_with_evidence(
+                &mut original.clone(),
+                &mut wallet.clone(),
+                observation.clone(),
+                &ReplayEvidence::default()
+            )
+            .await,
+            Err(HistoryReplayError::MissingFinalityEvidence { .. })
+        ));
+        let ready = replay_recorded_history_with_evidence(
+            &mut original.clone(),
+            &mut wallet.clone(),
+            observation,
+            &evidence,
+        )
+        .await
+        .unwrap();
+        assert!(!ready.defeated.contains(&locked.txid));
 
         for change_body in [false, true] {
             let mut changed = raw.clone();
@@ -2001,6 +2044,7 @@ mod tests {
                 ..spender.clone()
             };
             let history = RecordedHistory {
+                required_instant_locks: Default::default(),
                 owned_prevouts: Default::default(),
                 transactions: vec![without_ownership],
                 instant_locks: BTreeMap::new(),
@@ -2051,6 +2095,7 @@ mod tests {
         );
         let mut info = restored;
         let history = RecordedHistory {
+            required_instant_locks: Default::default(),
             owned_prevouts: Default::default(),
             transactions: vec![StoredTransaction {
                 owned_inputs: Vec::new(),
@@ -2117,6 +2162,7 @@ mod tests {
                 Utxo::new(spent, funding.output[0].clone(), address, 100, false),
             );
         let history = RecordedHistory {
+            required_instant_locks: Default::default(),
             owned_prevouts: Default::default(),
             transactions: vec![StoredTransaction {
                 context: TransactionContext::Mempool,
@@ -2750,6 +2796,7 @@ mod tests {
                 &mut restored,
                 &mut wallet,
                 RecordedHistory {
+                    required_instant_locks: Default::default(),
                     owned_prevouts: Default::default(),
                     transactions: stored,
                     instant_locks: BTreeMap::new(),
@@ -2884,6 +2931,7 @@ mod tests {
             &mut restored,
             &mut wallet,
             RecordedHistory {
+                required_instant_locks: Default::default(),
                 owned_prevouts: Default::default(),
                 transactions: history,
                 instant_locks: BTreeMap::new(),
@@ -2927,6 +2975,7 @@ mod tests {
             &mut restored,
             &mut wallet,
             RecordedHistory {
+                required_instant_locks: Default::default(),
                 owned_prevouts: Default::default(),
                 transactions: history,
                 instant_locks: BTreeMap::new(),
@@ -3006,6 +3055,7 @@ mod tests {
             &mut restored,
             &mut wallet,
             RecordedHistory {
+                required_instant_locks: Default::default(),
                 owned_prevouts: Default::default(),
                 transactions: vec![loser],
                 instant_locks: BTreeMap::new(),
@@ -3200,6 +3250,7 @@ mod tests {
         };
         let block = BlockInfo::new(101, BlockHash::from_byte_array([101; 32]), 101);
         let history = RecordedHistory {
+            required_instant_locks: Default::default(),
             owned_prevouts: Default::default(),
             transactions: vec![
                 stored(&winner, TransactionContext::InBlock(block)),
@@ -3520,6 +3571,7 @@ mod tests {
             };
             let block = BlockInfo::new(100, BlockHash::from_byte_array([82; 32]), 100);
             let history = RecordedHistory {
+                required_instant_locks: Default::default(),
                 owned_prevouts: Default::default(),
                 transactions: vec![
                     stored(funding.clone(), TransactionContext::InBlock(block)),
@@ -3649,6 +3701,7 @@ mod tests {
             );
         }
         let history = RecordedHistory {
+            required_instant_locks: Default::default(),
             owned_prevouts: Default::default(),
             transactions: unsafe_spends
                 .iter()
@@ -3859,6 +3912,7 @@ mod tests {
                 }
             }
             let history = RecordedHistory {
+                required_instant_locks: Default::default(),
                 owned_prevouts: Default::default(),
                 transactions: parents
                     .iter()
@@ -3968,6 +4022,7 @@ mod tests {
             .utxos
             .insert(coin, parked);
         let history = RecordedHistory {
+            required_instant_locks: Default::default(),
             owned_prevouts: Default::default(),
             transactions: vec![StoredTransaction {
                 txid: funding.txid(),
@@ -4061,6 +4116,7 @@ mod tests {
                 .utxos
                 .insert(coin, stored_coin);
             let history = RecordedHistory {
+                required_instant_locks: Default::default(),
                 owned_prevouts: Default::default(),
                 transactions: vec![StoredTransaction {
                     txid: funding.txid(),
