@@ -28,6 +28,8 @@ use crate::error::Error;
 use crate::query::{OrderClause, ResolvedTimeRange, WhereClause};
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
+use dpp::version::PlatformVersion;
+use grovedb::PathQuery;
 
 /// What a proved sum or average reads, decided from its request alone.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -221,6 +223,84 @@ impl DriveDocumentSumQuery<'_> {
                      prove = true never returns a no-proof mode",
                 )))
             }
+        }
+    }
+}
+
+impl SumProofPlan<'_> {
+    /// The path query a proof of this plan answers. The server proves it
+    /// (`Drive::execute_document_sum_proof`), and a client builds it from the
+    /// same plan before sending and before it verifies an answer, so a
+    /// request whose path query cannot be built is refused in the server's
+    /// words.
+    ///
+    /// `with_counts` is whether the request is an average, whose range and
+    /// carrier proofs read each element's count beside its sum; its point
+    /// lookups and distinct walks read the count-sum-bearing elements the
+    /// index's terminators already hold. The other arguments are the
+    /// request's, as the planner read them.
+    #[allow(clippy::too_many_arguments)]
+    pub fn path_query(
+        &self,
+        contract_id: [u8; 32],
+        document_type: DocumentTypeRef,
+        document_type_name: String,
+        where_clauses: Vec<WhereClause>,
+        sum_property: String,
+        with_counts: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
+        let sum_query = |index| DriveDocumentSumQuery {
+            document_type,
+            contract_id,
+            document_type_name,
+            index,
+            where_clauses,
+            sum_property,
+        };
+        match *self {
+            SumProofPlan::PrimaryKeySumTree => {
+                Ok(DriveDocumentSumQuery::primary_key_sum_path_query(
+                    contract_id,
+                    document_type.name(),
+                ))
+            }
+            SumProofPlan::PointLookup(index) => {
+                sum_query(index).point_lookup_sum_path_query(platform_version)
+            }
+            SumProofPlan::Range(index) if with_counts => {
+                sum_query(index).aggregate_count_and_sum_path_query(platform_version)
+            }
+            SumProofPlan::Range(index) => {
+                sum_query(index).aggregate_sum_path_query(platform_version)
+            }
+            SumProofPlan::RangeDistinct {
+                index,
+                limit,
+                left_to_right,
+            } => sum_query(index).distinct_sum_path_query(
+                Some(limit),
+                left_to_right,
+                platform_version,
+            ),
+            SumProofPlan::RangeAggregateCarrier {
+                index,
+                limit,
+                left_to_right,
+            } if with_counts => sum_query(index).carrier_aggregate_count_and_sum_path_query(
+                limit,
+                left_to_right,
+                platform_version,
+            ),
+            SumProofPlan::RangeAggregateCarrier {
+                index,
+                limit,
+                left_to_right,
+            } => sum_query(index).carrier_aggregate_sum_path_query(
+                limit,
+                left_to_right,
+                platform_version,
+            ),
         }
     }
 }

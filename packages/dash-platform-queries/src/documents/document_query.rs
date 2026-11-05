@@ -273,12 +273,7 @@ impl DocumentQuery {
     /// the having view verifies, and every node refuses one without a grouping.
     pub(super) fn ensure_no_having(&self) -> Result<(), drive_proof_verifier::Error> {
         if !self.having.is_empty() {
-            return Err(drive_proof_verifier::Error::RequestError {
-                error: "a having clause is answered as a having-range page, which a count, sum \
-                        or average view cannot verify; fetch a grouped query with one as \
-                        DocumentHavingEntries"
-                    .to_string(),
-            });
+            return Err(having_page_refusal());
         }
         Ok(())
     }
@@ -748,6 +743,16 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
             platform_version,
             provider,
         )
+    }
+}
+
+/// The refusal of a `having` clause in a count, sum or average view.
+pub(super) fn having_page_refusal() -> drive_proof_verifier::Error {
+    drive_proof_verifier::Error::RequestError {
+        error: "a having clause is answered as a having-range page, which a count, sum or \
+                average view cannot verify; fetch a grouped query with one as \
+                DocumentHavingEntries"
+            .to_string(),
     }
 }
 

@@ -63,7 +63,7 @@ mod tests;
 #[cfg(feature = "server")]
 use crate::query::ResolvedTimeRange;
 #[cfg(any(feature = "server", feature = "verify"))]
-use crate::query::{WhereClause, WhereOperator};
+use crate::query::{CountMode, WhereClause, WhereOperator};
 
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
@@ -112,6 +112,19 @@ pub enum SumMode {
     GroupByRange,
     /// One sum per `(In-value, range-value)` pair.
     GroupByCompound,
+}
+
+/// The routing ([`crate::query::aggregate_routing`]) decides one SQL-shape
+/// mode for counts, sums and averages; a sum reads it as its own.
+impl From<CountMode> for SumMode {
+    fn from(mode: CountMode) -> Self {
+        match mode {
+            CountMode::Aggregate => SumMode::Aggregate,
+            CountMode::GroupByIn => SumMode::GroupByIn,
+            CountMode::GroupByRange => SumMode::GroupByRange,
+            CountMode::GroupByCompound => SumMode::GroupByCompound,
+        }
+    }
 }
 
 /// The lower-level routing decision the dispatcher reaches after

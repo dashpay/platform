@@ -26,6 +26,8 @@
 //! [`crate::query::drive_document_count_and_sum_query`] for the
 //! no-prove perf / atomicity contract.
 
+use crate::query::CountMode;
+
 #[cfg(feature = "server")]
 pub mod drive_dispatcher;
 // The request-only plan of a proved average, shared by the server's
@@ -63,6 +65,19 @@ pub enum AverageMode {
     GroupByRange,
     /// One pair per `(In-value, range-value)` pair.
     GroupByCompound,
+}
+
+/// The routing ([`crate::query::aggregate_routing`]) decides one SQL-shape
+/// mode for counts, sums and averages; an average reads it as its own.
+impl From<CountMode> for AverageMode {
+    fn from(mode: CountMode) -> Self {
+        match mode {
+            CountMode::Aggregate => AverageMode::Aggregate,
+            CountMode::GroupByIn => AverageMode::GroupByIn,
+            CountMode::GroupByRange => AverageMode::GroupByRange,
+            CountMode::GroupByCompound => AverageMode::GroupByCompound,
+        }
+    }
 }
 
 /// A single per-key average entry. Carries BOTH count and sum so the

@@ -13,6 +13,7 @@
 //! [`DocumentCount`]: drive_proof_verifier::DocumentCount
 //! [`DocumentSplitCounts`]: drive_proof_verifier::DocumentSplitCounts
 
+use crate::documents::aggregate_routing::grouped_mode;
 use crate::documents::array_element_clauses::{
     aggregate_request_where_clauses, aggregate_where_clauses, document_type_named,
 };
@@ -25,8 +26,8 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
 use drive::query::{
-    CountMode, CountProofPlan, DriveDocumentCountQuery, OrderClause, ResolvedTimeRange,
-    SelectFunction, WhereClause, WhereOperator,
+    CountMode, CountProofPlan, DriveDocumentCountQuery, ResolvedTimeRange, SelectFunction,
+    WhereClause,
 };
 use drive_proof_verifier::{
     verify_aggregate_count_proof, verify_carrier_aggregate_count_proof,
@@ -68,19 +69,14 @@ pub(super) fn assert_select_is_count(
 /// The refusals [`verify_count_query`] makes from the request alone, made
 /// before it is sent ([`drive_proof_verifier::FromProof::check_request`]).
 ///
-/// A grouped request is verified only when an `In` or a range constrains its
-/// group ([`resolve_count_mode`]), yet some requests without one are served.
-/// From protocol version 14 a grouped request ordered by its count, or with a
-/// `having` clause, is served as a ranked or having-range answer, and a node
-/// serves one only when nothing constrains its group: its where clauses may
-/// only pin the index properties before the grouped one. Older nodes refuse
-/// those shapes, so refusing them here is right at every protocol version.
-///
 /// Pending window selections are resolved first, as the verifier resolves them
 /// ([`DocumentQuery::resolved_for_checking`]), so the checks read the clauses the verifier reads.
-/// The last check is the verifier's proof plan ([`count_proof_plan`]): the primary-key route or
-/// the covering index, and the limit, which the node plans its proof by too, so a count no index
-/// serves is refused here in the node's words.
+/// The request is then routed as every node routes it ([`grouped_mode`]): a grouping no `In` or
+/// range constrains, or a `limit` its mode cannot honor, is refused in the node's words, and a
+/// request the node answers as a ranked or having-range page is refused in favour of the view
+/// that verifies it. The last check is the verifier's proof plan, lowered to its path query
+/// ([`count_proof_plan`]), which the node proves by too, so a count no index serves, or whose
+/// path query cannot be built, is refused here in the node's words.
 pub(super) fn check_count_request(
     request: &DocumentQuery,
     folds_entries: bool,
@@ -90,38 +86,40 @@ pub(super) fn check_count_request(
     assert_select_is_count(request)?;
     let (resolved, resolved_time_ranges) = request.resolved_for_checking()?;
     let request = &resolved;
-    let where_clauses = aggregate_request_where_clauses(request, folds_entries, platform_version)?;
-    let count_mode = resolve_count_mode(&request.group_by, &where_clauses)?;
     request.ensure_no_having()?;
+    let count_mode = grouped_mode(request, "COUNT", platform_version)?;
+    let where_clauses =
+        aggregate_request_where_clauses(request, count_mode, folds_entries, platform_version)?;
     let document_type = document_type_named(&request.data_contract, &request.document_type_name)?;
     count_proof_plan(
+        request,
         &document_type,
         &where_clauses,
         &resolved_time_ranges,
         count_mode,
-        &request.order_by_clauses,
-        request.limit,
         platform_version,
     )
     .map(drop)
 }
 
-/// The proof plan a node makes for a proved count, made from the request alone
-/// ([`DriveDocumentCountQuery::proof_plan`]): Drive resolves the SQL-shape
-/// `count_mode` into its proof mode
-/// ([`DriveDocumentCountQuery::detect_mode_versioned`]), then picks the
-/// primary-key route or the covering index and the limit the path query
-/// carries. A client cannot know a node's `max_query_limit`, so it leaves that
-/// check to the node.
+/// The proof plan a node makes for a proved count of `request`, made from the
+/// request alone and lowered to the path query its proof answers. Drive
+/// resolves the SQL-shape `count_mode` into its proof mode
+/// ([`DriveDocumentCountQuery::detect_mode_versioned`]), picks the
+/// primary-key route or the covering index and the limit and walk direction
+/// ([`DriveDocumentCountQuery::proof_plan`]), and builds the path query
+/// ([`CountProofPlan::path_query`]), which the check before sending discards
+/// and the verifier's Drive call rebuilds from the plan. A client cannot know
+/// a node's `max_query_limit`, so it leaves that check to the node.
 ///
-/// `order_clauses` and `limit` are the request's, `limit` `0` when unset.
+/// `where_clauses` are the request's as the server reads them
+/// ([`aggregate_where_clauses`]).
 pub(super) fn count_proof_plan<'a>(
+    request: &DocumentQuery,
     document_type: &'a DocumentTypeRef<'_>,
     where_clauses: &[WhereClause],
     resolved_time_ranges: &[ResolvedTimeRange],
     count_mode: CountMode,
-    order_clauses: &[OrderClause],
-    limit: u32,
     platform_version: &PlatformVersion,
 ) -> Result<CountProofPlan<'a>, drive_proof_verifier::Error> {
     let mode = DriveDocumentCountQuery::detect_mode_versioned(
@@ -133,18 +131,28 @@ pub(super) fn count_proof_plan<'a>(
     .map_err(|e| drive_proof_verifier::Error::RequestError {
         error: format!("count-mode detection failed: {e}"),
     })?;
-    DriveDocumentCountQuery::proof_plan(
+    let unverifiable = |e| drive_proof_verifier::Error::RequestError {
+        error: format!("no answer to this count can be verified: {e}"),
+    };
+    let plan = DriveDocumentCountQuery::proof_plan(
         document_type,
         where_clauses,
         resolved_time_ranges,
         mode,
-        order_clauses,
-        (limit != 0).then_some(limit),
+        &request.order_by_clauses,
+        (request.limit != 0).then_some(request.limit),
         None,
     )
-    .map_err(|e| drive_proof_verifier::Error::RequestError {
-        error: format!("no answer to this count can be verified: {e}"),
-    })
+    .map_err(unverifiable)?;
+    plan.path_query(
+        request.data_contract.id().to_buffer(),
+        *document_type,
+        request.document_type_name.clone(),
+        where_clauses.to_vec(),
+        platform_version,
+    )
+    .map_err(unverifiable)?;
+    Ok(plan)
 }
 
 /// Verify a count-shape proof and return per-branch entries.
@@ -160,9 +168,8 @@ pub(super) fn count_proof_plan<'a>(
 /// `verify_distinct_count_proof` (different primitive ⇒
 /// verification fails).
 ///
-/// **Routing**: build a [`CountMode`] from `(group_by,
-/// where_clauses)` matching the abci handler's
-/// `validate_and_route` logic, then take Drive's plan
+/// **Routing**: route the request to a [`CountMode`] with the
+/// node's own routing ([`grouped_mode`]), then take Drive's plan
 /// ([`count_proof_plan`]). Branch by the plan:
 ///
 /// - [`CountProofPlan::PrimaryKeyCountTree`] (empty where on a
@@ -229,33 +236,28 @@ pub(super) fn verify_count_query(
                 request.document_type_name, e
             ),
         })?;
+    // The grouped mode the node's routing answers the request in, read over
+    // the clauses as the routing reads them: windows resolved, elements not
+    // yet keyed.
+    let count_mode = grouped_mode(&request, "COUNT", platform_version)?;
     request.where_clauses = aggregate_where_clauses(
         document_type,
-        &request.group_by,
+        count_mode,
         std::mem::take(&mut request.where_clauses),
         folds_entries,
         platform_version,
     )?;
-
-    // Resolve the SQL-shape `CountMode` the request implies. Same
-    // decision tree as `validate_and_route` in the abci handler —
-    // single source of truth would be nicer but the SDK can't
-    // depend on rs-drive-abci, and drive doesn't expose this
-    // helper because `validate_and_route` also folds in the
-    // unrelated `select` projection check.
-    let count_mode = resolve_count_mode(&request.group_by, &request.where_clauses)?;
 
     // Drive's plan, the one the prover made from the same request: the
     // proof mode, the primary-key route or covering index, and the limit
     // the path query carries. A plan the verifier made apart from the
     // prover's would build a different path query.
     let plan = count_proof_plan(
+        &request,
         &document_type,
         &request.where_clauses,
         &resolved_time_ranges,
         count_mode,
-        &request.order_by_clauses,
-        request.limit,
         platform_version,
     )?;
     let contract_id = request.data_contract.id().to_buffer();
@@ -324,67 +326,6 @@ pub(super) fn verify_count_query(
     Ok((Some(entries), mtd.clone(), proof.clone()))
 }
 
-/// Build the SQL-shape [`CountMode`] from `(group_by,
-/// where_clauses)`. Mirrors the abci handler's
-/// `validate_and_route` logic so the SDK side picks the same
-/// mode the server would have routed to, which keeps
-/// [`DriveDocumentCountQuery::detect_mode`]'s output (and the
-/// proof-verification primitive) in sync end-to-end.
-///
-/// Match-any semantics on the field lookups (`is_in_field` /
-/// `is_range_field`) — clause ordering on the wire must not
-/// affect routing, same fix as the abci handler's round-3
-/// regression.
-fn resolve_count_mode(
-    group_by: &[String],
-    where_clauses: &[drive::query::WhereClause],
-) -> Result<CountMode, drive_proof_verifier::Error> {
-    let is_in_field = |field: &str| {
-        where_clauses
-            .iter()
-            .any(|wc| wc.operator == WhereOperator::In && wc.field == field)
-    };
-    let is_range_field = |field: &str| {
-        where_clauses
-            .iter()
-            .any(|wc| DriveDocumentCountQuery::is_range_operator(wc.operator) && wc.field == field)
-    };
-    let unsupported = |feature: String| drive_proof_verifier::Error::RequestError {
-        error: format!("{feature} (see issue #3655 for the v1 wire surface follow-ups)"),
-    };
-    match group_by {
-        [] => Ok(CountMode::Aggregate),
-        [field] => {
-            if is_in_field(field) {
-                Ok(CountMode::GroupByIn)
-            } else if is_range_field(field) {
-                Ok(CountMode::GroupByRange)
-            } else {
-                Err(drive_proof_verifier::Error::RequestError {
-                    error: format!(
-                        "GROUP BY on field '{field}' which is not constrained by an `In` \
-                         or range where clause is not yet implemented (see issue #3655)"
-                    ),
-                })
-            }
-        }
-        [first, second] => {
-            if is_in_field(first) && is_range_field(second) {
-                Ok(CountMode::GroupByCompound)
-            } else {
-                Err(unsupported(
-                    "two-field GROUP BY outside the `(In, range)` compound shape \
-                     is not yet implemented"
-                        .to_string(),
-                ))
-            }
-        }
-        _ => Err(unsupported(
-            "GROUP BY with more than two fields is not yet implemented".to_string(),
-        )),
-    }
-}
-
 /// Wrap a single `u64` from an aggregate proof primitive
 /// (`AggregateCountOnRange` or `verify_primary_key_count_tree_proof`)
 /// as a one-element `Vec<SplitCountEntry>` so callers see a
@@ -430,7 +371,7 @@ mod tests {
     use dpp::data_contract::{DataContractFactory, TokenConfiguration};
     use dpp::platform_value::platform_value;
     use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
-    use drive::query::{SelectProjection, TimeRangeSelector, WhereClause};
+    use drive::query::{SelectProjection, TimeRangeSelector, WhereClause, WhereOperator};
     use std::sync::Arc;
 
     const DOCUMENT_TYPE: &str = "post";

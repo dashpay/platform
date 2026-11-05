@@ -14,6 +14,8 @@ use crate::error::Error;
 use crate::query::{OrderClause, ResolvedTimeRange, WhereClause};
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
+use dpp::version::PlatformVersion;
+use grovedb::PathQuery;
 
 /// What a proved count reads, decided from its request alone.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -177,6 +179,89 @@ impl DriveDocumentCountQuery<'_> {
                     "a count proof plan is made only for a proof mode; mode detection with \
                      prove = true never returns a no-proof mode",
                 )))
+            }
+        }
+    }
+}
+
+impl CountProofPlan<'_> {
+    /// The path query a proof of this plan answers. The server proves it
+    /// (`Drive::execute_document_count_proof`), and a
+    /// client builds it from the same plan before sending and before it
+    /// verifies an answer, so a request whose path query cannot be built is
+    /// refused in the server's words. A `summableOffCountIndex` index counts
+    /// its documents through its range sums, so its range proofs read the sum
+    /// surface's path queries.
+    ///
+    /// The other arguments are the request's, as
+    /// [`DriveDocumentCountQuery::proof_plan`] read them.
+    pub fn path_query(
+        &self,
+        contract_id: [u8; 32],
+        document_type: DocumentTypeRef,
+        document_type_name: String,
+        where_clauses: Vec<WhereClause>,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
+        let count_query = |index| DriveDocumentCountQuery {
+            document_type,
+            contract_id,
+            document_type_name,
+            index,
+            where_clauses,
+        };
+        match *self {
+            CountProofPlan::PrimaryKeyCountTree => {
+                Ok(DriveDocumentCountQuery::primary_key_count_tree_path_query(
+                    contract_id,
+                    document_type.name(),
+                ))
+            }
+            CountProofPlan::PointLookup(index) => {
+                count_query(index).point_lookup_count_path_query(platform_version)
+            }
+            CountProofPlan::Range(index) => {
+                let query = count_query(index);
+                match query.counter_sums_query() {
+                    Some(sums) => sums.aggregate_sum_path_query(platform_version),
+                    None => query.aggregate_count_path_query(platform_version),
+                }
+            }
+            CountProofPlan::RangeDistinct {
+                index,
+                limit,
+                left_to_right,
+            } => {
+                let query = count_query(index);
+                match query.counter_sums_query() {
+                    Some(sums) => {
+                        sums.distinct_sum_path_query(Some(limit), left_to_right, platform_version)
+                    }
+                    None => query.distinct_count_path_query(
+                        Some(limit),
+                        left_to_right,
+                        platform_version,
+                    ),
+                }
+            }
+            CountProofPlan::RangeAggregateCarrier {
+                index,
+                limit,
+                left_to_right,
+            } => {
+                let query = count_query(index);
+                match query.counter_sums_query() {
+                    Some(sums) => sums.carrier_aggregate_sum_path_query(
+                        limit,
+                        left_to_right,
+                        platform_version,
+                    ),
+                    None => query.carrier_aggregate_count_path_query(
+                        limit,
+                        left_to_right,
+                        platform_version,
+                    ),
+                }
             }
         }
     }

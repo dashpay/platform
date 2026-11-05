@@ -418,10 +418,9 @@ fn should_refuse_a_having_view_without_a_having_clause() {
 
 /// From protocol version 14 a grouped aggregate ordered by its aggregate is
 /// served as a ranked answer, and one with a `having` clause as a having-range
-/// answer. Neither is a grouped total a count, sum or average view verifies,
-/// and its verifier refuses the request outright: a node serves a ranked or
-/// having-range request only when no `In` or range constrains its group, since
-/// the where clauses pin the properties before the grouped one.
+/// answer. Neither is a grouped total a count, sum or average view verifies, so
+/// the view routes the request as every node routes it and refuses it before
+/// sending, naming the view that verifies it.
 #[test]
 fn should_refuse_an_aggregate_view_of_a_ranked_or_having_query() {
     let views: [(&str, Check, SelectProjection); 6] = [
@@ -462,12 +461,12 @@ fn should_refuse_an_aggregate_view_of_a_ranked_or_having_query() {
             .with_group_by("restaurantId")
             .order_by_selected_aggregate(RankingDirection::Descending)
             .with_limit(5);
-        for query in [ranked, having().with_select(select)] {
+        for (query, verified_by) in [
+            (ranked, "DocumentRankedEntries"),
+            (having().with_select(select), "DocumentHavingEntries"),
+        ] {
             let error = refusal(view, check, &query);
-            assert!(
-                error.contains("not constrained by an `In` or range"),
-                "{view}: {error}"
-            );
+            assert!(error.contains(verified_by), "{view}: {error}");
         }
     }
 }
@@ -1330,6 +1329,149 @@ fn should_refuse_an_aggregate_no_index_serves_before_sending() {
             "{view}: refused for the index it lacks: {error}"
         );
     }
+}
+
+/// A `sale` whose index on `category` then `price` counts and sums `amount` over price ranges.
+fn sales() -> DocumentQuery {
+    let schemas = platform_value!({"sale": {
+        "type": "object",
+        "properties": {
+            "category": {"type": "string", "minLength": 1, "maxLength": 59, "position": 0},
+            "price": {"type": "integer", "minimum": 0, "maximum": 1_000_000, "position": 1},
+            "amount": {"type": "integer", "minimum": 0, "maximum": 1_000_000, "position": 2}
+        },
+        "required": ["category", "price", "amount"],
+        "indices": [
+            {"name": "byCategoryPrice",
+             "properties": [{"category": "asc"}, {"price": "asc"}],
+             "averageable": "amount",
+             "rangeAverageable": true}
+        ],
+        "additionalProperties": false
+    }});
+    let contract = DataContractFactory::new(PlatformVersion::latest().protocol_version)
+        .expect("factory")
+        .create_with_value_config(Identifier::new([15u8; 32]), 0, schemas, None, None)
+        .expect("the sale contract is well-formed")
+        .data_contract_owned();
+    DocumentQuery::new(Arc::new(contract), "sale").expect("the contract has this document type")
+}
+
+/// A count, sum or average proof answers the path query its plan lowers to, which the node
+/// builds from the request alone before it proves anything. A request whose path query cannot
+/// be built — an ungrouped average over a range under several `In` prefixes, which the range
+/// total reads through one prefix only — is refused by every node and every verifier, so it is
+/// refused before sending; the same average under one prefix is sent.
+#[test]
+fn should_refuse_an_aggregate_whose_path_query_cannot_be_built_before_sending() {
+    let price_above_zero = WhereClause {
+        field: "price".to_string(),
+        operator: WhereOperator::GreaterThan,
+        value: Value::U64(0),
+    };
+    let average = || sales().with_select(SelectProjection::avg("amount"));
+    let under_several = average()
+        .with_where(WhereClause {
+            field: "category".to_string(),
+            operator: WhereOperator::In,
+            value: platform_value!(["tools", "toys"]),
+        })
+        .with_where(price_above_zero.clone());
+    let error = refusal("DocumentAverage", check::<DocumentAverage>, &under_several);
+    assert!(
+        error.contains("no answer to this average can be verified")
+            && error.contains("prefix properties must use `==`"),
+        "{error}"
+    );
+    let under_one = average()
+        .with_where(WhereClause {
+            field: "category".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("tools".to_string()),
+        })
+        .with_where(price_above_zero);
+    assert!(
+        check::<DocumentAverage>(&under_one).is_ok(),
+        "{:?}",
+        check::<DocumentAverage>(&under_one)
+    );
+}
+
+/// A node routes every count, sum and average before executing it, and refuses a `limit` the
+/// routed mode cannot honor: a total is one row, and a grouping by an `In` field is bounded by
+/// the `In` array. The view routes the request the same way and refuses it before sending, in
+/// the node's words; a limit on a distinct walk, which a node honors, is sent.
+#[test]
+fn should_refuse_a_limit_the_routed_mode_cannot_honor_before_sending() {
+    let total = |select: SelectProjection| reviews().with_select(select).with_limit(1);
+    let per_restaurant = |select: SelectProjection| {
+        reviews()
+            .with_select(select)
+            .with_where(restaurants_in())
+            .with_group_by("restaurantId")
+            .with_limit(1)
+    };
+    let total_words = "is not valid for SELECT";
+    let cases: Vec<(&str, Check, DocumentQuery)> = vec![
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            total(SelectProjection::count_star()),
+        ),
+        (
+            "DocumentSum",
+            check::<DocumentSum>,
+            total(SelectProjection::sum("grade")),
+        ),
+        (
+            "DocumentAverage",
+            check::<DocumentAverage>,
+            total(SelectProjection::avg("grade")),
+        ),
+        (
+            "DocumentSplitCounts",
+            check::<DocumentSplitCounts>,
+            per_restaurant(SelectProjection::count_star()),
+        ),
+        (
+            "DocumentSplitSums",
+            check::<DocumentSplitSums>,
+            per_restaurant(SelectProjection::sum("grade")),
+        ),
+        (
+            "DocumentSplitAverages",
+            check::<DocumentSplitAverages>,
+            per_restaurant(SelectProjection::avg("grade")),
+        ),
+    ];
+    for (view, check, query) in cases {
+        let error = refusal(view, check, &query);
+        assert!(
+            error.contains("`limit`") && error.contains(total_words),
+            "{view}: {error}"
+        );
+        let mut without_limit = query;
+        without_limit.limit = 0;
+        assert!(
+            check(&without_limit).is_ok(),
+            "{view}: {:?}",
+            check(&without_limit)
+        );
+    }
+    let distinct_with_limit = reviews()
+        .with_select(SelectProjection::count_star())
+        .with_where(WhereClause {
+            field: "hashtag".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("a".to_string()),
+        })
+        .with_group_by("hashtag")
+        .with_limit(5);
+    assert!(
+        check::<DocumentSplitCounts>(&distinct_with_limit).is_ok(),
+        "{:?}",
+        check::<DocumentSplitCounts>(&distinct_with_limit)
+    );
 }
 
 /// The verifier rebuilds a distinct walk's limit byte for byte and leaves the cap on it to the

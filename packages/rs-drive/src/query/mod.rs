@@ -280,6 +280,12 @@ pub mod filter;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod token_status_drive_query;
 
+/// How a `SELECT COUNT` / `SUM` / `AVG` request executes — one of the
+/// grouped modes, ranked or having-range — and the grouped modes' limit
+/// contract, decided from the request's shape alone.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod aggregate_routing;
+
 /// A query to count documents using CountTree elements
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod drive_document_count_query;
@@ -4165,6 +4171,9 @@ pub(crate) mod unsigned_index_key_order_tests;
 
 #[cfg(all(test, feature = "server"))]
 mod window_selection_cardinality_tests;
+
+#[cfg(all(test, feature = "server"))]
+mod proof_plan_equivalence_tests;
 
 #[cfg(feature = "server")]
 #[cfg(test)]

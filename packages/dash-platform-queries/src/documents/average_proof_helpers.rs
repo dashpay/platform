@@ -18,12 +18,12 @@
 //! [`DocumentAverage`]: drive_proof_verifier::DocumentAverage
 //! [`DocumentSplitAverages`]: drive_proof_verifier::DocumentSplitAverages
 
+use crate::documents::aggregate_routing::grouped_mode;
 use crate::documents::array_element_clauses::{
     aggregate_request_where_clauses, aggregate_where_clauses, document_type_named,
 };
 use crate::documents::document_query::normalize_time_range_clauses_with_metadata_time;
 use crate::documents::document_query::DocumentQuery;
-use crate::documents::sum_proof_helpers::resolve_sum_mode;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dash_context_provider::ContextProvider;
@@ -31,8 +31,8 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
 use drive::query::drive_document_average_query::AverageMode;
-use drive::query::drive_document_sum_query::{DriveDocumentSumQuery, SumMode, SumProofPlan};
-use drive::query::{OrderClause, ResolvedTimeRange, SelectFunction, WhereClause};
+use drive::query::drive_document_sum_query::{DriveDocumentSumQuery, SumProofPlan};
+use drive::query::{ResolvedTimeRange, SelectFunction, WhereClause};
 use drive_proof_verifier::{
     verify_aggregate_count_and_sum_proof, verify_carrier_aggregate_count_and_sum_proof,
     verify_distinct_count_and_sum_proof, verify_point_lookup_count_and_sum_proof,
@@ -79,66 +79,66 @@ pub(super) fn check_average_request(
     assert_select_is_avg(request)?;
     let (resolved, resolved_time_ranges) = request.resolved_for_checking()?;
     let request = &resolved;
-    let where_clauses = aggregate_request_where_clauses(request, folds_entries, platform_version)?;
-    let average_mode = resolve_average_mode(&request.group_by, &where_clauses)?;
     request.ensure_no_having()?;
+    let mode = grouped_mode(request, "AVG", platform_version)?;
+    let where_clauses =
+        aggregate_request_where_clauses(request, mode, folds_entries, platform_version)?;
     let document_type = document_type_named(&request.data_contract, &request.document_type_name)?;
     average_proof_plan(
+        request,
         &document_type,
         &where_clauses,
         &resolved_time_ranges,
-        &request.select.field,
-        average_mode,
-        &request.order_by_clauses,
-        request.limit,
+        AverageMode::from(mode),
+        platform_version,
     )
     .map(drop)
 }
 
-/// The SQL-shape [`AverageMode`] of an average request: the [`SumMode`] a sum
-/// over the same `(group_by, where_clauses)` resolves to
-/// ([`resolve_sum_mode`]), mapped 1:1 as drive-abci maps it.
-fn resolve_average_mode(
-    group_by: &[String],
-    where_clauses: &[WhereClause],
-) -> Result<AverageMode, drive_proof_verifier::Error> {
-    Ok(match resolve_sum_mode(group_by, where_clauses)? {
-        SumMode::Aggregate => AverageMode::Aggregate,
-        SumMode::GroupByIn => AverageMode::GroupByIn,
-        SumMode::GroupByRange => AverageMode::GroupByRange,
-        SumMode::GroupByCompound => AverageMode::GroupByCompound,
-    })
-}
-
-/// The proof plan a node makes for a proved average of `sum_property`, made
-/// from the request alone ([`DriveDocumentSumQuery::average_proof_plan`]): the
-/// primary-key route or the covering index, and the limit the path query
-/// carries. A client cannot know a node's `max_query_limit`, so it leaves that
-/// check to the node.
+/// The proof plan a node makes for a proved average of `request`'s select
+/// field, made from the request alone and lowered to the path query its proof
+/// answers: the primary-key route or the covering index and the limit and walk
+/// direction ([`DriveDocumentSumQuery::average_proof_plan`]), and the path
+/// query ([`SumProofPlan::path_query`]), which the check before sending
+/// discards and the verifier's Drive call rebuilds from the plan. A client
+/// cannot know a node's `max_query_limit`, so it leaves that check to the
+/// node.
 ///
-/// `order_clauses` and `limit` are the request's, `limit` `0` when unset.
+/// `where_clauses` are the request's as the server reads them
+/// ([`aggregate_where_clauses`]).
 fn average_proof_plan<'a>(
+    request: &DocumentQuery,
     document_type: &'a DocumentTypeRef<'_>,
     where_clauses: &[WhereClause],
     resolved_time_ranges: &[ResolvedTimeRange],
-    sum_property: &str,
     average_mode: AverageMode,
-    order_clauses: &[OrderClause],
-    limit: u32,
+    platform_version: &PlatformVersion,
 ) -> Result<SumProofPlan<'a>, drive_proof_verifier::Error> {
-    DriveDocumentSumQuery::average_proof_plan(
+    let unverifiable = |e| drive_proof_verifier::Error::RequestError {
+        error: format!("no answer to this average can be verified: {e}"),
+    };
+    let plan = DriveDocumentSumQuery::average_proof_plan(
         document_type,
         where_clauses,
         resolved_time_ranges,
-        sum_property,
+        &request.select.field,
         average_mode,
-        order_clauses,
-        (limit != 0).then_some(limit),
+        &request.order_by_clauses,
+        (request.limit != 0).then_some(request.limit),
         None,
     )
-    .map_err(|e| drive_proof_verifier::Error::RequestError {
-        error: format!("no answer to this average can be verified: {e}"),
-    })
+    .map_err(unverifiable)?;
+    plan.path_query(
+        request.data_contract.id().to_buffer(),
+        *document_type,
+        request.document_type_name.clone(),
+        where_clauses.to_vec(),
+        request.select.field.clone(),
+        true,
+        platform_version,
+    )
+    .map_err(unverifiable)?;
+    Ok(plan)
 }
 
 /// Verify an AVG-shape proof and return per-branch `AverageEntry`s.
@@ -148,10 +148,9 @@ fn average_proof_plan<'a>(
 /// rather than a clause-shape heuristic, so the SDK's routing matches
 /// the server's exactly.
 ///
-/// **Routing**: build an [`AverageMode`] from `(group_by,
-/// where_clauses)` matching the abci handler's `validate_and_route`
-/// logic, then take Drive's plan ([`average_proof_plan`]). Branch by
-/// the plan:
+/// **Routing**: route the request to an [`AverageMode`] with the
+/// node's own routing ([`grouped_mode`]), then take Drive's plan
+/// ([`average_proof_plan`]). Branch by the plan:
 ///
 /// - [`SumProofPlan::PrimaryKeySumTree`] (empty where on a doctype
 ///   that declares `documentsCountable` and sums by the averaged
@@ -210,30 +209,28 @@ pub(super) fn verify_average_query(
                 request.document_type_name, e
             ),
         })?;
+    // The grouped mode the node's routing answers the request in, read over
+    // the clauses as the routing reads them: windows resolved, elements not
+    // yet keyed.
+    let mode = grouped_mode(&request, "AVG", platform_version)?;
     request.where_clauses = aggregate_where_clauses(
         document_type,
-        &request.group_by,
+        mode,
         std::mem::take(&mut request.where_clauses),
         folds_entries,
         platform_version,
     )?;
 
-    // Resolve the SQL-shape `AverageMode` the request implies — the
-    // same decision tree as `validate_and_route` in the abci handler,
-    // which maps it 1:1 from the count / sum mode.
-    let average_mode = resolve_average_mode(&request.group_by, &request.where_clauses)?;
-
     // Drive's plan, the one the prover made from the same request: the
     // primary-key route or covering index, and the limit the path query
     // carries.
     let plan = average_proof_plan(
+        &request,
         &document_type,
         &request.where_clauses,
         &resolved_time_ranges,
-        &sum_property,
-        average_mode,
-        &request.order_by_clauses,
-        request.limit,
+        AverageMode::from(mode),
+        platform_version,
     )?;
     let sum_query = |index| DriveDocumentSumQuery {
         document_type,

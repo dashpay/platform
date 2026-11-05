@@ -67,8 +67,9 @@ fn listings(version: &PlatformVersion) -> Arc<dpp::prelude::DataContract> {
     )
 }
 
-/// A `review` whose index sums and counts `grade` per restaurant, and a `note` that counts and
-/// sums nothing.
+/// A `review` whose index sums and counts `grade` per restaurant, a `note` that counts and sums
+/// nothing, and a `sale` whose index on `category` then `price` counts and sums `amount` over
+/// price ranges.
 fn reviews(version: &PlatformVersion) -> Arc<dpp::prelude::DataContract> {
     contract(
         32,
@@ -93,6 +94,22 @@ fn reviews(version: &PlatformVersion) -> Arc<dpp::prelude::DataContract> {
                     "name": {"type": "string", "minLength": 1, "maxLength": 59, "position": 0}
                 },
                 "required": ["name"],
+                "additionalProperties": false
+            },
+            "sale": {
+                "type": "object",
+                "properties": {
+                    "category": {"type": "string", "minLength": 1, "maxLength": 59, "position": 0},
+                    "price": {"type": "integer", "minimum": 0, "maximum": 1_000_000, "position": 1},
+                    "amount": {"type": "integer", "minimum": 0, "maximum": 1_000_000, "position": 2}
+                },
+                "required": ["category", "price", "amount"],
+                "indices": [
+                    {"name": "byCategoryPrice",
+                     "properties": [{"category": "asc"}, {"price": "asc"}],
+                     "averageable": "amount",
+                     "rangeAverageable": true}
+                ],
                 "additionalProperties": false
             }
         }),
@@ -144,6 +161,12 @@ async fn agree_at(version: &'static PlatformVersion) {
     let listing = || DocumentQuery::new(Arc::clone(&listings), "listing").expect("listing");
     let review = || DocumentQuery::new(Arc::clone(&reviews), "review").expect("review");
     let note = || DocumentQuery::new(Arc::clone(&reviews), "note").expect("note");
+    let sale = || DocumentQuery::new(Arc::clone(&reviews), "sale").expect("sale");
+    let price_above_zero = || WhereClause {
+        field: "price".to_string(),
+        operator: WhereOperator::GreaterThan,
+        value: Value::U64(0),
+    };
     let price_window = || listing().with_integer_range("price", Value::U64(200));
     let restaurants_in = || any_of("restaurantId", platform_value!(["a", "b"]));
     let categories_in = || any_of("category", platform_value!(["tools", "toys"]));
@@ -235,6 +258,55 @@ async fn agree_at(version: &'static PlatformVersion) {
             price_window()
                 .with_select(SelectProjection::sum("quantity"))
                 .with_where(equal("category", Value::Text("tools".to_string()))),
+            true,
+        ),
+        // A range total reads through one prefix: no path query serves several `In` prefixes.
+        (
+            "avg(amount) of sales in a price range under several categories",
+            check::<DocumentAverage>,
+            sale()
+                .with_select(SelectProjection::avg("amount"))
+                .with_where(categories_in())
+                .with_where(price_above_zero()),
+            false,
+        ),
+        (
+            "avg(amount) of sales in a price range under one category",
+            check::<DocumentAverage>,
+            sale()
+                .with_select(SelectProjection::avg("amount"))
+                .with_where(equal("category", Value::Text("tools".to_string())))
+                .with_where(price_above_zero()),
+            true,
+        ),
+        // A total is one row and a grouping by an `In` field is bounded by the array: neither
+        // honors a `limit`.
+        (
+            "count of reviews with a limit",
+            check::<DocumentCount>,
+            review()
+                .with_select(SelectProjection::count_star())
+                .with_where(restaurants_in())
+                .with_limit(1),
+            false,
+        ),
+        (
+            "count per restaurant with a limit",
+            check::<DocumentSplitCounts>,
+            review()
+                .with_select(SelectProjection::count_star())
+                .with_where(restaurants_in())
+                .with_group_by("restaurantId")
+                .with_limit(1),
+            false,
+        ),
+        (
+            "count per restaurant",
+            check::<DocumentSplitCounts>,
+            review()
+                .with_select(SelectProjection::count_star())
+                .with_where(restaurants_in())
+                .with_group_by("restaurantId"),
             true,
         ),
         // A `note` counts nothing.

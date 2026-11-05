@@ -20,6 +20,7 @@
 //! [`DocumentSum`]: drive_proof_verifier::DocumentSum
 //! [`DocumentSplitSums`]: drive_proof_verifier::DocumentSplitSums
 
+use crate::documents::aggregate_routing::grouped_mode;
 use crate::documents::array_element_clauses::{
     aggregate_request_where_clauses, aggregate_where_clauses, document_type_named,
 };
@@ -36,7 +37,7 @@ use drive::query::drive_document_sum_query::mode_detection::{
     check_sum_property_against_document_type, detect_sum_mode_from_inputs,
 };
 use drive::query::drive_document_sum_query::{DriveDocumentSumQuery, SumMode, SumProofPlan};
-use drive::query::{OrderClause, ResolvedTimeRange, SelectFunction, WhereClause, WhereOperator};
+use drive::query::{ResolvedTimeRange, SelectFunction, WhereClause};
 use drive_proof_verifier::{
     verify_aggregate_sum_proof, verify_carrier_aggregate_sum_proof, verify_distinct_sum_proof,
     verify_point_lookup_sum_proof, verify_primary_key_sum_tree_proof, SumEntry,
@@ -96,58 +97,70 @@ pub(super) fn check_sum_request(
     )?;
     let (resolved, resolved_time_ranges) = request.resolved_for_checking()?;
     let request = &resolved;
-    let where_clauses = aggregate_request_where_clauses(request, folds_entries, platform_version)?;
-    let sum_mode = resolve_sum_mode(&request.group_by, &where_clauses)?;
     request.ensure_no_having()?;
+    let mode = grouped_mode(request, "SUM", platform_version)?;
+    let where_clauses =
+        aggregate_request_where_clauses(request, mode, folds_entries, platform_version)?;
     sum_proof_plan(
+        request,
         &document_type,
         &where_clauses,
         &resolved_time_ranges,
-        &request.select.field,
-        sum_mode,
-        &request.order_by_clauses,
-        request.limit,
+        SumMode::from(mode),
         platform_version,
     )
     .map(drop)
 }
 
-/// The proof plan a node makes for a proved sum of `sum_property`, made from
-/// the request alone ([`DriveDocumentSumQuery::proof_plan`]): Drive resolves the
-/// SQL-shape `sum_mode` into its proof mode ([`detect_sum_mode_from_inputs`]),
-/// then picks the primary-key route or the covering index and the limit the
-/// path query carries. A client cannot know a node's `max_query_limit`, so it
-/// leaves that check to the node.
+/// The proof plan a node makes for a proved sum of `request`'s select field,
+/// made from the request alone and lowered to the path query its proof
+/// answers. Drive resolves the SQL-shape `sum_mode` into its proof mode
+/// ([`detect_sum_mode_from_inputs`]), picks the primary-key route or the
+/// covering index and the limit and walk direction
+/// ([`DriveDocumentSumQuery::proof_plan`]), and builds the path query
+/// ([`SumProofPlan::path_query`]), which the check before sending discards
+/// and the verifier's Drive call rebuilds from the plan. A client cannot know
+/// a node's `max_query_limit`, so it leaves that check to the node.
 ///
-/// `order_clauses` and `limit` are the request's, `limit` `0` when unset.
-#[allow(clippy::too_many_arguments)]
+/// `where_clauses` are the request's as the server reads them
+/// ([`aggregate_where_clauses`]).
 fn sum_proof_plan<'a>(
+    request: &DocumentQuery,
     document_type: &'a DocumentTypeRef<'_>,
     where_clauses: &[WhereClause],
     resolved_time_ranges: &[ResolvedTimeRange],
-    sum_property: &str,
     sum_mode: SumMode,
-    order_clauses: &[OrderClause],
-    limit: u32,
     platform_version: &PlatformVersion,
 ) -> Result<SumProofPlan<'a>, drive_proof_verifier::Error> {
     let mode = detect_sum_mode_from_inputs(where_clauses, sum_mode, true, platform_version)
         .map_err(|e| drive_proof_verifier::Error::RequestError {
             error: format!("sum-mode detection failed: {e}"),
         })?;
-    DriveDocumentSumQuery::proof_plan(
+    let unverifiable = |e| drive_proof_verifier::Error::RequestError {
+        error: format!("no answer to this sum can be verified: {e}"),
+    };
+    let plan = DriveDocumentSumQuery::proof_plan(
         document_type,
         where_clauses,
         resolved_time_ranges,
-        sum_property,
+        &request.select.field,
         mode,
-        order_clauses,
-        (limit != 0).then_some(limit),
+        &request.order_by_clauses,
+        (request.limit != 0).then_some(request.limit),
         None,
     )
-    .map_err(|e| drive_proof_verifier::Error::RequestError {
-        error: format!("no answer to this sum can be verified: {e}"),
-    })
+    .map_err(unverifiable)?;
+    plan.path_query(
+        request.data_contract.id().to_buffer(),
+        *document_type,
+        request.document_type_name.clone(),
+        where_clauses.to_vec(),
+        request.select.field.clone(),
+        false,
+        platform_version,
+    )
+    .map_err(unverifiable)?;
+    Ok(plan)
 }
 
 /// Verify a SUM-shape proof and return per-branch `SumEntry`s.
@@ -157,10 +170,9 @@ fn sum_proof_plan<'a>(
 /// so the SDK's routing matches the server's exactly. Mirrors count's
 /// [`super::count_proof_helpers::verify_count_query`] approach.
 ///
-/// **Routing**: build a [`SumMode`] from `(group_by,
-/// where_clauses)` matching the abci handler's `validate_and_route`
-/// logic, then take Drive's plan ([`sum_proof_plan`]). Branch by the
-/// plan:
+/// **Routing**: route the request to a [`SumMode`] with the node's
+/// own routing ([`grouped_mode`]), then take Drive's plan
+/// ([`sum_proof_plan`]). Branch by the plan:
 ///
 /// - [`SumProofPlan::PrimaryKeySumTree`] (empty where on a doctype
 ///   whose `documentsSummable` is the summed property) →
@@ -218,19 +230,17 @@ pub(super) fn verify_sum_query(
                 request.document_type_name, e
             ),
         })?;
+    // The grouped mode the node's routing answers the request in, read over
+    // the clauses as the routing reads them: windows resolved, elements not
+    // yet keyed.
+    let mode = grouped_mode(&request, "SUM", platform_version)?;
     request.where_clauses = aggregate_where_clauses(
         document_type,
-        &request.group_by,
+        mode,
         std::mem::take(&mut request.where_clauses),
         folds_entries,
         platform_version,
     )?;
-
-    // Resolve the SQL-shape `SumMode` the request implies. Same
-    // decision tree as `validate_and_route` in the abci handler —
-    // single source of truth would be nicer but the SDK can't
-    // depend on rs-drive-abci.
-    let sum_mode = resolve_sum_mode(&request.group_by, &request.where_clauses)?;
 
     // Drive's plan, the one the prover made from the same request: the
     // proof mode, the primary-key route or covering index, and the limit
@@ -238,13 +248,11 @@ pub(super) fn verify_sum_query(
     // over-max limit with a typed `InvalidLimit` before producing proof
     // bytes, so the SDK never sees a clamped value to un-clamp.
     let plan = sum_proof_plan(
+        &request,
         &document_type,
         &request.where_clauses,
         &resolved_time_ranges,
-        &sum_property,
-        sum_mode,
-        &request.order_by_clauses,
-        request.limit,
+        SumMode::from(mode),
         platform_version,
     )?;
     let sum_query = |index| DriveDocumentSumQuery {
@@ -309,65 +317,6 @@ pub(super) fn verify_sum_query(
         )?,
     };
     Ok((Some(entries), mtd.clone(), proof.clone()))
-}
-
-/// Build the SQL-shape [`SumMode`] from `(group_by, where_clauses)`.
-/// Mirrors [`super::count_proof_helpers::resolve_count_mode`] —
-/// same SQL surface, same routing decision shape (`SumMode` is
-/// structurally identical to `CountMode`). Keeping the two
-/// resolvers in lock-step means a future SQL extension only has
-/// to land once in count + once in sum. The average helpers resolve
-/// their mode with it too, since an average routes over the same SQL
-/// surface.
-pub(super) fn resolve_sum_mode(
-    group_by: &[String],
-    where_clauses: &[drive::query::WhereClause],
-) -> Result<SumMode, drive_proof_verifier::Error> {
-    let is_in_field = |field: &str| {
-        where_clauses
-            .iter()
-            .any(|wc| wc.operator == WhereOperator::In && wc.field == field)
-    };
-    let is_range_field = |field: &str| {
-        where_clauses.iter().any(|wc| {
-            drive::query::drive_document_sum_query::is_range_operator(wc.operator)
-                && wc.field == field
-        })
-    };
-    let unsupported = |feature: String| drive_proof_verifier::Error::RequestError {
-        error: format!("{feature} (see issue #3655 for the v1 wire surface follow-ups)"),
-    };
-    match group_by {
-        [] => Ok(SumMode::Aggregate),
-        [field] => {
-            if is_in_field(field) {
-                Ok(SumMode::GroupByIn)
-            } else if is_range_field(field) {
-                Ok(SumMode::GroupByRange)
-            } else {
-                Err(drive_proof_verifier::Error::RequestError {
-                    error: format!(
-                        "GROUP BY on field '{field}' which is not constrained by an `In` \
-                         or range where clause is not yet implemented (see issue #3655)"
-                    ),
-                })
-            }
-        }
-        [first, second] => {
-            if is_in_field(first) && is_range_field(second) {
-                Ok(SumMode::GroupByCompound)
-            } else {
-                Err(unsupported(
-                    "two-field GROUP BY outside the `(In, range)` compound shape \
-                     is not yet implemented"
-                        .to_string(),
-                ))
-            }
-        }
-        _ => Err(unsupported(
-            "GROUP BY with more than two fields is not yet implemented".to_string(),
-        )),
-    }
 }
 
 /// Wrap a single `i64` from an aggregate primitive (range-aggregate
