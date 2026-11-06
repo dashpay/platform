@@ -50,6 +50,31 @@ fn quorum_lookup_key(display_order: [u8; 32]) -> QuorumHash {
     QuorumHash::from_byte_array(internal_order)
 }
 
+/// How many blocks the newest masternode list may trail the header tip
+/// while SPV still counts as synced.
+///
+/// dash-spv requests a diff for each new tip, so the list normally trails
+/// the tip only while that diff is in flight, by a block or two. It keeps
+/// masternode sync `Synced` when those updates fail, so a list further
+/// behind no longer follows the chain: it misses every quorum mined since.
+const MASTERNODE_LIST_TIP_LAG: u32 = 2;
+
+/// Whether `progress` reports header and masternode-list synchronization
+/// complete, with the newest masternode list at most
+/// [`MASTERNODE_LIST_TIP_LAG`] blocks behind the header tip.
+fn is_synced_to_tip(progress: &SyncProgress) -> bool {
+    progress
+        .headers()
+        .is_ok_and(|headers| headers.state() == SyncState::Synced)
+        && progress.masternodes().is_ok_and(|masternodes| {
+            masternodes.state() == SyncState::Synced
+                && masternodes
+                    .current_height()
+                    .saturating_add(MASTERNODE_LIST_TIP_LAG)
+                    >= masternodes.block_header_tip_height()
+        })
+}
+
 /// A quorum public key from the SPV masternode state, see
 /// [`SpvRuntime::get_quorum_public_key_with_status`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -350,22 +375,19 @@ impl SpvRuntime {
     }
 
     /// Whether sync is running and dash-spv's current progress reports both
-    /// header and masternode-list synchronization complete.
+    /// header and masternode-list synchronization complete, with the newest
+    /// masternode list at the header tip or just behind it.
     ///
-    /// A failed sync keeps its last progress, so "synced" alone would vouch
+    /// A failed sync keeps its last progress, and masternode sync stays
+    /// `Synced` when later list updates fail, so "synced" alone would vouch
     /// for a masternode list that no longer follows the chain.
     pub async fn is_ready(&self) -> bool {
         if !self.is_running() {
             return false;
         }
-        self.sync_progress().await.is_some_and(|progress| {
-            progress
-                .headers()
-                .is_ok_and(|headers| headers.state() == SyncState::Synced)
-                && progress
-                    .masternodes()
-                    .is_ok_and(|masternodes| masternodes.state() == SyncState::Synced)
-        })
+        self.sync_progress()
+            .await
+            .is_some_and(|progress| is_synced_to_tip(&progress))
     }
 
     /// Whether SPV sync is running or starting. `false` once background sync
@@ -1076,12 +1098,17 @@ mod tests {
     use key_wallet_manager::WalletManager;
     use tokio::sync::RwLock;
 
-    use super::{classify_spv_send_error, quorum_lookup_key, SpvRuntime};
+    use super::{
+        classify_spv_send_error, is_synced_to_tip, quorum_lookup_key, SpvRuntime,
+        MASTERNODE_LIST_TIP_LAG,
+    };
     use crate::broadcaster::BroadcastError;
     use crate::error::PlatformWalletError;
     use crate::events::{EventHandler, PlatformEventHandler, PlatformEventManager};
     use crate::wallet::platform_wallet::PlatformWalletInfo;
-    use dash_spv::ClientConfig;
+    use dash_spv::{
+        BlockHeadersProgress, ClientConfig, MasternodesProgress, SyncProgress, SyncState,
+    };
 
     fn unstarted_runtime() -> SpvRuntime {
         let wallet_manager = Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
@@ -1585,6 +1612,43 @@ mod tests {
                 "quorum type {quorum_type} must be rejected, got {verified:?}"
             );
         }
+    }
+
+    /// Progress with headers and masternode lists both `Synced`, the headers
+    /// at `tip` and the newest masternode list at `list_height`.
+    fn synced_progress(tip: u32, list_height: u32) -> SyncProgress {
+        let mut headers = BlockHeadersProgress::default();
+        headers.set_state(SyncState::Synced);
+        headers.update_tip_height(tip);
+        let mut masternodes = MasternodesProgress::default();
+        masternodes.set_state(SyncState::Synced);
+        masternodes.update_block_header_tip_height(tip);
+        masternodes.update_current_height(list_height);
+        let mut progress = SyncProgress::default();
+        progress.update_headers(headers);
+        progress.update_masternodes(masternodes);
+        progress
+    }
+
+    /// dash-spv keeps masternode sync `Synced` when later list updates fail,
+    /// for example a restored list whose every QRInfo attempt timed out. Such
+    /// a list misses every quorum mined since, and a miss on a ready source
+    /// is blamed on the node, so a list that stopped following the header tip
+    /// must not count as ready: lookups then fail as unavailable instead of
+    /// banning honest nodes.
+    #[test]
+    fn should_not_be_ready_while_the_masternode_list_trails_the_header_tip() {
+        let tip = 1_100_000;
+        assert!(is_synced_to_tip(&synced_progress(tip, tip)));
+        assert!(
+            is_synced_to_tip(&synced_progress(tip, tip - MASTERNODE_LIST_TIP_LAG)),
+            "a tip diff in flight must not drop readiness"
+        );
+        assert!(
+            !is_synced_to_tip(&synced_progress(tip, tip - MASTERNODE_LIST_TIP_LAG - 1)),
+            "a list behind the header tip must not be ready"
+        );
+        assert!(!is_synced_to_tip(&synced_progress(tip, 0)));
     }
 
     /// Drive the production startup path and wait for upstream `run` to return.
