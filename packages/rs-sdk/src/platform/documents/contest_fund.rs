@@ -14,6 +14,7 @@ use dpp::document::DocumentV0Getters;
 use dpp::fee::Credits;
 use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dpp::voting::contender_structs::ContenderWithSerializedDocument;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use drive::config::DEFAULT_QUERY_LIMIT;
 use drive::query::vote_poll_vote_state_query::{
     ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
@@ -51,13 +52,7 @@ impl Sdk {
         document_type: DocumentTypeRef<'_>,
         document: &Document,
     ) -> Result<Option<(String, Credits)>, Error> {
-        // The contest is resolved on the document the transition builder sends, with every
-        // `generatedFrom` property generated from its params as the platform generates it
-        let mut document = document.clone();
-        document_type.regenerate_generated_properties(document.properties_mut(), self.version())?;
-        let Some(vote_poll) =
-            document_type.contested_vote_poll_for_document(&document, self.version())?
-        else {
+        let Some(vote_poll) = self.contested_vote_poll(document_type, document)? else {
             return Ok(None);
         };
 
@@ -94,6 +89,19 @@ impl Sdk {
         let contest_fund =
             vote_poll.required_vote_resolution_fund_to_join(contenders, self.version());
         Ok(Some((vote_poll.index_name, contest_fund)))
+    }
+
+    /// The contest a create of `document` joins, or `None`: resolved on the document the
+    /// transition builder sends, with every `generatedFrom` property generated from its params
+    /// as the platform generates it.
+    pub(crate) fn contested_vote_poll(
+        &self,
+        document_type: DocumentTypeRef<'_>,
+        document: &Document,
+    ) -> Result<Option<ContestedDocumentResourceVotePoll>, Error> {
+        let mut document = document.clone();
+        document_type.regenerate_generated_properties(document.properties_mut(), self.version())?;
+        Ok(document_type.contested_vote_poll_for_document(&document, self.version())?)
     }
 }
 

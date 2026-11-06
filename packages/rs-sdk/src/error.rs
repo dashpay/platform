@@ -131,6 +131,19 @@ pub enum Error {
     #[error("Operation cancelled: {0}")]
     Cancelled(String),
 
+    /// A DPNS registration under
+    /// [`DpnsContestPolicy::Refuse`](crate::platform::dpns_usernames::DpnsContestPolicy::Refuse)
+    /// was refused, before anything was written, because the name would join a contest.
+    /// `index` is the contested index of the DPNS contract the registration built its domain
+    /// with, or `None` when the label's spelling alone put it in a contest.
+    #[error("{label} would join a DPNS contest, and only ordinary names are registered")]
+    DpnsNameContested {
+        /// The label as the caller gave it.
+        label: String,
+        /// The contested index the domain falls under.
+        index: Option<String>,
+    },
+
     /// Remote node is stale; try another server
     #[error(transparent)]
     StaleNode(#[from] StaleNodeError),
