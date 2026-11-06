@@ -219,7 +219,7 @@ async fn explicitly_supplied_seed_matches_the_resident_one() {
     };
 
     let supplied = block_in_place(|| {
-        wallet.derive_provider_key_at_index(ProviderKeyKind::Voting, 3, Some(&seed), true)
+        wallet.derive_provider_key_at_index(ProviderKeyKind::Voting, 3, Some(&*seed), true)
     })
     .expect("supplied-seed derivation");
 

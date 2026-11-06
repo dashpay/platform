@@ -578,7 +578,7 @@ mod tests {
     fn master_for(network: Network) -> ExtendedPrivKey {
         let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid English test mnemonic");
         let seed = mnemonic.to_seed("");
-        ExtendedPrivKey::new_master(network, &seed).expect("master xpriv from test seed")
+        ExtendedPrivKey::new_master(network, &*seed).expect("master xpriv from test seed")
     }
 
     /// The loading probe's resident-wallet and master derive sources

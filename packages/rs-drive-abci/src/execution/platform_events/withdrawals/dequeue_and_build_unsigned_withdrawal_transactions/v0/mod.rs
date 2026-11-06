@@ -3,7 +3,7 @@ use dpp::dashcore::transaction::special_transaction::asset_unlock::qualified_ass
 use dpp::dashcore::Transaction;
 use dpp::dashcore::{
     blockdata::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo,
-    hashes::Hash, QuorumHash,
+    QuorumHash,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::document_methods::DocumentMethodsV0;
