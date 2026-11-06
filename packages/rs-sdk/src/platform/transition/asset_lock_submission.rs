@@ -16,9 +16,13 @@
 //! - [`submit_with_cl_height_retry`] — retry-on-10506 wrapper that bumps
 //!   `user_fee_increase` between attempts so Tenderdash's invalid-tx hash
 //!   cache (24h on mainnet/testnet) can't silently drop resubmits.
+//! - [`Sdk::asset_lock_outpoint_state`] — Platform's record of an outpoint,
+//!   read with a proof: whether a transition used the lock, and what is left.
 
 use std::time::Duration;
 
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
+use dpp::asset_lock::StoredAssetLockInfo;
 use dpp::consensus::basic::identity::InvalidAssetLockProofCoreChainHeightError;
 use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
 use dpp::consensus::basic::BasicError;
@@ -26,9 +30,14 @@ use dpp::consensus::ConsensusError;
 use dpp::dashcore::OutPoint;
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::prelude::AssetLockProof;
+use dpp::serialization::PlatformDeserializableUntrusted;
+use drive::drive::RootTree;
+use drive::grovedb::Element;
+use drive_proof_verifier::types::{Elements, KeysInPath};
 
 use super::put_settings::PutSettings;
-use crate::Error;
+use crate::platform::FetchMany;
+use crate::{Error, Sdk};
 
 /// Delay between retries when Platform rejected with CL-height-too-low.
 /// Each retry bumps `PutSettings::user_fee_increase` so the ST hash
@@ -85,6 +94,59 @@ pub fn is_asset_lock_already_consumed(error: &Error, out_point: &OutPoint) -> bo
         )) if e.transaction_id() == out_point.txid
             && e.output_index() == out_point.vout as usize
     )
+}
+
+impl Sdk {
+    /// Platform's record of the asset lock `out_point` spends, read with a
+    /// proof: [`StoredAssetLockInfo::FullyConsumed`] once a transition used
+    /// it up, `PartiallyConsumed` with what is left after a transition that
+    /// failed past its asset-lock signature check, `NotPresent` before any.
+    ///
+    /// Drive keeps these records under `SpentAssetLockTransactions` and never
+    /// removes one, so `FullyConsumed` is final: no transition can spend the
+    /// lock again. It does not say which transition used the lock, or which
+    /// identity its credits went to. `NotPresent` holds only as of the
+    /// proof's block: a transition still in flight may use the lock later.
+    ///
+    /// A top-up's own wait cannot tell either: it proves a snapshot of the
+    /// identity's balance, which no particular top-up is bound to.
+    pub async fn asset_lock_outpoint_state(
+        &self,
+        out_point: &OutPoint,
+    ) -> Result<StoredAssetLockInfo, Error> {
+        let key = <[u8; 36]>::from(*out_point).to_vec();
+        let query = KeysInPath {
+            path: vec![vec![RootTree::SpentAssetLockTransactions as u8]],
+            keys: vec![key.clone()],
+        };
+        let elements = Element::fetch_many(self, query).await?;
+        stored_asset_lock_info(elements, &key)
+    }
+}
+
+/// Reads a spent-asset-lock record through Drive's reader of it, decoding
+/// the remaining [`AssetLockValue`] as untrusted and exact.
+fn stored_asset_lock_info(
+    mut elements: Elements,
+    key: &[u8],
+) -> Result<StoredAssetLockInfo, Error> {
+    let element = elements.swap_remove(key).flatten();
+    let item = element
+        .as_ref()
+        .map(Element::as_item_bytes)
+        .transpose()
+        .map_err(|e| {
+            Error::InvalidProvedResponse(format!(
+                "a spent asset lock record that is not an item: {e}"
+            ))
+        })?;
+    drive::util::common::asset_lock::stored_asset_lock_info(
+        item,
+        AssetLockValue::deserialize_from_bytes_untrusted_exact,
+    )
+    .map_err(|e| {
+        Error::InvalidProvedResponse(format!("an undecodable spent asset lock record: {e}"))
+    })
 }
 
 /// Extract the `InvalidAssetLockProofCoreChainHeightError` (DPP
@@ -725,5 +787,57 @@ mod chain_lock_fallback_tests {
         let error = Error::Generic("transport failure".to_string());
 
         assert!(!needs_chain_lock_proof(&error, &instant_proof(80)));
+    }
+}
+
+#[cfg(test)]
+mod asset_lock_outpoint_state_tests {
+    use super::*;
+
+    /// A spent-asset-lock record reads as Drive writes it: no record before
+    /// any use, an empty item once used up, the remaining value after a
+    /// partial use. An element Drive never writes there is refused.
+    #[test]
+    fn should_read_a_spent_asset_lock_record_as_drive_writes_it() {
+        use dpp::serialization::PlatformSerializable;
+        use dpp::version::PlatformVersion;
+
+        let key = vec![7u8; 36];
+        let read = |records: Vec<(Vec<u8>, Option<Element>)>| {
+            stored_asset_lock_info(records.into_iter().collect(), &key)
+        };
+        let left = AssetLockValue::new(2_000, vec![0x76], 1_500, vec![], PlatformVersion::latest())
+            .expect("an asset lock value");
+
+        assert_eq!(read(vec![]).unwrap(), StoredAssetLockInfo::NotPresent);
+        assert_eq!(
+            read(vec![(key.clone(), None)]).unwrap(),
+            StoredAssetLockInfo::NotPresent
+        );
+        assert_eq!(
+            read(vec![(vec![8u8; 36], Some(Element::new_item(vec![])))]).unwrap(),
+            StoredAssetLockInfo::NotPresent,
+            "another outpoint's record says nothing about this one"
+        );
+        assert_eq!(
+            read(vec![(key.clone(), Some(Element::new_item(vec![])))]).unwrap(),
+            StoredAssetLockInfo::FullyConsumed
+        );
+        assert_eq!(
+            read(vec![(
+                key.clone(),
+                Some(Element::new_item(left.serialize_to_bytes().unwrap()))
+            )])
+            .unwrap(),
+            StoredAssetLockInfo::PartiallyConsumed(left)
+        );
+        assert!(matches!(
+            read(vec![(key.clone(), Some(Element::empty_tree()))]),
+            Err(Error::InvalidProvedResponse(_))
+        ));
+        assert!(matches!(
+            read(vec![(key.clone(), Some(Element::new_item(vec![0xff; 3])))]),
+            Err(Error::InvalidProvedResponse(_))
+        ));
     }
 }
