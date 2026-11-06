@@ -37,6 +37,13 @@ class Dashpay internal constructor(private val walletHandle: Long,
     private val gate: org.dashfoundation.dashsdk.wallet.TeardownGate? = null,
 ) {
 
+    /** Fetch and validate the current recipient through proof-verified DPNS and profile reads. */
+    suspend fun resolveShieldedTip(username: String): ShieldedTipRecipient = gate.op {
+        val bytes = mapNativeErrors { org.dashfoundation.dashsdk.ffi.FundingNative.resolveShieldedTip(walletHandle, username) }
+        check(bytes.size == 75) { "Invalid recipient response" }
+        ShieldedTipRecipient(bytes.copyOfRange(0, 32), bytes.copyOfRange(32, 75))
+    }
+
     /**
      * Send a contact request to [recipientIdentityId], signing the document
      * state-transition with [signerHandle] and keying the contact crypto
@@ -476,11 +483,17 @@ class Dashpay internal constructor(private val walletHandle: Long,
         avatarBytes: ByteArray? = null,
         doCreate: Boolean,
         signerHandle: Long,
+        corePaymentAddress: PaymentAddressUpdate = PaymentAddressUpdate.Keep,
+        platformPaymentAddress: PaymentAddressUpdate = PaymentAddressUpdate.Keep,
+        shieldedAddress: PaymentAddressUpdate = PaymentAddressUpdate.Keep,
     ): String? = gate.op {
         mapNativeErrors {
             DashpayNative.createOrUpdateProfile(
                 walletHandle, identityId, displayName, publicMessage,
                 avatarUrl, avatarBytes, doCreate, signerHandle,
+                corePaymentAddress.action, corePaymentAddress.bytes,
+                platformPaymentAddress.action, platformPaymentAddress.bytes,
+                shieldedAddress.action, shieldedAddress.bytes,
             )
         }
     }

@@ -627,11 +627,35 @@ final class DashModelMigrationTests: XCTestCase {
     func testV3AddsKeyColumnsWithoutChangingTheFrozenBaseline() throws {
         let baseline = Schema(versionedSchema: DashSchemaV1.self)
         let live = Schema(versionedSchema: DashSchemaV3.self)
+        // V3 is the published snapshot; the live types must still carry the columns.
+        let current = Schema(versionedSchema: DashSchemaV4.self)
         let oldKey = try XCTUnwrap(baseline.entities.first { $0.name == "PersistentPublicKey" })
         let newKey = try XCTUnwrap(live.entities.first { $0.name == "PersistentPublicKey" })
+        let currentKey = try XCTUnwrap(current.entities.first { $0.name == "PersistentPublicKey" })
         for column in ["totalBudget", "expiresAt", "contractBoundsKind"] {
             XCTAssertNil(oldKey.attributesByName[column])
             XCTAssertNotNil(newKey.attributesByName[column])
+            XCTAssertNotNil(currentKey.attributesByName[column])
+        }
+    }
+
+    /// V4 adds exactly one entity, for the payment addresses, which
+    /// deliberately live in their own table rather
+    /// than as columns on the profile entities, so the published V3 profile
+    /// shapes are untouched.
+    func testV4AddsOnlyThePaymentAddressesEntityToPublishedV3() throws {
+        let v3 = Schema(versionedSchema: DashSchemaV3.self)
+        let v4 = Schema(versionedSchema: DashSchemaV4.self)
+        XCTAssertEqual(
+            Set(v4.entities.map(\.name)).subtracting(v3.entities.map(\.name)),
+            ["PersistentDashpayPaymentAddresses"])
+        XCTAssertEqual(Set(v3.entities.map(\.name)).subtracting(v4.entities.map(\.name)), [])
+        for name in ["PersistentDashpayProfile", "PersistentDashpayContactProfile"] {
+            let published = try XCTUnwrap(v3.entities.first { $0.name == name })
+            let live = try XCTUnwrap(v4.entities.first { $0.name == name })
+            XCTAssertEqual(
+                live.attributesByName.keys.sorted(), published.attributesByName.keys.sorted(),
+                "\(name): V4 adds no column; addresses live in their own entity")
         }
     }
 

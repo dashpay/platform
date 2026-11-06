@@ -1668,6 +1668,9 @@ class PlatformWalletPersistenceHandler(
         dashpayAvatarFingerprint: ByteArray,
         dashpayAvatarFingerprintPresent: Boolean,
         dashpayPublicMessage: String?,
+        dashpayCorePaymentAddress: ByteArray?,
+        dashpayPlatformPaymentAddress: ByteArray?,
+        dashpayShieldedAddress: ByteArray?,
     ): Int = guarded {
         stage(walletId) { db ->
             val ownerWallet = if (walletIdIsSome) identityWalletId else walletId
@@ -1768,9 +1771,14 @@ class PlatformWalletPersistenceHandler(
                 )
             }
 
-            // DashPay profile: present == "update the whole document";
-            // absent == "no update" (never a delete).
-            if (dashpayProfilePresent) {
+            // DashPay profile: present == "update the whole document".
+            // Absent deletes the row for a wallet-owned identity (the load
+            // path hydrated it, so absent means Platform has none); for an
+            // out-of-wallet identity, which is never hydrated, it is "no
+            // update". Mirrors Swift `persistIdentities`.
+            if (!dashpayProfilePresent) {
+                if (identityIndexIsSome) db.dashpayDao().deleteProfile(networkRaw, identityId)
+            } else {
                 db.dashpayDao().upsertProfile(
                     DashpayProfileEntity(
                         networkRaw = networkRaw,
@@ -1782,6 +1790,9 @@ class PlatformWalletPersistenceHandler(
                         avatarHash = if (dashpayAvatarHashPresent) dashpayAvatarHash else null,
                         avatarFingerprint = if (dashpayAvatarFingerprintPresent)
                             dashpayAvatarFingerprint else null,
+                        corePaymentAddress = dashpayCorePaymentAddress,
+                        platformPaymentAddress = dashpayPlatformPaymentAddress,
+                        shieldedAddress = dashpayShieldedAddress,
                         lastUpdated = now(),
                     ),
                 )
@@ -2272,6 +2283,9 @@ class PlatformWalletPersistenceHandler(
         avatarFingerprintPresent: Boolean,
         publicMessage: String?,
         checkedAtMs: Long,
+        corePaymentAddress: ByteArray?,
+        platformPaymentAddress: ByteArray?,
+        shieldedAddress: ByteArray?,
     ): Int = guarded {
         stage(walletId) { db ->
             // Owner identity must exist (networkRaw is read off it). In the
@@ -2294,6 +2308,9 @@ class PlatformWalletPersistenceHandler(
                         avatarUrl = avatarUrl,
                         avatarHash = avatarHash.takeIf { avatarHashPresent },
                         avatarFingerprint = avatarFingerprint.takeIf { avatarFingerprintPresent },
+                        corePaymentAddress = corePaymentAddress,
+                        platformPaymentAddress = platformPaymentAddress,
+                        shieldedAddress = shieldedAddress,
                         checkedAtMs = checkedAtMs,
                         lastUpdated = now(),
                     ),
@@ -3074,6 +3091,9 @@ class PlatformWalletPersistenceHandler(
                         avatarFingerprint = cp.avatarFingerprint,
                         publicMessage = cp.publicMessage,
                         checkedAtMs = cp.checkedAtMs,
+                        corePaymentAddress = cp.corePaymentAddress,
+                        platformPaymentAddress = cp.platformPaymentAddress,
+                        shieldedAddress = cp.shieldedAddress,
                     )
                 }.toTypedArray()
             IdentityRestoreData(
@@ -3090,6 +3110,17 @@ class PlatformWalletPersistenceHandler(
                 ignoredSenders = ignoredRows,
                 payments = paymentRows,
                 contactProfiles = contactProfileRows,
+                dashpayProfile = database.dashpayDao().getProfile(idRow.networkRaw, idRow.identityId)?.let { p ->
+                    ContactProfileRestoreData(
+                        contactId = idRow.identityId,
+                        displayName = p.displayName, bio = p.bio, avatarUrl = p.avatarUrl,
+                        avatarHash = p.avatarHash, avatarFingerprint = p.avatarFingerprint,
+                        publicMessage = p.publicMessage, checkedAtMs = 0,
+                        corePaymentAddress = p.corePaymentAddress,
+                        platformPaymentAddress = p.platformPaymentAddress,
+                        shieldedAddress = p.shieldedAddress,
+                    )
+                },
             )
         }.toTypedArray()
     }

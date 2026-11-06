@@ -653,6 +653,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createO
     avatar_bytes: JByteArray,
     do_create: jboolean,
     signer_handle: jlong,
+    core_action: jint,
+    core_address: JByteArray,
+    platform_action: jint,
+    platform_address: JByteArray,
+    shielded_action: jint,
+    shielded_address: JByteArray,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
@@ -683,9 +689,34 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createO
             }
         };
 
+        let address_bytes = [&core_address, &platform_address, &shielded_address]
+            .into_iter()
+            .map(|address| {
+                if address.is_null() {
+                    Ok(Vec::new())
+                } else {
+                    env.convert_byte_array(address)
+                }
+            })
+            .collect::<Result<Vec<_>, _>>();
+        let address_bytes = match address_bytes {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                crate::support::throw_sdk_exception(env, 1, "Unreadable payment address");
+                return ptr::null_mut();
+            }
+        };
+        let actions = [core_action, platform_action, shielded_action];
+        let updates: [_; 3] = std::array::from_fn(|index| {
+            platform_wallet_ffi::dashpay_profile::PaymentAddressUpdateFFI {
+                action: actions[index] as u32,
+                bytes: address_bytes[index].as_ptr(),
+                len: address_bytes[index].len(),
+            }
+        });
         let mut profile = DashPayProfileFFI::empty();
         let result = unsafe {
-            platform_wallet_ffi::platform_wallet_create_or_update_dashpay_profile_with_signer(
+            platform_wallet_ffi::platform_wallet_create_or_update_dashpay_profile_with_addresses_with_signer(
                 wallet_handle as Handle,
                 id.as_ptr(),
                 display.as_ref().map_or(ptr::null(), |c| c.as_ptr()),
@@ -693,6 +724,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createO
                 url.as_ref().map_or(ptr::null(), |c| c.as_ptr()),
                 avatar.as_ref().map_or(ptr::null(), |v| v.as_ptr()),
                 avatar.as_ref().map_or(0, |v| v.len()),
+                &updates[0],
+                &updates[1],
+                &updates[2],
                 do_create != 0,
                 signer_handle as *mut SignerHandle,
                 &mut profile as *mut DashPayProfileFFI,

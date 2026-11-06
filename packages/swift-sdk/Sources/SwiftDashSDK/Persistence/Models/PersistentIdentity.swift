@@ -460,12 +460,18 @@ extension PersistentIdentity {
         return true
     }
 
+    /// Throws, deleting nothing, when the owner's payment-address rows cannot
+    /// be removed: they reference their owner by id only, so no relationship
+    /// cascade reaches them, and deleting the identity without them would
+    /// strand rows a later restore could pick up.
     @discardableResult
     public static func remove(
         in context: ModelContext,
         identityId: Data
-    ) -> Bool {
+    ) throws -> Bool {
         guard let row = fetch(in: context, identityId: identityId) else { return false }
+        try PersistentDashpayPaymentAddresses.removeOwned(
+            in: context, networkRaw: row.networkRaw, ownerIdentityId: identityId)
         context.delete(row)
         return true
     }
