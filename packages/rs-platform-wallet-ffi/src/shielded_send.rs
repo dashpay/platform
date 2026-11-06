@@ -798,6 +798,9 @@ pub(crate) fn catch_funding_panic(
 /// - `AssetLockAlreadyConsumed` -> `ErrorAssetLockAlreadyConsumed` (24). The
 ///   wallet retains nonterminal consumption-unknown state; the host must not
 ///   interpret this code as authenticated completion.
+/// - `AssetLockTooManyInputs` -> `ErrorAssetLockTooManyInputs` (60), for
+///   the fresh build and for the resume of a tracked lock over the input
+///   cap, as `asset_lock_manager_resume` reports it.
 /// - `AssetLockInsufficientFunds` -> `ErrorAssetLockInsufficientFunds` (29).
 ///   Coin selection came up short over the permitted funding set, so nothing
 ///   was built or broadcast and no funding output was consumed; the host may
@@ -858,6 +861,7 @@ fn map_asset_lock_funding_result(
         ) => e.into(),
         Err(
             e @ (PlatformWalletError::AssetLockInsufficientFunds { .. }
+            | PlatformWalletError::AssetLockTooManyInputs { .. }
             | PlatformWalletError::AssetLockFundsAwaitingFinality { .. }),
         ) => e.into(),
         Err(
@@ -3137,6 +3141,20 @@ mod tests {
             PlatformWalletFFIResultCode::ErrorAssetLockFundingMismatch
         );
         assert!(message_of(&mismatch).contains("is ineligible for"));
+
+        // The input-cap refusal of a resumed lock: the host offers coin
+        // consolidation on this code and nothing else.
+        let too_many_inputs = map_asset_lock_funding_result(
+            Err(PlatformWalletError::AssetLockTooManyInputs {
+                count: 101,
+                max: 100,
+            }),
+            "shielded resume fund-from-asset-lock",
+        );
+        assert_eq!(
+            too_many_inputs.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockTooManyInputs
+        );
 
         // The resume endpoint is where the double-spend screen fires, and
         // it funnels through this same wrapper. The screen
