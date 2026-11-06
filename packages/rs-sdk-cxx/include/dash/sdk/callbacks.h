@@ -18,8 +18,9 @@
 //! The C++ objects the SDK calls back into. Each wraps std::function
 //! callbacks the embedder supplies, and each method is noexcept: a callback
 //! that is empty, throws, or returns false is a refusal, and the SDK call it
-//! serves fails. Answers are written into fixed-size buffers owned by Rust,
-//! so nothing crosses the FFI by allocation.
+//! serves fails (CoreContext::QuorumPublicKey answers Unavailable instead).
+//! Answers are written into fixed-size buffers owned by Rust, so nothing
+//! crosses the FFI by allocation.
 //!
 //! The SDK calls these on its own worker threads, possibly concurrently
 //! with other calls on the same client, and may destroy them on any thread.
@@ -128,21 +129,38 @@ private:
     CompactXpubFn m_compact_xpub;
 };
 
+//! What the embedder knows of the quorum a proof names.
+enum class QuorumLookup : uint8_t {
+    //! The quorum could have signed: `key_out` holds its 48-byte BLS public key.
+    Found = 0,
+    //! The embedder's complete local evidence shows the quorum could not have
+    //! signed: the proof is bad, and the endpoint that sent it is at fault.
+    Invalid = 1,
+    //! The embedder cannot decide now (it is behind, misses data, or failed):
+    //! no fault of the proof or of the endpoint that sent it.
+    Unavailable = 2,
+};
+
 //! The embedder's chain state, which the SDK verifies every proof against.
 //!
-//! QuorumPublicKey: the BLS public key of the quorum of type `llmq_type`
-//! with hash `quorum_hash`, from the embedder's own mined commitments. The
-//! hash is in the embedder's internal uint256 byte order. The client only
-//! asks for its configured Platform LLMQ type; the callback must match both
-//! type and hash and answer false for any quorum it does not hold. Any key
-//! that is not exactly 48 bytes is refused. There is no fallback source.
+//! QuorumPublicKey: whether the quorum of type `llmq_type` with hash
+//! `quorum_hash` could have signed Platform state whose signed metadata
+//! carries `core_chain_locked_height`, judged from the embedder's own mined
+//! commitments, and its BLS public key when it could. The hash is in the
+//! embedder's internal uint256 byte order; the height is the signed one, as
+//! the proof carries it. The client only asks for its configured Platform
+//! LLMQ type. Invalid is passed on: the proof is bad. Unavailable, a Found
+//! whose key is not exactly 48 bytes, a value outside QuorumLookup, a throw
+//! and an empty callback all reach the client as Unavailable, never as a
+//! bad proof. There is no fallback source.
 //!
 //! PlatformActivationHeight: the core height Platform activated at.
 class CoreContext
 {
 public:
-    using QuorumPublicKeyFn = std::function<bool(uint8_t llmq_type, const std::array<uint8_t, 32>& quorum_hash,
-                                                 uint32_t core_chain_locked_height, std::vector<uint8_t>& key_out)>;
+    using QuorumPublicKeyFn =
+        std::function<QuorumLookup(uint8_t llmq_type, const std::array<uint8_t, 32>& quorum_hash,
+                                   uint32_t core_chain_locked_height, std::vector<uint8_t>& key_out)>;
     using PlatformActivationHeightFn = std::function<bool(uint32_t& height_out)>;
 
     CoreContext(QuorumPublicKeyFn quorum_public_key, PlatformActivationHeightFn platform_activation_height)
@@ -151,18 +169,25 @@ public:
     {
     }
 
-    bool QuorumPublicKey(uint8_t llmq_type, const std::array<uint8_t, 32>& quorum_hash,
-                         uint32_t core_chain_locked_height, std::array<uint8_t, 48>& key_out) const noexcept
+    QuorumLookup QuorumPublicKey(uint8_t llmq_type, const std::array<uint8_t, 32>& quorum_hash,
+                                 uint32_t core_chain_locked_height, std::array<uint8_t, 48>& key_out) const noexcept
     {
-        return detail::Guard([&] {
+        try {
+            if (!m_quorum_public_key) return QuorumLookup::Unavailable;
             std::vector<uint8_t> key;
-            if (!m_quorum_public_key || !m_quorum_public_key(llmq_type, quorum_hash, core_chain_locked_height, key) ||
-                key.size() != key_out.size()) {
-                return false;
+            switch (m_quorum_public_key(llmq_type, quorum_hash, core_chain_locked_height, key)) {
+            case QuorumLookup::Found:
+                if (key.size() != key_out.size()) return QuorumLookup::Unavailable;
+                std::copy(key.begin(), key.end(), key_out.begin());
+                return QuorumLookup::Found;
+            case QuorumLookup::Invalid:
+                return QuorumLookup::Invalid;
+            case QuorumLookup::Unavailable:
+                break;
             }
-            std::copy(key.begin(), key.end(), key_out.begin());
-            return true;
-        });
+        } catch (...) {
+        }
+        return QuorumLookup::Unavailable;
     }
 
     bool PlatformActivationHeight(uint32_t& height_out) const noexcept

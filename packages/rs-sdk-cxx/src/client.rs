@@ -13,6 +13,8 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use dash_sdk::dapi_client::transport::{ProxyEndpoint, Socks5Auth, Socks5Proxy};
+use dash_sdk::dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
+use dash_sdk::dpp::asset_lock::StoredAssetLockInfo;
 use dash_sdk::dpp::consensus::codes::ErrorWithCode;
 use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::document::DocumentV0Getters;
@@ -27,13 +29,19 @@ use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::dashpay::{
     ContactRequestInput, EcdhProvider, RecipientIdentity, SendContactRequestInput,
 };
-use dash_sdk::platform::dpns_usernames::{convert_to_homograph_safe_chars, RegisterDpnsNameInput};
+use dash_sdk::platform::dpns_usernames::{
+    convert_to_homograph_safe_chars, DpnsContestPolicy, RegisterDpnsNameInput,
+};
+use dash_sdk::platform::transition::asset_lock_submission::{
+    submit_funding_with_fee_floor, FundingFailure, FundingFailureKind, UnsettledLockRecord,
+};
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
 use dash_sdk::platform::types::identity::PublicKeyHash;
 use dash_sdk::platform::Fetch;
 use dash_sdk::sdk::{Address, AddressList};
 use dash_sdk::{Error, Sdk, SdkBuilder};
+use zeroize::Zeroizing;
 
 use crate::context::CoreContextProvider;
 use crate::ffi::{self, Status, StatusKind};
@@ -100,7 +108,21 @@ pub fn classify(error: &Error) -> Status {
                 ..Status::new(StatusKind::Consensus, broadcast.message.clone())
             }
         }
+        // The record's own failure, under the top-up's message.
+        Error::AssetLockNotUsedUp {
+            record: UnsettledLockRecord::Unread(read),
+            ..
+        } => {
+            return Status {
+                message: error.to_string(),
+                ..classify(read)
+            }
+        }
+        Error::DpnsNameContested { .. } => StatusKind::Contested,
         _ if error.is_quorum_source_unavailable() => StatusKind::Unavailable,
+        Error::AssetLockNotUsedUp { .. } | Error::FeeIncreaseFloorAboveCap { .. } => {
+            StatusKind::Unavailable
+        }
         Error::DapiClientError(_)
         | Error::TimeoutReached(..)
         | Error::Cancelled(_)
@@ -141,7 +163,30 @@ result_from!(IdentityResult {
 result_from!(IdResult {
     id: [u8; 32] = [0; 32]
 });
-result_from!(BalanceResult { balance: u64 = 0 });
+
+/// One result struct per funding call, built from its outcome and report.
+macro_rules! funding_result_from {
+    ($result:ident { $field:ident: $value:ty = $empty:expr }) => {
+        impl From<(Result<$value, Status>, ffi::FundingReport)> for ffi::$result {
+            fn from((outcome, funding): (Result<$value, Status>, ffi::FundingReport)) -> Self {
+                let (status, $field) = match outcome {
+                    Ok(value) => (Status::ok(), value),
+                    Err(status) => (status, $empty),
+                };
+                ffi::$result {
+                    status,
+                    $field,
+                    funding,
+                }
+            }
+        }
+    };
+}
+
+funding_result_from!(RegisterIdentityResult {
+    identity: ffi::Identity = Default::default()
+});
+funding_result_from!(TopUpIdentityResult { balance: u64 = 0 });
 result_from!(VoteStateResult {
     state: ffi::VoteState = marshal::empty_vote_state()
 });
@@ -157,6 +202,31 @@ impl From<Result<(Vec<ffi::ContactRequest>, bool), Status>> for ffi::ContactRequ
             status,
             requests,
             complete,
+        }
+    }
+}
+
+/// A failed read answers `NotPresent`, the state that settles nothing.
+impl From<Result<StoredAssetLockInfo, Status>> for ffi::AssetLockStateResult {
+    fn from(outcome: Result<StoredAssetLockInfo, Status>) -> Self {
+        let (status, state, remaining_credits) = match outcome {
+            Ok(StoredAssetLockInfo::NotPresent) => {
+                (Status::ok(), ffi::AssetLockState::NotPresent, 0)
+            }
+            Ok(StoredAssetLockInfo::PartiallyConsumed(value)) => (
+                Status::ok(),
+                ffi::AssetLockState::PartiallyConsumed,
+                value.remaining_credit_value(),
+            ),
+            Ok(StoredAssetLockInfo::FullyConsumed) => {
+                (Status::ok(), ffi::AssetLockState::FullyConsumed, 0)
+            }
+            Err(status) => (status, ffi::AssetLockState::NotPresent, 0),
+        };
+        ffi::AssetLockStateResult {
+            status,
+            state,
+            remaining_credits,
         }
     }
 }
@@ -419,9 +489,11 @@ impl PlatformClient {
         keys: &[ffi::IdentityKey],
         proof: &ffi::AssetLockProof,
         asset_lock_key_ref: u32,
+        user_fee_increase_floor: u16,
         signer: cxx::UniquePtr<ffi::WalletSigner>,
-    ) -> ffi::IdentityResult {
-        self.call("register_identity", |sdk| {
+    ) -> ffi::RegisterIdentityResult {
+        let built = Arc::new(Mutex::new(None));
+        let call = self.call("register_identity", |sdk| {
             let public_keys = keys
                 .iter()
                 .map(|key| marshal::new_identity_key(key).map(|key| (key.id(), key)))
@@ -432,24 +504,34 @@ impl PlatformClient {
                         .ok_or_else(|| "duplicate identity key ids".to_string())
                 });
             let proof = marshal::asset_lock_proof(proof);
+            let built = Arc::clone(&built);
             async move {
                 // The id is derived from the asset lock when the transition is built.
                 let identity = bare_identity(Identifier::default(), public_keys?);
                 let signer = WalletSigner::new(signer)?;
-                let created = identity
-                    .put_to_platform_and_wait_for_response_with_signer(
-                        &sdk,
-                        proof?,
-                        &DerivationPath::master(),
-                        &signer.asset_lock(asset_lock_key_ref),
-                        &signer,
-                        None,
-                    )
-                    .await?;
-                Ok(marshal::identity(&created))
+                let proof = proof?;
+                let asset_lock_signer = signer.asset_lock(asset_lock_key_ref);
+                let path = DerivationPath::master();
+                let created = submit_funding_with_fee_floor(
+                    &proof,
+                    user_fee_increase_floor,
+                    |fee| *lock(&built) = Some(fee),
+                    |settings| {
+                        identity.put_to_platform_and_wait_for_response_with_signer(
+                            &sdk,
+                            proof.clone(),
+                            &path,
+                            &asset_lock_signer,
+                            &signer,
+                            Some(settings),
+                        )
+                    },
+                )
+                .await;
+                Ok(created.map(|created| marshal::identity(&created)))
             }
-        })
-        .into()
+        });
+        funding_report(call, user_fee_increase_floor, &built).into()
     }
 
     pub fn top_up_identity(
@@ -457,24 +539,38 @@ impl PlatformClient {
         identity: &[u8; 32],
         proof: &ffi::AssetLockProof,
         asset_lock_key_ref: u32,
+        user_fee_increase_floor: u16,
         signer: cxx::UniquePtr<ffi::WalletSigner>,
-    ) -> ffi::BalanceResult {
-        self.call("top_up_identity", |sdk| {
-            // A top-up names only the identity's id.
-            let identity = bare_identity(Identifier::from(*identity), BTreeMap::new());
+    ) -> ffi::TopUpIdentityResult {
+        let built = Arc::new(Mutex::new(None));
+        let call = self.call("top_up_identity", |sdk| {
+            let identity = Identifier::from(*identity);
             let proof = marshal::asset_lock_proof(proof);
+            let built = Arc::clone(&built);
             async move {
                 let signer = WalletSigner::new(signer)?;
-                Ok(identity
-                    .top_up_identity_with_signer(
+                let proof = proof?;
+                let asset_lock_signer = signer.asset_lock(asset_lock_key_ref);
+                // A top-up names only the identity's id.
+                Ok(bare_identity(identity, BTreeMap::new())
+                    .top_up_identity_settled(
                         &sdk,
-                        proof?,
+                        proof,
                         &DerivationPath::master(),
-                        &signer.asset_lock(asset_lock_key_ref),
-                        None,
+                        &asset_lock_signer,
+                        user_fee_increase_floor,
+                        move |fee| *lock(&built) = Some(fee),
                     )
-                    .await?)
+                    .await)
             }
+        });
+        funding_report(call, user_fee_increase_floor, &built).into()
+    }
+
+    pub fn asset_lock_state(&self, txid: &[u8; 32], vout: u32) -> ffi::AssetLockStateResult {
+        self.call("asset_lock_state", |sdk| {
+            let out_point = marshal::out_point(txid, vout);
+            async move { Ok(sdk.asset_lock_outpoint_state(&out_point).await?) }
         })
         .into()
     }
@@ -484,24 +580,31 @@ impl PlatformClient {
         label: &str,
         identity: &[u8; 32],
         key_id: u32,
-        contest_fund: u64,
+        policy: &ffi::ContestPolicy,
         signer: cxx::UniquePtr<ffi::WalletSigner>,
     ) -> ffi::IdResult {
         self.call("register_dpns_name", |sdk| {
             let label = label.to_string();
-            let identity = Identifier::from(*identity);
+            let owner = Identifier::from(*identity);
+            let policy = *policy;
             async move {
                 let signer = WalletSigner::new(signer)?;
-                let (identity, key) = identity_and_key(&sdk, identity, key_id).await?;
+                let policy = contest_policy(policy)?;
+                // A label refused by its spelling is refused before the identity is read.
+                policy.check_label(&label)?;
+                let (identity, key) = identity_and_key(&sdk, owner, key_id).await?;
                 let registered = sdk
-                    .register_dpns_name(RegisterDpnsNameInput {
-                        label,
-                        identity,
-                        identity_public_key: key,
-                        signer,
-                        preorder_callback: None,
-                        contest_fund: (contest_fund != 0).then_some(contest_fund),
-                    })
+                    .register_dpns_name_under_policy(
+                        RegisterDpnsNameInput {
+                            label,
+                            identity,
+                            identity_public_key: key,
+                            signer,
+                            preorder_callback: None,
+                            contest_fund: None,
+                        },
+                        policy,
+                    )
                     .await?;
                 Ok(registered.domain_document.id().to_buffer())
             }
@@ -528,7 +631,7 @@ impl PlatformClient {
                 let recipient = input.recipient;
                 let ecdh = EcdhProvider::<NoPrivateKey, _, _, _>::ClientSide {
                     get_shared_secret: move |recipient_key: &PublicKey| {
-                        let mut secret = [0u8; 32];
+                        let mut secret = Zeroizing::new([0u8; 32]);
                         let answered = blocking(|| {
                             ecdh_keys.SharedSecret(
                                 sender_key,
@@ -536,7 +639,7 @@ impl PlatformClient {
                                 &mut secret,
                             )
                         });
-                        ready(answered.then_some(secret).ok_or_else(|| {
+                        ready(answered.then(|| *secret).ok_or_else(|| {
                             Error::Generic("the wallet refused the ECDH".to_string())
                         }))
                     },
@@ -622,6 +725,53 @@ async fn identity_and_key(
     Ok((identity, key))
 }
 
+/// What the embedder does next with the lock, as the bridge numbers it.
+fn funding_outcome(kind: FundingFailureKind) -> ffi::FundingOutcome {
+    match kind {
+        FundingFailureKind::NeedsChainLockProof => ffi::FundingOutcome::NeedsChainLockProof,
+        FundingFailureKind::PlatformBehindCore => ffi::FundingOutcome::PlatformBehindCore,
+        FundingFailureKind::FeeCapReached => ffi::FundingOutcome::FeeCapReached,
+        FundingFailureKind::ReportedConsumed => ffi::FundingOutcome::ReportedConsumed,
+        FundingFailureKind::Rejected => ffi::FundingOutcome::Rejected,
+        FundingFailureKind::Submitted => ffi::FundingOutcome::Submitted,
+        _ => ffi::FundingOutcome::Unavailable,
+    }
+}
+
+/// A funding call's result and report. A call that failed before any SDK
+/// error (bad input, shutdown) settles nothing. `built` holds the highest
+/// fee an attempt started with.
+fn funding_report<T>(
+    call: Result<Result<T, FundingFailure>, Status>,
+    floor: u16,
+    built: &Mutex<Option<u16>>,
+) -> (Result<T, Status>, ffi::FundingReport) {
+    let (result, outcome) = match call {
+        Ok(Ok(value)) => (Ok(value), ffi::FundingOutcome::Ok),
+        Ok(Err(failure)) => (Err(classify(&failure.error)), funding_outcome(failure.kind)),
+        Err(status) => (Err(status), ffi::FundingOutcome::Unavailable),
+    };
+    let last_user_fee_increase = lock(built).unwrap_or(floor.saturating_sub(1));
+    (
+        result,
+        ffi::FundingReport {
+            outcome,
+            last_user_fee_increase,
+        },
+    )
+}
+
+fn contest_policy(policy: ffi::ContestPolicy) -> Result<DpnsContestPolicy, Status> {
+    match policy.kind {
+        ffi::ContestPolicyKind::Refuse => Ok(DpnsContestPolicy::Refuse),
+        ffi::ContestPolicyKind::Cap => Ok(DpnsContestPolicy::Cap(policy.cap)),
+        other => Err(Status::internal(format!(
+            "unknown contest policy {}",
+            other.repr
+        ))),
+    }
+}
+
 /// The embedder's proxy setting. Anything malformed is an error, so a
 /// client never connects directly when a proxy was meant.
 fn proxy(cfg: &ffi::Proxy) -> Result<Option<Socks5Proxy>, String> {
@@ -673,11 +823,144 @@ fn endpoint(uri: &str, proxied: bool) -> Result<Address, String> {
 }
 
 #[cfg(test)]
+mod top_up_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
-    use dash_sdk::dapi_client::DapiClientError;
+    use dash_sdk::dapi_client::{CanRetry, DapiClientError};
     use dash_sdk::dpp::consensus::ConsensusError;
+    use dash_sdk::dpp::dashcore::{OutPoint, Txid};
     use dash_sdk::error::{ContextProviderError, StateTransitionBroadcastError};
+    use dash_sdk::ProofVerifierError;
+
+    /// What the provider's answer becomes once a proof names the quorum: a
+    /// gap in the embedder's data is Unavailable and bans no endpoint; a
+    /// quorum it knows invalid is the proof's fault, and its node's.
+    #[test]
+    fn should_ban_an_endpoint_only_for_an_invalid_quorum() {
+        let verified = |error| {
+            Error::from(ProofVerifierError::QuorumKeyUnavailable {
+                quorum_type: 106,
+                quorum_hash: [1; 32],
+                core_chain_locked_height: 9,
+                error,
+            })
+        };
+        let gap = verified(ContextProviderError::QuorumSourceUnavailable("x".into()));
+        assert_eq!(classify(&gap).kind, StatusKind::Unavailable);
+        assert!(
+            !gap.can_retry(),
+            "an endpoint is banned for the embedder's gap"
+        );
+        let invalid = verified(ContextProviderError::InvalidQuorum("x".into()));
+        assert_eq!(classify(&invalid).kind, StatusKind::Rejected);
+        assert!(invalid.can_retry());
+    }
+
+    /// Each way a funding call can leave its lock unsettled keeps its own
+    /// bridge value, and a kind the bridge does not know is Unavailable.
+    #[test]
+    fn should_map_each_funding_failure_to_its_bridge_outcome() {
+        for (kind, outcome) in [
+            (
+                FundingFailureKind::NeedsChainLockProof,
+                ffi::FundingOutcome::NeedsChainLockProof,
+            ),
+            (
+                FundingFailureKind::PlatformBehindCore,
+                ffi::FundingOutcome::PlatformBehindCore,
+            ),
+            (
+                FundingFailureKind::FeeCapReached,
+                ffi::FundingOutcome::FeeCapReached,
+            ),
+            (
+                FundingFailureKind::ReportedConsumed,
+                ffi::FundingOutcome::ReportedConsumed,
+            ),
+            (FundingFailureKind::Rejected, ffi::FundingOutcome::Rejected),
+            (
+                FundingFailureKind::Unavailable,
+                ffi::FundingOutcome::Unavailable,
+            ),
+            (
+                FundingFailureKind::Submitted,
+                ffi::FundingOutcome::Submitted,
+            ),
+        ] {
+            assert_eq!(funding_outcome(kind), outcome, "{kind:?}");
+        }
+    }
+
+    /// A call that never built a transition reports one below its floor, so
+    /// the next floor is the same value; one cut short reports its attempts.
+    /// A failure keeps its kind, and its error's status.
+    #[test]
+    fn should_report_what_a_failed_funding_call_built() {
+        let built = Mutex::new(None);
+        let (result, report) = funding_report::<u64>(Err(Status::internal("bad proof")), 4, &built);
+        assert_eq!(result.unwrap_err().kind, StatusKind::Internal);
+        assert_eq!(
+            (report.outcome, report.last_user_fee_increase),
+            (ffi::FundingOutcome::Unavailable, 3)
+        );
+        assert_eq!(
+            funding_report::<u64>(Err(Status::internal("x")), 0, &built)
+                .1
+                .last_user_fee_increase,
+            0
+        );
+        *lock(&built) = Some(6);
+        let shut_down = Status::new(StatusKind::Unavailable, "client is shut down");
+        let (_, report) = funding_report::<u64>(Err(shut_down), 4, &built);
+        assert_eq!(
+            (report.outcome, report.last_user_fee_increase),
+            (ffi::FundingOutcome::Unavailable, 6)
+        );
+
+        let capped = FundingFailure {
+            kind: FundingFailureKind::FeeCapReached,
+            error: Error::FeeIncreaseFloorAboveCap {
+                floor: 101,
+                cap: 100,
+            },
+        };
+        let (result, report) = funding_report::<u64>(Ok(Err(capped)), 101, &Mutex::new(None));
+        let status = result.unwrap_err();
+        assert_eq!(status.kind, StatusKind::Unavailable);
+        assert!(
+            status.message.contains("nothing was submitted"),
+            "{status:?}"
+        );
+        assert_eq!(
+            (report.outcome, report.last_user_fee_increase),
+            (ffi::FundingOutcome::FeeCapReached, 100)
+        );
+    }
+
+    /// The bridge's policy is the SDK's, with the cap as given; any other
+    /// kind is refused before anything is read.
+    #[test]
+    fn should_map_each_contest_policy_to_the_sdks() {
+        let policy = |kind, cap| contest_policy(ffi::ContestPolicy { kind, cap });
+        assert_eq!(
+            policy(ffi::ContestPolicyKind::Refuse, 7).unwrap(),
+            DpnsContestPolicy::Refuse
+        );
+        for cap in [0, 5_000_000] {
+            assert_eq!(
+                policy(ffi::ContestPolicyKind::Cap, cap).unwrap(),
+                DpnsContestPolicy::Cap(cap)
+            );
+        }
+        assert_eq!(
+            policy(ffi::ContestPolicyKind { repr: 9 }, 0)
+                .unwrap_err()
+                .kind,
+            StatusKind::Internal
+        );
+    }
 
     /// Only a proof yields `Ok` or `NotFound`; consensus refusals keep
     /// their code; nothing else may read as either.
@@ -700,6 +983,7 @@ mod tests {
         );
 
         let quorum = Error::ContextProviderError;
+        let out_point = OutPoint::new(Txid::from_byte_array([4; 32]), 1);
         for (error, kind) in [
             (
                 Error::DapiClientError(DapiClientError::NoAvailableAddresses),
@@ -724,9 +1008,46 @@ mod tests {
                 StatusKind::Rejected,
             ),
             (Error::Generic("x".into()), StatusKind::Internal),
+            (
+                Error::DpnsNameContested {
+                    label: "Alice".into(),
+                    index: None,
+                },
+                StatusKind::Contested,
+            ),
+            (
+                Error::FeeIncreaseFloorAboveCap {
+                    floor: 101,
+                    cap: 100,
+                },
+                StatusKind::Unavailable,
+            ),
+            (
+                Error::AssetLockNotUsedUp {
+                    out_point,
+                    record: UnsettledLockRecord::NotPresent,
+                },
+                StatusKind::Unavailable,
+            ),
         ] {
             assert_eq!(classify(&error).kind, kind, "{error}");
         }
+
+        // A top-up whose lock record could not be read keeps the read's
+        // status under the top-up's message.
+        let unread = classify(&Error::AssetLockNotUsedUp {
+            out_point,
+            record: UnsettledLockRecord::Unread(Box::new(Error::Protocol(
+                ProtocolError::ConsensusError(Box::new(ConsensusError::DefaultError)),
+            ))),
+        });
+        assert_eq!(unread.kind, StatusKind::Consensus);
+        assert!(
+            unread
+                .message
+                .contains("is not proved used up: its record could not be read"),
+            "{unread:?}"
+        );
     }
 
     /// Tor stream isolation; the C++ smoke covers the refusals.

@@ -51,7 +51,9 @@ struct Sentinel {
 std::unique_ptr<CoreContext> context(std::shared_ptr<Sentinel> sentinel = nullptr)
 {
     return std::make_unique<CoreContext>(
-        [sentinel](uint8_t, const std::array<uint8_t, 32>&, uint32_t, std::vector<uint8_t>&) { return false; },
+        [sentinel](uint8_t, const std::array<uint8_t, 32>&, uint32_t, std::vector<uint8_t>&) {
+            return QuorumLookup::Unavailable;
+        },
         [](uint32_t&) { return false; });
 }
 
@@ -79,10 +81,17 @@ bool refused(Config cfg, std::unique_ptr<CoreContext> ctx = context())
 
 int main()
 {
-    static_assert(sizeof(Network) == 1 && sizeof(StatusKind) == 1);
+    static_assert(sizeof(Network) == 1 && sizeof(StatusKind) == 1 && sizeof(QuorumLookup) == 1);
     static_assert(static_cast<uint8_t>(StatusKind::NotFound) == 1);
     static_assert(static_cast<uint8_t>(StatusKind::Consensus) == 4);
+    static_assert(static_cast<uint8_t>(StatusKind::Contested) == 6);
     static_assert(static_cast<uint8_t>(AssetLockProofKind::Chain) == 1);
+    static_assert(static_cast<uint8_t>(QuorumLookup::Unavailable) == 2);
+    static_assert(static_cast<uint8_t>(FundingOutcome::Unavailable) == 5);
+    static_assert(static_cast<uint8_t>(FundingOutcome::Submitted) == 6);
+    static_assert(static_cast<uint8_t>(FundingOutcome::FeeCapReached) == 7);
+    static_assert(static_cast<uint8_t>(AssetLockState::FullyConsumed) == 2);
+    static_assert(static_cast<uint8_t>(ContestPolicyKind::Cap) == 1);
 
     // Configs the client cannot honour are errors, never a direct fallback.
     {
@@ -140,6 +149,9 @@ int main()
     check(unproved(client->contested_vote_state("a11ce").status), "contested_vote_state");
     const auto requests = client->contact_requests(id, ContactDirection::Received, 0);
     check(unproved(requests.status) && !requests.complete, "contact_requests");
+    const std::array<uint8_t, 32> lock_txid{};
+    const auto lock_state = client->asset_lock_state(lock_txid, 1);
+    check(unproved(lock_state.status) && lock_state.state == AssetLockState::NotPresent, "asset_lock_state");
     check(client->contact_requests(id, static_cast<ContactDirection>(9), 0).status.kind == StatusKind::Internal,
           "unknown contact direction accepted");
 
@@ -177,19 +189,41 @@ int main()
     const std::vector<IdentityKey> keys{key};
     const rust::Slice<const IdentityKey> key_slice(keys.data(), keys.size());
 
-    const auto created = client->register_identity(key_slice, proof, 77, signer(true));
+    // A refused signature settles nothing about the lock; the attempt that
+    // asked for it is reported, so the next floor is above it.
+    const auto created = client->register_identity(key_slice, proof, 77, 3, signer(true));
     check(created.status.kind == StatusKind::Internal, "a throwing asset-lock signer was not a refusal");
-    const auto topped_up = client->top_up_identity(id, proof, 77, signer(false));
+    check(created.funding.outcome == FundingOutcome::Unavailable && created.funding.last_user_fee_increase == 3,
+          "a refused registration was reported wrongly");
+    const auto topped_up = client->top_up_identity(id, proof, 77, 0, signer(false));
     check(topped_up.status.kind == StatusKind::Internal, "a refusing asset-lock signer was not a refusal");
+    check(topped_up.funding.outcome == FundingOutcome::Unavailable && topped_up.funding.last_user_fee_increase == 0,
+          "a refused top-up was reported wrongly");
     check(asset_lock_calls == 2, "the asset-lock signer was not reached");
     check(identity_key_calls <= 1, "the identity key was signed more than once");
+    // A floor above the cap submits nothing, and says no fee step is left.
+    const auto capped = client->top_up_identity(id, proof, 77, 101, signer(false));
+    check(capped.funding.outcome == FundingOutcome::FeeCapReached && asset_lock_calls == 2,
+          "a floor above the fee cap was submitted, or not reported as the cap");
     proof.kind = static_cast<AssetLockProofKind>(5);
-    check(client->register_identity(key_slice, proof, 77, signer(false)).status.kind == StatusKind::Internal,
-          "unknown proof kind accepted");
-    check(client->register_identity(key_slice, proof, 77, nullptr).status.kind == StatusKind::Internal,
+    const auto bad_proof = client->register_identity(key_slice, proof, 77, 4, signer(false));
+    check(bad_proof.status.kind == StatusKind::Internal && bad_proof.funding.outcome == FundingOutcome::Unavailable &&
+              bad_proof.funding.last_user_fee_increase == 3,
+          "unknown proof kind accepted, or reported as an attempt");
+    check(client->register_identity(key_slice, proof, 77, 0, nullptr).status.kind == StatusKind::Internal,
           "missing signer accepted");
 
-    check(unproved(client->register_dpns_name("alice", id, 1, 0, signer(false)).status), "register_dpns_name");
+    // Refuse decides a contested label before any network call or write.
+    const ContestPolicy refuse{ContestPolicyKind::Refuse, 0};
+    check(client->register_dpns_name("alice", id, 1, refuse, signer(false)).status.kind == StatusKind::Contested,
+          "a contested label was not refused");
+    check(unproved(client->register_dpns_name("alice-2000", id, 1, refuse, signer(false)).status),
+          "register_dpns_name");
+    const ContestPolicy cap{ContestPolicyKind::Cap, 0};
+    check(unproved(client->register_dpns_name("alice", id, 1, cap, signer(false)).status), "register_dpns_name cap");
+    const ContestPolicy unknown{static_cast<ContestPolicyKind>(9), 0};
+    check(client->register_dpns_name("alice", id, 1, unknown, signer(false)).status.kind == StatusKind::Internal,
+          "unknown contest policy accepted");
     ContactRequestInput request{};
     request.sender = id;
     request.recipient = id;
@@ -215,31 +249,54 @@ int main()
     }
     check(threw, "an undecryptable xpub was accepted");
 
-    // The callback types contain exceptions and check sizes.
+    std::array<uint8_t, 32> txid{};
+    for (size_t i = 0; i < txid.size(); ++i) txid[i] = static_cast<uint8_t>(i);
+    const auto derived = identity_id_from_asset_lock_outpoint(txid, 1);
+    check(derived.status.kind == StatusKind::Ok && derived.id[0] == 0x52 && derived.id[31] == 0xfd,
+          "identity_id_from_asset_lock_outpoint");
+
+    // The callback types contain exceptions and check sizes. A quorum answer
+    // the embedder gets wrong is Unavailable, never Invalid.
     {
         const std::array<uint8_t, 32> hash{};
         std::array<uint8_t, 48> out{};
-        const auto answer = [](size_t size) {
+        const auto answer = [](QuorumLookup lookup, size_t size) {
             return CoreContext(
-                [size](uint8_t, const std::array<uint8_t, 32>&, uint32_t, std::vector<uint8_t>& key) {
+                [lookup, size](uint8_t, const std::array<uint8_t, 32>&, uint32_t, std::vector<uint8_t>& key) {
                     key.assign(size, 0x05);
-                    return true;
+                    return lookup;
                 },
                 [](uint32_t&) -> bool { throw std::runtime_error("x"); });
         };
-        check(!answer(47).QuorumPublicKey(106, hash, 1, out), "a 47-byte quorum key accepted");
-        check(!answer(49).QuorumPublicKey(106, hash, 1, out), "a 49-byte quorum key accepted");
-        check(out == std::array<uint8_t, 48>{}, "a refused quorum key was copied");
-        check(answer(48).QuorumPublicKey(106, hash, 1, out) && out[47] == 0x05, "a 48-byte quorum key refused");
+        check(answer(QuorumLookup::Found, 47).QuorumPublicKey(106, hash, 1, out) == QuorumLookup::Unavailable,
+              "a 47-byte quorum key accepted");
+        check(answer(QuorumLookup::Found, 49).QuorumPublicKey(106, hash, 1, out) == QuorumLookup::Unavailable,
+              "a 49-byte quorum key accepted");
+        check(answer(QuorumLookup::Invalid, 48).QuorumPublicKey(106, hash, 1, out) == QuorumLookup::Invalid,
+              "an invalid quorum not reported");
+        check(answer(QuorumLookup::Unavailable, 48).QuorumPublicKey(106, hash, 1, out) == QuorumLookup::Unavailable,
+              "an undecided quorum not reported");
+        check(answer(static_cast<QuorumLookup>(7), 48).QuorumPublicKey(106, hash, 1, out) ==
+                  QuorumLookup::Unavailable,
+              "an unknown quorum answer was not Unavailable");
+        check(out == std::array<uint8_t, 48>{}, "a quorum key was copied without Found");
+        check(answer(QuorumLookup::Found, 48).QuorumPublicKey(106, hash, 1, out) == QuorumLookup::Found &&
+                  out[47] == 0x05,
+              "a 48-byte quorum key refused");
         uint32_t height = 0;
-        check(!answer(48).PlatformActivationHeight(height), "a throwing callback was not a refusal");
+        check(!answer(QuorumLookup::Found, 48).PlatformActivationHeight(height),
+              "a throwing callback was not a refusal");
         const CoreContext throwing(
-            [](uint8_t, const std::array<uint8_t, 32>&, uint32_t, std::vector<uint8_t>&) -> bool {
+            [](uint8_t, const std::array<uint8_t, 32>&, uint32_t, std::vector<uint8_t>&) -> QuorumLookup {
                 throw std::runtime_error("x");
             },
             nullptr);
-        check(!throwing.QuorumPublicKey(106, hash, 1, out) && !throwing.PlatformActivationHeight(height),
-              "a throwing or empty CoreContext was not a refusal");
+        check(throwing.QuorumPublicKey(106, hash, 1, out) == QuorumLookup::Unavailable &&
+                  !throwing.PlatformActivationHeight(height),
+              "a throwing CoreContext was not Unavailable and a refusal");
+        const CoreContext no_callbacks(nullptr, nullptr);
+        check(no_callbacks.QuorumPublicKey(106, hash, 1, out) == QuorumLookup::Unavailable,
+              "an empty CoreContext was not Unavailable");
         std::array<uint8_t, 65> sig{};
         const WalletSigner empty(nullptr, nullptr);
         check(!empty.SignAssetLock(1, hash, sig), "an empty WalletSigner signed");

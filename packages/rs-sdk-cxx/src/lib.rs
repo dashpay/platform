@@ -82,6 +82,9 @@ pub mod ffi {
         Consensus = 4,
         /// Bad input from the embedder, a refused callback, or a bug.
         Internal = 5,
+        /// `register_dpns_name` under `ContestPolicyKind::Refuse`: the label
+        /// would join a contest, so nothing was sent or charged.
+        Contested = 6,
     }
 
     #[derive(Debug, Clone)]
@@ -123,10 +126,125 @@ pub mod ffi {
         id: [u8; 32],
     }
 
+    /// What the embedder does next with the asset lock an identity funding
+    /// call submitted. Nothing here proves the lock unconsumed, and only
+    /// `Ok` proves it used up: the embedder keeps the lock until a proof
+    /// settles it, and never assumes a call it cancelled sent nothing.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[repr(u8)]
+    enum FundingOutcome {
+        /// Settled, proved. A registration: the identity the lock creates
+        /// exists. A top-up: Platform's record of the lock shows it used up
+        /// (see `asset_lock_state`). That record names no transition, so it
+        /// does not prove this identity was credited: another use of the
+        /// lock's key, or failed transitions, can use a lock up too.
+        Ok = 0,
+        /// Platform could not use the InstantSend proof (a stale islock, or
+        /// one that made the transition too large): submit a ChainLock proof
+        /// for the same outpoint once the lock is ChainLocked.
+        NeedsChainLockProof = 1,
+        /// Platform's view of Core stayed below the ChainLock proof's height
+        /// (consensus 10506) through every attempt the SDK's retry budget
+        /// allowed, all below the fee cap. Retry later with the next floor.
+        PlatformBehindCore = 2,
+        /// A node reported this exact outpoint already consumed. Not
+        /// authenticated: check with `asset_lock_state`, or for a
+        /// registration with `get_identity` of the id
+        /// `identity_id_from_asset_lock_outpoint` derives.
+        ReportedConsumed = 3,
+        /// Platform refused the transition with another consensus error,
+        /// raw 10504 included.
+        Rejected = 4,
+        /// Nothing settled: a transport failure, a timeout, a response that
+        /// failed verification, a refused callback, bad input or shutdown.
+        /// A transition that was sent may still execute.
+        Unavailable = 5,
+        /// A top-up whose wait returned a verified snapshot of the
+        /// identity's balance, while the lock is not proved used up (no
+        /// record of it yet, credits left in it, or the record could not be
+        /// read). The snapshot binds neither this top-up nor this lock:
+        /// settle it with `asset_lock_state`. The status is `Unavailable`,
+        /// or the failed read's own (`Rejected` when its proof failed
+        /// verification).
+        Submitted = 6,
+        /// No fee step is left for this proof: the floor is above 100, so
+        /// nothing was submitted, or the attempt at 100 still met 10506.
+        /// Tenderdash keeps the hash of every transition its CheckTx
+        /// refused, with no time limit, until its cache evicts it or the
+        /// node restarts, and a node that holds it never admits those bytes
+        /// again: do not resend this proof at any step. Send a ChainLock
+        /// proof for the same outpoint at a height it has not carried (one
+        /// above the last, at most the embedder's best ChainLock), from
+        /// floor 0. The lock is not settled.
+        FeeCapReached = 7,
+    }
+
+    /// `last_user_fee_increase`: the highest `user_fee_increase` an attempt
+    /// of this call started with, or one below the floor (saturating at 0)
+    /// when it started none. Every attempt may have reached Platform, so the
+    /// next call with the same proof passes one more than this as its floor.
     #[derive(Debug, Clone)]
-    struct BalanceResult {
+    struct FundingReport {
+        outcome: FundingOutcome,
+        last_user_fee_increase: u16,
+    }
+
+    #[derive(Debug, Clone)]
+    struct RegisterIdentityResult {
+        status: Status,
+        identity: Identity,
+        funding: FundingReport,
+    }
+
+    /// `balance`: under `Ok`, the identity's balance in the proof the wait
+    /// returned. A node may answer that from a block before this top-up,
+    /// so it need not include it: read `get_identity` for a balance to show.
+    #[derive(Debug, Clone)]
+    struct TopUpIdentityResult {
         status: Status,
         balance: u64,
+        funding: FundingReport,
+    }
+
+    /// Platform's record of an asset lock, proved, as of the answering
+    /// node's block. A record is never removed.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[repr(u8)]
+    enum AssetLockState {
+        /// No transition has used it yet; one in flight still may.
+        NotPresent = 0,
+        /// A transition that failed after its asset-lock signature checked
+        /// out used part of it; `remaining_credits` can still fund one.
+        PartiallyConsumed = 1,
+        /// Used up: nothing can spend it again.
+        FullyConsumed = 2,
+    }
+
+    #[derive(Debug, Clone)]
+    struct AssetLockStateResult {
+        status: Status,
+        state: AssetLockState,
+        remaining_credits: u64,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[repr(u8)]
+    enum ContestPolicyKind {
+        /// Ordinary names only: a label that would join a contest is refused
+        /// (`StatusKind::Contested`) before anything is written.
+        Refuse = 0,
+        /// Join a contest if the label is contested, paying at most `cap`
+        /// credits into it; Platform refuses, and charges the transition's
+        /// fees, when joining costs more.
+        Cap = 1,
+    }
+
+    /// How `register_dpns_name` treats a label that would join a contest.
+    /// `cap` is read under `Cap` only.
+    #[derive(Debug, Clone, Copy)]
+    struct ContestPolicy {
+        kind: ContestPolicyKind,
+        cap: u64,
     }
 
     /// A DPNS name. `identity` is the identity it resolves to, all zero
@@ -269,9 +387,19 @@ pub mod ffi {
         public_key: [u8; 33],
     }
 
+    /// What the embedder knows of a quorum; defined in `callbacks.h`.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[repr(u8)]
+    enum QuorumLookup {
+        Found = 0,
+        Invalid = 1,
+        Unavailable = 2,
+    }
+
     unsafe extern "C++" {
         include!("dash/sdk/callbacks.h");
 
+        type QuorumLookup;
         type WalletSigner;
         type ContactKeys;
         type CoreContext;
@@ -310,7 +438,7 @@ pub mod ffi {
             quorum_hash: &[u8; 32],
             core_chain_locked_height: u32,
             key_out: &mut [u8; 48],
-        ) -> bool;
+        ) -> QuorumLookup;
         fn PlatformActivationHeight(self: &CoreContext, height_out: &mut u32) -> bool;
     }
 
@@ -372,34 +500,55 @@ pub mod ffi {
             direction: ContactDirection,
             since_ms: u64,
         ) -> ContactRequestsResult;
+        /// Platform's record of credit output `vout` of asset lock
+        /// transaction `txid` (internal uint256 byte order). Any proved
+        /// state is `Ok`.
+        fn asset_lock_state(
+            self: &PlatformClient,
+            txid: &[u8; 32],
+            vout: u32,
+        ) -> AssetLockStateResult;
 
         // Writes: one end-to-end SDK call each, waiting for the proved
         // result. Callback objects are moved in.
+        //
+        // Identity funding: each attempt is built with a `user_fee_increase`
+        // from `user_fee_increase_floor` up, never above 100 (at most double
+        // the processing fee, paid from the lock's own credits). While
+        // Platform's view of Core is below a ChainLock proof's height
+        // (10506) the SDK resubmits, one higher each time, for at most
+        // 210 s. A floor above 100 makes no attempt: `FeeCapReached`.
         /// Creates the identity holding `keys` (each must be enabled).
         fn register_identity(
             self: &PlatformClient,
             keys: &[IdentityKey],
             proof: &AssetLockProof,
             asset_lock_key_ref: u32,
+            user_fee_increase_floor: u16,
             signer: UniquePtr<WalletSigner>,
-        ) -> IdentityResult;
-        /// The identity's balance after the top-up.
+        ) -> RegisterIdentityResult;
+        /// Tops up `identity`, then reads the lock's record (as
+        /// `asset_lock_state`): `Ok` only once it shows the lock used up,
+        /// `Submitted` otherwise.
         fn top_up_identity(
             self: &PlatformClient,
             identity: &[u8; 32],
             proof: &AssetLockProof,
             asset_lock_key_ref: u32,
+            user_fee_increase_floor: u16,
             signer: UniquePtr<WalletSigner>,
-        ) -> BalanceResult;
+        ) -> TopUpIdentityResult;
         /// Preorder then domain, signed with `key_id`; the domain document
-        /// id. `contest_fund`: the most a contested name may pay into its
-        /// contest; 0 lets the SDK price it just before the domain is sent.
+        /// id. Under `Refuse`, a label `is_contested_username` calls
+        /// contested, or whose domain the network's DPNS contract puts in a
+        /// contest, is `Contested` before any write; any other label states
+        /// a contest fund of 0. Under `Cap` the domain states `cap`.
         fn register_dpns_name(
             self: &PlatformClient,
             label: &str,
             identity: &[u8; 32],
             key_id: u32,
-            contest_fund: u64,
+            policy: &ContestPolicy,
             signer: UniquePtr<WalletSigner>,
         ) -> IdResult;
         /// The contact request document id.
@@ -418,6 +567,10 @@ pub mod ffi {
             shared_secret: &[u8; 32],
             encrypted_public_key: &[u8],
         ) -> Result<CompactXpub>;
+        /// The id of the identity that credit output `vout` of asset lock
+        /// transaction `txid` (internal uint256 byte order) registers, as
+        /// Platform derives it.
+        fn identity_id_from_asset_lock_outpoint(txid: &[u8; 32], vout: u32) -> IdResult;
     }
 }
 
@@ -467,6 +620,15 @@ fn is_contested_username(label: &str) -> bool {
 /// Fails closed: a contested answer keeps Core off the ordinary-name path.
 fn contested(check: fn(&str) -> bool, label: &str) -> bool {
     guarded("is_contested_username", || check(label), |_| true)
+}
+
+fn identity_id_from_asset_lock_outpoint(txid: &[u8; 32], vout: u32) -> ffi::IdResult {
+    guarded(
+        "identity_id_from_asset_lock_outpoint",
+        || Ok(marshal::identity_id_from_outpoint(txid, vout)),
+        |message| Err(ffi::Status::from(message)),
+    )
+    .into()
 }
 
 fn decrypt_contact_xpub(
