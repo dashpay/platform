@@ -39,7 +39,7 @@ use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
 use dpp::tests::json_document::json_document_to_json_value;
-use dpp::system_data_contracts::dashpay_contract;
+use dpp::system_data_contracts::dpns_contract;
 use dpp::validation::ConsensusValidationResult;
 use dpp::util::hash::hash_single;
 use dpp::version::DefaultForPlatformVersion;
@@ -734,7 +734,7 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 .value
                 .unwrap()
         ),
-        "fb76e051fe936ae3e39265a9cddf3d3297e901ca2c6048c1dcf85b82a92d8778"
+        "01b1aa765b58c73b580de019d98fdb10106003b0941b738769a96dc0feba8741"
     );
     assert_eq!(
         pool.platform
@@ -1589,16 +1589,29 @@ async fn should_reject_a_duplicate_payment_before_its_failing_trigger_without_ch
     let mut json = json_document_to_json_value(
         "tests/supporting_files/contract/crypto-card-game/crypto-card-game-in-game-currency-burn-tokens.json").unwrap();
     json.as_object_mut().unwrap().remove("tokens");
-    json["documentSchemas"] = serde_json::json!({ "contactRequest": {
+    // A `domain` under the DPNS contract's id, so the DPNS domain create trigger runs on it.
+    // From protocol version 15 that trigger is the one left that reads state before it fails
+    // a create: it looks the parent up, and a parent that does not exist refuses the name.
+    json["documentSchemas"] = serde_json::json!({ "domain": {
         "type": "object", "documentsMutable": false, "canBeDeleted": false,
-        "properties": { "toUserId": { "type": "identifier", "position": 0 } },
-        "required": ["toUserId"], "additionalProperties": false,
+        "indices": [{ "name": "parentNameAndLabel", "properties": [
+            { "normalizedParentDomainName": "asc" }, { "normalizedLabel": "asc" }
+        ] }],
+        "properties": {
+            "normalizedLabel": { "type": "string", "maxLength": 63, "position": 0 },
+            "normalizedParentDomainName": { "type": "string", "maxLength": 63, "position": 1 },
+            "subdomainRules": { "type": "object", "position": 2,
+                "properties": { "allowSubdomains": { "type": "boolean", "position": 0 } },
+                "required": ["allowSubdomains"], "additionalProperties": false }
+        },
+        "required": ["normalizedLabel", "normalizedParentDomainName", "subdomainRules"],
+        "additionalProperties": false,
         "tokenCost": { "create": { "contractId": pool.contract.id().to_buffer(),
             "tokenPosition": 0, "amount": 10, "effect": 0 } }
     } });
     let mut contract =
         DataContract::from_json(json, true, version).expect("valid trigger/payment contract");
-    contract.set_id(dashpay_contract::ID.into());
+    contract.set_id(dpns_contract::ID.into());
     contract.set_owner_id(pool.identity.id());
     contract.set_created_at_epoch(Some(0));
     contract.set_created_at(Some(0));
@@ -1614,7 +1627,7 @@ async fn should_reject_a_duplicate_payment_before_its_failing_trigger_without_ch
             version,
         )
         .unwrap();
-    let document_type = contract.document_type_for_name("contactRequest").unwrap();
+    let document_type = contract.document_type_for_name("domain").unwrap();
     let mut rng = StdRng::seed_from_u64(70_505);
     let entropy = Bytes32::random_with_rng(&mut rng);
     let mut document = document_type
@@ -1627,7 +1640,19 @@ async fn should_reject_a_duplicate_payment_before_its_failing_trigger_without_ch
             version,
         )
         .unwrap();
-    document.set("toUserId", Value::Identifier([96; 32]));
+    // a name under a parent no domain holds, so the lookup finds nothing
+    document.set("normalizedLabel", Value::Text("alice".to_string()));
+    document.set(
+        "normalizedParentDomainName",
+        Value::Text("nowhere".to_string()),
+    );
+    document.set(
+        "subdomainRules",
+        Value::Map(vec![(
+            Value::Text("allowSubdomains".to_string()),
+            Value::Bool(false),
+        )]),
+    );
     document
         .set_id_for_creation(document_type, &entropy.0, 1, version)
         .unwrap();
@@ -1709,7 +1734,7 @@ async fn should_reject_a_duplicate_payment_before_its_failing_trigger_without_ch
     assert_eq!(
         natural_context.operations_slice().len(),
         disabled_natural_context.operations_slice().len() + 1,
-        "the failing recipient trigger must actually perform and bill its identity lookup"
+        "the failing parent domain trigger must actually perform and bill its parent lookup"
     );
     assert_eq!(
         format!("{:?}", duplicate_context.operations_slice()),
@@ -2160,39 +2185,39 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
         let (expected_validation, expected_settled) = match case {
             "shield" => (
                 "6a823c2db94612652926e6b9c1ae7feec9c2547dfd4cfc4e474318da1c16d59c",
-                "eb7e34a02f156dbe1d9c9609b41bd67a033d1cd3fe81c5f2e6fcef575fc88459",
+                "761e92d28f8cef61e908c2ae3b24938b405868e468f44fd22a68f61da64b682c",
             ),
             "valid-payment" => (
                 "9388d5cf63c4a571b9fb009679e2e34d0b681acc88f0f5195e7287c7efbd92f7",
-                "44684cf51317f0e60bc836e7bd671798145bb69bc7605241ebbc659028d50070",
+                "5a8fa6e02357c351ba35b210eaaadb09cb9786d7b12d06b1483e75411c478d3f",
             ),
             "failed-payment" => (
                 "d9b5fe191841bea952494f2a45e3833f925f4d367a1937b2ef1235a1aa01f51e",
-                "365a97c4e20ae4ee695505a8d5dbb0dea5584c14eb4c6b223a3ae4f0b2f8b668",
+                "1dee6b00d4f6ab7be85238448840e8a124b75260a445a3ec38b0c2283633544b",
             ),
             "within-bundle-repeat" => (
                 "8023e03a697a20f6a78396a05503a4bc583ca8f69e19bd7ee07a6ae0ce7be478",
-                "b9cfc7cafbeafb436917f0b35bfa97df6be58b73a25e0159038558fdc9a2751c",
+                "5557745a60262645a038803fffb5c3e7f5a85b0822d0d81f515b30cfca8a5316",
             ),
             "stored-repeat" => (
                 "05652ac85c972902e8c09d20a7d8586e17e9434a478b335da136ad85f73def01",
-                "9e1d6b0bc9097d817f4ca0ac952611f69398d8f201b6eb36556059b166488393",
+                "a8fa01705072cdaddf01155bc21a707da71765cca36e829ed8689bc010721571",
             ),
             "open-mint-group" => (
                 "5c68381297c9bf68c5e85ebe6bb9e0f1289e2c07718eecfb5e6773d6009455bb",
-                "b96b1e9b643552413c2e5049f9f9b6ae92357a6ad462e2d3a673d239a355cfd9",
+                "2cc8ac005b08d6bdba5713b81653f43d8db6d62f1f0c64f2e11dc987dd6587be",
             ),
             "closing-mint-group" => (
                 "2cedc16732c76e0605b5f46085db3d69c12936a5af55a2a82f52ec9e9ca67e38",
-                "78fd3bdabed41d31082162dfc95158872108872c79f3041ef3d71c7fa48dd905",
+                "cc45783c058f65155e440957bde48a991854eda553fe868586c4688e7e608963",
             ),
             "open-burn-group" => (
                 "e664a045f020ff84de1ca98f364fbabccfc141ad46aa82c79491a340bb0db5f8",
-                "38b6b6d2d77fb41c4262adaa6bbbd581dbb2c5d3195e3d11cec16411464e2758",
+                "a15f8c988bf4aac48480c32842c9e0b1d04b6304fbfd427b289dc7dc9fb54b8a",
             ),
             "closing-burn-group" => (
                 "93e1732286f168c4a91d2765931e181c5721bfca1bfd5f93b8baacca03e00b2b",
-                "6a4f89129b2bd16b078b1165a46775e20deb1808bfd239fd49e5f4e89e45453c",
+                "d799aab48f5ce1eb60b3076e576b663c982e59ac003b42210565753f68848591",
             ),
             _ => unreachable!("enumerated characterization case"),
         };
