@@ -2374,6 +2374,188 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     })
 }
 
+/// Size of one row of the withdrawal-inputs blob:
+/// `u8 addressType, u8[20] hash, u64 credits`.
+const WITHDRAWAL_INPUT_ROW_LEN: usize = 1 + 20 + 8;
+
+/// Decode the withdrawal-inputs blob into FFI rows.
+///
+/// Layout (big-endian, the same row shape as the transfer outputs blob):
+/// `u32 rowCount` then per row `u8 addressType, u8[20] hash, u64 credits`.
+///
+/// Only malformed framing and a set sign bit on `credits` (a negative Kotlin
+/// `Long`, which would otherwise read as a huge `u64`) are rejected here.
+/// Everything else is validated once by its owner: the address type and
+/// duplicate addresses by `parse_explicit_inputs` in `rs-platform-wallet-ffi`,
+/// an empty list by `rs-platform-wallet`, and the input count and minimum
+/// input amount by `rs-dpp`. The messages never echo a hash or amount.
+fn decode_withdrawal_inputs(
+    bytes: &[u8],
+) -> Result<Vec<platform_wallet_ffi::ExplicitInputFFI>, String> {
+    let (count_bytes, body) = bytes
+        .split_first_chunk::<4>()
+        .ok_or("withdrawal inputs blob truncated (row count)")?;
+    let count = u32::from_be_bytes(*count_bytes) as usize;
+    // Exact-length check before allocating: a header that disagrees with
+    // the payload is malformed, and this bounds `with_capacity`.
+    if count.checked_mul(WITHDRAWAL_INPUT_ROW_LEN) != Some(body.len()) {
+        return Err(format!(
+            "withdrawal inputs blob claims {count} rows but has {} body bytes",
+            body.len()
+        ));
+    }
+    let mut inputs = Vec::with_capacity(count);
+    let (rows, _) = body.as_chunks::<WITHDRAWAL_INPUT_ROW_LEN>();
+    for (i, row) in rows.iter().enumerate() {
+        let (type_byte, rest) = row.split_at(1);
+        let (hash, credit_bytes) = rest.split_at(20);
+        let mut hash_arr = [0u8; 20];
+        hash_arr.copy_from_slice(hash);
+        let mut credits_arr = [0u8; 8];
+        credits_arr.copy_from_slice(credit_bytes);
+        let credits = u64::from_be_bytes(credits_arr);
+        if credits & (1 << 63) != 0 {
+            return Err(format!(
+                "withdrawal inputs blob row {i} credits amount out of range"
+            ));
+        }
+        inputs.push(platform_wallet_ffi::ExplicitInputFFI {
+            address: platform_wallet_ffi::PlatformAddressFFI {
+                address_type: type_byte[0],
+                hash: hash_arr,
+            },
+            balance: credits,
+        });
+    }
+    Ok(inputs)
+}
+
+/// Withdraw exactly the listed amounts from the listed platform addresses
+/// (EXPLICIT input selection) to a Core L1 address, wallet-signed. Port of
+/// Swift's `ManagedPlatformAddressWallet.withdraw(accountIndex:coreAddress:
+/// inputs:…)`; sibling of [`walletPlatformAddressWithdraw`], which withdraws
+/// the full balance.
+///
+/// The payout is the sum of the input amounts. The transition fee is
+/// deducted by the chain from the fee-source input's REMAINING balance, so
+/// that address must keep at least the fee after the withdrawal, or the
+/// transition is rejected. Rust re-fetches every input's on-chain balance
+/// before signing, so a stale caller-side balance fails with a typed error
+/// rather than a wrong-amount withdrawal.
+///
+/// Fee source: as in Swift, no fee strategy is passed, so the FFI applies
+/// its default `DeductFromInput(0)`. Consensus resolves index 0 against the
+/// inputs sorted by address, NOT the order of `inputs_blob`, so the input
+/// whose address sorts first pays the fee.
+///
+/// Same `core_address` network check, Fibonacci `core_fee_per_byte` rule and
+/// changeset blob as [`walletPlatformAddressWithdraw`].
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletPlatformAddressWithdrawExplicit(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    account_index: jni::sys::jint,
+    inputs_blob: JByteArray,
+    core_address: JString,
+    core_fee_per_byte: jni::sys::jint,
+    signer_handle: jlong,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        // Reject sign errors at the boundary — negatives would otherwise
+        // bit-cast to huge u32s on the FFI call.
+        if account_index < 0 {
+            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
+            return ptr::null_mut();
+        }
+        if core_fee_per_byte < 0 {
+            throw_sdk_exception(env, 1, "coreFeePerByte must be non-negative");
+            return ptr::null_mut();
+        }
+
+        if inputs_blob.is_null() {
+            throw_sdk_exception(env, 1, "withdrawal inputs blob was null");
+            return ptr::null_mut();
+        }
+        let blob_bytes = match env.convert_byte_array(&inputs_blob) {
+            Ok(b) => b,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "withdrawal inputs blob was invalid");
+                return ptr::null_mut();
+            }
+        };
+        let input = match decode_withdrawal_inputs(&blob_bytes) {
+            Ok(rows) => rows,
+            Err(msg) => {
+                throw_sdk_exception(env, 1, &msg);
+                return ptr::null_mut();
+            }
+        };
+
+        let Some(core_address_c) = read_cstring_required(env, &core_address, "core_address") else {
+            return ptr::null_mut();
+        };
+
+        let mut addr_handle: Handle = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_get_platform(
+                wallet_handle as Handle,
+                &mut addr_handle as *mut Handle,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        let mut changeset = platform_wallet_ffi::PlatformAddressChangeSetFFI {
+            updated: ptr::null_mut(),
+            updated_count: 0,
+        };
+        let withdraw_result = unsafe {
+            platform_wallet_ffi::platform_address_wallet_withdraw_to_address(
+                addr_handle,
+                account_index as u32,
+                platform_wallet_ffi::InputSelectionType::Explicit,
+                input.as_ptr(),
+                input.len(),
+                ptr::null(),
+                0,
+                core_address_c.as_ptr(),
+                core_fee_per_byte as u32,
+                ptr::null(), // fee strategy: FFI default `DeductFromInput(0)`
+                0,
+                signer_handle as *mut rs_sdk_ffi::SignerHandle,
+                &mut changeset as *mut platform_wallet_ffi::PlatformAddressChangeSetFFI,
+            )
+        };
+
+        let out = if take_pwffi_error(env, withdraw_result) {
+            ptr::null_mut()
+        } else {
+            let blob = unsafe { encode_changeset(&changeset) };
+            unsafe {
+                platform_wallet_ffi::platform_address_wallet_free_changeset(
+                    &changeset as *const platform_wallet_ffi::PlatformAddressChangeSetFFI,
+                )
+            };
+            env.byte_array_from_slice(&blob)
+                .map(|a| a.into_raw())
+                .unwrap_or(ptr::null_mut())
+        };
+
+        let destroy_result =
+            unsafe { platform_wallet_ffi::platform_address_wallet_destroy(addr_handle) };
+        if !env.exception_check().unwrap_or(false) {
+            let _ = take_pwffi_error(env, destroy_result);
+        } else {
+            unsafe { platform_wallet_ffi_result_free(&mut { destroy_result }) };
+        }
+
+        out
+    })
+}
+
 /// Preflight an AUTO withdrawal WITHOUT signing / broadcasting / consuming a
 /// Core address. Returns a `long[3]` = `[canWithdraw (0/1), netWithdrawable,
 /// estimatedFee]`; the figures are `0` when `canWithdraw == 0`. The "can't
@@ -4005,4 +4187,70 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
             }
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_withdrawal_inputs;
+
+    /// Encode rows the way Kotlin's `encodeWithdrawalInputs` does.
+    fn blob(rows: &[(u8, [u8; 20], i64)]) -> Vec<u8> {
+        let mut out = (rows.len() as u32).to_be_bytes().to_vec();
+        for (address_type, hash, credits) in rows {
+            out.push(*address_type);
+            out.extend_from_slice(hash);
+            out.extend_from_slice(&credits.to_be_bytes());
+        }
+        out
+    }
+
+    #[test]
+    fn should_decode_inputs_in_blob_order() {
+        let rows = decode_withdrawal_inputs(&blob(&[(0, [7u8; 20], 1_000), (0, [3u8; 20], 2_000)]))
+            .expect("valid blob");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].address.address_type, 0);
+        assert_eq!(rows[0].address.hash, [7u8; 20]);
+        assert_eq!(rows[0].balance, 1_000);
+        assert_eq!(rows[1].address.hash, [3u8; 20]);
+        assert_eq!(rows[1].balance, 2_000);
+    }
+
+    #[test]
+    fn should_pass_policy_checks_through_to_their_owners() {
+        // An empty list (rs-platform-wallet), P2SH (rs-platform-wallet-ffi)
+        // and zero credits (rs-dpp) are each rejected by their owner, not here.
+        assert!(decode_withdrawal_inputs(&blob(&[]))
+            .expect("marshals")
+            .is_empty());
+        let rows = decode_withdrawal_inputs(&blob(&[(1, [0u8; 20], 0)])).expect("marshals");
+        assert_eq!(rows[0].address.address_type, 1);
+        assert_eq!(rows[0].balance, 0);
+    }
+
+    #[test]
+    fn should_reject_negative_withdrawal_input_credits() {
+        assert!(decode_withdrawal_inputs(&blob(&[(0, [0u8; 20], -1)])).is_err());
+        assert!(decode_withdrawal_inputs(&blob(&[(0, [0u8; 20], i64::MIN)])).is_err());
+    }
+
+    #[test]
+    fn should_accept_the_largest_positive_withdrawal_input_credits() {
+        let rows = decode_withdrawal_inputs(&blob(&[(0, [0u8; 20], i64::MAX)])).expect("valid");
+        assert_eq!(rows[0].balance, i64::MAX as u64);
+    }
+
+    #[test]
+    fn should_reject_a_withdrawal_inputs_blob_with_bad_framing() {
+        assert!(decode_withdrawal_inputs(&[]).is_err());
+        assert!(decode_withdrawal_inputs(&[0, 0, 0]).is_err());
+        let mut short = blob(&[(0, [0u8; 20], 5)]);
+        short.pop();
+        assert!(decode_withdrawal_inputs(&short).is_err());
+        let mut long = blob(&[(0, [0u8; 20], 5)]);
+        long.push(0);
+        assert!(decode_withdrawal_inputs(&long).is_err());
+        // A header claiming more rows than the body holds must not allocate.
+        assert!(decode_withdrawal_inputs(&u32::MAX.to_be_bytes()).is_err());
+    }
 }
