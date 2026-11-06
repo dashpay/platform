@@ -25,12 +25,17 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 hex = "0.4"
 zeroize = "1"
+# The test-only credit-verdict round hook (`verdict_round_test_hook.rs`)
+# builds a `CoreChangeSet` and drives it through `FFIPersister::store`.
+# All three are already in the graph through platform-wallet-ffi.
+dashcore = { workspace = true }
+key-wallet = { workspace = true }
+platform-wallet = { path = "../rs-platform-wallet" }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.14"
 
 [dev-dependencies]
-dashcore = { workspace = true }
 # Anchors the cross-language golden-fixture test to the canonical DashPay
 # contract id, so the mirrored Kotlin constant can't drift undetected.
 dashpay-contract = { path = "../dashpay-contract" }

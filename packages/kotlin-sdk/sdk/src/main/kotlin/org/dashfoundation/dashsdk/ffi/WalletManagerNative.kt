@@ -63,6 +63,31 @@ internal object WalletManagerNative {
         bridge: NativePersistenceBridge,
     ): String?
 
+    /**
+     * TEST ONLY (`rs-unified-sdk-jni/src/verdict_round_test_hook.rs`):
+     * deliver one credit-verdict round to [bridge] through the real native
+     * persistence path — `FFIPersister::store`, the verdict packing and the
+     * JNI trampolines — as the SPV engine would after processing a
+     * transaction it did not credit, which otherwise needs a synced chain.
+     *
+     * Output `i` pays `amounts[i]` to `addresses[i]` in the fixture
+     * transaction `txTags[i]` (its vout is its position among the outputs
+     * sharing that tag; the same tag and outputs always give the same txid),
+     * confirmed at [blockHeight]. `verdicts[i]` is `0` for a credited output,
+     * else a `UTXO_CREDIT_VERDICT_*` code with `spentAtHeights[i]`. Throws
+     * [DashSDKException] when the fixture is malformed or the round fails.
+     */
+    external fun nativeTestDeliverUtxoCreditVerdictRound(
+        bridge: NativePersistenceBridge,
+        walletId: ByteArray,
+        txTags: IntArray,
+        addresses: Array<String>,
+        amounts: LongArray,
+        verdicts: ByteArray,
+        spentAtHeights: IntArray,
+        blockHeight: Int,
+    )
+
     // ── Wallet creation / restore ─────────────────────────────────────
 
     /**
