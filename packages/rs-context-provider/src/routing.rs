@@ -256,6 +256,10 @@ impl ContextProvider for SpvContextProvider {
         Ok(platform_activation_height(self.network))
     }
 
+    fn network(&self) -> Option<Network> {
+        Some(self.network)
+    }
+
     fn get_data_contract(
         &self,
         id: &Identifier,
@@ -279,6 +283,10 @@ impl ContextProvider for SpvContextProvider {
 /// Routes each quorum lookup to an SPV client or a trusted provider by
 /// [`ContextProviderMode`]; contracts and tokens come from a
 /// [`ContractSource`].
+///
+/// It does not pass on [`ContextProvider::core_height_verified`]: it does not
+/// record which source supplied a quorum's key, and a verified height vouches
+/// only for that source.
 pub struct AdaptiveContextProvider {
     trusted: Arc<dyn ContextProvider>,
     spv: Arc<SpvSourceSlot>,
@@ -386,6 +394,16 @@ impl ContextProvider for AdaptiveContextProvider {
         Ok(platform_activation_height(self.network))
     }
 
+    fn network(&self) -> Option<Network> {
+        Some(self.network)
+    }
+
+    /// The trusted provider's requirement. It is the only source known when
+    /// the SDK is built, and the route Auto falls back to.
+    fn requires_proofs(&self) -> bool {
+        self.trusted.requires_proofs()
+    }
+
     fn get_data_contract(
         &self,
         id: &Identifier,
@@ -409,7 +427,7 @@ impl ContextProvider for AdaptiveContextProvider {
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     use dpp::dashcore::Network;
     use dpp::data_contract::TokenConfiguration;
@@ -779,6 +797,97 @@ mod tests {
 
         lease.publish(quorums("spv", 0x22), Arc::new(|| Ok(true)));
         drop(lease);
+    }
+
+    /// A quorum source that states requirements and records the verified
+    /// heights it is told about.
+    #[derive(Default)]
+    struct Requiring {
+        proofs: bool,
+        verified: Mutex<Vec<(u32, [u8; 32], u32)>>,
+    }
+
+    impl ContextProvider for Requiring {
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Ok([0x44; 48])
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(999)
+        }
+
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn requires_proofs(&self) -> bool {
+            self.proofs
+        }
+
+        fn core_height_verified(&self, quorum_type: u32, quorum_hash: [u8; 32], height: u32) {
+            self.verified
+                .lock()
+                .expect("test state lock")
+                .push((quorum_type, quorum_hash, height));
+        }
+    }
+
+    /// The SDK refuses a provider for another network, or one that requires
+    /// proofs while proofs are off, by asking the provider it is built with.
+    /// A routing provider that answered with the defaults would let the SDK
+    /// accept one it must refuse.
+    #[test]
+    fn should_forward_provider_requirements_through_every_wrapper() {
+        let fixed = SpvContextProvider::new(Arc::new(TestContracts), Network::Testnet);
+        assert_eq!(fixed.network(), Some(Network::Testnet));
+        assert!(!fixed.requires_proofs());
+
+        for proofs in [false, true] {
+            let trusted = Arc::new(Requiring {
+                proofs,
+                ..Default::default()
+            });
+            let adaptive =
+                AdaptiveContextProvider::new(trusted, Arc::new(TestContracts), Network::Testnet);
+            assert_eq!(adaptive.network(), Some(Network::Testnet));
+            assert_eq!(adaptive.requires_proofs(), proofs);
+        }
+    }
+
+    /// A verified height vouches only for the source whose key verified the
+    /// response. The adaptive provider does not record which source supplied
+    /// a key, and its route can change between the lookup and the call, so
+    /// it tells neither: the trusted provider must not hear of a response an
+    /// SPV key verified.
+    #[test]
+    fn should_not_report_a_verified_height_to_a_source_that_may_not_have_supplied_the_key() {
+        let trusted = Arc::new(Requiring::default());
+        let adaptive = AdaptiveContextProvider::new(
+            Arc::clone(&trusted) as Arc<dyn ContextProvider>,
+            Arc::new(TestContracts),
+            Network::Testnet,
+        );
+        let _lease = publish(&adaptive.source_slot(), quorums("spv", 0x22), true);
+        assert_eq!(quorum_key(&adaptive).unwrap(), [0x22; 48]);
+
+        adaptive.core_height_verified(1, [2; 32], 3);
+        assert!(trusted.verified.lock().expect("test state lock").is_empty());
     }
 
     /// Auto mode treats an SPV client that cannot say whether it is synced as
