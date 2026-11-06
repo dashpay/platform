@@ -25,6 +25,7 @@ use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
 use crate::masternode::list::MasternodeListSummary;
 use crate::spv::peers::{classify_peers, PeerTracker, SpvPeerInfo};
+use crate::wallet::asset_lock::sync::locate::HeaderLookup;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 type SpvClient = DashSpvClient<WalletManager<PlatformWalletInfo>, PeerNetworkManager>;
@@ -792,17 +793,13 @@ impl SpvRuntime {
         Some(tip.header().time)
     }
 
-    /// Hash of the stored header at `height`.
+    /// What the SPV header store holds at `height`.
     ///
-    /// Returns `None` if the SPV client isn't running or the header store
-    /// does not hold that height (below the sync start, above the tip, or
-    /// unreadable).
-    pub(crate) async fn header_hash_at(
-        &self,
-        height: u32,
-    ) -> crate::wallet::asset_lock::sync::locate::HeaderLookup {
-        use crate::wallet::asset_lock::sync::locate::HeaderLookup;
-
+    /// Only [`HeaderLookup::Found`] says which block the chain has there.
+    /// [`HeaderLookup::Unreadable`] when the SPV client isn't running or the
+    /// store can't be read, [`HeaderLookup::Absent`] when the store holds no
+    /// header at that height (below the sync start or above the tip).
+    pub async fn header_hash_at(&self, height: u32) -> HeaderLookup {
         let client_guard = self.client.read().await;
         let Some(client) = client_guard.as_ref() else {
             return HeaderLookup::Unreadable("SPV client not running".to_string());
