@@ -2437,7 +2437,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// same txid — a later batch of this round sweeping or chaining onto
     /// it — returns the same object instead of re-fetching. The plain
     /// pending-changes fetch with no active round keeps the old behaviour
-    /// for unbracketed callers.
+    /// for unbracketed callers. The store read goes through `modelFetcher`
+    /// (verbatim `ModelContext.fetch` in production), so a test can fault
+    /// it; the reconcile heal relies on that to prove a failed read stops
+    /// the step instead of minting a stub over the real row.
     private func fetchTransactionRow(
         txid: Data,
         prefetching: [PartialKeyPath<PersistentTransaction>]
@@ -2453,7 +2456,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             descriptor.relationshipKeyPathsForPrefetching = prefetching
         }
         if roundIndex != nil { descriptor.includePendingChanges = false }
-        guard let row = try backgroundContext.fetch(descriptor).first,
+        guard let row = try modelFetcher.fetch(descriptor, in: backgroundContext).first,
               !row.isDeleted else { return nil }
         roundIndex?.transactionsByTxid[txid] = row
         return row
@@ -2495,12 +2498,32 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// optimisation — the sweep phase re-points and tombstones these rows
     /// through this helper, and a second store-only fetch of the same key
     /// would refresh those mutations away (see `roundIndex`).
+    ///
+    /// A failed fetch reads as "no saved rows" — the additive hot path's
+    /// contract: the claim stays in the store and drains on a later upsert.
+    /// Inside a round the empty saved set is still registered, merged with
+    /// the round's staged rows, exactly as before the checked core existed.
     private func pendingInputRows(outpoint: Data) -> [PersistentPendingInput] {
+        do {
+            return try pendingInputRowsChecked(outpoint: outpoint)
+        } catch {
+            guard roundIndex != nil else { return [] }
+            registerPendingInputRows([], outpoint: outpoint)
+            return (roundIndex!.pendingInputsByOutpoint[outpoint] ?? []).filter { !$0.isDeleted }
+        }
+    }
+
+    /// Throwing core of `pendingInputRows`: an empty result is a successful
+    /// miss, a read that fails throws (and registers nothing). Taken through
+    /// `modelFetcher` so a test can fault it. The reconcile heal uses this
+    /// form: a missed claim there would write a coin unspent that a pending
+    /// spend already covers, and report it repaired.
+    private func pendingInputRowsChecked(outpoint: Data) throws -> [PersistentPendingInput] {
         guard roundIndex != nil else {
             let descriptor = FetchDescriptor<PersistentPendingInput>(
                 predicate: #Predicate { $0.outpoint == outpoint }
             )
-            return ((try? backgroundContext.fetch(descriptor)) ?? []).filter { !$0.isDeleted }
+            return try modelFetcher.fetch(descriptor, in: backgroundContext).filter { !$0.isDeleted }
         }
         if roundIndex!.pendingInputsFetched.contains(outpoint) {
             return (roundIndex!.pendingInputsByOutpoint[outpoint] ?? []).filter { !$0.isDeleted }
@@ -2509,7 +2532,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             predicate: #Predicate { $0.outpoint == outpoint }
         )
         descriptor.includePendingChanges = false
-        let saved = (try? backgroundContext.fetch(descriptor)) ?? []
+        let saved = try modelFetcher.fetch(descriptor, in: backgroundContext)
         registerPendingInputRows(saved, outpoint: outpoint)
         return (roundIndex!.pendingInputsByOutpoint[outpoint] ?? []).filter { !$0.isDeleted }
     }
@@ -3004,13 +3027,42 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// yet; the matching upsert here drains those rows and stamps
     /// `isSpent` on the TXO. Symmetric with the resolve path in
     /// `upsertTransaction`, so the spend signal is order-independent at
-    /// this layer regardless of which side arrives first. Shared by
-    /// `upsertUtxo` and the store reconcile's heal path
-    /// (`reconcileHealMissingTxos`), so both writers honour the same
-    /// tombstone precedence and spender-adoption rules.
+    /// this layer regardless of which side arrives first. The drain body
+    /// (`applyPendingInputs`) is shared by `upsertUtxo` and the store
+    /// reconcile's heal path (`reconcileHealMissingTxos`), so both writers
+    /// honour the same tombstone precedence and spender-adoption rules; the
+    /// heal feeds it through the throwing reads.
     private func drainPendingInputs(into record: PersistentTxo, resolvedWalletId: Data) {
-        let pendingRows = pendingInputRows(outpoint: record.outpoint)
+        applyPendingInputs(
+            pendingInputRows(outpoint: record.outpoint),
+            into: record,
+            resolvedWalletId: resolvedWalletId,
+            resolveSpender: resolvePendingSpender
+        )
+    }
+
+    /// The drain itself, over rows the caller already read. `upsertUtxo`
+    /// reads them through the forgiving `pendingInputRows` and resolves
+    /// spenders through `resolvePendingSpender` (a failed read is a miss);
+    /// the reconcile heal reads both through their throwing forms, so a
+    /// failed read stops the step instead of writing the coin unspent and
+    /// deleting the claim that covered it. Nothing is written until every
+    /// spender this drain adopts has resolved or thrown — a throw leaves
+    /// the record as the caller built it, and the heal rolls back.
+    private func applyPendingInputs(
+        _ pendingRows: [PersistentPendingInput],
+        into record: PersistentTxo,
+        resolvedWalletId: Data,
+        resolveSpender: (PersistentPendingInput) throws -> PersistentTransaction?
+    ) rethrows {
         if !pendingRows.isEmpty {
+            // Resolve every ordinary row's spender before touching the
+            // record, so a throwing resolver leaves it as the caller built
+            // it. Oldest first — the order the adoption pass below walks.
+            let ordinary = pendingRows
+                .sorted(by: { $0.createdAt < $1.createdAt })
+                .filter { !$0.isSweptTombstone }
+            let spenders = try ordinary.map { try resolveSpender($0) }
             // A tombstone is not an observation — it is a sweep's settled
             // verdict that its winner consumed this coin — so it outranks
             // every ordinary row regardless of age, and a drained tombstone
@@ -3045,9 +3097,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // ordinary row moments before the sweep, and that row — not
             // the tombstone — carries the link and the right vin index.
             var adoptedAny = false
-            for pending in pendingRows.sorted(by: { $0.createdAt < $1.createdAt })
-            where !pending.isSweptTombstone {
-                guard let spending = resolvePendingSpender(pending) else { continue }
+            for (pending, resolved) in zip(ordinary, spenders) {
+                guard let spending = resolved else { continue }
                 adoptSpendObservation(txo: record, spender: spending, inputIndex: pending.inputIndex)
                 if record.spendingTransaction?.txid == spending.txid {
                     adoptedAny = true
@@ -3082,6 +3133,19 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             return spending
         }
         return fetchTransactionRow(txid: pending.spendingTxid)
+    }
+
+    /// Throwing form of `resolvePendingSpender`, for the reconcile heal: a
+    /// spender that cannot be read must stop the step, not read as "not
+    /// arrived yet" and let the drain delete the claim off an unspent coin.
+    private func resolvePendingSpenderChecked(
+        _ pending: PersistentPendingInput
+    ) throws -> PersistentTransaction? {
+        if let spending = pending.spendingTransaction {
+            roundIndex?.transactionsByTxid[spending.txid] = spending
+            return spending
+        }
+        return try fetchTransactionRow(txid: pending.spendingTxid, prefetching: [])
     }
 
     /// The one rule every spend-linkage writer follows — the record pass
@@ -11638,8 +11702,22 @@ extension PlatformWalletPersistenceHandler {
                     counts.skippedMissingAddress += 1
                     continue
                 }
+                // Both reads below are throwing: a failed parent read taken
+                // as a miss would insert a stub under the parent's unique
+                // txid and the save could overwrite its bytes and context;
+                // a failed pending-input read taken as "no claims" would
+                // write a covered coin unspent and report it repaired.
+                // Read before anything is staged for this row.
+                let existingTx: PersistentTransaction?
+                let pendingRows: [PersistentPendingInput]
+                do {
+                    existingTx = try fetchTransactionRow(txid: row.txid, prefetching: [])
+                    pendingRows = try pendingInputRowsChecked(outpoint: outpoint)
+                } catch {
+                    return reconcileReadFailed(walletId: walletId, error: error)
+                }
                 let parentTx: PersistentTransaction
-                if let existing = fetchTransactionRow(txid: row.txid) {
+                if let existing = existingTx {
                     parentTx = existing
                 } else {
                     // Stub row, exactly as `upsertUtxo` does: empty bytes read
@@ -11665,7 +11743,16 @@ extension PlatformWalletPersistenceHandler {
                 record.isLocked = row.isLocked
                 backgroundContext.insert(record)
                 record.coreAddress = coreAddr
-                drainPendingInputs(into: record, resolvedWalletId: walletId)
+                do {
+                    try applyPendingInputs(
+                        pendingRows,
+                        into: record,
+                        resolvedWalletId: walletId,
+                        resolveSpender: resolvePendingSpenderChecked
+                    )
+                } catch {
+                    return reconcileReadFailed(walletId: walletId, error: error)
+                }
                 if record.isSpent {
                     // A pending-input claim or a swept tombstone already
                     // covered this outpoint, so the drain wrote the row spent

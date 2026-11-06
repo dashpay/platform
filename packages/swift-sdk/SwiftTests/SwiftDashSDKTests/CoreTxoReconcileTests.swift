@@ -1021,6 +1021,116 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertTrue(injector.observedReads.contains("PersistentCoreAddress"))
     }
 
+    /// The heal looks up the coin's parent transaction before filing it. A
+    /// read that fails there must not read as "no record": the heal would
+    /// insert an empty stub under the parent's unique txid, and the save
+    /// could overwrite the real row's bytes and confirmation context. The
+    /// step fails and the run stops before any insert; the parent row keeps
+    /// its bytes.
+    func testTheRunStopsWhenTheParentTransactionLookupCannotRead() throws {
+        let injector = FetchFaultInjector(faulting: PersistentTransaction.self)
+        let (handler, container) = try makeHandler(modelFetcher: injector)
+        try seedWallet(in: container)
+        try fileAddress(in: container)
+        let parentTxid = txid(0xc1)
+        let parentBytes = Data(repeating: 0x06, count: 10)
+        let context = ModelContext(container)
+        context.insert(PersistentTransaction(
+            txid: parentTxid,
+            transactionData: parentBytes,
+            context: 3,
+            blockHeight: 2_391_743,
+            netAmount: 19_549
+        ))
+        try context.save()
+        let engine = FakeCoreTxoEngine(inventory: [engineUtxo(txid: parentTxid)])
+
+        let report = run(handler, engine: engine)
+
+        XCTAssertFalse(report.completed)
+        XCTAssertEqual(report.storeFailures, 1)
+        XCTAssertEqual(report.inserted, 0)
+        XCTAssertEqual(report.healedSpent, 0)
+        XCTAssertEqual(engine.healApplied, 0, "a failed page is never reported applied")
+        XCTAssertNil(try txo(container, txid: parentTxid))
+        let parents = try ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>(
+            predicate: #Predicate { $0.txid == parentTxid }
+        ))
+        XCTAssertEqual(parents.count, 1)
+        XCTAssertEqual(parents.first?.transactionData, parentBytes, "the parent keeps its bytes")
+        XCTAssertTrue(injector.observedReads.contains("PersistentTransaction"))
+    }
+
+    /// The heal drains any pending spend claim on the coin it files. A read
+    /// of those claims that fails must not read as "no claims": the coin
+    /// would be written unspent although a pending spend covers it, and be
+    /// reported repaired. The step fails, nothing is inserted and the claim
+    /// stays for a later run.
+    func testTheRunStopsWhenThePendingInputLookupCannotRead() throws {
+        let injector = FetchFaultInjector(faulting: PersistentPendingInput.self)
+        let (handler, container) = try makeHandler(modelFetcher: injector)
+        try seedWallet(in: container)
+        try fileAddress(in: container)
+        let context = ModelContext(container)
+        context.insert(PersistentPendingInput(
+            outpoint: PersistentTxo.makeOutpoint(txid: txid(0xc2), vout: 0),
+            inputIndex: 0,
+            spendingTxid: txid(0xc3),
+            spendingTransaction: nil,
+            walletId: walletId
+        ))
+        try context.save()
+        let engine = FakeCoreTxoEngine(inventory: [engineUtxo(txid: txid(0xc2))])
+
+        let report = run(handler, engine: engine)
+
+        XCTAssertFalse(report.completed)
+        XCTAssertEqual(report.storeFailures, 1)
+        XCTAssertEqual(report.inserted, 0)
+        XCTAssertEqual(report.healedSpent, 0)
+        XCTAssertEqual(engine.healApplied, 0, "a failed page is never reported applied")
+        XCTAssertNil(try txo(container, txid: txid(0xc2)))
+        XCTAssertEqual(try pendingCount(container), 1, "the claim is not consumed")
+        XCTAssertTrue(injector.observedReads.contains("PersistentPendingInput"))
+    }
+
+    /// A pending claim whose spender is not linked is resolved by txid. A
+    /// read that fails there must not read as "spender not arrived yet": the
+    /// drain would delete the claim and leave the coin unspent. The parent
+    /// read is served (a miss); the spender read faults. The step fails,
+    /// nothing is inserted and the claim stays.
+    func testTheRunStopsWhenThePendingSpenderLookupCannotRead() throws {
+        let injector = FetchFaultInjector(faulting: PersistentTransaction.self, afterServing: 1)
+        let (handler, container) = try makeHandler(modelFetcher: injector)
+        try seedWallet(in: container)
+        try fileAddress(in: container)
+        let context = ModelContext(container)
+        context.insert(PersistentPendingInput(
+            outpoint: PersistentTxo.makeOutpoint(txid: txid(0xc4), vout: 0),
+            inputIndex: 0,
+            spendingTxid: txid(0xc5),
+            spendingTransaction: nil,
+            walletId: walletId
+        ))
+        try context.save()
+        let engine = FakeCoreTxoEngine(inventory: [engineUtxo(txid: txid(0xc4))])
+
+        let report = run(handler, engine: engine)
+
+        XCTAssertFalse(report.completed)
+        XCTAssertEqual(report.storeFailures, 1)
+        XCTAssertEqual(report.inserted, 0)
+        XCTAssertEqual(report.healedSpent, 0)
+        XCTAssertEqual(engine.healApplied, 0, "a failed page is never reported applied")
+        XCTAssertNil(try txo(container, txid: txid(0xc4)))
+        XCTAssertEqual(try pendingCount(container), 1, "the claim is not consumed")
+        XCTAssertEqual(injector.readCount(of: PersistentTransaction.self), 2, "parent served, spender faulted")
+        let stubTxid = txid(0xc4)
+        XCTAssertEqual(try ModelContext(container).fetchCount(FetchDescriptor<PersistentTransaction>(
+            predicate: #Predicate { $0.txid == stubTxid }
+        )), 0, "the parent stub was rolled back")
+    }
+
     /// The heal pass asks the store whether it already holds each engine
     /// coin. A read that fails there must not read as "absent": that would
     /// insert a row the store may well hold. The step fails and the run
