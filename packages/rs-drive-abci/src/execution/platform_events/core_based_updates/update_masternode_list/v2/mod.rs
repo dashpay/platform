@@ -17,7 +17,7 @@ where
     /// from Dash Core between two block heights.
     ///
     /// Version 1's steps with `update_state_masternode_list_v2`, which keeps a diff's operator
-    /// payouts, clears the payout on an operator key change Core prints without one, keeps
+    /// payouts, reads from Core the payout of an operator key change printed without one, keeps
     /// revived heights a diff does not print, and reads whether Dash Core's V24 is active from
     /// the Core fork record.
     ///

@@ -165,15 +165,19 @@ where
     /// Updates the masternode lists like version 1, except for operator payouts and revived
     /// heights.
     ///
-    /// A diff's operator payout reaches the stored list and the identity updates. Core prints
-    /// no field when it empties a payout, but it empties it on every operator key change, so an
-    /// entry left with a real key change and no payout gets an explicit clear
-    /// (`Some(None)`): the new operator starts without the previous operator's payout. A
-    /// payout Core prints with the key change wins. A diff applies with `DMNState::apply_diff`,
-    /// which keeps a stored revived height the diff does not print.
+    /// A diff's operator payout reaches the stored list and the identity updates. Core empties
+    /// the payout on every operator key change and prints no field for that, and it prints a
+    /// payout only when it differs between the diff's two Core heights, so a key change printed
+    /// without a payout does not tell whether the new operator set one again in between, maybe
+    /// the very payout the masternode had. For such an entry the payout is Core's for that
+    /// masternode at `core_block_height` (`get_masternode_state`, `protx info` at that chain
+    /// locked height), `Some(None)` when it has none: the new operator never starts with the
+    /// previous operator's payout, nor without its own. Core is asked about no other entry; a
+    /// Core error fails the update. A diff applies with `DMNState::apply_diff`, which keeps a
+    /// stored revived height the diff does not print.
     ///
-    /// An operator key Core re-encoded is the stored key, and is dropped from its entry before
-    /// the clear is inferred, so a re-encode never reads as a key change.
+    /// An operator key Core re-encoded is the stored key, and is dropped from its entry before,
+    /// so a re-encode is never read as a key change.
     pub(crate) fn update_state_masternode_list_v2(
         &self,
         state: &mut PlatformState,
@@ -206,12 +210,25 @@ where
                 transaction,
                 platform_version,
             )?;
-            for (_, state_diff) in &mut masternode_diff.updated_mns {
-                if state_diff.pub_key_operator.is_some()
-                    && state_diff.operator_payout_address.is_none()
+            for (pro_tx_hash, state_diff) in &mut masternode_diff.updated_mns {
+                if state_diff.pub_key_operator.is_none()
+                    || state_diff.operator_payout_address.is_some()
+                    || !state.full_masternode_list().contains_key(pro_tx_hash)
                 {
-                    state_diff.operator_payout_address = Some(None);
+                    continue;
                 }
+                let core_state = self
+                    .core_rpc
+                    .get_masternode_state(pro_tx_hash, core_block_height)
+                    .inspect_err(|error| {
+                        tracing::error!(
+                            %pro_tx_hash,
+                            core_block_height,
+                            ?error,
+                            "could not read the operator payout of a masternode whose operator key changed"
+                        )
+                    })?;
+                state_diff.operator_payout_address = Some(core_state.operator_payout_address);
             }
         }
 

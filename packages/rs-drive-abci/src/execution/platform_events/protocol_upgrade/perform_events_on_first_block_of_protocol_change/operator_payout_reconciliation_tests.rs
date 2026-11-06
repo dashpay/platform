@@ -240,6 +240,12 @@ fn platform_with_config_after_history(
             })
         });
 
+    // Asked about a masternode whose operator key changed without a printed payout, Core reports
+    // none, as after a key change that set none.
+    platform
+        .core_rpc
+        .expect_get_masternode_state()
+        .returning(|_, _| Ok(masternode(0, 0, None).state));
     let quorum_types = [
         platform.config.validator_set.quorum_type,
         platform.config.chain_lock.quorum_type,
@@ -463,9 +469,9 @@ fn should_not_reconcile_operator_payouts_in_the_first_block_of_protocol_version_
 }
 
 /// The upgrade block then applies its own diff from the reconciled list, under protocol version
-/// 15's rules, with the committed state as the identity updates' base as in a real block: a
-/// key change clears the payout, a payout reaches the identity the reconciliation fixed, under a
-/// fresh key id, and masternodes come and go as always.
+/// 15's rules, with the committed state as the identity updates' base as in a real block: a key
+/// change takes Core's payout (none here), a payout reaches the identity the reconciliation
+/// fixed, under a fresh key id, and masternodes come and go as always.
 #[test]
 fn should_apply_the_upgrade_blocks_own_diff_after_the_reconciliation() {
     let platform_version = PlatformVersion::latest();

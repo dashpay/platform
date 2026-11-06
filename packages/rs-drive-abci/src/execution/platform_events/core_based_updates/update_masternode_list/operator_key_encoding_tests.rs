@@ -21,7 +21,7 @@ use dpp::dashcore::address::NetworkUnchecked;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{Address, ProTxHash};
 use dpp::dashcore_rpc::json::{
-    DMNStateDiff, ExtendedQuorumListResult, MasternodeListDiff, MasternodeListItem,
+    DMNState, DMNStateDiff, ExtendedQuorumListResult, MasternodeListDiff, MasternodeListItem,
 };
 use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -158,6 +158,24 @@ fn platform_with_core(
             }))
         });
     platform
+        .core_rpc
+        .expect_get_masternode_state()
+        .returning(|pro_tx_hash, _| Ok(recorded_state(pro_tx_hash)));
+    platform
+}
+
+/// Core's state of a recorded masternode once its operator key changed: the listed state, with
+/// no operator payout for MN_L3, whose owner set another operator key, which empties it.
+/// MN_L1 and MN_L2 only had their keys re-encoded, and MN_L4 lists no payout.
+fn recorded_state(pro_tx_hash: &ProTxHash) -> DMNState {
+    let mut state = recorded_masternodes()
+        .remove(pro_tx_hash)
+        .unwrap_or_else(|| panic!("no recorded masternode {pro_tx_hash}"))
+        .state;
+    if *pro_tx_hash == self::pro_tx_hash(MN_L3) {
+        state.operator_payout_address = None;
+    }
+    state
 }
 
 /// The recorded diffs one Core height at a time, from the list at 399 to MN_L4's revocation.
@@ -953,10 +971,11 @@ fn should_keep_the_operator_identity_for_a_negated_key_once_v24_is_active() {
 
 /// From protocol version 15 the masternode list update reads whether V24 is active from the Core
 /// fork record that `update_core_info` writes before it, at the same chain locked height, and
-/// never asks Core itself. MN_L2's recorded re-encode (402) keeps its operator identity and its
-/// payout when V24 was recorded in an earlier block or in this very block, and is a key change,
-/// which clears the payout, when Core reports V24 inactive. Core is asked about the coinbase only
-/// by the record step, once per block that moves the chain locked height until V24 is recorded.
+/// never asks Core about it. MN_L2's recorded re-encode (402) keeps its operator identity and its
+/// payout when V24 was recorded in an earlier block or in this very block, and is a key change
+/// when Core reports V24 inactive, which takes the payout Core reports for MN_L2. Core is asked
+/// about the coinbase only by the record step, once per block that moves the chain locked height
+/// until V24 is recorded.
 #[test]
 fn should_take_v24_from_the_core_fork_record() {
     let platform_version = PlatformVersion::latest();
@@ -1016,6 +1035,11 @@ fn should_take_v24_from_the_core_fork_record() {
                     .push(core_height);
                 Ok(Some(if core_height >= v24_from { 4 } else { 3 }))
             });
+
+        platform
+            .core_rpc
+            .expect_get_masternode_state()
+            .returning(|pro_tx_hash, _| Ok(recorded_state(pro_tx_hash)));
 
         let transaction = platform.drive.grove.start_transaction();
         let mut committed: Option<PlatformState> = None;
@@ -1083,19 +1107,27 @@ fn should_take_v24_from_the_core_fork_record() {
             );
             assert_eq!(basic_identity, None, "{case}");
         } else {
+            // Read as a key change, which Core prints without a payout: the payout is Core's,
+            // which a re-encode keeps.
             assert_eq!(stored.pub_key_operator, bytes(MN_L2_BASIC_KEY), "{case}");
-            assert_eq!(stored.operator_payout_address, None, "{case}");
+            assert_eq!(stored.operator_payout_address, listed_payout, "{case}");
             assert_eq!(
                 bls_key_disabled(&legacy_identity, &bytes(MN_L2_LEGACY_KEY)),
                 Some(true),
                 "{case}"
             );
             let basic_identity = basic_identity.expect("expected the basic bytes' identity");
-            assert!(
+            assert_eq!(
                 basic_identity
                     .iter()
-                    .all(|(_, purpose, ..)| *purpose != Purpose::TRANSFER),
-                "{case}: {basic_identity:?}"
+                    .filter(|(_, purpose, ..)| *purpose == Purpose::TRANSFER)
+                    .map(|(_, _, data, disabled)| (data.clone(), *disabled))
+                    .collect::<Vec<_>>(),
+                [(
+                    listed_payout.expect("expected MN_L2's payout").to_vec(),
+                    false
+                )],
+                "{case}"
             );
         }
         assert_eq!(*reads.lock().unwrap(), expected_reads, "{case}");

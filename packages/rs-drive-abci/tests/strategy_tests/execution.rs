@@ -24,6 +24,7 @@ use dpp::dashcore::consensus::Encodable;
 use dpp::dashcore::hashes::{sha256d, HashEngine};
 use dpp::dashcore::{ChainLock, QuorumSigningRequestId, VarInt};
 use dpp::dashcore_rpc::json::{ExtendedQuorumListResult, SoftforkInfo};
+use dpp::dashcore_rpc::Error as CoreRpcError;
 use drive::structure::conformance::check_conformance;
 use drive::structure::drive_structure;
 use drive_abci::abci::app::FullAbciApplication;
@@ -505,6 +506,36 @@ pub(crate) async fn run_chain_for_strategy<'a>(
                 .get::<QuorumHash>(quorum_hash)
                 .unwrap_or_else(|| panic!("expected to get quorum {}", hex::encode(quorum_hash)))
                 .clone())
+        });
+
+    // Core's state of one masternode at a height, as the strategy made it: the first block of a
+    // protocol version 15 operator key change printed without a payout reads it.
+    let masternodes_by_height = with_extra_masternodes_with_updates.clone();
+    let hpmns_by_height = with_extra_hpmns_with_updates.clone();
+    let initial_masternodes = initial_all_masternodes.clone();
+    platform
+        .core_rpc
+        .expect_get_masternode_state()
+        .returning(move |pro_tx_hash, block| {
+            let at_height = masternodes_by_height
+                .get(&block)
+                .into_iter()
+                .chain(hpmns_by_height.get(&block))
+                .flatten()
+                .find(|masternode| masternode.pro_tx_hash() == *pro_tx_hash)
+                .map(|masternode| masternode.get_state_at_height(block).state.clone());
+            at_height
+                .or_else(|| {
+                    initial_masternodes
+                        .iter()
+                        .find(|masternode| masternode.pro_tx_hash() == *pro_tx_hash)
+                        .map(|masternode| masternode.get_state_at_height(block).state.clone())
+                })
+                .ok_or_else(|| {
+                    CoreRpcError::UnexpectedStructure(format!(
+                        "no masternode {pro_tx_hash} in the strategy at core height {block}"
+                    ))
+                })
         });
 
     let genesis_core_height = config.abci.genesis_core_height;

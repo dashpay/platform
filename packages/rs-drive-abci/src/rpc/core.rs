@@ -3,11 +3,12 @@ use dpp::dashcore::consensus::encode::deserialize_partial;
 use dpp::dashcore::ephemerealdata::chain_lock::ChainLock;
 use dpp::dashcore::transaction::special_transaction::coinbase::CoinbasePayload;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
-use dpp::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
+use dpp::dashcore::{Block, BlockHash, ProTxHash, QuorumHash, Transaction, Txid};
 use dpp::dashcore::{Header, InstantLock};
 use dpp::dashcore_rpc::dashcore_rpc_json::{
-    AssetUnlockStatusResult, ExtendedQuorumDetails, ExtendedQuorumListResult, GetChainTipsResult,
-    MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType, SoftforkInfo,
+    AssetUnlockStatusResult, DMNState, ExtendedQuorumDetails, ExtendedQuorumListResult,
+    GetChainTipsResult, MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType,
+    SoftforkInfo,
 };
 use dpp::dashcore_rpc::json::GetRawTransactionResult;
 use dpp::dashcore_rpc::jsonrpc::error::{Error as JsonRpcError, RpcError};
@@ -179,8 +180,14 @@ pub trait CoreRPCLike {
         block: u32,
     ) -> Result<MasternodeListDiff, Error>;
 
-    // /// Get the detailed information about a deterministic masternode
-    // fn get_protx_info(&self, pro_tx_hash: &ProTxHash) -> Result<ProTxInfo, Error>;
+    /// Get the state of the masternode `pro_tx_hash` in Core's masternode list at the block at
+    /// `height` (`protx info` at that block's hash). Only ask for a chain locked height: the
+    /// answer is then the same on every node.
+    fn get_masternode_state(
+        &self,
+        pro_tx_hash: &ProTxHash,
+        height: CoreHeight,
+    ) -> Result<DMNState, Error>;
 
     /// Verify Instant Lock signature
     /// If `max_height` is provided the chain lock will be verified
@@ -549,6 +556,22 @@ impl CoreRPCLike for DefaultCoreRPC {
             return Ok(None);
         };
         coinbase_payload_version_from_coinbase(&coinbase).map_err(Error::UnexpectedStructure)
+    }
+
+    fn get_masternode_state(
+        &self,
+        pro_tx_hash: &ProTxHash,
+        height: CoreHeight,
+    ) -> Result<DMNState, Error> {
+        let block_hash = self.get_block_hash(height)?;
+        let info = retry!(self.inner.get_protx_info(pro_tx_hash, Some(&block_hash)))?;
+        if info.pro_tx_hash != *pro_tx_hash {
+            return Err(Error::UnexpectedStructure(format!(
+                "protx info for {pro_tx_hash} answered for {}",
+                info.pro_tx_hash
+            )));
+        }
+        Ok(info.state)
     }
 }
 

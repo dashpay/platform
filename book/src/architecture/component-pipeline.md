@@ -397,7 +397,7 @@ relative to `core_based_updates/`):
 | Read | Asked of Core | Code | Kept in |
 |---|---|---|---|
 | Core fork activations, from protocol version 15 | The coinbase payload version of the block at `c`, until the fork is recorded | `update_core_info/v1/` | GroveDB `Misc`; see [Core Fork Activations](core-fork-activations.md) |
-| Masternode list | `protx listdiff` from the previous block's `c` to `c`; up to protocol version 14 also the coinbase payload version at `c` when a reported operator key may only be re-encoded (from 15 the Core fork record answers) | `update_masternode_list/` | Platform state, and masternode identities in GroveDB |
+| Masternode list | `protx listdiff` from the previous block's `c` to `c`; up to protocol version 14 also the coinbase payload version at `c` when a reported operator key may only be re-encoded (from 15 the Core fork record answers); from protocol version 15 also `protx info` at `c` for a masternode whose operator key changed without a printed payout | `update_masternode_list/` | Platform state, and masternode identities in GroveDB |
 | Quorums | `quorum listextended` at `c`, `quorum info` for each new quorum | `update_quorum_info/` | Platform state: the validator sets and the chain lock and instant lock quorums |
 
 Other steps read Core at `c` or below too. The paths in the first two rows are

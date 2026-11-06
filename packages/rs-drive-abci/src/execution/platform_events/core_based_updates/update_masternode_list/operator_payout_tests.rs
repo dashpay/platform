@@ -15,6 +15,7 @@ use dpp::identity::Purpose;
 use dpp::util::hash::ripemd160_sha256;
 use dpp::version::PlatformVersion;
 use std::collections::BTreeSet;
+use std::sync::{Arc, Mutex};
 
 /// Core height of the full list the masternodes start from; diff `i` ends at the next heights.
 const LIST_HEIGHT: u32 = 1000;
@@ -22,12 +23,30 @@ const LIST_HEIGHT: u32 = 1000;
 /// Processes a mock Core's full list of `masternodes` at Core height 1000 and then each of
 /// `diffs`, one Core height and one block each, on a platform at `platform_version`. Returns the
 /// platform, with the updates committed, and the platform state after the last diff, whose
-/// change trackers hold only what that diff changed.
+/// change trackers hold only what that diff changed. Asked for a masternode's state, Core
+/// reports no operator payout, as after an operator key change that set none.
 fn masternode_list_after_diffs(
     platform_version: &PlatformVersion,
     masternodes: Vec<MasternodeListItem>,
     diffs: Vec<DMNStateDiffs>,
 ) -> (TempPlatform<MockCoreRPCLike>, PlatformState) {
+    let (platform, state, _) =
+        masternode_list_after_diffs_with_core_payouts(platform_version, masternodes, diffs, &[]);
+    (platform, state)
+}
+
+/// The masternode states Platform asked Core for, as (masternode, Core height).
+type StateReads = Arc<Mutex<Vec<(ProTxHash, u32)>>>;
+
+/// `masternode_list_after_diffs`, with Core reporting `core_payouts` as the operator payout of
+/// a masternode at a Core height, and no payout for any other. Also returns the masternode states
+/// Platform asked Core for.
+fn masternode_list_after_diffs_with_core_payouts(
+    platform_version: &PlatformVersion,
+    masternodes: Vec<MasternodeListItem>,
+    diffs: Vec<DMNStateDiffs>,
+    core_payouts: &[(ProTxHash, u32, Option<[u8; 20]>)],
+) -> (TempPlatform<MockCoreRPCLike>, PlatformState, StateReads) {
     let mut platform = TestPlatformBuilder::new()
         .with_config(PlatformConfig::default())
         .with_initial_protocol_version(platform_version.protocol_version)
@@ -66,6 +85,25 @@ fn masternode_list_after_diffs(
             })
         });
 
+    let core_payouts = core_payouts.to_vec();
+    let reads = StateReads::default();
+    let recorded_reads = Arc::clone(&reads);
+    platform
+        .core_rpc
+        .expect_get_masternode_state()
+        .returning(move |pro_tx_hash, core_height| {
+            recorded_reads
+                .lock()
+                .expect("expected the state reads")
+                .push((*pro_tx_hash, core_height));
+            let mut state = masternode_with_operator_payout(0).state;
+            state.operator_payout_address = core_payouts
+                .iter()
+                .find(|(masternode, height, _)| masternode == pro_tx_hash && *height == core_height)
+                .and_then(|(_, _, payout)| *payout);
+            Ok(state)
+        });
+
     let transaction = platform.drive.grove.start_transaction();
     let mut committed: Option<PlatformState> = None;
     let mut block_state = platform.state.load().as_ref().clone();
@@ -95,7 +133,7 @@ fn masternode_list_after_diffs(
         .commit_transaction(transaction)
         .unwrap()
         .expect("expected to commit");
-    (platform, block_state)
+    (platform, block_state, reads)
 }
 
 /// The updated masternodes of one Core diff.
@@ -599,4 +637,75 @@ fn should_leave_the_state_clean_after_a_payment_only_diff() {
 
     assert!(!state.heavy_fields_dirty);
     assert!(state.masternode_changes.upserted.is_empty());
+}
+
+/// Core empties the operator payout on every operator key change and prints nothing for it, so
+/// a key change printed without a payout does not tell whether the new operator set a payout
+/// again inside the same Core heights, possibly the very one the masternode had. Platform takes
+/// the payout from Core's state of that masternode at the block's Core height instead: a new
+/// operator identity gets the payout Core reports, an identity a masternode returns to keeps the
+/// key of the payout Core reports, and a reset leaves no payout. Core is asked only about such
+/// entries.
+#[test]
+fn should_take_the_payout_core_reports_for_an_operator_key_change_printed_without_one() {
+    let restored_on_new = masternode_with_operator_payout(0x71);
+    let restored_on_returning = masternode_with_operator_payout(0x72);
+    let reset = masternode_with_operator_payout(0x73);
+    let key_change = |masternode: &MasternodeListItem, key: u8, payout: Option<u8>| {
+        (
+            masternode.pro_tx_hash,
+            DMNStateDiff {
+                pub_key_operator: Some(vec![key; 48]),
+                operator_payout_address: payout.map(|payout| Some([payout; 20])),
+                ..empty_state_diff()
+            },
+        )
+    };
+    let (platform, state, reads) = masternode_list_after_diffs_with_core_payouts(
+        PlatformVersion::latest(),
+        vec![
+            restored_on_new.clone(),
+            restored_on_returning.clone(),
+            reset.clone(),
+        ],
+        vec![
+            vec![
+                key_change(&restored_on_new, 0x81, None),
+                key_change(&restored_on_returning, 0x82, Some(0x92)),
+                key_change(&reset, 0x83, None),
+            ],
+            vec![key_change(&restored_on_returning, 0x72, None)],
+        ],
+        &[
+            (restored_on_new.pro_tx_hash, 1001, Some([0x71; 20])),
+            (restored_on_returning.pro_tx_hash, 1002, Some([0x72; 20])),
+        ],
+    );
+
+    assert_eq!(
+        transfer_keys(&platform, &restored_on_new, &[0x81; 48]),
+        [(vec![0x71; 20], false)]
+    );
+    assert_eq!(
+        stored_operator_payout(&state, &restored_on_new),
+        Some([0x71; 20])
+    );
+    assert_eq!(
+        transfer_keys(&platform, &restored_on_returning, &[0x72; 48]),
+        [(vec![0x72; 20], false)]
+    );
+    assert_eq!(
+        stored_operator_payout(&state, &restored_on_returning),
+        Some([0x72; 20])
+    );
+    assert_eq!(transfer_keys(&platform, &reset, &[0x83; 48]), []);
+    assert_eq!(stored_operator_payout(&state, &reset), None);
+    assert_eq!(
+        *reads.lock().unwrap(),
+        vec![
+            (restored_on_new.pro_tx_hash, 1001),
+            (reset.pro_tx_hash, 1001),
+            (restored_on_returning.pro_tx_hash, 1002),
+        ]
+    );
 }

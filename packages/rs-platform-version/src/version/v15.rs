@@ -474,9 +474,12 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     (`DRIVE_ABCI_METHOD_VERSIONS_V11`) keeps the operator payout of an updated masternode's
 ///     Core diff, where earlier versions took operator payouts only from full masternode states,
 ///     so a payout set or changed after Platform first listed a masternode never reached it.
-///     Core prints no field when it empties a payout, but it empties it on every operator key
-///     change, so a key change printed without a payout clears the stored one: the new operator
-///     no longer inherits the previous operator's payout key. An operator key Core only
+///     Core empties the payout on every operator key change and prints a payout only when it
+///     differs between the diff's two Core heights, so for a key change printed without one the
+///     payout is read from Core's state of that masternode at the block's chain locked height
+///     (`protx info`, about one call per operator key change, 31 on mainnet since Platform's
+///     genesis): the new operator no longer inherits the previous operator's payout key, nor
+///     starts without the one it set. A Core error fails the block. An operator key Core only
 ///     re-encodes is still the stored key, and whether Core's V24 is active is read from the
 ///     Core fork record (note 18) instead of asked of Core. A diff that does not print the PoSe
 ///     revived height keeps the stored one. `update_operator_identity` 1 reconciles every
