@@ -4570,42 +4570,62 @@ mod tests {
             info
         }
 
-        /// A coin on the address the receiving and the reverse contact
+        /// Loads a coin on the address the receiving and the reverse contact
         /// accounts share, past the receiving pool's window but inside the
-        /// contact pool, ends in the receiving account, which discovery
-        /// derives it in: signable, in the balance, and gone from the contact
-        /// account. Strict and Recovery, with and without its address in the
-        /// used set.
+        /// contact pool, under `ctx`, with its address in the used set or
+        /// not. Checks it ends in the receiving account, which discovery
+        /// derives it in: signable, in the balance, gone from the contact
+        /// account, and nothing left unresolved.
+        fn assert_ends_in_the_receiving_account(seed: u8, ctx: LoadCtx, coin_used: bool) {
+            let (wallet, manifest, receiving, reverse, shared) = befriended_both_ways(seed);
+            let coin = utxo(1, &shared);
+            let used = if coin_used {
+                ownerless(&[&coin.address])
+            } else {
+                HashMap::new()
+            };
+            let mut info = with_deeper_contact_pool(&wallet, &receiving, &reverse);
+            load_into(
+                &mut info,
+                &manifest,
+                vec![coin.clone()],
+                &HashMap::new(),
+                &used,
+                &ctx,
+            )
+            .unwrap();
+            assert_eq!(every_holder(&info, &coin.outpoint), vec![receiving]);
+            assert!(
+                derives(&info, &receiving, &coin.address),
+                "the coin is signable"
+            );
+            assert_eq!(info.balance.total(), VALUE);
+            assert_eq!(
+                ctx.degradation()
+                    .by_site
+                    .get(&LoadSite::UnresolvedUtxoAddress),
+                None
+            );
+        }
+
         #[test]
         fn a_coin_a_deeper_contact_pool_holds_ends_in_the_receiving_account() {
-            let (wallet, manifest, receiving, reverse, shared) = befriended_both_ways(42);
-            let coin = utxo(1, &shared);
-            for ctx in [LoadCtx::strict(), LoadCtx::recovery()] {
-                for used in [HashMap::new(), ownerless(&[&coin.address])] {
-                    let mut info = with_deeper_contact_pool(&wallet, &receiving, &reverse);
-                    load_into(
-                        &mut info,
-                        &manifest,
-                        vec![coin.clone()],
-                        &HashMap::new(),
-                        &used,
-                        &ctx,
-                    )
-                    .unwrap();
-                    assert_eq!(every_holder(&info, &coin.outpoint), vec![receiving]);
-                    assert!(
-                        derives(&info, &receiving, &coin.address),
-                        "the coin is signable"
-                    );
-                    assert_eq!(info.balance.total(), VALUE);
-                }
-                assert_eq!(
-                    ctx.degradation()
-                        .by_site
-                        .get(&LoadSite::UnresolvedUtxoAddress),
-                    None
-                );
-            }
+            assert_ends_in_the_receiving_account(42, LoadCtx::strict(), true);
+        }
+
+        #[test]
+        fn a_coin_a_deeper_contact_pool_holds_ends_in_the_receiving_account_unused() {
+            assert_ends_in_the_receiving_account(44, LoadCtx::strict(), false);
+        }
+
+        #[test]
+        fn a_coin_a_deeper_contact_pool_holds_ends_in_the_receiving_account_in_recovery() {
+            assert_ends_in_the_receiving_account(45, LoadCtx::recovery(), true);
+        }
+
+        #[test]
+        fn a_coin_a_deeper_contact_pool_holds_ends_in_the_receiving_account_unused_in_recovery() {
+            assert_ends_in_the_receiving_account(46, LoadCtx::recovery(), false);
         }
 
         /// After discovery derives something every coin is offered to
