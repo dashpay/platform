@@ -52,6 +52,8 @@ mod pre_programmed_distribution {
         );
 
         fast_forward_to_block(&platform, 100, 40, 42, 1, false);
+        // The fast-forward records the epoch 1 fee history, so read the state again.
+        let platform_state = platform.state.load();
 
         let claim_transition = BatchTransition::new_token_claim_transition(
             token_id,
@@ -221,6 +223,8 @@ mod pre_programmed_distribution {
         );
 
         fast_forward_to_block(&platform, 100, 40, 42, 1, false);
+        // The fast-forward records the epoch 1 fee history, so read the state again.
+        let platform_state = platform.state.load();
 
         let claim_transition = BatchTransition::new_token_claim_transition(
             token_id,
@@ -503,6 +507,8 @@ mod pre_programmed_distribution {
         );
 
         fast_forward_to_block(&platform, 100, 40, 42, 1, false);
+        // The fast-forward records the epoch 1 fee history, so read the state again.
+        let platform_state = platform.state.load();
 
         let claim_transition = BatchTransition::new_token_claim_transition(
             token_id,

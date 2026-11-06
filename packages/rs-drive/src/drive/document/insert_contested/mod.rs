@@ -636,4 +636,450 @@ mod tests {
             }
         }
     }
+
+    /// The second contender of a contest resolved without locking moves the poll's end
+    /// date: the creator-flagged join-window entry is removed and the vote-window entry
+    /// written, so pricing it without the fee history is rejected from protocol version
+    /// 15. Both bare wrappers own their transaction when the caller passes none, so the
+    /// rejected join leaves the root hash, the contenders and the end-date entries as they
+    /// were; the production funnel joins with the history, and protocol version 14 joins
+    /// without one.
+    mod second_contender_without_fee_history {
+        use super::*;
+        use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+        use crate::drive::Drive;
+        use crate::error::drive::DriveError;
+        use crate::error::Error;
+        use crate::query::vote_poll_vote_state_query::{
+            ContestedDocumentVotePollDriveQueryResultType,
+            ResolvedContestedDocumentVotePollDriveQuery,
+        };
+        use crate::query::VotePollsByEndDateDriveQuery;
+        use crate::util::batch::drive_op_batch::DocumentOperationType;
+        use crate::util::batch::DriveOperation;
+        use crate::util::object_size_info::{
+            DataContractInfo, DataContractOwnedResolvedInfo, DocumentTypeInfo,
+        };
+        use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+        use crate::util::test_helpers::setup_contract;
+        use dpp::data_contract::document_type::random_document::{
+            CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
+        };
+        use dpp::data_contract::DataContract;
+        use dpp::document::{Document, DocumentV0Setters};
+        use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+        use dpp::fee::fee_result::FeeResult;
+        use dpp::identifier::Identifier;
+        use dpp::platform_value::{Bytes32, Value};
+        use dpp::prelude::TimestampMillis;
+        use dpp::version::fee::FeeVersion;
+        use dpp::version::LATEST_VERSION;
+        use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+        use std::borrow::Cow;
+        use std::collections::BTreeMap;
+
+        const NO_LOCKING_CONTRACT: &str =
+            "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index-no-locking.json";
+
+        fn quantum_domain_document(
+            contract: &DataContract,
+            owner_id: Identifier,
+            rng: &mut StdRng,
+            platform_version: &PlatformVersion,
+        ) -> Document {
+            let document_type = contract
+                .document_type_for_name("domain")
+                .expect("domain should exist on DPNS");
+            let mut document = document_type
+                .random_document_with_params(
+                    owner_id,
+                    Bytes32::random_with_rng(rng),
+                    Some(1),
+                    Some(1),
+                    Some(1),
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::MinDocumentFillSize,
+                    rng,
+                    platform_version,
+                )
+                .expect("random document");
+            document.set("parentDomainName", "dash".into());
+            document.set("normalizedParentDomainName", "dash".into());
+            document.set("label", "quantum".into());
+            document.set("normalizedLabel", "quantum".into());
+            document.set("records.identity", owner_id.into());
+            document.set("subdomainRules.allowSubdomains", false.into());
+            document
+        }
+
+        fn vote_poll(contract: &DataContract) -> ContestedDocumentResourceVotePollWithContractInfo {
+            ContestedDocumentResourceVotePollWithContractInfo {
+                contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
+                document_type_name: "domain".to_string(),
+                index_name: "parentNameAndLabel".to_string(),
+                index_values: vec![
+                    Value::Text("dash".to_string()),
+                    Value::Text("quantum".to_string()),
+                ],
+            }
+        }
+
+        fn owned(document: &Document, owner_id: Identifier) -> OwnedDocumentInfo<'_> {
+            OwnedDocumentInfo {
+                document_info: DocumentRefInfo((
+                    document,
+                    Some(Cow::Owned(StorageFlags::SingleEpochOwned(
+                        0,
+                        owner_id.to_buffer(),
+                    ))),
+                )),
+                owner_id: Some(owner_id.to_buffer()),
+            }
+        }
+
+        struct Contest {
+            drive: Drive,
+            contract: DataContract,
+            first_owner_id: Identifier,
+            second_owner_id: Identifier,
+            second_document: Document,
+        }
+
+        /// Opens the `dash.quantum` contest with one contender through the production
+        /// funnel, and prepares the second contender's document.
+        fn open_contest(platform_version: &PlatformVersion) -> Contest {
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+            let contract = setup_contract(
+                &drive,
+                NO_LOCKING_CONTRACT,
+                None,
+                None,
+                None::<fn(&mut DataContract)>,
+                None,
+                Some(platform_version),
+            );
+            let mut rng = StdRng::seed_from_u64(0x5EC0_004D);
+            let first_owner_id = Identifier::from([0x31; 32]);
+            let second_owner_id = Identifier::from([0x32; 32]);
+            let first_document =
+                quantum_domain_document(&contract, first_owner_id, &mut rng, platform_version);
+            let second_document =
+                quantum_domain_document(&contract, second_owner_id, &mut rng, platform_version);
+            drive
+                .add_contested_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: owned(&first_document, first_owner_id),
+                        contract: &contract,
+                        document_type: contract
+                            .document_type_for_name("domain")
+                            .expect("domain should exist on DPNS"),
+                    },
+                    vote_poll(&contract),
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    Some(
+                        ContestedDocumentVotePollStoredInfo::new(
+                            BlockInfo::default(),
+                            platform_version,
+                        )
+                        .expect("expected the stored info of a new poll"),
+                    ),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to open the contest");
+            Contest {
+                drive,
+                contract,
+                first_owner_id,
+                second_owner_id,
+                second_document,
+            }
+        }
+
+        fn root_hash(drive: &Drive, platform_version: &PlatformVersion) -> [u8; 32] {
+            drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("expected a root hash")
+        }
+
+        fn end_dates(drive: &Drive, platform_version: &PlatformVersion) -> Vec<TimestampMillis> {
+            VotePollsByEndDateDriveQuery {
+                start_time: None,
+                end_time: None,
+                limit: None,
+                offset: None,
+                order_ascending: true,
+            }
+            .execute_no_proof(drive, None, &mut vec![], platform_version)
+            .expect("expected the end date entries")
+            .into_iter()
+            .flat_map(|(time, polls)| polls.into_iter().map(move |_| time))
+            .collect()
+        }
+
+        fn contenders(
+            drive: &Drive,
+            contract: &DataContract,
+            platform_version: &PlatformVersion,
+        ) -> Vec<Identifier> {
+            ResolvedContestedDocumentVotePollDriveQuery {
+                vote_poll: (&vote_poll(contract)).into(),
+                result_type: ContestedDocumentVotePollDriveQueryResultType::VoteTally,
+                offset: None,
+                limit: None,
+                start_at: None,
+                allow_include_locked_and_abstaining_vote_tally: false,
+            }
+            .execute(drive, None, &mut vec![], platform_version)
+            .expect("expected the contenders")
+            .contenders
+            .into_iter()
+            .map(|contender| contender.identity_id())
+            .collect()
+        }
+
+        fn fee_history() -> CachedEpochIndexFeeVersions {
+            BTreeMap::from([(0, FeeVersion::first())])
+        }
+
+        fn assert_rejected(result: Result<FeeResult, Error>) {
+            assert!(
+                matches!(
+                    result,
+                    Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+                ),
+                "moving a creator-flagged end date without a fee history must be rejected, got {:?}",
+                result
+            );
+        }
+
+        #[test]
+        fn should_leave_a_no_locking_contest_in_place_when_a_bare_wrapper_cannot_price_the_second_contender(
+        ) {
+            let platform_version = PlatformVersion::latest();
+            let Contest {
+                drive,
+                contract,
+                first_owner_id,
+                second_owner_id,
+                second_document,
+            } = open_contest(platform_version);
+            let join_window_end = end_dates(&drive, platform_version);
+            assert_eq!(join_window_end.len(), 1, "the contest has one end date");
+            let before = root_hash(&drive, platform_version);
+            let document_type = contract
+                .document_type_for_name("domain")
+                .expect("domain should exist on DPNS");
+
+            // The wrapper taking the contract reference.
+            assert_rejected(drive.add_contested_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: owned(&second_document, second_owner_id),
+                    contract: &contract,
+                    document_type,
+                },
+                vote_poll(&contract),
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            ));
+            assert_eq!(root_hash(&drive, platform_version), before);
+
+            // The wrapper taking the contract id.
+            assert_rejected(drive.add_contested_document(
+                owned(&second_document, second_owner_id),
+                vote_poll(&contract),
+                false,
+                None,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            ));
+            assert_eq!(
+                root_hash(&drive, platform_version),
+                before,
+                "a rejected second contender must not persist"
+            );
+            assert_eq!(
+                contenders(&drive, &contract, platform_version),
+                vec![first_owner_id],
+                "the contest still has its first contender only"
+            );
+            assert_eq!(
+                end_dates(&drive, platform_version),
+                join_window_end,
+                "the join-window end date is still the only entry"
+            );
+
+            // The production funnel carries the history: the second contender joins and the
+            // end date moves to the vote window.
+            let history = fee_history();
+            drive
+                .apply_drive_operations(
+                    vec![DriveOperation::DocumentOperation(
+                        DocumentOperationType::AddContestedDocument {
+                            owned_document_info: owned(&second_document, second_owner_id),
+                            contested_document_resource_vote_poll: vote_poll(&contract),
+                            contract_info: DataContractInfo::BorrowedDataContract(&contract),
+                            document_type_info: DocumentTypeInfo::DocumentTypeNameAsStr("domain"),
+                            insert_without_check: false,
+                            also_insert_vote_poll_stored_info: None,
+                        },
+                    )],
+                    true,
+                    &BlockInfo::default(),
+                    None,
+                    platform_version,
+                    Some(&history),
+                )
+                .expect("expected the second contender to join with the fee history");
+            assert_eq!(
+                contenders(&drive, &contract, platform_version),
+                vec![first_owner_id, second_owner_id]
+            );
+            let vote_window_end = end_dates(&drive, platform_version);
+            assert_eq!(
+                vote_window_end.len(),
+                1,
+                "the contest still has one end date"
+            );
+            assert!(
+                vote_window_end[0] > join_window_end[0],
+                "the end date moved from the join window to the vote window"
+            );
+
+            // Protocol version 14 prices the shipped shortcut without a history and commits.
+            let frozen_platform_version = PlatformVersion::get(14).expect("protocol version 14");
+            let Contest {
+                drive,
+                contract,
+                first_owner_id,
+                second_owner_id,
+                second_document,
+            } = open_contest(frozen_platform_version);
+            drive
+                .add_contested_document(
+                    owned(&second_document, second_owner_id),
+                    vote_poll(&contract),
+                    false,
+                    None,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    frozen_platform_version,
+                )
+                .expect("protocol version 14 prices the shipped shortcut without a history");
+            assert_eq!(
+                contenders(&drive, &contract, frozen_platform_version),
+                vec![first_owner_id, second_owner_id]
+            );
+        }
+
+        /// The first contender frees nothing, so the bare wrappers price it at every
+        /// version; the by-id wrapper's fee includes the contract read from protocol
+        /// version 15 (generation 0 priced the write alone).
+        #[test]
+        fn should_open_a_contest_through_the_bare_wrappers_at_every_version() {
+            for (protocol_version, prices_the_fetch) in [(14, false), (LATEST_VERSION, true)] {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("expected a platform version");
+                let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+                let contract = setup_contract(
+                    &drive,
+                    NO_LOCKING_CONTRACT,
+                    None,
+                    None,
+                    None::<fn(&mut DataContract)>,
+                    None,
+                    Some(platform_version),
+                );
+                let mut rng = StdRng::seed_from_u64(0x5EC0_004E);
+                let owner_id = Identifier::from([0x33; 32]);
+                let document =
+                    quantum_domain_document(&contract, owner_id, &mut rng, platform_version);
+                let stored_info = || {
+                    Some(
+                        ContestedDocumentVotePollStoredInfo::new(
+                            BlockInfo::default(),
+                            platform_version,
+                        )
+                        .expect("expected the stored info of a new poll"),
+                    )
+                };
+
+                let by_reference = drive
+                    .add_contested_document_for_contract(
+                        DocumentAndContractInfo {
+                            owned_document_info: owned(&document, owner_id),
+                            contract: &contract,
+                            document_type: contract
+                                .document_type_for_name("domain")
+                                .expect("domain should exist on DPNS"),
+                        },
+                        vote_poll(&contract),
+                        false,
+                        BlockInfo::default(),
+                        false,
+                        stored_info(),
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to estimate the contest by contract reference");
+                let by_id = drive
+                    .add_contested_document(
+                        owned(&document, owner_id),
+                        vote_poll(&contract),
+                        false,
+                        stored_info(),
+                        &BlockInfo::default(),
+                        false,
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to estimate the contest by contract id");
+                assert_eq!(by_id.storage_fee, by_reference.storage_fee);
+                if prices_the_fetch {
+                    assert!(
+                        by_id.processing_fee > by_reference.processing_fee,
+                        "protocol version {protocol_version} must price the contract read"
+                    );
+                } else {
+                    assert_eq!(by_id.processing_fee, by_reference.processing_fee);
+                }
+
+                let before = root_hash(&drive, platform_version);
+                drive
+                    .add_contested_document(
+                        owned(&document, owner_id),
+                        vote_poll(&contract),
+                        false,
+                        stored_info(),
+                        &BlockInfo::default(),
+                        true,
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to open the contest by contract id");
+                assert_ne!(
+                    root_hash(&drive, platform_version),
+                    before,
+                    "the contest was committed"
+                );
+                assert_eq!(
+                    contenders(&drive, &contract, platform_version),
+                    vec![owner_id]
+                );
+            }
+        }
+    }
 }

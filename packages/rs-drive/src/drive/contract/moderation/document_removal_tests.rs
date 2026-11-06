@@ -1304,7 +1304,8 @@ fn should_keep_refunding_a_batch_without_the_forfeiture_before_protocol_version_
             .apply_drive_operations,
         0
     );
-    // Generation 1 (protocol version 14) introduced the forfeiture; generation 2 (15) keeps it.
+    // Protocol version 14 introduced generation 1 and is frozen at it; later versions may
+    // select later generations, which carry the forfeiture forward.
     assert_eq!(
         PlatformVersion::get(14)
             .expect("expected protocol version 14")

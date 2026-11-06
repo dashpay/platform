@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::util::object_size_info::DocumentAndContractInfo;
@@ -54,9 +55,18 @@ impl Drive {
                 platform_version,
                 previous_fee_versions,
             ),
+            1 => self.add_document_for_contract_v1(
+                document_and_contract_info,
+                override_document,
+                block_info,
+                apply,
+                transaction,
+                platform_version,
+                previous_fee_versions,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_document_for_contract".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

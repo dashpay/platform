@@ -522,9 +522,11 @@ mod tests {
     use dpp::data_contract::{DataContract, DataContractFactory};
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::document::{Document, DocumentV0, DocumentV0Setters};
+    use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
     use dpp::identifier::Identifier;
     use dpp::platform_value::string_encoding::Encoding;
     use dpp::platform_value::{platform_value, Value};
+    use dpp::version::fee::FeeVersion;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
     use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
     use dpp::voting::vote_polls::VotePoll;
@@ -910,6 +912,10 @@ mod tests {
 
         // A rewritten entry is found where protocol version 14 looks for it
         let platform_version = PlatformVersion::latest();
+        // The removed entries carry epoch flags, so pricing their refund
+        // needs the fee history of the removing block, as every production
+        // caller passes.
+        let fee_history: CachedEpochIndexFeeVersions = BTreeMap::from([(0, FeeVersion::first())]);
         let document_type = contract
             .document_type_for_name("item")
             .expect("expected the item type");
@@ -922,7 +928,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
+                Some(&fee_history),
             )
             .expect("expected to delete a rewritten item");
         insert_document(
@@ -963,7 +969,7 @@ mod tests {
                 Some(Cow::Owned(StorageFlags::SingleEpoch(0))),
                 None,
                 platform_version,
-                None,
+                Some(&fee_history),
             )
             .expect("expected to update a rewritten item");
         assert_eq!(
@@ -1172,6 +1178,9 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let grades =
             |sql: &str| query_values(&drive, &contract, "score", sql, "grade", platform_version);
+        // The deleted document carries epoch flags, so pricing its refund
+        // needs the fee history of the removing block.
+        let fee_history: CachedEpochIndexFeeVersions = BTreeMap::from([(0, FeeVersion::first())]);
         assert_eq!(grades("select * from score where grade == 128"), vec![128]);
         assert_eq!(grades("select * from score where grade == 1"), vec![1]);
 
@@ -1184,7 +1193,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
+                Some(&fee_history),
             )
             .expect("expected to delete a document written at protocol version 13");
         insert_document(
