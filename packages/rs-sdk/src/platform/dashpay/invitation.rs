@@ -745,13 +745,12 @@ impl Sdk {
     /// identity exists at this id, yet a claim still fails deterministically
     /// because the asset-lock output is already spent.
     ///
-    /// Platform exposes no client query for spent asset locks (drive tracks
-    /// them under `SpentAssetLockTransactions`, but no DAPI endpoint surfaces
-    /// it), so consumption cannot be checked from here. Callers must therefore
-    /// treat this as a fast-fail for the common case only: reject the
-    /// invitation when an identity exists, and otherwise proceed WITHOUT
-    /// concluding the voucher is usable. It narrows when the late failure
-    /// happens; it does not remove it.
+    /// This id does not read the spent-asset-lock record that settles
+    /// consumption; [`Sdk::asset_lock_outpoint_state`] does. Used alone, it is
+    /// a fast-fail for the common case only: reject the invitation when an
+    /// identity exists, and otherwise proceed WITHOUT concluding the voucher
+    /// is usable. It narrows when the late failure happens; it does not remove
+    /// it.
     ///
     /// Costs one funding-tx fetch: the outpoint is not in the link (the credit
     /// output is selected by pk↔script match, not by index), so the tx has to
