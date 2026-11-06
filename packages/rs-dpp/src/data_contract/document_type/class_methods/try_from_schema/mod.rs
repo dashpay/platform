@@ -3121,7 +3121,7 @@ fn apply_generated_from_v0(
 /// A property may also be generated with `sys.random.uniform`, which takes no parameters
 /// (`params` may be left out) and draws an integer from the property's `minimum` to its
 /// `maximum`, read into [`GeneratedFrom::range`] ([`uniform_range`]), where the platform
-/// version's `random_generated_from` admits it; `None`, in every table for now, refuses it.
+/// version's `random_generated_from` admits it (0 at protocol version 15); `None` refuses it.
 fn apply_generated_from_v1(
     inner_properties: &BTreeMap<String, &Value>,
     property_type: &DocumentPropertyType,
@@ -3229,13 +3229,13 @@ fn apply_generated_from_v1(
                 .schema
                 .random_generated_from
             {
-                // Nothing draws the values yet: block execution does not call
-                // `draw_random_document_properties` until Tenderdash delivers the block's
-                // random beacon, so a document would keep its placeholder for good
+                // A table that draws no random values: a document would keep its placeholder
+                // for good. Unreached by the shipped tables: generation 1 is protocol version
+                // 15's, whose table admits the function
                 None => {
                     return Err(DataContractError::InvalidContractStructure(format!(
                         "generatedFrom function {function} is not active at this protocol \
-                         version: the platform does not draw random values yet"
+                         version: the platform draws no random values"
                     )));
                 }
                 Some(0) => {

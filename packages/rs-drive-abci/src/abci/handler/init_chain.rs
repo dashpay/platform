@@ -93,6 +93,8 @@ mod tests {
             )
             .expect("should create default platform state"),
             proposer_results: None,
+            random_requests: Default::default(),
+            applied_randomness: None,
         });
 
         app.block_execution_context

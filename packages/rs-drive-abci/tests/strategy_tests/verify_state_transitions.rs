@@ -2,7 +2,8 @@ use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::{DocumentTypeRef, SystemFunction};
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -598,6 +599,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                             expected_document
                                                 .set_contract_version(document.contract_version());
                                         }
+                                        adopt_drawn_random_properties(
+                                            document_type,
+                                            &mut expected_document,
+                                            &document,
+                                        );
                                         assert_eq!(document, expected_document);
                                     } else {
                                         //there is the possibility that the state transition was not executed because it already existed,
@@ -770,7 +776,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     "we expect a token history document"
                                 );
 
-                                let expected_document = token_transition_action
+                                let mut expected_document = token_transition_action
                                     .build_historical_document(
                                         token_id,
                                         batch_transition.owner_id(),
@@ -784,21 +790,47 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                         platform_version,
                                     )
                                     .expect("expected to build historical document");
+                                let history_document_type = token_transition_action
+                                    .historical_document_type(&token_history)
+                                    .expect("expected document type");
+                                let serialized_document = serialized_document.unwrap();
+
+                                // A random transfer or mint (protocol version 15) writes its
+                                // history holding the range's minimum, and the block's
+                                // settlement rewrites the amount to the one drawn, which the
+                                // committed state proves: it must lie in the range
+                                if let Some((minimum, maximum)) =
+                                    token_transition_action.random_amount_range()
+                                {
+                                    let proved_document = Document::from_bytes(
+                                        &serialized_document,
+                                        history_document_type,
+                                        platform_version,
+                                    )
+                                    .expect("expected the history document to decode");
+                                    let amount = proved_document
+                                        .get("amount")
+                                        .cloned()
+                                        .expect("expected the history to hold an amount");
+                                    let drawn = amount
+                                        .to_integer::<u64>()
+                                        .expect("expected an integer amount");
+                                    assert!(
+                                        (minimum..=maximum).contains(&drawn),
+                                        "the settled amount {drawn} lies in {minimum}..={maximum}"
+                                    );
+                                    expected_document.set("amount", amount);
+                                }
 
                                 let serialized_expected_document = expected_document
                                     .serialize(
-                                        token_transition_action
-                                            .historical_document_type(&token_history)
-                                            .expect("expected document type"),
+                                        history_document_type,
                                         &token_history,
                                         platform_version,
                                     )
                                     .expect("expected to serialize");
 
-                                assert_eq!(
-                                    serialized_document.unwrap(),
-                                    serialized_expected_document
-                                );
+                                assert_eq!(serialized_document, serialized_expected_document);
                             } else {
                                 todo!();
                             }
@@ -1395,4 +1427,36 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
     log_state_transition_type_statistics();
 
     true
+}
+
+/// A `sys.random` property is drawn from the block's random beacon once the block's transitions
+/// ran (protocol version 15), so the create action this harness rebuilds holds the placeholder,
+/// the range's minimum, where the proved document holds the drawn value. Checks that the drawn
+/// value lies in the property's range and takes it into `expected`.
+fn adopt_drawn_random_properties(
+    document_type: DocumentTypeRef,
+    expected: &mut Document,
+    proved: &Document,
+) {
+    for (path, generated_from) in document_type.generated_from_fields() {
+        let (SystemFunction::Random(_), Some(range)) =
+            (generated_from.function, generated_from.range)
+        else {
+            continue;
+        };
+        let drawn = proved
+            .get(path)
+            .cloned()
+            .unwrap_or_else(|| panic!("the proved document holds the drawn {path}"));
+        let value = drawn
+            .to_integer::<i128>()
+            .unwrap_or_else(|_| panic!("the drawn {path} is an integer"));
+        assert!(
+            (range.minimum()..=range.maximum()).contains(&value),
+            "the drawn {path} {value} lies in {}..={}",
+            range.minimum(),
+            range.maximum()
+        );
+        expected.set(path, drawn);
+    }
 }

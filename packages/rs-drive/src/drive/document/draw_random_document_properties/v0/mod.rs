@@ -357,19 +357,6 @@ mod tests {
     const OWNER: [u8; 32] = [42; 32];
     const BEACON: [u8; 96] = [7; 96];
 
-    /// The latest platform version with `sys.random.uniform` admitted, which no protocol
-    /// version does until block execution draws the values.
-    fn drawing_platform_version() -> PlatformVersion {
-        let mut platform_version = PlatformVersion::latest().clone();
-        platform_version
-            .dpp
-            .contract_versions
-            .document_type_versions
-            .schema
-            .random_generated_from = Some(0);
-        platform_version
-    }
-
     /// A contract with an immutable `card` type, its `rarity` drawn from 1 to 100 and indexed,
     /// and a `plain` type drawing nothing, registered at `platform_version`.
     fn contract(platform_version: &PlatformVersion) -> DataContract {
@@ -535,9 +522,9 @@ mod tests {
 
     #[test]
     fn should_draw_into_an_immutable_document_and_move_its_index_entry() {
-        let platform_version = drawing_platform_version();
-        let (drive, contract) = setup(&platform_version);
-        let id = insert_card(&drive, &contract, 1, &platform_version);
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup(platform_version);
+        let id = insert_card(&drive, &contract, 1, platform_version);
         let request = request(contract.id(), "card", id);
         let expected = draw_v0(&BEACON, &request, "rarity", rarity_range()).expect("draws");
         assert!((1..=100).contains(&expected));
@@ -548,12 +535,12 @@ mod tests {
                 &[request],
                 &BlockInfo::default(),
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("the draw runs");
         assert_eq!(drawn, 1);
 
-        let found = cards_with_rarity(&drive, &contract, expected, &platform_version);
+        let found = cards_with_rarity(&drive, &contract, expected, platform_version);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].id(), id);
         assert_eq!(
@@ -563,7 +550,7 @@ mod tests {
             Some(expected)
         );
         if expected != 1 {
-            assert!(cards_with_rarity(&drive, &contract, 1, &platform_version).is_empty());
+            assert!(cards_with_rarity(&drive, &contract, 1, platform_version).is_empty());
         }
     }
 
@@ -605,8 +592,8 @@ mod tests {
 
     #[test]
     fn should_skip_a_deleted_document_and_a_type_drawing_nothing() {
-        let platform_version = drawing_platform_version();
-        let (drive, contract) = setup(&platform_version);
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup(platform_version);
         let drawn = drive
             .draw_random_document_properties(
                 &BEACON,
@@ -616,7 +603,7 @@ mod tests {
                 ],
                 &BlockInfo::default(),
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("the draw runs");
         assert_eq!(drawn, 0);
@@ -626,9 +613,9 @@ mod tests {
     fn should_skip_a_card_a_later_transition_of_the_block_deleted() {
         // The card was stored with its placeholder, then deleted before the draw: the draw
         // finds nothing to rewrite, and writes nothing back
-        let platform_version = drawing_platform_version();
-        let (drive, contract) = setup(&platform_version);
-        let id = insert_card(&drive, &contract, 1, &platform_version);
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup(platform_version);
+        let id = insert_card(&drive, &contract, 1, platform_version);
         drive
             .delete_document_for_contract(
                 id,
@@ -637,7 +624,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 None,
-                &platform_version,
+                platform_version,
                 None,
             )
             .expect("the card deletes");
@@ -648,7 +635,7 @@ mod tests {
                 &[request(contract.id(), "card", id)],
                 &BlockInfo::default(),
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("the draw runs");
         assert_eq!(drawn, 0);
@@ -661,7 +648,7 @@ mod tests {
         .expect("draws");
         for rarity in [1, expected] {
             assert!(
-                cards_with_rarity(&drive, &contract, rarity, &platform_version).is_empty(),
+                cards_with_rarity(&drive, &contract, rarity, platform_version).is_empty(),
                 "no card is filed under rarity {rarity}"
             );
         }
@@ -669,7 +656,7 @@ mod tests {
 
     #[test]
     fn should_not_draw_before_protocol_version_15() {
-        let (drive, _contract) = setup(&drawing_platform_version());
+        let (drive, _contract) = setup(PlatformVersion::latest());
         let result = drive.draw_random_document_properties(
             &BEACON,
             &[],
@@ -688,7 +675,7 @@ mod tests {
         // The insert of a card, and of one that expires in an hour, is charged the prepayment
         // on top of what it costs at a version whose draw method version is unset, which
         // prepays nothing
-        let platform_version = drawing_platform_version();
+        let platform_version = PlatformVersion::latest().clone();
         let mut without_draw = platform_version.clone();
         without_draw
             .drive
@@ -762,7 +749,7 @@ mod tests {
     fn should_prepay_the_draw_of_an_expiring_document_for_the_lifetime_it_has_left() {
         // A card that expires in an hour prepays its `byRarity` entry for that hour, where a
         // card that never expires pays for it for good
-        let platform_version = drawing_platform_version();
+        let platform_version = PlatformVersion::latest().clone();
         let (drive, contract) = setup(&platform_version);
         let prepay = |document_type_name: &str, document: &Document| {
             drive
@@ -796,8 +783,8 @@ mod tests {
 
     #[test]
     fn should_prepay_the_entries_of_the_indexes_holding_a_random_property_only() {
-        let platform_version = drawing_platform_version();
-        let (drive, contract) = setup(&platform_version);
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup(platform_version);
         let prepay = |document: &Document, document_type_name: &str| {
             drive
                 .prepay_random_document_index_entries(
@@ -809,7 +796,7 @@ mod tests {
                         .expect("the type"),
                     &BlockInfo::default(),
                     None,
-                    &platform_version,
+                    platform_version,
                 )
                 .expect("the prepayment is priced")
         };

@@ -363,6 +363,10 @@ pub struct NetworkStrategy {
     /// are reproducible; tests exercising behaviour that keys on how old a
     /// block is relative to the wall clock (checkpoints) set it near now.
     pub start_time_ms: u64,
+    /// The least every token transfer and mint of the strategy moves when its amount is random
+    /// (protocol version 15): set, they move an amount drawn from this to the operation's
+    /// amount from the block's random beacon; `None` keeps their fixed amounts.
+    pub random_token_minimum_amount: Option<u64>,
 }
 
 impl Default for NetworkStrategy {
@@ -388,6 +392,7 @@ impl Default for NetworkStrategy {
             sign_chain_locks: false,
             sign_instant_locks: false,
             start_time_ms: GENESIS_TIME_MS,
+            random_token_minimum_amount: None,
         }
     }
 }
@@ -1836,20 +1841,23 @@ impl NetworkStrategy {
                             .entry((operation_owner_id, contract.id()))
                             .or_default();
                         *identity_contract_nonce += 1;
-                        let token_mint_transition: TokenMintTransition = TokenMintTransitionV0 {
-                            base: TokenBaseTransitionV0 {
-                                identity_contract_nonce: *identity_contract_nonce,
-                                token_contract_position: *token_pos,
-                                data_contract_id: contract.id(),
-                                token_id: *token_id,
-                                using_group_info: None,
+                        let mut token_mint_transition: TokenMintTransition =
+                            TokenMintTransitionV0 {
+                                base: TokenBaseTransitionV0 {
+                                    identity_contract_nonce: *identity_contract_nonce,
+                                    token_contract_position: *token_pos,
+                                    data_contract_id: contract.id(),
+                                    token_id: *token_id,
+                                    using_group_info: None,
+                                }
+                                .into(),
+                                issued_to_identity_id: Some(*recipient),
+                                amount: *amount,
+                                public_note: note.clone(),
                             }
-                            .into(),
-                            issued_to_identity_id: Some(*recipient),
-                            amount: *amount,
-                            public_note: note.clone(),
-                        }
-                        .into();
+                            .into();
+                        token_mint_transition
+                            .set_random_minimum_amount(self.random_token_minimum_amount);
 
                         let batch_transition: BatchTransition = BatchTransitionV1 {
                             owner_id: identity.id,
@@ -1919,7 +1927,7 @@ impl NetworkStrategy {
                             .entry((operation_owner_id, contract.id()))
                             .or_default();
                         *identity_contract_nonce += 1;
-                        let token_transfer_transition: TokenTransferTransition =
+                        let mut token_transfer_transition: TokenTransferTransition =
                             TokenTransferTransitionV0 {
                                 base: TokenBaseTransitionV0 {
                                     identity_contract_nonce: *identity_contract_nonce,
@@ -1936,6 +1944,8 @@ impl NetworkStrategy {
                                 private_encrypted_note: private_encrypted_note.clone(),
                             }
                             .into();
+                        token_transfer_transition
+                            .set_random_minimum_amount(self.random_token_minimum_amount);
 
                         let batch_transition: BatchTransition = BatchTransitionV1 {
                             owner_id: identity.id,

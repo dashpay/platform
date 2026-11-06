@@ -637,8 +637,79 @@ mod evidence_policy_tests {
                 assert_eq!((duration.seconds, duration.nanos), (172_800, 0));
                 let version = response.version.unwrap();
                 assert_eq!(version.app_version, latest.protocol_version as u64);
-                assert_eq!(version.consensus_version, 1);
+                assert_eq!(
+                    version.consensus_version,
+                    latest.consensus.tenderdash_consensus_version as i32
+                );
             }
+        }
+    }
+
+    /// The block that switches to protocol version 15 raises Tenderdash to consensus version
+    /// 2, which recovers each block's random beacon and calls `ApplyBlockRandomness`; every
+    /// earlier switch keeps sending consensus version 1.
+    #[test]
+    fn should_raise_tenderdash_to_consensus_version_2_on_the_switch_to_15() {
+        for network in [
+            Network::Mainnet,
+            Network::Testnet,
+            Network::Regtest,
+            Network::Devnet,
+        ] {
+            let params = consensus_params_update(
+                network,
+                PlatformVersion::get(14).unwrap(),
+                PlatformVersion::get(15).unwrap(),
+                &epoch_info(true, 20),
+            )
+            .unwrap()
+            .expect("the switch to 15 updates the consensus parameters");
+            let version = params.version.expect("version parameters");
+            assert_eq!(version.app_version, 15);
+            assert_eq!(version.consensus_version, 2);
+
+            for new in 3..=14 {
+                let params = consensus_params_update(
+                    network,
+                    PlatformVersion::get(new - 1).unwrap(),
+                    PlatformVersion::get(new).unwrap(),
+                    &epoch_info(true, 20),
+                )
+                .unwrap()
+                .expect("a switch of protocol version updates the consensus parameters");
+                assert!(params.evidence.is_none());
+                let version = params.version.expect("version parameters");
+                assert_eq!(version.app_version, new as u64);
+                assert_eq!(version.consensus_version, 1, "switch to {new}");
+            }
+        }
+    }
+
+    /// The emergency updates at mainnet epoch 3 and testnet epoch 1480 raised Tenderdash to
+    /// consensus version 1. From protocol version 15 they give the version's own consensus
+    /// version, so a chain reaching those epochs at 15 keeps its random beacon.
+    #[test]
+    fn should_not_lower_the_consensus_version_in_an_emergency_update_from_15() {
+        for (network, epoch) in [(Network::Mainnet, 3), (Network::Testnet, 1480)] {
+            let params = consensus_params_update(
+                network,
+                PlatformVersion::get(15).unwrap(),
+                PlatformVersion::get(15).unwrap(),
+                &epoch_info(true, epoch),
+            )
+            .unwrap()
+            .expect("emergency update");
+            assert_eq!(params.version.unwrap().consensus_version, 2);
+
+            let params = consensus_params_update(
+                network,
+                PlatformVersion::get(14).unwrap(),
+                PlatformVersion::get(14).unwrap(),
+                &epoch_info(true, epoch),
+            )
+            .unwrap()
+            .expect("emergency update");
+            assert_eq!(params.version.unwrap().consensus_version, 1);
         }
     }
 
@@ -734,7 +805,12 @@ mod evidence_policy_tests {
                     .max_bytes,
                 0
             );
-            assert_eq!(params.version.unwrap().consensus_version, 1);
+            assert_eq!(
+                params.version.unwrap().consensus_version,
+                PlatformVersion::latest()
+                    .consensus
+                    .tenderdash_consensus_version as i32
+            );
             let params = consensus_params_update(
                 network,
                 PlatformVersion::latest(),

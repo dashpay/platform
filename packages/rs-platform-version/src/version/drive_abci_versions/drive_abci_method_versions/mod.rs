@@ -166,6 +166,12 @@ pub struct DriveAbciBlockEndMethodVersions {
     /// Records the anchor of every token shielded pool a block touched and prunes that
     /// pool's anchors older than the retention window. `None` before token pools exist.
     pub record_token_shielded_pool_anchors: OptionalFeatureVersion,
+    /// Fills a block's `sys.random` document properties and settles its random token amounts
+    /// from the block's random beacon, which Tenderdash hands over in `ApplyBlockRandomness`
+    /// once the block's prevotes combine into it. `None` before protocol version 15, whose
+    /// Tenderdash consensus version 2 is the first to send a beacon; a block then collects no
+    /// random requests and applies none.
+    pub apply_random_beacon: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

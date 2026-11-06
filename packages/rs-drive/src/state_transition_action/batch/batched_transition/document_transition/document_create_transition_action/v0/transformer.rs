@@ -244,19 +244,6 @@ mod tests {
     const OWNER: [u8; 32] = [42; 32];
     const CONTRACT_ID: [u8; 32] = [9; 32];
 
-    /// The latest platform version with `sys.random.uniform` admitted, which no protocol
-    /// version does until block execution draws the values.
-    fn drawing_platform_version() -> PlatformVersion {
-        let mut platform_version = PlatformVersion::latest().clone();
-        platform_version
-            .dpp
-            .contract_versions
-            .document_type_versions
-            .schema
-            .random_generated_from = Some(0);
-        platform_version
-    }
-
     /// A card whose `rarity` is drawn from 1 to 100, indexed by it when `indexed`.
     fn card_schema(indexed: bool) -> Value {
         let mut schema = platform_value!({
@@ -409,7 +396,7 @@ mod tests {
     ) -> (FeeResult, FeeResult) {
         data.entry("name".to_string())
             .or_insert_with(|| Value::Text("Ace".to_string()));
-        let platform_version = drawing_platform_version();
+        let platform_version = PlatformVersion::latest().clone();
         let drive = setup_drive_with_initial_state_structure(Some(&platform_version));
         let contract = contract(&platform_version);
         let transition = DocumentCreateTransitionV0 {
@@ -538,7 +525,7 @@ mod tests {
                 )]),
             ),
         ] {
-            let platform_version = drawing_platform_version();
+            let platform_version = PlatformVersion::latest().clone();
             let drive = setup_drive_with_initial_state_structure(Some(&platform_version));
             let contract = contract(&platform_version);
             let mut data = data;

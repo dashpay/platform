@@ -9,7 +9,10 @@ use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::version::PlatformVersion;
 
 use tenderdash_abci::{
-    proto::{types::BlockId as ProtoBlockId, ToMillis},
+    proto::{
+        types::{BlockId as ProtoBlockId, StateId},
+        ToMillis,
+    },
     signatures::Hashable,
 };
 
@@ -129,6 +132,58 @@ where
             return Ok(validation_result.into());
         }
 
+        // The state the block commits: after the block's random draws when its random beacon
+        // was applied (`ApplyBlockRandomness`, or the commit's beacon in `FinalizeBlock`), which
+        // is the state the precommits sign; the header's, the state before them, otherwise.
+        // Added in place to this shipped generation: before protocol version 15 Tenderdash runs
+        // consensus version 1, whose commits carry neither a beacon nor an app hash, so nothing
+        // is applied, the app hash is the header's as before, and the check below never runs.
+        let committed_app_hash = block_execution_context
+            .applied_randomness()
+            .map(|applied| applied.app_hash)
+            .unwrap_or(block_header.app_hash);
+
+        if let Some(commit_app_hash) = commit_info.app_hash {
+            if commit_app_hash != committed_app_hash {
+                validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
+                    "received a block for h: {} r: {} whose commit signs the app hash {}, but its state after the random draws is {}",
+                    height,
+                    round,
+                    hex::encode(commit_app_hash),
+                    hex::encode(committed_app_hash),
+                )));
+                return Ok(validation_result.into());
+            }
+
+            // The precommits sign the block id, whose state id must be the header's with the
+            // app hash after the draws: what binds that app hash to the commit's signature.
+            // Same justification as above: only a consensus version 2 commit carries an app
+            // hash, so this never runs before protocol version 15.
+            let signed_state_id = StateId {
+                height: block_header.height,
+                app_hash: commit_app_hash.to_vec(),
+                app_version: block_header.version.app,
+                core_chain_locked_height: block_header.core_chain_locked_height,
+                time: block_header
+                    .time
+                    .to_millis()
+                    .map_err(|e| AbciError::BadRequest(format!("invalid block time: {}", e)))?,
+            }
+            .calculate_msg_hash(&block_header.chain_id, height as i64, round as i32)
+            .map_err(AbciError::from)?;
+            if signed_state_id.as_slice() != block_id.state_id.as_slice() {
+                validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
+                    "received a block for h: {} r: {} whose block id carries the state id {}, but the header's state id with the app hash {} the commit signs hashes to {}",
+                    height,
+                    round,
+                    hex::encode(block_id.state_id),
+                    hex::encode(commit_app_hash),
+                    hex::encode(&signed_state_id),
+                )));
+                return Ok(validation_result.into());
+            }
+        }
+
         let last_committed_state = self.state.load();
         let current_quorum_hash = last_committed_state
             .current_validator_set_quorum_hash()
@@ -233,9 +288,10 @@ where
 
         // Update platform (drive abci) state
 
+        // The committed state's root, so the next proposal finds it on disk
         let extended_block_info = ExtendedBlockInfoV0 {
             basic_info: to_commit_block_info,
-            app_hash: block_header.app_hash,
+            app_hash: committed_app_hash,
             quorum_hash: current_quorum_hash,
             block_id_hash,
             proposer_pro_tx_hash: block_header.proposer_pro_tx_hash,

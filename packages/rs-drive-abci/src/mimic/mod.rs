@@ -7,6 +7,7 @@ use crate::abci::app::FullAbciApplication;
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
 use crate::mimic::test_quorum::TestQuorumInfo;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::{
     tx_to_extend_vote_extension, UnsignedWithdrawalTxs,
 };
@@ -21,6 +22,7 @@ use dpp::platform_value::Value;
 use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
+use dpp::util::hash::hash_single;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use rand::rngs::StdRng;
@@ -29,9 +31,9 @@ use tenderdash_abci::proto::abci::response_process_proposal::ProposalStatus;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{
-    CommitInfo, ExecTxResult, ExtendVoteExtension, RequestExtendVote, RequestFinalizeBlock,
-    RequestPrepareProposal, RequestProcessProposal, RequestVerifyVoteExtension,
-    ResponsePrepareProposal, ValidatorSetUpdate,
+    CommitInfo, ExecTxResult, ExtendVoteExtension, RequestApplyBlockRandomness, RequestExtendVote,
+    RequestFinalizeBlock, RequestPrepareProposal, RequestProcessProposal,
+    RequestVerifyVoteExtension, ResponsePrepareProposal, ValidatorSetUpdate,
 };
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::types::ConsensusParams;
@@ -61,9 +63,11 @@ pub struct MimicExecuteBlockOutcome {
     pub validator_set_update: Option<ValidatorSetUpdate>,
     /// The next validators hash
     pub next_validator_set_hash: Vec<u8>,
-    /// Root App hash
+    /// Root App hash: the state the block commits, after its random draws from Tenderdash
+    /// consensus version 2
     pub root_app_hash: [u8; 32],
-    /// State ID needed to verify the block, for example height, app version, etc.
+    /// State ID the commit signs, needed to verify the block, for example height, app version,
+    /// etc.
     pub state_id: StateId,
     /// Hash of CanonicalBlockId
     pub block_id_hash: [u8; 32],
@@ -102,6 +106,17 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
         options: MimicExecuteBlockOptions,
     ) -> Result<MimicExecuteBlockOutcome, Error> {
         let platform_version = PlatformVersion::get(proposed_version)?;
+
+        // The Tenderdash consensus version in force for this block: the one the last committed
+        // block's protocol version set, since a protocol version a block switches to takes
+        // effect in Tenderdash at the next height (after init chain, the genesis version's)
+        let tenderdash_consensus_version = self
+            .platform
+            .state
+            .load()
+            .current_platform_version()?
+            .consensus
+            .tenderdash_consensus_version;
 
         // This will be NONE, except on init chain
         let original_block_execution_context = self
@@ -495,6 +510,34 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
             }
         }
 
+        // From Tenderdash consensus version 2 (protocol version 15) the round's prevotes
+        // combine into the block's random beacon, which Tenderdash hands to Drive before the
+        // precommit, and the precommits sign the app hash Drive returns: the state after the
+        // block's random draws. The commit carries both.
+        let (beacon, final_app_hash) = if tenderdash_consensus_version >= 2 {
+            let beacon = stand_in_beacon(&block_header_hash, round);
+            let response = self
+                .apply_block_randomness(RequestApplyBlockRandomness {
+                    hash: block_header_hash.to_vec(),
+                    height: height as i64,
+                    round: round as i32,
+                    beacon: beacon.clone(),
+                })
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "should apply the randomness of block #{} round #{} at time #{} : {:?}",
+                        block_info.height, round, block_info.time_ms, e
+                    )
+                });
+            (beacon, response.app_hash)
+        } else {
+            (Vec::new(), app_hash.clone())
+        };
+        let final_state_id = StateId {
+            app_hash: final_app_hash.clone(),
+            ..state_id.clone()
+        };
+
         //FixMe: This is not correct for the threshold votes extension (we need to sign and do
         // things differently
 
@@ -533,13 +576,13 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
         // We need to sign the block
 
         let quorum_type = self.platform.config.validator_set.quorum_type;
-        let state_id_hash = state_id
+        let state_id_hash = final_state_id
             .calculate_msg_hash(CHAIN_ID, height as i64, round as i32)
             .expect("cannot calculate state id hash");
 
         let commit = CanonicalVote {
             block_id: block_id_hash.clone(),
-            state_id: state_id_hash,
+            state_id: state_id_hash.clone(),
             chain_id: CHAIN_ID.to_string(),
             height: height as i64,
             round: round as i64,
@@ -553,6 +596,12 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
             quorum_hash: quorum_hash.clone(),
             block_signature: Default::default(),
             threshold_vote_extensions: extensions,
+            app_hash: if beacon.is_empty() {
+                Vec::new()
+            } else {
+                final_app_hash.clone()
+            },
+            beacon,
         };
         //if not in testing this will default to true
         #[cfg(not(feature = "testing-config"))]
@@ -575,7 +624,7 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
 
             tracing::trace!(
             digest=hex::encode(&digest),
-                        ?state_id,
+                        ?final_state_id,
                         ?commit,
                         ?quorum_type,
                         ?quorum_hash,
@@ -631,6 +680,12 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
             core_chain_lock: None,
         };
 
+        // The commit's block id, whose state id is the one the precommits signed
+        let block_id = BlockId {
+            state_id: state_id_hash,
+            ..block_id
+        };
+
         let request_finalize_block = RequestFinalizeBlock {
             commit: Some(commit_info.clone()),
             misbehavior: vec![],
@@ -655,7 +710,7 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
             .root_hash(Some(transaction), &platform_version.drive.grove_version)
             .unwrap()
             .unwrap();
-        assert_eq!(app_hash, root_hash_before_finalization);
+        assert_eq!(final_app_hash, root_hash_before_finalization);
         drop(transaction_guard);
 
         if !options.dont_finalize_block
@@ -675,7 +730,7 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
                 .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .unwrap();
-            assert_eq!(app_hash, root_hash_after_finalization);
+            assert_eq!(final_app_hash, root_hash_after_finalization);
         }
 
         Ok(MimicExecuteBlockOutcome {
@@ -685,10 +740,10 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
             withdrawal_transactions,
             validator_set_update,
             next_validator_set_hash,
-            root_app_hash: app_hash
+            root_app_hash: final_app_hash
                 .try_into()
                 .expect("expected 32 bytes for the root hash"),
-            state_id,
+            state_id: final_state_id,
             block_id_hash: block_id_hash.try_into().expect("invalid block id hash len"),
             signature: commit_info
                 .block_signature
@@ -696,4 +751,19 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
                 .expect("signature mut be 96 bytes long"),
         })
     }
+}
+
+/// A stand-in for the random beacon Tenderdash recovers from a round's prevotes, the threshold
+/// signature nobody can compute before the prevotes are cast: 96 bytes expanded from SHA-256 of
+/// the block hash and the round, so a strategy test draws the same values on every run.
+fn stand_in_beacon(block_hash: &[u8; 32], round: u32) -> Vec<u8> {
+    (0u8..3)
+        .flat_map(|part| {
+            let mut preimage = Vec::with_capacity(32 + 4 + 1);
+            preimage.extend_from_slice(block_hash);
+            preimage.extend_from_slice(&round.to_be_bytes());
+            preimage.push(part);
+            hash_single(preimage)
+        })
+        .collect()
 }

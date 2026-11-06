@@ -92,6 +92,8 @@ impl From<PlatformStateForSavingV0> for PlatformState {
             // this record carried the collections itself, so no entries back it on disk
             masternode_changes: EntryChanges::all(),
             validator_set_changes: EntryChanges::all(),
+            // Never saved: a state read back is a committed one
+            switched_from_protocol_version: None,
         }
     }
 }

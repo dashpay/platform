@@ -25,11 +25,15 @@
 mod contract_moderation_gate;
 mod moderator_fields;
 pub(crate) mod property_constraint_aggregates;
+mod random_beacon_gate;
 mod retraction;
 
 use contract_moderation_gate::{BatchTransitionContractModerationGate, ContractModerationRefusal};
 use moderator_fields::judge_moderator_field_write;
 use property_constraint_aggregates::attach_property_constraint_reads;
+use random_beacon_gate::{
+    random_beacon_withheld, refuse_random_document, refuse_random_token_amount,
+};
 use retraction::judge_barred_replace;
 use std::borrow::Cow;
 use std::collections::btree_map::Entry;
@@ -240,6 +244,24 @@ impl BatchTransitionTransformerV0 for BatchTransition {
         let owner_id = self.owner_id();
         let user_fee_increase = self.user_fee_increase();
         let platform_version = platform.state.current_platform_version()?;
+
+        // The block that switches to protocol version 15 receives no random beacon, so nothing
+        // would settle a random token amount there (`random_beacon_gate`): a batch moving one
+        // is refused, unpaid, before anything is read. In place: `random_beacon_withheld` is
+        // false at every protocol version before 15, whose tables draw nothing
+        if random_beacon_withheld(platform.state, platform_version)? {
+            if let Some(refusal) = refuse_random_token_amount(
+                self.transitions_iter()
+                    .filter_map(|transition| match transition {
+                        BatchedTransitionRef::Token(token_transition) => Some(token_transition),
+                        BatchedTransitionRef::Document(_) => None,
+                    }),
+                platform_version,
+            ) {
+                return Ok(ConsensusValidationResult::new_with_error(refusal));
+            }
+        }
+
         let mut document_transitions_by_contracts_and_types: BTreeMap<
             &Identifier,
             BTreeMap<&String, Vec<&DocumentTransition>>,
@@ -487,6 +509,22 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 )
                 .into(),
             ));
+        }
+
+        // The block that switches to protocol version 15 receives no random beacon, so a
+        // document created there with a `sys.random` property would keep its placeholder for
+        // good (`random_beacon_gate`): the Batch is refused here, unpaid, before the contract
+        // moderation gate reads state and before any document is read or written. In place:
+        // `random_beacon_withheld` is false at every protocol version before 15, whose tables
+        // draw nothing, and no type parsed there declares such a property
+        if random_beacon_withheld(platform.state, platform_version)? {
+            if let Some(refusal) = refuse_random_document(
+                &data_contract_fetch_info.contract,
+                document_transitions,
+                platform_version,
+            ) {
+                return Ok(ConsensusValidationResult::new_with_error(refusal));
+            }
         }
 
         // Contract moderation (protocol version 14): a moderated contract refuses the document

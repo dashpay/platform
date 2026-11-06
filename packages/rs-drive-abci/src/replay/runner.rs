@@ -12,8 +12,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tenderdash_abci::proto::abci::{
-    response_process_proposal, response_verify_vote_extension, RequestExtendVote,
-    RequestFinalizeBlock, RequestInfo, RequestInitChain, RequestPrepareProposal,
+    response_process_proposal, response_verify_vote_extension, RequestApplyBlockRandomness,
+    RequestExtendVote, RequestFinalizeBlock, RequestInfo, RequestInitChain, RequestPrepareProposal,
     RequestProcessProposal, RequestVerifyVoteExtension,
 };
 use tenderdash_abci::Application;
@@ -82,6 +82,7 @@ pub(super) enum LoadedRequest {
     Finalize(RequestFinalizeBlock),
     ExtendVote(RequestExtendVote),
     VerifyVoteExtension(RequestVerifyVoteExtension),
+    ApplyBlockRandomness(RequestApplyBlockRandomness),
 }
 
 impl LoadedRequest {
@@ -98,6 +99,7 @@ impl LoadedRequest {
             LoadedRequest::Finalize(request) => to_height(request.height),
             LoadedRequest::ExtendVote(request) => to_height(request.height),
             LoadedRequest::VerifyVoteExtension(request) => to_height(request.height),
+            LoadedRequest::ApplyBlockRandomness(request) => to_height(request.height),
         }
     }
 }
@@ -152,8 +154,13 @@ where
                 .as_ref()
                 .map(|info| info.basic_info().height);
         }
-        LoadedRequest::Info(request) => {
+        LoadedRequest::Info(mut request) => {
             tracing::debug!("executing info from {}", origin);
+            // The recorded ABCI version is that of the Tenderdash that wrote the log. The replay
+            // stands in for Tenderdash here, so it speaks this build's version, and a log
+            // recorded under an older one still replays; `info` still checks the state it
+            // reports
+            request.abci_version = tenderdash_abci::proto::ABCI_VERSION.to_string();
             let response = app
                 .info(request)
                 .map_err(|err| logged_error(format!("info failed for {}: {:?}", origin, err)))?;
@@ -363,6 +370,26 @@ where
                 status
             );
         }
+        LoadedRequest::ApplyBlockRandomness(request) => {
+            let context = format_height_round(Some(request.height), Some(request.round));
+            tracing::debug!(
+                "executing apply_block_randomness from {} (height={}, round={})",
+                origin,
+                request.height,
+                request.round
+            );
+            let response = app.apply_block_randomness(request).map_err(|err| {
+                logged_error(format!(
+                    "apply_block_randomness failed for {}{}: {:?}",
+                    origin, context, err
+                ))
+            })?;
+            tracing::debug!(
+                "apply_block_randomness result ({}): app_hash=0x{}",
+                origin,
+                hex::encode(&response.app_hash)
+            );
+        }
     }
 
     Ok(committed_height)
@@ -527,12 +554,22 @@ pub(super) fn stop_height_reached(limit: Option<u64>, known_height: Option<u64>)
     matches!((limit, known_height), (Some(limit), Some(height)) if height >= limit)
 }
 
+/// The app hash the block commits: from consensus version 2 the commit's, the state after the
+/// block's random draws, which the header's (the state before them) is not; before, the
+/// header's.
 fn extract_expected_app_hash(request: &RequestFinalizeBlock) -> Option<Vec<u8>> {
     request
-        .block
+        .commit
         .as_ref()
-        .and_then(|block| block.header.as_ref())
-        .map(|header| header.app_hash.clone())
+        .map(|commit| commit.app_hash.clone())
+        .filter(|app_hash| !app_hash.is_empty())
+        .or_else(|| {
+            request
+                .block
+                .as_ref()
+                .and_then(|block| block.header.as_ref())
+                .map(|header| header.app_hash.clone())
+        })
 }
 
 fn format_height_round(height: Option<i64>, round: Option<i32>) -> String {
@@ -555,7 +592,7 @@ fn format_height_round(height: Option<i64>, round: Option<i32>) -> String {
 mod tests {
     use super::*;
     use tenderdash_abci::proto::abci::{
-        RequestExtendVote, RequestFinalizeBlock, RequestInfo, RequestInitChain,
+        CommitInfo, RequestExtendVote, RequestFinalizeBlock, RequestInfo, RequestInitChain,
         RequestPrepareProposal, RequestProcessProposal, RequestVerifyVoteExtension,
     };
     use tenderdash_abci::proto::types::{Block, Header};
@@ -634,6 +671,33 @@ mod tests {
         };
         let hash = extract_expected_app_hash(&request);
         assert_eq!(hash, Some(vec![1, 2, 3, 4]));
+    }
+
+    /// From consensus version 2 the block commits the state after its random draws, which the
+    /// commit carries and the header does not.
+    #[test]
+    fn should_expect_the_commit_app_hash_from_consensus_version_2() {
+        let request = RequestFinalizeBlock {
+            commit: Some(CommitInfo {
+                app_hash: vec![5, 6, 7, 8],
+                ..Default::default()
+            }),
+            block: Some(Block {
+                header: Some(Header {
+                    app_hash: vec![1, 2, 3, 4],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(extract_expected_app_hash(&request), Some(vec![5, 6, 7, 8]));
+
+        let request = RequestFinalizeBlock {
+            commit: Some(CommitInfo::default()),
+            ..request
+        };
+        assert_eq!(extract_expected_app_hash(&request), Some(vec![1, 2, 3, 4]));
     }
 
     #[test]
@@ -930,5 +994,48 @@ mod tests {
         let reporter = ProgressReporter::new(None);
         let rate = reporter.rate_per_minute(Instant::now(), Duration::from_secs(60));
         assert!(rate.is_none());
+    }
+
+    // ---- execute_request ----
+
+    #[test]
+    fn should_replay_an_info_request_recorded_under_an_older_abci_version() {
+        use crate::abci::app::FullAbciApplication;
+        use crate::replay::log_ingest::LogRequestStream;
+        use crate::test::helpers::setup::TestPlatformBuilder;
+        use std::io::Write as _;
+
+        let dir = tempfile::tempdir().expect("expected a temporary directory");
+        let log_path = dir.path().join("abci.log");
+        {
+            let mut file = std::fs::File::create(&log_path).expect("expected to create the log");
+            writeln!(
+                file,
+                r#"{{"timestamp":"2026-01-01T00:00:00Z","fields":{{"message":"received ABCI request","request":"Request {{ value: Some(Info(RequestInfo {{ version: \"1.8.0\", block_version: 14, p2p_version: 10, abci_version: \"1.4.0\" }})) }}"}},"span":{{"endpoint":"info"}}}}"#
+            )
+            .expect("expected to write the log");
+        }
+        let mut stream = LogRequestStream::open(&log_path).expect("expected to open the log");
+        let item = stream
+            .next_item()
+            .expect("expected to read the log")
+            .expect("expected the info request");
+        let LoadedRequest::Info(recorded) = &item.request else {
+            panic!("expected an info request, got {}", item.describe());
+        };
+        assert_eq!(recorded.abci_version, "1.4.0");
+        assert!(
+            !tenderdash_abci::check_version(&recorded.abci_version),
+            "expected this build to refuse an ABCI 1.4 handshake from a live Tenderdash"
+        );
+
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+        let app = FullAbciApplication::new(&platform.platform);
+        assert_eq!(
+            execute_request(&app, item, None).expect("expected the recorded info to replay"),
+            None
+        );
     }
 }
