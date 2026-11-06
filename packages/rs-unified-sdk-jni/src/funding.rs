@@ -722,6 +722,76 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     })
 }
 
+/// Shield from Platform balance to a third-party Orchard address (Type 15)
+/// — bridges `platform_wallet_manager_shielded_shield_to_recipient`. See
+/// Kotlin's `PlatformWalletManager.shieldedShieldToRecipient` for the
+/// contract.
+///
+/// `memo_text` null or empty maps to a null pointer (no memo); the FFI owns
+/// the memo rules. The caller retains ownership of `signer_address_handle`.
+/// Blocks for the ~30s Halo 2 proof; nothing is returned on success.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedShieldToRecipient(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    shielded_account: jint,
+    payment_account: jint,
+    recipient_raw43: JByteArray,
+    amount: jlong,
+    memo_text: JString,
+    signer_address_handle: jlong,
+) {
+    guard(&mut env, (), |env| {
+        // Reject sign errors at the boundary: negatives would otherwise
+        // bit-cast to huge unsigned values (never clamp).
+        if amount <= 0 {
+            throw_sdk_exception(env, 1, "amount must be positive");
+            return;
+        }
+        if shielded_account < 0 {
+            throw_sdk_exception(env, 1, "shieldedAccount must be non-negative");
+            return;
+        }
+        if payment_account < 0 {
+            throw_sdk_exception(env, 1, "paymentAccount must be non-negative");
+            return;
+        }
+        if signer_address_handle == 0 {
+            throw_sdk_exception(env, 1, "signerAddressHandle must be non-null");
+            return;
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return;
+        };
+        let Some(recipient) = read_recipient43(env, &recipient_raw43) else {
+            return;
+        };
+        // null / empty memo → null pointer (no memo). The CString owns the
+        // bytes through the blocking FFI call below.
+        let memo = match read_cstring_opt(env, &memo_text, "memoText") {
+            Ok(m) => m,
+            Err(()) => return,
+        };
+        let memo_ptr = memo.as_ref().map_or(ptr::null(), |c| c.as_ptr());
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_shield_to_recipient(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                shielded_account as u32,
+                payment_account as u32,
+                recipient.as_ptr(),
+                amount as u64,
+                memo_ptr,
+                signer_address_handle as *const SignerHandle,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
 /// Shield from a Platform IDENTITY's balance, Type 21 (bridges
 /// `platform_wallet_manager_shielded_shield_from_identity`).
 ///
