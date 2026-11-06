@@ -1064,7 +1064,6 @@ fn received_then_matching_sent_promotes_to_established() {
 /// asset locks bucketed by (wallet, account, outpoint).
 #[test]
 fn tc_p4_005_load_asset_locks_bucketed() {
-    use dashcore::hashes::Hash;
     use dashcore::{OutPoint, Transaction, Txid};
     use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
     use platform_wallet::changeset::{AssetLockChangeSet, AssetLockEntry};
@@ -1341,7 +1340,6 @@ fn tc_p4_008b_contacts_corruption_is_hard_error() {
 /// typed decode error. An intact wallet still decodes cleanly.
 #[test]
 fn tc_p4_008c_asset_locks_corruption_is_hard_error() {
-    use dashcore::hashes::Hash;
     use dashcore::{OutPoint, Transaction, Txid};
     use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
     use platform_wallet::changeset::{AssetLockChangeSet, AssetLockEntry};

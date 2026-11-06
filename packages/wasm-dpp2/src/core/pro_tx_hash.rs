@@ -2,7 +2,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
 use crate::utils::{IntoWasm, try_to_fixed_bytes};
 use dpp::dashcore::ProTxHash;
-use dpp::dashcore::hashes::{Hash, sha256d};
+use dpp::dashcore::hashes::sha256d;
 use std::str::FromStr;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;

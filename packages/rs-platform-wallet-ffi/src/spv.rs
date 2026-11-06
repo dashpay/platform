@@ -3,7 +3,6 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
-use dashcore::hashes::Hash;
 use dashcore::sml::llmq_type::LlmqDevnetParams;
 use dashcore::PubkeyHash;
 use platform_wallet::spv::{
@@ -493,12 +492,21 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
             "llmq_devnet_params is only valid on devnet",
         );
     }
+    let (Ok(llmq_devnet_size), Ok(llmq_devnet_threshold)) = (
+        u16::try_from(llmq_devnet_size),
+        u16::try_from(llmq_devnet_threshold),
+    ) else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "llmq_devnet_size and llmq_devnet_threshold must fit in 16 bits",
+        );
+    };
 
     // Dash Core devnet peers disconnect any inbound connection whose
     // user agent doesn't contain `devnet.devnet-<name>`. Rebuild the
     // user agent to embed the substring while keeping whatever base
     // the caller (or our default) provided. Mirrors the dash-spv
-    // binary's `/rust-dash-spv:VERSION(devnet.devnet-NAME)/` format.
+    // binary's `/dash-spv:VERSION(devnet.devnet-NAME)/` format.
     if let Some(name) = devnet_name_str.as_deref() {
         let base = user_agent_str
             .clone()
@@ -522,8 +530,8 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
     let mut config = ClientConfig::default();
     config.network = net;
     config.storage_path = std::path::PathBuf::from(&data_dir_str);
-    if let Some(ua) = user_agent_str.clone() {
-        config.user_agent = Some(ua);
+    if let Some(ua) = user_agent_str {
+        config.user_agent = ua;
     }
     if start_from_height > 0 {
         config.start_from_height = Some(start_from_height);

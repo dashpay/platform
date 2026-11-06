@@ -4126,7 +4126,6 @@ impl PlatformWalletPersistence for FFIPersister {
         PersistenceError,
     > {
         use dashcore::consensus::Decodable;
-        use dashcore::hashes::Hash;
         use key_wallet::account::{AccountType, StandardAccountType};
         use key_wallet::managed_account::transaction_record::{
             TransactionDirection, TransactionRecord,
@@ -4303,8 +4302,6 @@ impl PlatformWalletPersistence for FFIPersister {
         &self,
         wallet_id: WalletId,
     ) -> Result<Option<Vec<ListedCoreTxid>>, PersistenceError> {
-        use dashcore::hashes::Hash;
-
         // An unset callback means this host never wired wallet-scoped
         // transaction enumeration (the Android vtable leaves both slots
         // `None`). Report the capability as absent — NOT an empty table —
@@ -5488,7 +5485,6 @@ fn decode_unconfirmed_outgoing(
     entry: &WalletRestoreEntryFFI,
 ) -> Vec<dashcore::blockdata::transaction::Transaction> {
     use dashcore::consensus::Decodable;
-    use dashcore::hashes::Hash;
     let recs: &[UnconfirmedOutgoingTxRecordFFI] = if entry.unconfirmed_outgoing_tx_records.is_null()
         || entry.unconfirmed_outgoing_tx_records_count == 0
     {
@@ -5906,10 +5902,6 @@ fn build_wallet_start_state(
     let mut dropped_bad_script = 0usize;
     let mut dropped_no_account = 0usize;
     for u in utxo_entries {
-        // Bring `Hash` into scope locally so `Txid::from_slice` is
-        // available — matches the pattern used elsewhere in this
-        // crate (see e.g. asset_lock/sync.rs).
-        use dashcore::hashes::Hash;
         let script_bytes = unsafe { slice_from_raw(u.script_pubkey, u.script_pubkey_len) };
         // Build the AccountType via the same helper the per-spec path
         // uses, repackaged as an `AccountSpecFFI` so we can reuse
@@ -6411,8 +6403,6 @@ fn build_unused_asset_locks(
     BTreeMap<u32, BTreeMap<dashcore::OutPoint, platform_wallet::TrackedAssetLock>>,
     PersistenceError,
 > {
-    use dashcore::hashes::Hash;
-
     if entry.tracked_asset_locks.is_null() && entry.tracked_asset_locks_count != 0 {
         return Err(PersistenceError::backend(
             "tracked asset locks: missing row buffer",
@@ -7315,7 +7305,6 @@ fn restore_unresolved_asset_lock_tx_records(
     wallet_info: &mut ManagedWalletInfo,
     records: &[UnresolvedAssetLockTxRecordFFI],
 ) -> Result<UnresolvedRestoreStats, PersistenceError> {
-    use dashcore::hashes::Hash;
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     use key_wallet::managed_account::transaction_record::{
         TransactionDirection, TransactionRecord,
@@ -7479,7 +7468,6 @@ fn restore_provider_special_txs(
     wallet_info: &mut ManagedWalletInfo,
     records: &[ProviderSpecialTxRestoreEntryFFI],
 ) -> Result<UnresolvedRestoreStats, PersistenceError> {
-    use dashcore::hashes::Hash;
     use dashcore::transaction::TransactionPayload;
     use key_wallet::account::AccountType;
     use key_wallet::managed_account::transaction_record::{
@@ -8623,7 +8611,6 @@ mod tests {
     /// turns that into a withheld watermark rather than a false success.
     #[test]
     fn store_delivers_sweeps_through_the_extension_slot_after_the_changeset() {
-        use dashcore::hashes::Hash as _;
         use platform_wallet::changeset::changeset::SweepBatch;
         use platform_wallet::changeset::CoreChangeSet;
 
@@ -9554,7 +9541,7 @@ mod tests {
         .expect("static BIP-39 vector")
         .to_seed("");
         let master =
-            ExtendedPrivKey::new_master(dashcore::Network::Testnet, &seed).expect("master");
+            ExtendedPrivKey::new_master(dashcore::Network::Testnet, &*seed).expect("master");
         let xpub = ExtendedPubKey::from_priv(&master);
         let owner = Identifier::from([0xAA; 32]);
         let contact = Identifier::from([0x01; 32]);
@@ -9716,7 +9703,6 @@ mod tests {
         }
         fn chain_lock_at(height: u32) -> dashcore::ephemerealdata::chain_lock::ChainLock {
             use dashcore::bls_sig_utils::BLSSignature;
-            use dashcore::hashes::Hash as _;
             use dashcore::BlockHash;
             dashcore::ephemerealdata::chain_lock::ChainLock {
                 block_height: height,
@@ -9814,7 +9800,6 @@ mod tests {
     /// before the slot existed.
     #[test]
     fn store_delivers_credit_verdicts_through_the_extension_slot_before_the_changeset() {
-        use dashcore::hashes::Hash as _;
         use platform_wallet::changeset::changeset::UtxoCreditVerdict;
         use platform_wallet::changeset::CoreChangeSet;
 
@@ -9938,7 +9923,6 @@ mod tests {
 
     #[test]
     fn should_roundtrip_drain_operation_ids_including_consumed_tombstones() {
-        use dashcore::hashes::Hash;
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
         unsafe extern "C" fn load_id(
@@ -10873,7 +10857,6 @@ mod tests {
     use dashcore::blockdata::transaction::Transaction;
     use dashcore::consensus::encode::serialize;
     use dashcore::ephemerealdata::instant_lock::InstantLock;
-    use dashcore::hashes::Hash;
     use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
     use dashcore::transaction::special_transaction::TransactionPayload;
     use dashcore::{BlockHash, OutPoint, Txid};
@@ -11341,7 +11324,7 @@ mod tests {
         )
         .expect("static BIP-39 vector must parse");
         let seed = mnemonic.to_seed("");
-        let master = ExtendedPrivKey::new_master(Network::Testnet, &seed)
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &*seed)
             .expect("master derivation must succeed");
         let xpub = ExtendedPubKey::from_priv(&master);
         let account = Account::from_xpub(
@@ -11373,7 +11356,7 @@ mod tests {
         )
         .expect("static BIP-39 vector must parse");
         let seed = mnemonic.to_seed("");
-        let master = ExtendedPrivKey::new_master(Network::Testnet, &seed)
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &*seed)
             .expect("master derivation must succeed");
         let xpub = ExtendedPubKey::from_priv(&master);
         let account = Account::from_xpub(None, account_type, xpub, Network::Testnet)
@@ -11487,7 +11470,7 @@ mod tests {
         )
         .expect("static BIP-39 vector must parse");
         let seed = mnemonic.to_seed("");
-        let master = ExtendedPrivKey::new_master(Network::Testnet, &seed)
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &*seed)
             .expect("master derivation must succeed");
         let xpub = ExtendedPubKey::from_priv(&master);
         let account =
@@ -11608,7 +11591,6 @@ mod tests {
     #[test]
     fn provider_special_tx_restore_round_trips_block_position() {
         use dashcore::blockdata::transaction::special_transaction::provider_update_service::ProviderUpdateServicePayload;
-        use dashcore::hashes::Hash;
         use dashcore::transaction::TransactionPayload;
 
         let payload = ProviderUpdateServicePayload {
@@ -11684,7 +11666,6 @@ mod tests {
     /// [`address_info_from_ffi`], which re-parses the rendered string and
     /// rebuilds the address from its script.
     fn typed_key_test_address_info(index: u32, public_key: Option<PublicKeyType>) -> AddressInfo {
-        use dashcore::hashes::Hash;
         let mut h = [0u8; 20];
         h[0] = index as u8;
         h[1] = (index >> 8) as u8;
@@ -11931,7 +11912,7 @@ mod tests {
         .expect("static BIP-39 vector must parse");
         let seed = mnemonic.to_seed("");
         let wallet = Wallet::from_seed_bytes(
-            seed,
+            *seed,
             Network::Testnet,
             key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
         )
@@ -12872,7 +12853,6 @@ mod tests {
 
     #[test]
     fn should_restore_only_committed_asset_lock_status_after_a_failed_round() {
-        use dashcore::hashes::Hash;
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
         use std::sync::{mpsc, Condvar, Mutex as StdMutex};
         use std::time::Duration;

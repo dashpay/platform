@@ -2493,6 +2493,11 @@ public class PlatformWalletManager: ObservableObject {
                     let maxConcurrent = 4
                     var nextIndex = 0
                     var published = false
+                    // The input-cap refusal is held back, not published
+                    // on arrival: it returns at once, with no proof wait,
+                    // and would otherwise take the one slot ahead of a
+                    // sibling's double-spend verdict on every launch.
+                    var capRefusal: PlatformWalletError?
                     // Seed the group with up to `maxConcurrent` tasks.
                     // Each `group.addTask` closure captures
                     // `assetLockManager` — that retain keeps the
@@ -2525,10 +2530,23 @@ public class PlatformWalletManager: ObservableObject {
                     // would strand a lock that is free to confirm. The
                     // wait it runs under is capped below this call's 300s
                     // ceiling for exactly that case.
+                    //
+                    // An input-cap refusal (60) is the fallback: it is
+                    // published once the batch has drained, and only if
+                    // no double-spend verdict was. A row over the cap is
+                    // refused again on every pass, so nothing is lost by
+                    // the wait, while a contested lock's verdict is what
+                    // stops its UI from spinning.
                     while let outcome = await group.next() {
-                        if !published, let verdict = outcome {
-                            published = true
-                            await publishConflict(verdict)
+                        if let verdict = outcome {
+                            if case .assetLockTooManyInputs = verdict {
+                                if capRefusal == nil {
+                                    capRefusal = verdict
+                                }
+                            } else if !published {
+                                published = true
+                                await publishConflict(verdict)
+                            }
                         }
                         if nextIndex < outpoints.count {
                             let (txid, vout) = outpoints[nextIndex]
@@ -2537,6 +2555,9 @@ public class PlatformWalletManager: ObservableObject {
                             }
                             nextIndex += 1
                         }
+                    }
+                    if !published, let refusal = capRefusal {
+                        await publishConflict(refusal)
                     }
                 }
             }
@@ -2557,12 +2578,17 @@ public class PlatformWalletManager: ObservableObject {
     /// runs off the main actor — the FFI call is synchronous and
     /// reads no `PlatformWalletManager` state.
     /// Returns the typed double-spend verdict when the catch-up hits one —
-    /// the one outcome a host must see so its UI can explain why the lock
-    /// is stuck instead of spinning — and `nil` for every expected failure.
+    /// the outcome a host must see so its UI can explain why the lock
+    /// is stuck instead of spinning — or the input-cap refusal, and `nil`
+    /// for every expected failure.
     /// In practice that verdict is always the provisional
     /// `assetLockInputContested`; the terminal `assetLockInputConflict` is
     /// reserved with no emitter and is matched so it would surface intact
-    /// if that ever changes.
+    /// if that ever changes. The input-cap refusal
+    /// (`assetLockTooManyInputs`) is returned the same way: such a lock is
+    /// never re-sent and stays tracked, so this error is how the host
+    /// learns that the row will not complete. Consolidating coins does not
+    /// change that row; it lets a new lock fit.
     nonisolated private static func runCatchUp(assetLockManager: ManagedAssetLockManager, txid: Data, vout: UInt32) -> PlatformWalletError? {
         // Build the txid tuple inline so the Task body captures only
         // Sendable values.
@@ -2600,7 +2626,8 @@ public class PlatformWalletManager: ObservableObject {
                 vout
             )
             return nil
-        case .errorAssetLockInputConflict, .errorAssetLockInputContested:
+        case .errorAssetLockInputConflict, .errorAssetLockInputContested,
+             .errorAssetLockTooManyInputs:
             return PlatformWalletError(result: result)
         default:
             return nil

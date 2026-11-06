@@ -407,7 +407,7 @@ mod tests {
         assert_eq!(first.public_key_bytes, second.public_key_bytes);
 
         let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).unwrap();
-        let master = ExtendedPrivKey::new_master(Network::Testnet, &mnemonic.to_seed("")).unwrap();
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &*mnemonic.to_seed("")).unwrap();
         let expected = derive_connect_keypair_from_master(
             &master,
             Network::Testnet,
