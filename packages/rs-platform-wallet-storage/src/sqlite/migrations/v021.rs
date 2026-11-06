@@ -1,6 +1,6 @@
 //! Rewind coverage without discarding any wallet's unresolved InstantSend evidence.
 
-use dashcore::{hashes::Hash, Txid};
+use dashcore::Txid;
 use key_wallet::transaction_checking::TransactionContext;
 use rusqlite::{params, Row, Transaction};
 

@@ -22,7 +22,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use dashcore::blockdata::script::Instruction;
-use dashcore::hashes::Hash;
+use dashcore::hashes::hash160;
 use dashcore::{Address, OutPoint, PubkeyHash, ScriptBuf, Transaction, TxIn, Txid};
 use key_wallet::account::AccountType;
 use key_wallet::managed_account::managed_account_ref::ManagedAccountRef;
@@ -299,7 +299,8 @@ fn p2pkh_redeemed_script(input: &TxIn) -> Option<ScriptBuf> {
         return None;
     };
     let pubkey = pubkey.as_bytes();
-    matches!(pubkey.len(), 33 | 65).then(|| ScriptBuf::new_p2pkh(&PubkeyHash::hash(pubkey)))
+    matches!(pubkey.len(), 33 | 65)
+        .then(|| ScriptBuf::new_p2pkh(&PubkeyHash::from_raw_hash(hash160::Hash::hash(pubkey))))
 }
 
 /// The wallet's funds accounts, without contacts' watch-only chains.

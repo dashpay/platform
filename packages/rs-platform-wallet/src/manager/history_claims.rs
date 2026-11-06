@@ -136,7 +136,6 @@ impl HistoryReplayEffects {
 mod operation_tests {
     use super::*;
     use crate::wallet::identity::PaymentStatus;
-    use dashcore::hashes::Hash;
 
     #[test]
     fn should_settle_wallet_linked_payment_without_a_registration_index() {
@@ -558,7 +557,7 @@ fn select_claim(
 mod tests {
     use super::*;
     use crate::changeset::changeset::SweepBatch;
-    use dashcore::{hashes::Hash, Transaction, TxIn};
+    use dashcore::{Transaction, TxIn};
     use key_wallet::transaction_checking::TransactionContext;
 
     fn point(marker: u8) -> OutPoint {

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use dash_spv::test_utils::{InstantLockFixture, MockNetworkManager};
 use dash_spv::{ClientConfig, DashSpvClient};
-use dashcore::{hashes::Hash, OutPoint};
+use dashcore::OutPoint;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::prelude::AssetLockProof;
 use key_wallet::transaction_checking::TransactionContext;

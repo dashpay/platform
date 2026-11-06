@@ -70,27 +70,16 @@ grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "9b19035f5
 grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "9b19035f51905b156e8a628c10b71b85797ffa21" }
 grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", rev = "9b19035f51905b156e8a628c10b71b85797ffa21" }
 grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "9b19035f51905b156e8a628c10b71b85797ffa21" }
-# TODO(upstream-merge): verify this compat revision is reachable from merged rust-dashcore dev; PR #1336 alone does not prove its ancestry.
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "5e7982b3b7a3b5ab3999cd0d83235c705abcd3cb" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "5e7982b3b7a3b5ab3999cd0d83235c705abcd3cb" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "5e7982b3b7a3b5ab3999cd0d83235c705abcd3cb" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "5e7982b3b7a3b5ab3999cd0d83235c705abcd3cb" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "5e7982b3b7a3b5ab3999cd0d83235c705abcd3cb" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "5e7982b3b7a3b5ab3999cd0d83235c705abcd3cb" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "5e7982b3b7a3b5ab3999cd0d83235c705abcd3cb" }
-dashcore-crypto = { git = "https://github.com/dashpay/rust-dashcore", rev = "5e7982b3b7a3b5ab3999cd0d83235c705abcd3cb" }
+# TODO(upstream-merge): move this wallet-restore authorization pin to merged rust-dashcore dev after PR #1336 lands.
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "6f206d482d38def57b866f9dae1a6e98f84d25a9" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "6f206d482d38def57b866f9dae1a6e98f84d25a9" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "6f206d482d38def57b866f9dae1a6e98f84d25a9" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "6f206d482d38def57b866f9dae1a6e98f84d25a9" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "6f206d482d38def57b866f9dae1a6e98f84d25a9" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "6f206d482d38def57b866f9dae1a6e98f84d25a9" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "6f206d482d38def57b866f9dae1a6e98f84d25a9" }
+dashcore-crypto = { git = "https://github.com/dashpay/rust-dashcore", rev = "6f206d482d38def57b866f9dae1a6e98f84d25a9" }
 tokio-metrics = "0.5"
-
-# rust-dashcore's bitcoin-crypto takes these crates from this rust-bitcoin rev,
-# while other dependencies take the same versions from crates.io. Cargo cannot
-# vendor one name and version from two sources, so use the git copies for both.
-# Keep the rev equal to bitcoin-crypto's rev in rust-dashcore. A bump past
-# dashpay/rust-dashcore#1224 needs only bitcoin-internals; see #5648.
-[patch.crates-io]
-base58ck = { git = "https://github.com/rust-bitcoin/rust-bitcoin", rev = "7ba35c7c1dd63892bfb9c9395bbd80e2ab5df516" }
-bitcoin_hashes = { git = "https://github.com/rust-bitcoin/rust-bitcoin", rev = "7ba35c7c1dd63892bfb9c9395bbd80e2ab5df516" }
-bitcoin-internals = { git = "https://github.com/rust-bitcoin/rust-bitcoin", rev = "7ba35c7c1dd63892bfb9c9395bbd80e2ab5df516" }
-bitcoin-units = { git = "https://github.com/rust-bitcoin/rust-bitcoin", rev = "7ba35c7c1dd63892bfb9c9395bbd80e2ab5df516" }
 
 # Size-tuned profile for the iOS `rs-unified-sdk-ffi` staticlib, which
 # otherwise ships huge. Inherits `release` and is ONLY used by the iOS

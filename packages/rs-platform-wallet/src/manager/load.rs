@@ -1751,7 +1751,6 @@ mod idempotent_load_tests {
         address: &dashcore::Address,
         mut tx: dashcore::Transaction,
     ) -> dashcore::Transaction {
-        use dashcore::hashes::Hash;
         use dashcore::script::{Builder, PushBytesBuf};
         use dashcore::sighash::SighashCache;
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
@@ -1861,7 +1860,6 @@ mod idempotent_load_tests {
     /// attributable and never gets a record at all.
     #[tokio::test]
     async fn should_remember_stored_spender_of_pending_asset_lock_input_on_load() {
-        use dashcore::hashes::Hash;
         use key_wallet::transaction_checking::BlockInfo;
 
         for funding_recorded in [true, false] {
@@ -1973,7 +1971,6 @@ mod idempotent_load_tests {
     async fn should_not_credit_inputs_of_a_final_asset_lock_again() {
         use dashcore::blockdata::transaction::special_transaction::asset_lock::AssetLockPayload;
         use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
-        use dashcore::hashes::Hash;
         use key_wallet::transaction_checking::wallet_checker::WalletTransactionChecker;
         use key_wallet::transaction_checking::BlockInfo;
         use key_wallet::Utxo;
@@ -2160,7 +2157,6 @@ mod idempotent_load_tests {
         use dashcore::blockdata::transaction::special_transaction::asset_lock::AssetLockPayload;
         use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
         use dashcore::ephemerealdata::instant_lock::InstantLock;
-        use dashcore::hashes::Hash;
         use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
         use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
         use dpp::prelude::AssetLockProof;
@@ -2526,7 +2522,6 @@ mod idempotent_load_tests {
     /// transaction that no longer stands.
     #[tokio::test]
     async fn should_not_claim_inputs_of_a_tracked_funding_the_replay_defeated() {
-        use dashcore::hashes::Hash;
         use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
         use dpp::prelude::AssetLockProof;
         use key_wallet::transaction_checking::wallet_checker::WalletTransactionChecker;
@@ -2671,7 +2666,6 @@ mod idempotent_load_tests {
     /// nothing proves its inputs free, so a final lock still claims them.
     #[tokio::test]
     async fn should_keep_the_claim_of_a_final_lock_whose_funding_was_only_left_out() {
-        use dashcore::hashes::Hash;
         use key_wallet::transaction_checking::wallet_checker::WalletTransactionChecker;
         use key_wallet::transaction_checking::BlockInfo;
 

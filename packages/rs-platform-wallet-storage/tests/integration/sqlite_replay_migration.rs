@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use dashcore::{hashes::Hash, OutPoint};
+use dashcore::OutPoint;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use platform_wallet::changeset::recorded_history::ReplayEvidence;

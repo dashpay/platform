@@ -1487,7 +1487,6 @@ mod tests {
         address: &dashcore::Address,
         mut tx: dashcore::Transaction,
     ) -> dashcore::Transaction {
-        use dashcore::hashes::Hash;
         use dashcore::script::{Builder, PushBytesBuf};
         use dashcore::sighash::SighashCache;
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
@@ -1585,7 +1584,6 @@ mod tests {
         Vec<TransactionRecord>,
         OutPoint,
     ) {
-        use dashcore::hashes::Hash;
         use dashcore::{BlockHash, Transaction, TxIn, TxOut};
         use key_wallet::transaction_checking::BlockInfo;
         use key_wallet::Utxo;
@@ -1793,7 +1791,6 @@ mod tests {
 
     #[tokio::test]
     async fn should_preserve_existing_claim_provenance_when_withholding_final_asset_lock_input() {
-        use dashcore::hashes::Hash;
         for claimant in [None, Some(Txid::from_byte_array([71; 32]))] {
             for mined_height in [None, Some(123)] {
                 let (mut state, spent) = stale_consumed_asset_lock_fixture().await;
@@ -1826,7 +1823,6 @@ mod tests {
     /// redelivery does resurrect it when no history is replayed.
     #[tokio::test]
     async fn should_not_resurrect_confirmed_spent_output_on_funding_redelivery() {
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::transaction_checking::BlockInfo;
 
@@ -1879,7 +1875,6 @@ mod tests {
     async fn should_rebuild_spent_mark_for_height_only_funding_from_owned_inputs() {
         use dashcore::bls_sig_utils::BLSSignature;
         use dashcore::ephemerealdata::chain_lock::ChainLock;
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::transaction_checking::BlockInfo;
 
@@ -1939,7 +1934,6 @@ mod tests {
     #[tokio::test]
     async fn should_not_finalize_stored_history_by_checkpoint_height_alone() {
         use dashcore::ephemerealdata::chain_lock::ChainLock;
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
 
         let (mut wallet, mut info, _, records, _) = confirmed_spend_fixture().await;
@@ -2367,7 +2361,6 @@ mod tests {
     async fn should_guard_unreplayed_funding_against_irreversible_spends_only() {
         use dashcore::bls_sig_utils::BLSSignature;
         use dashcore::ephemerealdata::chain_lock::ChainLock;
-        use dashcore::hashes::Hash;
         use dashcore::{BlockHash, Transaction, TxIn};
         use key_wallet::transaction_checking::BlockInfo;
 
@@ -2463,7 +2456,6 @@ mod tests {
     /// its funding must credit it.
     #[tokio::test]
     async fn should_credit_funding_again_after_a_fork_drops_the_restored_spend() {
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::transaction_checking::BlockInfo;
 
@@ -2518,7 +2510,6 @@ mod tests {
     async fn should_guard_restored_coin_of_unconfirmed_spend_without_owned_inputs() {
         use dashcore::bls_sig_utils::BLSSignature;
         use dashcore::ephemerealdata::chain_lock::ChainLock;
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::transaction_checking::BlockInfo;
 
@@ -2808,7 +2799,6 @@ mod tests {
     /// would rebuild the child from the output it pays the wallet.
     #[tokio::test]
     async fn should_drop_attributable_descendant_of_swept_conflict_for_any_replay_order() {
-        use dashcore::hashes::Hash;
         use dashcore::{BlockHash, Transaction, TxIn, TxOut};
         use key_wallet::transaction_checking::BlockInfo;
 
@@ -2963,7 +2953,6 @@ mod tests {
     /// only through a parent recorded in the same account.
     #[tokio::test]
     async fn should_remove_cross_account_descendant_of_conflicting_spend() {
-        use dashcore::hashes::Hash;
         use dashcore::{BlockHash, Transaction, TxIn, TxOut};
         use key_wallet::transaction_checking::BlockInfo;
 
@@ -3093,7 +3082,6 @@ mod tests {
     /// record, for a later conflict to find.
     #[tokio::test]
     async fn should_keep_unsafe_amounts_from_the_checker_and_reserve_the_coins_they_spend() {
-        use dashcore::hashes::Hash;
         use dashcore::{BlockHash, Transaction, TxIn};
         use key_wallet::managed_account::transaction_record::InputDetail;
         use key_wallet::transaction_checking::BlockInfo;
@@ -3233,7 +3221,6 @@ mod tests {
         dashcore::Transaction,
         [OutPoint; 2],
     ) {
-        use dashcore::hashes::Hash;
         use dashcore::{BlockHash, Transaction, TxIn};
         use key_wallet::transaction_checking::BlockInfo;
 
@@ -3351,7 +3338,6 @@ mod tests {
     /// sweeps it and releases the coin it does not spend itself.
     #[tokio::test]
     async fn should_release_other_input_of_unsafe_loser_beaten_after_load() {
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::transaction_checking::BlockInfo;
 
@@ -3508,7 +3494,6 @@ mod tests {
     /// looks only at the records it could remove.
     #[test]
     fn should_plan_sweeps_only_while_a_competitor_remains() {
-        use dashcore::hashes::Hash;
         use dashcore::{BlockHash, Transaction, TxIn};
         use key_wallet::transaction_checking::BlockInfo;
 
@@ -3596,7 +3581,6 @@ mod tests {
     /// go out again; every other send must, stored or not.
     #[tokio::test]
     async fn should_withhold_retired_sends_from_re_dispatch() {
-        use dashcore::hashes::Hash;
         use dashcore::{BlockHash, Transaction, TxIn};
         use key_wallet::transaction_checking::BlockInfo;
 
@@ -3761,7 +3745,6 @@ mod tests {
     /// competitors, descendants, bystanders and locked competitors.
     #[test]
     fn should_plan_the_same_removals_as_whole_history_sweeps() {
-        use dashcore::hashes::Hash;
         use dashcore::{BlockHash, Transaction, TxIn};
         use key_wallet::transaction_checking::BlockInfo;
         use rand::rngs::StdRng;
@@ -3932,7 +3915,6 @@ mod tests {
     /// checker's wallet total doubles and a large coin overflows it.
     #[tokio::test]
     async fn should_spend_coin_parked_in_fallback_account_once() {
-        use dashcore::hashes::Hash;
         use dashcore::{BlockHash, Transaction, TxIn};
         use key_wallet::transaction_checking::BlockInfo;
 
@@ -4032,7 +4014,6 @@ mod tests {
         [OutPoint; 2],
         [bool; 2],
     ) {
-        use dashcore::hashes::Hash;
         use dashcore::{Transaction, TxIn};
 
         let (mut wallet, _, address) = wallet_with_receive_address();
@@ -4143,7 +4124,6 @@ mod tests {
         wallet: &mut Wallet,
         coins: &[OutPoint],
     ) -> key_wallet::transaction_checking::TransactionCheckResult {
-        use dashcore::hashes::Hash;
         use dashcore::{BlockHash, Transaction, TxIn};
         use key_wallet::transaction_checking::BlockInfo;
 
@@ -4181,7 +4161,6 @@ mod tests {
         funding: &dashcore::Transaction,
         coin: &OutPoint,
     ) -> bool {
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::transaction_checking::BlockInfo;
 
@@ -4232,7 +4211,6 @@ mod tests {
     /// transaction has swept both, the genuine coin must be released.
     #[tokio::test]
     async fn should_release_coin_shared_by_spends_of_impossible_recorded_amounts() {
-        use dashcore::hashes::Hash;
         use dashcore::{Transaction, TxIn};
 
         for one_parent in [false, true] {
@@ -4379,7 +4357,6 @@ mod tests {
     /// InstantSend status.
     #[tokio::test]
     async fn should_keep_restored_flags_of_coin_moved_from_fallback_account() {
-        use dashcore::hashes::Hash;
         use dashcore::{Transaction, TxIn};
 
         let (mut wallet, mut restored, addresses) = two_account_wallet();
@@ -4450,7 +4427,6 @@ mod tests {
     /// confirmed the coin, the record's block stands.
     #[tokio::test]
     async fn should_restore_only_the_confirmation_persistence_stored_on_a_coin() {
-        use dashcore::hashes::Hash;
         use dashcore::{BlockHash, Transaction, TxIn};
         use key_wallet::transaction_checking::BlockInfo;
 
@@ -4578,7 +4554,6 @@ mod tests {
     /// not a competitor of itself: with no other spender it is uncontested.
     #[tokio::test]
     async fn should_not_count_multi_account_record_as_its_own_competitor() {
-        use dashcore::hashes::Hash;
         use dashcore::{BlockHash, Transaction, TxIn};
         use key_wallet::transaction_checking::BlockInfo;
 
@@ -4661,7 +4636,6 @@ mod tests {
     /// and recorded as observed spent, whichever of the two is stored first.
     #[tokio::test]
     async fn should_exclude_spent_output_for_either_same_height_replay_order() {
-        use dashcore::hashes::Hash;
         use dashcore::{BlockHash, Transaction, TxIn, TxOut};
         use key_wallet::transaction_checking::BlockInfo;
         use key_wallet::Utxo;
@@ -4776,7 +4750,6 @@ mod tests {
     /// already-marked lock deduplicates any later lock event.
     #[tokio::test]
     async fn should_replay_mempool_record_with_persisted_lock_as_instant_send() {
-        use dashcore::hashes::Hash;
         use dashcore::{BlockHash, Transaction, TxIn, TxOut};
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use key_wallet::transaction_checking::BlockInfo;
@@ -4911,7 +4884,6 @@ mod tests {
     #[tokio::test]
     async fn should_sweep_conflicting_spend_for_either_sibling_replay_order() {
         use dashcore::ephemerealdata::chain_lock::ChainLock;
-        use dashcore::hashes::Hash;
         use dashcore::{BlockHash, Transaction, TxIn, TxOut};
         use key_wallet::transaction_checking::BlockInfo;
 
@@ -5102,7 +5074,6 @@ mod tests {
     /// Mismatched persisted finality evidence fails without upgrading or replaying records.
     #[tokio::test]
     async fn should_not_upgrade_record_to_instant_send_with_mismatched_lock() {
-        use dashcore::hashes::Hash;
         use dashcore::{BlockHash, Transaction, TxIn, TxOut};
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use key_wallet::transaction_checking::BlockInfo;
@@ -5253,7 +5224,6 @@ mod tests {
     }
 
     fn in_block(height: u32, position: Option<u32>) -> TransactionContext {
-        use dashcore::hashes::Hash;
         use key_wallet::transaction_checking::BlockInfo;
 
         let block = BlockInfo::new(height, dashcore::BlockHash::all_zeros(), height);
@@ -5271,8 +5241,6 @@ mod tests {
     /// replays after it, so its input reserves the parent's output.
     #[test]
     fn should_replay_unconfirmed_parent_before_its_child() {
-        use dashcore::hashes::Hash;
-
         let parent = replay_record(
             &[Txid::from_byte_array([1; 32])],
             1_000,
@@ -5291,8 +5259,6 @@ mod tests {
     /// already recorded as confirmed.
     #[test]
     fn should_replay_mempool_parent_before_its_confirmed_child() {
-        use dashcore::hashes::Hash;
-
         let parent = replay_record(
             &[Txid::from_byte_array([2; 32])],
             1_000,
@@ -5309,8 +5275,6 @@ mod tests {
     /// position, then unconfirmed.
     #[test]
     fn should_order_independent_records_by_height_then_block_position() {
-        use dashcore::hashes::Hash;
-
         let funding = |marker| [Txid::from_byte_array([marker; 32])];
         let pending = replay_record(&funding(4), 1, TransactionContext::Mempool);
         let late_second = replay_record(&funding(5), 2, in_block(10, Some(2)));
@@ -5329,8 +5293,6 @@ mod tests {
     /// place around the pair.
     #[test]
     fn should_keep_block_position_order_for_same_block_spends() {
-        use dashcore::hashes::Hash;
-
         let parent = replay_record(&[Txid::from_byte_array([9; 32])], 10, in_block(20, Some(1)));
         let child = replay_record(&[parent.txid], 9, in_block(20, Some(2)));
         let before = replay_record(&[Txid::from_byte_array([10; 32])], 8, in_block(20, Some(0)));
@@ -5344,8 +5306,6 @@ mod tests {
     /// still all replay, after everything that is ready.
     #[test]
     fn should_keep_every_record_of_a_dependency_cycle() {
-        use dashcore::hashes::Hash;
-
         let (a, b) = (
             Txid::from_byte_array([0xAA; 32]),
             Txid::from_byte_array([0xBB; 32]),

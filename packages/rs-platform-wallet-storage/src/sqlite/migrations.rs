@@ -466,8 +466,6 @@ pub(crate) fn wallet_db(wallet_id: &[u8; 32]) -> rusqlite::Connection {
 pub(crate) fn oversize_script_db(
     wallet_id: &[u8; 32],
 ) -> (rusqlite::Connection, dashcore::OutPoint) {
-    use dashcore::hashes::Hash;
-
     use crate::sqlite::conn::SQLITE_MAX_BLOB_BYTES;
 
     let conn = wallet_db(wallet_id);

@@ -302,7 +302,6 @@ pub fn registration(
 
 /// A ChainLock for `height` over a block hash of `[hash; 32]`, unsigned.
 pub fn chain_lock(height: u32, hash: u8) -> dashcore::ephemerealdata::chain_lock::ChainLock {
-    use dashcore::hashes::Hash;
     dashcore::ephemerealdata::chain_lock::ChainLock {
         block_height: height,
         block_hash: dashcore::BlockHash::from_byte_array([hash; 32]),
@@ -322,7 +321,6 @@ pub type Manager = std::sync::Arc<
 /// Process `tx` alone in a block at `height` for `wallet_id`, as SPV would.
 pub async fn mine(manager: &Manager, wallet_id: [u8; 32], tx: dashcore::Transaction, height: u32) {
     use dashcore::block::{Header, Version};
-    use dashcore::hashes::Hash;
     use dashcore::{Block, BlockHash, CompactTarget, TxMerkleNode};
     use platform_wallet::key_wallet_manager::WalletInterface;
     let block = Block {
@@ -394,7 +392,6 @@ pub fn authorize_with_mode(
     mut tx: dashcore::Transaction,
     mode: u8,
 ) -> dashcore::Transaction {
-    use dashcore::hashes::Hash;
     use dashcore::script::{Builder, PushBytesBuf};
     use dashcore::sighash::SighashCache;
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;

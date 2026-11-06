@@ -10,7 +10,6 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use common::{chain_lock, mine, persist_events, registration, Manager};
-use dashcore::hashes::Hash;
 use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dashcore::transaction::special_transaction::TransactionPayload;
 use dashcore::{Address, Network, OutPoint, ScriptBuf, Transaction, TxOut};

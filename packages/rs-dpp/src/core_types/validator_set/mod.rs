@@ -151,7 +151,6 @@ mod json_convertible_tests {
     use crate::bls::SecretKey;
     use crate::core_types::validator::v0::ValidatorV0;
     use crate::core_types::validator_set::v0::ValidatorSetV0;
-    use dashcore::hashes::Hash;
     use dashcore::{ProTxHash, PubkeyHash, QuorumHash};
     use platform_value::{platform_value, Value};
     use rand::rngs::StdRng;

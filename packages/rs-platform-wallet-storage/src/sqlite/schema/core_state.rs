@@ -8,7 +8,7 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use dashcore::ephemerealdata::chain_lock::ChainLock;
 use dashcore::transaction::special_transaction::TransactionPayload;
-use dashcore::{hashes::Hash, OutPoint, Txid};
+use dashcore::{OutPoint, Txid};
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::Utxo;
@@ -488,8 +488,6 @@ fn surviving_stored_input_claims(
     wallet_id: &WalletId,
     swept_txids: &HashSet<dashcore::Txid>,
 ) -> Result<HashSet<dashcore::OutPoint>, WalletStorageError> {
-    use dashcore::hashes::Hash;
-
     let mut stmt = tx.prepare_cached(
         "SELECT length(txid), txid, length(record_blob), record_blob \
          FROM core_transactions WHERE wallet_id = ?1 AND record_blob IS NOT NULL",
@@ -1011,8 +1009,6 @@ pub(crate) fn load_snapshot(
     let mut transaction_heights: HashMap<dashcore::Txid, Option<u32>> = HashMap::new();
     let mut blob_backed_transaction_heights = HashSet::new();
     {
-        use dashcore::hashes::Hash;
-
         // Pre-read length gates keep fixed-width txids and record blobs from
         // being materialized before their stored sizes are validated.
         let mut stmt = conn.prepare(
@@ -1124,7 +1120,6 @@ pub(crate) fn load_snapshot(
         )?;
         let mut rows = stmt.query(params![wallet_id.as_slice()])?;
         while let Some(row) = rows.next()? {
-            use dashcore::hashes::Hash;
             blob::check_fixed_width(row.get::<_, i64>(0)?, 32, "core_instant_locks.txid")?;
             let txid_bytes: Vec<u8> = row.get(1)?;
             blob::check_size(row.get::<_, i64>(2)?)?;
@@ -1479,7 +1474,6 @@ mod tests {
     use crate::sqlite::config::LoadPolicy;
     use crate::sqlite::migrations::{self, insert_test_wallet, rewind_v020, wallet_db};
     use dashcore::address::Payload;
-    use dashcore::hashes::Hash;
     use dashcore::{BlockHash, OutPoint, PubkeyHash, Transaction, TxOut, Txid};
     use key_wallet::account::{AccountType, StandardAccountType};
     use key_wallet::managed_account::transaction_record::{

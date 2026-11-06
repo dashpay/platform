@@ -5,7 +5,7 @@ use std::os::raw::c_void;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use dashcore::{hashes::Hash, OutPoint, ScriptBuf, TxOut, Txid};
+use dashcore::{OutPoint, ScriptBuf, TxOut, Txid};
 use parking_lot::Mutex;
 use platform_wallet::changeset::recorded_history::ReplayEvidence;
 use platform_wallet::changeset::{PersistenceError, RecordedHistory};

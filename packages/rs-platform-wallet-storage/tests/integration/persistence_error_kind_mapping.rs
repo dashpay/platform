@@ -14,7 +14,6 @@
 
 use std::path::PathBuf;
 
-use dashcore::hashes::Hash;
 use platform_wallet::changeset::{PersistenceError, PersistenceErrorKind};
 use platform_wallet_storage::sqlite::error::{AutoBackupOperation, WalletStorageError};
 use platform_wallet_storage::sqlite::util::safe_cast::SafeCastTarget;

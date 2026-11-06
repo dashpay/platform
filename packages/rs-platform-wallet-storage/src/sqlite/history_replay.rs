@@ -1,7 +1,7 @@
 //! SQL adapter for wallet-owned replay effects.
 
 use crate::sqlite::util::safe_cast::{i64_to_u32, i64_to_u64};
-use dashcore::{hashes::Hash, OutPoint, ScriptBuf, TxOut, Txid};
+use dashcore::{OutPoint, ScriptBuf, TxOut, Txid};
 use platform_wallet::manager::history_replay::{
     HistoryReplayEffects, ReplayClaimEffect, StoredReplayClaim,
 };

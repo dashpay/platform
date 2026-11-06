@@ -542,7 +542,6 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use dashcore::hashes::Hash;
     use dashcore::{BlockHash, Network, OutPoint, Transaction};
     use key_wallet::account::account_type::StandardAccountType;
     use key_wallet::account::AccountType;

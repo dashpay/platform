@@ -1250,7 +1250,7 @@ pub(super) fn contact_address_paid_on_chain(
 /// sweep without adding or removing a txid, and must re-trigger it.
 /// In-memory only, never persisted — no cross-version stability required.
 fn wallet_tx_table_digest(listed: &[crate::changeset::traits::ListedCoreTxid]) -> [u8; 32] {
-    use dashcore::hashes::{sha256, Hash, HashEngine};
+    use dashcore::hashes::{sha256, HashEngine};
 
     let mut rows: Vec<([u8; 32], bool)> = listed
         .iter()
@@ -2609,7 +2609,7 @@ mod tests {
             .expect("valid mnemonic")
             .to_seed("");
         let wallet = key_wallet::wallet::Wallet::from_seed_bytes(
-            seed,
+            *seed,
             Network::Testnet,
             WalletAccountCreationOptions::None,
         )
@@ -2682,7 +2682,6 @@ mod tests {
         txid_byte: u8,
         value_duffs: u64,
     ) -> String {
-        use dashcore::hashes::Hash;
         let wallet = manager
             .get_wallet(&wallet_id)
             .await
@@ -4998,7 +4997,7 @@ mod tests {
             .expect("mnemonic")
             .to_seed("");
         let w = key_wallet::wallet::Wallet::from_seed_bytes(
-            seed,
+            *seed,
             Network::Testnet,
             WalletAccountCreationOptions::None,
         )
@@ -8705,7 +8704,6 @@ mod tests {
     #[tokio::test]
     async fn block_processed_confirms_sent_payment() {
         use dashcore::blockdata::transaction::Transaction;
-        use dashcore::hashes::Hash;
         use dashcore::{BlockHash, TxIn};
         use key_wallet::account::account_type::StandardAccountType;
         use key_wallet::account::AccountType;
@@ -9094,7 +9092,6 @@ mod tests {
     #[tokio::test]
     async fn reconcile_sent_payments_confirms_from_persisted_record() {
         use dashcore::blockdata::transaction::Transaction;
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::account::account_type::StandardAccountType;
         use key_wallet::account::AccountType;
@@ -9257,7 +9254,6 @@ mod tests {
 
     #[tokio::test]
     async fn reconcile_sent_payments_from_tx_history_rebuilds_and_is_idempotent() {
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::managed_account::transaction_record::OutputRole;
         use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
@@ -9338,7 +9334,6 @@ mod tests {
     /// re-running the whole sweep on every dashpay sync.
     #[tokio::test]
     async fn reconcile_sent_payments_from_tx_history_surfaces_permanent_read_failures() {
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::managed_account::transaction_record::OutputRole;
         use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
@@ -9406,7 +9401,6 @@ mod tests {
     /// suppressed the wallet's entire `Sent` history — on every sweep, forever.
     #[tokio::test]
     async fn reconcile_sent_payments_from_tx_history_reconstructs_around_an_unreadable_record() {
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::managed_account::transaction_record::OutputRole;
         use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
@@ -9491,7 +9485,6 @@ mod tests {
 
     #[tokio::test]
     async fn reconcile_sent_payments_from_tx_history_does_not_overwrite_existing_entry() {
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::managed_account::transaction_record::OutputRole;
         use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
@@ -9574,7 +9567,6 @@ mod tests {
     /// (`outputs_scanned=0`, `matched_txids=0` against 49 records read).
     #[tokio::test]
     async fn reconcile_sent_payments_from_tx_history_matches_without_output_details() {
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::managed_account::transaction_record::OutputRole;
         use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
@@ -9645,7 +9637,6 @@ mod tests {
     #[tokio::test]
     async fn reconcile_sent_payments_from_tx_history_reconstructs_for_contact_with_received_history(
     ) {
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::managed_account::transaction_record::OutputRole;
         use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
@@ -9842,7 +9833,6 @@ mod tests {
     /// has to be wider than one gap limit.
     #[tokio::test]
     async fn reconcile_sent_payments_from_tx_history_crosses_a_full_unused_gap() {
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::managed_account::transaction_record::OutputRole;
         use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
@@ -9942,7 +9932,6 @@ mod tests {
     /// keep arriving with every new block.
     #[tokio::test]
     async fn reconcile_sent_payments_from_tx_history_resweeps_when_the_table_changes() {
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::managed_account::transaction_record::OutputRole;
         use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
@@ -10047,7 +10036,6 @@ mod tests {
 
     #[tokio::test]
     async fn reconcile_sent_payments_from_tx_history_skips_repeat_sweeps_after_a_real_scan() {
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::managed_account::transaction_record::OutputRole;
         use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
@@ -10118,7 +10106,6 @@ mod tests {
     /// has a `Sent` entry" is not a completion marker.
     #[tokio::test]
     async fn reconcile_sent_payments_from_tx_history_retries_failed_write_after_sibling_success() {
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::managed_account::transaction_record::OutputRole;
         use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
@@ -10215,7 +10202,6 @@ mod tests {
     /// contact as complete until every listed wallet-funded record was read.
     #[tokio::test]
     async fn reconcile_sent_payments_from_tx_history_retries_when_listed_record_is_unavailable() {
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::managed_account::transaction_record::OutputRole;
         use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
@@ -10313,7 +10299,6 @@ mod tests {
     /// of matching only what the pool already holds.
     #[tokio::test]
     async fn reconcile_sent_payments_from_tx_history_finds_payments_past_initial_gap_window() {
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::managed_account::address_pool::KeySource;
         use key_wallet::managed_account::transaction_record::OutputRole;
@@ -10416,7 +10401,6 @@ mod tests {
     /// skipping it is conclusive (the guard still stamps).
     #[tokio::test]
     async fn reconcile_sent_payments_from_tx_history_skips_transactions_wallet_did_not_fund() {
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::managed_account::transaction_record::OutputRole;
         use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
@@ -10497,7 +10481,6 @@ mod tests {
     /// every recurring sync pass.
     #[tokio::test]
     async fn reconcile_sent_payments_from_tx_history_skips_backends_without_enumeration() {
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::managed_account::transaction_record::OutputRole;
         use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
@@ -11070,7 +11053,7 @@ mod tests {
                 });
         }
 
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
         let drained = iw
             .dashpay()
             .drain_pending_contact_crypto_until(&provider, None)
@@ -11210,7 +11193,7 @@ mod tests {
                 });
         }
 
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
         let drained = iw
             .dashpay()
             .drain_pending_contact_crypto_until(&provider, None)
@@ -11354,7 +11337,7 @@ mod tests {
                 });
         }
 
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
         for pass in 1..=2 {
             let drained = iw
                 .dashpay()
@@ -11454,7 +11437,7 @@ mod tests {
         }
 
         let provider = SeedCryptoProvider::from_seed(
-            Mnemonic::from_phrase(TEST_MNEMONIC)
+            *Mnemonic::from_phrase(TEST_MNEMONIC)
                 .expect("valid mnemonic")
                 .to_seed(""),
             Network::Testnet,
@@ -11533,7 +11516,7 @@ mod tests {
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
 
         // The contact's encryption keypair (the "sender" of the request).
         let contact_secret = dpp::secp256k1::SecretKey::from_secret_bytes([0x42u8; 32])
@@ -11564,7 +11547,7 @@ mod tests {
         // The sender encrypts a real compact xpub to that secret.
         let compact = {
             let w = key_wallet::wallet::Wallet::from_seed_bytes(
-                seed,
+                *seed,
                 Network::Testnet,
                 WalletAccountCreationOptions::None,
             )
@@ -11719,7 +11702,7 @@ mod tests {
                 });
         }
 
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
         let drained = iw
             .dashpay()
             .drain_pending_contact_crypto_until(&provider, None)
@@ -11905,7 +11888,7 @@ mod tests {
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("mnemonic")
             .to_seed("");
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
         let not_ours = Identifier::from([0x99; 32]);
         let err = iw
             .dashpay()
@@ -11994,7 +11977,7 @@ mod tests {
         let wallet = manager.get_wallet(&wallet_id).await.unwrap();
         let iw = wallet.identity();
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC).unwrap().to_seed("");
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
         persister.stores.lock().unwrap().clear();
         let first = iw
             .dashpay()
@@ -12020,7 +12003,7 @@ mod tests {
         // A subsequent transparent send must draw a third address, not reuse
         // either durably exposed withdrawal destination.
         fund_bip44_account_0(&manager, wallet_id, 0xC5, 120_000).await;
-        let signer = SeedSigner::new(seed, Network::Testnet);
+        let signer = SeedSigner::new(*seed, Network::Testnet);
         with_accepting_broadcaster(iw)
             .dashpay()
             .send_payment(&owner, &contact, 50_000, None, &signer, &provider)
@@ -12048,8 +12031,8 @@ mod tests {
         let iw = wallet.identity();
         fund_bip44_account_0(&manager, wallet_id, 0xC6, 120_000).await;
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC).unwrap().to_seed("");
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
-        let signer = SeedSigner::new(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
+        let signer = SeedSigner::new(*seed, Network::Testnet);
         let entered = Arc::new(tokio::sync::Barrier::new(2));
         let release = Arc::new(tokio::sync::Barrier::new(2));
         let gated =
@@ -12106,7 +12089,7 @@ mod tests {
         let addresses = install_external_account(&manager, wallet_id, owner, contact).await;
         let wallet = manager.get_wallet(&wallet_id).await.unwrap();
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC).unwrap().to_seed("");
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
         *persister.allow_stores_then_fail.lock().unwrap() = Some(0);
         assert!(matches!(
             wallet
@@ -12259,8 +12242,9 @@ mod tests {
         let wallet = manager.get_wallet(&wallet_id).await.unwrap();
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC).unwrap().to_seed("");
         let reserve = |wallet: Arc<crate::wallet::platform_wallet::PlatformWallet>| {
+            let seed = seed.clone();
             tokio::spawn(async move {
-                let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+                let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
                 wallet
                     .identity()
                     .dashpay()
@@ -12384,8 +12368,8 @@ mod tests {
 
         // A signer + provider derived from the same test seed — the production
         // posture (Keychain signer present on the send path).
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
-        let signer = SeedSigner::new(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
+        let signer = SeedSigner::new(*seed, Network::Testnet);
 
         // The send fails (no external account for `pay_contact`), but the drain
         // it runs first must have completed the queued RegisterReceiving op.
@@ -12477,7 +12461,7 @@ mod tests {
                 .expect("mnemonic")
                 .to_seed("");
             let w = key_wallet::wallet::Wallet::from_seed_bytes(
-                seed,
+                *seed,
                 Network::Testnet,
                 WalletAccountCreationOptions::None,
             )
@@ -12509,8 +12493,8 @@ mod tests {
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
-        let signer = SeedSigner::new(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
+        let signer = SeedSigner::new(*seed, Network::Testnet);
 
         let err = iw
             .dashpay()
@@ -12587,7 +12571,7 @@ mod tests {
             .to_seed("");
         let compact = {
             let w = key_wallet::wallet::Wallet::from_seed_bytes(
-                seed,
+                *seed,
                 Network::Testnet,
                 WalletAccountCreationOptions::None,
             )
@@ -12615,8 +12599,8 @@ mod tests {
             .await
             .expect("register external account");
 
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
-        let signer = SeedSigner::new(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
+        let signer = SeedSigner::new(*seed, Network::Testnet);
         let result = iw
             .dashpay()
             .send_payment(&owner_id, &contact_id, 100_000, None, &signer, &provider)
@@ -12671,7 +12655,7 @@ mod tests {
                 .expect("mnemonic")
                 .to_seed("");
             let w = key_wallet::wallet::Wallet::from_seed_bytes(
-                seed,
+                *seed,
                 Network::Testnet,
                 WalletAccountCreationOptions::None,
             )
@@ -12703,8 +12687,8 @@ mod tests {
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
-        let signer = SeedSigner::new(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
+        let signer = SeedSigner::new(*seed, Network::Testnet);
 
         // Two failed builds in a row: without rollback each one consumes an
         // index and the pool's used range marches forward off-chain.
@@ -12784,8 +12768,8 @@ mod tests {
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
-        let signer = SeedSigner::new(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
+        let signer = SeedSigner::new(*seed, Network::Testnet);
 
         let rejecting = with_rejecting_broadcaster(iw);
         let err = rejecting
@@ -12832,8 +12816,8 @@ mod tests {
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
-        let signer = SeedSigner::new(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
+        let signer = SeedSigner::new(*seed, Network::Testnet);
 
         // Clear the store log so the assertions below see only the send's
         // own writes.
@@ -13010,7 +12994,7 @@ mod tests {
                 .expect("mnemonic")
                 .to_seed("");
             let w = key_wallet::wallet::Wallet::from_seed_bytes(
-                seed,
+                *seed,
                 Network::Testnet,
                 WalletAccountCreationOptions::None,
             )
@@ -13053,8 +13037,8 @@ mod tests {
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
-        let signer = SeedSigner::new(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
+        let signer = SeedSigner::new(*seed, Network::Testnet);
 
         let iw_send = with_accepting_broadcaster(iw);
         iw_send
@@ -13129,16 +13113,15 @@ mod tests {
         // outpoint the parked transaction already spends.
         fund_bip44_account_0(&manager, wallet_id, 0xD1, 1_000_000).await;
         let funded = dashcore::OutPoint {
-            txid: <dashcore::Txid as dashcore::hashes::Hash>::from_slice(&[0xD1; 32])
-                .expect("txid"),
+            txid: dashcore::Txid::from_slice(&[0xD1; 32]).expect("txid"),
             vout: 0,
         };
 
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
-        let signer = SeedSigner::new(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
+        let signer = SeedSigner::new(*seed, Network::Testnet);
 
         let stamped = synced_height(&manager, wallet_id).await;
         let entered = Arc::new(tokio::sync::Barrier::new(2));
@@ -13228,16 +13211,15 @@ mod tests {
 
         fund_bip44_account_0(&manager, wallet_id, 0xD2, 1_000_000).await;
         let funded = dashcore::OutPoint {
-            txid: <dashcore::Txid as dashcore::hashes::Hash>::from_slice(&[0xD2; 32])
-                .expect("txid"),
+            txid: dashcore::Txid::from_slice(&[0xD2; 32]).expect("txid"),
             vout: 0,
         };
 
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
-        let signer = SeedSigner::new(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
+        let signer = SeedSigner::new(*seed, Network::Testnet);
 
         let entered = Arc::new(tokio::sync::Barrier::new(2));
         let release = Arc::new(tokio::sync::Barrier::new(2));
@@ -13340,16 +13322,15 @@ mod tests {
 
         fund_bip44_account_0(&manager, wallet_id, 0xD3, 1_000_000).await;
         let funded = dashcore::OutPoint {
-            txid: <dashcore::Txid as dashcore::hashes::Hash>::from_slice(&[0xD3; 32])
-                .expect("txid"),
+            txid: dashcore::Txid::from_slice(&[0xD3; 32]).expect("txid"),
             vout: 0,
         };
 
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
-        let signer = SeedSigner::new(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
+        let signer = SeedSigner::new(*seed, Network::Testnet);
 
         let entered = Arc::new(tokio::sync::Barrier::new(2));
         let release = Arc::new(tokio::sync::Barrier::new(2));
@@ -13566,7 +13547,6 @@ mod tests {
         txid_byte: u8,
         value_duffs: u64,
     ) {
-        use dashcore::hashes::Hash;
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         let wallet = manager
             .get_wallet(&wallet_id)
@@ -13650,7 +13630,7 @@ mod tests {
                 .expect("mnemonic")
                 .to_seed("");
             let w = key_wallet::wallet::Wallet::from_seed_bytes(
-                seed,
+                *seed,
                 Network::Testnet,
                 WalletAccountCreationOptions::None,
             )
@@ -13709,8 +13689,8 @@ mod tests {
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
-        let signer = SeedSigner::new(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
+        let signer = SeedSigner::new(*seed, Network::Testnet);
 
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
         let iw = with_accepting_broadcaster(wallet.identity());
@@ -13764,8 +13744,8 @@ mod tests {
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
-        let signer = SeedSigner::new(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
+        let signer = SeedSigner::new(*seed, Network::Testnet);
 
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
         let iw = with_accepting_broadcaster(wallet.identity());
@@ -13819,9 +13799,9 @@ mod tests {
             .expect("valid mnemonic")
             .to_seed("");
         (
-            SeedSigner::new(seed, Network::Testnet),
+            SeedSigner::new(*seed, Network::Testnet),
             crate::wallet::identity::network::contact_requests::SeedCryptoProvider::from_seed(
-                seed,
+                *seed,
                 Network::Testnet,
             ),
         )
@@ -13916,7 +13896,6 @@ mod tests {
         address: &dashcore::Address,
         txid_byte: u8,
     ) {
-        use dashcore::hashes::Hash;
         use key_wallet::transaction_checking::{
             BlockInfo, TransactionContext, WalletTransactionChecker,
         };
@@ -15062,7 +15041,7 @@ mod tests {
         let reserving = Arc::clone(&wallet);
         let mut reserve = tokio::spawn(async move {
             let provider = SeedCryptoProvider::from_seed(
-                Mnemonic::from_phrase(TEST_MNEMONIC).unwrap().to_seed(""),
+                *Mnemonic::from_phrase(TEST_MNEMONIC).unwrap().to_seed(""),
                 Network::Testnet,
             );
             reserving

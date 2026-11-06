@@ -118,7 +118,7 @@ pub(super) fn plan_history_authorization(
 mod tests {
     use super::*;
     use dashcore::crypto::ecdsa::EcdsaSecretKey;
-    use dashcore::hashes::{hash160, Hash};
+    use dashcore::hashes::hash160;
     use dashcore::script::{Builder, PushBytesBuf};
     use dashcore::sighash::SighashCache;
     use dashcore::{Address, Network, ScriptBuf, Transaction, TxIn};

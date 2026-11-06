@@ -14,7 +14,6 @@ use std::collections::BTreeMap;
 
 use common::{ensure_wallet_meta, fresh_persister, fresh_persister_with_mode, ro_conn, wid};
 
-use dashcore::hashes::Hash;
 use platform_wallet::changeset::{
     CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
 };

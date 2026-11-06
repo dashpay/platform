@@ -468,8 +468,6 @@ mod tests {
         conn
     }
 
-    use dashcore::hashes::Hash;
-
     fn sample_outpoint(b: u8) -> OutPoint {
         OutPoint {
             txid: dashcore::Txid::from_byte_array([b; 32]),

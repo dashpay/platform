@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use common::{mine, persist_events, registration, Case};
 use dashcore::{
-    bls_sig_utils::BLSSignature, ephemerealdata::chain_lock::ChainLock, hashes::Hash, BlockHash,
-    Network, OutPoint, ScriptBuf, Transaction, TxOut,
+    bls_sig_utils::BLSSignature, ephemerealdata::chain_lock::ChainLock, BlockHash, Network,
+    OutPoint, ScriptBuf, Transaction, TxOut,
 };
 use key_wallet::wallet::{
     initialization::WalletAccountCreationOptions,

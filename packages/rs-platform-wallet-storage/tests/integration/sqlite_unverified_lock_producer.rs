@@ -8,7 +8,7 @@ use dash_spv::sync::SyncEvent;
 use dash_spv::test_utils::{InstantLockFixture, MockNetworkManager};
 use dash_spv::{ClientConfig, DashSpvClient, EventHandler};
 use dashcore::network::message::NetworkMessage;
-use dashcore::{hashes::Hash, Network, OutPoint, Txid};
+use dashcore::{Network, OutPoint, Txid};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;

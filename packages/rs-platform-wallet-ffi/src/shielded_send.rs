@@ -42,7 +42,6 @@
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_void};
 
-use dashcore::hashes::Hash;
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
 use dpp::shielded::{
     compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee,
@@ -799,6 +798,9 @@ pub(crate) fn catch_funding_panic(
 /// - `AssetLockAlreadyConsumed` -> `ErrorAssetLockAlreadyConsumed` (24). The
 ///   wallet retains nonterminal consumption-unknown state; the host must not
 ///   interpret this code as authenticated completion.
+/// - `AssetLockTooManyInputs` -> `ErrorAssetLockTooManyInputs` (60), for
+///   the fresh build and for the resume of a tracked lock over the input
+///   cap, as `asset_lock_manager_resume` reports it.
 /// - `AssetLockInsufficientFunds` -> `ErrorAssetLockInsufficientFunds` (29).
 ///   Coin selection came up short over the permitted funding set, so nothing
 ///   was built or broadcast and no funding output was consumed; the host may
@@ -810,6 +812,8 @@ pub(crate) fn catch_funding_panic(
 ///   drainable balance sits under the required minimum lock floor, so the
 ///   host's only remedies are to add funds to that account or lower the
 ///   floor. Do not surface "try a smaller amount" for the drain form.
+///   `AssetLockFundsAwaitingFinality` shares code 29, as it does on the
+///   non-shielded entry points.
 ///
 ///   Without this arm the shortfall flattened into the generic
 ///   `ErrorWalletOperation` (6) catch-all below, hiding a typed error behind
@@ -855,7 +859,11 @@ fn map_asset_lock_funding_result(
             e @ (PlatformWalletError::AssetLockInputConflict { .. }
             | PlatformWalletError::AssetLockInputContested { .. }),
         ) => e.into(),
-        Err(e @ PlatformWalletError::AssetLockInsufficientFunds { .. }) => e.into(),
+        Err(
+            e @ (PlatformWalletError::AssetLockInsufficientFunds { .. }
+            | PlatformWalletError::AssetLockTooManyInputs { .. }
+            | PlatformWalletError::AssetLockFundsAwaitingFinality { .. }),
+        ) => e.into(),
         Err(
             e @ (PlatformWalletError::TransactionBroadcast(_)
             | PlatformWalletError::TransactionBroadcastUnconfirmed(_)),
@@ -3134,6 +3142,20 @@ mod tests {
         );
         assert!(message_of(&mismatch).contains("is ineligible for"));
 
+        // The input-cap refusal of a resumed lock: the host offers coin
+        // consolidation on this code and nothing else.
+        let too_many_inputs = map_asset_lock_funding_result(
+            Err(PlatformWalletError::AssetLockTooManyInputs {
+                count: 101,
+                max: 100,
+            }),
+            "shielded resume fund-from-asset-lock",
+        );
+        assert_eq!(
+            too_many_inputs.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockTooManyInputs
+        );
+
         // The resume endpoint is where the double-spend screen fires, and
         // it funnels through this same wrapper. The screen
         // itself only ever raises the contested verdict below; the
@@ -3297,5 +3319,11 @@ mod tests {
             result.code,
             PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds
         );
+
+        let awaiting = PlatformWalletError::AssetLockFundsAwaitingFinality { waiting: 600 };
+        let rendered = awaiting.to_string();
+        let result = map_asset_lock_funding_result(Err(awaiting), "shielded fund-from-asset-lock");
+        assert_eq!(result.code as i32, 29);
+        assert_eq!(message_of(&result), rendered);
     }
 }

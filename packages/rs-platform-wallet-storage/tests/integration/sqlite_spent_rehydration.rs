@@ -5,7 +5,7 @@ use crate::common;
 use std::collections::BTreeMap;
 
 use common::{authorize, authorize_with_mode, chain_lock, registration, Case};
-use dashcore::{hashes::Hash, Address, Network, OutPoint, ScriptBuf, Transaction, TxOut, Txid};
+use dashcore::{Address, Network, OutPoint, ScriptBuf, Transaction, TxOut, Txid};
 use key_wallet::{
     managed_account::{
         managed_account_trait::ManagedAccountTrait, transaction_record::TransactionRecord,

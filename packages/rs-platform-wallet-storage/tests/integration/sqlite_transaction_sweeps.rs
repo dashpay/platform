@@ -12,7 +12,6 @@ use crate::common;
 
 use common::{ensure_wallet_meta, fresh_persister, wid, SqlitePersister, SqlitePersisterConfig};
 
-use dashcore::hashes::Hash;
 use dashcore::{Address, Network, OutPoint, Transaction, TxIn, TxOut, Txid};
 use key_wallet::account::{AccountType, StandardAccountType};
 use key_wallet::managed_account::transaction_record::{TransactionDirection, TransactionRecord};
@@ -31,7 +30,6 @@ const WINNER_HEIGHT: u32 = 400;
 
 fn p2pkh(byte: u8) -> Address {
     use dashcore::address::Payload;
-    use dashcore::hashes::Hash;
     use dashcore::PubkeyHash;
     let hash = PubkeyHash::from_byte_array([byte; 20]);
     Address::new(Network::Testnet, Payload::PubkeyHash(hash))

@@ -205,7 +205,6 @@ mod tests {
     //! which outpoints they yield. That decision IS the fence's release
     //! condition, so it is pinned here rather than only exercised end to end.
 
-    use dashcore::hashes::Hash;
     use dashcore::{
         Address as DashAddress, BlockHash, Network, OutPoint, ScriptBuf, Transaction, TxIn, Txid,
         Witness,

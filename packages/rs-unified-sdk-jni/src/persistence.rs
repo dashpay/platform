@@ -5030,7 +5030,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
 mod tests {
     use dashcore::blockdata::transaction::special_transaction::provider_update_service::ProviderUpdateServicePayload;
     use dashcore::consensus::{deserialize, serialize};
-    use dashcore::hashes::Hash;
     use dashcore::transaction::TransactionPayload;
     use dashcore::{ScriptBuf, Transaction, Txid};
 

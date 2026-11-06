@@ -71,10 +71,7 @@ fn spent_utxo_address_is_marked_used() {
     // spent = 1 and contributes no balance.
     let utxo = key_wallet::Utxo {
         outpoint: dashcore::OutPoint {
-            txid: {
-                use dashcore::hashes::Hash;
-                dashcore::Txid::from_byte_array([0x99; 32])
-            },
+            txid: { dashcore::Txid::from_byte_array([0x99; 32]) },
             vout: 0,
         },
         txout: dashcore::TxOut {

@@ -2,7 +2,6 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use dashcore::hashes::Hash;
 use dashcore::{Address, OutPoint, ScriptBuf, Txid};
 use key_wallet::managed_account::transaction_record::{
     InputDetail, OutputDetail, OutputRole, TransactionRecord,
