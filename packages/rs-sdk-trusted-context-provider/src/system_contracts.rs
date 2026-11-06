@@ -174,7 +174,7 @@ pub(crate) fn system_data_contract(
 
         #[cfg(any(feature = "app-connect-contract", feature = "all-system-contracts"))]
         // Below protocol version 14 the app-connect contract is
-        // absent, so the lookup falls through to the fallback provider (or `None`).
+        // absent, so the lookup returns `None`.
         if *id == SystemDataContract::AppConnect.id()
             && platform_version.protocol_version >= APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION
         {
