@@ -105,6 +105,9 @@ final class CoreTxoReconcilePrivacyTests: XCTestCase {
         }
         XCTAssertTrue(applied)
         _ = handler.endChangeset(walletId: walletId, success: true)
+        // The healed coin's address, filed under its BIP44 account: the heal
+        // pass inserts a coin only once its address is saved there.
+        try fileCoreTxoReconcileAddress(in: container, walletId: walletId, address: fixtureAddress)
 
         // The reconcile: one heal, one flip, one row the engine cannot classify.
         let healed = CoreEngineUtxo(

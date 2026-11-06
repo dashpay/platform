@@ -69,6 +69,8 @@ final class FakeReconcileNative: @unchecked Sendable {
 @MainActor
 final class CoreTxoReconcileShutdownTests: XCTestCase {
     private let walletId = Data(repeating: 0x51, count: 32)
+    /// Every engine coin and store row here pays this one address.
+    private let fixtureAddress = "yShutdownFixtureAddr"
     private let fixtureScript = Data([0x76, 0xa9, 0x14] + [UInt8](repeating: 0x5b, count: 20) + [0x88, 0xac])
 
     private var bip44: CoreAccountKey {
@@ -105,7 +107,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
             )
             context.insert(tx)
             let row = PersistentTxo(
-                transaction: tx, vout: 0, amount: 19_549, address: "yShutdownFixtureAddr",
+                transaction: tx, vout: 0, amount: 19_549, address: fixtureAddress,
                 scriptPubKey: fixtureScript, height: 2_391_743
             )
             row.account = account
@@ -119,9 +121,16 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
     private func engineUtxo(_ byte: UInt8) -> CoreEngineUtxo {
         CoreEngineUtxo(
             account: bip44, txid: txid(byte), vout: 0, amount: 19_549,
-            address: "yShutdownFixtureAddr", scriptPubKey: fixtureScript, height: 2_391_743,
+            address: fixtureAddress, scriptPubKey: fixtureScript, height: 2_391_743,
             isConfirmed: true, isInstantLocked: false, isCoinbase: false, isLocked: false
         )
+    }
+
+    /// Files the fixture address under the wallet's BIP44 account, the
+    /// account of every `engineUtxo`: the heal pass inserts a coin only once
+    /// its address is saved under the coin's own account.
+    private func fileAddress(in container: ModelContainer) throws {
+        try fileCoreTxoReconcileAddress(in: container, walletId: walletId, address: fixtureAddress)
     }
 
     private func txoCount(_ container: ModelContainer) throws -> Int {
@@ -166,6 +175,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
 
     func testACancelledRunDoesNothingAndSaysSo() throws {
         let (handler, container) = try makeHandler()
+        try fileAddress(in: container)
         let engine = FakeCoreTxoEngine(inventory: [engineUtxo(0x11)])
 
         let report = PlatformWalletManager.runCoreTxoReconcile(
@@ -181,6 +191,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
 
     func testARunCancelledMidWayStopsAtThePageBoundaryAndKeepsWhatLanded() throws {
         let (handler, container) = try makeHandler()
+        try fileAddress(in: container)
         let engine = FakeCoreTxoEngine(inventory: (0..<6).map { engineUtxo(0x20 + UInt8($0)) })
         let checks = Counter()
 
@@ -230,6 +241,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
     /// normally.
     func testAStepDeferredBehindAnOpenRoundCompletesOnceTheRoundCloses() throws {
         let (handler, container) = try makeHandler()
+        try fileAddress(in: container)
         // Each deferred heal step reads its page again, a page of the
         // budget each time: room for however many the wait below allows.
         let engine = FakeCoreTxoEngine(inventory: [engineUtxo(0x31)], budget: 1_000)
@@ -341,6 +353,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
     func testAGrantedRunIsFinishedAfterItsLastGuardIsReleased() throws {
         let (handler, container) = try makeHandler()
         try seedUnspentTxos(in: container, [0x62, 0x63])
+        try fileAddress(in: container)
         let engine = FakeCoreTxoEngine(inventory: [engineUtxo(0x13)])
         let native = FakeReconcileNative(engine: engine, gate: .run(start: .heal(resumed: false)))
         let classifies = Counter()
@@ -400,6 +413,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
     /// still releases the claim, as a run that did not go ahead.
     func testARunStaledAfterItsBeginIsFinishedAsNotRun() throws {
         let (handler, container) = try makeHandler()
+        try fileAddress(in: container)
         let engine = FakeCoreTxoEngine(inventory: [engineUtxo(0x14)])
         let native = FakeReconcileNative(engine: engine)
         let epoch = SyncGenerationCounter()
@@ -457,6 +471,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
     /// caller still gets the run's report.
     func testACancelledCallerStillFinishesTheClaim() async throws {
         let (handler, container) = try makeHandler()
+        try fileAddress(in: container)
         let entered = expectation(description: "first engine page entered")
         let gate = DispatchSemaphore(value: 0)
         defer { gate.signal() }
@@ -542,6 +557,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
 
     func testShouldCancelParkedReconcileBeforeBlockingShieldedStop() async throws {
         let (handler, container) = try makeHandler()
+        try fileAddress(in: container)
         let pageEntered = expectation(description: "Reconcile entered first page")
         let stopEntered = expectation(description: "Shielded stop entered")
         let finished = expectation(description: "Reconcile stopped while shielded stop remained blocked")

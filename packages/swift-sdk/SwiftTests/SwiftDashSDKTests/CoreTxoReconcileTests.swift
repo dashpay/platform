@@ -242,6 +242,38 @@ final class FakeCoreTxoEngine: CoreTxoReconcileEngine, @unchecked Sendable {
     }
 }
 
+/// Files the address row of `address` under `walletId`'s account of
+/// `accountType`, or under no account when `accountType` is `nil` —
+/// inserting the row if the store lacks it, re-filing it otherwise. The
+/// heal pass inserts a coin only once its address is saved under the
+/// coin's own account, so every reconcile fixture that expects a heal
+/// files the coin's address first. The wallet and account rows must
+/// already be saved.
+func fileCoreTxoReconcileAddress(
+    in container: ModelContainer,
+    walletId: Data,
+    address: String,
+    underAccountType accountType: UInt32? = 0
+) throws {
+    let context = ModelContext(container)
+    var account: PersistentAccount?
+    if let accountType {
+        let accounts = try context.fetch(FetchDescriptor<PersistentAccount>(
+            predicate: #Predicate { $0.wallet.walletId == walletId && $0.accountType == accountType }
+        ))
+        account = try XCTUnwrap(accounts.first)
+    }
+    let existing = try context.fetch(FetchDescriptor<PersistentCoreAddress>(
+        predicate: #Predicate { $0.address == address }
+    )).first
+    let row = existing ?? PersistentCoreAddress(
+        address: address, poolTypeTag: 0, addressIndex: 0, derivationPath: "m/44'/1'/0'/0/0"
+    )
+    if existing == nil { context.insert(row) }
+    row.account = account
+    try context.save()
+}
+
 /// Coverage for the store side of the reconcile
 /// (`PlatformWalletManager.runCoreTxoReconcile`) against a fake engine,
 /// driven exactly the way the manager drives it — engine reads on the
@@ -334,36 +366,20 @@ final class CoreTxoReconcileTests: XCTestCase {
         return wallet
     }
 
-    /// Files the address row of `address` (the fixture address unless
-    /// given) under `walletId`'s account of `accountType`, or under no
-    /// account when `accountType` is `nil` — inserting the row if the store
-    /// lacks it, re-filing it otherwise. The heal pass inserts a coin only
-    /// once its address is saved under the coin's own account.
+    /// `fileCoreTxoReconcileAddress`, for the fixture wallet and address
+    /// unless given.
     private func fileAddress(
         in container: ModelContainer,
         walletId: Data? = nil,
         address: String? = nil,
         underAccountType accountType: UInt32? = 0
     ) throws {
-        let walletId = walletId ?? self.walletId
-        let address = address ?? fixtureAddress
-        let context = ModelContext(container)
-        var account: PersistentAccount?
-        if let accountType {
-            let accounts = try context.fetch(FetchDescriptor<PersistentAccount>(
-                predicate: #Predicate { $0.wallet.walletId == walletId && $0.accountType == accountType }
-            ))
-            account = try XCTUnwrap(accounts.first)
-        }
-        let existing = try context.fetch(FetchDescriptor<PersistentCoreAddress>(
-            predicate: #Predicate { $0.address == address }
-        )).first
-        let row = existing ?? PersistentCoreAddress(
-            address: address, poolTypeTag: 0, addressIndex: 0, derivationPath: "m/44'/1'/0'/0/0"
+        try fileCoreTxoReconcileAddress(
+            in: container,
+            walletId: walletId ?? self.walletId,
+            address: address ?? fixtureAddress,
+            underAccountType: accountType
         )
-        if existing == nil { context.insert(row) }
-        row.account = account
-        try context.save()
     }
 
     /// An unspent, confirmed TXO row of `walletId` under its BIP44 account.
