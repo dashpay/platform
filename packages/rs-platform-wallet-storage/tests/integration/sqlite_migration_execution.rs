@@ -72,7 +72,6 @@ fn copy_fixture_as(dir: &Path, file_name: &str) -> PathBuf {
 /// The historical generator assigned a synthetic txid to an empty transaction.
 /// Preserve the committed schema fixture; make only this test copy self-consistent.
 fn correct_fixture_transaction_id(path: &Path) {
-    use dashcore::hashes::Hash;
     use key_wallet::managed_account::transaction_record::TransactionRecord;
     use platform_wallet_storage::sqlite::schema::blob;
 
@@ -287,8 +286,6 @@ fn v4_2_dev_database_opens_and_migrates_forward() {
 /// pre-V014 `core_utxos` row.
 #[test]
 fn v014_backfills_recordless_confirmed_utxo_height() {
-    use dashcore::hashes::Hash;
-
     let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("recordless-v013.db");
     let wallet_id = wid(0xC3);

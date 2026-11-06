@@ -15,7 +15,6 @@
 //!   crosses the FFI boundary as raw bytes — see
 //!   [`rs_sdk_ffi::MnemonicResolverCoreSigner`].
 
-use dashcore::hashes::Hash;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
 use platform_wallet::AssetLockFunding;

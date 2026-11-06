@@ -166,7 +166,6 @@ pub unsafe extern "C" fn platform_wallet_hash160(
     if data.is_null() || data_len == 0 || out_hash.is_null() {
         return -1;
     }
-    use dashcore::hashes::Hash;
     let bytes = std::slice::from_raw_parts(data, data_len);
     let hash = dashcore::hashes::hash160::Hash::hash(bytes);
     let h: [u8; 20] = hash.to_byte_array();
@@ -205,7 +204,6 @@ pub unsafe extern "C" fn platform_wallet_pubkey_hash_from_private_key(
     if private_key.is_null() || out_hash.is_null() {
         return -1;
     }
-    use dashcore::hashes::Hash;
     use dpp::secp256k1::{PublicKey, SecretKey};
 
     let sk_bytes = std::slice::from_raw_parts(private_key, 32);
@@ -255,7 +253,6 @@ mod tests {
 
     #[test]
     fn test_hash160_matches_known_vector() {
-        use dashcore::hashes::Hash;
         let input = [0u8; 33];
         let mut out = [0u8; 20];
         let rc = unsafe { platform_wallet_hash160(input.as_ptr(), input.len(), out.as_mut_ptr()) };
@@ -290,7 +287,6 @@ mod tests {
 
     #[test]
     fn test_pubkey_hash_from_private_key_matches_canonical_derivation() {
-        use dashcore::hashes::Hash;
         use dpp::secp256k1::{PublicKey, SecretKey};
 
         // A fixed, in-range scalar.

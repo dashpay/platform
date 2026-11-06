@@ -1,6 +1,5 @@
 //! Backfill all historical input indexes and repair accounting without changing spend state.
 
-use dashcore::hashes::Hash;
 use rusqlite::Transaction;
 
 use crate::sqlite::config::LoadPolicy;

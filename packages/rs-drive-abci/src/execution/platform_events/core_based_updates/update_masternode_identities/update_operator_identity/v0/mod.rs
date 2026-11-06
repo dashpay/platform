@@ -7,7 +7,6 @@ use crate::rpc::core::CoreRPCLike;
 
 use dpp::dashcore::ProTxHash;
 
-use dpp::dashcore::hashes::Hash;
 use dpp::identifier::{Identifier, MasternodeIdentifiers};
 use dpp::identity::accessors::IdentityGettersV0;
 
