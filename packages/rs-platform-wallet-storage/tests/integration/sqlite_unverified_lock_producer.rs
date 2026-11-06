@@ -3,10 +3,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dash_spv::error::NetworkResult;
-use dash_spv::network::{Message, MessageType, NetworkEvent, NetworkManager, RequestSender};
-use dash_spv::sync::SyncEvent;
+use dash_spv::network::{Inbound, MessageType, NetworkEvent, NetworkManager, RequestKey};
 use dash_spv::test_utils::{InstantLockFixture, MockNetworkManager};
 use dash_spv::{ClientConfig, DashSpvClient, EventHandler};
+use dash_spv::{SyncEvent, SyncProgress};
 use dashcore::network::message::NetworkMessage;
 use dashcore::{Network, OutPoint, Txid};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
@@ -20,7 +20,7 @@ use platform_wallet::test_support::core_fixtures::{
 };
 use platform_wallet::wallet::platform_wallet::PlatformWalletInfo;
 use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
-use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
+use tokio::sync::{broadcast, mpsc, RwLock};
 
 use crate::common::{
     authorize, fresh_persister, mine, persist_events, registration, secure_tempdir,
@@ -29,56 +29,54 @@ use crate::common::{
 /// Shared handle to the existing in-process transport. No method opens sockets or resolves DNS.
 #[derive(Clone)]
 struct InjectedNetwork {
-    inner: Arc<Mutex<MockNetworkManager>>,
-    requests: RequestSender,
-    events: broadcast::Sender<NetworkEvent>,
+    inner: Arc<MockNetworkManager>,
 }
 
 impl InjectedNetwork {
     fn new() -> Self {
-        let inner = MockNetworkManager::new();
         Self {
-            requests: inner.request_sender(),
-            inner: Arc::new(Mutex::new(inner)),
-            events: broadcast::channel(16).0,
+            inner: Arc::new(MockNetworkManager::new()),
         }
     }
 }
 
 #[async_trait::async_trait]
 impl NetworkManager for InjectedNetwork {
-    async fn message_receiver(
-        &mut self,
-        types: &[MessageType],
-    ) -> mpsc::UnboundedReceiver<Message> {
-        self.inner.lock().await.message_receiver(types).await
+    async fn start(&self) {
+        self.inner.start().await;
     }
-    fn request_sender(&self) -> RequestSender {
-        self.requests.clone()
+    async fn stop(&self) {
+        self.inner.stop().await;
     }
-    async fn start(&mut self) -> NetworkResult<()> {
-        self.inner.lock().await.start().await
+    async fn enqueue(&self, height: u32, message: NetworkMessage) {
+        self.inner.enqueue(height, message).await;
     }
-    async fn stop(&mut self) {
-        self.inner.lock().await.stop().await;
+    async fn send_to(&self, address: SocketAddr, message: NetworkMessage) -> bool {
+        self.inner.send_to(address, message).await
     }
-    async fn send_message(&mut self, message: NetworkMessage) -> NetworkResult<()> {
-        self.inner.lock().await.send_message(message).await
-    }
-    fn peer_count(&self) -> usize {
-        1
-    }
-    async fn broadcast(&self, _message: NetworkMessage) -> NetworkResult<()> {
-        Ok(())
+    async fn broadcast(&self, message: NetworkMessage) -> NetworkResult<()> {
+        self.inner.broadcast(message).await
     }
     async fn dispatch_local(&self, message: NetworkMessage) {
-        self.inner.lock().await.dispatch_local(message).await;
+        self.inner.dispatch_local(message).await;
     }
-    async fn disconnect_peer(&self, _address: &SocketAddr, _reason: &str) -> NetworkResult<()> {
-        Ok(())
+    async fn release_request(&self, key: RequestKey) {
+        self.inner.release_request(key).await;
     }
-    fn subscribe_network_events(&self) -> broadcast::Receiver<NetworkEvent> {
-        self.events.subscribe()
+    async fn subscribe(&self, types: &[MessageType]) -> mpsc::UnboundedReceiver<Inbound> {
+        self.inner.subscribe(types).await
+    }
+    fn events(&self) -> broadcast::Receiver<NetworkEvent> {
+        self.inner.events()
+    }
+    fn tip(&self) -> u32 {
+        self.inner.tip()
+    }
+    async fn connected_count(&self) -> u32 {
+        self.inner.connected_count().await
+    }
+    async fn ban_peer(&self, address: SocketAddr) {
+        self.inner.ban_peer(address).await;
     }
 }
 
@@ -86,19 +84,23 @@ impl NetworkManager for InjectedNetwork {
 enum Notice {
     Detected(Txid),
     Locked(Txid),
-    Proof(Txid, bool),
+    Proof(Txid),
+    Rejected(u32),
     Error(String),
 }
 
 struct Observer(mpsc::UnboundedSender<Notice>);
 impl EventHandler for Observer {
     fn on_sync_event(&self, event: &SyncEvent) {
-        if let SyncEvent::InstantLockReceived {
-            instant_lock,
-            validated,
-        } = event
-        {
-            let _ = self.0.send(Notice::Proof(instant_lock.txid, *validated));
+        if let SyncEvent::InstantLockReceived { instant_lock } = event {
+            let _ = self.0.send(Notice::Proof(instant_lock.txid()));
+        }
+    }
+    fn on_progress(&self, progress: &SyncProgress) {
+        if let Ok(instantsend) = progress.instantsend() {
+            if instantsend.invalid() > 0 {
+                let _ = self.0.send(Notice::Rejected(instantsend.invalid()));
+            }
         }
     }
     fn on_wallet_event(&self, event: &WalletEvent) {
@@ -162,8 +164,8 @@ async fn should_never_persist_unverified_lock_from_live_spv_before_or_after_its_
             .collect();
         let invalid_id = sends[0].txid();
         let valid_id = sends[1].txid();
-        let invalid_fixture = InstantLockFixture::new(&sends[0]).unwrap();
-        let valid_fixture = InstantLockFixture::new(&sends[1]).unwrap();
+        let invalid_fixture = InstantLockFixture::new(Network::Testnet, &sends[0]).unwrap();
+        let valid_fixture = InstantLockFixture::new(Network::Testnet, &sends[1]).unwrap();
         let mut invalid = invalid_fixture.instant_lock().clone();
         invalid.signature = valid_fixture.instant_lock().signature;
         let mut manager = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
@@ -193,7 +195,6 @@ async fn should_never_persist_unverified_lock_from_live_spv_before_or_after_its_
         .unwrap();
         client.run().await.unwrap();
         valid_fixture.install(&client).await.unwrap();
-        invalid_fixture.install(&client).await.unwrap();
         assert!(client.verify_instant_lock(&invalid).await.is_err());
         let checked = client
             .verify_instant_lock(valid_fixture.instant_lock())
@@ -208,14 +209,10 @@ async fn should_never_persist_unverified_lock_from_live_spv_before_or_after_its_
             network
                 .dispatch_local(NetworkMessage::ISLock(invalid.clone()))
                 .await;
-            let seen = receive_until(
-                &mut observed,
-                |n| matches!(n, Notice::Proof(id, false) if *id == invalid_id),
-            )
-            .await;
+            let seen = receive_until(&mut observed, |n| matches!(n, Notice::Rejected(1))).await;
             assert!(!seen
                 .iter()
-                .any(|n| matches!(n, Notice::Locked(id) if *id == invalid_id)));
+                .any(|n| matches!(n, Notice::Locked(id) | Notice::Proof(id) if *id == invalid_id)));
         }
         for send in &sends {
             network
@@ -231,14 +228,10 @@ async fn should_never_persist_unverified_lock_from_live_spv_before_or_after_its_
             network
                 .dispatch_local(NetworkMessage::ISLock(invalid))
                 .await;
-            let seen = receive_until(
-                &mut observed,
-                |n| matches!(n, Notice::Proof(id, false) if *id == invalid_id),
-            )
-            .await;
+            let seen = receive_until(&mut observed, |n| matches!(n, Notice::Rejected(1))).await;
             assert!(!seen
                 .iter()
-                .any(|n| matches!(n, Notice::Locked(id) if *id == invalid_id)));
+                .any(|n| matches!(n, Notice::Locked(id) | Notice::Proof(id) if *id == invalid_id)));
         }
         network
             .dispatch_local(NetworkMessage::ISLock(valid_fixture.instant_lock().clone()))
@@ -250,8 +243,8 @@ async fn should_never_persist_unverified_lock_from_live_spv_before_or_after_its_
         .await;
         assert!(!seen
             .iter()
-            .any(|n| matches!(n, Notice::Locked(id) if *id == invalid_id)));
-        // Both locks traverse the same ordered IS event receiver; the valid wallet
+            .any(|n| matches!(n, Notice::Locked(id) | Notice::Proof(id) if *id == invalid_id)));
+        // Both locks traverse the same ordered IS message receiver; the valid wallet
         // event is a processing barrier, rather than a sleep asserting absence.
         client.stop().await;
         persist_events(&manager, &persister, &mut persistence_events).await;
@@ -265,7 +258,7 @@ async fn should_never_persist_unverified_lock_from_live_spv_before_or_after_its_
             .unwrap();
         assert_eq!(
             raw, 0,
-            "validated:false must not produce durable IS evidence"
+            "a rejected lock must not produce durable IS evidence"
         );
         assert!(matches!(
             persister

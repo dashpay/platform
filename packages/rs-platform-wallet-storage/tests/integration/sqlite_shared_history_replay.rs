@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use dash_spv::test_utils::{InstantLockFixture, MockNetworkManager};
 use dash_spv::{ClientConfig, DashSpvClient};
-use dashcore::OutPoint;
+use dashcore::{Network, OutPoint};
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::prelude::AssetLockProof;
 use key_wallet::transaction_checking::TransactionContext;
@@ -42,7 +42,7 @@ async fn should_retry_sqlite_history_with_verified_lock_before_unsafe_amount_fil
     let mut alternative = info.clone();
     records.extend(records_of(&mut info, &mut wallet, &locked, TransactionContext::Mempool).await);
     records.extend(records_of(&mut alternative, &mut wallet, &competitor, block(101)).await);
-    let fixture = InstantLockFixture::new(&locked).unwrap();
+    let fixture = InstantLockFixture::new(Network::Testnet, &locked).unwrap();
     let (persister, _directory, path) = fresh_persister();
     persister
         .store(

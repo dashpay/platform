@@ -471,6 +471,7 @@ mod tests {
     use crate::types::FFINetwork;
     use crate::wallet_restore_types::RecordedTransactionRestoreFFI;
     use crate::wallet_restore_types::{UtxoRestoreEntryFFI, WalletRestoreEntryFFI};
+    use dashcore::Network;
     use dashcore::{Transaction, TxIn};
     use platform_wallet::changeset::recorded_history::ReplayEvidence;
     use platform_wallet::changeset::{PersistenceCapabilities, PlatformWalletPersistence};
@@ -949,7 +950,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let fixture = InstantLockFixture::new(transaction).unwrap();
+        let fixture = InstantLockFixture::new(Network::Testnet, transaction).unwrap();
         fixture.install(&client).await.unwrap();
         let proof = client
             .verify_instant_lock(fixture.instant_lock())

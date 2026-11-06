@@ -975,7 +975,7 @@ mod idempotent_load_tests {
 
     use std::sync::Mutex;
 
-    use dashcore::{OutPoint, Transaction, Txid};
+    use dashcore::{Network, OutPoint, Transaction, Txid};
     use key_wallet::account::{AccountType, StandardAccountType};
     use key_wallet::managed_account::transaction_record::{
         TransactionDirection, TransactionRecord,
@@ -1511,7 +1511,8 @@ mod idempotent_load_tests {
                 .with_mempool_funding(100_000)
                 .await;
             let spend = spend_to(OutPoint::new(funding.txid(), 0), 74_000);
-            let fixture = dash_spv::test_utils::InstantLockFixture::new(&spend).unwrap();
+            let fixture =
+                dash_spv::test_utils::InstantLockFixture::new(Network::Testnet, &spend).unwrap();
             let lock = TrackedAssetLock {
                 operation_id: None,
                 out_point: OutPoint::new(spend.txid(), 0),
@@ -1642,7 +1643,8 @@ mod idempotent_load_tests {
             .with_mempool_funding(100_000)
             .await;
         let spend = spend_to(OutPoint::new(funding.txid(), 0), 74_000);
-        let fixture = dash_spv::test_utils::InstantLockFixture::new(&spend).unwrap();
+        let fixture =
+            dash_spv::test_utils::InstantLockFixture::new(Network::Testnet, &spend).unwrap();
         let persister = PendingSendPersister {
             wallet: ctx.wallet,
             managed: ctx.managed_wallet,
@@ -1674,7 +1676,7 @@ mod idempotent_load_tests {
             .with_mempool_funding(100_000)
             .await;
         let wallet_id = ctx.wallet.compute_wallet_id();
-        let fixture = InstantLockFixture::new(&funding).unwrap();
+        let fixture = InstantLockFixture::new(Network::Testnet, &funding).unwrap();
         let history = RecordedHistory {
             required_instant_locks: Default::default(),
             owned_prevouts: Default::default(),
@@ -2043,7 +2045,9 @@ mod idempotent_load_tests {
                 txid: asset_lock.txid(),
                 vout: 0,
             };
-            let fixture = dash_spv::test_utils::InstantLockFixture::new(&asset_lock).unwrap();
+            let fixture =
+                dash_spv::test_utils::InstantLockFixture::new(Network::Testnet, &asset_lock)
+                    .unwrap();
             let proof = (status == AssetLockStatus::InstantSendLocked).then(|| {
                 dpp::prelude::AssetLockProof::Instant(
                     dpp::identity::state_transition::asset_lock_proof::instant::InstantAssetLockProof::new(
@@ -2375,7 +2379,9 @@ mod idempotent_load_tests {
                 )]),
                 _ => BTreeMap::new(),
             };
-            let fixture = dash_spv::test_utils::InstantLockFixture::new(&asset_lock).unwrap();
+            let fixture =
+                dash_spv::test_utils::InstantLockFixture::new(Network::Testnet, &asset_lock)
+                    .unwrap();
             let instant = |txid| {
                 let mut lock = fixture.instant_lock().clone();
                 lock.txid = txid;
@@ -2581,7 +2587,8 @@ mod idempotent_load_tests {
             txid: asset_lock.txid(),
             vout: 0,
         };
-        let fixture = dash_spv::test_utils::InstantLockFixture::new(&asset_lock).unwrap();
+        let fixture =
+            dash_spv::test_utils::InstantLockFixture::new(Network::Testnet, &asset_lock).unwrap();
         let instant_lock = fixture.instant_lock().clone();
         let mut wallet = ctx.wallet.clone();
         let manager = make_history_manager(RecordedHistoryPersister {
@@ -2682,7 +2689,8 @@ mod idempotent_load_tests {
             txid: asset_lock.txid(),
             vout: 0,
         };
-        let fixture = dash_spv::test_utils::InstantLockFixture::new(&asset_lock).unwrap();
+        let fixture =
+            dash_spv::test_utils::InstantLockFixture::new(Network::Testnet, &asset_lock).unwrap();
         let proof = dpp::prelude::AssetLockProof::Instant(
             dpp::identity::state_transition::asset_lock_proof::instant::InstantAssetLockProof::new(
                 fixture.instant_lock().clone(),

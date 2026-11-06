@@ -428,7 +428,7 @@ pub async fn replay_recorded_history_with_evidence(
             if let Some(proof) = evidence.instant_locks.get(&stored.txid).filter(|proof| {
                 proof.network() == wallet_info.network()
                     && proof.txid() == stored.txid
-                    && proof.matches_transaction(&stored.transaction)
+                    && proof.matches_transaction(wallet_info.network(), &stored.transaction)
             }) {
                 deferred.remove(&stored.txid);
                 history
@@ -456,7 +456,7 @@ pub async fn replay_recorded_history_with_evidence(
                     proof.network() == wallet_info.network()
                         && proof.txid() == stored.txid
                         && proof.instant_lock() == lock
-                        && proof.matches_transaction(&stored.transaction)
+                        && proof.matches_transaction(wallet_info.network(), &stored.transaction)
                 })
             {
                 deferred.insert(stored.txid);
@@ -1520,7 +1520,7 @@ mod tests {
         use std::sync::Arc;
         use tokio::sync::RwLock;
 
-        let fixture = InstantLockFixture::new(transaction).unwrap();
+        let fixture = InstantLockFixture::new(Network::Testnet, transaction).unwrap();
         let directory = tempfile::TempDir::new().unwrap();
         let client = DashSpvClient::new(
             ClientConfig::new(Network::Testnet)
@@ -2029,7 +2029,7 @@ mod tests {
         let mut competitor = records[1].clone();
         competitor.transaction.output[0].value -= 1;
         competitor.txid = competitor.transaction.txid();
-        let fixture = InstantLockFixture::new(&locked.transaction).unwrap();
+        let fixture = InstantLockFixture::new(Network::Testnet, &locked.transaction).unwrap();
         let raw = history(
             vec![locked.clone(), competitor],
             BTreeMap::from([(locked.txid, fixture.instant_lock().clone())]),
@@ -2259,7 +2259,7 @@ mod tests {
         let (mut wallet, mut info, _, records, _) = confirmed_spend_fixture().await;
         let mut locked = records[1].clone();
         locked.context = TransactionContext::Mempool;
-        let fixture = InstantLockFixture::new(&locked.transaction).unwrap();
+        let fixture = InstantLockFixture::new(Network::Mainnet, &locked.transaction).unwrap();
         fixture.install(&client).await.unwrap();
         let proof = client
             .verify_instant_lock(fixture.instant_lock())
@@ -2296,7 +2296,7 @@ mod tests {
 
         let (mut wallet, mut info, _, records, _) = confirmed_spend_fixture().await;
         let locked = records[1].clone();
-        let fixture = InstantLockFixture::new(&locked.transaction).unwrap();
+        let fixture = InstantLockFixture::new(Network::Testnet, &locked.transaction).unwrap();
         let directory = tempfile::TempDir::new().unwrap();
         let client = DashSpvClient::new(
             ClientConfig::testnet()

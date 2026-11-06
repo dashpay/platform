@@ -418,7 +418,7 @@ pub fn authorize_with_mode(
 
 /// Produce evidence through the public verifier; no synthetic token constructor.
 pub async fn checked_instant_lock(transaction: &Transaction) -> (InstantLock, ReplayEvidence) {
-    let fixture = InstantLockFixture::new(transaction).unwrap();
+    let fixture = InstantLockFixture::new(Network::Testnet, transaction).unwrap();
     let directory = secure_tempdir().unwrap();
     let client = DashSpvClient::new(
         ClientConfig::new(Network::Testnet)
