@@ -208,7 +208,6 @@ impl Error {
     fn cannot_verify_answers(&self) -> bool {
         match self {
             Self::NoAvailableAddressesToRetry(last_error) => last_error.cannot_verify_answers(),
-            Self::Proof(drive_proof_verifier::Error::ContextProviderNotSet) => true,
             Self::Proof(drive_proof_verifier::Error::QuorumKeyUnavailable { error, .. })
             | Self::ContextProviderError(error) => {
                 matches!(error, ContextProviderError::Config(_))
@@ -263,7 +262,11 @@ impl Error {
 }
 
 /// A trusted source outage is not the responding node's fault. Preserve that
-/// attribution and quorum context; every other verifier failure stays `Proof`.
+/// attribution and quorum context. A missing context provider, or one configured so that
+/// it cannot serve a lookup the verifier makes (a quorum key, or a data contract or token
+/// configuration a proof is read with), is this SDK's own setup, which no node can change:
+/// it is a configuration error that is not retried and bans no node. Every other verifier
+/// failure stays `Proof`.
 impl From<drive_proof_verifier::Error> for Error {
     fn from(value: drive_proof_verifier::Error) -> Self {
         match value {
@@ -276,6 +279,20 @@ impl From<drive_proof_verifier::Error> for Error {
                 "quorum {quorum_type}:{} at Core chain-locked height {core_chain_locked_height}: {reason}",
                 hex::encode(quorum_hash)
             ))),
+            drive_proof_verifier::Error::QuorumKeyUnavailable {
+                error: error @ ContextProviderError::Config(_),
+                ..
+            }
+            | drive_proof_verifier::Error::ContextProviderError(
+                error @ ContextProviderError::Config(_),
+            ) => Self::ContextProviderError(error),
+            drive_proof_verifier::Error::ContextProviderNotSet => {
+                Self::ContextProviderError(ContextProviderError::Config(
+                    "context provider is not set, so no proof can be verified; set one with \
+                     SdkBuilder::with_context_provider() or Sdk::set_context_provider()"
+                        .to_string(),
+                ))
+            }
             error => Self::Proof(error),
         }
     }
@@ -664,6 +681,25 @@ mod tests {
         );
     }
 
+    /// A context provider configured so that it cannot serve a lookup the verifier makes,
+    /// such as the data contract a document history proof is read with, fails alike for
+    /// every node's answer: the request is not retried and no node is banned for it.
+    #[test]
+    fn should_not_retry_a_lookup_the_context_provider_is_configured_not_to_serve() {
+        let error = Error::from(drive_proof_verifier::Error::ContextProviderError(
+            ContextProviderError::Config("dump dir not set".to_string()),
+        ));
+        assert!(
+            matches!(
+                &error,
+                Error::ContextProviderError(ContextProviderError::Config(reason))
+                    if reason == "dump dir not set"
+            ),
+            "{error:?}"
+        );
+        assert!(!error.can_retry());
+    }
+
     /// A refusal may lift soon only when the SDK could not learn the network's version for a
     /// reason that can pass; not when its own setup can never verify an answer, nor when the
     /// network's verified version explains it.
@@ -710,7 +746,7 @@ mod tests {
             );
         }
         let permanent = [
-            Error::Proof(drive_proof_verifier::Error::ContextProviderNotSet),
+            Error::from(drive_proof_verifier::Error::ContextProviderNotSet),
             quorum_key(ContextProviderError::Config(
                 "Non-trusted mode is not supported".to_string(),
             )),

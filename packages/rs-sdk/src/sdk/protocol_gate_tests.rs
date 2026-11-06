@@ -33,6 +33,9 @@ use crate::platform::{
 };
 use crate::SdkBuilder;
 use dapi_grpc::mock::Mockable;
+use dapi_grpc::platform::v0::get_contested_resources_response::{
+    get_contested_resources_response_v0, GetContestedResourcesResponseV0,
+};
 use dapi_grpc::platform::v0::get_contract_group_info_response::GetContractGroupInfoResponseV0;
 use dapi_grpc::platform::v0::get_data_contracts_latest_versions_response::{
     get_data_contracts_latest_versions_response_v0::Result as LatestVersionsResult,
@@ -40,6 +43,9 @@ use dapi_grpc::platform::v0::get_data_contracts_latest_versions_response::{
     GetDataContractsLatestVersionsResponseV0,
 };
 use dapi_grpc::platform::v0::get_documents_request::WhereClause;
+use dapi_grpc::platform::v0::{
+    get_contested_resources_response, GetContestedResourcesRequest, GetContestedResourcesResponse,
+};
 use dapi_grpc::platform::v0::{
     get_contract_group_info_request, get_contract_group_info_response,
     get_data_contracts_by_range_request, get_data_contracts_latest_versions_request,
@@ -57,7 +63,7 @@ use dapi_grpc::platform::v0::{
     GetEpochsInfoRequest, GetEpochsInfoResponse, GetIdentityKeysRemainingBudgetsRequest,
     GetMostRecentShieldedAnchorRequest, GetShieldedAnchorsRequest,
     GetShieldedEncryptedNotesRequest, GetShieldedNotesCountRequest, GetShieldedNullifiersRequest,
-    GetShieldedPoolStateRequest, ResponseMetadata,
+    GetShieldedPoolStateRequest, Proof, ResponseMetadata,
 };
 use dapi_grpc::tonic::Status;
 use dapi_grpc::Message;
@@ -73,10 +79,11 @@ use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::version::v13::PROTOCOL_VERSION_13;
 use dpp::version::v14::PROTOCOL_VERSION_14;
 use dpp::version::{PlatformVersion, PLATFORM_VERSIONS};
+use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive::query::{WhereClause as DriveWhereClause, WhereOperator};
 use drive_proof_verifier::types::{
-    Documents, MostRecentShieldedAnchor, ShieldedAnchors, ShieldedEncryptedNotes,
-    ShieldedNotesCount, ShieldedNullifierStatuses, ShieldedPoolState,
+    ContestedResource, Documents, MostRecentShieldedAnchor, ShieldedAnchors,
+    ShieldedEncryptedNotes, ShieldedNotesCount, ShieldedNullifierStatuses, ShieldedPoolState,
 };
 use rs_dapi_client::transport::{TransportError, TransportRequest};
 use rs_dapi_client::{
@@ -144,6 +151,71 @@ impl ContextProvider for NoQuorumKeys {
         _: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         Ok(None)
+    }
+    fn get_token_configuration(
+        &self,
+        _: &Identifier,
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        Ok(None)
+    }
+    fn get_quorum_public_key(
+        &self,
+        _: u32,
+        _: [u8; 32],
+        _: u32,
+    ) -> Result<[u8; 48], ContextProviderError> {
+        Err(ContextProviderError::InvalidQuorum(
+            "no quorum keys here".to_string(),
+        ))
+    }
+    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+        Ok(1)
+    }
+}
+
+/// Configured so that it can never give a quorum key, as wasm-sdk's context without a
+/// trusted quorum source.
+struct NoQuorumSource;
+impl ContextProvider for NoQuorumSource {
+    fn get_data_contract(
+        &self,
+        _: &Identifier,
+        _: &PlatformVersion,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        Ok(None)
+    }
+    fn get_token_configuration(
+        &self,
+        _: &Identifier,
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        Ok(None)
+    }
+    fn get_quorum_public_key(
+        &self,
+        _: u32,
+        _: [u8; 32],
+        _: u32,
+    ) -> Result<[u8; 48], ContextProviderError> {
+        Err(ContextProviderError::Config(
+            "no quorum source is configured".to_string(),
+        ))
+    }
+    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+        Ok(1)
+    }
+}
+
+/// Configured so that it can never give a data contract.
+struct NoContractSource;
+impl ContextProvider for NoContractSource {
+    fn get_data_contract(
+        &self,
+        _: &Identifier,
+        _: &PlatformVersion,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        Err(ContextProviderError::Config(
+            "no data contract source is configured".to_string(),
+        ))
     }
     fn get_token_configuration(
         &self,
@@ -497,8 +569,8 @@ async fn should_refuse_without_asking_when_pinned_below_the_version() {
     assert_eq!(sent(&sdk, &fee_pots()).await, 0);
 }
 
-/// Without a context provider the answer to the probe cannot be verified, and an answer the
-/// SDK cannot verify bans the node that sent it: refuse without asking.
+/// Without a context provider the answer to the probe cannot be verified, so asking cannot
+/// show the network's version: refuse without asking.
 #[tokio::test]
 async fn should_refuse_without_asking_when_answers_cannot_be_verified() {
     let mut sdk = mock_sdk(V13, false, 0);
@@ -514,6 +586,100 @@ async fn should_refuse_without_asking_when_answers_cannot_be_verified() {
     );
     assert_eq!(probes(&sdk).await, 0);
     assert_eq!(sent(&sdk, &fee_pots()).await, 0);
+}
+
+/// A proved fetch the node answered fails with a configuration error naming `reason`, after
+/// one attempt, and bans no node.
+async fn assert_fails_on_the_sdk_setup(sdk: &Sdk, reason: &str) {
+    let result = ExtendedEpochInfo::fetch_with_metadata(sdk, probe_request(), None).await;
+    assert_failed_on_the_sdk_setup(sdk, result, probes(sdk).await, reason);
+}
+
+/// `result`, of a proved fetch the node answered `sent` times, is a configuration error
+/// naming `reason`, the fetch was not retried, and no node was banned for it.
+fn assert_failed_on_the_sdk_setup<T: std::fmt::Debug>(
+    sdk: &Sdk,
+    result: Result<T, Error>,
+    sent: usize,
+    reason: &str,
+) {
+    let banned = sdk.address_list().is_banned(&node());
+    assert!(
+        matches!(
+            &result,
+            Err(Error::ContextProviderError(ContextProviderError::Config(message)))
+                if message.contains(reason)
+        ),
+        "{result:?}, sent {sent} times, node banned: {banned}"
+    );
+    assert_eq!(sent, 1, "sent once, never retried");
+    assert!(!banned);
+}
+
+/// Without a context provider the SDK cannot check any answer, whichever node sent it. The
+/// fault is the SDK's own setup: a proved fetch fails on its first answer with a
+/// configuration error, is not sent to another node, and bans no node.
+#[tokio::test]
+async fn should_fail_a_proved_fetch_once_and_ban_no_node_without_a_context_provider() {
+    let sdk = mock_sdk(V13, false, 0);
+    answer_probe(&sdk, "pv13").await;
+    sdk.context_provider.store(None);
+    assert_fails_on_the_sdk_setup(&sdk, "context provider is not set").await;
+}
+
+/// A context provider set up so that it can never give a quorum key cannot check any answer
+/// either, so another node's answer would fail alike: the fetch fails with the provider's
+/// configuration error, is not sent to another node, and bans no node.
+#[tokio::test]
+async fn should_fail_a_proved_fetch_once_and_ban_no_node_when_the_provider_has_no_quorum_source() {
+    let sdk = sdk_with_provider(V13, false, 0, true, NoQuorumSource);
+    answer_probe(&sdk, "pv13").await;
+    assert_fails_on_the_sdk_setup(&sdk, "no quorum source is configured").await;
+}
+
+/// A context provider set up so that it can never give a data contract fails alike for every
+/// node's answer, also where Drive looks the contract up through the provider and its own
+/// errors cannot carry the provider's: the fetch fails with the provider's configuration
+/// error, is not sent to another node, and bans no node.
+#[tokio::test]
+async fn should_fail_a_proved_fetch_once_and_ban_no_node_when_the_provider_has_no_contract_source()
+{
+    let sdk = sdk_with_provider(V13, false, 0, true, NoContractSource);
+    let request: GetContestedResourcesRequest = VotePollsByDocumentTypeQuery {
+        contract_id: dpns().id(),
+        document_type_name: "domain".to_string(),
+        index_name: "parentNameAndLabel".to_string(),
+        start_at_value: None,
+        start_index_values: vec![dpp::platform_value::Value::Text("dash".to_string())],
+        end_index_values: vec![],
+        limit: None,
+        order_ascending: true,
+    }
+    .query(&QuerySettings {
+        request_settings: &RequestSettings::default(),
+        protocol_version: PlatformVersion::latest(),
+        verified_protocol_version: 0,
+        prove: true,
+    })
+    .unwrap();
+    // Drive looks the contract up before it reads the proof, so no real proof is needed.
+    let response = GetContestedResourcesResponse {
+        version: Some(get_contested_resources_response::Version::V0(
+            GetContestedResourcesResponseV0 {
+                result: Some(get_contested_resources_response_v0::Result::Proof(
+                    Proof::default(),
+                )),
+                metadata: Some(ResponseMetadata {
+                    protocol_version: V13,
+                    ..Default::default()
+                }),
+            },
+        )),
+    };
+    answer(&sdk, &request, Ok(response)).await;
+    let result = ContestedResource::fetch_many(&sdk, request.clone()).await;
+    let sent = sent(&sdk, &request).await;
+    assert_failed_on_the_sdk_setup(&sdk, result, sent, "no data contract source is configured");
 }
 
 /// An SDK without proofs still learns the network's version from a proved probe.
