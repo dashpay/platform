@@ -686,7 +686,7 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
             "SINGLE ENTRY VALIDATION {mode:?}/{dry_run}: {}",
             hex::encode(hash_single(snapshot.as_bytes()))
         );
-        assert_eq!(hex::encode(hash_single(snapshot.as_bytes())), "6762c961d9ebe20d958ed3c1fb4849e3e4e7e745a56843032136f98c414611db",
+        assert_eq!(hex::encode(hash_single(snapshot.as_bytes())), "e39016f87e5fed71d449834829da17ec283b1aaffcc6eb0460564e04ef5f4112",
             "single-entry actions, errors, billed context and lowered operations must retain their characterization");
     }
     let before = pool_notes_count(&pool.platform, pool.token_id);
@@ -734,7 +734,7 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 .value
                 .unwrap()
         ),
-        "2b58577a1cdb38e9da1f3fe0b16556f15cd11f851364bf8e404dfb4f14b4410a"
+        "fb76e051fe936ae3e39265a9cddf3d3297e901ca2c6048c1dcf85b82a92d8778"
     );
     assert_eq!(
         pool.platform
@@ -1867,11 +1867,13 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
             "SINGLE SPONSORED PAYMENT shielded={shielded}: {:?}",
             result.execution_results()
         );
+        // Both estimates are apply_drive_operations 2's (protocol version 15), which resolves
+        // the batch's estimate (protocol v15 note 14).
         let (estimated_storage, estimated_processing, actual_storage, actual_processing) =
             if shielded {
-                (171_126_000, 213_217_600, 155_142_000, 92_739_560)
+                (171_126_000, 213_389_040, 155_142_000, 92_739_560)
             } else {
-                (138_024_000, 117_541_680, 126_468_000, 3_870_440)
+                (138_024_000, 117_713_120, 126_468_000, 3_870_440)
             };
         assert_eq!(
             result.execution_results().as_slice(),
@@ -2157,40 +2159,40 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
         // pinned at `PlatformVersion::latest()` and change when a new latest version is added.
         let (expected_validation, expected_settled) = match case {
             "shield" => (
-                "7e3cf25f4080c94ef028ede8d3bdc982d0055feaef0d9e75dcae11287146d425",
-                "4ba6e38cdbdda59c48644b8e0df3182a805bd87a7b3584906df8a84008c7df36",
+                "6a823c2db94612652926e6b9c1ae7feec9c2547dfd4cfc4e474318da1c16d59c",
+                "eb7e34a02f156dbe1d9c9609b41bd67a033d1cd3fe81c5f2e6fcef575fc88459",
             ),
             "valid-payment" => (
-                "da69c2e10a0fe88df56655907ae5c3acd6700f13823358159f6240b1fb33c6d1",
-                "1eb8b109ddb6a2d8896b113387132673e42f18f9abe560a607607593517ee3a3",
+                "9388d5cf63c4a571b9fb009679e2e34d0b681acc88f0f5195e7287c7efbd92f7",
+                "44684cf51317f0e60bc836e7bd671798145bb69bc7605241ebbc659028d50070",
             ),
             "failed-payment" => (
                 "d9b5fe191841bea952494f2a45e3833f925f4d367a1937b2ef1235a1aa01f51e",
-                "9f22a694033eb8c899df1fbad5c34bc97710ebad14aa2aff2dc495024bb6685b",
+                "365a97c4e20ae4ee695505a8d5dbb0dea5584c14eb4c6b223a3ae4f0b2f8b668",
             ),
             "within-bundle-repeat" => (
                 "8023e03a697a20f6a78396a05503a4bc583ca8f69e19bd7ee07a6ae0ce7be478",
-                "4a7e0f9b38b87219f276b6e54a4c0ace51245c23201057a0846be726f6854089",
+                "b9cfc7cafbeafb436917f0b35bfa97df6be58b73a25e0159038558fdc9a2751c",
             ),
             "stored-repeat" => (
                 "05652ac85c972902e8c09d20a7d8586e17e9434a478b335da136ad85f73def01",
-                "63be3fcbb363b244ab581de6cbaf38e50fd042bf8c276745ef62c2b5031abd53",
+                "9e1d6b0bc9097d817f4ca0ac952611f69398d8f201b6eb36556059b166488393",
             ),
             "open-mint-group" => (
-                "7f694d1f3507aaca0c5b5b1254eef3f8cd595379c23c32dea1d0a9c21d302088",
-                "637c59bb64c308336fb7de597fb34bb3137a39f9b45996b2ebbf238e7d7372ec",
+                "5c68381297c9bf68c5e85ebe6bb9e0f1289e2c07718eecfb5e6773d6009455bb",
+                "b96b1e9b643552413c2e5049f9f9b6ae92357a6ad462e2d3a673d239a355cfd9",
             ),
             "closing-mint-group" => (
-                "1901253314ac7c543ffa24ae22b91f6790365b66bfa9b477dce90bacd3c97e75",
-                "0c0789e5dc329c11b67d202552957cd81cc4ca78feee6c019d1e6e519bcd7439",
+                "2cedc16732c76e0605b5f46085db3d69c12936a5af55a2a82f52ec9e9ca67e38",
+                "78fd3bdabed41d31082162dfc95158872108872c79f3041ef3d71c7fa48dd905",
             ),
             "open-burn-group" => (
-                "eb4786ab90fb36ffc33d8167e199316929ef28cceb0dcff61e6612cd6fcc1d73",
-                "9485f54bfbbe8c73408d48186132b9f1fc8e5fc37685712bda30bc6478d29cdc",
+                "e664a045f020ff84de1ca98f364fbabccfc141ad46aa82c79491a340bb0db5f8",
+                "38b6b6d2d77fb41c4262adaa6bbbd581dbb2c5d3195e3d11cec16411464e2758",
             ),
             "closing-burn-group" => (
-                "dbb52b37ff8c4b451cf36ee3a6a8b1d299d0f786f55cad6c700ef1b947bc1179",
-                "24fe37d9d5e2a81c90c7415007d6351f87aa253c051dcc75c473a4b69b33d71e",
+                "93e1732286f168c4a91d2765931e181c5721bfca1bfd5f93b8baacca03e00b2b",
+                "6a4f89129b2bd16b078b1165a46775e20deb1808bfd239fd49e5f4e89e45453c",
             ),
             _ => unreachable!("enumerated characterization case"),
         };

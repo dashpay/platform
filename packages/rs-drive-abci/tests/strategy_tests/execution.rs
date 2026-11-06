@@ -697,7 +697,7 @@ pub(crate) async fn run_chain_for_strategy<'a>(
                 // From DIP 8: https://github.com/dashpay/dips/blob/master/dip-0008.md#finalization-of-signed-blocks
                 // The request id is SHA256("clsig", blockHeight) and the message hash is the block hash of the previously successful attempt.
 
-                let mut engine = QuorumSigningRequestId::engine();
+                let mut engine = sha256d::Hash::engine();
 
                 // Prefix
                 let prefix_len = VarInt("clsig".len() as u64);
@@ -708,7 +708,8 @@ pub(crate) async fn run_chain_for_strategy<'a>(
                 engine.input("clsig".as_bytes());
                 engine.input(block_height.to_le_bytes().as_slice());
 
-                let request_id = QuorumSigningRequestId::from_engine(engine);
+                let request_id =
+                    QuorumSigningRequestId::from_raw_hash(sha256d::Hash::from_engine(engine));
 
                 // Based on the deterministic masternode list at the given height, a quorum must be selected that was active at the time this block was mined
 
@@ -879,6 +880,7 @@ pub(crate) async fn start_chain_for_strategy<'a>(
 
     let ResponseInitChain {
         initial_core_height,
+        consensus_params,
         ..
     } = abci_application
         .init_chain(init_chain_request)
@@ -891,7 +893,7 @@ pub(crate) async fn start_chain_for_strategy<'a>(
         .load()
         .current_validator_set_quorum_hash();
 
-    continue_chain_for_strategy(
+    let mut outcome = continue_chain_for_strategy(
         abci_application,
         ChainExecutionParameters {
             block_start: 1,
@@ -914,7 +916,9 @@ pub(crate) async fn start_chain_for_strategy<'a>(
         config,
         StrategyRandomness::RNGEntropy(rng),
     )
-    .await
+    .await;
+    outcome.init_chain_consensus_params = consensus_params;
+    outcome
 }
 
 pub(crate) async fn continue_chain_for_strategy<'a>(
@@ -972,6 +976,7 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
         quorums.get::<QuorumHash>(&current_quorum_hash).unwrap();
 
     let mut validator_set_updates = BTreeMap::new();
+    let mut consensus_param_updates = BTreeMap::new();
 
     let mut state_transitions_per_block = BTreeMap::new();
     let mut state_transition_results_per_block = BTreeMap::new();
@@ -1104,6 +1109,7 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
         }
 
         let MimicExecuteBlockOutcome {
+            consensus_param_updates: block_consensus_params,
             state_transaction_results,
             withdrawal_transactions: withdrawals_this_block,
             validator_set_update,
@@ -1114,6 +1120,10 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
             signature,
             app_version,
         } = block_execution_outcome.unwrap();
+
+        if let Some(params) = block_consensus_params {
+            consensus_param_updates.insert(block_height, params);
+        }
 
         if let Some(validator_set_update) = validator_set_update {
             validator_set_updates.insert(block_height, validator_set_update);
@@ -1228,6 +1238,8 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
     assert_state_conforms_to_structure(platform);
 
     ChainExecutionOutcome {
+        init_chain_consensus_params: None,
+        consensus_param_updates,
         abci_app,
         masternode_identity_balances,
         identities: current_identities,

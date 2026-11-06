@@ -2,16 +2,16 @@ use crate::drive::identity::key::budget::{
     identity_key_budgets_path_vec, KEY_BUDGET_SIZE, KEY_ID_MAX_ENCODED_SIZE,
 };
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::ApproximateElements;
 use grovedb::EstimatedLayerSizes::AllItems;
 use grovedb::{EstimatedLayerInformation, TreeType};
-use std::collections::HashMap;
 
 impl Drive {
     pub(super) fn add_estimation_costs_for_key_budgets_v0(
         identity_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_owned_path(identity_key_budgets_path_vec(

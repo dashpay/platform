@@ -9,27 +9,9 @@ use dash_context_provider::ContextProviderError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{DataContract, Identifier};
-#[cfg(any(
-    feature = "dpns-contract",
-    feature = "dashpay-contract",
-    feature = "withdrawals-contract",
-    feature = "wallet-utils-contract",
-    feature = "token-history-contract",
-    feature = "keywords-contract",
-    feature = "document-history-contract",
-    feature = "app-connect-contract",
-    feature = "moderation-charters-contract",
-    feature = "all-system-contracts"
-))]
-use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
-#[cfg(any(feature = "app-connect-contract", feature = "all-system-contracts"))]
-use dpp::version::feature_initial_protocol_versions::APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION;
-#[cfg(any(
-    feature = "moderation-charters-contract",
-    feature = "all-system-contracts"
-))]
-use dpp::version::feature_initial_protocol_versions::MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION;
 use dpp::version::PlatformVersion;
+
+use crate::system_contracts::{is_inactive_system_contract, system_data_contract};
 
 /// The data contracts and token configurations a context provider can serve
 /// without a network: the ones registered with it, and the system contracts
@@ -136,177 +118,25 @@ impl LocalContextResolver {
     }
 
     /// The contract registered under `id`, else the system contract with that
-    /// id if `platform_version` has it, else `None`.
+    /// id if `platform_version` has it, else `None`. Under the id of a system
+    /// contract `platform_version` does not have yet it is always `None`.
     pub fn data_contract(
         &self,
         id: &Identifier,
         platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        // A system contract not active yet is served under its id from no
+        // source, not even a contract preloaded under that id.
+        if is_inactive_system_contract(id, platform_version) {
+            return Ok(None);
+        }
+
         // First check known contracts cache
         if let Some(contract) = self.get_known_contract(id) {
             return Ok(Some(contract));
         }
 
-        // Check if this is a system data contract and the corresponding feature is enabled
-        #[cfg(any(
-            feature = "dpns-contract",
-            feature = "dashpay-contract",
-            feature = "withdrawals-contract",
-            feature = "wallet-utils-contract",
-            feature = "token-history-contract",
-            feature = "keywords-contract",
-            feature = "document-history-contract",
-            feature = "app-connect-contract",
-            feature = "moderation-charters-contract",
-            feature = "all-system-contracts"
-        ))]
-        {
-            // Check each system contract if its feature is enabled
-            #[cfg(any(feature = "dpns-contract", feature = "all-system-contracts"))]
-            if *id == SystemDataContract::DPNS.id() {
-                return load_system_data_contract(SystemDataContract::DPNS, platform_version)
-                    .map(|contract| Some(Arc::new(contract)))
-                    .map_err(|e| {
-                        ContextProviderError::Generic(format!(
-                            "Failed to load DPNS contract: {}",
-                            e
-                        ))
-                    });
-            }
-
-            #[cfg(any(feature = "dashpay-contract", feature = "all-system-contracts"))]
-            if *id == SystemDataContract::Dashpay.id() {
-                return load_system_data_contract(SystemDataContract::Dashpay, platform_version)
-                    .map(|contract| Some(Arc::new(contract)))
-                    .map_err(|e| {
-                        ContextProviderError::Generic(format!(
-                            "Failed to load Dashpay contract: {}",
-                            e
-                        ))
-                    });
-            }
-
-            #[cfg(any(feature = "withdrawals-contract", feature = "all-system-contracts"))]
-            if *id == SystemDataContract::Withdrawals.id() {
-                return load_system_data_contract(
-                    SystemDataContract::Withdrawals,
-                    platform_version,
-                )
-                .map(|contract| Some(Arc::new(contract)))
-                .map_err(|e| {
-                    ContextProviderError::Generic(format!(
-                        "Failed to load Withdrawals contract: {}",
-                        e
-                    ))
-                });
-            }
-
-            #[cfg(any(feature = "wallet-utils-contract", feature = "all-system-contracts"))]
-            if *id == SystemDataContract::WalletUtils.id() {
-                return load_system_data_contract(
-                    SystemDataContract::WalletUtils,
-                    platform_version,
-                )
-                .map(|contract| Some(Arc::new(contract)))
-                .map_err(|e| {
-                    ContextProviderError::Generic(format!(
-                        "Failed to load WalletUtils contract: {}",
-                        e
-                    ))
-                });
-            }
-
-            #[cfg(any(feature = "token-history-contract", feature = "all-system-contracts"))]
-            if *id == SystemDataContract::TokenHistory.id() {
-                return load_system_data_contract(
-                    SystemDataContract::TokenHistory,
-                    platform_version,
-                )
-                .map(|contract| Some(Arc::new(contract)))
-                .map_err(|e| {
-                    ContextProviderError::Generic(format!(
-                        "Failed to load TokenHistory contract: {}",
-                        e
-                    ))
-                });
-            }
-
-            #[cfg(any(feature = "keywords-contract", feature = "all-system-contracts"))]
-            if *id == SystemDataContract::KeywordSearch.id() {
-                return load_system_data_contract(
-                    SystemDataContract::KeywordSearch,
-                    platform_version,
-                )
-                .map(|contract| Some(Arc::new(contract)))
-                .map_err(|e| {
-                    ContextProviderError::Generic(format!(
-                        "Failed to load KeywordSearch contract: {}",
-                        e
-                    ))
-                });
-            }
-
-            #[cfg(any(
-                feature = "document-history-contract",
-                feature = "all-system-contracts"
-            ))]
-            if *id == SystemDataContract::DocumentHistory.id() {
-                return load_system_data_contract(
-                    SystemDataContract::DocumentHistory,
-                    platform_version,
-                )
-                .map(|contract| Some(Arc::new(contract)))
-                .map_err(|e| {
-                    ContextProviderError::Generic(format!(
-                        "Failed to load DocumentHistory contract: {}",
-                        e
-                    ))
-                });
-            }
-
-            #[cfg(any(feature = "app-connect-contract", feature = "all-system-contracts"))]
-            // Below protocol version 14 the app-connect contract is
-            // absent, so the lookup returns `None`.
-            if *id == SystemDataContract::AppConnect.id()
-                && platform_version.protocol_version
-                    >= APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION
-            {
-                return load_system_data_contract(SystemDataContract::AppConnect, platform_version)
-                    .map(|contract| Some(Arc::new(contract)))
-                    .map_err(|e| {
-                        ContextProviderError::Generic(format!(
-                            "Failed to load AppConnect contract: {}",
-                            e
-                        ))
-                    });
-            }
-
-            #[cfg(any(
-                feature = "moderation-charters-contract",
-                feature = "all-system-contracts"
-            ))]
-            // Below protocol version 14 the moderation charters contract is absent too.
-            if *id == SystemDataContract::ModerationCharters.id()
-                && platform_version.protocol_version
-                    >= MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION
-            {
-                return load_system_data_contract(
-                    SystemDataContract::ModerationCharters,
-                    platform_version,
-                )
-                .map(|contract| Some(Arc::new(contract)))
-                .map_err(|e| {
-                    ContextProviderError::Generic(format!(
-                        "Failed to load ModerationCharters contract: {}",
-                        e
-                    ))
-                });
-            }
-        }
-
-        // Only the system contracts read the version, and a build may have none.
-        let _ = platform_version;
-        Ok(None)
+        system_data_contract(id, platform_version)
     }
 
     /// The token configuration registered under `token_id`, if any.
@@ -402,6 +232,32 @@ mod tests {
         let config = TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
         resolver.add_known_token_configuration(token_id, config.clone());
         assert_eq!(resolver.token_configuration(&token_id), Some(config));
+    }
+
+    /// The token market contract does not exist before protocol version 15.
+    /// The SPV and adaptive providers read contracts only from the resolver,
+    /// so it must refuse a contract preloaded under that id there itself.
+    #[test]
+    fn should_refuse_a_preloaded_token_market_contract_before_protocol_15() {
+        let resolver = LocalContextResolver::new();
+        let mut contract = app_contract();
+        let id = SystemDataContract::TokenMarket.id();
+        contract.set_id(id);
+        resolver.add_known_data_contract(Arc::new(contract));
+        let pv14 = PlatformVersion::get(14).expect("protocol version 14");
+        let pv15 = PlatformVersion::get(15).expect("protocol version 15");
+
+        assert!(resolver.data_contract(&id, pv14).unwrap().is_none());
+        assert!(ContractSource::get_data_contract(&resolver, &id, pv14)
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            resolver
+                .data_contract(&id, pv15)
+                .unwrap()
+                .map(|contract| contract.id()),
+            Some(id)
+        );
     }
 
     #[test]

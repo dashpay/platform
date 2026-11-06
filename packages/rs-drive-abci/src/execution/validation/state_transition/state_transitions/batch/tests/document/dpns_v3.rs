@@ -1565,13 +1565,17 @@ mod dpns_v3_tests {
                 measured.push((fee_result.processing_fee, fee_result.storage_fee, refund));
             }
         }
+        // At 15 each create also reads the DPNS contract through a contracts tree holding the
+        // decision proposals and token market contracts, two more siblings registered at
+        // genesis, which reshape the tree so the DPNS contract's node is billed more bytes to
+        // reach (+95_920 a create).
         assert_eq!(
             measured,
             vec![
                 (1_159_720, 31_158_000, 0),
                 (1_846_280, 42_687_000, 0),
-                (5_495_080, 11_558_570, 0),
-                (3_654_380, 42_687_000, 0)
+                (5_591_000, 11_558_570, 0),
+                (3_739_640, 42_687_000, 0)
             ]
         );
     }

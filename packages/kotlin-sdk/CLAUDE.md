@@ -10,7 +10,7 @@ file too; the architectural rules are identical.
    response to Rust state (via the persistence callback bridge).
 2. **Load data** — expose Room `Flow` queries for reactive UI updates.
 3. **Bridge** — thin JNI wrappers around functions defined in the Rust
-   libraries (`rs-sdk-ffi`, `platform-wallet-ffi`, `key-wallet-ffi`).
+   libraries (`rs-sdk-ffi`, `platform-wallet-ffi`).
 
 ## Forbidden in Kotlin (belongs in Rust `platform-wallet`)
 

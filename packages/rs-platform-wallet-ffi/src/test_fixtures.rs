@@ -1,12 +1,17 @@
 //! Test-only fixtures shared by the crate's unit tests.
 
+use std::ffi::CStr;
+use std::os::raw::c_char;
+use std::ptr::NonNull;
 use std::sync::Arc;
 
 use platform_wallet::PlatformWalletManager;
 
+use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
 use crate::event_handler::{EventHandlerCallbacks, FFIEventHandler};
 use crate::persistence::{FFIPersister, PersistenceCallbacks};
 use crate::runtime::runtime;
+use crate::xpub_render::platform_wallet_free_string;
 
 /// A manager over a mock SDK with no-op persistence and event callbacks:
 /// registrable in the handle storage, never touching the network.
@@ -46,4 +51,24 @@ pub(crate) fn mock_manager() -> PlatformWalletManager<FFIPersister> {
         Arc::new(persister),
         Arc::new(events),
     )
+}
+
+/// Runs `call` with a dangling out pointer and returns the C string it wrote,
+/// or `None` for a null one, or the failure code. A failure must leave the
+/// pointer null.
+pub(crate) fn out_string(
+    call: impl FnOnce(*mut *mut c_char) -> PlatformWalletFFIResult,
+) -> Result<Option<String>, PlatformWalletFFIResultCode> {
+    let mut out: *mut c_char = NonNull::dangling().as_ptr();
+    let r = call(&mut out);
+    if r.code != PlatformWalletFFIResultCode::Success {
+        assert!(out.is_null());
+        return Err(r.code);
+    }
+    if out.is_null() {
+        return Ok(None);
+    }
+    let string = unsafe { CStr::from_ptr(out) }.to_str().unwrap().to_owned();
+    unsafe { platform_wallet_free_string(out) };
+    Ok(Some(string))
 }

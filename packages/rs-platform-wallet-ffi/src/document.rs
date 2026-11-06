@@ -151,7 +151,9 @@ pub unsafe extern "C" fn platform_wallet_create_document_with_signer(
 ///
 /// Note: `dash_sdk_document_get_info` (single-document fetch) emits a different,
 /// per-field shape (bytes as hex); this parity is with the list-query path only.
-fn confirmed_document_to_json(document: &Document) -> Result<String, PlatformWalletError> {
+pub(crate) fn confirmed_document_to_json(
+    document: &Document,
+) -> Result<String, PlatformWalletError> {
     let document_value = document.to_object().map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!(
             "Failed to convert confirmed document to a value: {e}"

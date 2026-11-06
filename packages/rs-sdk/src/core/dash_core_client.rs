@@ -6,7 +6,7 @@
 use crate::error::Error;
 use dash_context_provider::ContextProviderError;
 use dashcore_rpc::{
-    dashcore::{hashes::Hash, Amount, QuorumHash},
+    dashcore::{Amount, QuorumHash},
     dashcore_rpc_json as json,
     json::{ProTxList, ProTxListType},
     jsonrpc::error::{Error as JsonRpcError, RpcError},

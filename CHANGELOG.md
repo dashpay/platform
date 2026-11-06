@@ -22,6 +22,18 @@
 
 ### Changed
 
+- **drive (Rust API):** Drive's cost estimators write their layer descriptions into
+  `drive::util::estimated_layers::EstimatedLayers` instead of
+  `HashMap<KeyInfoPath, EstimatedLayerInformation>`, in `DriveLowLevelOperationConverter`
+  and every Drive method that takes an estimate. This is a source change for Rust code
+  built with the `server` feature, whichever protocol version it runs. Build an estimate
+  with `EstimatedLayers::new()`; `insert` replaces a path's description as `HashMap::insert`
+  did (it returns nothing), `insert_if_absent` replaces `.entry(path).or_insert(layer)`, and
+  `get`, `len` and `is_empty` read it. The estimate cannot be iterated or turned back into a
+  map outside Drive; `{:?}` prints it. GroveDB prices the description written last for each
+  path, as before, so the type changes no estimate by itself; protocol version 15's batch
+  estimates are resolved instead (protocol v15 note 14).
+
 - **Rust dependencies:** pin rust-dashcore to `dev` at `280b3f2c`, which includes
   [rust-dashcore#1175](https://github.com/dashpay/rust-dashcore/pull/1175):
   every transaction payload keeps its stored serde variant index, so wallet rows
@@ -83,10 +95,65 @@
   returns a `Result` and refuses format version 2. `DPPContractVersions` gains
   `contract_storage_serialization_version`, the format Drive writes to state, and
   `contract_storage_document_type_version`, the generation of each compiled document
-  type; every protocol version still selects format 0 or 1, so nothing stored
-  changes, but struct literals need the fields. `DocumentTypeV0MutGetters`
-  (`schema_mut`) is available only to tests and the `fixtures-and-mocks` feature. See
+  type; protocol version 15 selects format 2 (next entry), and struct literals need
+  the fields. `DocumentTypeV0MutGetters` (`schema_mut`) is available only to tests
+  and the `fixtures-and-mocks` feature. See
   [#5578](https://github.com/dashpay/platform/pull/5578).
+- **drive (breaking, protocol version 15):** from protocol version 15 Drive stores a
+  contract it creates or updates in format version 2, with its document types
+  compiled, so loading it reads them back instead of parsing its schemas. A contract
+  stored earlier is stored compiled at its next update or token configuration update.
+  A contract stored compiled takes at most 1 MiB
+  (`SystemLimits::max_compiled_contract_size`): creating or updating one over it is
+  refused with the new paid consensus error `DataContractCompiledMaxSizeExceededError`
+  (10282), and the compiled size is charged per byte. The 65,000-byte limit still
+  applies to the contract's format version 1 bytes. Clients verifying contract proofs
+  from a protocol version 15 network need
+  [#5578](https://github.com/dashpay/platform/pull/5578). Rust API:
+  `Drive::apply_contract_with_serialization` is crate-private and
+  `DataContractOperationType::ApplyContractWithSerialization` is removed (submit
+  `ApplyContract`); `SystemLimits` gains `max_compiled_contract_size`, `BasicError`
+  gains `DataContractCompiledMaxSizeExceededError` and `ProtocolValidationOperation`
+  gains `ContractCompiledSizeValidation`, so struct literals and exhaustive matches
+  need them. See [#5579](https://github.com/dashpay/platform/pull/5579).
+
+### [5.0.3](https://github.com/dashpay/platform/compare/v5.0.2...v5.0.3) (2026-11-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform-wallet:** restore a coin as final as its stored transaction (#5719)
+
+### Bug Fixes
+
+* **dashmate:** set up local networks on Dash Core v24 ([#5730](https://github.com/dashpay/platform/issues/5730))
+* **dashmate:** wait out the previous lego container's removal in ssl obtain ([#5602](https://github.com/dashpay/platform/issues/5602))
+* **platform-wallet:** carry a resumed asset lock's change into the store ([#5716](https://github.com/dashpay/platform/issues/5716))
+* **platform-wallet:** poll the asset-lock resume FFIs on a big-stack thread ([#5585](https://github.com/dashpay/platform/issues/5585))
+* **platform-wallet:** reject zero-amount shielded spends before reserving notes ([#5570](https://github.com/dashpay/platform/issues/5570))
+* **platform-wallet:** restore a coin as final as its stored transaction ([#5719](https://github.com/dashpay/platform/issues/5719))
+* **platform-wallet:** stop concurrent shielded syncs from duplicating commitments ([#5564](https://github.com/dashpay/platform/issues/5564))
+* **sdk:** let wasm-sdk build without its default features ([#5612](https://github.com/dashpay/platform/issues/5612))
+* **sdk:** query compacted address balances when the recent proof has no boundary ([#5572](https://github.com/dashpay/platform/issues/5572))
+* **sdk:** send wasm DAPI requests to a single-slash path ([#5611](https://github.com/dashpay/platform/issues/5611))
+* **sdk:** stop header sync errors from crashing the process or hiding their cause ([#5697](https://github.com/dashpay/platform/issues/5697))
+* **sdk:** validate SPV header difficulty exactly as Dash Core does ([#5699](https://github.com/dashpay/platform/issues/5699))
+
+
+### Tests
+
+* **platform-wallet:** add tempfile as a dev-dependency for the backported shielded tests ([#5731](https://github.com/dashpay/platform/issues/5731))
+
+### [5.0.2](https://github.com/dashpay/platform/compare/v5.0.1...v5.0.2) (2026-10-31)
+
+
+### Bug Fixes
+
+* **drive-abci:** make zero quorum windows and active-signer counts unrepresentable ([#5630](https://github.com/dashpay/platform/issues/5630))
+* **platform-wallet:** refuse ports Dash Core v24 refuses before building a version-3 ProUpServTx ([#5629](https://github.com/dashpay/platform/issues/5629))
+* **sdk:** read the proved vote of a masternode vote that already exists ([#5628](https://github.com/dashpay/platform/issues/5628))
+* **sdk:** refuse a non-unique identity V1 request before protocol 14 is proven ([#5615](https://github.com/dashpay/platform/issues/5615))
+* **sdk:** update dashcore-lib to 0.26.1 and refresh the testnet whitelist for Core V24 ([#5687](https://github.com/dashpay/platform/issues/5687))
 
 ### [5.0.1](https://github.com/dashpay/platform/compare/v5.0.0...v5.0.1) (2026-10-27)
 

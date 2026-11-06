@@ -4,11 +4,10 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Gathers the operations removing a document's entry from the documents expirations
@@ -35,9 +34,7 @@ impl Drive {
         document_id: [u8; 32],
         expires_at_ms: TimestampMillis,
         entry_value_size: u32,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         check_existing_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,

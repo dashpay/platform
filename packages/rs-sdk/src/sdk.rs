@@ -60,6 +60,8 @@ mod protocol_gate_tests;
 mod quorum_key;
 #[cfg(all(test, feature = "mocks"))]
 mod signed_version_tests;
+#[cfg(all(test, feature = "mocks"))]
+mod verified_provider_tests;
 
 /// A local view of the authenticated network observation and this SDK's version tables.
 /// This is informational: a newer network version does not disable operations.
@@ -323,6 +325,11 @@ pub struct Sdk {
     /// host can persist the learned version and seed the next SDK with it.
     protocol_version_observer: Option<ProtocolVersionObserver>,
 
+    /// What the last probe of the network's protocol version proved about the epoch it ran
+    /// in, so that the gate does not ask again before that epoch can end, and the probe
+    /// running, so that calls made meanwhile wait for its answer. Shared between clones.
+    probe_hold: Arc<protocol_gate::SharedProbeHold>,
+
     /// Enforce the protocol version gate on a mock SDK, as on a network one.
     #[cfg(all(test, feature = "mocks"))]
     enforce_protocol_gate_on_mock: bool,
@@ -364,6 +371,7 @@ impl Clone for Sdk {
             version_pinned: self.version_pinned,
             verified_protocol_version: Arc::clone(&self.verified_protocol_version),
             protocol_version_observer: self.protocol_version_observer.clone(),
+            probe_hold: Arc::clone(&self.probe_hold),
             #[cfg(all(test, feature = "mocks"))]
             enforce_protocol_gate_on_mock: self.enforce_protocol_gate_on_mock,
             metadata_last_seen_height: Arc::clone(&self.metadata_last_seen_height),
@@ -436,6 +444,11 @@ impl Sdk {
     /// respective tolerance will be None regardless of method, to allow disabling staleness checks globally.
     fn freshness_criteria(&self, method_name: &str) -> (Option<u64>, Option<u64>) {
         match method_name {
+            // A one-block-old address nonce can cause the next signed spend to fail.
+            "get_addresses_infos" | "get_address_info" => (
+                self.metadata_height_tolerance.map(|_| 0),
+                self.metadata_time_tolerance_ms,
+            ),
             "get_addresses_trunk_state" | "get_addresses_branch_state" => (
                 // Address synchronization checkpoints can lag the latest
                 // Platform height. Prefer their signed time when available,
@@ -571,6 +584,11 @@ impl Sdk {
 
     /// Turn a proof verifier error into an SDK error.
     ///
+    /// A verified result that cannot be returned as the requested type
+    /// ([`drive_proof_verifier::Error::UnusableVerifiedResult`]) has its metadata accepted as
+    /// a verified answer's: a fresh answer fails as [`Error::InvalidRequest`], one outside the
+    /// height or time tolerance as stale.
+    ///
     /// Document queries are verified only at the protocol version that signed the
     /// answer ([`drive_proof_verifier::Error::ProofProtocolVersionMismatch`]). An answer
     /// signed below the SDK's version is classified by what verified answers have shown:
@@ -597,6 +615,21 @@ impl Sdk {
         metadata: Option<&ResponseMetadata>,
         arrival: MetadataArrival,
     ) -> Error {
+        if let drive_proof_verifier::Error::UnusableVerifiedResult { .. } = error {
+            // Raised only once the proof and its signature verified, so the metadata is
+            // verified too. It is accepted as any verified answer's is: an answer from a
+            // state the network has left behind fails as stale, and its node is banned,
+            // instead of ending the request with a result fresh nodes may not prove.
+            return match metadata {
+                Some(metadata) => {
+                    match self.accept_verified_metadata(method_name, metadata, Some(arrival)) {
+                        Ok(()) => error.into(),
+                        Err(stale) => stale,
+                    }
+                }
+                None => Error::Proof(error),
+            };
+        }
         if let drive_proof_verifier::Error::ProofProtocolVersionMismatch { signed, verifier } =
             error
         {
@@ -841,6 +874,16 @@ impl Sdk {
         } else {
             panic!("not a mock")
         }
+    }
+
+    /// The mock DAPI client, for tests that answer a request with an error, which
+    /// [`MockDashPlatformSdk`] expectations cannot express.
+    #[cfg(all(test, feature = "mocks"))]
+    pub(crate) fn mock_dapi(&self) -> &Arc<Mutex<MockDapiClient>> {
+        let SdkInstance::Mock { dapi, .. } = &self.inner else {
+            panic!("not a mock")
+        };
+        dapi
     }
 
     /// Get or fetch identity nonce, querying Platform when stale or absent.
@@ -1521,6 +1564,9 @@ impl SdkBuilder {
     ///
     /// This method will return an error if the Sdk cannot be created.
     pub fn build(self) -> Result<Sdk, Error> {
+        if let Some(context_provider) = &self.context_provider {
+            check_context_provider(context_provider.as_ref(), self.network, self.proofs)?;
+        }
         let is_network_sdk = self.addresses.is_some();
         let has_height_anchor = self
             .trusted_initial_height
@@ -1609,6 +1655,7 @@ impl SdkBuilder {
                     protocol_version: Arc::new(atomic::AtomicU32::new(initial_version.protocol_version)),
                     version_pinned: self.version_pinned,
                     verified_protocol_version: Arc::new(atomic::AtomicU32::new(0)),
+                    probe_hold: Arc::default(),
                     protocol_version_observer: self.protocol_version_observer.clone(),
                     #[cfg(all(test, feature = "mocks"))]
                     enforce_protocol_gate_on_mock: false,
@@ -1656,6 +1703,7 @@ impl SdkBuilder {
                     protocol_version: Arc::new(atomic::AtomicU32::new(initial_version.protocol_version)),
                     version_pinned: self.version_pinned,
                     verified_protocol_version: Arc::new(atomic::AtomicU32::new(0)),
+                    probe_hold: Arc::default(),
                     protocol_version_observer: self.protocol_version_observer.clone(),
                     #[cfg(all(test, feature = "mocks"))]
                     enforce_protocol_gate_on_mock: false,
@@ -1681,6 +1729,29 @@ impl SdkBuilder {
 
         Ok(sdk)
     }
+}
+
+/// Refuse a context provider whose requirements an SDK on `network`, with
+/// proofs on or off, cannot meet.
+fn check_context_provider(
+    context_provider: &dyn ContextProvider,
+    network: Network,
+    proofs: bool,
+) -> Result<(), Error> {
+    if let Some(provider_network) = context_provider.network() {
+        if provider_network != network {
+            return Err(Error::Config(format!(
+                "the context provider serves {provider_network:?} quorums, but the SDK targets {network:?}"
+            )));
+        }
+    }
+    if !proofs && context_provider.requires_proofs() {
+        return Err(Error::Config(
+            "the context provider requires proofs, but they are turned off with with_proofs(false)"
+                .to_string(),
+        ));
+    }
+    Ok(())
 }
 
 pub fn prettify_proof(proof: &Proof) -> String {
@@ -1712,15 +1783,103 @@ pub fn prettify_proof(proof: &Proof) -> String {
 
 #[cfg(test)]
 pub(crate) mod test {
+    use std::future::ready;
     use std::sync::Arc;
 
+    use crate::sync::retry;
     use dapi_grpc::platform::v0::{GetIdentityRequest, ResponseMetadata};
     use rs_dapi_client::transport::TransportRequest;
+    use rs_dapi_client::{AddressList, ExecutionError, ExecutionResponse, RequestSettings};
     use test_case::test_matrix;
 
     use crate::SdkBuilder;
 
     use super::{min_protocol_version, Network};
+    use dash_context_provider::{ContextProvider, ContextProviderError};
+    use dpp::data_contract::TokenConfiguration;
+    use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+    use dpp::version::PlatformVersion;
+
+    #[test_matrix(["get_addresses_infos", "get_address_info"], [Some(1), Some(20)])]
+    #[tokio::test]
+    async fn should_retry_one_block_stale_address_nonce_read_on_fresh_node(
+        method: &str,
+        tolerance: Option<u64>,
+    ) {
+        let sdk = SdkBuilder::new_mock()
+            .with_height_tolerance(tolerance)
+            .with_trusted_initial_height(100)
+            .build()
+            .unwrap();
+        let addresses: AddressList = "http://127.0.0.1:3001,http://127.0.0.1:3002"
+            .parse()
+            .unwrap();
+        let nodes = addresses.get_live_addresses();
+        let lagging = &nodes[0];
+        let fresh = &nodes[1];
+        let mut sends = 0;
+        // Proof verification is mocked; use the same metadata validation and retry
+        // machinery as Fetch/FetchMany after verifying each response's proof.
+        let response = retry(
+            &addresses,
+            RequestSettings {
+                retries: Some(1),
+                ban_failed_address: Some(true),
+                ..Default::default()
+            },
+            |_| {
+                sends += 1;
+                let (node, height, nonce) = if sends == 1 {
+                    (lagging, 99, 0)
+                } else {
+                    assert_eq!(addresses.get_live_address(), Some(fresh.clone()));
+                    (fresh, 100, 1)
+                };
+                ready(
+                    sdk.verify_response_metadata(
+                        method,
+                        &ResponseMetadata {
+                            height,
+                            ..Default::default()
+                        },
+                    )
+                    .map(|()| ExecutionResponse {
+                        inner: nonce,
+                        retries: 0,
+                        address: node.clone(),
+                    })
+                    .map_err(|inner| ExecutionError {
+                        inner,
+                        retries: 0,
+                        address: Some(node.clone()),
+                    }),
+                )
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(sends, 2);
+        assert_eq!(response.inner, 1);
+        assert_eq!(response.address, *fresh);
+        assert!(addresses.is_banned(lagging));
+    }
+
+    #[test_matrix(["get_addresses_infos", "get_address_info", "get_identity"])]
+    fn should_preserve_disabled_height_checks_for_address_info(method: &str) {
+        let sdk = SdkBuilder::new_mock()
+            .with_height_tolerance(None)
+            .with_trusted_initial_height(100)
+            .build()
+            .unwrap();
+        sdk.verify_response_metadata(
+            method,
+            &ResponseMetadata {
+                height: 99,
+                ..Default::default()
+            },
+        )
+        .expect("height checks remain disabled");
+    }
 
     /// Mainnet Evo masternodes expose the Platform HTTP endpoint on 443.
     const MAINNET_PLATFORM_HTTP_PORT: u16 = 443;
@@ -2019,6 +2178,141 @@ pub(crate) mod test {
         assert!(
             matches!(error, crate::Error::Config(message) if message.contains("trusted initial height"))
         );
+    }
+
+    /// A provider that states requirements and serves nothing.
+    struct Requiring {
+        network: Option<Network>,
+        proofs: bool,
+    }
+
+    impl ContextProvider for Requiring {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Err(ContextProviderError::Config("serves nothing".to_string()))
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
+
+        fn network(&self) -> Option<Network> {
+            self.network
+        }
+
+        fn requires_proofs(&self) -> bool {
+            self.proofs
+        }
+    }
+
+    fn is_config_error(error: crate::Error, needle: &str) -> bool {
+        matches!(error, crate::Error::Config(message) if message.contains(needle))
+    }
+
+    /// A provider that requires proofs is refused with proofs turned off,
+    /// whichever of the two the caller configured first and through either
+    /// builder entry point. The provider is fixed once the SDK is built, so
+    /// the build is the only place it can be refused.
+    #[test]
+    fn should_refuse_a_provider_that_requires_proofs_with_proofs_off() {
+        let requiring = || Requiring {
+            network: Some(Network::Testnet),
+            proofs: true,
+        };
+        let before = SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_proofs(false)
+            .with_context_provider(requiring());
+        let after = SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_context_provider(requiring())
+            .with_proofs(false);
+        let shared = SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_proofs(false)
+            .with_context_provider_arc(Arc::new(requiring()));
+        for builder in [before, after, shared] {
+            let error = builder.build().expect_err("refused");
+            assert!(is_config_error(error, "requires proofs"));
+        }
+
+        SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_proofs(false)
+            .with_proofs(true)
+            .with_context_provider(requiring())
+            .build()
+            .expect("proofs turned back on");
+        SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_proofs(false)
+            .with_context_provider(Requiring {
+                network: None,
+                proofs: false,
+            })
+            .build()
+            .expect("a provider that does not require proofs");
+    }
+
+    /// A provider that serves one network is refused by an SDK for another,
+    /// through either builder entry point, and accepted by an SDK for its own
+    /// network or when it names none.
+    #[test]
+    fn should_refuse_a_provider_for_another_network() {
+        let mainnet = || Requiring {
+            network: Some(Network::Mainnet),
+            proofs: false,
+        };
+        let direct = SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_context_provider(mainnet());
+        let shared = SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_context_provider_arc(Arc::new(mainnet()));
+        for builder in [direct, shared] {
+            let error = builder.build().expect_err("refused");
+            assert!(is_config_error(error, "Mainnet"));
+        }
+
+        let sdk = SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_context_provider(Requiring {
+                network: Some(Network::Testnet),
+                proofs: false,
+            })
+            .build()
+            .expect("the same network is accepted");
+        assert_eq!(
+            sdk.context_provider().expect("installed").network(),
+            Some(Network::Testnet)
+        );
+        SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_context_provider(Requiring {
+                network: None,
+                proofs: false,
+            })
+            .build()
+            .expect("a provider that names no network");
     }
 
     #[test]

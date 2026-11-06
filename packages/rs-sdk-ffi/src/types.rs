@@ -40,8 +40,41 @@ pub type DashSDKPublicKeyHandle = IdentityPublicKeyHandle;
 // is the `#[repr(C)]` mirror cbindgen emits for callers. Every FFI
 // entry point in this crate takes / returns `FFINetwork`; internal
 // Rust code converts via `Network::from(ffi)` / `ffi.into()`.
-pub use dash_network::ffi::FFINetwork;
 pub use dash_network::Network;
+
+/// C-ABI mirror of [`Network`].
+///
+/// cbindgen:prefix-with-name
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FFINetwork {
+    Mainnet = 0,
+    Testnet = 1,
+    Devnet = 2,
+    Regtest = 3,
+}
+
+impl From<Network> for FFINetwork {
+    fn from(network: Network) -> Self {
+        match network {
+            Network::Mainnet => FFINetwork::Mainnet,
+            Network::Testnet => FFINetwork::Testnet,
+            Network::Devnet => FFINetwork::Devnet,
+            Network::Regtest => FFINetwork::Regtest,
+        }
+    }
+}
+
+impl From<FFINetwork> for Network {
+    fn from(network: FFINetwork) -> Self {
+        match network {
+            FFINetwork::Mainnet => Network::Mainnet,
+            FFINetwork::Testnet => Network::Testnet,
+            FFINetwork::Devnet => Network::Devnet,
+            FFINetwork::Regtest => Network::Regtest,
+        }
+    }
+}
 
 /// SDK configuration passed from C callers.
 ///
@@ -1042,6 +1075,14 @@ pub struct DashSDKContender {
     /// be decoded; callers fall back to the normalized name rather than
     /// guessing a spelling.
     pub label: *mut c_char,
+    /// When this contender submitted its request: the document's `$createdAt`,
+    /// in milliseconds since the Unix epoch. Meaningful only when
+    /// `has_created_at` is true.
+    pub created_at: u64,
+    /// False when the document could not be decoded or carries no
+    /// `$createdAt`; `created_at` is then 0 and must be ignored. A present 0
+    /// is passed on as `true` with `created_at` 0.
+    pub has_created_at: bool,
 }
 
 /// Represents contest information for a DPNS name
@@ -1053,9 +1094,9 @@ pub struct DashSDKContestInfo {
     pub contender_count: usize,
     /// The distinct labels the contenders requested, in contender order and
     /// already de-duplicated — `["pizza", "p1zza"]` for a contest normalized to
-    /// `"p1zza"`. Derived here rather than by the caller so display policy has
-    /// one home. Null/zero when no contender document could be decoded; callers
-    /// fall back to the normalized contest name.
+    /// `"p1zza"`. Derived by the SDK (`dpns_usernames::ContestRequests`) so
+    /// display policy has one home. Null/zero when no contender has a usable
+    /// label; callers fall back to the normalized contest name.
     pub requested_labels: *mut *mut c_char,
     /// Number of entries in `requested_labels`.
     pub requested_label_count: usize,
@@ -1743,6 +1784,8 @@ mod tests {
                 Some(l) => CString::new(l).unwrap().into_raw(),
                 None => std::ptr::null_mut(),
             },
+            created_at: 0,
+            has_created_at: false,
         }
     }
 
@@ -1882,6 +1925,21 @@ mod tests {
                 count,
             };
             dash_sdk_contested_names_list_free(Box::into_raw(Box::new(list)));
+        }
+    }
+
+    #[test]
+    fn should_keep_the_ffi_network_values_and_conversions() {
+        let cases = [
+            (FFINetwork::Mainnet, 0, Network::Mainnet),
+            (FFINetwork::Testnet, 1, Network::Testnet),
+            (FFINetwork::Devnet, 2, Network::Devnet),
+            (FFINetwork::Regtest, 3, Network::Regtest),
+        ];
+        for (ffi, value, network) in cases {
+            assert_eq!(ffi as u32, value);
+            assert_eq!(FFINetwork::from(network), ffi);
+            assert_eq!(Network::from(ffi), network);
         }
     }
 }

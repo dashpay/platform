@@ -16,8 +16,9 @@ use dashcore::sml::masternode_list_entry::MasternodeListEntry;
 use dashcore::{PubkeyHash, QuorumHash, Transaction};
 
 use dash_spv::network::PeerNetworkManager;
-use dash_spv::sync::{SyncProgress, SyncState};
-use dash_spv::{BroadcastResult, ClientConfig, DashSpvClient, EventHandler, Hash};
+use dash_spv::{
+    BroadcastResult, ClientConfig, DashSpvClient, EventHandler, SyncProgress, SyncState,
+};
 
 use key_wallet_manager::WalletManager;
 
@@ -263,9 +264,7 @@ impl SpvRuntime {
         }
         self.ensure_joined(shutdown)?;
 
-        let network_manager = PeerNetworkManager::new(&config)
-            .await
-            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+        let network_manager = PeerNetworkManager::new(&config).await;
 
         // PlatformEventManager implements `EventHandler`; the peer tracker
         // rides alongside it so `connected_peers` can answer from the latest
@@ -530,7 +529,7 @@ impl SpvRuntime {
         height: u32,
     ) -> Result<SpvQuorumPublicKey, PlatformWalletError> {
         let llmq_type = match u8::try_from(quorum_type).map(LLMQType::from) {
-            Ok(LLMQType::LlmqtypeUnknown) | Err(_) => {
+            Ok(LLMQType::LlmqtypeUnknown(_)) | Err(_) => {
                 return Err(PlatformWalletError::InvalidParameter(format!(
                     "quorum type {quorum_type} is not an LLMQ type"
                 )));
@@ -899,12 +898,9 @@ impl SpvRuntime {
         // dash-spv clears its storage only through a client. This one never
         // runs and has no event handlers, and dropping it releases the
         // storage. Clearing removes the whole storage directory, so the client
-        // needs neither filters nor masternodes; without them it does not
-        // replay the stored masternode state only to delete it.
+        // needs neither filters nor masternodes.
         let config = config.without_filters().without_masternodes();
-        let network_manager = PeerNetworkManager::new(&config)
-            .await
-            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+        let network_manager = PeerNetworkManager::new(&config).await;
         let client: SpvClient = DashSpvClient::new(
             config,
             network_manager,
@@ -973,7 +969,6 @@ fn masternodes_by_voting_key(list: &MasternodeList, voting_key_id: &PubkeyHash) 
 #[cfg(test)]
 mod masternodes_by_voting_key_tests {
     use dashcore::bls_sig_utils::BLSPublicKey;
-    use dashcore::hashes::Hash;
     use dashcore::sml::masternode_list_entry::{
         EntryMasternodeType, MasternodeListEntry, MasternodeNetInfo,
     };
@@ -1392,7 +1387,6 @@ mod tests {
 
         use dashcore::bls_sig_utils::{BLSPublicKey, BLSSignature};
         use dashcore::hash_types::QuorumVVecHash;
-        use dashcore::hashes::Hash;
         use dashcore::sml::llmq_type::LLMQType;
         use dashcore::sml::masternode_list::MasternodeList;
         use dashcore::sml::quorum_entry::qualified_quorum_entry::QualifiedQuorumEntry;
@@ -2306,12 +2300,11 @@ mod tests {
         runtime
             .peer_tracker
             .on_network_event(&NetworkEvent::PeersUpdated {
-                connected_count: 1,
                 addresses: vec![SocketAddr::new(
                     IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
                     19999,
                 )],
-                best_height: Some(1_100_000),
+                best_height: 1_100_000,
             });
 
         assert!(
@@ -2332,12 +2325,11 @@ mod tests {
         use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
         dash_spv::network::NetworkEvent::PeersUpdated {
-            connected_count: 1,
             addresses: vec![SocketAddr::new(
                 IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
                 19999,
             )],
-            best_height: Some(1_100_000),
+            best_height: 1_100_000,
         }
     }
 
@@ -2480,7 +2472,6 @@ mod tests {
     /// fail-closed rejection.
     #[test]
     fn quorum_hash_reversed_to_internal_order_before_lookup() {
-        use dashcore::hashes::Hash;
         use dashcore::QuorumHash;
         use std::collections::BTreeMap;
 
