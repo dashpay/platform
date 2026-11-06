@@ -12,6 +12,14 @@ use super::{
 ///   it too) is refused without a fee and without using the identity's nonce, instead of being
 ///   charged. The identity's signature does not cover the proofs of possession of the keys it
 ///   adds. A revision mismatch is still charged.
+/// - the identity create `basic_structure`, 1 rather than 0, and `advanced_structure`, 2 rather
+///   than 1: the check that the identity id is the one the asset lock's outpoint derives moves
+///   from advanced structure to basic structure, as it reads only the transition. A wrong
+///   identity id is still refused without a fee, but before the asset lock proof is verified,
+///   so a transition with a wrong identity id and an asset lock that is spent or whose proof
+///   does not verify is refused for its identity id. An asset lock proof whose structure is
+///   invalid is still refused first, for its structure. Advanced structure 2 still charges the
+///   double SHA-256 of deriving the identity id, so every identity create costs what it did.
 /// - `create_domain_data_trigger` 2, which keeps only the parent domain checks of a DPNS domain
 ///   create: the DPNS contract v3 (`SYSTEM_DATA_CONTRACT_VERSIONS_V4`) checks the normalized
 ///   names, the preorder and the identity record with schema keywords.
@@ -49,6 +57,13 @@ use super::{
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
         state_transitions: DriveAbciStateTransitionValidationVersions {
+            identity_create_state_transition: DriveAbciStateTransitionValidationVersion {
+                basic_structure: Some(1), // the identity id is checked before the asset lock proof is verified
+                advanced_structure: Some(2), // v1 without the identity id check, which basic structure now makes
+                ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
+                    .state_transitions
+                    .identity_create_state_transition
+            },
             identity_update_state_transition: DriveAbciStateTransitionValidationVersion {
                 advanced_structure: Some(1), // added key proof of possession failures are refused unpaid
                 state: 2, // an identity keeps at most one enabled Hecate signer key
