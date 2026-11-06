@@ -172,12 +172,13 @@ where
     /// the very payout the masternode had. For such an entry the payout is Core's for that
     /// masternode at `core_block_height` (`get_masternode_state`, `protx info` at that chain
     /// locked height), `Some(None)` when it has none: the new operator never starts with the
-    /// previous operator's payout, nor without its own. Core is asked about no other entry; a
-    /// Core error fails the update. A diff applies with `DMNState::apply_diff`, which keeps a
-    /// stored revived height the diff does not print.
+    /// previous operator's payout, nor without its own. Core is asked about no other entry, and
+    /// not about a masternode Platform does not list, whose entry applies nothing; a Core error
+    /// fails the update. A diff applies with `DMNState::apply_diff`, which keeps a stored revived
+    /// height the diff does not print.
     ///
-    /// An operator key Core re-encoded is the stored key, and is dropped from its entry before,
-    /// so a re-encode is never read as a key change.
+    /// An operator key Core only re-encoded is the stored key, and is dropped from its entry
+    /// first, so a re-encode is never read as a key change.
     pub(crate) fn update_state_masternode_list_v2(
         &self,
         state: &mut PlatformState,

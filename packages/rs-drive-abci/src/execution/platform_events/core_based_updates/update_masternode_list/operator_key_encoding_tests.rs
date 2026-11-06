@@ -157,22 +157,32 @@ fn platform_with_core(
                 3
             }))
         });
-    platform
-        .core_rpc
-        .expect_get_masternode_state()
-        .returning(|pro_tx_hash, _| Ok(recorded_state(pro_tx_hash)));
+    // Up to protocol version 14 the list update never asks Core for a masternode's state: no
+    // answer is given, so a call fails the test.
+    if platform_version
+        .drive_abci
+        .methods
+        .core_based_updates
+        .update_masternode_list
+        >= 2
+    {
+        platform
+            .core_rpc
+            .expect_get_masternode_state()
+            .returning(|pro_tx_hash, _| Ok(recorded_state(pro_tx_hash)));
+    }
     platform
 }
 
 /// Core's state of a recorded masternode once its operator key changed: the listed state, with
-/// no operator payout for MN_L3, whose owner set another operator key, which empties it.
-/// MN_L1 and MN_L2 only had their keys re-encoded, and MN_L4 lists no payout.
-fn recorded_state(pro_tx_hash: &ProTxHash) -> DMNState {
+/// no operator payout for MN_L3, whose owner set another operator key, which empties it. MN_L1
+/// and MN_L4 list no payout, and MN_L2's re-encoded key kept its own.
+fn recorded_state(masternode: &ProTxHash) -> DMNState {
     let mut state = recorded_masternodes()
-        .remove(pro_tx_hash)
-        .unwrap_or_else(|| panic!("no recorded masternode {pro_tx_hash}"))
+        .remove(masternode)
+        .unwrap_or_else(|| panic!("no recorded masternode {masternode}"))
         .state;
-    if *pro_tx_hash == self::pro_tx_hash(MN_L3) {
+    if *masternode == pro_tx_hash(MN_L3) {
         state.operator_payout_address = None;
     }
     state

@@ -241,11 +241,18 @@ fn platform_with_config_after_history(
         });
 
     // Asked about a masternode whose operator key changed without a printed payout, Core reports
-    // none, as after a key change that set none.
+    // none, as after a key change that set none. Up to protocol version 14 nothing asks.
+    let state_reads = Arc::new(Mutex::new(0));
+    let recorded_state_reads = Arc::clone(&state_reads);
     platform
         .core_rpc
         .expect_get_masternode_state()
-        .returning(|_, _| Ok(masternode(0, 0, None).state));
+        .returning(move |_, _| {
+            *recorded_state_reads
+                .lock()
+                .expect("expected the state reads") += 1;
+            Ok(masternode(0, 0, None).state)
+        });
     let quorum_types = [
         platform.config.validator_set.quorum_type,
         platform.config.chain_lock.quorum_type,
@@ -293,6 +300,11 @@ fn platform_with_config_after_history(
         .unwrap()
         .expect("expected to commit");
     *history_done.lock().expect("expected the history flag") = true;
+    assert_eq!(
+        *state_reads.lock().expect("expected the state reads"),
+        0,
+        "protocol version {previous} asked Core for a masternode's state"
+    );
     (platform, state, calls)
 }
 

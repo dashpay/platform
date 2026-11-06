@@ -508,8 +508,8 @@ pub(crate) async fn run_chain_for_strategy<'a>(
                 .clone())
         });
 
-    // Core's state of one masternode at a height, as the strategy made it: the first block of a
-    // protocol version 15 operator key change printed without a payout reads it.
+    // Core's state of one masternode at a height, as the strategy made it. From protocol version
+    // 15 a block reads it for an operator key change printed without a payout.
     let masternodes_by_height = with_extra_masternodes_with_updates.clone();
     let hpmns_by_height = with_extra_hpmns_with_updates.clone();
     let initial_masternodes = initial_all_masternodes.clone();

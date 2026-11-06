@@ -3,6 +3,7 @@
 
 use super::test::{empty_state_diff, masternode_with_operator_payout, operator_identity_keys};
 use crate::config::PlatformConfig;
+use crate::error::Error;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
@@ -11,6 +12,7 @@ use dpp::dashcore::ProTxHash;
 use dpp::dashcore_rpc::json::{
     DMNStateDiff, MasternodeListDiff, MasternodeListItem, MasternodeType,
 };
+use dpp::dashcore_rpc::Error as CoreRpcError;
 use dpp::identity::Purpose;
 use dpp::util::hash::ripemd160_sha256;
 use dpp::version::PlatformVersion;
@@ -708,4 +710,140 @@ fn should_take_the_payout_core_reports_for_an_operator_key_change_printed_withou
             (restored_on_returning.pro_tx_hash, 1002),
         ]
     );
+}
+
+/// The payout of an operator key change printed without one comes only from Core: a Core that
+/// cannot answer fails the update, instead of the payout being read as cleared, and leaves the
+/// stored list as it was.
+#[test]
+fn should_fail_when_core_cannot_report_the_payout_of_an_operator_key_change() {
+    let platform_version = PlatformVersion::latest();
+    let masternode = masternode_with_operator_payout(0x75);
+    let mut platform = TestPlatformBuilder::new()
+        .with_config(PlatformConfig::default())
+        .build_with_mock_rpc()
+        .set_genesis_state();
+    let listed = MasternodeListDiff {
+        base_height: 0,
+        block_height: LIST_HEIGHT,
+        added_mns: vec![masternode.clone()],
+        removed_mns: vec![],
+        updated_mns: vec![],
+    };
+    let key_change = MasternodeListDiff {
+        base_height: LIST_HEIGHT,
+        block_height: LIST_HEIGHT + 1,
+        added_mns: vec![],
+        removed_mns: vec![],
+        updated_mns: vec![(
+            masternode.pro_tx_hash,
+            DMNStateDiff {
+                pub_key_operator: Some(vec![0x85; 48]),
+                ..empty_state_diff()
+            },
+        )],
+    };
+    platform
+        .core_rpc
+        .expect_get_protx_diff_with_masternodes()
+        .returning(move |_, block| {
+            Ok(if block == LIST_HEIGHT {
+                listed.clone()
+            } else {
+                key_change.clone()
+            })
+        });
+    platform
+        .core_rpc
+        .expect_get_masternode_state()
+        .returning(|_, _| Err(CoreRpcError::UnexpectedStructure("refused".to_string())));
+
+    let transaction = platform.drive.grove.start_transaction();
+    let mut state = platform.state.load().as_ref().clone();
+    let block_info = |height, core_height| BlockInfo {
+        height,
+        core_height,
+        time_ms: height,
+        ..Default::default()
+    };
+    platform
+        .update_masternode_list(
+            None,
+            &mut state,
+            LIST_HEIGHT,
+            true,
+            &block_info(1, LIST_HEIGHT),
+            &transaction,
+            platform_version,
+        )
+        .expect("expected to list the masternode");
+    let committed = state.clone();
+
+    let result = platform.update_masternode_list(
+        Some(&committed),
+        &mut state,
+        LIST_HEIGHT + 1,
+        false,
+        &block_info(2, LIST_HEIGHT + 1),
+        &transaction,
+        platform_version,
+    );
+
+    assert!(matches!(result, Err(Error::CoreRpc(_))), "{result:?}");
+    assert_eq!(
+        state.full_masternode_list(),
+        committed.full_masternode_list()
+    );
+}
+
+/// An entry for a masternode Platform does not list is left as Core reports it, without asking
+/// Core for the masternode's state: the list update applies nothing for it.
+#[test]
+fn should_not_ask_core_about_a_masternode_platform_does_not_list() {
+    let platform_version = PlatformVersion::latest();
+    let listed = masternode_with_operator_payout(0x76);
+    let unlisted = masternode_with_operator_payout(0x77);
+    let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+    // Without the default answers, so asking Core anything else fails the test.
+    platform.core_rpc.checkpoint();
+    let entry = (
+        unlisted.pro_tx_hash,
+        DMNStateDiff {
+            pub_key_operator: Some(vec![0x87; 48]),
+            ..empty_state_diff()
+        },
+    );
+    let reported = entry.clone();
+    platform
+        .core_rpc
+        .expect_get_protx_diff_with_masternodes()
+        .returning(move |base_block, block| {
+            Ok(MasternodeListDiff {
+                base_height: base_block.unwrap_or_default(),
+                block_height: block,
+                added_mns: vec![],
+                removed_mns: vec![],
+                updated_mns: vec![reported.clone()],
+            })
+        });
+    let mut state = PlatformState::default_with_protocol_versions(
+        platform_version.protocol_version,
+        platform_version.protocol_version,
+        &PlatformConfig::default(),
+    )
+    .expect("expected a platform state");
+    state.insert_masternode(listed);
+    let transaction = platform.drive.grove.start_transaction();
+
+    let outcome = platform
+        .update_state_masternode_list_v2(
+            &mut state,
+            LIST_HEIGHT + 1,
+            false,
+            &transaction,
+            platform_version,
+        )
+        .expect("expected to update the masternode list");
+
+    assert_eq!(outcome.masternode_list_diff.updated_mns, vec![entry]);
 }

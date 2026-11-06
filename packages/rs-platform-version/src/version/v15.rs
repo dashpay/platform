@@ -488,8 +488,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     Core empties the payout on every operator key change and prints a payout only when it
 ///     differs between the diff's two Core heights, so for a key change printed without one the
 ///     payout is read from Core's state of that masternode at the block's chain locked height
-///     (`protx info`, about one call per operator key change, 31 on mainnet since Platform's
-///     genesis): the new operator no longer inherits the previous operator's payout key, nor
+///     (`protx info`, one call for each operator key change or revocation of a listed
+///     masternode): the new operator no longer inherits the previous operator's payout key, nor
 ///     starts without the one it set. A Core error fails the block. An operator key Core only
 ///     re-encodes is still the stored key, and whether Core's V24 is active is read from the
 ///     Core fork record (note 18) instead of asked of Core. A diff that does not print the PoSe
