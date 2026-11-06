@@ -8,8 +8,9 @@ use std::error::Error as StdError;
 use crate::changeset::changeset::{DpnsNameStateEntry, PlatformWalletChangeSet};
 use crate::changeset::client_start_state::ClientStartState;
 use crate::changeset::persistence_capabilities::PersistenceCapabilities;
+use crate::changeset::wallet_accounting::WalletAccounting;
 use crate::wallet::platform_wallet::WalletId;
-use dashcore::Txid;
+use dashcore::{Transaction, Txid};
 use dpp::prelude::Identifier;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 
@@ -494,6 +495,28 @@ pub trait PlatformWalletPersistence: Send + Sync {
         Ok(None)
     }
 
+    /// The body of a stored Core transaction, for the accounting backfill.
+    ///
+    /// Stricter than [`Self::get_core_tx_record`], whose policy suits the
+    /// asset-lock and DashPay callers that retry a miss anyway: here
+    /// `Ok(None)` must mean only "this backend does not store `txid`". A
+    /// stored transaction is returned in any context, InstantSend included,
+    /// and a stored one that cannot be read (a failing backend, an
+    /// undecodable body) is an `Err`. The backfill then fails its round and
+    /// runs again at the next load, rather than reading a wallet-owned input
+    /// as someone else's.
+    ///
+    /// The default delegates to [`Self::get_core_tx_record`].
+    fn get_core_transaction(
+        &self,
+        wallet_id: WalletId,
+        txid: &Txid,
+    ) -> Result<Option<Transaction>, PersistenceError> {
+        Ok(self
+            .get_core_tx_record(wallet_id, txid)?
+            .map(|record| record.transaction))
+    }
+
     /// Enumerate the persisted Core transaction ids that belong to
     /// `wallet_id`, each tagged with whether the transaction spends an
     /// input this wallet funded.
@@ -526,6 +549,49 @@ pub trait PlatformWalletPersistence: Send + Sync {
         _wallet_id: WalletId,
     ) -> Result<Option<Vec<ListedCoreTxid>>, PersistenceError> {
         Ok(None)
+    }
+
+    /// The wallet's stored Core transactions that have no
+    /// [`WalletAccounting`] yet, or `None` once this wallet's history
+    /// backfill has completed (see [`Self::store_history_accounting`]).
+    ///
+    /// Read at every load of the wallet until the backfill completes. The
+    /// manager computes the missing rows with
+    /// [`history_accounting`](crate::changeset::history_accounting),
+    /// fetching the funding transactions it needs through
+    /// [`Self::get_core_transaction`] itself, and hands them back through
+    /// [`Self::store_history_accounting`]. Any subset is safe: a transaction
+    /// left out only stays without a row.
+    ///
+    /// A transaction without a row is "not yet accounted", never "accounted
+    /// as nothing": the host displays it without an amount or direction
+    /// until a backfill or a live update writes the row.
+    ///
+    /// The default (`None`) suits backends that never stored rows without
+    /// accounting, such as the SQLite store, whose own migration repairs
+    /// history.
+    fn load_core_history_for_accounting(
+        &self,
+        _wallet_id: WalletId,
+    ) -> Result<Option<Vec<Transaction>>, PersistenceError> {
+        Ok(None)
+    }
+
+    /// Persist the backfilled rows (upsert keyed by `(txid, wallet_id)`)
+    /// and, when `complete`, record that this wallet's history backfill is
+    /// done, as one atomic write; `rows` may be empty. After a complete
+    /// write, [`Self::load_core_history_for_accounting`] returns `None` for
+    /// the wallet. An incomplete one (some transaction could not be
+    /// accounted yet) leaves the backfill open, so the next load reads the
+    /// transactions still without a row and tries again. The default drops
+    /// both.
+    fn store_history_accounting(
+        &self,
+        _wallet_id: WalletId,
+        _rows: &[WalletAccounting],
+        _complete: bool,
+    ) -> Result<(), PersistenceError> {
+        Ok(())
     }
 
     /// Look up the persisted DPNS marketplace row for one
