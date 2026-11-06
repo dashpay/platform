@@ -506,12 +506,12 @@ pub fn apply_persisted_core_state(
         // Degraded in BOTH policies, never fatal: a foreign address and a
         // legitimately-owned deep-and-sparse one look the same in the stored
         // rows, and no fix short of an unbounded scan tells them apart. The
-        // wallet total is exact either way, except for a coin only a DashPay
-        // contact account holds: `restore_utxos` places it there, outside the
-        // total. Discovery moves one a funds account derives within its
-        // reach; one past that reach stays, as does one placed after a
-        // refused or failed refill (Recovery only), where discovery is
-        // skipped (`place_held_coins`).
+        // wallet total is exact either way, except for a coin of ours only a
+        // DashPay contact account holds: `restore_utxos` places it there,
+        // outside the total. Discovery moves one a funds account derives
+        // within its reach; one past that reach stays, as does one placed
+        // after a refused or failed refill (Recovery only), where discovery
+        // is skipped (`place_held_coins`).
         if unresolved > 0 {
             ctx.note_degraded(
                 LoadSite::UnresolvedUtxoAddress,
@@ -662,8 +662,10 @@ fn restore_owned_utxos(
 /// the address marked used and any copy in another account removed. Derives
 /// nothing: the restore runs against `wallet` without its accounts, so no
 /// pool has a key source and its refill skips every one. Returns the coins no
-/// account holds, or every coin if the placement fails, which is reported as
-/// a failed restore is.
+/// account holds. The placement can't fail: `restore_utxos` errs only from a
+/// refill, and with no key source there is none. Were it to fail, it is
+/// reported as a failed restore is and every coin comes back, which is right
+/// only while no earlier restore of this load has placed any of them.
 ///
 /// Only the pools as far as the marking rounds grew them are matched, so a
 /// coin a DashPay contact account already holds before its funds account's
