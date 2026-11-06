@@ -564,8 +564,8 @@ mod tests {
     }
 
     /// The direction case table; pins the rule repair takes from
-    /// `platform_wallet`. Swift's history reconciliation (dashpay/platform#5417)
-    /// mirrors it.
+    /// `platform_wallet`, which Swift's history reconciliation
+    /// (dashpay/platform#5417) consumes.
     #[test]
     fn should_classify_repaired_direction_like_the_swift_sdk() {
         use TransactionDirection::{CoinJoin, Incoming, Internal, Outgoing};

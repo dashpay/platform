@@ -37,8 +37,8 @@ use key_wallet::transaction_checking::transaction_router::TransactionType;
 /// An asset lock is `Internal` when nothing leaves the wallet: no external
 /// output and every credit owned, change or not. The case table lives in
 /// `platform-wallet-storage`
-/// (`should_classify_repaired_direction_like_the_swift_sdk`); Swift's history
-/// reconciliation (dashpay/platform#5417) mirrors the rule.
+/// (`should_classify_repaired_direction_like_the_swift_sdk`). The rule is
+/// consumed by Swift's history reconciliation (dashpay/platform#5417).
 pub fn wallet_direction(
     transaction_type: TransactionType,
     spends_ours: bool,
