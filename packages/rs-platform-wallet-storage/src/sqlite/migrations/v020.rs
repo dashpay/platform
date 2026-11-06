@@ -69,6 +69,7 @@ pub(super) fn backfill_accounting(
         });
         match (repaired, policy) {
             (Ok(()), _) => tx.execute_batch("RELEASE accounting_record")?,
+            (Err(error), _) if error.is_transient() => return Err(error),
             (Err(error), LoadPolicy::Strict) => return Err(error),
             (Err(error), LoadPolicy::Recovery) => {
                 tx.execute_batch("ROLLBACK TO accounting_record; RELEASE accounting_record")?;
@@ -94,6 +95,88 @@ mod tests {
     use super::*;
     use crate::sqlite::conn::SQLITE_MAX_BLOB_BYTES;
     use crate::sqlite::migrations::{self, rewind_v020, wallet_db};
+
+    #[test]
+    fn should_roll_back_v020_on_transient_repair_failure_even_in_recovery() {
+        let wallet = [0x73; 32];
+        let mut conn = wallet_db(&wallet);
+        let fields: Vec<_> = include_str!("../../../tests/fixtures/v019_kept_records.txt")
+            .lines()
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .collect();
+        let mut record =
+            core_state::decode_transaction_record(&hex::decode(fields[3]).unwrap()).unwrap();
+        record.net_amount = 777;
+        let original = blob::encode(&record).unwrap();
+        conn.execute(
+            "INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) VALUES (?1, ?2, 0, ?3)",
+            params![
+                wallet.as_slice(),
+                record.txid.as_byte_array().as_slice(),
+                &original
+            ],
+        )
+        .unwrap();
+        rewind_v020(&conn);
+        conn.create_scalar_function(
+            "migration_busy",
+            0,
+            rusqlite::functions::FunctionFlags::SQLITE_UTF8,
+            |_| -> rusqlite::Result<i64> {
+                Err(rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+                    None,
+                ))
+            },
+        )
+        .unwrap();
+        let error = conn
+            .query_row("SELECT migration_busy()", [], |_| Ok(()))
+            .unwrap_err();
+        assert!(WalletStorageError::from(error).is_transient());
+        conn.execute_batch("CREATE TEMP TRIGGER fail_accounting_repair BEFORE UPDATE OF record_blob ON core_transactions BEGIN SELECT migration_busy(); END;").unwrap();
+        let result = migrations::run_for_open(&mut conn, LoadPolicy::Recovery);
+        assert!(
+            result.is_err(),
+            "Recovery must not mark a transiently incomplete backfill successful"
+        );
+        let version: i64 = conn
+            .query_row(
+                "SELECT max(version) FROM refinery_schema_history",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(version, 19);
+        let tables: i64 = conn.query_row("SELECT count(*) FROM sqlite_master WHERE name IN ('core_transaction_inputs', 'core_transaction_record_originals')", [], |r| r.get(0)).unwrap();
+        assert_eq!(tables, 0, "all V020 DDL and row writes roll back");
+        let bytes: Vec<u8> = conn
+            .query_row("SELECT record_blob FROM core_transactions", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(bytes, original);
+        conn.execute_batch("DROP TRIGGER fail_accounting_repair")
+            .unwrap();
+        migrations::run_for_open(&mut conn, LoadPolicy::Recovery).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT count(*) FROM core_transaction_inputs", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, record.transaction.input.len() as i64);
+        let repaired = core_state::get_tx_record(
+            &conn,
+            &wallet,
+            &record.txid,
+            &crate::sqlite::load_ctx::LoadCtx::strict(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(repaired.net_amount, -1);
+    }
 
     #[test]
     fn should_decode_all_immutable_v019_transaction_fixtures_with_live_codec() {
