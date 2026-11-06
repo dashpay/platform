@@ -77,6 +77,10 @@ pub fn wait_for_core_to_sync_v0<C: CoreRPCLike + Debug>(
             );
             return Err(error.into());
         }
+        tracing::debug!(
+            ?error,
+            "core answers protx info for a masternode it does not list"
+        );
     }
 
     Ok(())

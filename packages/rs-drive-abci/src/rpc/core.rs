@@ -769,7 +769,9 @@ mod tests {
     mod fork_info {
         use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
         use dpp::dashcore::ProTxHash;
-        use dpp::dashcore_rpc::dashcore_rpc_json::{SoftforkInfo, SoftforkType};
+        use dpp::dashcore_rpc::dashcore_rpc_json::{
+            MasternodeListDiff, SoftforkInfo, SoftforkType,
+        };
         use dpp::dashcore_rpc::jsonrpc::error::{Error as JsonRpcError, RpcError};
         use dpp::dashcore_rpc::jsonrpc::simple_http::Error as HttpError;
         use dpp::dashcore_rpc::Error;
@@ -1059,7 +1061,20 @@ mod tests {
                 ("getblockhash", Answer::Result(BLOCK_HASH)),
                 ("protx", Answer::Result(PROTX_INFO)),
             ]);
-            let pro_tx_hash = ProTxHash::from_str(MN_L2).expect("expected a pro tx hash");
+            // As Platform has the hash: decoded from Core's masternode list.
+            let listed: MasternodeListDiff = serde_json::from_str(include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/supporting_files/core_v24_protx_list_diffs/legacy_operator_key/1-399.json"
+            )))
+            .expect("expected the recorded masternode list");
+            let pro_tx_hash = listed
+                .added_mns
+                .iter()
+                .map(|masternode| masternode.pro_tx_hash)
+                .find(|pro_tx_hash| {
+                    *pro_tx_hash == ProTxHash::from_str(MN_L2).expect("expected a pro tx hash")
+                })
+                .expect("expected MN_L2 in the recording");
 
             let state = core
                 .rpc()
