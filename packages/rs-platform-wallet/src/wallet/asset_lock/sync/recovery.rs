@@ -6256,6 +6256,7 @@ mod tests {
                             amount: amount_duffs,
                             status,
                             proof: None,
+                            shielded_recipient: None,
                         },
                     );
             }

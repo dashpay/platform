@@ -10054,7 +10054,6 @@ mod tests {
     /// recipient is simply absent after load) and never attests the bit.
     #[test]
     fn should_roundtrip_shielded_recipients_and_tolerate_a_host_without_the_slots() {
-        use dashcore::hashes::Hash;
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
         let raw = [0x33u8; 43];
