@@ -293,6 +293,11 @@ fn tc044_load_empty_is_empty() {
 /// existing install experiences.
 #[test]
 fn tc045_v004_widens_asset_lock_status_on_existing_db() {
+    use dashcore::{OutPoint, Transaction};
+    use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+    use platform_wallet::changeset::AssetLockEntry;
+    use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
+    use platform_wallet_storage::sqlite::schema::asset_locks::encode_entry_for_test;
     use rusqlite::params;
 
     let mut conn = rusqlite::Connection::open_in_memory().expect("open in-memory db");
@@ -312,10 +317,28 @@ fn tc045_v004_widens_asset_lock_status_on_existing_db() {
     )
     .expect("insert wallet");
     let outpoint_a = [1u8; 36];
+    let lifecycle = encode_entry_for_test(&AssetLockEntry {
+        operation_id: None,
+        out_point: OutPoint::null(),
+        transaction: Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        },
+        account_index: 0,
+        funding_type: AssetLockFundingType::IdentityRegistration,
+        identity_index: 4,
+        amount_duffs: 1_000_000,
+        status: AssetLockStatus::ChainLocked,
+        proof: None,
+    })
+    .unwrap();
     conn.execute(
         "INSERT INTO asset_locks (wallet_id, outpoint, status, account_index, identity_index, \
-         amount_duffs, lifecycle_blob) VALUES (?1, ?2, 'chain_locked', 0, 4, 1000000, X'01')",
-        params![wallet_id.as_slice(), outpoint_a.as_slice()],
+         amount_duffs, lifecycle_blob) VALUES (?1, ?2, 'chain_locked', 0, 4, 1000000, ?3)",
+        params![wallet_id.as_slice(), outpoint_a.as_slice(), lifecycle],
     )
     .expect("insert pre-upgrade asset lock");
 
@@ -482,8 +505,11 @@ fn tc046_v014_purges_legacy_empty_script_spent_utxos() {
         "expected AddressDecode from the empty script, got {err:?}"
     );
 
-    // 4. Upgrade to the latest schema (applies V013's purge).
-    mig::run(&mut conn).expect("migrate to latest");
+    // Check the purge before V021 intentionally removes recordless unspent rows.
+    mig::runner()
+        .set_target(refinery::Target::Version(20))
+        .run(&mut conn)
+        .unwrap();
 
     // 5. The poisoned row is gone...
     let poisoned_rows: i64 = conn
@@ -540,6 +566,17 @@ fn tc046_v014_purges_legacy_empty_script_spent_utxos() {
     assert_eq!(
         unspent_rows, 1,
         "an unspent row is balance state and must survive any script content"
+    );
+    mig::run(&mut conn).unwrap();
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM core_utxos WHERE wallet_id = ?1",
+            params![untouched.as_slice()],
+            |row| row.get::<_, i64>(0)
+        )
+        .unwrap(),
+        0,
+        "V021 rebuilds recordless unspent outputs through rescan"
     );
 }
 

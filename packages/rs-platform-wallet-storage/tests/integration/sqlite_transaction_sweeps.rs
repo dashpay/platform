@@ -3756,7 +3756,10 @@ fn should_preserve_mainline_sweep_holds_through_rehydration_migrations() {
         params![w.as_slice(), encoded],
     )
     .unwrap();
-    migrations::run(&mut conn).unwrap();
+    migrations::runner()
+        .set_target(refinery::Target::Version(20))
+        .run(&mut conn)
+        .unwrap();
     assert_eq!(
         utxo_row_state(&conn, &w, &input),
         Some((true, true, Some(400)))
@@ -3768,6 +3771,13 @@ fn should_preserve_mainline_sweep_holds_through_rehydration_migrations() {
     assert!(row_exists(&conn, &w, &input));
     apply_heights(&mut conn, &w, 400);
     assert!(!row_exists(&conn, &w, &input));
+    conn.execute("INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent, is_sweep_placeholder, winner_mined_height) VALUES (?1, ?2, 0, X'', 1, 1, 400)",
+        params![w.as_slice(), blob::encode_outpoint(&input).unwrap()]).unwrap();
+    migrations::run(&mut conn).unwrap();
+    assert!(
+        !row_exists(&conn, &w, &input),
+        "V021 rescans mined sweep holds"
+    );
 }
 
 #[test]

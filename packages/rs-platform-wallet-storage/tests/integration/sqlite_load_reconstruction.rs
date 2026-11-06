@@ -1541,9 +1541,10 @@ fn tc_p4_012_load_query_count_bounded() {
         "per-wallet statement count must be constant \
          (N=1 → {count_one}, N=10 → {count_ten}, delta → {delta})"
     );
+    // Atomic replay also reads durable claims and spent prevout material.
     let per_wallet = delta / 9;
     assert!(
-        (1..=20).contains(&per_wallet),
+        (1..=21).contains(&per_wallet),
         "per-wallet statement count must be small + bounded, got {per_wallet}"
     );
     // Shared (wallet-count-independent) overhead: the `list_ids` +
@@ -1825,7 +1826,7 @@ fn tc_p4_020_unignore_survives_restart_table_is_authoritative() {
 }
 
 #[test]
-fn should_load_wallet_from_one_snapshot_during_an_external_commit() {
+fn should_exclude_external_writers_while_loading_one_consistent_snapshot() {
     use key_wallet::account::{AccountType, StandardAccountType};
     use platform_wallet::changeset::{AccountRegistrationEntry, CoreChangeSet};
     use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
@@ -1854,23 +1855,36 @@ fn should_load_wallet_from_one_snapshot_during_an_external_commit() {
             },
         )
         .unwrap();
-    let writer = rusqlite::Connection::open(path).unwrap();
+    let writer = rusqlite::Connection::open(&path).unwrap();
+    writer.busy_timeout(std::time::Duration::ZERO).unwrap();
     let changed = Arc::new(AtomicBool::new(false));
     let changed_hook = Arc::clone(&changed);
-    persister.lock_conn_for_test().authorizer(Some(move |ctx: AuthContext<'_>| {
-        if matches!(ctx.action, AuthAction::Read { table_name: "core_sync_state", .. })
-            && !changed_hook.swap(true, Ordering::SeqCst)
-        {
-            writer.execute_batch("BEGIN IMMEDIATE; UPDATE wallets SET birth_height = 10; UPDATE core_sync_state SET synced_height = 200; COMMIT;").unwrap();
-        }
-        Authorization::Allow
-    })).unwrap();
+    persister
+        .lock_conn_for_test()
+        .authorizer(Some(move |ctx: AuthContext<'_>| {
+            if matches!(
+                ctx.action,
+                AuthAction::Read {
+                    table_name: "core_sync_state",
+                    ..
+                }
+            ) && !changed_hook.swap(true, Ordering::SeqCst)
+            {
+                let error = writer.execute_batch("BEGIN IMMEDIATE").unwrap_err();
+                assert_eq!(
+                    error.sqlite_error_code(),
+                    Some(rusqlite::ErrorCode::DatabaseBusy)
+                );
+            }
+            Authorization::Allow
+        }))
+        .unwrap();
 
     let state = persister.load().unwrap();
 
     assert!(
         changed.load(Ordering::SeqCst),
-        "external commit must occur during load"
+        "external writer must attempt to enter during load"
     );
     let metadata = &state.wallets[&wallet_id].wallet_info.metadata;
     assert_eq!(metadata.birth_height, 0);
@@ -1878,4 +1892,13 @@ fn should_load_wallet_from_one_snapshot_during_an_external_commit() {
         metadata.synced_height, 100,
         "wallet metadata and checkpoint share one snapshot"
     );
+    persister
+        .lock_conn_for_test()
+        .authorizer(None::<fn(AuthContext<'_>) -> Authorization>)
+        .unwrap();
+    let writer = rusqlite::Connection::open(&path).unwrap();
+    writer.execute_batch("BEGIN IMMEDIATE; UPDATE wallets SET birth_height = 10; UPDATE core_sync_state SET synced_height = 200; COMMIT;").unwrap();
+    let next = persister.load().unwrap();
+    let metadata = &next.wallets[&wallet_id].wallet_info.metadata;
+    assert_eq!((metadata.birth_height, metadata.synced_height), (10, 200));
 }
