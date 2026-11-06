@@ -382,8 +382,14 @@ pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
                 // intact rather than flattening the day it ships.
                 // Flattening either to ErrorWalletOperation would leave
                 // the host with a spinner it can never resolve.
-                conflict @ (PlatformWalletError::AssetLockInputConflict { .. }
-                | PlatformWalletError::AssetLockInputContested { .. }) => conflict.into(),
+                //
+                // The input-cap refusal (60) crosses typed for the same
+                // reason: a lock over the cap is never re-sent, so every
+                // catch-up of it ends here, and only the code tells the
+                // host why this row will not complete.
+                typed @ (PlatformWalletError::AssetLockInputConflict { .. }
+                | PlatformWalletError::AssetLockInputContested { .. }
+                | PlatformWalletError::AssetLockTooManyInputs { .. }) => typed.into(),
                 other => PlatformWalletFFIResult::err(
                     PlatformWalletFFIResultCode::ErrorWalletOperation,
                     format!("{}", other),
@@ -465,7 +471,10 @@ mod tests {
     use crate::error::PlatformWalletFFIResultCode;
     use crate::handle::{Handle, ASSET_LOCK_MANAGER_STORAGE};
     use crate::runtime::runtime;
+    use dashcore::{OutPoint, Transaction, TxIn, Txid};
+    use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
     use platform_wallet::test_support::{test_platform_wallet_manager, NoopTestPersister};
+    use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
     use platform_wallet::PlatformWalletManager;
     use std::os::raw::c_char;
     use std::sync::Arc;
@@ -594,9 +603,9 @@ mod tests {
         assert_eq!(
             code,
             PlatformWalletFFIResultCode::ErrorWalletOperation,
-            "the catch-up maps every resume failure but a double-spend verdict \
-             to this one code, so this proves the resume ran rather than the \
-             handle lookup missing"
+            "the catch-up maps every resume failure it does not pass through \
+             typed to this one code, so this proves the resume ran rather than \
+             the handle lookup missing"
         );
         assert_eq!(
             recorded,
@@ -606,6 +615,68 @@ mod tests {
         );
         let bound = recorded[0].expect("a non-zero request is bounded");
         let _deadline = std::time::Instant::now() + bound;
+
+        ASSET_LOCK_MANAGER_STORAGE.remove(handle);
+    }
+
+    /// The launch catch-up must hand the host the typed input-cap refusal,
+    /// not the generic code every other resume failure flattens to: the
+    /// row is never re-sent, so this code is all the host learns about it.
+    /// The row is tracked the way a restored one is, over a transaction
+    /// with one input more than the cap. It carries no asset-lock payload:
+    /// the cap is the first thing DPP's structure validator checks, and
+    /// the resume asks it nothing else.
+    #[test]
+    fn should_keep_the_input_cap_refusal_typed_through_the_exported_catch_up() {
+        let (manager, handle) = live_manager_handle();
+        let asset_locks = runtime().block_on(async {
+            let wallet_id = manager.wallet_ids().await[0];
+            let wallet = manager
+                .get_wallet(&wallet_id)
+                .await
+                .expect("the manager just registered this wallet");
+            Arc::clone(wallet.asset_locks())
+        });
+        let transaction = Transaction {
+            version: 3,
+            lock_time: 0,
+            input: (0..101)
+                .map(|vout| TxIn {
+                    previous_output: OutPoint::new(Txid::from_byte_array([9u8; 32]), vout),
+                    ..TxIn::default()
+                })
+                .collect(),
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        let out_point = OutPoint::new(transaction.txid(), 0);
+        asset_locks.recover_asset_lock_blocking(
+            transaction,
+            1_000_000,
+            0,
+            AssetLockFundingType::IdentityRegistration,
+            0,
+            out_point,
+            None,
+        );
+
+        let result = unsafe {
+            asset_lock_manager_catch_up_blocking(
+                handle,
+                &out_point.txid.to_byte_array(),
+                out_point.vout,
+                1,
+            )
+        };
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockTooManyInputs
+        );
+        let tracked = asset_locks.list_tracked_locks_blocking();
+        assert_eq!(tracked.len(), 1, "the refused row stays tracked");
+        assert_eq!(tracked[0].out_point, out_point);
+        assert_eq!(tracked[0].status, AssetLockStatus::Broadcast);
 
         ASSET_LOCK_MANAGER_STORAGE.remove(handle);
     }
