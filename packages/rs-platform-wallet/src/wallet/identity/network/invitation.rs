@@ -535,7 +535,7 @@ mod tests {
                 .expect("wallet creation");
             let iw = wallet.identity();
 
-            let crypto_provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+            let crypto_provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
             let err = iw
                 .create_invitation(
                     1_000_000,

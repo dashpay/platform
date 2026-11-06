@@ -5,7 +5,6 @@ mod vectors;
 
 use dpp::dashcore::consensus::{deserialize, serialize};
 use dpp::dashcore::ephemerealdata::chain_lock::ChainLock;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::sml::llmq_type::LLMQType;
 use dpp::dashcore::{InstantLock, QuorumHash, Transaction};
 use dpp::identity::KeyType;

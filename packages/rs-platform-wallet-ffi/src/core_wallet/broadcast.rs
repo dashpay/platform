@@ -218,7 +218,6 @@ pub unsafe extern "C" fn core_wallet_signed_transaction_bytes(
 
 #[cfg(test)]
 mod outcome_tests {
-    use dashcore::hashes::Hash;
 
     use super::*;
 
