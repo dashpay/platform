@@ -107,7 +107,9 @@ impl<C> Platform<C> {
                         &platform_version.fee_version,
                     );
                 }
-            // In case of empty cached_fee_version, insert the new (epoch_index, fee_version)
+            // In case of empty cached_fee_version, insert the new (epoch_index, fee_version).
+            // A fresh state records its genesis generation at init chain, so this branch
+            // remains for saved states created before the genesis entry was recorded.
             } else {
                 previous_fee_versions_map.insert(
                     epoch_info.current_epoch_index(),
@@ -177,6 +179,7 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
+    use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
     use dpp::version::PlatformVersion;
 
     #[test]
@@ -362,6 +365,60 @@ mod tests {
         assert!(
             fee_versions.get(&1u16).is_some(),
             "expected fee version to be inserted for epoch 1"
+        );
+    }
+
+    #[test]
+    fn should_not_insert_a_second_entry_on_epoch_change_when_the_generation_is_unchanged() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let epoch_info = EpochInfo::V0(EpochInfoV0 {
+            current_epoch_index: 1,
+            previous_epoch_index: Some(0),
+            is_epoch_change: true,
+        });
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        let last_committed_state = platform.state.load();
+        let mut block_platform_state = last_committed_state.as_ref().clone();
+
+        // The genesis generation is recorded at init chain, so the map is not empty.
+        let seeded = block_platform_state.previous_fee_versions().clone();
+        assert_eq!(seeded.len(), 1, "a fresh state carries the genesis entry");
+        assert_eq!(
+            seeded
+                .get(&GENESIS_EPOCH_INDEX)
+                .expect("genesis entry")
+                .fee_version_number,
+            platform_version.fee_version.fee_version_number
+        );
+
+        platform
+            .upgrade_protocol_version_on_epoch_change_v0(
+                &block_info,
+                &epoch_info,
+                &last_committed_state,
+                &mut block_platform_state,
+                &transaction,
+                platform_version,
+            )
+            .expect("epoch change with the same protocol version succeeds");
+
+        assert_eq!(
+            block_platform_state.previous_fee_versions(),
+            &seeded,
+            "an epoch change within the same fee generation leaves the history alone"
         );
     }
 
