@@ -143,16 +143,19 @@ enum WalletKeyHealthChecker {
     /// its private bytes. Rust decides, and refuses a stored recovery
     /// phrase that isn't this wallet's (every key then shows not
     /// checked); this inspects the Keychain and renders. Pure read: does
-    /// not mutate state.
+    /// not mutate state. An identity deleted since the sheet opened is
+    /// skipped: its model must not be read.
     @MainActor
     static func runCheck(
         wallet: ManagedPlatformWallet,
         walletId: Data,
         identities: [PersistentIdentity]
     ) -> [WalletIdentityKeyHealthReport] {
-        identities.map { identity in
-            checkIdentity(identity, wallet: wallet, walletId: walletId)
-        }
+        identities
+            .filter { !$0.isDeleted && $0.modelContext != nil }
+            .map { identity in
+                checkIdentity(identity, wallet: wallet, walletId: walletId)
+            }
     }
 
     /// One identity's report from a single Rust check of all its keys.
@@ -440,7 +443,7 @@ enum WalletKeyHealthChecker {
     /// reactive). The caller can drop the row from the report
     /// list as long as `swiftDataDeleted == true`, even when
     /// `keychainError` is non-nil.
-    struct OrphanDeleteOutcome {
+    struct OrphanDeleteOutcome: Sendable {
         let swiftDataDeleted: Bool
         let keychainError: Error?
     }
@@ -538,6 +541,8 @@ struct WalletKeyHealthSheet: View {
     @State private var actionMessage: String?
     @State private var errorMessage: String?
     @State private var pendingOrphanDelete: WalletIdentityKeyHealthReport?
+    /// One removal per identity at a time.
+    @State private var removalGate = IdentityRemovalGate()
 
     var body: some View {
         NavigationView {
@@ -598,6 +603,7 @@ struct WalletKeyHealthSheet: View {
                         pendingOrphanDelete = nil
                     }
                 }
+                .disabled(pendingOrphanDelete.map { removalGate.isInFlight($0.id) } ?? false)
             } message: {
                 if let report = pendingOrphanDelete {
                     Text(
@@ -689,6 +695,7 @@ struct WalletKeyHealthSheet: View {
             } label: {
                 Label("Delete this identity", systemImage: "trash")
             }
+            .disabled(removalGate.isInFlight(report.id))
         }
     }
 
@@ -755,68 +762,88 @@ struct WalletKeyHealthSheet: View {
     /// Rust has re-fetched it from Platform and checked it again: the
     /// stored key rows can be stale (another device may have rotated the
     /// master key). Anything but `.notOwned` from that check, or an
-    /// error, deletes nothing.
+    /// error, deletes nothing. `removalGate` runs one removal per
+    /// identity at a time, and the row deleted is the one the store holds
+    /// after the check, not the one the report captured.
     private func deleteIdentity(_ report: WalletIdentityKeyHealthReport) {
-        Task { @MainActor in
-            let identityLabel = "identity \(report.identityIdBase58.prefix(12))…"
-            actionMessage = "Checking \(identityLabel) on Platform before deleting it…"
-            errorMessage = nil
-            let refreshed: ManagedPlatformWallet.IdentityWalletCheck
-            do {
-                refreshed = try await wallet.checkIdentityKeysOnPlatform(
-                    identityId: report.id,
-                    identityIndex: report.identityIndex
+        let identityId = report.id
+        let identityLabel = "identity \(report.identityIdBase58.prefix(12))…"
+        let wallet = wallet
+        let walletId = walletId
+        let modelContext = modelContext
+        guard let removal = removalGate.start(
+            identityId,
+            check: { try await wallet.checkIdentityKeysOnPlatform(identityId: identityId).ownership },
+            liveRow: { try Self.liveIdentityRow(identityId, in: modelContext) },
+            delete: { row in
+                try WalletKeyHealthChecker.deleteOrphan(
+                    identity: row,
+                    walletId: walletId,
+                    modelContext: modelContext
                 )
-            } catch {
+            }
+        ) else { return }
+        actionMessage = "Checking \(identityLabel) on Platform before deleting it…"
+        errorMessage = nil
+        Task { @MainActor in
+            switch await removal.value {
+            case .checkFailed(let error):
                 actionMessage = nil
                 errorMessage = "Not deleted: couldn't check \(identityLabel) on Platform: \(error.localizedDescription)"
-                return
-            }
-            guard refreshed.ownership == .notOwned else {
+            case .kept(let ownership):
                 // The refresh stored the identity's current key rows:
                 // check again so the sheet shows them, then say why
                 // nothing was deleted.
                 await runCheck()
-                errorMessage = refreshed.ownership == .owned
+                errorMessage = ownership == .owned
                     ? "Not deleted: on Platform, \(identityLabel) has this wallet's master key."
                     : "Not deleted: on Platform, \(identityLabel) can't be shown to belong to another wallet."
-                return
+            case .alreadyRemoved:
+                reports.removeAll { $0.id == identityId }
+                actionMessage = nil
+            case .lookupFailed(let error):
+                actionMessage = nil
+                errorMessage = "Not deleted: couldn't read \(identityLabel): \(error.localizedDescription)"
+            case .deleted(let outcome):
+                // SwiftData side succeeded → drop the now-deleted row
+                // from the report list regardless of the keychain
+                // side. Keeping it in `reports` after the SwiftData
+                // delete leaves stale UI (the row's relationship
+                // accessors are invalidated and any action against
+                // them throws). A keychain-only failure becomes a
+                // non-blocking warning instead of suppressing the
+                // success state.
+                if outcome.swiftDataDeleted {
+                    reports.removeAll { $0.id == identityId }
+                }
+                actionMessage = "Deleted orphan identity \(report.identityIdBase58.prefix(12))…"
+                if let keychainError = outcome.keychainError {
+                    errorMessage = "Keychain cleanup warning: \(keychainError.localizedDescription). Re-running Verify Identity Keys can retry."
+                } else {
+                    errorMessage = nil
+                }
+            case .deleteFailed(let error):
+                // SwiftData delete failed (the in-memory `reports`
+                // list is still authoritative); surface as a hard
+                // error and leave the row visible so the user can
+                // retry or escalate.
+                actionMessage = nil
+                errorMessage = "Delete failed: \(error.localizedDescription)"
             }
-            deleteOrphan(report)
         }
     }
 
-    private func deleteOrphan(_ report: WalletIdentityKeyHealthReport) {
-        do {
-            let outcome = try WalletKeyHealthChecker.deleteOrphan(
-                identity: report.identityRow,
-                walletId: walletId,
-                modelContext: modelContext
-            )
-            // SwiftData side succeeded → drop the now-deleted row
-            // from the report list regardless of the keychain
-            // side. Keeping it in `reports` after the SwiftData
-            // delete leaves stale UI (the row's relationship
-            // accessors are invalidated and any action against
-            // them throws). A keychain-only failure becomes a
-            // non-blocking warning instead of suppressing the
-            // success state.
-            if outcome.swiftDataDeleted {
-                reports.removeAll { $0.id == report.id }
-            }
-            if let keychainError = outcome.keychainError {
-                actionMessage = "Deleted orphan identity \(report.identityIdBase58.prefix(12))…"
-                errorMessage = "Keychain cleanup warning: \(keychainError.localizedDescription) — re-running Verify Identity Keys can retry."
-            } else {
-                actionMessage = "Deleted orphan identity \(report.identityIdBase58.prefix(12))…"
-                errorMessage = nil
-            }
-        } catch {
-            // SwiftData delete failed (the in-memory `reports`
-            // list is still authoritative); surface as a hard
-            // error and leave the row visible so the user can
-            // retry or escalate.
-            errorMessage = "Delete failed: \(error.localizedDescription)"
-        }
+    /// The identity's row as `modelContext` holds it now, or nil once it
+    /// is gone.
+    @MainActor
+    private static func liveIdentityRow(
+        _ identityId: Data,
+        in modelContext: ModelContext
+    ) throws -> PersistentIdentity? {
+        var descriptor = FetchDescriptor<PersistentIdentity>(
+            predicate: #Predicate { $0.identityId == identityId }
+        )
+        descriptor.fetchLimit = 1
+        return try modelContext.fetch(descriptor).first
     }
 }

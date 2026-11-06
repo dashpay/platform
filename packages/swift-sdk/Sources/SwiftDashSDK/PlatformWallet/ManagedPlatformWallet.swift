@@ -1756,22 +1756,21 @@ extension ManagedPlatformWallet {
     /// Rust's `PlatformWallet::check_identity_keys_on_platform` decides.
     /// The refresh stores the identity's key rows through the persister,
     /// so ask this before removing an identity: the stored rows can be
-    /// stale. The keys come back in the refreshed identity's key id
-    /// order.
+    /// stale. Rust checks at the identity's own slot in this wallet. The
+    /// keys come back in the refreshed identity's key id order.
     ///
     /// - Parameters:
     ///   - identityId: the 32-byte identity id.
-    ///   - identityIndex: the identity's index in the HD tree.
     ///   - storage: defaults to a fresh `WalletStorage()`, overridable
     ///     for tests. Used by the resolver vtable.
     ///
     /// - Throws: `PlatformWalletError` when the wallet doesn't hold the
-    ///   identity, Platform doesn't return it, or the mnemonic can't be
-    ///   read or isn't this wallet's. An error says nothing about whether
-    ///   the identity is the wallet's.
+    ///   identity or holds it with no slot in this wallet, Platform
+    ///   doesn't return it, or the mnemonic can't be read or isn't this
+    ///   wallet's. An error says nothing about whether the identity is
+    ///   the wallet's.
     public func checkIdentityKeysOnPlatform(
         identityId: Identifier,
-        identityIndex: UInt32,
         storage: WalletStorage = WalletStorage()
     ) async throws -> IdentityWalletCheck {
         guard identityId.count == 32 else {
@@ -1793,7 +1792,6 @@ extension ManagedPlatformWallet {
                         handle,
                         resolver.handle,
                         idBytes.bindMemory(to: UInt8.self).baseAddress!,
-                        identityIndex,
                         &out
                     )
                 }

@@ -1044,23 +1044,49 @@ impl IdentityWallet {
     /// Re-fetch the identity from Platform ([`Self::refresh_identity`],
     /// which also stores the refreshed key rows) and check every key it
     /// holds afterwards with [`Self::check_identity_keys`], in key id
-    /// order. Ask this before removing an identity: the stored key rows
-    /// can be stale (another device rotated the master key).
+    /// order, at the identity's slot in this wallet. Ask this before
+    /// removing an identity: the stored key rows can be stale (another
+    /// device rotated the master key).
     ///
-    /// An identity this wallet does not hold, or one Platform does not
-    /// return, fails the refresh, and the check fails with it: an error,
-    /// never `NotOwned`. The seed is resolved only after the refresh.
+    /// Each refusal is an error, never `NotOwned`: an identity the
+    /// manager doesn't hold (`IdentityNotFound`) or holds with no slot in
+    /// this wallet (`IdentityIndexNotSet`), both before the fetch, and one
+    /// Platform doesn't return. The seed is resolved only after the
+    /// refresh.
     pub async fn check_identity_keys_on_platform<E: From<PlatformWalletError>>(
         &self,
         identity_id: &Identifier,
-        identity_index: u32,
         resolve_master: impl FnOnce(Network) -> Result<ExtendedPrivKey, E>,
     ) -> Result<IdentityWalletCheck, E> {
+        self.wallet_identity_slot(identity_id).await?;
         let identity = self.refresh_identity(identity_id).await?;
+        // The slot as the manager holds it after the refresh.
+        let identity_index = self.wallet_identity_slot(identity_id).await?;
         let identity_public_keys: Vec<IdentityPublicKey> =
             identity.public_keys().values().cloned().collect();
         self.check_identity_keys(identity_index, &identity_public_keys, 0, resolve_master)
             .await
+    }
+
+    /// The slot `identity_id` has in this wallet: `IdentityNotFound` when
+    /// the manager doesn't hold it, `IdentityIndexNotSet` when it holds it
+    /// with no slot in this wallet (observed, or another wallet's).
+    async fn wallet_identity_slot(
+        &self,
+        identity_id: &Identifier,
+    ) -> Result<u32, PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
+        let manager = &wm
+            .get_wallet_info(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?
+            .identity_manager;
+        if manager.identity(identity_id).is_none() {
+            return Err(PlatformWalletError::IdentityNotFound(*identity_id));
+        }
+        manager
+            .wallet_identity(&self.wallet_id, identity_id)
+            .and_then(|managed| managed.identity_index)
+            .ok_or(PlatformWalletError::IdentityIndexNotSet(*identity_id))
     }
 }
 
@@ -1088,11 +1114,10 @@ impl PlatformWallet {
     pub async fn check_identity_keys_on_platform<E: From<PlatformWalletError>>(
         &self,
         identity_id: &Identifier,
-        identity_index: u32,
         resolve_master: impl FnOnce(Network) -> Result<ExtendedPrivKey, E>,
     ) -> Result<IdentityWalletCheck, E> {
         self.identity()
-            .check_identity_keys_on_platform(identity_id, identity_index, resolve_master)
+            .check_identity_keys_on_platform(identity_id, resolve_master)
             .await
     }
 
@@ -2434,11 +2459,21 @@ mod tests {
         })
     }
 
-    /// The testnet wallet of [`TEST_MNEMONIC`], holding `stored` at
-    /// identity index 1 when given, over a mock SDK that answers the
-    /// identity's fetch with `on_platform` when given.
+    /// Where the test wallet's identity manager holds the identity.
+    enum Held {
+        /// At this slot of the test wallet.
+        AtSlot(u32),
+        /// Observed, with no wallet slot.
+        OutOfWallet,
+        /// At slot 1 of another wallet's bucket.
+        InAnotherWallet,
+    }
+
+    /// The testnet wallet of [`TEST_MNEMONIC`], holding `stored` as given,
+    /// over a mock SDK that answers the identity's fetch with
+    /// `on_platform` when given.
     async fn wallet_on_platform(
-        stored: Option<dpp::identity::Identity>,
+        stored: Option<(dpp::identity::Identity, Held)>,
         on_platform: Option<Option<dpp::identity::Identity>>,
     ) -> (
         Arc<crate::PlatformWalletManager<crate::test_support::NoopTestPersister>>,
@@ -2472,13 +2507,23 @@ mod tests {
             )
             .await
             .expect("wallet creation");
-        if let Some(stored) = stored {
+        if let Some((stored, held)) = stored {
             let mut wm = manager.wallet_manager.write().await;
-            wm.get_wallet_info_mut(&wallet.wallet_id())
+            let identity_manager = &mut wm
+                .get_wallet_info_mut(&wallet.wallet_id())
                 .expect("wallet info")
-                .identity_manager
-                .add_identity(stored, 1, wallet.wallet_id(), &wallet.identity().persister)
-                .expect("store the identity");
+                .identity_manager;
+            let persister = &wallet.identity().persister;
+            match held {
+                Held::AtSlot(slot) => {
+                    identity_manager.add_identity(stored, slot, wallet.wallet_id(), persister)
+                }
+                Held::OutOfWallet => identity_manager.add_out_of_wallet_identity(stored, persister),
+                Held::InAnotherWallet => {
+                    identity_manager.add_identity(stored, 1, [0x99; 32], persister)
+                }
+            }
+            .expect("store the identity");
         }
         (manager, wallet)
     }
@@ -2503,7 +2548,8 @@ mod tests {
             ],
             1,
         );
-        let (_manager, wallet) = wallet_on_platform(Some(stored), Some(Some(on_platform))).await;
+        let (_manager, wallet) =
+            wallet_on_platform(Some((stored, Held::AtSlot(1))), Some(Some(on_platform))).await;
 
         let stale = wallet
             .check_identity_keys(1, &[stale_master], 0, |network| {
@@ -2514,7 +2560,7 @@ mod tests {
         assert_eq!(stale.ownership, IdentityWalletOwnership::NotOwned);
 
         let refreshed = wallet
-            .check_identity_keys_on_platform(&Identifier::from(PLATFORM_IDENTITY), 1, |network| {
+            .check_identity_keys_on_platform(&Identifier::from(PLATFORM_IDENTITY), |network| {
                 Ok::<_, PlatformWalletError>(master_for(network))
             })
             .await
@@ -2536,7 +2582,7 @@ mod tests {
         let (_manager, wallet) = wallet_on_platform(None, None).await;
 
         let err = wallet
-            .check_identity_keys_on_platform(&Identifier::from(PLATFORM_IDENTITY), 1, |_| {
+            .check_identity_keys_on_platform(&Identifier::from(PLATFORM_IDENTITY), |_| {
                 Err(PlatformWalletError::InvalidParameter(
                     "the seed must not be read".to_string(),
                 ))
@@ -2562,10 +2608,11 @@ mod tests {
             )],
             0,
         );
-        let (_manager, wallet) = wallet_on_platform(Some(stored), Some(None)).await;
+        let (_manager, wallet) =
+            wallet_on_platform(Some((stored, Held::AtSlot(1))), Some(None)).await;
 
         let err = wallet
-            .check_identity_keys_on_platform(&Identifier::from(PLATFORM_IDENTITY), 1, |_| {
+            .check_identity_keys_on_platform(&Identifier::from(PLATFORM_IDENTITY), |_| {
                 Err(PlatformWalletError::InvalidParameter(
                     "the seed must not be read".to_string(),
                 ))
@@ -2576,5 +2623,72 @@ mod tests {
             matches!(&err, PlatformWalletError::InvalidIdentityData(message) if message.contains("not found on Platform")),
             "{err:?}"
         );
+    }
+
+    /// The check uses the identity's own slot in the wallet, so a caller
+    /// can't ask about a contradictory one: checked at slot 0, the
+    /// identity at slot 1 would look foreign.
+    #[tokio::test]
+    async fn should_check_a_held_identity_at_its_own_wallet_slot() {
+        let master = ecdsa_key(0, SecurityLevel::MASTER, slot_public_key(1, 0), None);
+        let identity = platform_identity(vec![master.clone()], 0);
+        let (_manager, wallet) = wallet_on_platform(
+            Some((identity.clone(), Held::AtSlot(1))),
+            Some(Some(identity)),
+        )
+        .await;
+
+        let wrong_slot = wallet
+            .check_identity_keys(0, std::slice::from_ref(&master), 0, |network| {
+                Ok::<_, PlatformWalletError>(master_for(network))
+            })
+            .await
+            .expect("check at slot 0");
+        assert_eq!(wrong_slot.ownership, IdentityWalletOwnership::NotOwned);
+
+        let check = wallet
+            .check_identity_keys_on_platform(&Identifier::from(PLATFORM_IDENTITY), |network| {
+                Ok::<_, PlatformWalletError>(master_for(network))
+            })
+            .await
+            .expect("check after the refresh");
+        assert_eq!(check.ownership, IdentityWalletOwnership::Owned);
+        assert!(matches!(
+            check.keys[..],
+            [IdentityKeyWalletCheck::Matches { .. }]
+        ));
+    }
+
+    /// An identity the manager holds with no slot in this wallet
+    /// (observed, or another wallet's) is refused before the fetch and
+    /// before the seed is read, never called foreign.
+    #[tokio::test]
+    async fn should_refuse_a_held_identity_with_no_wallet_slot_without_the_seed() {
+        for held in [Held::OutOfWallet, Held::InAnotherWallet] {
+            let identity = platform_identity(
+                vec![ecdsa_key(
+                    0,
+                    SecurityLevel::MASTER,
+                    slot_public_key(1, 9),
+                    None,
+                )],
+                0,
+            );
+            // No fetch expectation: a fetch would fail with another error.
+            let (_manager, wallet) = wallet_on_platform(Some((identity, held)), None).await;
+
+            let err = wallet
+                .check_identity_keys_on_platform(&Identifier::from(PLATFORM_IDENTITY), |_| {
+                    Err(PlatformWalletError::InvalidParameter(
+                        "the seed must not be read".to_string(),
+                    ))
+                })
+                .await
+                .expect_err("an identity with no slot in this wallet");
+            assert!(
+                matches!(err, PlatformWalletError::IdentityIndexNotSet(id) if id == Identifier::from(PLATFORM_IDENTITY)),
+                "{err:?}"
+            );
+        }
     }
 }

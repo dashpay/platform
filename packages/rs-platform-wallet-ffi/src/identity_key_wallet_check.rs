@@ -502,14 +502,17 @@ pub unsafe extern "C" fn platform_wallet_check_identity_keys_with_resolver(
 /// `PlatformWallet::check_identity_keys_on_platform` decides: it refreshes
 /// the identity (storing its key rows through the persister), then runs
 /// the same check as [`platform_wallet_check_identity_keys_with_resolver`]
-/// on the refreshed keys, in key id order. Ask this before removing an
-/// identity, since the stored key rows can be stale.
+/// on the refreshed keys, in key id order, at the identity's own slot in
+/// this wallet. Ask this before removing an identity, since the stored
+/// key rows can be stale.
 ///
-/// An identity the wallet does not hold is refused with
-/// `ErrorIdentityNotFound`, and one Platform does not return with an
-/// error too, before the seed is read: never `NotOwned`. Otherwise this
-/// fails like the batch check. The result has one key per refreshed key;
-/// release it with [`platform_wallet_check_identity_keys_free`].
+/// Each refusal is an error, never `NotOwned`, and comes before the seed
+/// is read: an identity the wallet does not hold
+/// (`ErrorIdentityNotFound`), one it holds with no slot in this wallet
+/// (observed, or another wallet's), and one Platform does not return.
+/// Otherwise this fails like the batch check. The result has one key per
+/// refreshed key; release it with
+/// [`platform_wallet_check_identity_keys_free`].
 ///
 /// # Safety
 /// - `mnemonic_resolver_handle` must be a live handle from
@@ -522,7 +525,6 @@ pub unsafe extern "C" fn platform_wallet_check_identity_keys_on_platform_with_re
     wallet_handle: Handle,
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     identity_id: *const u8,
-    identity_index: u32,
     out_check: *mut IdentityWalletCheckFFI,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_check);
@@ -538,7 +540,7 @@ pub unsafe extern "C" fn platform_wallet_check_identity_keys_on_platform_with_re
     let resolve_master = master_resolver(mnemonic_resolver_handle as usize, wallet.wallet_id());
     let check = match block_on_worker(async move {
         wallet
-            .check_identity_keys_on_platform(&identity_id, identity_index, resolve_master)
+            .check_identity_keys_on_platform(&identity_id, resolve_master)
             .await
     }) {
         Ok(check) => check,
@@ -617,6 +619,9 @@ mod tests {
         dash_sdk_derive_identity_key_at_slot_free,
         dash_sdk_derive_identity_key_at_slot_with_resolver, platform_wallet_destroy,
     };
+    use dpp::identity::v0::IdentityV0;
+    use dpp::identity::Identity;
+    use dpp::prelude::Identifier;
     use rs_sdk_ffi::{
         dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy,
         mnemonic_resolver_result,
@@ -1557,7 +1562,6 @@ mod tests {
                 wallet_handle,
                 resolver,
                 identity_id,
-                1,
                 out,
             )
         }
@@ -1614,5 +1618,53 @@ mod tests {
             PlatformWalletFFIResultCode::NotFound
         );
         assert!(out.keys.is_null());
+    }
+
+    /// An identity the wallet holds with no slot in it (here observed) is
+    /// refused before the mnemonic is read (a NOT_FOUND resolver would
+    /// otherwise fail the call with `ErrorWalletOperation`), never called
+    /// foreign.
+    #[test]
+    fn should_refuse_a_held_identity_with_no_wallet_slot_without_the_mnemonic() {
+        let wallet = TestWallet::new();
+        let platform_wallet = registered_wallet(wallet.handle).expect("registered test wallet");
+        let observed = Identity::V0(IdentityV0 {
+            id: Identifier::from(UNHELD_IDENTITY),
+            public_keys: Default::default(),
+            balance: 0,
+            revision: 0,
+        });
+        runtime().block_on(async {
+            let mut wm = platform_wallet.identity().wallet_manager_write().await;
+            wm.get_wallet_info_mut(&platform_wallet.wallet_id())
+                .expect("wallet info")
+                .identity_manager
+                .add_out_of_wallet_identity(observed, platform_wallet.persister())
+                .expect("observe the identity");
+        });
+        let resolver = Resolver::new(not_found_resolve);
+        let mut out = IdentityWalletCheckFFI::empty();
+
+        let result = unsafe {
+            platform_wallet_check_identity_keys_on_platform_with_resolver(
+                wallet.handle,
+                resolver.0,
+                UNHELD_IDENTITY.as_ptr(),
+                &mut out,
+            )
+        };
+
+        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_ne!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        let message = unsafe { CStr::from_ptr(result.message) }
+            .to_str()
+            .expect("utf-8 message");
+        assert!(message.contains("Identity index not set"), "{message}");
+        assert_eq!(out.ownership, IdentityWalletOwnershipFFI::Undetermined);
+        assert!(out.keys.is_null());
+        unsafe { platform_wallet_check_identity_keys_free(&mut out) };
     }
 }
