@@ -11229,6 +11229,41 @@ mod tests {
         );
     }
 
+    fn complete_replay_extensions() -> PersistenceExtensionCallbacks {
+        unsafe extern "C" fn scope(
+            _: *mut c_void,
+            _: *const u8,
+            _: ReplayOperationFn,
+            _: *mut c_void,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load(
+            _: *mut c_void,
+            _: *const u8,
+            _: *mut *const ReplayClaimRestoreFFI,
+            _: *mut usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn free(_: *mut c_void, _: *const ReplayClaimRestoreFFI, _: usize) {}
+        unsafe extern "C" fn apply(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const HistoryReplayEffectsFFI,
+        ) -> i32 {
+            0
+        }
+        PersistenceExtensionCallbacks {
+            wallet_changeset_sweeps: Some(noop_wallet_changeset_sweeps),
+            replay_wallet: Some(scope),
+            load_replay_claims: Some(load),
+            free_replay_claims: Some(free),
+            apply_replay_effects: Some(apply),
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn asset_lock_reconciliation_requires_every_callback_leg() {
         fn complete_callbacks() -> PersistenceCallbacks {
@@ -11243,9 +11278,16 @@ mod tests {
         }
 
         let required = PersistenceCapabilities::ASSET_LOCK_RECONCILIATION;
-        assert!(declared_persister(complete_callbacks(), required)
-            .persistence_capabilities()
-            .contains(required));
+        let persister = |callbacks, extensions| {
+            FFIPersister::new_with_persistence_capabilities_and_extensions(
+                callbacks, required, extensions,
+            )
+        };
+        assert!(
+            persister(complete_callbacks(), complete_replay_extensions())
+                .persistence_capabilities()
+                .contains(required)
+        );
 
         let mut missing_begin = complete_callbacks();
         missing_begin.on_changeset_begin_fn = None;
@@ -11265,7 +11307,19 @@ mod tests {
             missing_load,
             missing_load_free,
         ] {
-            assert!(!declared_persister(callbacks, required)
+            assert!(!persister(callbacks, complete_replay_extensions())
+                .persistence_capabilities()
+                .contains(required));
+        }
+        for missing in 0..4 {
+            let mut extensions = complete_replay_extensions();
+            match missing {
+                0 => extensions.replay_wallet = None,
+                1 => extensions.load_replay_claims = None,
+                2 => extensions.free_replay_claims = None,
+                _ => extensions.apply_replay_effects = None,
+            }
+            assert!(!persister(complete_callbacks(), extensions)
                 .persistence_capabilities()
                 .contains(required));
         }
@@ -11298,41 +11352,10 @@ mod tests {
         cb.on_persist_token_balances_fn = Some(noop_token_balances);
         // "Fully wired" includes the extension's sweeps slot — the legacy
         // vtable alone can no longer attest CORE_SWEEP_REMOVAL.
-        unsafe extern "C" fn scope(
-            _: *mut c_void,
-            _: *const u8,
-            _: ReplayOperationFn,
-            _: *mut c_void,
-        ) -> i32 {
-            0
-        }
-        unsafe extern "C" fn load(
-            _: *mut c_void,
-            _: *const u8,
-            _: *mut *const ReplayClaimRestoreFFI,
-            _: *mut usize,
-        ) -> i32 {
-            0
-        }
-        unsafe extern "C" fn free(_: *mut c_void, _: *const ReplayClaimRestoreFFI, _: usize) {}
-        unsafe extern "C" fn apply(
-            _: *mut c_void,
-            _: *const u8,
-            _: *const HistoryReplayEffectsFFI,
-        ) -> i32 {
-            0
-        }
         let capabilities = FFIPersister::new_with_persistence_capabilities_and_extensions(
             cb,
             expected,
-            PersistenceExtensionCallbacks {
-                wallet_changeset_sweeps: Some(noop_wallet_changeset_sweeps),
-                replay_wallet: Some(scope),
-                load_replay_claims: Some(load),
-                free_replay_claims: Some(free),
-                apply_replay_effects: Some(apply),
-                ..Default::default()
-            },
+            complete_replay_extensions(),
         )
         .persistence_capabilities();
 

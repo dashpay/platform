@@ -6058,6 +6058,11 @@ mod tests {
     }
 
     impl PlatformWalletPersistence for SequencedHost {
+        fn replay_lock_candidates(&self) -> Result<Vec<dashcore::InstantLock>, PersistenceError> {
+            // Advisory proof discovery must not advance the authoritative snapshot sequence.
+            self.current.replay_lock_candidates()
+        }
+
         fn store_commits_inline(&self) -> bool {
             self.current.store_commits_inline()
         }
