@@ -645,6 +645,7 @@ mod tests {
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::Network;
+    use zeroize::Zeroizing;
 
     use crate::changeset::{
         ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
@@ -687,7 +688,7 @@ mod tests {
         Arc::new(PlatformWalletManager::new(sdk, persister, event_handler))
     }
 
-    fn seed_for(phrase: &str) -> [u8; 64] {
+    fn seed_for(phrase: &str) -> Zeroizing<[u8; 64]> {
         Mnemonic::from_phrase(phrase)
             .expect("valid test mnemonic")
             .to_seed("")
@@ -717,7 +718,7 @@ mod tests {
             "precondition: wallet must be seedless / external-signable"
         );
 
-        let crypto = SeedCryptoProvider::from_seed(seed, network);
+        let crypto = SeedCryptoProvider::from_seed(*seed, network);
         wallet
             .verify_seed_binds(&crypto)
             .await
@@ -746,7 +747,7 @@ mod tests {
         // A different mnemonic → a signer for the wrong wallet.
         let wrong_seed =
             seed_for("legal winner thank year wave sausage worth useful legal winner thank yellow");
-        let wrong_crypto = SeedCryptoProvider::from_seed(wrong_seed, network);
+        let wrong_crypto = SeedCryptoProvider::from_seed(*wrong_seed, network);
 
         let err = wallet
             .verify_seed_binds(&wrong_crypto)
@@ -781,10 +782,10 @@ mod tests {
         let identity = wallet.identity();
 
         let (path, expected) = identity.seed_binding_xpub().await.expect("binding xpub");
-        let master = ExtendedPrivKey::new_master(network, &seed).expect("master");
+        let master = ExtendedPrivKey::new_master(network, &*seed).expect("master");
         let from_master =
             ExtendedPubKey::from_priv(&master.derive_priv(&path).expect("derive account 0"));
-        let from_signer = SeedCryptoProvider::from_seed(seed, network)
+        let from_signer = SeedCryptoProvider::from_seed(*seed, network)
             .receiving_xpub(&path)
             .await
             .expect("signer xpub");
@@ -797,7 +798,7 @@ mod tests {
 
         let wrong_seed =
             seed_for("legal winner thank year wave sausage worth useful legal winner thank yellow");
-        let wrong_master = ExtendedPrivKey::new_master(network, &wrong_seed).expect("master");
+        let wrong_master = ExtendedPrivKey::new_master(network, &*wrong_seed).expect("master");
         let err = identity
             .verify_master_binds(&wrong_master)
             .await
@@ -807,7 +808,7 @@ mod tests {
             "expected SeedMismatch, got: {err:?}"
         );
         let err = wallet
-            .verify_seed_binds(&SeedCryptoProvider::from_seed(wrong_seed, network))
+            .verify_seed_binds(&SeedCryptoProvider::from_seed(*wrong_seed, network))
             .await
             .expect_err("the signer check refuses the same seed");
         assert!(matches!(err, PlatformWalletError::SeedMismatch { .. }));
@@ -832,7 +833,7 @@ mod tests {
             .await
             .expect("wallet creation");
 
-        let crypto = SeedCryptoProvider::from_seed(seed, network);
+        let crypto = SeedCryptoProvider::from_seed(*seed, network);
         let (outcome, marker) = wallet
             .verify_seed_binds_with_marker(&crypto, None, Some("stamp-1"))
             .await
@@ -885,7 +886,7 @@ mod tests {
 
         let wrong_seed =
             seed_for("legal winner thank year wave sausage worth useful legal winner thank yellow");
-        let wrong_crypto = SeedCryptoProvider::from_seed(wrong_seed, network);
+        let wrong_crypto = SeedCryptoProvider::from_seed(*wrong_seed, network);
 
         let (outcome, returned) = wallet
             .verify_seed_binds_with_marker(&wrong_crypto, Some(&marker), Some("stamp-1"))
@@ -931,7 +932,7 @@ mod tests {
         // The rewrite put a DIFFERENT mnemonic in the slot → must be caught.
         let wrong_seed =
             seed_for("legal winner thank year wave sausage worth useful legal winner thank yellow");
-        let wrong_crypto = SeedCryptoProvider::from_seed(wrong_seed, network);
+        let wrong_crypto = SeedCryptoProvider::from_seed(*wrong_seed, network);
         let err = wallet
             .verify_seed_binds_with_marker(&wrong_crypto, Some(&marker), Some("stamp-2"))
             .await
@@ -943,7 +944,7 @@ mod tests {
 
         // The rewrite re-stored the SAME mnemonic → re-verifies, and the new
         // marker carries the new stamp.
-        let crypto = SeedCryptoProvider::from_seed(seed, network);
+        let crypto = SeedCryptoProvider::from_seed(*seed, network);
         let (outcome, returned) = wallet
             .verify_seed_binds_with_marker(&crypto, Some(&marker), Some("stamp-2"))
             .await
@@ -980,7 +981,7 @@ mod tests {
             .account_xpub
             .to_string();
 
-        let crypto = SeedCryptoProvider::from_seed(seed, network);
+        let crypto = SeedCryptoProvider::from_seed(*seed, network);
         let (outcome, returned) = wallet
             .verify_seed_binds_with_marker(&crypto, Some(&format!("{xpub}|stamp-1")), None)
             .await
@@ -1020,7 +1021,7 @@ mod tests {
             .account_xpub
             .to_string();
 
-        let crypto = SeedCryptoProvider::from_seed(seed, network);
+        let crypto = SeedCryptoProvider::from_seed(*seed, network);
         let (outcome, marker) = wallet
             .verify_seed_binds_with_marker(
                 &crypto,
@@ -1034,7 +1035,7 @@ mod tests {
 
         let wrong_seed =
             seed_for("legal winner thank year wave sausage worth useful legal winner thank yellow");
-        let wrong_crypto = SeedCryptoProvider::from_seed(wrong_seed, network);
+        let wrong_crypto = SeedCryptoProvider::from_seed(*wrong_seed, network);
         let err = wallet
             .verify_seed_binds_with_marker(
                 &wrong_crypto,
@@ -1072,7 +1073,7 @@ mod tests {
             "precondition: wallet has no BIP44 account 0"
         );
 
-        let crypto = SeedCryptoProvider::from_seed(seed, network);
+        let crypto = SeedCryptoProvider::from_seed(*seed, network);
         let err = wallet
             .verify_seed_binds(&crypto)
             .await
@@ -1230,7 +1231,7 @@ mod tests {
         assert_eq!(receiving_account_count(&manager, &wallet_id).await, 0);
         assert_eq!(drainable(&wallet).await, 1);
 
-        let foreign = SeedCryptoProvider::from_seed(seed_for(FOREIGN_MNEMONIC), Network::Testnet);
+        let foreign = SeedCryptoProvider::from_seed(*seed_for(FOREIGN_MNEMONIC), Network::Testnet);
         let err = wallet
             .drain_pending_contact_crypto_verified(&foreign, None::<&UnusedSigner>, None)
             .await
@@ -1259,7 +1260,7 @@ mod tests {
     async fn the_owning_seed_passes_the_gate_and_the_drain_runs() {
         let (manager, wallet, wallet_id) = wallet_with_queued_contact_crypto().await;
 
-        let owning = SeedCryptoProvider::from_seed(seed_for(TEST_MNEMONIC), Network::Testnet);
+        let owning = SeedCryptoProvider::from_seed(*seed_for(TEST_MNEMONIC), Network::Testnet);
         let drained = wallet
             .drain_pending_contact_crypto_verified(&owning, None::<&UnusedSigner>, None)
             .await
@@ -1291,7 +1292,7 @@ mod tests {
             .expect("wallet creation");
         assert_eq!(drainable(&wallet).await, 0);
 
-        let foreign = SeedCryptoProvider::from_seed(seed_for(FOREIGN_MNEMONIC), Network::Testnet);
+        let foreign = SeedCryptoProvider::from_seed(*seed_for(FOREIGN_MNEMONIC), Network::Testnet);
         let drained = wallet
             .drain_pending_contact_crypto_verified(&foreign, None::<&UnusedSigner>, None)
             .await
@@ -1360,7 +1361,7 @@ mod tests {
         assert_eq!(receiving_account_count(&manager, &wallet_id).await, 0);
         assert_eq!(drainable(&wallet).await, 1);
 
-        let foreign = SeedCryptoProvider::from_seed(seed_for(FOREIGN_MNEMONIC), Network::Testnet);
+        let foreign = SeedCryptoProvider::from_seed(*seed_for(FOREIGN_MNEMONIC), Network::Testnet);
         let err = wallet
             .identity()
             .dashpay()
@@ -1405,7 +1406,7 @@ mod tests {
 
         let (manager, wallet, wallet_id) = wallet_with_queued_contact_crypto().await;
 
-        let owning = SeedCryptoProvider::from_seed(seed_for(TEST_MNEMONIC), Network::Testnet);
+        let owning = SeedCryptoProvider::from_seed(*seed_for(TEST_MNEMONIC), Network::Testnet);
         let err = wallet
             .identity()
             .dashpay()
@@ -1533,7 +1534,7 @@ mod tests {
     #[tokio::test]
     async fn the_gated_drain_reports_whether_it_verified_the_provider() {
         let (manager, wallet, wallet_id) = wallet_with_queued_contact_crypto().await;
-        let owning = SeedCryptoProvider::from_seed(seed_for(TEST_MNEMONIC), Network::Testnet);
+        let owning = SeedCryptoProvider::from_seed(*seed_for(TEST_MNEMONIC), Network::Testnet);
 
         // Work queued → the check runs and the binding is reported.
         let (drained, binding) = wallet
@@ -1575,7 +1576,7 @@ mod tests {
         enqueue_auto_accept(&manager, &wallet_id, 3).await;
         let queued_before = drainable(&wallet).await;
 
-        let foreign = SeedCryptoProvider::from_seed(seed_for(FOREIGN_MNEMONIC), Network::Testnet);
+        let foreign = SeedCryptoProvider::from_seed(*seed_for(FOREIGN_MNEMONIC), Network::Testnet);
         let err = wallet
             .identity()
             .dashpay()
@@ -1619,7 +1620,7 @@ mod tests {
     #[tokio::test]
     async fn a_queue_emptied_between_the_probes_does_not_let_an_auto_accept_through() {
         let (manager, wallet, wallet_id) = wallet_with_queued_contact_crypto().await;
-        let foreign = SeedCryptoProvider::from_seed(seed_for(FOREIGN_MNEMONIC), Network::Testnet);
+        let foreign = SeedCryptoProvider::from_seed(*seed_for(FOREIGN_MNEMONIC), Network::Testnet);
 
         // 1. The wrapper's probe: nonempty, so it does not early-out.
         assert_eq!(
@@ -1698,7 +1699,7 @@ mod tests {
     async fn a_binding_earned_elsewhere_cannot_authorize_this_wallets_auto_accepts() {
         let (_manager_a, wallet_a, _id_a) =
             wallet_with_queued_contact_crypto_from(TEST_MNEMONIC).await;
-        let provider_a = SeedCryptoProvider::from_seed(seed_for(TEST_MNEMONIC), Network::Testnet);
+        let provider_a = SeedCryptoProvider::from_seed(*seed_for(TEST_MNEMONIC), Network::Testnet);
 
         let (manager_b, wallet_b, id_b) =
             wallet_with_queued_contact_crypto_from(FOREIGN_MNEMONIC).await;
@@ -1736,7 +1737,7 @@ mod tests {
     #[tokio::test]
     async fn a_verified_binding_carries_into_the_auto_accept_pass() {
         let (manager, wallet, wallet_id) = wallet_with_queued_contact_crypto().await;
-        let owning = SeedCryptoProvider::from_seed(seed_for(TEST_MNEMONIC), Network::Testnet);
+        let owning = SeedCryptoProvider::from_seed(*seed_for(TEST_MNEMONIC), Network::Testnet);
 
         let (_, binding) = wallet
             .identity()
@@ -1810,7 +1811,7 @@ mod tests {
                 Self {
                     consulted: consulted.clone(),
                     answers_from: Some(SeedCryptoProvider::from_seed(
-                        seed_for(FOREIGN_MNEMONIC),
+                        *seed_for(FOREIGN_MNEMONIC),
                         Network::Testnet,
                     )),
                 },
@@ -2068,7 +2069,7 @@ mod tests {
     #[tokio::test]
     async fn a_deadline_with_room_left_still_lets_the_owning_seed_through() {
         let (manager, wallet, wallet_id) = wallet_with_queued_contact_crypto().await;
-        let owning = SeedCryptoProvider::from_seed(seed_for(TEST_MNEMONIC), Network::Testnet);
+        let owning = SeedCryptoProvider::from_seed(*seed_for(TEST_MNEMONIC), Network::Testnet);
 
         let drained = wallet
             .drain_pending_contact_crypto_verified(

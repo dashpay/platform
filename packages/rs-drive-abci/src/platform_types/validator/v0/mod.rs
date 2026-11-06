@@ -2,7 +2,6 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use dpp::bls::PublicKey as BlsPublicKey;
 pub use dpp::core_types::validator::v0::*;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{ProTxHash, PubkeyHash};
 use dpp::dashcore_rpc::json::{DMNState, MasternodeListItem};
 pub(crate) trait NewValidatorIfMasternodeInState {

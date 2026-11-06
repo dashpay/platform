@@ -465,10 +465,8 @@ impl VerifiedHttpContextProvider {
         // `signing_active_quorum_count` quorums, one is formed every DKG
         // interval, and one more interval covers a quorum mined late in it.
         // This bounds requests; it never decides which key is served.
-        let window = params
-            .dkg_params
-            .interval
-            .saturating_mul(params.signing_active_quorum_count.saturating_add(1));
+        let window = u32::from(params.dkg_interval)
+            .saturating_mul(u32::from(params.signing_active_quorum_count).saturating_add(1));
         let fetches = ProofFetches::new(
             u32::from(u8::from(platform_type)),
             window,
@@ -2806,7 +2804,7 @@ mod tests {
     #[test]
     fn should_ask_lower_by_one_dkg_interval_of_the_platform_quorums() {
         for network in [Network::Mainnet, Network::Testnet] {
-            let interval = network.platform_type().params().dkg_params.interval;
+            let interval = u32::from(network.platform_type().params().dkg_interval);
             assert_eq!(interval, DKG_INTERVAL_BLOCKS, "{network:?}");
         }
     }

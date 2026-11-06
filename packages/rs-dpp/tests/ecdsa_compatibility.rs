@@ -8,7 +8,7 @@ mod vectors;
 use dpp::address_funds::{AddressWitness, AddressWitnessVerificationOperations, PlatformAddress};
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::dashcore::crypto::ecdsa::EcdsaError;
-use dpp::dashcore::hashes::{hash160, Hash};
+use dpp::dashcore::hashes::hash160;
 use dpp::dashcore::key::Error as KeyError;
 use dpp::dashcore::sign_message::MessageSignatureError;
 use dpp::dashcore::signer::{sign, verify_hash_signature};

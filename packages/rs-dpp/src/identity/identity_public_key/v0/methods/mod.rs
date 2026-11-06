@@ -10,7 +10,6 @@ use crate::identity::KeyType;
 use crate::util::hash::ripemd160_sha256;
 use crate::ProtocolError;
 use anyhow::anyhow;
-use dashcore::hashes::Hash;
 use dashcore::{Network, PublicKey as ECDSAPublicKey};
 use platform_value::{BinaryData, Bytes20};
 use secp256k1::SecretKey;
