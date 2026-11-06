@@ -5837,7 +5837,7 @@ mod contact_info_provider_tests {
         )
         .expect("auth path");
 
-        let provider = SeedCryptoProvider::from_seed(seed, network);
+        let provider = SeedCryptoProvider::from_seed(*seed, network);
         let sealed = provider
             .contact_info_seal(&root_path, derivation_index, &contact_id, &plaintext, &iv)
             .await
@@ -5845,7 +5845,7 @@ mod contact_info_provider_tests {
 
         // Resident twin at the same real path → byte-identical ciphertext.
         let wallet = key_wallet::wallet::Wallet::from_seed_bytes(
-            seed,
+            *seed,
             network,
             key_wallet::wallet::initialization::WalletAccountCreationOptions::None,
         )
@@ -5913,14 +5913,14 @@ mod contact_info_provider_tests {
             &SecretKey::from_secret_bytes([0x42u8; 32]).expect("peer secret"),
         );
 
-        let provider = SeedCryptoProvider::from_seed(seed, network);
+        let provider = SeedCryptoProvider::from_seed(*seed, network);
         let shared: zeroize::Zeroizing<[u8; 32]> = provider
             .ecdh_shared_secret(&path, &peer)
             .await
             .expect("ecdh shared secret");
 
         let wallet = key_wallet::wallet::Wallet::from_seed_bytes(
-            seed,
+            *seed,
             network,
             key_wallet::wallet::initialization::WalletAccountCreationOptions::None,
         )
@@ -6418,7 +6418,7 @@ mod receiving_restore_tests {
                     friend_identity_id: contact.to_buffer(),
                 };
                 let account_xpub = ExtendedPubKey::from_priv(
-                    &ExtendedPrivKey::new_master(Network::Testnet, &seed).expect("master key"),
+                    &ExtendedPrivKey::new_master(Network::Testnet, &*seed).expect("master key"),
                 );
                 core_wallet
                     .add_account(account_type, Some(account_xpub))
@@ -6489,7 +6489,7 @@ mod receiving_restore_tests {
                 PendingContactCryptoOp::RegisterReceiving
             ));
         }
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
         assert_eq!(
             iw.dashpay()
                 .drain_pending_contact_crypto_verified(&provider, None)

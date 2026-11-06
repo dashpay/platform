@@ -15,7 +15,6 @@ use ciborium::Value as CborValue;
 use dpp::block::block_info::BlockInfo;
 
 use dpp::consensus::ConsensusError;
-use dpp::dashcore::hashes::Hash;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::string_encoding::{decode, Encoding};
 use dpp::platform_value::Value;

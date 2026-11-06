@@ -1,9 +1,8 @@
 //! Consensus-decodes raw transaction bytes into the outpoints they spend and
 //! the addresses and amounts they pay.
 
-use dashcore::blockdata::script::Instruction;
 use dashcore::consensus::{deserialize, encode};
-use dashcore::{Address, Network, OutPoint, PublicKey, ScriptBuf, Transaction, Txid};
+use dashcore::{Address, Network, OutPoint, ScriptBuf, Transaction, Txid};
 
 /// A transaction decoded by [`decode_transaction`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,9 +16,8 @@ pub struct DecodedTransaction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodedTxInput {
     pub previous_output: OutPoint,
-    /// The sender address a P2PKH-shaped scriptSig claims, or `None` for a
-    /// coinbase, non-P2PKH or unparsable input. The spender controls every push
-    /// and nothing verifies the signature against the spent output, so use it
+    /// The sender a P2PKH-shaped scriptSig claims, from
+    /// [`dashcore::TxIn::claimed_p2pkh_address`]. Nothing verifies it, so use it
     /// for display or as a matching hint only, never for authentication. The
     /// per-output `(address, value)` pair is the attacker-resistant primitive.
     pub sender_address: Option<Address>,
@@ -48,11 +46,7 @@ pub fn decode_transaction(
         .input
         .into_iter()
         .map(|txin| DecodedTxInput {
-            sender_address: if txin.previous_output.is_null() {
-                None
-            } else {
-                input_address_from_script_sig(&txin.script_sig, network)
-            },
+            sender_address: txin.claimed_p2pkh_address(network),
             previous_output: txin.previous_output,
         })
         .collect();
@@ -74,38 +68,10 @@ pub fn decode_transaction(
     })
 }
 
-/// Returns the P2PKH sender address claimed by `script_sig`.
-///
-/// Only the exact P2PKH spend shape matches: a DER-shaped signature push
-/// (`0x30` tag, at most 73 bytes with the sighash byte) followed by a 33 or
-/// 65 byte public key push, and nothing else. This keeps a P2SH redeem script
-/// whose last push happens to parse as a key from yielding an unrelated address.
-fn input_address_from_script_sig(script_sig: &ScriptBuf, network: Network) -> Option<Address> {
-    let mut sig: Option<&[u8]> = None;
-    let mut pubkey_bytes: Option<&[u8]> = None;
-    for instruction in script_sig.instructions() {
-        match instruction {
-            Ok(Instruction::PushBytes(bytes)) => match (sig, pubkey_bytes) {
-                (None, None) => sig = Some(bytes.as_bytes()),
-                (Some(_), None) => pubkey_bytes = Some(bytes.as_bytes()),
-                _ => return None,
-            },
-            _ => return None,
-        }
-    }
-    let (sig, pubkey_bytes) = (sig?, pubkey_bytes?);
-    if sig.is_empty() || sig[0] != 0x30 || sig.len() > 73 {
-        return None;
-    }
-    let pubkey = PublicKey::from_slice(pubkey_bytes).ok()?;
-    Some(Address::p2pkh(&pubkey, network))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{p2pkh_spend_tx, test_pubkey, tx_with_script_sig};
-    use dashcore::blockdata::script::Builder;
+    use crate::test_support::p2pkh_spend_tx;
     use dashcore::consensus::serialize;
 
     fn decode(tx: &Transaction, network: Network) -> DecodedTransaction {
@@ -154,39 +120,6 @@ mod tests {
             tx.input[0].previous_output
         );
         assert_eq!(decoded.inputs[0].sender_address, Some(addr));
-    }
-
-    #[test]
-    fn should_yield_no_input_address_for_a_non_p2pkh_script_sig() {
-        let addr = Address::dummy(Network::Testnet, 3);
-        let coinbase = Transaction::dummy_coinbase(&addr, 50_000);
-        assert!(decode(&coinbase, Network::Testnet).inputs[0]
-            .sender_address
-            .is_none());
-
-        // `Transaction::dummy` puts a lock script into the scriptSig: opcodes
-        // present and a 20-byte last push.
-        let lock_script_sig = Transaction::dummy(&addr, 1..2, &[1_000]);
-        assert!(decode(&lock_script_sig, Network::Testnet).inputs[0]
-            .sender_address
-            .is_none());
-
-        // Three pushes ending in a valid key, the P2SH redeem-script shape.
-        let redeem = Builder::new()
-            .push_slice([0x30u8; 71])
-            .push_slice([0x01u8; 20])
-            .push_key(&test_pubkey())
-            .into_script();
-        let decoded = decode(&tx_with_script_sig(redeem), Network::Testnet);
-        assert!(decoded.inputs[0].sender_address.is_none());
-
-        // Two pushes, but the first has no DER `0x30` tag.
-        let not_a_signature = Builder::new()
-            .push_slice([0xAAu8; 10])
-            .push_key(&test_pubkey())
-            .into_script();
-        let decoded = decode(&tx_with_script_sig(not_a_signature), Network::Testnet);
-        assert!(decoded.inputs[0].sender_address.is_none());
     }
 
     #[test]
