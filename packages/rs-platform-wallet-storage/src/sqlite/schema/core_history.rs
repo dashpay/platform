@@ -14,7 +14,7 @@ use platform_wallet::changeset::{
 use platform_wallet::wallet::platform_wallet::WalletId;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
-use super::accounts::DASHPAY_EXTERNAL_LABEL;
+use super::accounts::{DASHPAY_EXTERNAL_LABEL, PLATFORM_PAYMENT_LABEL};
 use super::{blob, core_state, wallets};
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::load_ctx::LoadCtx;
@@ -327,10 +327,12 @@ fn repair_record(
     Ok(())
 }
 
-/// The credit scripts of `record`'s asset-lock payload that a non-contact
-/// account's persisted address pool holds. The live projection persists the
-/// pool entry of every credit key it found owned before the record, so this
-/// sees whatever the live accounting saw.
+/// The credit scripts of `record`'s asset-lock payload that a persisted
+/// address pool of the wallet's own Core accounts holds. That is the live
+/// projection's domain: key-wallet's `all_accounts()` minus a contact's
+/// watch-only chain, so `PlatformPayment` pools (held outside it) do not
+/// count either. The live projection persists the pool entry of every credit
+/// key it counts before the record, so this sees what the live accounting saw.
 fn owned_credit_scripts(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -343,13 +345,14 @@ fn owned_credit_scripts(
     }
     let mut probe = conn.prepare_cached(
         "SELECT EXISTS(SELECT 1 FROM core_address_pool \
-         WHERE wallet_id = ?1 AND script = ?2 AND account_type <> ?3)",
+         WHERE wallet_id = ?1 AND script = ?2 AND account_type NOT IN (?3, ?4))",
     )?;
     for output in credits {
         let key = params![
             wallet_id.as_slice(),
             output.script_pubkey.as_bytes(),
-            DASHPAY_EXTERNAL_LABEL
+            DASHPAY_EXTERNAL_LABEL,
+            PLATFORM_PAYMENT_LABEL
         ];
         if probe.query_row(key, |row| row.get::<_, bool>(0))? {
             owned.insert(output.script_pubkey.clone());
@@ -560,8 +563,9 @@ mod tests {
         );
     }
 
-    /// Shared with the Swift SDK's `TransactionAccountingTests` direction
-    /// table; pins the rule repair takes from `platform_wallet`.
+    /// The direction case table; pins the rule repair takes from
+    /// `platform_wallet`. Swift's history reconciliation (dashpay/platform#5417)
+    /// mirrors it.
     #[test]
     fn should_classify_repaired_direction_like_the_swift_sdk() {
         use TransactionDirection::{CoinJoin, Incoming, Internal, Outgoing};
@@ -759,7 +763,7 @@ mod tests {
         transfer_receiver.net_amount = (FUNDING - LOCK_FEE) as i64;
 
         let lock_net = -((LOCK_CREDIT + LOCK_FEE) as i64);
-        let (own, foreign, contact) = (address(5), address(6), address(8));
+        let (own, foreign, contact, platform) = (address(5), address(6), address(8), address(10));
         let lock = |funding: &TransactionRecord, credits: &[Address]| {
             let funding = with_credits(funding.clone(), credits);
             let keys = keys_marker(&funding);
@@ -813,6 +817,12 @@ mod tests {
                 lock_net,
             ),
             (
+                "asset lock, platform-payment credit",
+                lock(&lock_change, std::slice::from_ref(&platform)),
+                Outgoing,
+                lock_net,
+            ),
+            (
                 "asset lock, no payload",
                 vec![lock_change.clone(), keys_marker(&lock_change)],
                 Outgoing,
@@ -846,6 +856,11 @@ mod tests {
                 &own.script_pubkey(),
             );
             pool_row(&conn, &contact_account, 0, &contact.script_pubkey());
+            let platform_account = AccountType::PlatformPayment {
+                account: 0,
+                key_class: 0,
+            };
+            pool_row(&conn, &platform_account, 0, &platform.script_pubkey());
             store(&conn, live);
             let tx = conn.transaction().unwrap();
             repair_record(&tx, &WALLET_ID, &live.txid, dashcore::Network::Testnet).unwrap();

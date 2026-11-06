@@ -1344,7 +1344,8 @@ fn pool_state(persister: &SqlitePersister, wallet_id: &WalletId) -> Vec<(u32, bo
 /// The pool rows of the keys an asset lock's credits pay are stored with
 /// the record; derived or used addresses no credit pays are not. A stored
 /// row is never rewritten: the projection's wallet snapshot may predate a
-/// reservation, and contradicting key material is refused.
+/// reservation. A row contradicting stored key material is skipped without
+/// failing the rest of the Core write.
 #[test]
 fn should_store_credit_key_rows_without_rewriting_stored_ones() {
     let (persister, _dir, _) = fresh_persister();
@@ -1419,9 +1420,18 @@ fn should_store_credit_key_rows_without_rewriting_stored_ones() {
     conflicting.addresses_derived = vec![derived(account, &external_infos(22)[0])];
     conflicting.addresses_derived[0].derivation_index = credit.index;
     conflicting.addresses_derived[0].address = credit.address.clone();
-    let error = emit(conflicting).unwrap_err();
-    assert!(matches!(
-        *wallet_storage_error(error),
-        WalletStorageError::TypedPoolKeyConflict { .. }
-    ));
+    let txid = conflicting.records[0].txid;
+    emit(conflicting).expect("conflicting evidence must not fail the Core write");
+    assert_eq!(
+        pool_state(&persister, &wallet_id),
+        vec![(credit.index, false, Some(9876))],
+        "the stored row stands"
+    );
+    assert!(
+        persister
+            .get_core_tx_record(wallet_id, &txid)
+            .unwrap()
+            .is_some(),
+        "the record is still persisted"
+    );
 }

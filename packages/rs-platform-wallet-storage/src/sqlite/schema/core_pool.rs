@@ -119,20 +119,34 @@ pub fn apply_pools(
     wallet_id: &WalletId,
     pools: &[AccountAddressPoolEntry],
 ) -> Result<(), WalletStorageError> {
-    apply_pool_rows(tx, wallet_id, pools, UPSERT_POOL_SQL)
+    apply_pool_rows(tx, wallet_id, pools, PoolWrite::Snapshot)
+}
+
+/// How [`apply_pool_rows`] writes its rows.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PoolWrite {
+    /// Upsert a pool snapshot; contradicting stored key material fails.
+    Snapshot,
+    /// Insert ownership evidence only where no row exists. A row that would
+    /// contradict stored key material is skipped: evidence must not fail
+    /// the Core write it rides in.
+    Evidence,
 }
 
 fn apply_pool_rows(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     pools: &[AccountAddressPoolEntry],
-    sql: &str,
+    write: PoolWrite,
 ) -> Result<(), WalletStorageError> {
     if pools.is_empty() {
         return Ok(());
     }
     let mut conflict_stmt = tx.prepare_cached(TYPED_POOL_CONFLICT_SQL)?;
-    let mut upsert_stmt = tx.prepare_cached(sql)?;
+    let mut upsert_stmt = tx.prepare_cached(match write {
+        PoolWrite::Snapshot => UPSERT_POOL_SQL,
+        PoolWrite::Evidence => INSERT_POOL_ROW_SQL,
+    })?;
     for entry in pools {
         // `account_type` discriminates accounts that collapse to the same
         // `(account_index, key_class)` sentinel (e.g. `IdentityRegistration`
@@ -193,6 +207,14 @@ fn apply_pool_rows(
                 ],
                 |row| row.get::<_, bool>(0),
             )?;
+            if conflicts && write == PoolWrite::Evidence {
+                tracing::warn!(
+                    account_type,
+                    address_index = info.index,
+                    "asset-lock credit key contradicts the stored pool key; kept the stored row"
+                );
+                continue;
+            }
             if conflicts {
                 return Err(WalletStorageError::TypedPoolKeyConflict {
                     account_type,
@@ -228,7 +250,8 @@ fn apply_pool_rows(
 /// Insert the pool rows of the wallet's own keys that `cs`'s asset-lock
 /// credits pay, so the repair's credit ownership sees what the live
 /// projection saw. Rows already stored are left untouched: the projection
-/// reads a wallet snapshot that may be older than a stored reservation.
+/// reads a wallet snapshot that may be older than a stored reservation. See
+/// [`PoolWrite::Evidence`] for a row contradicting stored key material.
 pub(super) fn apply_credit_key_rows(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -276,7 +299,7 @@ pub(super) fn apply_credit_key_rows(
             addresses: vec![used.info.clone()],
         });
     let rows: Vec<_> = derived.chain(used).collect();
-    apply_pool_rows(tx, wallet_id, &rows, INSERT_POOL_ROW_SQL)
+    apply_pool_rows(tx, wallet_id, &rows, PoolWrite::Evidence)
 }
 
 /// One restored typed-pool row: `(address_index, script_bytes, public_key, used)`.

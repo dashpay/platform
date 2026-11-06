@@ -2576,17 +2576,20 @@ async fn with_held_sibling_slices(
 /// ownership evidence the live accounting used.
 #[derive(Default)]
 struct CreditOwnership {
-    /// Credit scripts held by a non-contact account's address pool.
+    /// Credit scripts held by a non-contact account's address pool and
+    /// carried by one of the entries below.
     scripts: BTreeSet<ScriptBuf>,
-    /// The owning addresses already used, as `addresses_marked_used` entries.
+    /// The owning addresses already used or reserved, with their state, as
+    /// `addresses_marked_used` entries.
     used: Vec<DerivedAddressInfo>,
-    /// The owning addresses not yet used, as `addresses_derived` entries.
+    /// The owning addresses still available, as `addresses_derived` entries.
     derived: Vec<DerivedAddress>,
 }
 
 /// Credit ownership of `records`' asset-lock payloads, read from the same
 /// wallet snapshot as the records. A contact's watch-only chain never makes
-/// a credit the wallet's own.
+/// a credit the wallet's own, and a key no entry can carry is not claimed:
+/// the SQLite repair could not see it.
 fn credit_ownership(info: &PlatformWalletInfo, records: &[TransactionRecord]) -> CreditOwnership {
     let scripts: BTreeSet<_> = records
         .iter()
@@ -2597,18 +2600,14 @@ fn credit_ownership(info: &PlatformWalletInfo, records: &[TransactionRecord]) ->
     if scripts.is_empty() {
         return evidence;
     }
-    let mut seen = HashSet::new();
     for account in info.core_wallet.accounts.all_accounts() {
         let kind = account.managed_account_type();
         if kind.is_contact_owned() {
             continue;
         }
-        for script in &scripts {
-            if !kind.contains_script_pub_key(script) {
-                continue;
-            }
-            evidence.scripts.insert((*script).clone());
-            for pool in kind.address_pools() {
+        let account_type = kind.to_account_type();
+        for pool in kind.address_pools() {
+            for script in &scripts {
                 let Some(address) = pool
                     .script_pubkey_index
                     .get(*script)
@@ -2616,27 +2615,35 @@ fn credit_ownership(info: &PlatformWalletInfo, records: &[TransactionRecord]) ->
                 else {
                     continue;
                 };
-                if !seen.insert((kind.to_account_type(), pool.pool_type, address.index)) {
-                    continue;
-                }
-                if address.is_used() {
+                // Only an `Available` key may be announced as freshly derived:
+                // hosts store a derived entry as unused, which would release
+                // a reservation.
+                if !address.is_available() {
                     evidence.used.push(DerivedAddressInfo {
-                        account_type: kind.to_account_type(),
+                        account_type,
                         pool_type: pool.pool_type,
                         info: address.clone(),
                     });
-                } else if let Some(PublicKeyType::ECDSA(bytes)) = &address.public_key {
-                    // Evidence of a derived key, not a usage transition.
-                    if let Ok(public_key) = PublicKey::from_slice(bytes) {
-                        evidence.derived.push(DerivedAddress {
-                            account_type: kind.to_account_type(),
-                            pool_type: pool.pool_type,
-                            derivation_index: address.index,
-                            address: address.address.clone(),
-                            public_key,
-                        });
-                    }
+                } else if let Some(public_key) = match &address.public_key {
+                    Some(PublicKeyType::ECDSA(bytes)) => PublicKey::from_slice(bytes).ok(),
+                    _ => None,
+                } {
+                    evidence.derived.push(DerivedAddress {
+                        account_type,
+                        pool_type: pool.pool_type,
+                        derivation_index: address.index,
+                        address: address.address.clone(),
+                        public_key,
+                    });
+                } else {
+                    tracing::debug!(
+                        ?account_type,
+                        index = address.index,
+                        "asset-lock credit key has no ECDSA public key to persist; not counted as owned"
+                    );
+                    continue;
                 }
+                evidence.scripts.insert((*script).clone());
             }
         }
     }
@@ -4556,8 +4563,10 @@ mod contact_watch_only_projection_tests {
     /// credit pays a key of one of the wallet's own (non-contact) accounts,
     /// on every event that projects it; a foreign, mixed, empty or
     /// contact-only credit set is `Outgoing`. The net is `-(credit + fee)`
-    /// either way. An owning key the wallet has not used yet is emitted as a
-    /// derived address, never as a usage transition.
+    /// either way. An owning key still `Available` is emitted as a derived
+    /// address; a used or reserved one keeps its state as a marked-used entry.
+    /// An available key with no ECDSA key material cannot be kept as
+    /// evidence, so it is not claimed either.
     #[tokio::test]
     async fn should_project_asset_lock_credit_direction_from_every_payload_script() {
         use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
@@ -4573,6 +4582,8 @@ mod contact_watch_only_projection_tests {
             "contact",
             "shared contact",
             "funds key",
+            "keyless funds key",
+            "reserved funds key",
         ] {
             let (mut ctx, funding) = single_coin_wallet().await;
             let contact = contact_external_account();
@@ -4618,10 +4629,26 @@ mod contact_watch_only_projection_tests {
                 .addresses[&10]
                 .address
                 .clone();
+            let mut funds_pools = ctx
+                .managed_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .unwrap()
+                .managed_account_type_mut()
+                .address_pools_mut();
+            let reserved = funds_pools[0].addresses.get_mut(&11).unwrap();
+            reserved.state = AddressState::Reserved { at: 7 };
+            let reserved_key = reserved.address.clone();
+            let keyless = funds_pools[0].addresses.get_mut(&12).unwrap();
+            keyless.public_key = None;
+            let keyless_key = keyless.address.clone();
             let credit_addresses = match case {
                 "own" | "shared contact" => vec![own[0].clone()],
                 "contact" => vec![watched_address],
                 "funds key" => vec![funds_key.clone()],
+                "reserved funds key" => vec![reserved_key.clone()],
+                "keyless funds key" => vec![keyless_key.clone()],
                 "foreign" => vec![contact_address()],
                 "mixed" => vec![own[0].clone(), contact_address()],
                 "two owned" => own,
@@ -4661,7 +4688,11 @@ mod contact_watch_only_projection_tests {
                 .insert_wallet(ctx.wallet, platform_info(ctx.managed_wallet))
                 .unwrap();
             let manager = Arc::new(RwLock::new(wm));
-            let expected = if matches!(case, "own" | "two owned" | "shared contact" | "funds key") {
+            // A key the store could not keep as evidence is not claimed live.
+            let expected = if matches!(
+                case,
+                "own" | "two owned" | "shared contact" | "funds key" | "reserved funds key"
+            ) {
                 TransactionDirection::Internal
             } else {
                 TransactionDirection::Outgoing
@@ -4701,6 +4732,21 @@ mod contact_watch_only_projection_tests {
             ];
             for (event_index, event) in events.iter().enumerate() {
                 let projected = build_core_changeset(&manager, event).await;
+                if case == "reserved funds key" {
+                    assert!(
+                        projected.addresses_marked_used.iter().any(|entry| {
+                            entry.info.address == reserved_key && entry.info.is_reserved()
+                        }),
+                        "a reserved credit key keeps its reservation"
+                    );
+                    assert!(
+                        !projected
+                            .addresses_derived
+                            .iter()
+                            .any(|entry| entry.address == reserved_key),
+                        "a reserved credit key is not re-announced as fresh"
+                    );
+                }
                 if case == "funds key" {
                     assert!(
                         !projected

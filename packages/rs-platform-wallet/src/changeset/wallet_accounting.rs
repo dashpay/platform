@@ -31,16 +31,14 @@ use key_wallet::transaction_checking::transaction_router::TransactionType;
 /// - `has_ours`: at least one output is wallet-owned (`Received`/`Change`).
 /// - `has_external`: at least one output is neither wallet-owned nor an
 ///   OP_RETURN burn, so value leaves the wallet.
-///
 /// - `owns_all_credits`: the asset-lock payload has credit outputs and every
 ///   one pays a wallet-owned script; ignored for other transaction types.
 ///
 /// An asset lock is `Internal` when nothing leaves the wallet: no external
-/// output and every credit owned, change or not. The Swift SDK's
-/// `PersistentTransaction.reconciledAccounting` applies the same rule;
-/// keep them in step. The case table shared with Swift lives in
+/// output and every credit owned, change or not. The case table lives in
 /// `platform-wallet-storage`
-/// (`should_classify_repaired_direction_like_the_swift_sdk`).
+/// (`should_classify_repaired_direction_like_the_swift_sdk`); Swift's history
+/// reconciliation (dashpay/platform#5417) mirrors the rule.
 pub fn wallet_direction(
     transaction_type: TransactionType,
     spends_ours: bool,
