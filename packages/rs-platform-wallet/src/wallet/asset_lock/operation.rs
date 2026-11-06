@@ -157,7 +157,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Durable BEFORE visible: a failed store or flush leaves the live row and
     /// the context Pending, and the next resume re-derives completion from
     /// Platform's verdict. Idempotent on an already completed row.
-    #[cfg(any(feature = "shielded", test))]
+    #[cfg(feature = "shielded")]
     pub(crate) async fn complete_wallet_drain(
         &self,
         out_point: OutPoint,
