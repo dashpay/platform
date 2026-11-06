@@ -1138,7 +1138,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Ordering matters and is fourfold:
     /// 1. SPV is stopped and joined FIRST so it cannot dispatch more wallet
     ///    events, then payment-task admission is closed and all admitted
-    ///    DashPay payment-hook work is joined.
+    ///    DashPay payment-hook work is joined. TXO-reconcile engine guards a
+    ///    host still holds are force-released only after SPV stopped
+    ///    cleanly, never before, so no fork can land between a host's read
+    ///    and its in-flight store write; a failed stop leaves them held.
     /// 2. `quiesce()` each coordinator. Cancel-only `stop()` would
     ///    let a pass already inside `sync_now` keep running and call
     ///    `persister.store(...)` / fire a host completion callback after
@@ -1166,6 +1169,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// (its live handle is re-parked on timeout so a retry re-joins it).
     /// Past those SPV lock waits, a wedged await therefore surfaces as a
     /// non-clean report instead of hanging the FFI's `destroy` forever.
+    /// A host still writing a TXO-reconcile page holds its engine guard
+    /// through SPV stop, so SPV teardown (and anything queued on the engine
+    /// behind it) waits for that write; a write that never ends turns into a
+    /// timed-out SPV stop, not a hang.
     ///
     /// Returns a [`ShutdownReport`] keyed by [`WalletWorker`] — including
     /// the non-registry workers [`WalletWorker::Spv`],
@@ -1177,15 +1184,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// [`WorkerStatus`]: dash_async::WorkerStatus
     pub async fn shutdown(&self) -> ShutdownReport<WalletWorker> {
-        // A reconcile's engine guard is held across one host write and
-        // released by the host; one it failed to release must not hold the
-        // writers below off.
-        self.release_txo_reconcile_holds();
         // SPV first: it is the event source feeding everything below. Its
         // `stop` bounds the wait for teardown but never aborts it, so a
         // timeout means SPV work is still live. Its outcome lands in the
         // report — a failed stop must not hide behind a clean coordinator join.
-        let spv_status = match self.spv_manager.stop().await {
+        //
+        // A TXO reconcile's engine guard is held across one host store write
+        // and released by the host, which may still be writing when this
+        // runs. It is released here only AFTER SPV stopped cleanly — SPV is
+        // what applies forks, and a fork landing under a revoked guard
+        // before the host's write lands is exactly what the guard prevents.
+        // Until then an SPV writer simply waits for the host's write, under
+        // the stop's own deadline. A failed or timed-out stop releases
+        // nothing (fail closed): the guard stays with the host's handle.
+        let spv_status = match self.stop_spv_then_release_txo_reconcile_holds().await {
             Ok(()) => WorkerStatus::Ok,
             Err(error) => {
                 tracing::warn!(?error, "SPV shutdown failed");

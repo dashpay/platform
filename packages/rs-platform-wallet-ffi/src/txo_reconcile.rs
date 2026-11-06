@@ -393,8 +393,11 @@ pub struct TxoReconcileHeldVerdictsFFI {
 /// `platform_wallet_manager_txo_reconcile_finish`: those resolve the
 /// manager handle, and the handle registry must never be waited for while
 /// the guard is held (every other path takes the registry before the
-/// engine lock). Finish and manager destroy release a guard the host
-/// failed to, as a backstop. Call this outside the host's
+/// engine lock). Finish releases a guard the host failed to, as a
+/// backstop; so does manager destroy, but only once its SPV stop has
+/// succeeded — while SPV may still apply a fork the guard stays with this
+/// handle, and destroy's SPV stop waits (under its deadline) for the host's
+/// write. Call this outside the host's
 /// persistence-callback exclusion and never from inside a persistence
 /// callback: the engine calls those callbacks under its write lock. The
 /// registry is read only to resolve the manager, with no guard held; the

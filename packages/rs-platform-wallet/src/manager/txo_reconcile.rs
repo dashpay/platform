@@ -101,6 +101,7 @@ use key_wallet_manager::WalletManager;
 use tokio::sync::{OwnedRwLockReadGuard, RwLock};
 
 use crate::changeset::PlatformWalletPersistence;
+use crate::error::PlatformWalletError;
 use crate::manager::accessors::{
     classify_outpoints, wallet_utxos_page, OutpointClass, OutpointOwnershipQuery, WalletUtxoCursor,
     WalletUtxoRow,
@@ -457,7 +458,8 @@ pub struct TxoReconcileSchedule {
 type EngineReadGuard = OwnedRwLockReadGuard<WalletManager<PlatformWalletInfo>>;
 
 /// Where one page's engine guard lives: shared by the run's claim, which
-/// empties it on [`TxoReconcileSchedule::finish`] and at shutdown, and the
+/// empties it on [`TxoReconcileSchedule::finish`] and at shutdown once SPV
+/// has stopped ([`release_txo_holds_after_stop`]), and the
 /// host's [`TxoReconcileHeldVerdicts`], which empties it on drop. Whichever
 /// comes first releases the guard; the other finds the slot empty.
 type HeldSlot = Arc<Mutex<Option<EngineReadGuard>>>;
@@ -761,8 +763,9 @@ impl TxoReconciler {
     /// ([`Self::begin`]), answered under a read guard on the wallet manager
     /// that is kept when this returns: it comes back as a
     /// [`TxoReconcileHeldVerdicts`], which the host drops once it has
-    /// written the verdicts to its store. [`Self::finish`] and the manager's
-    /// shutdown release it too. Only [`OutpointClass::KnownUncredited`]
+    /// written the verdicts to its store. [`Self::finish`] releases it too,
+    /// and so does the manager's shutdown once SPV has stopped cleanly
+    /// (never before, and not at all after a failed stop). Only [`OutpointClass::KnownUncredited`]
     /// marks a row spent, and only a spend in a block the wallet's ChainLock
     /// covers earns it.
     ///
@@ -1015,18 +1018,55 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         lock_schedule(&self.txo_reconcile_schedule).forget(wallet_id);
     }
 
-    /// Release every engine guard a reconcile run still holds, so a host
-    /// that failed to release one cannot hold teardown's writers off.
-    pub(super) fn release_txo_reconcile_holds(&self) {
-        let schedule = lock_schedule(&self.txo_reconcile_schedule);
-        for slot in schedule
-            .in_flight
-            .values()
-            .filter_map(|claim| claim.held.as_ref())
-        {
-            release_slot(slot);
-        }
+    /// Stop SPV, then release every engine guard a reconcile run still
+    /// holds — only if the stop succeeded. Returns the stop's outcome.
+    ///
+    /// See [`release_txo_holds_after_stop`] for why the order matters.
+    pub(super) async fn stop_spv_then_release_txo_reconcile_holds(
+        &self,
+    ) -> Result<(), PlatformWalletError> {
+        release_txo_holds_after_stop(&self.txo_reconcile_schedule, self.spv_manager.stop()).await
     }
+}
+
+/// Run `stop_event_source` (the SPV stop), then, only once it has returned
+/// `Ok`, release every engine guard a reconcile run in `schedule` still
+/// holds. Returns the stop's outcome.
+///
+/// The guard of a held page is what keeps a fork out of the engine while the
+/// host writes that page; the host may still be writing it when teardown
+/// starts (its store step passed its stop check before shutdown began). So a
+/// guard is never revoked while anything that can apply a fork — SPV, the
+/// only writer that truncates the engine — may still run:
+///
+/// - **Before the stop**, nothing is released. An SPV writer that queues
+///   behind a held guard waits for the host to finish its write and drop
+///   the guard; the stop's own deadline bounds that wait, so a stalled host
+///   becomes a non-clean stop, not a hang.
+/// - **After an `Ok` stop**, SPV's run loop and its fork recovery have been
+///   joined, so no fork can land under a released guard. A guard released
+///   here is one the host failed to drop, and must not hold the teardown's
+///   later writers off.
+/// - **After a failed or timed-out stop**, nothing is released: SPV work is
+///   still live and could apply a fork the moment the guard went. The slot
+///   is shared with the host's [`TxoReconcileHeldVerdicts`], so the guard
+///   lives until the host drops that (or forever, if it leaked it). That
+///   fails closed; the stop's error already makes the shutdown non-clean,
+///   and a later shutdown whose stop succeeds releases it.
+pub(super) async fn release_txo_holds_after_stop<E>(
+    schedule: &Mutex<TxoReconcileSchedule>,
+    stop_event_source: impl Future<Output = Result<(), E>>,
+) -> Result<(), E> {
+    stop_event_source.await?;
+    let schedule = lock_schedule(schedule);
+    for slot in schedule
+        .in_flight
+        .values()
+        .filter_map(|claim| claim.held.as_ref())
+    {
+        release_slot(slot);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -2040,6 +2080,101 @@ mod tests {
             .expect("the fork proceeds once the run finished")
             .expect("fork task");
         drop(held);
+    }
+
+    /// Shutdown's release waits for the event source: while SPV stop runs,
+    /// a heal page the host may still be writing keeps its guard, and only
+    /// a stop that succeeded lets it go — after which no fork can land.
+    #[tokio::test]
+    async fn a_held_page_is_released_only_after_spv_stopped() {
+        let (wm, wallet_id, _) = wallet_with_three_spent_coins().await;
+        let reconciler = reconciler_over(wm);
+        assert!(reconciler.claim_without_gate(&wallet_id, TIP).is_some());
+        let (_, held) = page(reconciler.heal_page_held(&wallet_id, 10).await);
+
+        let stopped = release_txo_holds_after_stop(&reconciler.schedule, async {
+            assert!(
+                holds_engine(&reconciler, &wallet_id),
+                "the page stays guarded while SPV stops"
+            );
+            Ok::<(), &str>(())
+        })
+        .await;
+        assert_eq!(stopped, Ok(()));
+        assert!(
+            !holds_engine(&reconciler, &wallet_id),
+            "a clean stop releases the guard the host still holds"
+        );
+        timeout(PROCEEDS, spawn_fork(&reconciler))
+            .await
+            .expect("teardown's writers are not held off")
+            .expect("fork task");
+        drop(held);
+        reconciler.finish(&wallet_id, true);
+    }
+
+    /// A failed or timed-out SPV stop leaves SPV work live, so the guard of
+    /// a page the host may still be writing stays held: a fork waits for the
+    /// host's own release, as it would outside teardown.
+    #[tokio::test]
+    async fn a_failed_spv_stop_leaves_a_held_page_guarded() {
+        let (wm, wallet_id, _) = wallet_with_three_spent_coins().await;
+        let reconciler = reconciler_over(wm);
+        assert!(reconciler.claim_without_gate(&wallet_id, TIP).is_some());
+        let (_, held) = page(reconciler.heal_page_held(&wallet_id, 10).await);
+
+        let stopped = release_txo_holds_after_stop(&reconciler.schedule, async {
+            Err::<(), _>("SPV teardown timed out")
+        })
+        .await;
+        assert_eq!(stopped, Err("SPV teardown timed out"));
+        assert!(
+            holds_engine(&reconciler, &wallet_id),
+            "a failed stop releases nothing"
+        );
+        let mut fork = spawn_fork(&reconciler);
+        assert!(
+            timeout(BLOCKED, &mut fork).await.is_err(),
+            "a fork still waits for the host's write"
+        );
+
+        drop(held);
+        timeout(PROCEEDS, fork)
+            .await
+            .expect("the fork proceeds once the host released the page")
+            .expect("fork task");
+        reconciler.finish(&wallet_id, true);
+    }
+
+    /// The manager's shutdown, with an SPV client that never started (its
+    /// stop succeeds at once), releases a guard the host never dropped, so
+    /// the teardown's writers are not held off.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn shutdown_with_a_stopped_spv_releases_a_held_page() {
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let reconciler = manager.txo_reconciler();
+        assert!(reconciler.claim_without_gate(&wallet_id, TIP).is_some());
+        let (_, held) = page(reconciler.heal_page_held(&wallet_id, 10).await);
+        assert!(holds_engine(&reconciler, &wallet_id));
+
+        let report = timeout(PROCEEDS, manager.shutdown())
+            .await
+            .expect("shutdown is not held off by the host's guard");
+        assert_eq!(
+            report.per_worker.get(&crate::manager::WalletWorker::Spv),
+            Some(&dash_async::WorkerStatus::Ok),
+            "{report:?}"
+        );
+        assert!(
+            !holds_engine(&reconciler, &wallet_id),
+            "the stopped SPV let shutdown release the guard"
+        );
+        let writer = timeout(PROCEEDS, reconciler.wallet_manager.write())
+            .await
+            .expect("an engine writer goes ahead after shutdown");
+        drop(writer);
+        drop(held);
+        reconciler.finish(&wallet_id, false);
     }
 
     /// The store keeps a verdict after the guard is gone, so a spend counts
