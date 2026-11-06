@@ -139,7 +139,6 @@ fn forwarded(timeout: Option<Duration>) -> Option<Duration> {
 /// with a fallible return. Don't relax the signature without
 /// hardening the body.
 fn parse_outpoint(txid: *const [u8; 32], vout: u32) -> dashcore::OutPoint {
-    use dashcore::hashes::Hash;
     let txid_bytes = unsafe { *txid };
     dashcore::OutPoint {
         txid: dashcore::Txid::from_slice(&txid_bytes).expect("txid is 32 bytes"),
@@ -472,7 +471,6 @@ mod tests {
     use crate::error::PlatformWalletFFIResultCode;
     use crate::handle::{Handle, ASSET_LOCK_MANAGER_STORAGE};
     use crate::runtime::runtime;
-    use dashcore::hashes::Hash;
     use dashcore::{OutPoint, Transaction, TxIn, Txid};
     use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
     use platform_wallet::test_support::{test_platform_wallet_manager, NoopTestPersister};

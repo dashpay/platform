@@ -204,11 +204,6 @@ result = lib.dash_sdk_create(byref(config))
 - `dash_spv_ffi_client_broadcast_transaction()` - Broadcast transaction
 - `dash_spv_ffi_client_get_transaction()` - Get transaction details
 
-#### HD Wallet Functions
-- `key_wallet_ffi_mnemonic_generate()` - Generate HD wallet mnemonic
-- `key_wallet_ffi_derive_address()` - Derive addresses from HD wallet
-- `key_wallet_ffi_sign_transaction()` - Sign transactions with HD keys
-
 ## Architecture
 
 The FFI layer follows these principles:

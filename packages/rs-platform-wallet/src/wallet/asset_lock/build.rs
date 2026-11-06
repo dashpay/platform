@@ -1672,6 +1672,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 /// downstream by `broadcast_funded_asset_lock_with_funding` against the built
 /// payload.
 ///
+/// `BuilderError::FundsAwaitingFinality` is not a shortfall: the coins exist
+/// but are not final yet, so it maps to the typed
+/// [`PlatformWalletError::AssetLockFundsAwaitingFinality`] instead.
+///
 /// Every other builder error keeps the pre-existing generic
 /// `AssetLockTransaction` string form.
 fn map_builder_error(e: AssetLockError, requested: u64) -> PlatformWalletError {
@@ -1697,6 +1701,9 @@ fn map_builder_error(e: AssetLockError, requested: u64) -> PlatformWalletError {
         }
         AssetLockError::Builder(BuilderError::TooManyInputs { count, max }) => {
             PlatformWalletError::AssetLockTooManyInputs { count, max }
+        }
+        AssetLockError::Builder(BuilderError::FundsAwaitingFinality { waiting }) => {
+            PlatformWalletError::AssetLockFundsAwaitingFinality { waiting }
         }
         other => {
             PlatformWalletError::AssetLockTransaction(format!("Asset lock builder failed: {other}"))
@@ -1797,6 +1804,17 @@ mod tests {
                 assert_eq!(required, 500, "carried amounts win over the requested arg");
             }
             other => panic!("expected typed AssetLockInsufficientFunds, got {other:?}"),
+        }
+
+        // Coins that are not final yet -> typed, carrying the waiting amount.
+        match map_builder_error(
+            AssetLockError::Builder(BuilderError::FundsAwaitingFinality { waiting: 600 }),
+            999,
+        ) {
+            PlatformWalletError::AssetLockFundsAwaitingFinality { waiting } => {
+                assert_eq!(waiting, 600);
+            }
+            other => panic!("expected typed AssetLockFundsAwaitingFinality, got {other:?}"),
         }
 
         // A non-shortfall builder error keeps the pre-existing generic string

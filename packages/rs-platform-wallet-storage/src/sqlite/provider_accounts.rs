@@ -109,7 +109,6 @@ mod tests {
 
     #[test]
     fn insert_used_platform_node_pool_entry_restores_used_bookkeeping() {
-        use dashcore::hashes::Hash;
         use key_wallet::managed_account::address_pool::AddressPoolType;
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -157,7 +156,6 @@ mod tests {
 
     #[test]
     fn insert_platform_node_pool_entry_rejects_unmanaged_account() {
-        use dashcore::hashes::Hash;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 
         let wallet = provider_key_test_wallet();
@@ -186,7 +184,6 @@ mod tests {
 
     #[test]
     fn insert_platform_node_pool_entry_clears_stale_used_bookkeeping_on_downgrade() {
-        use dashcore::hashes::Hash;
         use key_wallet::managed_account::address_pool::AddressPoolType;
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -264,7 +261,6 @@ mod tests {
             pool.pool_type = AddressPoolType::Absent;
         }
 
-        use dashcore::hashes::Hash;
         let key = &keys[0];
         let address = dashcore::Address::new(
             Network::Testnet,

@@ -42,7 +42,6 @@
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_void};
 
-use dashcore::hashes::Hash;
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
 use dpp::shielded::{
     compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee,
@@ -813,6 +812,8 @@ pub(crate) fn catch_funding_panic(
 ///   drainable balance sits under the required minimum lock floor, so the
 ///   host's only remedies are to add funds to that account or lower the
 ///   floor. Do not surface "try a smaller amount" for the drain form.
+///   `AssetLockFundsAwaitingFinality` shares code 29, as it does on the
+///   non-shielded entry points.
 ///
 ///   Without this arm the shortfall flattened into the generic
 ///   `ErrorWalletOperation` (6) catch-all below, hiding a typed error behind
@@ -860,7 +861,8 @@ fn map_asset_lock_funding_result(
         ) => e.into(),
         Err(
             e @ (PlatformWalletError::AssetLockInsufficientFunds { .. }
-            | PlatformWalletError::AssetLockTooManyInputs { .. }),
+            | PlatformWalletError::AssetLockTooManyInputs { .. }
+            | PlatformWalletError::AssetLockFundsAwaitingFinality { .. }),
         ) => e.into(),
         Err(
             e @ (PlatformWalletError::TransactionBroadcast(_)
@@ -3317,5 +3319,11 @@ mod tests {
             result.code,
             PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds
         );
+
+        let awaiting = PlatformWalletError::AssetLockFundsAwaitingFinality { waiting: 600 };
+        let rendered = awaiting.to_string();
+        let result = map_asset_lock_funding_result(Err(awaiting), "shielded fund-from-asset-lock");
+        assert_eq!(result.code as i32, 29);
+        assert_eq!(message_of(&result), rendered);
     }
 }

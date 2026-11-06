@@ -17,7 +17,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
 
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroize;
 
 use crate::address_private_key::secret_string_into_raw;
 use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
@@ -28,9 +28,7 @@ use platform_wallet::parse_mnemonic_any_language;
 ///
 /// Discriminants match `key_wallet::Language`'s declaration order (and the
 /// Swift `MnemonicLanguage` raw values) so the three enums stay numerically
-/// aligned. Deliberately a distinct name from key-wallet-ffi's `FFILanguage`
-/// (same 0–9 values): both headers are exported by the single `DashSDKFFI`
-/// umbrella module, so reusing the name would be a C enumerator redefinition.
+/// aligned.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FFIMnemonicLanguage {
@@ -141,8 +139,7 @@ pub unsafe extern "C" fn platform_wallet_mnemonic_generate(
         word_count as usize,
         language.into()
     ));
-    *out_mnemonic =
-        unwrap_result_or_return!(secret_string_into_raw(Zeroizing::new(mnemonic.phrase())));
+    *out_mnemonic = unwrap_result_or_return!(secret_string_into_raw(mnemonic.phrase()));
     PlatformWalletFFIResult::ok()
 }
 

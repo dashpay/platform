@@ -2092,7 +2092,6 @@ mod tests {
         use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
         use dpp::consensus::basic::BasicError;
         use dpp::consensus::ConsensusError;
-        use dpp::dashcore::hashes::Hash;
         use dpp::dashcore::{OutPoint, Txid};
         use dpp::identity::{Identity, IdentityPublicKey, KeyID};
         use std::collections::BTreeMap;

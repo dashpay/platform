@@ -705,6 +705,10 @@ mod tests {
                 (
                     StateTransition::IdentityCreate(IdentityCreateTransition::V0(
                         IdentityCreateTransitionV0 {
+                            // The identity id the asset lock derives, which basic structure
+                            // checks from protocol version 15. A proof without the output
+                            // derives none, and basic structure refuses it before that check.
+                            identity_id: proof.create_identifier().unwrap_or_default(),
                             asset_lock_proof: proof.clone(),
                             ..Default::default()
                         },

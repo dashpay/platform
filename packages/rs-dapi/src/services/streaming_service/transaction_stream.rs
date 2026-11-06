@@ -11,7 +11,7 @@ use dapi_grpc::core::v0::{
 };
 use dapi_grpc::tonic::{Request, Response, Status};
 use dashcore_rpc::dashcore::consensus::Decodable as _;
-use dashcore_rpc::dashcore::{Block, InstantLock, Transaction, hashes::Hash};
+use dashcore_rpc::dashcore::{Block, InstantLock, Transaction};
 use futures::TryFutureExt;
 use tokio::sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, mpsc, watch};
 use tokio::task::JoinSet;
