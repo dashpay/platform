@@ -106,7 +106,7 @@ final class DashReleasedSchemaTests: XCTestCase {
         }
     }
 
-    /// V4 → V5 adds the per-wallet accounting entity: migrated rows start
+    /// The per-wallet accounting entity added in V5: migrated rows start
     /// without one and keep their stored amount, and a row written after the
     /// migration survives a reopen and cascades with its transaction.
     @MainActor

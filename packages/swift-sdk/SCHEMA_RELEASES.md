@@ -24,9 +24,14 @@ schema. The former live V2 is accepted only when its complete graph matches
 frozen V3 exactly, entity hashes and checksum alike. The alias remains supported
 when the live graph changes; other stores labelled `2.0.0` fail closed.
 
-V5 adds the `PersistentTransactionAccounting` entity and the
-`PersistentWallet.transactionAccountingBackfilled` attribute (default `false`)
-through a lightweight migration. Each accounting row, one per
+V5 adds the `PersistentTransactionAccounting` and `PersistentCoreInstantLock`
+entities and the `PersistentWallet.transactionAccountingBackfilled` attribute
+(default `false`) through a lightweight migration. Both entities belong to the same unreleased
+V5 graph; V4 remains frozen. `PersistentCoreInstantLock` stores raw consensus
+bytes per `(networkRaw, walletId, txid)` for Rust's load-time SPV verification
+after restore; storing the bytes does not establish finality.
+
+Each accounting row, one per
 `(walletId, txid)`, holds the net amount, direction and fee `rs-platform-wallet`
 emitted for that wallet. Migrated stores start with no rows; at the first load
 of each wallet Rust reads back the wallet's transactions that lack a row
