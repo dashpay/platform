@@ -83,7 +83,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dashcore::hashes::Hash;
     use dashcore::Txid;
     use std::sync::Mutex;
 
