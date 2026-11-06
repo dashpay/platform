@@ -4,7 +4,6 @@
 //! signature preservation is tested independently of chain/quorum validity.
 
 use crate::common::{ensure_wallet_meta, fresh_persister, wid};
-use dashcore::hashes::Hash;
 use dashcore::sighash::SighashCache;
 use dashcore::{consensus, Address, Network, OutPoint, Txid};
 use dpp::secp256k1::{ecdsa, ecdsa::Signature, Message, PublicKey};
