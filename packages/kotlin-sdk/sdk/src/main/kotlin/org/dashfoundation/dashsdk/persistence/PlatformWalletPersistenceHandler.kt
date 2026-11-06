@@ -1315,13 +1315,18 @@ class PlatformWalletPersistenceHandler(
         // re-discovers the spend; refusing the re-delivery would lock a
         // real coin out forever after a reorg of the winner, and on this
         // side of the FFI a row at `isSpent = true` is never restored to
-        // Rust again. So an UNLINKED row — a sweep hold with its stamp, or
-        // a legacy flag with nothing behind it — is cleared, stamp
-        // included. A LINKED row keeps its flag and stamp: the link is
-        // this store's recorded spend attribution, the pending drain
-        // below and the sweep pass own that transition, and a spender
-        // that reached a block is confirmed evidence a re-delivery never
-        // displaces.
+        // Rust again. So a spent row is cleared, stamp included — a sweep
+        // hold, a legacy flag with nothing behind it, or a row linked to a
+        // mempool spender alike. The link itself is kept: it is this
+        // store's spend attribution, and the pending drain below, the
+        // spend channels and the sweep pass own it. The one exception, as
+        // in Swift's `upsertUtxo`, is a row linked to a spender whose
+        // stored row is at or above InstantSend-locked
+        // ([hasSettledSpender]): confirmed evidence on record is never
+        // displaced by a re-delivery. A mempool link is not that evidence
+        // — a mempool spender can be dropped or reorged away, and holding
+        // the flag behind it would hide a coin the wallet credits from
+        // every later restore.
         //
         // Any credit verdict vetoes that clear (dashpay/platform#4638): the
         // wallet is not handing this coin back as unspent — its record
@@ -1330,12 +1335,14 @@ class PlatformWalletPersistenceHandler(
         // spendable (a block spent it before the output was recognised —
         // the spender may never have been recorded, rust-dashcore#992 — or
         // the record can never confirm), so the row is written spent with
-        // no spender link. `isSpent` is monotonic: a row already spent is
-        // left as it is. An uncredited verdict carries no context and only
-        // keeps the clear from resurrecting the row.
-        val linked = existing?.spendingTxid != null
-        val keepSpentState = linked || (existing != null && creditVerdict != null)
-        val alreadySpent = keepSpentState && existing!!.isSpent
+        // no new spender link. `isSpent` is monotonic: a row already spent
+        // is left as it is. An uncredited verdict carries no context and
+        // only keeps the clear from resurrecting the row. A verdict does
+        // not outlive its round: a later credited re-delivery of the same
+        // coin (a reorg handed it back) clears the row by the rule above.
+        val clearRecovered = existing != null && existing.isSpent && creditVerdict == null &&
+            !hasSettledSpender(db, existing)
+        val alreadySpent = existing?.isSpent == true && !clearRecovered
         val bornSpent = creditVerdict == UTXO_CREDIT_VERDICT_OBSERVED_SPENT ||
             creditVerdict == UTXO_CREDIT_VERDICT_DOOMED
         if (creditVerdict != null && creditTally != null) {
@@ -1361,12 +1368,17 @@ class PlatformWalletPersistenceHandler(
             walletId = walletId,
             txid = txid,
             spendingTxid = existing?.spendingTxid,
-            spendingInputIndex = existing?.spendingInputIndex,
+            // A cleared row with no link has no spend to index.
+            spendingInputIndex = if (clearRecovered && existing?.spendingTxid == null) {
+                null
+            } else {
+                existing?.spendingInputIndex
+            },
             accountId = existing?.accountId ?: resolvedAccountId,
             coreAddressId = existing?.coreAddressId ?: coreAddressIdIfPresent(db, coreAddressId),
             createdAt = existing?.createdAt ?: java.util.Date(),
             lastUpdated = now(),
-            supersededByTxid = if (keepSpentState) existing!!.supersededByTxid else null,
+            supersededByTxid = if (clearRecovered) null else existing?.supersededByTxid,
         )
         db.txoDao().upsert(row)
         var written = row
@@ -2607,6 +2619,21 @@ class PlatformWalletPersistenceHandler(
         val chainlockOverIsLock =
             newContext >= CONTEXT_CHAIN_LOCKED && existing.context == CONTEXT_INSTANT_SEND
         return !chainlockOverIsLock
+    }
+
+    /**
+     * Whether [txo] is linked to a spender whose stored row is
+     * network-final — IS-locked, in-block or chainlocked
+     * (context >= [CONTEXT_INSTANT_SEND]). The recovery clear in
+     * [upsertUtxoRow] refuses only for such a spender, the check Swift's
+     * `upsertUtxo` makes on `spendingTransaction.context`. A link whose
+     * spender row is missing, or still at mempool context, is not
+     * settled.
+     */
+    private suspend fun hasSettledSpender(db: DashDatabase, txo: TxoEntity): Boolean {
+        val link = txo.spendingTxid ?: return false
+        val spender = db.transactionDao().getByTxid(link) ?: return false
+        return spender.context >= CONTEXT_INSTANT_SEND
     }
 
     // ── Sweeps ────────────────────────────────────────────────────────

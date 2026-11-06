@@ -2486,8 +2486,8 @@ class PlatformWalletPersistenceHandlerTest {
         // good. Same answer as the SQLite store's upsert valve, which now
         // holds only never-materialised placeholders: a stamped, UNLINKED
         // row the wallet hands back as a UTXO is cleared, stamp included.
-        // A row still LINKED to a spender keeps its flag — the link is the
-        // store's recorded spend attribution and the sweep pass owns it.
+        // Only a row LINKED to a settled spender (IS-locked or better)
+        // keeps its flag — confirmed evidence a re-delivery never displaces.
         seedWalletWithAddress(walletId, "yUtxoAddr")
         val fundingTxid = ByteArray(32) { 48 }
         val coin = makeOutpoint(fundingTxid, 0)
@@ -9230,6 +9230,143 @@ class PlatformWalletPersistenceHandlerTest {
         val row = db.txoDao().getByOutpoint(outpoint)!!
         assertTrue(row.isSpent)
         assertTrue(winner.contentEquals(row.supersededByTxid))
+    }
+
+    /** A credited re-delivery of the [seedFundedCoin] coin at `fundingTxid:0`, inside whatever bracket the caller opened. */
+    private fun redeliverFundedCoin(h: PlatformWalletPersistenceHandler, fundingTxid: ByteArray): Int =
+        h.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 100_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+
+    /**
+     * Seed a funded coin linked to a spender recorded at [spenderContext],
+     * then deliver it with an observed-spent verdict (a block spent it). The
+     * coin is spent and keeps its link. Returns the coin's outpoint.
+     */
+    private suspend fun seedLinkedCoinMarkedSpentByAVerdict(
+        fundingTxid: ByteArray,
+        spender: ByteArray,
+        spenderContext: Int,
+    ): ByteArray {
+        val coin = seedFundedCoin(fundingTxid)
+        recordMempoolSpend(spender, coin, context = spenderContext)
+        val linked = db.txoDao().getByOutpoint(coin)!!
+        assertTrue("sanity: linked to the spender", spender.contentEquals(linked.spendingTxid))
+        verdictRound {
+            stageVerdicts(handler, CreditVerdict(fundingTxid, 0, observedSpent, 2_402_896))
+            redeliverFundedCoin(handler, fundingTxid)
+        }
+        val marked = db.txoDao().getByOutpoint(coin)!!
+        assertTrue("the observed-spent verdict marks the coin spent", marked.isSpent)
+        assertTrue("and keeps the existing link", spender.contentEquals(marked.spendingTxid))
+        assertTrue(handler.onLoadWalletList().single().utxos.none { it.prevTxid.contentEquals(fundingTxid) })
+        return coin
+    }
+
+    @Test
+    fun aMempoolSpenderLinkDoesNotMakeAnObservedSpentVerdictPermanent() = runTest {
+        // The reviewer's sequence: a coin linked to a mempool (context 0)
+        // spender, still unspent; an observed-spent verdict marks it spent
+        // with the link kept; a reorg then hands the coin back — the engine
+        // credits it again and re-delivers it with no verdict. A mempool link
+        // is not settled evidence (Swift's `upsertUtxo` checks the spender's
+        // context), so the re-delivery clears the flag and the coin is
+        // restored again, now and after a restart.
+        val fundingTxid = ByteArray(32) { 0x71 }
+        val spender = ByteArray(32) { 0x72 }
+        val coin = seedFundedCoin(fundingTxid)
+        recordMempoolSpend(spender, coin, context = 0)
+        assertFalse("sanity: a mempool link leaves the coin unspent", db.txoDao().getByOutpoint(coin)!!.isSpent)
+        verdictRound {
+            stageVerdicts(handler, CreditVerdict(fundingTxid, 0, observedSpent, 2_402_896))
+            redeliverFundedCoin(handler, fundingTxid)
+        }
+        val marked = db.txoDao().getByOutpoint(coin)!!
+        assertTrue("the observed-spent verdict marks the coin spent", marked.isSpent)
+        assertTrue("and keeps the mempool link", spender.contentEquals(marked.spendingTxid))
+        assertTrue(handler.onLoadWalletList().single().utxos.isEmpty())
+
+        verdictRound { redeliverFundedCoin(handler, fundingTxid) }
+
+        val recovered = db.txoDao().getByOutpoint(coin)!!
+        assertFalse("the credited re-delivery clears the verdict's flag", recovered.isSpent)
+        assertTrue("the spend attribution is kept", spender.contentEquals(recovered.spendingTxid))
+        assertEquals("a linked row keeps its vin index", 0, recovered.spendingInputIndex)
+        assertNull(recovered.supersededByTxid)
+        assertTrue(
+            "the restore set includes the coin again",
+            handler.onLoadWalletList().single().utxos.any { it.prevTxid.contentEquals(fundingTxid) && it.vout == 0 },
+        )
+        assertTrue(
+            "and so does a relaunch's",
+            newHandler().onLoadWalletList().single().utxos.any { it.prevTxid.contentEquals(fundingTxid) && it.vout == 0 },
+        )
+    }
+
+    // The control: the same sequence with the linked spender IS-locked
+    // (context 1) or in a block (context 2). Confirmed evidence on record
+    // is never displaced by a re-delivery, so the coin stays spent and out
+    // of the restore set, now and after a restart.
+    private suspend fun assertASettledSpenderKeepsTheCoinSpent(spenderContext: Int) {
+        val fundingTxid = ByteArray(32) { 0x73 }
+        val spender = ByteArray(32) { 0x74 }
+        val coin = seedLinkedCoinMarkedSpentByAVerdict(fundingTxid, spender, spenderContext)
+
+        verdictRound { redeliverFundedCoin(handler, fundingTxid) }
+
+        val kept = db.txoDao().getByOutpoint(coin)!!
+        assertTrue("context $spenderContext: the settled spender keeps the coin spent", kept.isSpent)
+        assertTrue(spender.contentEquals(kept.spendingTxid))
+        assertTrue(
+            "context $spenderContext: and out of the restore set",
+            newHandler().onLoadWalletList().single().utxos.none { it.prevTxid.contentEquals(fundingTxid) },
+        )
+    }
+
+    @Test
+    fun anInstantSendLockedSpenderLinkKeepsAnObservedSpentVerdictAcrossACreditedRedelivery() = runTest {
+        assertASettledSpenderKeepsTheCoinSpent(spenderContext = 1)
+    }
+
+    @Test
+    fun anInBlockSpenderLinkKeepsAnObservedSpentVerdictAcrossACreditedRedelivery() = runTest {
+        assertASettledSpenderKeepsTheCoinSpent(spenderContext = 2)
+    }
+
+    @Test
+    fun aSpentRowLinkedToAMempoolSpenderIsClearedByACreditedRedelivery() = runTest {
+        // No verdict involved: a spent row whose link names a mempool
+        // spender (here a legacy flag and stamp) is cleared when the wallet
+        // hands the coin back as unspent, its stamp with it; the link
+        // stays. Before this rule ANY link kept the flag. An unlinked spent
+        // row clears too, and drops its stale vin index, as in Swift.
+        val fundingTxid = ByteArray(32) { 0x78 }
+        val spender = ByteArray(32) { 0x79 }
+        val stamp = ByteArray(32) { 0x7a }
+        val coin = seedFundedCoin(fundingTxid)
+        recordMempoolSpend(spender, coin)
+        db.txoDao().upsert(
+            db.txoDao().getByOutpoint(coin)!!.copy(isSpent = true, supersededByTxid = stamp),
+        )
+
+        verdictRound { redeliverFundedCoin(handler, fundingTxid) }
+
+        val cleared = db.txoDao().getByOutpoint(coin)!!
+        assertFalse(cleared.isSpent)
+        assertNull("the stamp clears with the flag", cleared.supersededByTxid)
+        assertTrue("the link is kept", spender.contentEquals(cleared.spendingTxid))
+        assertEquals(0, cleared.spendingInputIndex)
+        assertEquals(1, handler.onLoadWalletList().single().utxos.size)
+
+        // Unlinked, with a stale index: cleared, index dropped.
+        db.txoDao().upsert(
+            db.txoDao().getByOutpoint(coin)!!.copy(isSpent = true, spendingTxid = null, spendingInputIndex = 3),
+        )
+        verdictRound { redeliverFundedCoin(handler, fundingTxid) }
+        val unlinked = db.txoDao().getByOutpoint(coin)!!
+        assertFalse(unlinked.isSpent)
+        assertNull(unlinked.spendingInputIndex)
     }
 
     @Test
