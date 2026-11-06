@@ -634,6 +634,32 @@ impl SqlitePersister {
         prune_backups_in(dir, policy)
     }
 
+    /// One asset lock's persisted status by outpoint, `Consumed` rows
+    /// included, or `None` when `wallet_id` stored none for it.
+    ///
+    /// `load()` does not rehydrate a consumed lock without an operation ID,
+    /// so a lock missing from the live wallet after a reopen may have been
+    /// spent or never stored here;
+    /// this read tells them apart. A wallet delete removes every row, so a
+    /// re-imported wallet reads `None` for locks it held before.
+    ///
+    /// Reads the *committed* table: in [`FlushMode::Manual`] a row still in
+    /// the write buffer is not visible yet.
+    pub fn asset_lock_status(
+        &self,
+        wallet_id: &WalletId,
+        outpoint: &dashcore::OutPoint,
+    ) -> Result<
+        Option<platform_wallet::wallet::asset_lock::tracked::AssetLockStatus>,
+        WalletStorageError,
+    > {
+        let conn = self.conn()?;
+        let ctx = LoadCtx::new(self.config.load_policy);
+        let status = schema::asset_locks::status_of(&conn, wallet_id, outpoint, &ctx)?;
+        self.merge_load_degradation(ctx.degradation());
+        Ok(status)
+    }
+
     /// Read every identity that belongs to NO wallet, each already
     /// carrying its own persisted public keys.
     ///

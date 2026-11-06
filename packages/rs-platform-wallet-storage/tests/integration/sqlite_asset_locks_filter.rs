@@ -339,3 +339,53 @@ fn should_reject_conflicting_operation_id_before_mutating_any_stored_columns() {
         );
     }
 }
+
+/// The point read sees a `Consumed` row the rehydration feed drops, keeps
+/// it across a reopen, returns a live row's status, and `None` for an
+/// outpoint the wallet never stored or another wallet's row.
+#[test]
+fn should_read_an_asset_locks_status_by_outpoint_including_consumed_after_reopen() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xA6);
+    let other = wid(0xA7);
+    ensure_wallet_meta(&persister, &w);
+    ensure_wallet_meta(&persister, &other);
+    let consumed = op(0x30);
+    let live = op(0x31);
+    let mut cs = AssetLockChangeSet::default();
+    cs.asset_locks
+        .insert(consumed, entry(consumed, AssetLockStatus::Consumed));
+    cs.asset_locks
+        .insert(live, entry(live, AssetLockStatus::InstantSendLocked));
+    persister
+        .store(
+            w,
+            platform_wallet::changeset::PlatformWalletChangeSet {
+                asset_locks: Some(cs),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        persister.asset_lock_status(&w, &consumed).unwrap(),
+        Some(AssetLockStatus::Consumed)
+    );
+    drop(persister);
+
+    let p2 = reopen(&path);
+    assert_eq!(
+        p2.asset_lock_status(&w, &consumed).unwrap(),
+        Some(AssetLockStatus::Consumed),
+        "a consumed row reads back after a reopen"
+    );
+    assert_eq!(
+        p2.asset_lock_status(&w, &live).unwrap(),
+        Some(AssetLockStatus::InstantSendLocked)
+    );
+    assert_eq!(p2.asset_lock_status(&w, &op(0x32)).unwrap(), None);
+    assert_eq!(
+        p2.asset_lock_status(&other, &consumed).unwrap(),
+        None,
+        "another wallet's row is not this wallet's"
+    );
+}
