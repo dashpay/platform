@@ -1949,7 +1949,9 @@ dependencies = [
  "cxx",
  "cxx-build",
  "dash-sdk",
+ "drive",
  "platform-encryption",
+ "tenderdash-abci",
  "tokio",
  "zeroize",
 ]
