@@ -6,7 +6,6 @@
 
 use std::collections::BTreeSet;
 
-use dashcore::hashes::Hash;
 use dashcore::transaction::special_transaction::TransactionPayload;
 use dashcore::{OutPoint, Txid};
 use key_wallet::managed_account::transaction_record::TransactionRecord;

@@ -2771,7 +2771,6 @@ mod swept_transaction_projection_tests {
     //! and a sweep that never reaches it leaves the dead rows on disk.
 
     use super::*;
-    use dashcore::hashes::Hash;
     use dashcore::Txid;
     use key_wallet::WalletCoreBalance;
     use key_wallet_manager::WalletManager;
@@ -3076,7 +3075,6 @@ mod sent_payment_verdict_tests {
 
     use super::*;
     use dashcore::ephemerealdata::instant_lock::InstantLock;
-    use dashcore::hashes::Hash as _;
     use dashcore::{BlockHash, Transaction, TxIn, Txid};
     use dpp::identity::{Identity, IdentityV0};
     use dpp::prelude::Identifier;
@@ -3504,7 +3502,6 @@ mod contact_watch_only_projection_tests {
     use crate::wallet::identity::IdentityManager;
     use dashcore::bls_sig_utils::BLSSignature;
     use dashcore::ephemerealdata::chain_lock::ChainLock;
-    use dashcore::hashes::Hash;
     use dashcore::{Address as DashAddress, BlockHash, Txid};
     use dashcore::{OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Witness};
     use key_wallet::account::{Account, AccountType, StandardAccountType};
@@ -5576,7 +5573,6 @@ mod usage_delta_tests {
     //! as the event adapter does at runtime.
 
     use super::*;
-    use dashcore::hashes::Hash;
     use dashcore::{BlockHash, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness};
     use key_wallet::account::{AccountType, StandardAccountType};
     use key_wallet::test_utils::TestWalletContext;
@@ -5820,7 +5816,6 @@ mod tests {
     /// enforce the address/script pairing.
     #[test]
     fn spent_utxos_carry_the_real_script_of_the_address_they_spend() {
-        use dashcore::hashes::Hash;
         use dashcore::{OutPoint, Transaction, TxIn, Txid};
         use key_wallet::account::{AccountType, StandardAccountType};
         use key_wallet::managed_account::transaction_record::{
@@ -7663,7 +7658,6 @@ mod tests {
 
     /// A `TransactionsSwept` event for a helper below.
     fn swept_event(wallet_id: WalletId, txid_byte: u8, superseded_by_byte: u8) -> WalletEvent {
-        use dashcore::hashes::Hash as _;
         WalletEvent::TransactionsSwept {
             wallet_id,
             txids: vec![dashcore::Txid::from_byte_array([txid_byte; 32])],
@@ -7877,7 +7871,6 @@ mod tests {
     /// mirror after a wipe & recover.
     #[tokio::test]
     async fn block_processed_asset_lock_record_reconstructs_and_persists() {
-        use dashcore::hashes::Hash as _;
         use key_wallet::account::account_type::StandardAccountType;
         use key_wallet::account::AccountType;
         use key_wallet::managed_account::transaction_record::{
@@ -8006,7 +7999,6 @@ mod tests {
     /// every store mirrors it forever.
     #[tokio::test]
     async fn transactions_swept_removes_the_tracked_asset_lock_it_funded() {
-        use dashcore::hashes::Hash as _;
         use key_wallet::account::account_type::StandardAccountType;
         use key_wallet::account::AccountType;
         use key_wallet::managed_account::transaction_record::{
@@ -8156,7 +8148,6 @@ mod tests {
     /// funding transaction survived.
     #[tokio::test]
     async fn a_reinstating_reconstruction_folded_after_a_sweep_cancels_its_tombstone() {
-        use dashcore::hashes::Hash as _;
         use key_wallet::account::account_type::StandardAccountType;
         use key_wallet::account::AccountType;
         use key_wallet::managed_account::transaction_record::{
@@ -8284,7 +8275,6 @@ mod tests {
         use std::sync::Arc;
 
         use dashcore::ephemerealdata::chain_lock::ChainLock;
-        use dashcore::hashes::Hash as _;
         use key_wallet::account::account_type::StandardAccountType;
         use key_wallet::account::AccountType;
         use key_wallet::managed_account::transaction_record::{
@@ -8435,7 +8425,6 @@ mod tests {
     /// predicate considers both sub-changesets.
     #[test]
     fn asset_locks_only_batch_reaches_store() {
-        use dashcore::hashes::Hash as _;
         use dashcore::OutPoint;
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
@@ -8760,7 +8749,6 @@ mod tests {
     /// when the missing piece is the host's sweep capability.
     #[test]
     fn undeclared_sweep_capability_reports_the_watermark_as_frozen_not_rejected() {
-        use dashcore::hashes::Hash as _;
         let wallet_id = [9u8; 32];
         let (obs_tx, mut obs_rx) = unbounded_channel();
         // No capabilities declared, store() succeeds.
@@ -9299,7 +9287,6 @@ mod utxo_credit_verdict_tests {
     //! post-mutation state, as the event adapter does at runtime.
 
     use super::*;
-    use dashcore::hashes::Hash;
     use dashcore::{BlockHash, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness};
     use key_wallet::test_utils::TestWalletContext;
     use key_wallet::transaction_checking::{BlockInfo, WalletTransactionChecker};
@@ -9807,7 +9794,6 @@ mod no_change_asset_lock_block_projection_tests {
     use crate::wallet::identity::IdentityManager;
     use dashcore::blockdata::transaction::special_transaction::asset_lock::AssetLockPayload;
     use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
-    use dashcore::hashes::Hash;
     use dashcore::{BlockHash, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness};
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     use key_wallet::managed_account::transaction_record::{InputDetail, TransactionDirection};

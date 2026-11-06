@@ -1868,7 +1868,6 @@ mod txo_inventory_tests {
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
-    use dashcore::hashes::Hash;
     use dashcore::{BlockHash, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness};
     use key_wallet::account::{AccountType, StandardAccountType};
     use key_wallet::test_utils::TestWalletContext;

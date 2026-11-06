@@ -28,7 +28,8 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::prelude::Identifier;
 use key_wallet::bip32::{
-    ApplicationKeyPurpose, ChildNumber, DerivationPath, ExtendedPrivKey, KeyDerivationType,
+    ApplicationKeyPurpose, ChildNumber, DerivationPath, Error as Bip32Error, ExtendedPrivKey,
+    KeyDerivationType,
 };
 use key_wallet::dip9::{
     FEATURE_PURPOSE_IDENTITIES_SUBFEATURE_APPLICATION_ENCRYPTION,
@@ -237,35 +238,26 @@ impl ConnectKey {
                 contract_id,
                 purpose,
                 rotation,
-            } => {
-                let rotation = hardened_rotation(rotation)?;
-                // Temporary: the pinned rust-dashcore builds only the
-                // pre-rotation path, so the rotation level is appended here.
-                // dashpay/rust-dashcore#1250 adds the level to key-wallet;
-                // once platform bumps to a rev with it, replace this arm with
-                // `DerivationPath::application_encryption_path(network,
-                // identity_id, contract_id, purpose, rotation)` and the
-                // legacy arm with `application_encryption_path_without_rotation`.
-                // `connect_keypairs_match_the_pinned_vectors` keeps that swap
-                // a no-op.
-                Ok(DerivationPath::application_encryption_path(
-                    network,
-                    identity_id.to_buffer(),
-                    contract_id,
-                    purpose,
-                )
-                .extend([rotation]))
-            }
-            ConnectKey::AppEncryptionLegacy {
-                identity_id,
-                contract_id,
-                purpose,
-            } => Ok(DerivationPath::application_encryption_path(
+            } => DerivationPath::application_encryption_path(
                 network,
                 identity_id.to_buffer(),
                 contract_id,
                 purpose,
-            )),
+                rotation,
+            )
+            .map_err(|e| invalid_rotation(rotation, e)),
+            ConnectKey::AppEncryptionLegacy {
+                identity_id,
+                contract_id,
+                purpose,
+            } => Ok(
+                DerivationPath::application_encryption_path_without_rotation(
+                    network,
+                    identity_id.to_buffer(),
+                    contract_id,
+                    purpose,
+                ),
+            ),
         }
     }
 }
@@ -284,11 +276,13 @@ fn app_encryption_purpose(purpose: u32) -> Result<ApplicationKeyPurpose, Platfor
 /// The hardened `rotation'` level; a rotation of `2^31` or more does not fit
 /// one and is refused rather than wrapped onto another key.
 fn hardened_rotation(rotation: u32) -> Result<ChildNumber, PlatformWalletError> {
-    ChildNumber::from_hardened_idx(rotation).map_err(|e| {
-        PlatformWalletError::InvalidParameter(format!(
-            "Invalid app encryption rotation {rotation}: {e}"
-        ))
-    })
+    ChildNumber::from_hardened_idx(rotation).map_err(|e| invalid_rotation(rotation, e))
+}
+
+fn invalid_rotation(rotation: u32, e: Bip32Error) -> PlatformWalletError {
+    PlatformWalletError::InvalidParameter(format!(
+        "Invalid app encryption rotation {rotation}: {e}"
+    ))
 }
 
 /// Derive the ECDSA secp256k1 keypair of `key` from a master xpriv. Pure,
@@ -713,7 +707,7 @@ mod tests {
     fn master_for(network: Network) -> ExtendedPrivKey {
         let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid English test mnemonic");
         let seed = mnemonic.to_seed("");
-        ExtendedPrivKey::new_master(network, &seed).expect("master xpriv from test seed")
+        ExtendedPrivKey::new_master(network, &*seed).expect("master xpriv from test seed")
     }
 
     /// (a) The master-based key-hash helper must produce the SAME 20-byte

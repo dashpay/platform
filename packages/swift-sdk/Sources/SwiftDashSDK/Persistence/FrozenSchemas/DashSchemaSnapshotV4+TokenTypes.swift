@@ -3,7 +3,7 @@ import SwiftData
 
 // Inline value types exactly as schema DashSchemaSnapshotV4 stored them, generated
 // by scripts/freeze_schema_models.py from TokenTypes.swift
-// at commit 292b5101f3. SwiftData expands a stored Codable struct into composite
+// at commit f830a1c73c. SwiftData expands a stored Codable struct into composite
 // attributes of the owning entity, so these shapes are inputs to that
 // version's checksum just like the model's own properties. Do not edit.
 extension DashSchemaSnapshotV4 {
@@ -142,11 +142,14 @@ extension DashSchemaSnapshotV4 {
 
     enum TokenTradeMode: String, CaseIterable, Codable, Sendable {
         case notTradeable = "NotTradeable"
+        case tradeable = "Tradeable"
 
         var displayName: String {
             switch self {
             case .notTradeable:
                 return "Not Tradeable"
+            case .tradeable:
+                return "Tradeable"
             }
         }
     }

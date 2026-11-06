@@ -17,7 +17,6 @@
 //! [`PutVote`]: super::vote::PutVote
 //! [`Signer`]: dpp::identity::signer::Signer
 
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
 use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::accessors::IdentityGettersV0;

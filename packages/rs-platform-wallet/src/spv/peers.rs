@@ -145,7 +145,6 @@ mod tests {
     use std::net::{Ipv4Addr, SocketAddrV4};
 
     use dashcore::bls_sig_utils::BLSPublicKey;
-    use dashcore::hashes::Hash;
     use dashcore::sml::masternode_list_entry::{MasternodeListEntry, MasternodeNetInfo};
     use dashcore::{BlockHash, PlatformNodeId, ProTxHash, PubkeyHash};
 
@@ -233,16 +232,14 @@ mod tests {
     fn peers_updated_replaces_snapshot_and_clear_empties_it() {
         let tracker = PeerTracker::default();
         tracker.on_network_event(&NetworkEvent::PeersUpdated {
-            connected_count: 1,
             addresses: vec![socket([1, 1, 1, 1], 9999)],
-            best_height: Some(100),
+            best_height: 100,
         });
         assert_eq!(tracker.snapshot(), vec![socket([1, 1, 1, 1], 9999)]);
 
         tracker.on_network_event(&NetworkEvent::PeersUpdated {
-            connected_count: 1,
             addresses: vec![socket([2, 2, 2, 2], 9999)],
-            best_height: Some(100),
+            best_height: 100,
         });
         assert_eq!(tracker.snapshot(), vec![socket([2, 2, 2, 2], 9999)]);
 
@@ -264,9 +261,8 @@ mod tests {
         assert!(tracker.connected.is_poisoned());
 
         tracker.on_network_event(&NetworkEvent::PeersUpdated {
-            connected_count: 1,
             addresses: vec![socket([1, 1, 1, 1], 9999)],
-            best_height: Some(100),
+            best_height: 100,
         });
         assert_eq!(tracker.snapshot(), vec![socket([1, 1, 1, 1], 9999)]);
 
