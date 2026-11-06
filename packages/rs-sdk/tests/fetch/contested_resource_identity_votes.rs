@@ -5,7 +5,7 @@ use dash_sdk::platform::FetchMany;
 use dash_sdk::query_types::{ResourceVoteWithCount, ResourceVotesByIdentity};
 use dash_sdk::Sdk;
 use dpp::{
-    dashcore::{hashes::Hash, ProTxHash},
+    dashcore::ProTxHash,
     identifier::Identifier,
     platform_value::Value,
     voting::{

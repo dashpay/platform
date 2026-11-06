@@ -1,7 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{ProTxHash, PubkeyHash};
 
 use crate::platform_types::platform_state::PlatformState;

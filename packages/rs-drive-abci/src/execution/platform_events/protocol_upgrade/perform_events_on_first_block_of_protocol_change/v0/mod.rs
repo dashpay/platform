@@ -4,7 +4,6 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use dpp::block::block_info::BlockInfo;
-use dpp::dashcore::hashes::Hash;
 use dpp::data_contracts::SystemDataContract;
 use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
@@ -939,7 +938,7 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
-        // DashPay contract v3 (v15 note 23): the checks of its two data triggers become schema
+        // DashPay contract v3 (v15 note 24): the checks of its two data triggers become schema
         // keywords. It only adds declarations and keeps every property stored as v2 stores it,
         // so the documents written under v1 and v2 read back unchanged; the upgrade replaces the
         // contract without the contract update checks, as the one to v2 did.
