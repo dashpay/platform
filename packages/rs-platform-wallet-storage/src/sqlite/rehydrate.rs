@@ -409,7 +409,7 @@ pub fn apply_persisted_core_state(
                 },
                 "restored UTXOs or used addresses name owning accounts that are not funds \
                  accounts of this wallet; they are placed in the funds account that derives \
-                 their address, or the first one when none does",
+                 their address, or in the first one when the bounded search finds none",
             );
         }
 

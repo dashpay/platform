@@ -165,7 +165,7 @@ impl LoadSite {
             // describes an accepted-as-is degradation rather than a
             // tolerated inconsistency.
             Self::OrphanedUtxoOwner => {
-                "load degraded: placing addresses from an unavailable owner in the funds account that derives them, else the first one"
+                "load degraded: placing addresses from an unavailable owner in the funds account that derives them, or in the first one when the bounded search finds none"
             }
             Self::UnresolvedUtxoAddress => {
                 "load degraded: deferring addresses that did not resolve against the account xpub"
@@ -678,7 +678,7 @@ mod tests {
             "ambiguous owner",
         );
         assert!(logs_contain(
-            "load degraded: placing addresses from an unavailable owner in the funds account that derives them, else the first one"
+            "load degraded: placing addresses from an unavailable owner in the funds account that derives them, or in the first one when the bounded search finds none"
         ));
     }
 
