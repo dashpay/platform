@@ -1868,6 +1868,22 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '5.1.0-beta.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            // From protocol version 15 Drive reads, with protx info, the operator payout of a
+            // masternode whose operator key changed. Core refuses the method to the consensus
+            // user until its whitelist names it, and loads the whitelist only when Core itself
+            // restarts. Added to the operator's list rather than replacing it; a user without a
+            // whitelist may already call every method.
+            const whitelist = options.core?.rpc?.users?.drive_consensus?.whitelist;
+            if (Array.isArray(whitelist) && !whitelist.includes('protxinfo')) {
+              whitelist.push('protxinfo');
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 

@@ -1,8 +1,10 @@
 mod v0;
 mod v1;
+mod v2;
 
 // Private helpers are selected by the update_masternode_list generation, except
-// `without_operator_payout_changes` and `drop_unchanged_operator_keys`, which v0 and v1 share.
+// `without_operator_payout_changes` and `drop_unchanged_operator_keys`, which v0 and v1 share,
+// and `is_basic_re_encoding_of_legacy_key`, which v0, v1 and v2 share.
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -38,7 +40,8 @@ const BASIC_SIGN_BIT: u8 = 0x20;
 
 /// Whether `new` is the basic-scheme encoding of the BLS public key that `old` encodes in the
 /// legacy scheme. The verdict decides whether a masternode keeps its operator identity, so the
-/// encodings it accepts are pinned by tests.
+/// encodings it accepts are pinned by tests. `update_state_masternode_list` v0, v1 and v2 use it,
+/// so a change of behaviour here needs new generations of all three.
 ///
 /// The legacy flags are moved to their basic-scheme positions and the result must decode as a
 /// basic-scheme key: an x coordinate below the field modulus, a point on the curve and in the
