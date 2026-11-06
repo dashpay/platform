@@ -2436,10 +2436,12 @@ fn decode_withdrawal_inputs(
 /// inputs:…)`; sibling of [`walletPlatformAddressWithdraw`], which withdraws
 /// the full balance.
 ///
-/// The payout is the sum of the input amounts. The transition fee is
-/// deducted by the chain from the fee-source input's REMAINING balance, so
-/// that address must keep at least the fee after the withdrawal, or the
-/// transition is rejected. Rust re-fetches every input's on-chain balance
+/// The input sum is the gross withdrawal amount: from protocol version 14
+/// the Core fee (asset-unlock tx size × `core_fee_per_byte` duffs) is taken
+/// out of it before the Core output. The platform transition fee does not
+/// reduce it: the chain deducts that fee from the fee-source input's
+/// REMAINING balance, so that address must keep at least the fee after the
+/// withdrawal, or the transition is rejected. Rust re-fetches every input's on-chain balance
 /// before signing, so a stale caller-side balance fails with a typed error
 /// rather than a wrong-amount withdrawal.
 ///

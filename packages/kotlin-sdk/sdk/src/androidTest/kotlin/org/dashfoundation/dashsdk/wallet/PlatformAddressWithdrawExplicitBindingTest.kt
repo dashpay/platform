@@ -1,11 +1,19 @@
 package org.dashfoundation.dashsdk.wallet
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.runBlocking
+import org.dashfoundation.dashsdk.Network
+import org.dashfoundation.dashsdk.Sdk
+import org.dashfoundation.dashsdk.config.SdkConfig
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
+import org.dashfoundation.dashsdk.persistence.DashDatabase
+import org.dashfoundation.dashsdk.security.WalletStorage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -25,6 +33,10 @@ import org.junit.runner.RunWith
  *  - a well-formed call with a dead wallet handle crosses into the FFI, whose
  *    miss comes back in the platform-wallet code range
  *    (>= [DashSdkError.PLATFORM_WALLET_CODE_OFFSET]).
+ *
+ * One test goes further, through the public `withdrawCredits` overload with
+ * an offline wallet and its real signer, into the platform wallet's
+ * withdraw: it pins that the trampoline selects EXPLICIT inputs, not AUTO.
  *
  * The message checks double as parameter-order pins: `accountIndex` and
  * `coreFeePerByte` share the `I` descriptor slot type, so swapping them in
@@ -112,5 +124,58 @@ class PlatformAddressWithdrawExplicitBindingTest {
                 "${DashSdkError.PLATFORM_WALLET_CODE_OFFSET}), got ${e.code}: ${e.message}",
             e.code >= DashSdkError.PLATFORM_WALLET_CODE_OFFSET,
         )
+    }
+
+    @Test
+    fun explicitSelectionReachesThePlatformWalletWithdraw() = runBlocking {
+        // An offline wallet (no connection is made) and the manager's real
+        // signer get the call past every JNI and FFI check and into the
+        // platform wallet's `withdraw`. With an empty input list, EXPLICIT
+        // selection fails there with its own message before any network
+        // call. AUTO selection would instead fail on the fresh wallet with
+        // "No funded addresses available", so a trampoline that passed the
+        // wrong selection type fails this test.
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val db = DashDatabase.createInMemory(context)
+        val sdk = Sdk.create(SdkConfig(network = Network.TESTNET))
+        try {
+            PlatformWalletManager(sdk, Network.TESTNET, db, WalletStorage(context)).use { manager ->
+                val walletId = manager.createWallet(
+                    mnemonic = TEST_MNEMONIC,
+                    name = "withdraw-explicit-binding",
+                    createDefaultAccounts = true,
+                ).walletId
+                val wallet = manager.wallet(forWalletId = walletId)
+                assertNotNull("the created wallet is managed", wallet)
+
+                val e = assertThrows(DashSdkError::class.java) {
+                    runBlocking {
+                        requireNotNull(wallet).withdrawCredits(
+                            coreAddress = TESTNET_CORE_ADDRESS,
+                            inputs = emptyList(),
+                            coreFeePerByte = 1,
+                            signerHandle = manager.signerHandle,
+                        )
+                    }
+                }
+                assertTrue(
+                    "an empty EXPLICIT withdrawal must fail in the platform wallet, got: ${e.message}",
+                    e.message.orEmpty().contains("at least one input address"),
+                )
+            }
+        } finally {
+            runCatching { db.close() }
+            runCatching { sdk.close() }
+        }
+    }
+
+    private companion object {
+        // BIP39 English test vector (all-zero entropy).
+        const val TEST_MNEMONIC =
+            "abandon abandon abandon abandon abandon abandon abandon abandon " +
+                "abandon abandon abandon about"
+
+        // Testnet P2PKH address of the all-zero hash: valid, owned by no one.
+        const val TESTNET_CORE_ADDRESS = "yLKSrCjLQFsfVgX8RjdctZ797d54atPjnV"
     }
 }
