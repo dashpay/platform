@@ -53,7 +53,6 @@ fn external_infos(seed_byte: u8) -> Vec<AddressInfo> {
 }
 
 fn utxo_on(info: &AddressInfo, value: u64) -> Utxo {
-    use dashcore::hashes::Hash;
     Utxo {
         outpoint: dashcore::OutPoint {
             txid: dashcore::Txid::from_byte_array([info.index as u8 ^ 0x5A; 32]),

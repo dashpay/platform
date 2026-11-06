@@ -287,8 +287,6 @@ fn v4_2_dev_database_opens_and_migrates_forward() {
 /// pre-V014 `core_utxos` row.
 #[test]
 fn v014_backfills_recordless_confirmed_utxo_height() {
-    use dashcore::hashes::Hash;
-
     let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("recordless-v013.db");
     let wallet_id = wid(0xC3);

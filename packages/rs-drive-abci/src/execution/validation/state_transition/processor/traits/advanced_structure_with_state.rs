@@ -138,8 +138,9 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
     /// proofs of possession fail, unpaid from protocol version 14, as the address witnesses do
     /// not sign those proofs. Admission is not consensus, so every protocol version gets this.
     ///
-    /// An identity create is checked here because a block refuses one whose identity id is not
-    /// the one its asset lock derives, or whose key structure or key proofs of possession fail.
+    /// An identity create is checked here because a block refuses one whose key structure or key
+    /// proofs of possession fail, or, up to protocol version 14, whose identity id is not the one
+    /// its asset lock derives; from protocol version 15 basic structure checks the identity id.
     /// From protocol version 14 the identity id and proof of possession failures are refused
     /// unpaid, as the asset lock signature covers neither field. Admission is not consensus, so
     /// every protocol version gets this.

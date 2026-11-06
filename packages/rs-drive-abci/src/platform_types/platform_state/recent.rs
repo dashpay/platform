@@ -17,7 +17,6 @@ use crate::platform_types::platform_state::PlatformState;
 use bincode::{Decode, Encode};
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::QuorumHash;
 use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::platform_value::Bytes32;

@@ -13,7 +13,6 @@ use async_trait::async_trait;
 use dashcore::blockdata::script::Builder;
 use dashcore::crypto::ecdsa::{EcdsaPublicKey as PublicKey, EcdsaSignature};
 use dashcore::ecdsa::EcdsaSecretKey;
-use dashcore::hashes::Hash;
 use dashcore::BlockHash;
 use dashcore::PublicKey as AddressPublicKey;
 #[cfg(test)]

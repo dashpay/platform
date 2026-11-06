@@ -225,7 +225,6 @@ mod tests {
     use super::*;
     use dashcore_rpc::dashcore::bloom::BloomFlags;
     use dashcore_rpc::dashcore::consensus::encode::serialize;
-    use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::{OutPoint, PubkeyHash, ScriptBuf, TxIn, TxOut};
     use tokio::time::{Duration, timeout};
 
