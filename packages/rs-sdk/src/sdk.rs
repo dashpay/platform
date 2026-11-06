@@ -58,6 +58,8 @@ mod identity_discovery_tests;
 mod protocol_gate;
 #[cfg(all(test, feature = "mocks"))]
 mod protocol_gate_tests;
+#[cfg(all(test, feature = "mocks"))]
+pub(crate) mod put_test_support;
 mod quorum_key;
 #[cfg(all(test, feature = "mocks"))]
 mod signed_version_tests;
@@ -1869,6 +1871,7 @@ pub(crate) mod test {
                         address: node.clone(),
                     })
                     .map_err(|inner| ExecutionError {
+                        possibly_accepted: false,
                         inner,
                         retries: 0,
                         address: Some(node.clone()),

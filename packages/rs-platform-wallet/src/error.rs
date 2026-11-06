@@ -188,14 +188,21 @@ pub enum PlatformWalletError {
     #[error("Transaction broadcast failed: {0}")]
     TransactionBroadcast(String),
 
-    /// A core transaction broadcast failed with an **ambiguous** outcome — the
+    /// A Core transaction or Platform state transition has an
+    /// **ambiguous** outcome. Reconcile it before submitting a replacement.
+    ///
+    /// For Core transactions, the
     /// transaction may already have reached the network (transport timeout
     /// after delivery, partial peer send, or an internal multi-node retry
-    /// whose earlier attempt may have succeeded). The spent inputs are
+    /// whose earlier attempt may have succeeded). The spent Core inputs are
     /// intentionally kept out of the selectable set, so an immediate retry
     /// fails at input selection instead of double-spending.
     ///
-    /// # What actually reconciles this, and what does not
+    /// A Platform state transition may instead have been accepted but its
+    /// result proof could not be verified. Reconcile the original operation
+    /// before retrying; the Core input protections below do not apply to it.
+    ///
+    /// # Core input reconciliation
     ///
     /// The inputs are held by TWO independent things, and only one of them
     /// expires. Key-wallet's `ReservationSet` entry is swept by its own TTL —
@@ -228,9 +235,8 @@ pub enum PlatformWalletError {
     ///
     /// The shielded sibling is [`Self::ShieldedSpendUnconfirmed`].
     #[error(
-        "Transaction broadcast outcome unknown — it may already be on the \
-         network; its inputs stay unspendable until this wallet observes them \
-         spent: {0}"
+        "Transaction outcome unknown — it may already have executed; \
+         sync and reconcile the original operation before submitting another: {0}"
     )]
     TransactionBroadcastUnconfirmed(String),
 
@@ -1422,12 +1428,14 @@ pub const SIGNER_KEY_UNAVAILABLE_PREFIX: &str = "signer_error:key_unavailable: "
 /// resulting variant reaches the FFI's `_` arm and flattens to
 /// `ErrorUnknown`, losing the host's key-repair routing. This helper keeps the
 /// failure verbatim under [`PlatformWalletError::Sdk`] — the one shape
-/// `From<PlatformWalletError> for PlatformWalletFFIResult` maps to code 31 —
-/// and hands every other error to `wrap`, the caller's stringifying wrapper,
-/// unchanged.
+/// `From<PlatformWalletError> for PlatformWalletFFIResult` maps to code 31.
+/// An unconfirmed submission is also preserved under `Sdk`: its
+/// diagnostic source must not become a safe-to-retry refusal or be flattened
+/// into an operation-specific string. Every other error is handed unchanged
+/// to `wrap`, the caller's stringifying wrapper.
 ///
-/// The check is **structural and position-0 only** (the marker must start the
-/// nested `ProtocolError::Generic` payload); it is never a substring sniff of
+/// The signer-marker check is **structural and position-0 only** (it must start
+/// the nested `ProtocolError::Generic` payload); it is never a substring sniff of
 /// the rendered error, so a foreign signer that merely mentions the token is
 /// not misrouted into key repair. This mirrors
 /// the guarded restore already performed by the FFI conversion.
@@ -1435,11 +1443,13 @@ pub fn preserve_signer_key_unavailable_or(
     error: dash_sdk::Error,
     wrap: impl FnOnce(dash_sdk::Error) -> PlatformWalletError,
 ) -> PlatformWalletError {
-    if matches!(
-        &error,
-        dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(s))
-            if s.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX)
-    ) {
+    if error.is_state_transition_result_unconfirmed()
+        || matches!(
+            &error,
+            dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(s))
+                if s.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX)
+        )
+    {
         PlatformWalletError::Sdk(error)
     } else {
         wrap(error)
@@ -1952,6 +1962,70 @@ mod quorum_lookup_context_error_tests {
         match error.quorum_lookup_context_error() {
             ContextProviderError::Generic(reason) => assert_eq!(reason, error.to_string()),
             other => panic!("expected Generic, got {other:?}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod unconfirmed_submission_tests {
+    use super::*;
+    use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
+    use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
+
+    fn diagnostic(kind: usize) -> dash_sdk::Error {
+        let id = Identifier::from([9; 32]);
+        let cause: ConsensusError = match kind {
+            0 => AddressInvalidNonceError::new(PlatformAddress::P2pkh([7; 20]), 1, 2).into(),
+            1 => DocumentIncorrectPurchasePriceError::new(id, 100, 200).into(),
+            2 => IdentityInsufficientBalanceError::new(id, 100, 200).into(),
+            _ => InvalidIdentityRevisionError::new(id, 5).into(),
+        };
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(cause)))
+    }
+
+    #[test]
+    fn should_preserve_unconfirmed_submission_before_recovery_or_stringification() {
+        for kind in 0..4 {
+            // Definite refusals still reach their existing recovery paths.
+            let definite = diagnostic(kind);
+            assert!(definite.consensus_error().is_some());
+            match kind {
+                0 => assert!(promote_address_nonce_error(&definite).is_some()),
+                1 => assert!(promote_document_trade_error(&definite).is_some()),
+                2 => assert!(promote_identity_insufficient_balance(&definite).is_some()),
+                _ => assert!(as_identity_revision_invalid(&definite).is_some()),
+            }
+            for depth in 0..=2 {
+                for boundary in 0..5 {
+                    let mut error = dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(
+                        diagnostic(kind),
+                    ));
+                    for _ in 0..depth {
+                        error = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(error));
+                    }
+                    let message = error.to_string();
+                    assert!(promote_address_nonce_error(&error).is_none());
+                    assert!(promote_document_trade_error(&error).is_none());
+                    assert!(promote_identity_insufficient_balance(&error).is_none());
+                    assert!(as_identity_revision_invalid(&error).is_none());
+                    let unexpected_fallback = |_| panic!("unconfirmed result was stringified");
+                    let mapped = match boundary {
+                        0 => preserve_signer_key_unavailable_or(error, unexpected_fallback),
+                        1 => promote_identity_insufficient_balance_or(error, unexpected_fallback),
+                        2 => promote_document_trade_error_or(error, unexpected_fallback),
+                        3 => promote_address_nonce_error_or_sdk(error),
+                        _ => PlatformWalletError::token_operation_failed("transfer", error),
+                    };
+                    assert!(mapped.consensus_error().is_none());
+                    match mapped {
+                        PlatformWalletError::Sdk(source) => {
+                            assert!(source.is_state_transition_result_unconfirmed());
+                            assert_eq!(source.to_string(), message);
+                        }
+                        other => panic!("expected preserved SDK submission status, got {other:?}"),
+                    }
+                }
+            }
         }
     }
 }

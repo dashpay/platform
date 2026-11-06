@@ -191,6 +191,12 @@ impl From<SdkError> for WasmSdkError {
             ExecutionNotProved(msg) => {
                 Self::new(WasmSdkErrorKind::ExecutionNotProved, msg, None, false)
             }
+            StateTransitionResultUnconfirmed(source) => Self::new(
+                WasmSdkErrorKind::Generic,
+                format!("state transition result is unconfirmed; reconcile before re-submitting: {source}"),
+                None,
+                false,
+            ),
             InvalidProvedResponse(msg) => Self::new(
                 WasmSdkErrorKind::InvalidProvedResponse,
                 msg,
@@ -447,6 +453,26 @@ mod tests {
     use rs_dapi_client::transport::TransportError;
     use rs_dapi_client::DapiClientError;
 
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    fn should_keep_unconfirmed_submission_non_retriable_with_its_diagnostic() {
+        for depth in 0..=2 {
+            let mut source = SdkError::StateTransitionResultUnconfirmed(Box::new(
+                SdkError::InvalidProvedResponse("document result proof was invalid".into()),
+            ));
+            for _ in 0..depth {
+                source = SdkError::NoAvailableAddressesToRetry(Box::new(source));
+            }
+            let error = WasmSdkError::from(source);
+            assert!(!error.is_retriable());
+            assert!(error.message().contains("unconfirmed"));
+            assert!(error
+                .message()
+                .contains("document result proof was invalid"));
+            assert_eq!(error.code(), -1);
+        }
+    }
+
     fn property_constraint_violated() -> ConsensusError {
         DocumentPropertyConstraintViolatedError::new(
             "post".to_string(),
@@ -557,6 +583,7 @@ mod tests {
             async move {
                 Err::<ExecutionResponse<()>, _>(if first {
                     ExecutionError {
+                        possibly_accepted: false,
                         inner: SdkError::StaleNode(StaleNodeError::ProtocolVersion {
                             expected_protocol_version: 14,
                             received_protocol_version: 13,
@@ -566,6 +593,7 @@ mod tests {
                     }
                 } else {
                     ExecutionError {
+                        possibly_accepted: false,
                         inner: SdkError::DapiClientError(DapiClientError::NoAvailableAddresses),
                         retries: 0,
                         address: None,
