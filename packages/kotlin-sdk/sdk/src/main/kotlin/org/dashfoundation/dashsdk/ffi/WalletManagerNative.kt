@@ -439,9 +439,11 @@ internal object WalletManagerNative {
 
     /**
      * Withdraw exactly the listed amounts from the listed platform addresses
-     * (EXPLICIT input selection) to a Core L1 address, wallet-signed. No fee
-     * strategy is passed, so Rust applies `DeductFromInput(0)`, resolved
-     * against the inputs sorted by address. Same composite call, network
+     * (EXPLICIT input selection) to a Core L1 address, wallet-signed. The
+     * amounts are gross: from protocol version 14 the Core fee is taken out
+     * of their sum before the Core output. No fee strategy is passed, so
+     * Rust applies `DeductFromInput(0)` for the platform transition fee,
+     * resolved against the inputs sorted by address. Same composite call, network
      * check and changeset blob as [walletPlatformAddressWithdraw].
      *
      * @param inputsBlob `u32 rowCount` then per row `u8 addressType,

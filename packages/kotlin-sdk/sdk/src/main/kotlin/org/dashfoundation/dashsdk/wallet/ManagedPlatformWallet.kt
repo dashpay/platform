@@ -841,7 +841,7 @@ class ManagedPlatformWallet internal constructor(
      *
      * @property addressType `0` (P2PKH); the only type the wallet can sign.
      * @property hash the 20-byte address hash.
-     * @property credits credits to withdraw (the payout).
+     * @property credits credits to withdraw from this address (gross; see [withdrawCredits]).
      */
     data class WithdrawalInput(val addressType: Int, val hash: ByteArray, val credits: Long) {
         override fun equals(other: Any?): Boolean =
@@ -925,14 +925,17 @@ class ManagedPlatformWallet internal constructor(
     }
 
     /**
-     * Partial-amount withdrawal: pay out exactly the sum of
-     * [WithdrawalInput.credits] to [coreAddress], drawing the listed amounts
-     * from the listed addresses (EXPLICIT input selection). Port of Swift's
+     * Partial-amount withdrawal: withdraw the sum of [WithdrawalInput.credits]
+     * to [coreAddress], drawing the listed amounts from the listed addresses
+     * (EXPLICIT input selection). Port of Swift's
      * `ManagedPlatformAddressWallet.withdraw(accountIndex:coreAddress:inputs:…)`.
      *
-     * Unlike the full-balance overload, the payout equals the requested
-     * amount: the transition fee comes out of the fee-source input's
-     * REMAINING balance, not the payout. Rust re-fetches every input's
+     * The input sum is the GROSS withdrawal amount. From protocol version 14
+     * the Core fee (the asset-unlock transaction size × [coreFeePerByte]
+     * duffs) is taken out of it, so [coreAddress] receives the sum minus
+     * that fee. Unlike the full-balance overload, the platform transition
+     * fee does not reduce the withdrawal: it comes out of the fee-source
+     * input's REMAINING balance. Rust re-fetches every input's
      * on-chain balance before signing, so a stale caller-side balance fails
      * with an error instead of withdrawing a wrong amount.
      *
