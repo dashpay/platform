@@ -1303,6 +1303,22 @@ impl PlatformWalletPersistence for SqlitePersister {
         self.config.flush_mode == FlushMode::Immediate
     }
 
+    /// Every `store` writes the record in the same transaction as the cursor
+    /// it travels with (`core_sync_state` and `account_registrations`
+    /// columns, see `schema::dashpay_backfill`), and an empty record clears
+    /// the stored one. Durable coverage additionally needs inline rounds, so
+    /// in [`FlushMode::Manual`] `persists_backfill_coverage` still reads
+    /// `false` through [`store_commits_inline`](Self::store_commits_inline).
+    fn stores_dashpay_backfill(&self) -> bool {
+        true
+    }
+
+    /// [`LoadPolicy::Recovery`] serves a degraded projection and refuses
+    /// every write ([`ensure_writable`](Self::ensure_writable)).
+    fn refuses_writes(&self) -> bool {
+        self.config.load_policy == LoadPolicy::Recovery
+    }
+
     fn persistence_capabilities(&self) -> PersistenceCapabilities {
         // Every `flush_inner` applies the complete changeset in one SQLite
         // transaction. The current schema also has lossless token balances,
@@ -1517,7 +1533,17 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// # }
     /// ```
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
-        let conn = self.conn().map_err(PersistenceError::from)?;
+        let mut guard = self.conn().map_err(PersistenceError::from)?;
+        // One read snapshot for the whole load. The mutex excludes only this
+        // process, so without it another process could commit between two
+        // reads: a rewound cursor plus its backfill coverage landing after
+        // the cursor read but before the coverage read would hand back the
+        // old cursor beside coverage that suppresses the rescan of the range
+        // it skipped. A deferred transaction takes no lock until its first
+        // read, which in WAL mode pins the snapshot every later read sees.
+        let conn = guard
+            .transaction()
+            .map_err(|e| PersistenceError::from(WalletStorageError::from(e)))?;
         let ctx = LoadCtx::new(self.config.load_policy);
         // Cleared up front so a failed load never leaves the previous load's
         // snapshot behind, masquerading as this one's verdict.
@@ -1607,6 +1633,9 @@ impl PlatformWalletPersistence for SqlitePersister {
             unimplemented_rows = degradation.unimplemented_rows,
             "load() summary"
         );
+        // Read-only, so committing only releases the snapshot.
+        conn.commit()
+            .map_err(|e| PersistenceError::from(WalletStorageError::from(e)))?;
         self.replace_load_degradation(degradation);
         Ok(state)
     }
@@ -1851,6 +1880,8 @@ fn load_one_wallet(
                 ))
             })?;
     }
+    let dashpay_backfill = schema::dashpay_backfill::load_for_wallet(conn, &wallet_id)
+        .map_err(PersistenceError::from)?;
     Ok(platform_wallet::changeset::ClientWalletStartState {
         wallet,
         wallet_info,
@@ -1861,10 +1892,7 @@ fn load_one_wallet(
         // replay inert here, which is the behaviour this path had before the
         // field existed.
         unconfirmed_outgoing_txs: Vec::new(),
-        // Not persisted by this backend yet: the backfill record rides the
-        // FFI hosts' wallet row only. Empty keeps the rescan sweep on its
-        // pre-record behaviour here (a rewind per launch, never lossy).
-        dashpay_backfill: Default::default(),
+        dashpay_backfill,
     })
 }
 
@@ -2229,6 +2257,9 @@ fn apply_changeset_to_tx(
     }
     if let Some(scan_state) = cs.identity_scan_state.as_ref() {
         schema::identity_scan_states::apply(tx, wallet_id, scan_state)?;
+    }
+    if let Some(record) = cs.dashpay_backfill.as_ref() {
+        schema::dashpay_backfill::apply(tx, wallet_id, record)?;
     }
     if let Some(balances) = cs.token_balances.as_ref() {
         schema::token_balances::apply(tx, wallet_id, balances)?;

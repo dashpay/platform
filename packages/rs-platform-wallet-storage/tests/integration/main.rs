@@ -32,6 +32,8 @@ mod sqlite_compile_time;
 mod sqlite_contacts_keys_rehydration;
 mod sqlite_core_pool_writer;
 mod sqlite_core_state_reader;
+mod sqlite_dashpay_backfill;
+mod sqlite_dashpay_backfill_relaunch;
 mod sqlite_dashpay_overlay_contract;
 mod sqlite_delete_buffer_reconcile;
 mod sqlite_delete_cross_process_exclusion;
