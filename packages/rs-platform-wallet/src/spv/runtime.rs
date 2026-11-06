@@ -475,7 +475,8 @@ impl SpvRuntime {
     /// quorum's commitment against the members it derives for the quorum. Any
     /// other status is a key dash-spv holds but has not verified, which must
     /// not verify Platform proofs; [`Self::get_quorum_public_key`] enforces
-    /// that.
+    /// that. A `quorum_type` above 255 fails with
+    /// [`PlatformWalletError::InvalidParameter`].
     pub async fn get_quorum_public_key_with_status(
         &self,
         quorum_type: u32,
@@ -487,7 +488,11 @@ impl SpvRuntime {
             "SPV Client not started".to_string(),
         ))?;
 
-        let llmq_type = LLMQType::from(quorum_type as u8);
+        let llmq_type = u8::try_from(quorum_type).map(LLMQType::from).map_err(|_| {
+            PlatformWalletError::InvalidParameter(format!(
+                "quorum type {quorum_type} does not fit an LLMQ type byte"
+            ))
+        })?;
         let qh = QuorumHash::from_byte_array(quorum_hash).reverse();
 
         let quorum = client
@@ -1409,6 +1414,18 @@ mod tests {
             assert_eq!(quorum.public_key, [9; 48]);
             assert_eq!(quorum.status, status);
         }
+
+        let wrapped = runtime
+            .get_quorum_public_key_with_status(
+                6 + 256,
+                QUORUM_FIXTURE_PLATFORM_HASH,
+                QUORUM_FIXTURE_HEIGHT,
+            )
+            .await;
+        assert!(
+            matches!(wrapped, Err(PlatformWalletError::InvalidParameter(_))),
+            "a quorum type above 255 must not resolve as its low byte, got {wrapped:?}"
+        );
 
         hold_quorum(
             &runtime,
