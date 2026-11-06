@@ -2,7 +2,6 @@ use dpp::consensus::basic::identity::IdentityAssetLockStateTransitionReplayError
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 
-use dpp::dashcore::hashes::Hash;
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;

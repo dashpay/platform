@@ -277,7 +277,7 @@ impl ManagedIdentity {
     /// sender alone) means a DIFFERENT proof from the same sender is not
     /// suppressed by a prior bad one.
     pub fn auto_accept_verify_failed_key(sender_id: &Identifier, proof: &[u8]) -> [u8; 32] {
-        use dashcore::hashes::{sha256, Hash, HashEngine};
+        use dashcore::hashes::{sha256, HashEngine};
         let mut engine = sha256::Hash::engine();
         engine.input(&sender_id.to_buffer());
         engine.input(proof);

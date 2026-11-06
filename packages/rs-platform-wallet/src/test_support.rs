@@ -13,7 +13,6 @@ use async_trait::async_trait;
 use dashcore::blockdata::script::Builder;
 use dashcore::crypto::ecdsa::{EcdsaPublicKey as PublicKey, EcdsaSignature};
 use dashcore::ecdsa::EcdsaSecretKey;
-use dashcore::hashes::Hash;
 use dashcore::BlockHash;
 use dashcore::PublicKey as AddressPublicKey;
 #[cfg(test)]
@@ -206,7 +205,6 @@ pub fn fold_wallet_records(records: &mut Vec<TransactionRecord>) {
 /// crate and of `platform-wallet-storage`.
 pub mod core_fixtures {
     use dashcore::address::Payload;
-    use dashcore::hashes::Hash;
     use dashcore::{
         Address, BlockHash, Network, OutPoint, PubkeyHash, Transaction, TxIn, TxOut, Txid,
     };

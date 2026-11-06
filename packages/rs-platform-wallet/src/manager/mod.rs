@@ -1408,8 +1408,6 @@ mod tests {
     /// because nothing else on the fan-out calls `observe_spent`.
     #[tokio::test]
     async fn constructor_wires_spend_observation_into_the_event_fanout() {
-        use dashcore::hashes::Hash as _;
-
         let mgr = make_manager();
 
         // A funded wallet registered in the manager's live wallets map — the

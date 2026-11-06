@@ -6,7 +6,6 @@ use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoun
 use dpp::consensus::state::voting::masternode_vote_already_present_error::MasternodeVoteAlreadyPresentError;
 use dpp::consensus::state::voting::masternode_voted_too_many_times::MasternodeVotedTooManyTimesError;
 use dpp::consensus::ConsensusError;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
 use dpp::dashcore_rpc::dashcore_rpc_json::{MasternodeListItem, MasternodeType};
 use dpp::identifier::Identifier;
