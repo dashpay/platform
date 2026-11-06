@@ -8,8 +8,9 @@ use crate::version::drive_versions::drive_token_method_versions::{
 /// Identical to [`super::v2::DRIVE_TOKEN_METHOD_VERSIONS_V2`] except
 /// `calculate_total_tokens_balance` is bumped to `2`: the tokens the token marketplace holds in
 /// escrow for open listings join the identity balances and the shielded pools on the balance
-/// side of the token conservation check; and the token marketplace's escrow methods, `None`
-/// before, are active.
+/// side of the token conservation check; the token marketplace's escrow methods, `None`
+/// before, are active; and `settle_random_token_amounts`, `None` before, pays out the random
+/// token transfers and mints of a block.
 pub const DRIVE_TOKEN_METHOD_VERSIONS_V3: DriveTokenMethodVersions = DriveTokenMethodVersions {
     calculate_total_tokens_balance: 2,
     order_escrow: DriveTokenOrderEscrowMethodVersions {
@@ -24,5 +25,6 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V3: DriveTokenMethodVersions = DriveTokenM
         estimated_costs_for_tokens: Some(0),
         estimated_costs_for_credits: Some(0),
     },
+    settle_random_token_amounts: Some(0), // changed: random token amounts are settled
     ..DRIVE_TOKEN_METHOD_VERSIONS_V2
 };

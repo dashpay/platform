@@ -39,6 +39,11 @@ pub mod mint_many;
 #[cfg(feature = "server")]
 pub mod shielded_pool;
 
+/// Pays out the random token transfers and mints of a block from its random beacon
+/// (protocol version 15).
+#[cfg(feature = "server")]
+pub mod settle_random_token_amounts;
+
 /// Manages system-level operations and utilities.
 #[cfg(feature = "server")]
 pub mod system;

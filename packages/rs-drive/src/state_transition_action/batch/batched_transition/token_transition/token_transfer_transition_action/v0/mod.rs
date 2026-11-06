@@ -2,6 +2,7 @@ mod transformer;
 
 use std::sync::Arc;
 
+use dpp::balances::credits::TokenAmount;
 use dpp::identifier::Identifier;
 use dpp::prelude::{
     DerivationEncryptionKeyIndex, IdentityNonce, RootEncryptionKeyIndex,
@@ -17,7 +18,8 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 pub struct TokenTransferTransitionActionV0 {
     /// Base token transition action
     pub base: TokenBaseTransitionAction,
-    /// The amount to transfer
+    /// The amount to transfer: with `random_minimum_amount` set, the most it transfers, taken
+    /// from the sender when the block executes it
     pub amount: u64,
     /// The recipient owner ID
     pub recipient_id: Identifier,
@@ -31,6 +33,10 @@ pub struct TokenTransferTransitionActionV0 {
         DerivationEncryptionKeyIndex,
         Vec<u8>,
     )>,
+    /// The least the transfer moves when its amount is random (protocol version 15): the
+    /// recipient receives an amount drawn from this to `amount` from the block's random beacon,
+    /// and the rest goes back to the sender (`Drive::settle_random_token_amounts`)
+    pub random_minimum_amount: Option<TokenAmount>,
 }
 
 /// Accessors for `TokenTransferTransitionActionV0`
@@ -46,6 +52,10 @@ pub trait TokenTransferTransitionActionAccessorsV0 {
 
     /// Returns the recipient owner ID
     fn recipient_id(&self) -> Identifier;
+
+    /// The least the transfer moves when its amount is random, `None` for a transfer of
+    /// exactly `amount`
+    fn random_minimum_amount(&self) -> Option<TokenAmount>;
 
     /// Returns the token position in the contract
     fn token_position(&self) -> u16 {
@@ -149,6 +159,10 @@ impl TokenTransferTransitionActionAccessorsV0 for TokenTransferTransitionActionV
 
     fn recipient_id(&self) -> Identifier {
         self.recipient_id
+    }
+
+    fn random_minimum_amount(&self) -> Option<TokenAmount> {
+        self.random_minimum_amount
     }
 
     fn public_note(&self) -> Option<&String> {

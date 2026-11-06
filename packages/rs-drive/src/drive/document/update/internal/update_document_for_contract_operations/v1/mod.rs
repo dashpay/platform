@@ -201,8 +201,9 @@ impl Drive {
     /// types a client cannot update, split out unchanged (the refusal reads only the document
     /// type, which dropping storage flags leaves as it is), so an update gathers the same
     /// operations as before at every protocol version. `draw_random_document_properties`
-    /// calls it to fill the `sys.random` properties of a document of any type.
-    pub(in crate::drive::document) fn update_stored_document_operations_v1(
+    /// calls it to fill the `sys.random` properties of a document of any type, and
+    /// `settle_random_token_amounts` to fill the drawn amount into a token history document.
+    pub(crate) fn update_stored_document_operations_v1(
         &self,
         document_and_contract_info: DocumentAndContractInfo,
         block_info: &BlockInfo,

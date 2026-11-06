@@ -26,6 +26,14 @@ pub trait TokenTransferTransitionV0Methods: TokenBaseTransitionAccessors {
     /// Sets the value of the `amount` field in the `TokenTransferTransitionV0`.
     fn set_amount(&mut self, amount: u64);
 
+    /// The least the transfer moves when its amount is random (format version 1, protocol
+    /// version 15): the recipient receives an amount drawn uniformly from it to `amount`, both
+    /// included. `None` for a transfer of exactly `amount`, which every version 0 transfer is.
+    /// Set on the versioned
+    /// [`TokenTransferTransition`](crate::state_transition::batch_transition::TokenTransferTransition),
+    /// which takes the format holding it.
+    fn random_minimum_amount(&self) -> Option<u64>;
+
     /// Returns the `recipient_owner_id` field of the `TokenTransferTransitionV0`.
     fn recipient_id(&self) -> Identifier;
 
@@ -106,6 +114,10 @@ impl TokenTransferTransitionV0Methods for TokenTransferTransitionV0 {
 
     fn set_amount(&mut self, amount: u64) {
         self.amount = amount;
+    }
+
+    fn random_minimum_amount(&self) -> Option<u64> {
+        None
     }
 
     fn recipient_id(&self) -> Identifier {

@@ -33,6 +33,12 @@ pub trait TokenMintTransitionV0Methods:
 
     fn set_amount(&mut self, amount: u64);
 
+    /// The least the mint issues when its amount is random (format version 1, protocol version
+    /// 15): the recipient receives an amount drawn uniformly from it to `amount`, both included.
+    /// `None` for a mint of exactly `amount`, which every version 0 mint is. Set on the
+    /// versioned [`TokenMintTransition`], which takes the format holding it.
+    fn random_minimum_amount(&self) -> Option<u64>;
+
     /// Returns the `public_note` field of the `TokenMintTransitionV0`.
     fn public_note(&self) -> Option<&String>;
 
@@ -60,6 +66,10 @@ impl TokenMintTransitionV0Methods for TokenMintTransitionV0 {
 
     fn set_amount(&mut self, amount: u64) {
         self.amount = amount;
+    }
+
+    fn random_minimum_amount(&self) -> Option<u64> {
+        None
     }
 
     fn public_note(&self) -> Option<&String> {

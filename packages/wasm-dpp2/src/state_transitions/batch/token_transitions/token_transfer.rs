@@ -26,6 +26,12 @@ export interface TokenTransferTransitionOptions {
     publicNote?: string;
     sharedEncryptedNote?: SharedEncryptedNote;
     privateEncryptedNote?: PrivateEncryptedNote;
+    /**
+     * The least the transfer moves when its amount is random (protocol version 15): the
+     * recipient receives an amount drawn from it to `amount`. Setting it makes a version 1
+     * transfer, which no protocol version before 15 accepts.
+     */
+    randomMinimumAmount?: bigint;
 }
 "#;
 
@@ -74,21 +80,32 @@ impl TokenTransferTransitionWasm {
         let private_encrypted_note: Option<PrivateEncryptedNoteWasm> =
             try_from_options_optional(&options, "privateEncryptedNote")?;
 
-        Ok(TokenTransferTransitionWasm(TokenTransferTransition::V0(
-            TokenTransferTransitionV0 {
-                base: base.into(),
-                recipient_id: recipient_id.into(),
-                amount,
-                public_note,
-                shared_encrypted_note: shared_encrypted_note.map(Into::into),
-                private_encrypted_note: private_encrypted_note.map(Into::into),
-            },
-        )))
+        let random_minimum_amount: Option<u64> =
+            try_from_options_optional_with(&options, "randomMinimumAmount", |v| {
+                try_to_u64(v, "randomMinimumAmount")
+            })?;
+
+        let mut transition = TokenTransferTransition::V0(TokenTransferTransitionV0 {
+            base: base.into(),
+            recipient_id: recipient_id.into(),
+            amount,
+            public_note,
+            shared_encrypted_note: shared_encrypted_note.map(Into::into),
+            private_encrypted_note: private_encrypted_note.map(Into::into),
+        });
+        // A random amount takes the version 1 format
+        transition.set_random_minimum_amount(random_minimum_amount);
+        Ok(TokenTransferTransitionWasm(transition))
     }
 
     #[wasm_bindgen(getter = "amount")]
     pub fn amount(&self) -> u64 {
         self.0.amount()
+    }
+
+    #[wasm_bindgen(getter = "randomMinimumAmount")]
+    pub fn random_minimum_amount(&self) -> Option<u64> {
+        self.0.random_minimum_amount()
     }
 
     #[wasm_bindgen(getter = "base")]
@@ -134,6 +151,21 @@ impl TokenTransferTransitionWasm {
     #[wasm_bindgen(setter = "amount")]
     pub fn set_amount(&mut self, amount: &js_sys::BigInt) -> WasmDppResult<()> {
         self.0.set_amount(try_to_u64(amount, "amount")?);
+        Ok(())
+    }
+
+    #[wasm_bindgen(setter = "randomMinimumAmount")]
+    pub fn set_random_minimum_amount(
+        &mut self,
+        #[wasm_bindgen(js_name = "randomMinimumAmount")] random_minimum_amount: JsValue,
+    ) -> WasmDppResult<()> {
+        let random_minimum_amount =
+            if random_minimum_amount.is_undefined() || random_minimum_amount.is_null() {
+                None
+            } else {
+                Some(try_to_u64(&random_minimum_amount, "randomMinimumAmount")?)
+            };
+        self.0.set_random_minimum_amount(random_minimum_amount);
         Ok(())
     }
 

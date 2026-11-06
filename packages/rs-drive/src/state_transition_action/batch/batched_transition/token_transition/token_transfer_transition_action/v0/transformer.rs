@@ -1,5 +1,6 @@
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_transfer_transition::v0::TokenTransferTransitionV0;
+use dpp::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV1;
 use dpp::ProtocolError;
 use grovedb::TransactionArg;
 use std::sync::Arc;
@@ -91,6 +92,7 @@ impl TokenTransferTransitionActionV0 {
                 public_note,
                 shared_encrypted_note,
                 private_encrypted_note,
+                random_minimum_amount: None,
             },
             fee_result,
         ))
@@ -175,9 +177,91 @@ impl TokenTransferTransitionActionV0 {
                 public_note: public_note.clone(),
                 shared_encrypted_note: shared_encrypted_note.clone(),
                 private_encrypted_note: private_encrypted_note.clone(),
+                random_minimum_amount: None,
             },
             fee_result,
         ))
+    }
+
+    /// Converts a `TokenTransferTransitionV1` into a `TokenTransferTransitionActionV0`: the
+    /// version 0 conversion of its version 0 fields, carrying its random minimum amount. It
+    /// bills only what the version 0 conversion does: the history index entries the settlement
+    /// of a random amount may create are prepaid by the write of the history document
+    /// (`TokenOperationType::TokenRandomAmountHistory`), which a transfer refused later never
+    /// reaches.
+    ///
+    /// # Arguments
+    ///
+    /// The arguments of [`Self::try_from_token_transfer_transition_with_contract_lookup`], with
+    /// `value` a `TokenTransferTransitionV1`.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<(TokenTransferTransitionActionV0, FeeResult), Error>` - The action and the fees
+    ///   of the lookups it made.
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_from_token_transfer_transition_v1_with_contract_lookup(
+        drive: &Drive,
+        owner_id: Identifier,
+        value: TokenTransferTransitionV1,
+        approximate_without_state_for_costs: bool,
+        transaction: TransactionArg,
+        block_info: &BlockInfo,
+        get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, FeeResult), Error> {
+        let (v0, random_minimum_amount) = value.into_v0_and_random_minimum_amount();
+        let (mut action, fee_result) =
+            Self::try_from_token_transfer_transition_with_contract_lookup(
+                drive,
+                owner_id,
+                v0,
+                approximate_without_state_for_costs,
+                transaction,
+                block_info,
+                get_data_contract,
+                platform_version,
+            )?;
+        action.random_minimum_amount = random_minimum_amount;
+        Ok((action, fee_result))
+    }
+
+    /// Converts a borrowed `TokenTransferTransitionV1` into a `TokenTransferTransitionActionV0`:
+    /// [`Self::try_from_token_transfer_transition_v1_with_contract_lookup`] of a copy.
+    ///
+    /// # Arguments
+    ///
+    /// The arguments of
+    /// [`Self::try_from_borrowed_token_transfer_transition_with_contract_lookup`], with `value`
+    /// a borrowed `TokenTransferTransitionV1`.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<(TokenTransferTransitionActionV0, FeeResult), Error>` - The action and the fees
+    ///   of the lookups it made.
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_from_borrowed_token_transfer_transition_v1_with_contract_lookup(
+        drive: &Drive,
+        owner_id: Identifier,
+        value: &TokenTransferTransitionV1,
+        approximate_without_state_for_costs: bool,
+        transaction: TransactionArg,
+        block_info: &BlockInfo,
+        get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, FeeResult), Error> {
+        // One copy of the fields, moved into the owned conversion, which builds the same action
+        // as the borrowed one does without copying the notes a second time
+        Self::try_from_token_transfer_transition_v1_with_contract_lookup(
+            drive,
+            owner_id,
+            value.clone(),
+            approximate_without_state_for_costs,
+            transaction,
+            block_info,
+            get_data_contract,
+            platform_version,
+        )
     }
 }
 
@@ -236,6 +320,7 @@ mod tests {
             public_note: public_note.map(|s| s.to_string()),
             shared_encrypted_note: shared,
             private_encrypted_note: private_,
+            random_minimum_amount: None,
         }
     }
 
@@ -503,5 +588,117 @@ mod tests {
         let owned_id = wrapped.base_owned().token_id();
         assert_eq!(ref_id, owned_id);
         assert_eq!(ref_id, Identifier::new([21u8; 32]));
+    }
+}
+
+#[cfg(test)]
+mod random_amount_tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::data_contract::accessors::v1::DataContractV1Getters;
+    use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+    use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+    use dpp::data_contract::associated_token::token_keeps_history_rules::v0::TokenKeepsHistoryRulesV0;
+    use dpp::data_contract::config::v0::DataContractConfigV0;
+    use dpp::data_contract::v1::DataContractV1;
+    use dpp::data_contract::DataContract;
+    use dpp::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+    use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+    use grovedb_costs::OperationCost;
+    use std::collections::BTreeMap;
+
+    const CONTRACT: [u8; 32] = [3; 32];
+    const SENDER: [u8; 32] = [1; 32];
+    const RECIPIENT: [u8; 32] = [2; 32];
+    const MINIMUM: u64 = 100;
+    const MAXIMUM: u64 = 1_000;
+
+    /// A contract whose token, at position 0, keeps every kind of history when `keeps_history`
+    /// and none otherwise.
+    fn token_contract(keeps_history: bool) -> Arc<DataContractFetchInfo> {
+        let mut token = TokenConfigurationV0::default_most_restrictive();
+        token.keeps_history =
+            TokenKeepsHistoryRulesV0::default_for_keeping_all_history(keeps_history).into();
+        let contract = DataContract::V1(DataContractV1 {
+            id: CONTRACT.into(),
+            version: 0,
+            owner_id: SENDER.into(),
+            document_types: Default::default(),
+            config: DataContractConfigV0::default().into(),
+            schema_defs: None,
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
+            groups: Default::default(),
+            tokens: BTreeMap::from([(0, TokenConfiguration::V0(token))]),
+            keywords: Vec::new(),
+            description: None,
+        });
+        Arc::new(DataContractFetchInfo {
+            contract,
+            storage_flags: None,
+            cost: OperationCost::default(),
+            fee: None,
+        })
+    }
+
+    /// What building the action of a transfer of up to `MAXIMUM` tokens bills, a random one
+    /// from `MINIMUM` when `random`.
+    fn transfer_fee(keeps_history: bool, random: bool) -> FeeResult {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let fetch_info = token_contract(keeps_history);
+        let token_id = fetch_info
+            .contract
+            .token_id(0)
+            .expect("expected a token at position 0");
+        let random_minimum_amount = random.then_some(MINIMUM);
+        let transition = TokenTransferTransitionV1 {
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce: 1,
+                token_contract_position: 0,
+                data_contract_id: CONTRACT.into(),
+                token_id,
+                using_group_info: None,
+            }),
+            amount: MAXIMUM,
+            recipient_id: RECIPIENT.into(),
+            public_note: Some("for the raffle".to_string()),
+            shared_encrypted_note: None,
+            private_encrypted_note: None,
+            random_minimum_amount,
+        };
+        let (action, fee_result) =
+            TokenTransferTransitionActionV0::try_from_borrowed_token_transfer_transition_v1_with_contract_lookup(
+                &drive,
+                SENDER.into(),
+                &transition,
+                false,
+                None,
+                &BlockInfo::default(),
+                |_| Ok(fetch_info.clone()),
+                platform_version,
+            )
+            .expect("expected the action to build");
+        assert_eq!(action.random_minimum_amount, random_minimum_amount);
+        assert_eq!(action.amount, MAXIMUM);
+        assert_eq!(action.public_note.as_deref(), Some("for the raffle"));
+        fee_result
+    }
+
+    #[test]
+    fn should_bill_a_random_transfer_action_what_a_fixed_one_costs() {
+        // The history write prepays the entries the settlement may create, so a transfer its
+        // state validation refuses after this, whose action fee is still billed, prepays none
+        for keeps_history in [true, false] {
+            assert_eq!(
+                transfer_fee(keeps_history, true),
+                transfer_fee(keeps_history, false),
+                "keeps history: {keeps_history}"
+            );
+        }
     }
 }

@@ -4,6 +4,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use dpp::balances::credits::TokenAmount;
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
@@ -20,6 +21,7 @@ impl Drive {
         owner_id: Identifier,
         owner_nonce: IdentityNonce,
         event: TokenEvent,
+        random_range: Option<(TokenAmount, TokenAmount)>,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
@@ -36,6 +38,7 @@ impl Drive {
             token_id,
             owner_id,
             owner_nonce,
+            random_range,
             block_info,
             platform_version,
         )?;
