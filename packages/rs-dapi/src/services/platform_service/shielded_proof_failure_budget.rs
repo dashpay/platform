@@ -28,7 +28,7 @@ use dpp::state_transition::shield_transition::ShieldTransition;
 use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
 use dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition;
 use dpp::state_transition::unshield_transition::UnshieldTransition;
-use dpp::version::PlatformVersion;
+use dpp::version::{PLATFORM_VERSIONS, PlatformVersion};
 use tonic::Request;
 
 /// Consensus code of `InvalidShieldedProofError`, the CheckTx answer for a
@@ -43,6 +43,11 @@ const FAILED_ACTIONS_ALLOWED: u32 = 4;
 /// Time for one failed action to drain, so a source that keeps failing gets
 /// two actions verified a minute.
 const ACTION_DRAIN_INTERVAL: Duration = Duration::from_secs(30);
+
+/// The most Orchard actions one bundle can carry under any protocol version
+/// this build knows: the largest bundle a source can have in flight.
+const MAX_SHIELDED_ACTIONS: u16 = largest_action_limit(PLATFORM_VERSIONS);
+const _: () = assert!(MAX_SHIELDED_ACTIONS > 0, "a zero bound would meter nothing");
 
 /// Sources tracked at once. When full, a source with nothing in flight and the
 /// least debt makes room.
@@ -170,19 +175,36 @@ pub struct ShieldedProofFailureBudget {
 
 impl Default for ShieldedProofFailureBudget {
     fn default() -> Self {
-        // `latest()` is a static upper bound, as for the size pre-filter:
-        // Drive refuses a bundle over the active limit before any proof work.
-        let max_actions = PlatformVersion::latest()
-            .system_limits
-            .max_shielded_transition_actions;
         Self {
             sources: Mutex::new(HashMap::new()),
             failed_actions_allowed: FAILED_ACTIONS_ALLOWED,
-            max_in_flight_actions: u32::from(max_actions),
+            max_in_flight_actions: u32::from(MAX_SHIELDED_ACTIONS),
             drain_interval: ACTION_DRAIN_INTERVAL,
             max_sources: MAX_TRACKED_SOURCES,
         }
     }
+}
+
+/// The largest `max_shielded_transition_actions` in `versions`.
+///
+/// DAPI does not track which version the network runs, so the budget clamps a
+/// bundle to the most actions any version this build knows admits: a smaller
+/// bound would charge a bundle the active version still verifies for fewer
+/// actions than Drive checks. Drive refuses a bundle over the active limit
+/// before any proof work.
+const fn largest_action_limit(versions: &[PlatformVersion]) -> u16 {
+    let mut largest = 0;
+    let mut index = 0;
+    while index < versions.len() {
+        let limit = versions[index]
+            .system_limits
+            .max_shielded_transition_actions;
+        if limit > largest {
+            largest = limit;
+        }
+        index += 1;
+    }
+    largest
 }
 
 impl ShieldedProofFailureBudget {
@@ -470,6 +492,36 @@ mod tests {
             Err(ACTION_DRAIN_INTERVAL * 14),
             "sixteen failed actions, less room for one two-action bundle"
         );
+    }
+
+    #[test]
+    fn should_clamp_to_the_largest_action_limit_of_any_known_version() {
+        let with_limit = |limit| {
+            let mut version = PlatformVersion::latest().clone();
+            version.system_limits.max_shielded_transition_actions = limit;
+            version
+        };
+
+        assert_eq!(largest_action_limit(&[with_limit(16)]), 16);
+        assert_eq!(
+            largest_action_limit(&[with_limit(32), with_limit(16)]),
+            32,
+            "an older version that admits more actions still bounds the charge"
+        );
+        assert_eq!(
+            largest_action_limit(&[with_limit(8), with_limit(24), with_limit(16)]),
+            24
+        );
+
+        let largest = u32::from(MAX_SHIELDED_ACTIONS);
+        let budget = budget();
+        let now = Instant::now();
+        let reservation = budget
+            .try_reserve_at(SOURCE, largest as usize + 10, now)
+            .unwrap()
+            .unwrap();
+        assert_eq!(reservation.actions, largest);
+        reservation.settle_at(false, now);
     }
 
     #[test]

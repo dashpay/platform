@@ -17,7 +17,7 @@ use crate::services::platform_service::shielded_proof_failure_budget::{
 use base64::prelude::*;
 use dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, BroadcastStateTransitionResponse};
 use dpp::state_transition::validate_state_transition_size;
-use dpp::version::PlatformVersion;
+use dpp::version::{PLATFORM_VERSIONS, PlatformVersion};
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 use tonic::Request;
@@ -256,6 +256,34 @@ impl PlatformServiceImpl {
     }
 }
 
+/// The known protocol version with the largest `max_state_transition_size`.
+///
+/// DAPI does not track which version the network runs, and that version can
+/// change at the next epoch, so the pre-filter refuses only a size that every
+/// version this build knows refuses. Drive enforces the active version's
+/// limit when it decodes. A limit raised by a version newer than this build
+/// is honoured once DAPI is upgraded.
+const MOST_PERMISSIVE_SIZE_VERSION: &PlatformVersion =
+    &PLATFORM_VERSIONS[most_permissive_size_index(PLATFORM_VERSIONS)];
+
+/// The index in `versions` of the first version with the largest
+/// `max_state_transition_size`.
+const fn most_permissive_size_index(versions: &[PlatformVersion]) -> usize {
+    let mut most_permissive = 0;
+    let mut index = 1;
+    while index < versions.len() {
+        if versions[index].system_limits.max_state_transition_size
+            > versions[most_permissive]
+                .system_limits
+                .max_state_transition_size
+        {
+            most_permissive = index;
+        }
+        index += 1;
+    }
+    most_permissive
+}
+
 fn validate_state_transition_bytes(tx: &[u8]) -> Result<(), DapiError> {
     if tx.is_empty() {
         debug!("State transition is empty");
@@ -264,11 +292,7 @@ fn validate_state_transition_bytes(tx: &[u8]) -> Result<(), DapiError> {
         ));
     }
 
-    // `latest()` is a static upper bound, not the network's active version:
-    // every released version so far shares the same limit, and if a future
-    // version raises it, latest ≥ active keeps this a pure pre-filter —
-    // Drive still enforces the active version's limit authoritatively.
-    if let Err(e) = validate_state_transition_size(tx.len() as u64, PlatformVersion::latest()) {
+    if let Err(e) = validate_state_transition_size(tx.len() as u64, MOST_PERMISSIVE_SIZE_VERSION) {
         let max_size = e.max_size_bytes();
         debug!(actual = tx.len(), max_size, "State transition is too large");
         return Err(DapiError::InvalidArgument(format!(
@@ -324,8 +348,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn state_transition_size_is_checked_before_broadcast_work() {
-        let max_size = PlatformVersion::latest()
+    fn should_pick_the_version_with_the_largest_size_limit() {
+        let with_limit = |limit| {
+            let mut version = PlatformVersion::latest().clone();
+            version.system_limits.max_state_transition_size = limit;
+            version
+        };
+
+        assert_eq!(most_permissive_size_index(&[with_limit(100)]), 0);
+        assert_eq!(
+            most_permissive_size_index(&[with_limit(100), with_limit(300), with_limit(200)]),
+            1
+        );
+        assert_eq!(
+            most_permissive_size_index(&[with_limit(300), with_limit(100), with_limit(300)]),
+            0
+        );
+    }
+
+    #[test]
+    fn should_check_the_size_against_the_largest_known_limit_before_broadcast_work() {
+        let max_size = MOST_PERMISSIVE_SIZE_VERSION
             .system_limits
             .max_state_transition_size as usize;
 
