@@ -398,8 +398,14 @@ public final class SDK: @unchecked Sendable {
 
   /// Policy used by the SDK's fixed adaptive context provider.
   public enum QuorumMode: UInt8, Sendable {
+    /// SPV while it is synced, the trusted quorum service whenever it is
+    /// not. Cutting the client off from its SPV peers forces the trusted
+    /// service, so use `.spv` when proofs must never be verified with its
+    /// keys.
     case auto = 0
+    /// SPV only; proofs fail whenever SPV is not synced.
     case spv = 1
+    /// The trusted quorum service only.
     case trusted = 2
   }
 

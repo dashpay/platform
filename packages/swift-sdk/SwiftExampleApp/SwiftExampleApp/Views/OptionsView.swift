@@ -437,7 +437,7 @@ struct OptionsView: View {
                         }
                         .pickerStyle(.segmented)
                     }
-                    .help("Which quorum public-key source to use for Platform proof verification, applied live. Auto: trusted until the SPV masternode list syncs, then SPV. SPV: force SPV now (proofs fail closed until synced; no trusted fallback). Trusted: force the trusted HTTP quorum service. The Proof Quorum Source below shows what is actually active.")
+                    .help("Which quorum public-key source to use for Platform proof verification, applied live. Auto: SPV while its masternode list is synced, trusted otherwise; losing the SPV peers falls back to trusted. SPV: force SPV now (proofs fail closed whenever SPV is not synced; no trusted fallback). Trusted: force the trusted HTTP quorum service. The Proof Quorum Source below shows what is actually active.")
 
                     HStack {
                         Text("Proof Quorum Source")
