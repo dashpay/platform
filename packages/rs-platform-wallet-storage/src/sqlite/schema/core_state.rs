@@ -19,7 +19,7 @@ use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::blob::impl_persistable_blob;
 use crate::sqlite::schema::core_history;
-use crate::sqlite::schema::core_pool::{owning_account_for_script, OwningAccount};
+use crate::sqlite::schema::core_pool::{self, owning_account_for_script, OwningAccount};
 use crate::sqlite::schema::{asset_locks, blob, dashpay};
 
 // PUBLIC material only: core-chain state reaching `record_blob` /
@@ -83,6 +83,11 @@ pub fn apply(
     wallet_id: &WalletId,
     cs: &CoreChangeSet,
 ) -> Result<(), WalletStorageError> {
+    // Before the records: their repair reads credit ownership from the pool.
+    // Other `addresses_derived` entries are NOT persisted — the pool
+    // snapshot (`account_address_pools`) is the derived-address source used
+    // to resolve UTXO ownership during rehydration.
+    core_pool::apply_credit_key_rows(tx, wallet_id, cs)?;
     if !cs.records.is_empty() {
         let mut stmt = tx.prepare_cached(
             "INSERT INTO core_transactions \
@@ -115,9 +120,6 @@ pub fn apply(
             core_history::index_record(tx, wallet_id, &record)?;
         }
     }
-    // `addresses_derived` is intentionally NOT persisted here — the pool
-    // snapshot (`account_address_pools`) is the derived-address source used
-    // to resolve UTXO ownership during rehydration.
     if !cs.new_utxos.is_empty() {
         // Blob-bearing records always win; height-only writes never overwrite them.
         // Placeholder confirmation is `height IS NOT NULL`; `finalized` stays 0.

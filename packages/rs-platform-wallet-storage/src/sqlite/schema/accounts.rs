@@ -657,6 +657,9 @@ pub(crate) const ACCOUNT_TYPE_LABELS: &[&str] = &[
 /// singles out contact watch-only rows binds this instead of a literal.
 pub(crate) const DASHPAY_EXTERNAL_LABEL: &str = "dashpay_external";
 
+/// Database label of `AccountType::PlatformPayment`.
+pub(crate) const PLATFORM_PAYMENT_LABEL: &str = "platform_payment";
+
 /// Stable database label for an `AccountType` variant (the `Debug` impl is not
 /// a stable format; this match is the contract). An added upstream variant
 /// fails this match's exhaustiveness check at compile time.

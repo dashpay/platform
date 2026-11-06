@@ -34,6 +34,7 @@ mod sqlite_contacts_keys_rehydration;
 mod sqlite_core_pool_writer;
 mod sqlite_core_rescan;
 mod sqlite_core_state_reader;
+mod sqlite_credit_direction;
 mod sqlite_dashpay_overlay_contract;
 mod sqlite_delete_buffer_reconcile;
 mod sqlite_delete_cross_process_exclusion;

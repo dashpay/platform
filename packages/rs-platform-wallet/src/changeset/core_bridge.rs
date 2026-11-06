@@ -46,14 +46,16 @@ use std::sync::{Arc, Mutex, Weak};
 
 use dashcore::blockdata::transaction::{txout::TxOut, OutPoint};
 use dashcore::ephemerealdata::instant_lock::InstantLock;
-use dashcore::Txid;
+use dashcore::{PublicKey, ScriptBuf, Txid};
 use key_wallet::account::AccountType;
-use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, AddressState};
+use key_wallet::managed_account::address_pool::{
+    AddressPool, AddressPoolType, AddressState, PublicKeyType,
+};
 use key_wallet::managed_account::transaction_record::{OutputRole, TransactionRecord};
 use key_wallet::transaction_checking::transaction_router::AccountTypeToCheck;
 use key_wallet::transaction_checking::{DerivedAddressInfo, TransactionContext};
 use key_wallet::Utxo;
-use key_wallet_manager::{WalletEvent, WalletId, WalletManager};
+use key_wallet_manager::{DerivedAddress, WalletEvent, WalletId, WalletManager};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::RwLock;
@@ -68,6 +70,7 @@ use crate::changeset::changeset::{
 use crate::changeset::merge::Merge;
 use crate::changeset::persistence_capabilities::PersistenceCapabilities;
 use crate::changeset::traits::PlatformWalletPersistence;
+use crate::changeset::wallet_accounting::asset_lock_credit_outputs;
 use crate::wallet::asset_lock::sync::reconstruction;
 use crate::wallet::identity::network::sent_payment_status_for_record;
 use crate::wallet::identity::types::dashpay::payment::{
@@ -1629,7 +1632,10 @@ async fn instant_lock_changeset(
         .filter(|r| !is_contact_watch_only(r))
         .collect();
     cs.records = cs.account_records.clone();
-    fold_same_txid_records(&mut cs.records);
+    let credits = credit_ownership(info, &cs.records);
+    fold_same_txid_records(&mut cs.records, &credits.scripts);
+    cs.addresses_marked_used = credits.used;
+    cs.addresses_derived = credits.derived;
     cs.utxo_credit_verdicts = verdicts;
     cs
 }
@@ -1683,15 +1689,17 @@ async fn build_core_changeset(
             // `Doomed`). Read from two snapshots, a funding that confirmed
             // and lost its coin to a mempool child between them would be
             // judged on a stale mempool context and marked spent for good.
-            let (slices, utxo_credit_verdicts): (
-                Vec<TransactionRecord>,
-                BTreeMap<OutPoint, UtxoCreditVerdict>,
-            ) = match wallet_slices_and_verdicts_for_txid(wallet_manager, wallet_id, &record.txid)
-                .await
-            {
-                Some(read) => read,
-                None => (vec![(**record).clone()], BTreeMap::new()),
-            };
+            let (slices, utxo_credit_verdicts, credits) =
+                match wallet_slices_and_verdicts_for_txid(wallet_manager, wallet_id, &record.txid)
+                    .await
+                {
+                    Some(read) => read,
+                    None => (
+                        vec![(**record).clone()],
+                        BTreeMap::new(),
+                        CreditOwnership::default(),
+                    ),
+                };
             // A contact's watch-only chain never defines the wallet's
             // transaction row or its TXOs (see `is_contact_watch_only`);
             // the usage deltas below are still emitted, so the event
@@ -1702,10 +1710,13 @@ async fn build_core_changeset(
                 .filter(|r| !is_contact_watch_only(r))
                 .cloned()
                 .collect();
-            let (addresses_marked_used, account_highest_used) =
+            let (mut addresses_marked_used, account_highest_used) =
                 collect_usage_deltas(wallet_manager, wallet_id, vec![&**record]).await;
+            addresses_marked_used.extend(credits.used);
+            let mut addresses_derived = addresses_derived.clone();
+            addresses_derived.extend(credits.derived);
             let mut folded = owned.clone();
-            fold_same_txid_records(&mut folded);
+            fold_same_txid_records(&mut folded, &credits.scripts);
             CoreChangeSet {
                 // New UTXOs from the owned slices only (a watch-only
                 // chain's outputs are the contact's coins); spends
@@ -1721,7 +1732,7 @@ async fn build_core_changeset(
                 // triggered the extension. See
                 // `CoreChangeSet.addresses_derived` for the cascade-
                 // link rationale.
-                addresses_derived: addresses_derived.clone(),
+                addresses_derived,
                 addresses_marked_used,
                 account_highest_used,
                 utxo_credit_verdicts,
@@ -1773,14 +1784,16 @@ async fn build_core_changeset(
             // The wallet-level row folds every slice the manager holds for
             // the transaction, not only the ones this block re-emitted (see
             // `with_held_sibling_slices`).
-            cs.records =
+            let (records, credits) =
                 with_held_sibling_slices(wallet_manager, wallet_id, &cs.account_records).await;
-            fold_same_txid_records(&mut cs.records);
+            cs.records = records;
+            fold_same_txid_records(&mut cs.records, &credits.scripts);
             cs.last_processed_height = Some(*height);
             // Pool extensions triggered by any record in this block.
             // Already deduped upstream by `project_derived_addresses`;
             // `Merge` re-dedupes if multiple events fold together.
             cs.addresses_derived = addresses_derived.clone();
+            cs.addresses_derived.extend(credits.derived);
             // Used-flag flips + highest-used watermarks for every
             // record in the block. `updated` / `matured` records
             // re-emit their involved addresses — idempotent at the
@@ -1794,6 +1807,7 @@ async fn build_core_changeset(
             let (addresses_marked_used, account_highest_used) =
                 collect_usage_deltas(wallet_manager, wallet_id, records).await;
             cs.addresses_marked_used = addresses_marked_used;
+            cs.addresses_marked_used.extend(credits.used);
             cs.account_highest_used = account_highest_used;
             // The engine's verdict on the outputs the persister is about to
             // materialise from these records — see
@@ -2497,10 +2511,13 @@ async fn wallet_slices_and_verdicts_for_txid(
 ) -> Option<(
     Vec<TransactionRecord>,
     BTreeMap<OutPoint, UtxoCreditVerdict>,
+    CreditOwnership,
 )> {
     let guard = wallet_manager.read().await;
     let info = guard.get_wallet_info(wallet_id)?;
-    Some(slices_and_verdicts_for_txid(info, txid))
+    let (slices, verdicts) = slices_and_verdicts_for_txid(info, txid);
+    let credits = credit_ownership(info, &slices);
+    Some((slices, verdicts, credits))
 }
 
 /// `slices` plus every slice the manager still holds, for the same
@@ -2525,14 +2542,14 @@ async fn with_held_sibling_slices(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: &WalletId,
     slices: &[TransactionRecord],
-) -> Vec<TransactionRecord> {
+) -> (Vec<TransactionRecord>, CreditOwnership) {
     let mut complete = slices.to_vec();
     if slices.is_empty() {
-        return complete;
+        return (complete, CreditOwnership::default());
     }
     let guard = wallet_manager.read().await;
     let Some(info) = guard.get_wallet_info(wallet_id) else {
-        return complete;
+        return (complete, CreditOwnership::default());
     };
     let carried: HashSet<(Txid, AccountType)> = slices
         .iter()
@@ -2550,7 +2567,87 @@ async fn with_held_sibling_slices(
             }
         }
     }
-    complete
+    let credits = credit_ownership(info, &complete);
+    (complete, credits)
+}
+
+/// Which asset-lock credit scripts of a transaction the wallet's own keys
+/// pay, and the pool entries of those keys, so a persister keeps the same
+/// ownership evidence the live accounting used.
+#[derive(Default)]
+struct CreditOwnership {
+    /// Credit scripts held by a non-contact account's address pool and
+    /// carried by one of the entries below.
+    scripts: BTreeSet<ScriptBuf>,
+    /// The owning addresses already used or reserved, with their state, as
+    /// `addresses_marked_used` entries.
+    used: Vec<DerivedAddressInfo>,
+    /// The owning addresses still available, as `addresses_derived` entries.
+    derived: Vec<DerivedAddress>,
+}
+
+/// Credit ownership of `records`' asset-lock payloads, read from the same
+/// wallet snapshot as the records. A contact's watch-only chain never makes
+/// a credit the wallet's own, and a key no entry can carry is not claimed:
+/// the SQLite repair could not see it.
+fn credit_ownership(info: &PlatformWalletInfo, records: &[TransactionRecord]) -> CreditOwnership {
+    let scripts: BTreeSet<_> = records
+        .iter()
+        .flat_map(|record| asset_lock_credit_outputs(&record.transaction))
+        .map(|output| &output.script_pubkey)
+        .collect();
+    let mut evidence = CreditOwnership::default();
+    if scripts.is_empty() {
+        return evidence;
+    }
+    for account in info.core_wallet.accounts.all_accounts() {
+        let kind = account.managed_account_type();
+        if kind.is_contact_owned() {
+            continue;
+        }
+        let account_type = kind.to_account_type();
+        for pool in kind.address_pools() {
+            for script in &scripts {
+                let Some(address) = pool
+                    .script_pubkey_index
+                    .get(*script)
+                    .and_then(|index| pool.addresses.get(index))
+                else {
+                    continue;
+                };
+                // Only an `Available` key may be announced as freshly derived:
+                // hosts store a derived entry as unused, which would release
+                // a reservation.
+                if !address.is_available() {
+                    evidence.used.push(DerivedAddressInfo {
+                        account_type,
+                        pool_type: pool.pool_type,
+                        info: address.clone(),
+                    });
+                } else if let Some(public_key) = match &address.public_key {
+                    Some(PublicKeyType::ECDSA(bytes)) => PublicKey::from_slice(bytes).ok(),
+                    _ => None,
+                } {
+                    evidence.derived.push(DerivedAddress {
+                        account_type,
+                        pool_type: pool.pool_type,
+                        derivation_index: address.index,
+                        address: address.address.clone(),
+                        public_key,
+                    });
+                } else {
+                    tracing::debug!(
+                        ?account_type,
+                        index = address.index,
+                        "asset-lock credit key has no ECDSA public key to persist; not counted as owned"
+                    );
+                    continue;
+                }
+                evidence.scripts.insert((*script).clone());
+            }
+        }
+    }
+    evidence
 }
 
 /// The slices `info` holds of `txid` and the verdicts of their owned outputs.
@@ -4462,19 +4559,232 @@ mod contact_watch_only_projection_tests {
         (funding, keys)
     }
 
-    /// The wallet's Core balance drops by the locked credit plus the fee
-    /// — the credit leaves Core for the wallet's own Platform keys, so
-    /// the move is `Internal` and the net is `-(credit + fee)`, with or
-    /// without change. The keys account's `+credit` marker net counts
-    /// Platform credits, not Core funds, and must not be summed in (it
-    /// made the live row read `-fee` while every repair path wrote
-    /// `-(credit + fee)`). A funding slice that never meets the keys
-    /// marker (the keys account did not match, or its slice lands in
-    /// another round) is projected with the same wallet rule — not left
-    /// on upstream's account-local `Outgoing`. The keys account's marker
-    /// alone carries no Core accounting evidence, so the projection leaves
-    /// upstream's verdict alone. An asset lock that also pays someone else
-    /// is a real outgoing payment; the asset-lock exception covers only the burn.
+    /// A wallet-signed asset lock is `Internal` only when every payload
+    /// credit pays a key of one of the wallet's own (non-contact) accounts,
+    /// on every event that projects it; a foreign, mixed, empty or
+    /// contact-only credit set is `Outgoing`. The net is `-(credit + fee)`
+    /// either way. An owning key still `Available` is emitted as a derived
+    /// address; a used or reserved one keeps its state as a marked-used entry.
+    /// An available key with no ECDSA key material cannot be kept as
+    /// evidence, so it is not claimed either.
+    #[tokio::test]
+    async fn should_project_asset_lock_credit_direction_from_every_payload_script() {
+        use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
+        use dashcore::transaction::TransactionPayload;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedAccountOperations;
+        for case in [
+            "own",
+            "foreign",
+            "mixed",
+            "two owned",
+            "empty",
+            "contact",
+            "shared contact",
+            "funds key",
+            "keyless funds key",
+            "reserved funds key",
+        ] {
+            let (mut ctx, funding) = single_coin_wallet().await;
+            let contact = contact_external_account();
+            ctx.wallet.add_account(contact, None).unwrap();
+            ctx.managed_wallet
+                .add_managed_account(&ctx.wallet, contact)
+                .unwrap();
+            let keys = ctx
+                .managed_wallet
+                .accounts
+                .identity_registration
+                .as_ref()
+                .unwrap();
+            let own: Vec<_> = keys.managed_account_type().address_pools()[0]
+                .addresses
+                .values()
+                .take(2)
+                .map(|entry| entry.address.clone())
+                .collect();
+            let own_info = keys.managed_account_type().address_pools()[0].addresses[&0].clone();
+            let contact_account = ctx
+                .managed_wallet
+                .accounts
+                .dashpay_external_accounts
+                .values_mut()
+                .next()
+                .unwrap();
+            let pool = contact_account
+                .managed_account_type_mut()
+                .address_pools_mut()
+                .remove(0);
+            let watched_address = pool.address_at_index(0).unwrap();
+            if case == "shared contact" {
+                pool.address_index
+                    .insert(own_info.address.clone(), own_info.index);
+                pool.script_pubkey_index
+                    .insert(own_info.script_pubkey.clone(), own_info.index);
+                pool.addresses.insert(own_info.index, own_info);
+            }
+            let funds_key = ctx.managed_wallet.accounts.standard_bip44_accounts[&0]
+                .managed_account_type()
+                .address_pools()[0]
+                .addresses[&10]
+                .address
+                .clone();
+            let mut funds_pools = ctx
+                .managed_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .unwrap()
+                .managed_account_type_mut()
+                .address_pools_mut();
+            let reserved = funds_pools[0].addresses.get_mut(&11).unwrap();
+            reserved.state = AddressState::Reserved { at: 7 };
+            let reserved_key = reserved.address.clone();
+            let keyless = funds_pools[0].addresses.get_mut(&12).unwrap();
+            keyless.public_key = None;
+            let keyless_key = keyless.address.clone();
+            let credit_addresses = match case {
+                "own" | "shared contact" => vec![own[0].clone()],
+                "contact" => vec![watched_address],
+                "funds key" => vec![funds_key.clone()],
+                "reserved funds key" => vec![reserved_key.clone()],
+                "keyless funds key" => vec![keyless_key.clone()],
+                "foreign" => vec![contact_address()],
+                "mixed" => vec![own[0].clone(), contact_address()],
+                "two owned" => own,
+                _ => vec![],
+            };
+            let mut tx = spend_of(
+                &funding,
+                vec![
+                    TxOut {
+                        value: LOCK_CREDIT,
+                        script_pubkey: ScriptBuf::new_op_return(&[]),
+                    },
+                    TxOut {
+                        value: FUNDING - LOCK_CREDIT - LOCK_FEE,
+                        script_pubkey: ctx.receive_address.script_pubkey(),
+                    },
+                ],
+            );
+            tx.version = 3;
+            let credits = credit_addresses
+                .iter()
+                .map(|address| TxOut {
+                    value: LOCK_CREDIT / credit_addresses.len() as u64,
+                    script_pubkey: address.script_pubkey(),
+                })
+                .collect();
+            tx.special_transaction_payload = Some(TransactionPayload::AssetLockPayloadType(
+                AssetLockPayload::new(credits),
+            ));
+            let checked = ctx
+                .check_transaction(&tx, TransactionContext::Mempool)
+                .await;
+            assert!(checked.is_relevant);
+            let records = checked.new_records;
+            let mut wm = WalletManager::new(Network::Testnet);
+            let wallet_id = wm
+                .insert_wallet(ctx.wallet, platform_info(ctx.managed_wallet))
+                .unwrap();
+            let manager = Arc::new(RwLock::new(wm));
+            // A key the store could not keep as evidence is not claimed live.
+            let expected = if matches!(
+                case,
+                "own" | "two owned" | "shared contact" | "funds key" | "reserved funds key"
+            ) {
+                TransactionDirection::Internal
+            } else {
+                TransactionDirection::Outgoing
+            };
+            let events = [
+                WalletEvent::TransactionDetected {
+                    wallet_id,
+                    record: Box::new(records[0].clone()),
+                    balance: Default::default(),
+                    account_balances: Default::default(),
+                    addresses_derived: vec![],
+                },
+                WalletEvent::BlockProcessed {
+                    wallet_id,
+                    height: 101,
+                    chain_lock: None,
+                    inserted: records,
+                    updated: vec![],
+                    matured: vec![],
+                    balance: Default::default(),
+                    account_balances: Default::default(),
+                    addresses_derived: vec![],
+                },
+                WalletEvent::TransactionInstantLocked {
+                    wallet_id,
+                    txid: tx.txid(),
+                    instant_lock: InstantLock {
+                        version: 1,
+                        txid: tx.txid(),
+                        inputs: tx.input.iter().map(|input| input.previous_output).collect(),
+                        cyclehash: BlockHash::all_zeros(),
+                        signature: BLSSignature::from([0; 96]),
+                    },
+                    balance: Default::default(),
+                    account_balances: Default::default(),
+                },
+            ];
+            for (event_index, event) in events.iter().enumerate() {
+                let projected = build_core_changeset(&manager, event).await;
+                if case == "reserved funds key" {
+                    assert!(
+                        projected.addresses_marked_used.iter().any(|entry| {
+                            entry.info.address == reserved_key && entry.info.is_reserved()
+                        }),
+                        "a reserved credit key keeps its reservation"
+                    );
+                    assert!(
+                        !projected
+                            .addresses_derived
+                            .iter()
+                            .any(|entry| entry.address == reserved_key),
+                        "a reserved credit key is not re-announced as fresh"
+                    );
+                }
+                if case == "funds key" {
+                    assert!(
+                        !projected
+                            .addresses_marked_used
+                            .iter()
+                            .any(|entry| entry.info.address == funds_key),
+                        "credit observation must not invent final usage"
+                    );
+                    assert!(projected
+                        .addresses_derived
+                        .iter()
+                        .any(|entry| entry.address == funds_key));
+                }
+                let record = projected
+                    .records
+                    .iter()
+                    .find(|record| record.txid == tx.txid())
+                    .unwrap();
+                assert_eq!(
+                    record.net_amount,
+                    -((LOCK_CREDIT + LOCK_FEE) as i64),
+                    "{case}/{event_index}"
+                );
+                assert_eq!(record.direction, expected, "{case}/{event_index}");
+            }
+        }
+    }
+
+    /// The wallet's Core balance drops by the locked credit plus the fee,
+    /// with or without change: the keys account's `+credit` marker net
+    /// counts Platform credits, not Core funds, and is not summed in. A
+    /// funding slice that never meets the keys marker is projected with the
+    /// same wallet rule. These fixtures' manager holds no wallet, so no
+    /// credit is provably the wallet's own and every lock reads `Outgoing`
+    /// even beside a keys marker that says `Internal` (credit ownership is
+    /// pinned by `should_project_asset_lock_credit_direction_from_every_payload_script`).
+    /// The keys marker alone carries no Core accounting evidence, so the
+    /// projection leaves upstream's verdict alone.
     #[tokio::test]
     async fn should_project_asset_lock_accounting_from_the_wallet_side() {
         use TransactionDirection::{Internal, Outgoing};
@@ -4504,17 +4814,17 @@ mod contact_watch_only_projection_tests {
         let keys_net = lock_credit(false) as i64;
         let paying_net = -((LOCK_CREDIT + LOCK_FEE + paid) as i64);
         for (case, records, expected) in [
-            ("no change", both(false), (Internal, lock_net(false), bip44)),
-            ("change", both(true), (Internal, lock_net(true), bip44)),
+            ("no change", both(false), (Outgoing, lock_net(false), bip44)),
+            ("change", both(true), (Outgoing, lock_net(true), bip44)),
             (
                 "lone funding slice",
                 funding_alone(false),
-                (Internal, lock_net(false), bip44),
+                (Outgoing, lock_net(false), bip44),
             ),
             (
                 "lone funding slice, change",
                 funding_alone(true),
-                (Internal, lock_net(true), bip44),
+                (Outgoing, lock_net(true), bip44),
             ),
             (
                 "lone keys marker",
@@ -4874,7 +5184,7 @@ mod contact_watch_only_projection_tests {
         );
 
         let mut records = vec![no_input_slice, unrelated, funding_slice];
-        fold_same_txid_records(&mut records);
+        fold_same_txid_records(&mut records, &BTreeSet::new());
 
         assert_eq!(records.len(), 2);
         assert_eq!(
@@ -5111,9 +5421,10 @@ mod contact_watch_only_projection_tests {
         let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
         let manager = Arc::new(RwLock::new(wm));
 
-        let (slices, _) = wallet_slices_and_verdicts_for_txid(&manager, &wallet_id, &spend.txid())
-            .await
-            .expect("manager knows the wallet");
+        let (slices, _, _) =
+            wallet_slices_and_verdicts_for_txid(&manager, &wallet_id, &spend.txid())
+                .await
+                .expect("manager knows the wallet");
         assert_eq!(slices.len(), 2, "both funding accounts hold a slice");
         let lone_slice = slices
             .iter()
