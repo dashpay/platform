@@ -1875,7 +1875,6 @@ impl FFIPersister {
     /// caller applies its own policy to the outcome.
     fn read_core_tx(&self, wallet_id: WalletId, txid: &dashcore::Txid) -> CoreTxRead {
         use dashcore::consensus::Decodable;
-        use dashcore::hashes::Hash;
 
         let Some(get_cb) = self.callbacks.on_get_core_tx_record_fn else {
             return CoreTxRead::Missing;
@@ -10135,7 +10134,6 @@ mod tests {
     /// slot still succeeds.
     #[test]
     fn store_delivers_transaction_accounting_after_the_changeset_skipping_detailless_records() {
-        use dashcore::hashes::Hash as _;
         use key_wallet::account::{AccountType, StandardAccountType};
         use key_wallet::managed_account::transaction_record::{
             OutputDetail, OutputRole, TransactionDirection, TransactionRecord,
