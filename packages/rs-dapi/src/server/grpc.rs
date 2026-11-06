@@ -10,6 +10,7 @@ use axum::http::{HeaderMap, Request, Response};
 use dapi_grpc::core::v0::core_server::CoreServer;
 use dapi_grpc::platform::v0::platform_server::PlatformServer;
 use dapi_grpc::tonic::Status;
+use dapi_grpc::tonic::codec::CompressionEncoding;
 use tower::layer::util::{Identity, Stack};
 use tower::util::Either;
 use tower::{Layer, Service};
@@ -78,12 +79,15 @@ impl DapiServer {
             .add_service(
                 PlatformServer::new(platform_service)
                     .max_decoding_message_size(MAX_PLATFORM_DECODING_BYTES)
-                    .max_encoding_message_size(MAX_ENCODING_BYTES),
+                    .max_encoding_message_size(MAX_ENCODING_BYTES)
+                    // Only for clients that list gzip in grpc-accept-encoding.
+                    .send_compressed(CompressionEncoding::Gzip),
             )
             .add_service(
                 CoreServer::new(core_service)
                     .max_decoding_message_size(MAX_CORE_DECODING_BYTES)
-                    .max_encoding_message_size(MAX_ENCODING_BYTES),
+                    .max_encoding_message_size(MAX_ENCODING_BYTES)
+                    .send_compressed(CompressionEncoding::Gzip),
             )
             .serve(addr)
             .await?;

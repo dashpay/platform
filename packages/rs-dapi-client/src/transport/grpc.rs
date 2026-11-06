@@ -2,9 +2,9 @@
 
 use std::time::Duration;
 
-use super::create_channel;
 #[cfg(not(target_arch = "wasm32"))]
 use super::proxy::is_proxy_failure;
+use super::{create_channel, new_core_client, new_platform_client};
 use super::{CanRetry, TransportClient, TransportError, TransportRequest};
 use super::{CoreGrpcClient, PlatformGrpcClient};
 use crate::connection_pool::{ConnectionPool, PoolPrefix};
@@ -23,7 +23,7 @@ impl TransportClient for PlatformGrpcClient {
         Ok(pool
             .get_or_create(PoolPrefix::Platform, &uri, None, || {
                 match create_channel(uri.clone(), None) {
-                    Ok(channel) => Ok(Self::new(channel).into()),
+                    Ok(channel) => Ok(new_platform_client(channel).into()),
                     Err(e) => Err(dapi_grpc::tonic::Status::invalid_argument(format!(
                         "channel creation failed: {}",
                         e
@@ -50,7 +50,7 @@ impl TransportClient for PlatformGrpcClient {
             pool.get_or_create_with_generation(PoolPrefix::Platform, &uri, Some(settings), || {
                 match create_channel(uri.clone(), Some(settings)) {
                     Ok(channel) => {
-                        let mut client = Self::new(channel);
+                        let mut client = new_platform_client(channel);
                         if let Some(max_size) = settings.max_decoding_message_size {
                             client = client.max_decoding_message_size(max_size);
                         }
@@ -75,7 +75,7 @@ impl TransportClient for CoreGrpcClient {
         Ok(pool
             .get_or_create(PoolPrefix::Core, &uri, None, || {
                 match create_channel(uri.clone(), None) {
-                    Ok(channel) => Ok(Self::new(channel).into()),
+                    Ok(channel) => Ok(new_core_client(channel).into()),
                     Err(e) => Err(dapi_grpc::tonic::Status::invalid_argument(format!(
                         "Channel creation failed: {}",
                         e
@@ -102,7 +102,7 @@ impl TransportClient for CoreGrpcClient {
             pool.get_or_create_with_generation(PoolPrefix::Core, &uri, Some(settings), || {
                 match create_channel(uri.clone(), Some(settings)) {
                     Ok(channel) => {
-                        let mut client = Self::new(channel);
+                        let mut client = new_core_client(channel);
                         if let Some(max_size) = settings.max_decoding_message_size {
                             client = client.max_decoding_message_size(max_size);
                         }
@@ -130,6 +130,13 @@ const OLDER_NODE_REQUEST_REFUSALS: [&str; 3] = [
     "proved path queries can not be for limit 0",
 ];
 
+/// Start of the status tonic returns when a compressed response decompresses past the
+/// client's `max_decoding_message_size`. The limit is the client's own, so every node
+/// would fail the same way: this must not ban nodes like other `ResourceExhausted`
+/// statuses (an uncompressed oversized response is `OutOfRange`, also not retried).
+/// The text comes from tonic 0.14's `codec::decode`; re-check it on tonic upgrades.
+const DECOMPRESS_LIMIT_ERROR: &str = "Error decompressing: size limit";
+
 impl CanRetry for dapi_grpc::tonic::Status {
     fn can_retry(&self) -> bool {
         // A failing SOCKS5 proxy fails every node alike: retrying elsewhere
@@ -142,6 +149,10 @@ impl CanRetry for dapi_grpc::tonic::Status {
         let code = self.code();
 
         use dapi_grpc::tonic::Code::*;
+
+        if code == ResourceExhausted && self.message().starts_with(DECOMPRESS_LIMIT_ERROR) {
+            return false;
+        }
 
         if matches!(code, Unknown | Internal)
             && OLDER_NODE_REQUEST_REFUSALS
