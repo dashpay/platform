@@ -24,7 +24,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use dashcore::blockdata::transaction::{OutPoint, Transaction};
 use dashcore::ephemerealdata::chain_lock::ChainLock;
 use dashcore::ephemerealdata::instant_lock::InstantLock;
-use dashcore::Txid;
+use dashcore::{ScriptBuf, Txid};
 
 use dash_sdk::platform::address_sync::AddressFunds;
 use dpp::prelude::AssetLockProof;
@@ -472,7 +472,7 @@ impl HighestUsedIndexes {
 ///   stays out: an asset lock nets `−(credit + fee)`, not `−fee`.
 /// - `direction` is [`wallet_direction`](super::wallet_direction): account-local slices that said
 ///   `Outgoing`/`Incoming` for a cross-account move become `Internal`, and
-///   an asset lock with no change is `Internal` like one with change.
+///   an asset lock is `Internal` only when every payload credit is owned.
 ///   Deriving direction from the net's sign instead would erase
 ///   `Internal` and `CoinJoin`.
 /// - A group or record with no details at all (keys markers only) keeps
@@ -484,10 +484,13 @@ impl HighestUsedIndexes {
 /// ahead of the folded transaction. Contact-watch-only records never
 /// reach here (filtered at projection — see
 /// `core_bridge::is_contact_watch_only`).
-pub(crate) fn fold_same_txid_records(records: &mut Vec<TransactionRecord>) {
+pub(crate) fn fold_same_txid_records(
+    records: &mut Vec<TransactionRecord>,
+    owned_credit_scripts: &BTreeSet<ScriptBuf>,
+) {
     fold_groups(records);
     for record in records.iter_mut() {
-        apply_wallet_accounting(record);
+        apply_wallet_accounting(record, owned_credit_scripts);
     }
 }
 

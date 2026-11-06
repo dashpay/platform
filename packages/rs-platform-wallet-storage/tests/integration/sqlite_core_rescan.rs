@@ -305,12 +305,13 @@ fn assert_rebuilt(
             -61_000,
             TransactionDirection::Outgoing,
         ),
+        // The lock's credit pays a foreign key.
         (
             "asset lock",
             &chain.lock,
             vec![input(20_000)],
             -20_000,
-            TransactionDirection::Internal,
+            TransactionDirection::Outgoing,
         ),
     ];
     for (case, tx, inputs, net, direction) in cases {
@@ -425,7 +426,8 @@ async fn should_keep_unconsumed_asset_locks_when_a_wiped_wallet_loads_and_rescan
 
     assert_eq!(
         stored(&path, &wallet_id, &chain.lock).direction,
-        TransactionDirection::Internal
+        TransactionDirection::Outgoing,
+        "the lock's credit pays a foreign key"
     );
     let after: Vec<_> = state.wallets[&wallet_id]
         .unused_asset_locks

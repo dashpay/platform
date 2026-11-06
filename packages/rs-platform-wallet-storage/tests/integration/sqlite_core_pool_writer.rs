@@ -8,8 +8,12 @@
 use crate::common;
 
 use common::{ensure_wallet_meta, fresh_persister, wid};
+use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
+use dashcore::transaction::TransactionPayload;
 use key_wallet::account::{AccountType, StandardAccountType};
 use key_wallet::managed_account::address_pool::{AddressPoolType, AddressState, PublicKeyType};
+use key_wallet::managed_account::transaction_record::{TransactionDirection, TransactionRecord};
+use key_wallet::transaction_checking::{DerivedAddressInfo, TransactionContext, TransactionType};
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
@@ -19,6 +23,8 @@ use platform_wallet::changeset::{
     PlatformWalletPersistence, ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
     WalletMetadataEntry,
 };
+use platform_wallet::key_wallet_manager::DerivedAddress;
+use platform_wallet::test_support::core_fixtures::{outside, pay, spend_of};
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet_storage::sqlite::schema::{core_pool, core_state};
 use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig, WalletStorageError};
@@ -1285,4 +1291,137 @@ fn typed_pool_key_at_fresh_index_succeeds() {
             .public_key,
         fresh.public_key
     );
+}
+
+/// An asset-lock record whose single credit output pays `credit`.
+fn credit_lock(credit: &AddressInfo) -> TransactionRecord {
+    let mut body = spend_of(&[outside(71)], vec![]);
+    body.version = 3;
+    body.special_transaction_payload = Some(TransactionPayload::AssetLockPayloadType(
+        AssetLockPayload::new(vec![pay(1, &credit.address)]),
+    ));
+    TransactionRecord::new(
+        body,
+        AccountType::IdentityRegistration,
+        TransactionContext::Mempool,
+        TransactionType::AssetLock,
+        TransactionDirection::Internal,
+        vec![],
+        vec![],
+        0,
+    )
+}
+
+fn derived(account_type: AccountType, info: &AddressInfo) -> DerivedAddress {
+    let Some(PublicKeyType::ECDSA(bytes)) = &info.public_key else {
+        panic!("ECDSA fixture")
+    };
+    DerivedAddress {
+        account_type,
+        pool_type: AddressPoolType::External,
+        derivation_index: info.index,
+        address: info.address.clone(),
+        public_key: dashcore::PublicKey::from_slice(bytes).unwrap(),
+    }
+}
+
+fn pool_state(persister: &SqlitePersister, wallet_id: &WalletId) -> Vec<(u32, bool, Option<i64>)> {
+    let conn = persister.lock_conn_for_test();
+    let mut stmt = conn
+        .prepare(
+            "SELECT address_index, used, reserved_at FROM core_address_pool \
+             WHERE wallet_id = ?1 ORDER BY address_index",
+        )
+        .unwrap();
+    stmt.query_map([wallet_id.as_slice()], |r| {
+        Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+    })
+    .unwrap()
+    .map(Result::unwrap)
+    .collect()
+}
+
+/// The pool rows of the keys an asset lock's credits pay are stored with
+/// the record; derived or used addresses no credit pays are not. A stored
+/// row is never rewritten: the projection's wallet snapshot may predate a
+/// reservation, and contradicting key material is refused.
+#[test]
+fn should_store_credit_key_rows_without_rewriting_stored_ones() {
+    let (persister, _dir, _) = fresh_persister();
+    let wallet_id = wid(91);
+    ensure_wallet_meta(&persister, &wallet_id);
+    let account = AccountType::Standard {
+        index: 0,
+        standard_account_type: StandardAccountType::BIP44Account,
+    };
+    let infos = external_infos(21);
+    let (credit, other) = (&infos[0], &infos[1]);
+    let mut other_used = other.clone();
+    other_used.state = AddressState::Used;
+    let emit = |core| {
+        persister.store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(core),
+                ..Default::default()
+            },
+        )
+    };
+    let observed = CoreChangeSet {
+        records: vec![credit_lock(credit)],
+        addresses_derived: vec![derived(account, credit), derived(account, other)],
+        addresses_marked_used: vec![DerivedAddressInfo {
+            account_type: account,
+            pool_type: AddressPoolType::External,
+            info: other_used,
+        }],
+        ..Default::default()
+    };
+    let mut recordless = observed.clone();
+    recordless.records.clear();
+    emit(recordless).unwrap();
+    assert_eq!(
+        pool_state(&persister, &wallet_id),
+        vec![],
+        "no credit, no row"
+    );
+
+    emit(observed.clone()).unwrap();
+    assert_eq!(
+        pool_state(&persister, &wallet_id),
+        vec![(credit.index, false, None)],
+        "only the credit key's row is stored"
+    );
+
+    let mut reserved = credit.clone();
+    reserved.state = AddressState::Reserved { at: 9876 };
+    persister
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![pool_entry(
+                    account,
+                    AddressPoolType::External,
+                    vec![reserved],
+                )],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    emit(observed.clone()).unwrap();
+    assert_eq!(
+        pool_state(&persister, &wallet_id),
+        vec![(credit.index, false, Some(9876))],
+        "a late observation cannot release a newer reservation"
+    );
+
+    let mut conflicting = observed;
+    conflicting.addresses_derived = vec![derived(account, &external_infos(22)[0])];
+    conflicting.addresses_derived[0].derivation_index = credit.index;
+    conflicting.addresses_derived[0].address = credit.address.clone();
+    let error = emit(conflicting).unwrap_err();
+    assert!(matches!(
+        *wallet_storage_error(error),
+        WalletStorageError::TypedPoolKeyConflict { .. }
+    ));
 }

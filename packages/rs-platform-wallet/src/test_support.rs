@@ -4,7 +4,7 @@
 //! Used by the broadcast-failure regression tests in `wallet::core::broadcast`
 //! and `wallet::asset_lock::build`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 #[cfg(test)]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -198,8 +198,13 @@ impl ExtendedPubKeySigner for WalletSigner {
 /// Runs the live projection's per-txid fold and wallet-level accounting
 /// over upstream per-account records, so downstream crates can pin their
 /// own accounting (the SQLite repair) against the live path.
-pub fn fold_wallet_records(records: &mut Vec<TransactionRecord>) {
-    fold_same_txid_records(records);
+/// `owned_credit_scripts` are the asset-lock credit scripts the wallet's
+/// keys pay.
+pub fn fold_wallet_records(
+    records: &mut Vec<TransactionRecord>,
+    owned_credit_scripts: &BTreeSet<ScriptBuf>,
+) {
+    fold_same_txid_records(records, owned_credit_scripts);
 }
 
 /// Core transaction and wallet fixtures shared by the history tests of this

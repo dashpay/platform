@@ -1,6 +1,6 @@
 //! Wallet accounting repaired from historical owned outputs, independent of live UTXOs.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use dashcore::hashes::Hash;
 use dashcore::{Address, OutPoint, ScriptBuf, Txid};
@@ -8,7 +8,9 @@ use key_wallet::managed_account::transaction_record::{
     InputDetail, OutputDetail, OutputRole, TransactionRecord,
 };
 use key_wallet::transaction_checking::TransactionContext;
-use platform_wallet::changeset::{is_owned, wallet_accounting, CoreChangeSet};
+use platform_wallet::changeset::{
+    asset_lock_credit_outputs, is_owned, wallet_accounting, CoreChangeSet,
+};
 use platform_wallet::wallet::platform_wallet::WalletId;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
@@ -287,7 +289,8 @@ fn repair_record(
     record.output_details = outputs.into_values().collect();
     // The live projection computes the same accounting, so repair never
     // flips a row it just wrote; only the overflow policy differs.
-    let (net, direction) = wallet_accounting(&record);
+    let credits = owned_credit_scripts(tx, wallet_id, &record)?;
+    let (net, direction) = wallet_accounting(&record, &credits);
     record.net_amount = match i64::try_from(net) {
         Ok(net) => net,
         // Nothing authenticates a mempool transaction: this is peer-supplied data,
@@ -324,8 +327,41 @@ fn repair_record(
     Ok(())
 }
 
+/// The credit scripts of `record`'s asset-lock payload that a non-contact
+/// account's persisted address pool holds. The live projection persists the
+/// pool entry of every credit key it found owned before the record, so this
+/// sees whatever the live accounting saw.
+fn owned_credit_scripts(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    record: &TransactionRecord,
+) -> Result<BTreeSet<ScriptBuf>, WalletStorageError> {
+    let mut owned = BTreeSet::new();
+    let credits = asset_lock_credit_outputs(&record.transaction);
+    if credits.is_empty() {
+        return Ok(owned);
+    }
+    let mut probe = conn.prepare_cached(
+        "SELECT EXISTS(SELECT 1 FROM core_address_pool \
+         WHERE wallet_id = ?1 AND script = ?2 AND account_type <> ?3)",
+    )?;
+    for output in credits {
+        let key = params![
+            wallet_id.as_slice(),
+            output.script_pubkey.as_bytes(),
+            DASHPAY_EXTERNAL_LABEL
+        ];
+        if probe.query_row(key, |row| row.get::<_, bool>(0))? {
+            owned.insert(output.script_pubkey.clone());
+        }
+    }
+    Ok(owned)
+}
+
 #[cfg(test)]
 mod tests {
+    use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
+    use dashcore::transaction::TransactionPayload;
     use dashcore::TxOut;
     use key_wallet::account::{AccountType, StandardAccountType};
     use key_wallet::managed_account::transaction_record::TransactionDirection;
@@ -338,6 +374,7 @@ mod tests {
 
     use super::*;
     use crate::sqlite::migrations::oversize_script_db;
+    use crate::sqlite::schema::accounts::account_type_db_label;
 
     const WALLET_ID: WalletId = [0x5Au8; 32];
 
@@ -529,22 +566,33 @@ mod tests {
     fn should_classify_repaired_direction_like_the_swift_sdk() {
         use TransactionDirection::{CoinJoin, Incoming, Internal, Outgoing};
         use TransactionType::{AssetLock, Standard};
-        // (type, spends ours, has owned output, has external output, expected)
+        // (type, spends ours, has owned output, has external output,
+        //  owns every credit, expected)
         let cases = [
-            (Standard, true, true, false, Internal),
-            (Standard, true, true, true, Outgoing),
-            (Standard, true, false, false, Outgoing),
-            (AssetLock, true, false, false, Internal),
-            (AssetLock, true, true, false, Internal),
-            (AssetLock, true, false, true, Outgoing),
-            (Standard, false, true, false, Incoming),
-            (TransactionType::CoinJoin, true, true, false, CoinJoin),
+            (Standard, true, true, false, false, Internal),
+            (Standard, true, true, true, false, Outgoing),
+            (Standard, true, false, false, false, Outgoing),
+            (AssetLock, true, false, false, true, Internal),
+            (AssetLock, true, true, false, true, Internal),
+            (AssetLock, true, false, true, true, Outgoing),
+            (AssetLock, true, false, false, false, Outgoing),
+            (AssetLock, true, true, false, false, Outgoing),
+            (Standard, false, true, false, false, Incoming),
+            (
+                TransactionType::CoinJoin,
+                true,
+                true,
+                false,
+                false,
+                CoinJoin,
+            ),
         ];
-        for (kind, spends_ours, has_ours, has_external, expected) in cases {
+        for (kind, spends_ours, has_ours, has_external, owns_credits, expected) in cases {
             assert_eq!(
-                wallet_direction(kind, spends_ours, has_ours, has_external),
+                wallet_direction(kind, spends_ours, has_ours, has_external, owns_credits),
                 expected,
-                "{kind:?} spends_ours={spends_ours} has_ours={has_ours} has_external={has_external}"
+                "{kind:?} spends_ours={spends_ours} has_ours={has_ours} \
+                 has_external={has_external} owns_credits={owns_credits}"
             );
         }
     }
@@ -626,11 +674,42 @@ mod tests {
         )
     }
 
+    /// `record` with an asset-lock payload whose credit outputs pay `credits`.
+    fn with_credits(mut record: TransactionRecord, credits: &[Address]) -> TransactionRecord {
+        let credit_outputs = credits
+            .iter()
+            .map(|credit| pay(LOCK_CREDIT / credits.len() as u64, credit))
+            .collect();
+        record.transaction.special_transaction_payload = Some(
+            TransactionPayload::AssetLockPayloadType(AssetLockPayload::new(credit_outputs)),
+        );
+        record.txid = record.transaction.txid();
+        record
+    }
+
+    /// A persisted address-pool row holding `script` for `account_type`.
+    fn pool_row(conn: &Connection, account_type: &AccountType, index: u32, script: &ScriptBuf) {
+        conn.execute(
+            "INSERT INTO core_address_pool \
+             (wallet_id, account_type, account_index, pool_type, address_index, script) \
+             VALUES (?1, ?2, 0, 2, ?3, ?4)",
+            params![
+                &WALLET_ID[..],
+                account_type_db_label(account_type),
+                index,
+                script.as_bytes()
+            ],
+        )
+        .unwrap();
+    }
+
     /// The live projection and the SQLite repair must agree on a row's
     /// net and direction, or the row flips each time storage repairs
     /// what the live path just wrote. Covers the asset-lock shapes (no
-    /// change, change, paying an external output) and a plain
-    /// cross-account transfer.
+    /// change, change, paying an external output), credits paying the
+    /// wallet's own, a foreign, a mixed or a contact's key, and a plain
+    /// cross-account transfer. Live credit ownership comes from the
+    /// wallet's keys, repair's from the persisted pool rows of those keys.
     #[test]
     fn should_repair_live_folded_records_without_changing_their_accounting() {
         let burn = || ScriptBuf::new_op_return(&[]);
@@ -680,46 +759,93 @@ mod tests {
         transfer_receiver.net_amount = (FUNDING - LOCK_FEE) as i64;
 
         let lock_net = -((LOCK_CREDIT + LOCK_FEE) as i64);
+        let (own, foreign, contact) = (address(5), address(6), address(8));
+        let lock = |funding: &TransactionRecord, credits: &[Address]| {
+            let funding = with_credits(funding.clone(), credits);
+            let keys = keys_marker(&funding);
+            vec![funding, keys]
+        };
+        use TransactionDirection::{Internal, Outgoing};
         let cases = [
             (
                 "asset lock, no change",
-                vec![lock_no_change.clone(), keys_marker(&lock_no_change)],
-                TransactionDirection::Internal,
+                lock(&lock_no_change, std::slice::from_ref(&own)),
+                Internal,
                 -(FUNDING as i64),
             ),
             (
                 "asset lock, change",
-                vec![lock_change.clone(), keys_marker(&lock_change)],
-                TransactionDirection::Internal,
+                lock(&lock_change, std::slice::from_ref(&own)),
+                Internal,
                 lock_net,
             ),
             (
                 "asset lock, no change, funding slice alone",
-                vec![lock_no_change.clone()],
-                TransactionDirection::Internal,
+                vec![with_credits(
+                    lock_no_change.clone(),
+                    std::slice::from_ref(&own),
+                )],
+                Internal,
                 -(FUNDING as i64),
             ),
             (
                 "asset lock paying an external output",
-                vec![lock_external.clone(), keys_marker(&lock_external)],
-                TransactionDirection::Outgoing,
+                lock(&lock_external, std::slice::from_ref(&own)),
+                Outgoing,
                 lock_net - 5_000,
+            ),
+            (
+                "asset lock, foreign credit",
+                lock(&lock_change, std::slice::from_ref(&foreign)),
+                Outgoing,
+                lock_net,
+            ),
+            (
+                "asset lock, mixed credits",
+                lock(&lock_change, &[own.clone(), foreign]),
+                Outgoing,
+                lock_net,
+            ),
+            (
+                "asset lock, contact's credit",
+                lock(&lock_change, std::slice::from_ref(&contact)),
+                Outgoing,
+                lock_net,
+            ),
+            (
+                "asset lock, no payload",
+                vec![lock_change.clone(), keys_marker(&lock_change)],
+                Outgoing,
+                lock_net,
             ),
             (
                 "cross-account transfer",
                 vec![transfer, transfer_receiver],
-                TransactionDirection::Internal,
+                Internal,
                 -(LOCK_FEE as i64),
             ),
         ];
+        let contact_account = AccountType::DashpayExternalAccount {
+            index: 0,
+            user_identity_id: [1; 32],
+            friend_identity_id: [2; 32],
+        };
         for (name, mut records, direction, net) in cases {
-            fold_wallet_records(&mut records);
+            let owned_credits = BTreeSet::from([own.script_pubkey()]);
+            fold_wallet_records(&mut records, &owned_credits);
             assert_eq!(records.len(), 1, "{name}");
             let live = &records[0];
             assert_eq!(live.direction, direction, "{name}: live direction");
             assert_eq!(live.net_amount, net, "{name}: live net");
 
             let mut conn = wallet_db("testnet");
+            pool_row(
+                &conn,
+                &AccountType::IdentityRegistration,
+                0,
+                &own.script_pubkey(),
+            );
+            pool_row(&conn, &contact_account, 0, &contact.script_pubkey());
             store(&conn, live);
             let tx = conn.transaction().unwrap();
             repair_record(&tx, &WALLET_ID, &live.txid, dashcore::Network::Testnet).unwrap();

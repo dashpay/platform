@@ -4274,7 +4274,7 @@ mod tests {
             "the child is recorded in both accounts"
         );
         records.extend(records_of(&mut winner_info, &mut wallet, &winner, block(101)).await);
-        platform_wallet::test_support::fold_wallet_records(&mut records);
+        platform_wallet::test_support::fold_wallet_records(&mut records, &Default::default());
         let child_outpoint = OutPoint::new(child.txid(), 0);
         let dir = tempfile::tempdir().unwrap();
         #[cfg(unix)]

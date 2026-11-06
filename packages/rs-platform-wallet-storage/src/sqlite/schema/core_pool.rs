@@ -11,9 +11,14 @@
 //! from the `account_address_pools` changeset snapshots; the UTXO writer reads
 //! it back to attribute an outpoint to its owning account.
 
+use std::collections::BTreeSet;
+
+use key_wallet::AddressInfo;
 use rusqlite::{params, Connection, Transaction};
 
-use platform_wallet::changeset::AccountAddressPoolEntry;
+use platform_wallet::changeset::{
+    asset_lock_credit_outputs, AccountAddressPoolEntry, CoreChangeSet,
+};
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use key_wallet::managed_account::address_pool::{
@@ -72,6 +77,12 @@ const UPSERT_POOL_SQL: &str = "INSERT INTO core_address_pool \
             ELSE excluded.reserved_at \
         END";
 
+const INSERT_POOL_ROW_SQL: &str = "INSERT INTO core_address_pool \
+        (wallet_id, account_type, account_index, key_class, user_identity_id, friend_identity_id, \
+         pool_type, address_index, script, used, public_key, key_type, reserved_at) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) \
+     ON CONFLICT DO NOTHING";
+
 const TYPED_POOL_CONFLICT_SQL: &str = "SELECT EXISTS( \
         SELECT 1 FROM core_address_pool \
         WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
@@ -108,11 +119,20 @@ pub fn apply_pools(
     wallet_id: &WalletId,
     pools: &[AccountAddressPoolEntry],
 ) -> Result<(), WalletStorageError> {
+    apply_pool_rows(tx, wallet_id, pools, UPSERT_POOL_SQL)
+}
+
+fn apply_pool_rows(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    pools: &[AccountAddressPoolEntry],
+    sql: &str,
+) -> Result<(), WalletStorageError> {
     if pools.is_empty() {
         return Ok(());
     }
     let mut conflict_stmt = tx.prepare_cached(TYPED_POOL_CONFLICT_SQL)?;
-    let mut upsert_stmt = tx.prepare_cached(UPSERT_POOL_SQL)?;
+    let mut upsert_stmt = tx.prepare_cached(sql)?;
     for entry in pools {
         // `account_type` discriminates accounts that collapse to the same
         // `(account_index, key_class)` sentinel (e.g. `IdentityRegistration`
@@ -203,6 +223,60 @@ pub fn apply_pools(
         }
     }
     Ok(())
+}
+
+/// Insert the pool rows of the wallet's own keys that `cs`'s asset-lock
+/// credits pay, so the repair's credit ownership sees what the live
+/// projection saw. Rows already stored are left untouched: the projection
+/// reads a wallet snapshot that may be older than a stored reservation.
+pub(super) fn apply_credit_key_rows(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    cs: &CoreChangeSet,
+) -> Result<(), WalletStorageError> {
+    let credits: BTreeSet<_> = cs
+        .records
+        .iter()
+        .flat_map(|record| asset_lock_credit_outputs(&record.transaction))
+        .map(|output| &output.script_pubkey)
+        .collect();
+    if credits.is_empty() {
+        return Ok(());
+    }
+    let derived = cs
+        .addresses_derived
+        .iter()
+        .filter(|derived| credits.contains(&derived.address.script_pubkey()))
+        .map(|derived| AccountAddressPoolEntry {
+            account_type: derived.account_type,
+            pool_type: derived.pool_type,
+            addresses: vec![AddressInfo {
+                address: derived.address.clone(),
+                script_pubkey: derived.address.script_pubkey(),
+                public_key: Some(PublicKeyType::ECDSA(derived.public_key.to_bytes())),
+                index: derived.derivation_index,
+                // The writer stores only the key, index, script and state.
+                path: Default::default(),
+                state: AddressState::Available,
+                tx_count: 0,
+                total_received: 0,
+                total_sent: 0,
+                balance: 0,
+                label: None,
+                metadata: Default::default(),
+            }],
+        });
+    let used = cs
+        .addresses_marked_used
+        .iter()
+        .filter(|used| credits.contains(&used.info.script_pubkey))
+        .map(|used| AccountAddressPoolEntry {
+            account_type: used.account_type,
+            pool_type: used.pool_type,
+            addresses: vec![used.info.clone()],
+        });
+    let rows: Vec<_> = derived.chain(used).collect();
+    apply_pool_rows(tx, wallet_id, &rows, INSERT_POOL_ROW_SQL)
 }
 
 /// One restored typed-pool row: `(address_index, script_bytes, public_key, used)`.

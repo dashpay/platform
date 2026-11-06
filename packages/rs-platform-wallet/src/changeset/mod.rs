@@ -69,4 +69,6 @@ pub use traits::{
     persists_outbound_account_markers, ListedCoreTxid, PersistenceError, PersistenceErrorKind,
     PlatformWalletPersistence,
 };
-pub use wallet_accounting::{is_owned, wallet_accounting, wallet_direction};
+pub use wallet_accounting::{
+    asset_lock_credit_outputs, is_owned, wallet_accounting, wallet_direction,
+};
