@@ -55,7 +55,9 @@ export default function startGroupNodesTaskFactory(
 
     return new Listr([
       {
-        enabled: () => platformBuildConfig,
+        // A caller that has already built the images - restart builds them
+        // before it stops anything - says so, and the build is not repeated
+        enabled: (ctx) => Boolean(platformBuildConfig) && !ctx.skipBuildServices,
         task: () => buildServicesTask(platformBuildConfig),
       },
       {
