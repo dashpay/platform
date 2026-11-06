@@ -167,3 +167,208 @@ impl DocumentCreateTransitionActionStateValidationV3 for DocumentCreateTransitio
         Ok(SimpleConsensusValidationResult::new())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform_types::platform::PlatformStateRef;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+    use dpp::data_contract::DataContract;
+    use dpp::fee::fee_result::FeeResult;
+    use dpp::platform_value::{platform_value, Value};
+    use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+    use dpp::state_transition::batch_transition::document_create_transition::v0::DocumentCreateTransitionV0;
+    use dpp::version::DefaultForPlatformVersion;
+    use dpp::document::Document;
+    use drive::drive::contract::DataContractFetchInfo;
+    use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentFromCreateTransitionAction;
+    use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionV0;
+    use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+    use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    const OWNER: [u8; 32] = [42; 32];
+    const CONTRACT_ID: [u8; 32] = [9; 32];
+
+    /// The latest platform version with `sys.random.uniform` admitted, which no protocol
+    /// version does until block execution draws the values.
+    fn drawing_platform_version() -> PlatformVersion {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .schema
+            .random_generated_from = Some(0);
+        platform_version
+    }
+
+    /// A card whose `rarity` is drawn from 1 to 100, indexed by it when `indexed`.
+    fn card_schema(indexed: bool) -> Value {
+        let mut schema = platform_value!({
+            "type": "object",
+            "documentsMutable": false,
+            "properties": {
+                "name": { "type": "string", "maxLength": 32, "position": 0 },
+                "rarity": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "generatedFrom": { "function": "sys.random.uniform" },
+                    "position": 1
+                }
+            },
+            "required": ["name", "rarity"],
+            "additionalProperties": false
+        });
+        if indexed {
+            schema
+                .insert(
+                    "indices".to_string(),
+                    platform_value!([{ "name": "byRarity", "properties": [{ "rarity": "asc" }] }]),
+                )
+                .expect("the schema is a map");
+        }
+        schema
+    }
+
+    /// The precalculated fees the state validation of a create of a `document_type_name`
+    /// document charged, and what `Drive::prepay_random_document_index_entries` prices for
+    /// its document.
+    fn state_validation_charges(document_type_name: &str) -> (Vec<FeeResult>, FeeResult) {
+        let platform_version = drawing_platform_version();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let contract = DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Identifier::from(CONTRACT_ID),
+                "ownerId": Identifier::from(OWNER),
+                "version": 1u32,
+                "documentSchemas": {
+                    "card": card_schema(true),
+                    "looseCard": card_schema(false)
+                }
+            }),
+            true,
+            &platform_version,
+        )
+        .expect("the contract parses");
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                &platform_version,
+            )
+            .expect("the contract is stored");
+        let fetch_info: Arc<DataContractFetchInfo> = platform
+            .drive
+            .get_contract_with_fetch_info(CONTRACT_ID, false, None, &platform_version)
+            .expect("the contract reads back")
+            .expect("the contract is stored");
+
+        let transition = DocumentCreateTransitionV0 {
+            base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                id: Identifier::from([1; 32]),
+                identity_contract_nonce: 1,
+                document_type_name: document_type_name.to_string(),
+                data_contract_id: Identifier::from(CONTRACT_ID),
+            }),
+            entropy: [2; 32],
+            data: BTreeMap::from([("name".to_string(), Value::Text("Ace".to_string()))]),
+            prefunded_voting_balance: None,
+        };
+        let (result, _) =
+            DocumentCreateTransitionActionV0::try_from_borrowed_document_create_transition_with_contract_lookup(
+                &platform.drive,
+                Identifier::from(OWNER),
+                None,
+                &transition,
+                &BlockInfo::default(),
+                0,
+                |_| Ok(fetch_info.clone()),
+                &platform_version,
+            )
+            .expect("the action builds");
+        let BatchedTransitionAction::DocumentAction(DocumentTransitionAction::CreateAction(
+            mut action,
+        )) = result.into_data().expect("an action")
+        else {
+            panic!("a create action");
+        };
+
+        let state = platform.state.load();
+        let platform_ref = PlatformStateRef {
+            drive: &platform.drive,
+            state: &state,
+            config: &platform.config,
+        };
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(&platform_version)
+                .expect("an execution context");
+        let validation = action
+            .validate_state_v3(
+                &platform_ref,
+                Identifier::from(OWNER),
+                &BlockInfo::default(),
+                &mut vec![],
+                &mut execution_context,
+                None,
+                &platform_version,
+            )
+            .expect("the state validation runs");
+        assert!(validation.is_valid(), "{:?}", validation.errors);
+
+        let charged = execution_context
+            .operations_slice()
+            .iter()
+            .filter_map(|operation| match operation {
+                ValidationOperation::PrecalculatedOperation(fee_result) => Some(fee_result.clone()),
+                _ => None,
+            })
+            .collect();
+        let document = Document::try_from_create_transition_action(
+            &action,
+            Identifier::from(OWNER),
+            &platform_version,
+        )
+        .expect("the document");
+        let prepayment = platform
+            .drive
+            .prepay_random_document_index_entries(
+                &document,
+                Identifier::from(OWNER),
+                &fetch_info.contract,
+                fetch_info
+                    .contract
+                    .document_type_for_name(document_type_name)
+                    .expect("the type"),
+                &BlockInfo::default(),
+                None,
+                &platform_version,
+            )
+            .expect("the prepayment is priced");
+        (charged, prepayment)
+    }
+
+    #[test]
+    fn should_leave_the_draw_prepayment_to_the_insert() {
+        // State validation charges a create indexing a random property what it charges one
+        // that indexes none: the prepayment rides on the document's insert, so a create
+        // refused at a later stage, whose document is never inserted, prepays nothing
+        let (indexed, prepayment) = state_validation_charges("card");
+        let (unindexed, nothing) = state_validation_charges("looseCard");
+        assert_ne!(prepayment, FeeResult::default());
+        assert_eq!(nothing, FeeResult::default());
+        assert_eq!(indexed, unindexed);
+    }
+}

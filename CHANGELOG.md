@@ -22,6 +22,11 @@
 
 ### Changed
 
+- **dpp (Rust API):** `GeneratedFrom` gains a public `range: Option<RandomRange>` field, and
+  `SystemFunction` a `Random(RandomFunction)` variant, for `sys.random.uniform` (protocol
+  version 15). This is a source change for Rust code whichever protocol version it runs: a
+  `GeneratedFrom` literal sets `range: None` for every function but a random one, and an
+  exhaustive match on `SystemFunction` needs a `Random` arm.
 - **drive (Rust API):** Drive's cost estimators write their layer descriptions into
   `drive::util::estimated_layers::EstimatedLayers` instead of
   `HashMap<KeyInfoPath, EstimatedLayerInformation>`, in `DriveLowLevelOperationConverter`

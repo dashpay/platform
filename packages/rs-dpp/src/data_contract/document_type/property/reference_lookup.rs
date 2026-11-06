@@ -28,7 +28,8 @@ use crate::data_contract::document_type::property::lookup_preimage::{
     LookupHashKey, LookupKeyParam,
 };
 use crate::data_contract::document_type::property::{
-    is_transient, top_level_property, DocumentPropertyReferenceTarget, DocumentPropertyType,
+    is_drawn_at_random, is_transient, top_level_property, DocumentPropertyReferenceTarget,
+    DocumentPropertyType,
 };
 
 /// Why a key part moves when it is a field only the contract's moderators write
@@ -38,6 +39,10 @@ const MODERATORS_CHANGE: &str = "the contract's moderators change";
 /// Why a key part moves when it is an immutable, optional `deletableDocument`
 /// reference by id: a replace may clear it once its document is deleted.
 const CLEARED_ONCE_DELETED: &str = "a replace can clear once its document is deleted";
+
+/// Why a key part moves when it is drawn at random (`sys.random`): the draw replaces the
+/// placeholder its document was created with once the block's transitions are accepted.
+const DRAWN_AT_RANDOM: &str = "the draw from the block's random beacon changes";
 use crate::data_contract::document_type::{property_names, DocumentTypeRef, Index};
 use crate::data_contract::errors::DataContractError;
 use crate::document::property_names::{
@@ -1115,7 +1120,7 @@ pub fn owner_can_change(document_type: DocumentTypeRef) -> bool {
 /// with a replace; a schema property is fixed when
 /// [`schema_property_is_fixed_once_written`] says so and a replace cannot
 /// clear it ([`clearable_once_its_document_is_deleted`]), and its moderators'
-/// fields are named as such. Shared by a lookup's key and the
+/// fields and a property drawn at random are named as such. Shared by a lookup's key and the
 /// `summableOffCountIndex` lossless rule, so the two judge a value alike.
 pub(crate) fn why_value_can_change(
     referenced: DocumentTypeRef,
@@ -1140,6 +1145,8 @@ pub(crate) fn why_value_can_change(
                 .contains(top_level_property(property))
             {
                 Some(MODERATORS_CHANGE)
+            } else if is_drawn_at_random(referenced, property) {
+                Some(DRAWN_AT_RANDOM)
             } else if !schema_property_is_fixed_once_written(referenced, property) {
                 Some("a replace can change")
             } else {
@@ -1156,20 +1163,27 @@ pub(crate) fn why_value_can_change(
 /// under `immutable`, and in either case the contract's moderators do not
 /// write it (`moderatorAbilities.changeFields`, which the parser keeps apart
 /// from `immutable`). A property listed under `immutable` with a condition is
-/// not fixed: a replace may change it while its condition does not hold. The
+/// not fixed: a replace may change it while its condition does not hold. Nor is
+/// a property drawn at random ([`is_drawn_at_random`]): the draw replaces the
+/// placeholder once the block's transitions are accepted, after a value read
+/// from it was written, and moves nothing that read it. The
 /// flags and the moderators' fields are immutable on contract update and the
 /// properties `immutable` lists without a condition may only grow, so the
 /// answer holds for good. The one rule
-/// both a lookup's key parts and a list element's list are judged by.
+/// both a lookup's key parts and a list element's list are judged by, and the
+/// field a derived index property of another type reads.
 pub(crate) fn schema_property_is_fixed_once_written(
     document_type: DocumentTypeRef,
     path: &str,
 ) -> bool {
     let top_level = top_level_property(path);
+    // In place, inert before protocol version 15: no type parsed earlier declares a
+    // `sys.random` function, and none does from it until `random_generated_from` admits one
     (!document_type.documents_mutable() || document_type.immutable_fields().contains(top_level))
         && !document_type
             .moderator_changeable_fields()
             .contains(top_level)
+        && !is_drawn_at_random(document_type, path)
 }
 
 /// Whether a replace may clear the top-level property of `path` of a document

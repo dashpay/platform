@@ -194,6 +194,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
         insert_empty_private_document_store_operation: None, // no private document type before protocol version 15
         fetch_private_document_entries: None, // no private document type before protocol version 15
         prove_private_document_entries: None,
+        draw_random_document_properties: None,
         expiration: DriveDocumentExpirationMethodVersions {
             insert_document_ttl_trees: 0,
             add_document_expiration_operations: 0,

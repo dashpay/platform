@@ -7,13 +7,18 @@
 //! lookup key is computed with. `sys.tokens` is [`TokenFunction`], in
 //! [`tokens`], which a `generatedFrom` property is generated with from protocol
 //! version 15: unlike the string transformations, its functions read state.
-//! Each keyword takes the functions of its own namespaces only.
+//! `sys.random` is [`RandomFunction`], in [`random`], which a `generatedFrom`
+//! property is generated with from protocol version 15 too: the platform draws its
+//! value from the block's random beacon. Each keyword takes the functions of its
+//! own namespaces only.
 
 pub mod hash;
+pub mod random;
 pub mod string_transformations;
 pub mod tokens;
 
 pub use hash::HashFunction;
+pub use random::{RandomFunction, RandomRange};
 pub use string_transformations::StringTransformation;
 pub use tokens::TokenFunction;
 
@@ -26,8 +31,9 @@ use std::fmt;
 /// A closed list of built-ins. Every node must compute exactly the same value,
 /// so each function is defined without any table that could differ between
 /// builds (Unicode case mappings change between Rust releases): the string
-/// transformations change ASCII characters only, and the token functions read
-/// committed state.
+/// transformations change ASCII characters only, the token functions read
+/// committed state, and the random functions read the block's random beacon,
+/// which every node recovers to the same bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SystemFunction {
     /// `sys.stringTransformations.*`: one string to a string.
@@ -37,19 +43,34 @@ pub enum SystemFunction {
     /// `sys.tokens.*`: one token id to what the token's configuration holds
     /// (protocol version 15).
     Token(TokenFunction),
+    /// `sys.random.*`: no parameters to a value drawn from the block's random
+    /// beacon (protocol version 15).
+    Random(RandomFunction),
 }
 
 impl SystemFunction {
-    /// Every function, in wire-name order: the hashes, the string
-    /// transformations, then the token functions.
+    /// Every function, in wire-name order: the hashes, the random functions, the
+    /// string transformations, then the token functions.
     pub const ALL: [SystemFunction;
-        HashFunction::ALL.len() + StringTransformation::ALL.len() + TokenFunction::ALL.len()] = {
+        HashFunction::ALL.len()
+            + RandomFunction::ALL.len()
+            + StringTransformation::ALL.len()
+            + TokenFunction::ALL.len()] = {
         let mut all = [SystemFunction::Hash(HashFunction::ALL[0]);
-            HashFunction::ALL.len() + StringTransformation::ALL.len() + TokenFunction::ALL.len()];
+            HashFunction::ALL.len()
+                + RandomFunction::ALL.len()
+                + StringTransformation::ALL.len()
+                + TokenFunction::ALL.len()];
         let mut index = 0;
         while index < HashFunction::ALL.len() {
             all[index] = SystemFunction::Hash(HashFunction::ALL[index]);
             index += 1;
+        }
+        let mut random = 0;
+        while random < RandomFunction::ALL.len() {
+            all[index] = SystemFunction::Random(RandomFunction::ALL[random]);
+            index += 1;
+            random += 1;
         }
         let mut transformation = 0;
         while transformation < StringTransformation::ALL.len() {
@@ -74,6 +95,7 @@ impl SystemFunction {
             SystemFunction::StringTransformation(transformation) => transformation.as_str(),
             SystemFunction::Hash(hash) => hash.as_str(),
             SystemFunction::Token(token) => token.as_str(),
+            SystemFunction::Random(random) => random.as_str(),
         }
     }
 
@@ -85,22 +107,25 @@ impl SystemFunction {
     }
 
     /// How many parameters the function takes: a string transformation one
-    /// string, a token function one token id, `None` for a hash, which takes
-    /// one or more.
+    /// string, a token function one token id, a random function none, `None`
+    /// for a hash, which takes one or more.
     pub const fn parameter_count(&self) -> Option<usize> {
         match self {
             SystemFunction::StringTransformation(_) | SystemFunction::Token(_) => Some(1),
+            SystemFunction::Random(_) => Some(0),
             SystemFunction::Hash(_) => None,
         }
     }
 
     /// Whether a property the function generates is an integer one: `sys.tokens.decimals`
-    /// generates a token's decimals. A string transformation generates a string, and a hash
-    /// generates no property (it keys a `refersTo` lookup). Every function is named, so one
-    /// added must say which it generates.
+    /// generates a token's decimals, and `sys.random.uniform` an integer of the property's
+    /// range. A string transformation generates a string, and a hash generates no property
+    /// (it keys a `refersTo` lookup). Every function is named, so one added must say which it
+    /// generates.
     pub const fn generates_an_integer(&self) -> bool {
         match self {
-            SystemFunction::Token(TokenFunction::Decimals) => true,
+            SystemFunction::Token(TokenFunction::Decimals)
+            | SystemFunction::Random(RandomFunction::Uniform) => true,
             SystemFunction::StringTransformation(_) | SystemFunction::Hash(_) => false,
         }
     }
@@ -114,10 +139,20 @@ impl SystemFunction {
         matches!(self, SystemFunction::Token(_))
     }
 
+    /// Whether only the platform can generate a property the function generates, so a
+    /// client leaves it out: a token function reads state, and a random function draws from
+    /// the block's random beacon, which no one knows when the document is sent. Such a value
+    /// is generated when the document is created and kept after. A string transformation
+    /// generates from the document's own data, which a client can do too.
+    pub const fn platform_generated(&self) -> bool {
+        matches!(self, SystemFunction::Token(_) | SystemFunction::Random(_))
+    }
+
     /// The string value for `arguments`, the parameters' values in `params`
     /// order. `None` when their count is not the function's, which registration
     /// rules out, and for a function that does not return a string from
-    /// strings (a hash, or a token function, which reads state).
+    /// strings (a hash, a token function, which reads state, or a random
+    /// function, which the platform draws).
     /// The platform writes this value into a document that leaves the property
     /// out, and compares a sent value with it.
     pub fn apply(&self, arguments: &[&str]) -> Option<String> {
@@ -190,10 +225,22 @@ mod tests {
                     assert_eq!(function.parameter_count(), Some(1), "{function}");
                     assert_eq!(function.apply(&["a"]), None, "{function}");
                 }
+                SystemFunction::Random(_) => {
+                    assert_eq!(function.parameter_count(), Some(0), "{function}");
+                    assert_eq!(function.apply(&["a"]), None, "{function}");
+                }
             }
             assert_eq!(
                 function.reads_state(),
                 matches!(function, SystemFunction::Token(_)),
+                "{function}"
+            );
+            assert_eq!(
+                function.platform_generated(),
+                matches!(
+                    function,
+                    SystemFunction::Token(_) | SystemFunction::Random(_)
+                ),
                 "{function}"
             );
             assert_eq!(function.apply(&[]), None, "{function}");
@@ -211,6 +258,7 @@ mod tests {
             names,
             [
                 "sys.hash.sha256d",
+                "sys.random.uniform",
                 "sys.stringTransformations.camelCase",
                 "sys.stringTransformations.capitalize",
                 "sys.stringTransformations.homographSafeASCII",
@@ -248,9 +296,9 @@ mod tests {
     /// Meta-schema v3 lists every system function the parser knew at protocol
     /// version 14, each where its keyword takes it, so a name it admits always
     /// parses: the string transformations for `generatedFrom`, the hashes for a
-    /// lookup key. The token functions came with protocol version 15, whose
-    /// registration is checked natively (`native_schema`), and the meta-schema,
-    /// frozen with protocol version 14, keeps refusing them.
+    /// lookup key. The token and random functions came with protocol version 15,
+    /// whose registration is checked natively (`native_schema`), and the
+    /// meta-schema, frozen with protocol version 14, keeps refusing them.
     #[test]
     fn should_list_every_function_in_the_meta_schema() {
         let meta_schema: serde_json::Value = serde_json::from_str(include_str!(

@@ -25,18 +25,19 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{
-    is_path_listed, is_referenced_system_agreement_property,
-    is_referring_system_agreement_property, is_transient, property_at_path, property_names,
-    ChooseFirstOrder, ContractReferenceModeration, ContractReferenceOwner,
-    ContractReferenceRequirements, DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget,
-    DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentReferenceDeclaration,
-    DocumentReferenceKind, DocumentReferenceLookup, DocumentType, DocumentTypeRef, EncryptedFor,
-    EncryptedForRecipient, EncryptionScheme, GeneratedFrom, GenerationParam,
-    IdentityKeyReferenceRequirements, KeyIdReference, KeyReferenceIdentityProperty,
-    ListElementReference, LookupChooseFirst, LookupHashKey, LookupKeySource, PropertyReference,
-    ReferenceCombinator, ReferenceOperands, SystemFunction, TokenFunction, WhereBoundRead,
-    WhereCondition, WhereContainsBound, WhereLiteral, WhereLiteralKind, WhereNotEqualBound,
-    WhereOrdering, WhereOrderingBound, COMBINABLE_REFERENCE_TARGET_TYPES,
+    integer_type_bounds, is_drawn_at_random, is_path_listed,
+    is_referenced_system_agreement_property, is_referring_system_agreement_property, is_transient,
+    property_at_path, property_names, ChooseFirstOrder, ContractReferenceModeration,
+    ContractReferenceOwner, ContractReferenceRequirements, DistinctFrom, DocumentProperty,
+    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentPropertyTypeParsingOptions,
+    DocumentReferenceDeclaration, DocumentReferenceKind, DocumentReferenceLookup, DocumentType,
+    DocumentTypeRef, EncryptedFor, EncryptedForRecipient, EncryptionScheme, GeneratedFrom,
+    GenerationParam, IdentityKeyReferenceRequirements, KeyIdReference,
+    KeyReferenceIdentityProperty, ListElementReference, LookupChooseFirst, LookupHashKey,
+    LookupKeySource, PropertyReference, RandomFunction, RandomRange, ReferenceCombinator,
+    ReferenceOperands, SystemFunction, TokenFunction, WhereBoundRead, WhereCondition,
+    WhereContainsBound, WhereLiteral, WhereLiteralKind, WhereNotEqualBound, WhereOrdering,
+    WhereOrderingBound, COMBINABLE_REFERENCE_TARGET_TYPES,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -52,6 +53,8 @@ use platform_value::string_encoding::Encoding;
 use platform_value::{Identifier, Value, ValueMapHelper};
 use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
+
+use common::paths_read_by_references;
 
 mod common;
 #[cfg(feature = "validation")]
@@ -2974,7 +2977,7 @@ fn apply_generated_from(
     {
         None => Ok(None),
         Some(0) => apply_generated_from_v0(inner_properties, property_type),
-        Some(1) => apply_generated_from_v1(inner_properties, property_type),
+        Some(1) => apply_generated_from_v1(inner_properties, property_type, platform_version),
         Some(version) => Err(DataContractError::Unsupported(format!(
             "apply_generated_from version {version} is not supported"
         ))),
@@ -3100,7 +3103,11 @@ fn apply_generated_from_v0(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(Some(GeneratedFrom { function, params }))
+    Ok(Some(GeneratedFrom {
+        function,
+        params,
+        range: None,
+    }))
 }
 
 /// Generation 1 (protocol version 15): generation 0, and a property may also be
@@ -3110,9 +3117,15 @@ fn apply_generated_from_v0(
 /// declares them, admit 0 to 255, and it declares none of the keywords that can refuse some of
 /// those values (`enum`, `const`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`). A
 /// string transformation still generates a string property only.
+///
+/// A property may also be generated with `sys.random.uniform`, which takes no parameters
+/// (`params` may be left out) and draws an integer from the property's `minimum` to its
+/// `maximum`, read into [`GeneratedFrom::range`] ([`uniform_range`]), where the platform
+/// version's `random_generated_from` admits it; `None`, in every table for now, refuses it.
 fn apply_generated_from_v1(
     inner_properties: &BTreeMap<String, &Value>,
     property_type: &DocumentPropertyType,
+    platform_version: &PlatformVersion,
 ) -> Result<Option<GeneratedFrom>, DataContractError> {
     if let DocumentPropertyType::TypedArray(_) = property_type {
         if inner_properties.contains_key(property_names::GENERATED_FROM)
@@ -3178,6 +3191,7 @@ fn apply_generated_from_v1(
 
     // The property's type is the one its function generates; `sys.hash` belongs
     // to the `refersTo` lookup keys
+    let mut range = None;
     match function {
         SystemFunction::StringTransformation(_) => {
             if !matches!(property_type, DocumentPropertyType::String(_)) {
@@ -3207,10 +3221,38 @@ fn apply_generated_from_v1(
                 )));
             }
         }
+        SystemFunction::Random(RandomFunction::Uniform) => {
+            match platform_version
+                .dpp
+                .contract_versions
+                .document_type_versions
+                .schema
+                .random_generated_from
+            {
+                // Nothing draws the values yet: block execution does not call
+                // `draw_random_document_properties` until Tenderdash delivers the block's
+                // random beacon, so a document would keep its placeholder for good
+                None => {
+                    return Err(DataContractError::InvalidContractStructure(format!(
+                        "generatedFrom function {function} is not active at this protocol \
+                         version: the platform does not draw random values yet"
+                    )));
+                }
+                Some(0) => {
+                    range = Some(uniform_range(inner_properties, property_type, function)?);
+                }
+                Some(version) => {
+                    return Err(DataContractError::Unsupported(format!(
+                        "random_generated_from version {version} is not supported"
+                    )));
+                }
+            }
+        }
         SystemFunction::Hash(_) => {
             return Err(DataContractError::InvalidContractStructure(format!(
                 "generatedFrom function {function} does not generate a string or an integer: a \
-                 property is generated with a sys.stringTransformations or sys.tokens function"
+                 property is generated with a sys.stringTransformations, sys.tokens or \
+                 sys.random function"
             )));
         }
     }
@@ -3218,10 +3260,13 @@ fn apply_generated_from_v1(
         return Err(shape_error());
     };
 
-    let params = generated_from_map
-        .get(property_names::PARAMS)
-        .and_then(|value| value.as_array())
-        .ok_or_else(shape_error)?;
+    // A function that takes no parameters (`sys.random`) may leave `params` out
+    let no_params = Vec::new();
+    let params = match generated_from_map.get(property_names::PARAMS) {
+        Some(params) => params.as_array().ok_or_else(shape_error)?,
+        None if parameter_count == 0 => &no_params,
+        None => return Err(shape_error()),
+    };
     if params.len() != parameter_count {
         return Err(DataContractError::InvalidContractStructure(format!(
             "generatedFrom function {function} takes {parameter_count} parameter(s), but params \
@@ -3253,7 +3298,76 @@ fn apply_generated_from_v1(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(Some(GeneratedFrom { function, params }))
+    Ok(Some(GeneratedFrom {
+        function,
+        params,
+        range,
+    }))
+}
+
+/// The values a property generated with `function`, `sys.random.uniform`, is drawn from: its
+/// `minimum` to its `maximum`, both included. The property must be an integer one of at most
+/// 64 bits, declare both bounds, with `minimum` not above `maximum` and both inside its type,
+/// and declare none of the keywords that refuse some values in between (`enum`, `const`,
+/// `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`), so every value drawn passes its
+/// schema. At most 64 bits keeps the range within 2^64 values, which a draw maps 128 random
+/// bits onto.
+fn uniform_range(
+    map: &BTreeMap<String, &Value>,
+    property_type: &DocumentPropertyType,
+    function: SystemFunction,
+) -> Result<RandomRange, DataContractError> {
+    let refusal = |reason: String| {
+        DataContractError::InvalidContractStructure(format!(
+            "generatedFrom function {function} draws an integer from the property's minimum to \
+             its maximum, so {reason}"
+        ))
+    };
+    let Some((type_minimum, type_maximum)) = integer_type_bounds(property_type) else {
+        return Err(refusal(format!(
+            "it is only allowed on an integer property of at most 64 bits, not on a {}",
+            property_type.name()
+        )));
+    };
+    let minimum = map.get_optional_integer::<i128>(property_names::MINIMUM)?;
+    let maximum = map.get_optional_integer::<i128>(property_names::MAXIMUM)?;
+    let (Some(minimum), Some(maximum)) = (minimum, maximum) else {
+        return Err(refusal(
+            "the property must declare both a minimum and a maximum".to_string(),
+        ));
+    };
+    if minimum > maximum {
+        return Err(refusal(format!(
+            "its minimum, {minimum}, may not be above its maximum, {maximum}"
+        )));
+    }
+    if minimum < type_minimum || maximum > type_maximum {
+        return Err(refusal(format!(
+            "both must fit the property's type, {}",
+            property_type.name()
+        )));
+    }
+    if let Some(keyword) = [
+        property_names::ENUM,
+        property_names::CONST,
+        property_names::EXCLUSIVE_MINIMUM,
+        property_names::EXCLUSIVE_MAXIMUM,
+        property_names::MULTIPLE_OF,
+    ]
+    .into_iter()
+    .find(|keyword| map.contains_key(*keyword))
+    {
+        return Err(refusal(format!(
+            "the property may not declare {keyword}, which would refuse some of the values \
+             in between"
+        )));
+    }
+    // Inside a type of at most 64 bits, so at most 2^64 values
+    RandomRange::new(minimum, maximum).ok_or_else(|| {
+        refusal(format!(
+            "its range, {minimum} to {maximum}, may hold at most 2^64 values"
+        ))
+    })
 }
 
 /// Whether the property schema `map` admits every token's decimals, 0 to 255: its `minimum`
@@ -3374,6 +3488,30 @@ fn refuse_state_generated_schema_path(schema: &Value, path: &str) -> Result<(), 
 /// `enum`, which compare the whole object, the value included
 /// ([`refuse_state_generated_schema_path`]).
 ///
+/// A `sys.random` function (protocol version 15) takes no parameters. A client cannot know
+/// the value either, so the same in-place declaration is required, and the type may not be
+/// indexOnly. The platform fills the value after every transition of the block is accepted,
+/// when nothing can be refused any more, so the property may not be in a unique index, where
+/// two drawn values could collide, and the type may not keep history, which would keep the
+/// placeholder. Nor may the type have a contested index, anywhere: a contested create waits in
+/// its contest, outside the documents the draw rewrites, and the document a contest awards
+/// would keep the placeholder. The property may not be summed, by `documentsSummable` or as the
+/// `summable` (or averaged) property of an index: the total would take the drawn value when
+/// nothing can be refused any more, past `i64::MAX` included. Nor may an index holding it sum
+/// another property, since the draw moves the document's contribution into the group of the
+/// drawn value, whose total could pass `i64::MAX` the same way. A create prepays the entries
+/// the draw may create in the indexes holding it, priced on the document it writes
+/// (`prepay_random_document_index_entries`), so the draw may not create more entries than the
+/// create wrote: such an index may not be an `integerRange` index on it, which files a value
+/// in every window holding it, more for a drawn value than for the placeholder (the inputs a
+/// replace or a moderator could change are judged once the moderators' abilities are known,
+/// [`validate_random_declarations_after_moderation`]).
+/// And nothing a write is judged by may read it: not a reference declared on the type (the property holding it, a `where`
+/// value, a `findBy` source, a function's params, a key id), nor an `encryptedFor` key, which
+/// would name another key once drawn. The rules reading it are refused where their reads are
+/// checked ([`property_read_error`]), and a value of another type reading it through a
+/// reference is not fixed once written (`schema_property_is_fixed_once_written`).
+///
 /// Owned by parser generation 3: the only generation that admits the keyword.
 pub(super) fn validate_generated_from_declarations(
     document_type: &DocumentTypeV2,
@@ -3438,13 +3576,142 @@ pub(super) fn validate_generated_from_declarations(
             })?;
         }
 
+        if let SystemFunction::Random(_) = generated_from.function {
+            if document_type.index_only {
+                return Err(structure_error(format!(
+                    "function {} draws a value the platform keeps from the document's creation, \
+                     and an indexOnly type keeps no document: draw it on a type that stores its \
+                     documents",
+                    generated_from.function
+                )));
+            }
+            if document_type.documents_keep_history {
+                return Err(structure_error(format!(
+                    "function {} draws a value the platform writes once the block is accepted, \
+                     and a type that keeps history would keep the placeholder written before it",
+                    generated_from.function
+                )));
+            }
+            if let Some(index) = document_type.indices.values().find(|index| {
+                index.unique
+                    && index
+                        .properties
+                        .iter()
+                        .any(|property| &property.name == path)
+            }) {
+                return Err(structure_error(format!(
+                    "function {} draws a value once the block is accepted, when nothing can be \
+                     refused any more, so the property may not be in unique index \"{}\", where \
+                     two drawn values could collide",
+                    generated_from.function, index.name
+                )));
+            }
+            // A contested create waits in its contest, outside the documents tree the draw
+            // rewrites, so the document a contest awards would keep the placeholder
+            if let Some(index) = document_type
+                .indices
+                .values()
+                .find(|index| index.contested_index.is_some())
+            {
+                return Err(structure_error(format!(
+                    "function {} draws a value into the documents a block stored, and the type \
+                     has contested index \"{}\": a contested document waits in its contest \
+                     until it is awarded, so it would keep the placeholder",
+                    generated_from.function, index.name
+                )));
+            }
+            // A total takes the drawn value once nothing can be refused any more, so it could
+            // not be held below i64::MAX
+            let summed_by = if document_type.documents_summable.as_deref() == Some(path.as_str()) {
+                Some("documentsSummable".to_string())
+            } else {
+                document_type
+                    .indices
+                    .values()
+                    .find(|index| index.summable.as_deref() == Some(path.as_str()))
+                    .map(|index| format!("index \"{}\"", index.name))
+            };
+            if let Some(summed_by) = summed_by {
+                return Err(structure_error(format!(
+                    "function {} draws a value once the block is accepted, when nothing can be \
+                     refused any more, so the property may not be summed or averaged, as \
+                     {summed_by} does: the total could not be held to its bounds",
+                    generated_from.function
+                )));
+            }
+            for index in document_type.indices.values().filter(|index| {
+                index
+                    .properties
+                    .iter()
+                    .any(|property| &property.name == path)
+            }) {
+                if let Some(summed) = &index.summable {
+                    return Err(structure_error(format!(
+                        "function {} draws a value once the block is accepted, when nothing \
+                         can be refused any more, so index \"{}\" holding the property may \
+                         not sum or average \"{summed}\": the draw moves the document's \
+                         contribution into the group of the drawn value, whose total could not \
+                         be held to its bounds",
+                        generated_from.function, index.name
+                    )));
+                }
+                if index
+                    .integer_range
+                    .as_ref()
+                    .is_some_and(|transform| &transform.source == path)
+                {
+                    return Err(structure_error(format!(
+                        "function {} draws a value once the block is accepted, and integerRange \
+                         index \"{}\" files a value in every window holding it, so the draw \
+                         could create more entries than the create wrote and prepaid",
+                        generated_from.function, index.name
+                    )));
+                }
+            }
+            // A reference is judged when the document is written, before the draw
+            if paths_read_by_references(DocumentTypeRef::V2(document_type)).contains(path.as_str())
+            {
+                return Err(structure_error(format!(
+                    "function {} draws a value once the block is accepted, and a reference \
+                     declared on the type reads the property: it would be judged with the \
+                     placeholder written before the draw",
+                    generated_from.function
+                )));
+            }
+            if let Some((holder, _)) = flattened_properties.iter().find(|(_, property)| {
+                property
+                    .encrypted_for
+                    .as_ref()
+                    .is_some_and(|encrypted_for| {
+                        &encrypted_for.recipient_key == path || &encrypted_for.sender_key == path
+                    })
+            }) {
+                return Err(structure_error(format!(
+                    "function {} draws a value once the block is accepted, and the encryptedFor \
+                     of \"{holder}\" names the property as a key: the ciphertext was made for \
+                     the key the placeholder names",
+                    generated_from.function
+                )));
+            }
+            // A client leaves the value out, and its schema check reads a stand-in, as for a
+            // value read from state
+            refuse_state_generated_schema_path(&document_type.schema, path).map_err(|message| {
+                structure_error(format!(
+                    "function {} draws a value a client cannot know, so {message}: the client \
+                     could not tell whether its document matches",
+                    generated_from.function
+                ))
+            })?;
+        }
+
         // The kind of property a param names: the messages of the string functions are
         // those protocol version 14 gives
         let (param_kind, a_param_kind) = match generated_from.function {
             SystemFunction::Token(_) => ("identifier", "an identifier"),
-            SystemFunction::StringTransformation(_) | SystemFunction::Hash(_) => {
-                ("string", "a string")
-            }
+            // A random function takes no parameters, so the loop below never reads its kind
+            SystemFunction::StringTransformation(_)
+            | SystemFunction::Hash(_)
+            | SystemFunction::Random(_) => ("string", "a string"),
         };
         for param in generated_from.property_params() {
             if param == path {
@@ -3479,7 +3746,9 @@ pub(super) fn validate_generated_from_declarations(
                         )));
                     }
                 }
-                SystemFunction::StringTransformation(_) | SystemFunction::Hash(_) => {
+                SystemFunction::StringTransformation(_)
+                | SystemFunction::Hash(_)
+                | SystemFunction::Random(_) => {
                     if !matches!(
                         param_property.property_type,
                         DocumentPropertyType::String(_)
@@ -3515,6 +3784,102 @@ pub(super) fn validate_generated_from_declarations(
                          supplying the params always has the object the value is written into"
                     )));
                 }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// What a `sys.random` property (protocol version 15) needs of the rest of its type once the
+/// moderators' abilities are applied (`apply_moderator_abilities`) and the derived index
+/// properties are (`apply_derived_index_properties`), both after
+/// [`validate_generated_from_declarations`].
+///
+/// A create prepays the entries the draw may create in the indexes holding the property,
+/// priced on the document it writes (`prepay_random_document_index_entries`), so no write
+/// between the create and the draw may make the draw create more: an index holding it may not
+/// skip documents on a stored property a replace or a moderator's change could add before the
+/// draw (`skipIfAbsent`, or a typed array), nor be an `integerRange` index whose source either
+/// could move into more windows. A property is safe there only when it is fixed once written
+/// (`schema_property_is_fixed_once_written`: the type's documents are immutable, or it lists
+/// the property `immutable`, and no moderator may change it). And a moderator may not delete
+/// such a document keeping a record of it (`deleteKeepsRecord`, on by default): a restore puts
+/// the removed document back as it was, with the placeholder if the block's draw had not
+/// reached it yet, and nothing draws it after.
+///
+/// Owned by parser generation 3: the only generation that admits the keyword.
+pub(super) fn validate_random_declarations_after_moderation(
+    document_type: &DocumentTypeV2,
+    document_type_name: &str,
+) -> Result<(), DataContractError> {
+    for (path, property) in &document_type.flattened_properties {
+        let Some(generated_from) = &property.generated_from else {
+            continue;
+        };
+        let SystemFunction::Random(_) = generated_from.function else {
+            continue;
+        };
+        let structure_error = |message: String| {
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{document_type_name}\" property \"{path}\" generatedFrom \
+                 {message}"
+            ))
+        };
+
+        if document_type.documents_can_be_deleted_by_moderators
+            && document_type.moderator_deletions_keep_records
+        {
+            return Err(structure_error(format!(
+                "function {} draws a value once the block is accepted, and the type's \
+                 moderators delete its documents keeping a record of them, from which a \
+                 restore puts a removed document back as it was, with the placeholder if it \
+                 was removed before the draw: set deleteKeepsRecord to false",
+                generated_from.function
+            )));
+        }
+
+        let fixed_once_written = |path: &str| {
+            schema_property_is_fixed_once_written(DocumentTypeRef::V2(document_type), path)
+        };
+        for index in document_type.indices.values().filter(|index| {
+            index
+                .properties
+                .iter()
+                .any(|property| &property.name == path)
+        }) {
+            // A replace or a moderator's change in the block of the create may move a window
+            // source it can change before the draw, into more windows than the create's
+            if let Some(source) = index
+                .integer_range
+                .as_ref()
+                .map(|transform| transform.source.as_str())
+                .filter(|source| !fixed_once_written(source))
+            {
+                return Err(structure_error(format!(
+                    "function {} draws a value once the block is accepted, and integerRange \
+                     index \"{}\" files a document in every window its source \"{source}\" \
+                     falls in, which a replace or a moderator's change in the block of the \
+                     create could change before the draw, creating entries the create did not \
+                     prepay: window such an index only on a property fixed once written",
+                    generated_from.function, index.name
+                )));
+            }
+            // A derived property is fixed once written, so only a stored one a replace or a
+            // moderator's change can change can be added
+            if let Some(skipped_on) = index.skip_if_absent_properties.iter().find(|skipped_on| {
+                !document_type
+                    .derived_index_properties
+                    .contains_key(skipped_on.as_str())
+                    && !fixed_once_written(skipped_on)
+            }) {
+                return Err(structure_error(format!(
+                    "function {} draws a value once the block is accepted, and index \"{}\" \
+                     skips a document without \"{skipped_on}\", which a replace or a \
+                     moderator's change in the block of the create could add before the draw, \
+                     creating entries the create did not prepay: skip only on a property fixed \
+                     once written",
+                    generated_from.function, index.name
+                )));
             }
         }
     }
@@ -3878,8 +4243,9 @@ fn stored_read_in_delete_rule(subject: &str, path: &str) -> String {
 
 /// Why `document_type` has no property at `lookup` a rule `subject` can read
 /// as `read`, the message naming it `path`; `None` when it has one: of the kind
-/// the read needs, neither transient nor inside a transient object. Shared by
-/// the reads of the type's own properties and those of a referenced document.
+/// the read needs, neither transient nor inside a transient object, nor drawn at
+/// random ([`is_drawn_at_random`]). Shared by the reads of the type's own
+/// properties and those of a referenced document.
 pub(super) fn property_read_error(
     document_type: DocumentTypeRef,
     subject: &str,
@@ -4148,6 +4514,17 @@ pub(super) fn property_read_error(
             "{subject} {reads} \"{path}\", which is transient or inside a \
              transient object: a transient value is never stored, so a stored document \
              could not be held to the rule"
+        ));
+    }
+    // A value drawn once the block's transitions are accepted is the placeholder while they
+    // are judged. In place, inert before protocol version 15: no type parsed earlier declares
+    // a `sys.random` function (`apply_generated_from` 0 refuses every function but a string
+    // transformation), and none does from it until `random_generated_from` admits one
+    if is_drawn_at_random(document_type, lookup) {
+        return Some(format!(
+            "{subject} {reads} \"{path}\", which the platform draws at random once the \
+             block's transitions are accepted: a write would be judged against the placeholder \
+             written before the draw"
         ));
     }
     None
@@ -5298,6 +5675,16 @@ fn validate_property_constraint_aggregates_with(
                                  \"{counted_name}\" (a nested one is named by its dotted path)"
                             )));
                         };
+                        // The documents a block created hold their placeholder while the block's
+                        // writes are judged. In place, inert before protocol version 15, where no
+                        // type declares a `sys.random` function
+                        if is_drawn_at_random(counted, key) {
+                            return Err(error(format!(
+                                "{totals} by \"{key}\", which \"{counted_name}\" draws at random \
+                                 once the block's transitions are accepted: the total would \
+                                 count the documents the block created under their placeholder"
+                            )));
+                        }
                         let Some(kind) = (grammar.kind_of)(&property.property_type) else {
                             return Err(error(format!(
                                 "{totals} by \"{key}\", which has type {}: {}",
