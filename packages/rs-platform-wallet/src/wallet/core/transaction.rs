@@ -103,7 +103,6 @@ fn checked_fee(fee_rate: FeeRate, size_bytes: usize) -> Result<u64, PlatformWall
 /// the hash — so a zero hash stands in for the real destination, which the
 /// caller has not chosen yet at send-max time.
 fn modeled_output_script() -> ScriptBuf {
-    use dashcore::hashes::Hash;
     ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0u8; 20]))
 }
 

@@ -8,8 +8,6 @@ use bincode::enc::Encoder;
 use bincode::error::EncodeError;
 #[cfg(feature = "core-types-serialization")]
 use bincode::{BorrowDecode, Decode, Encode};
-#[cfg(feature = "core-types-serialization")]
-use dashcore::hashes::Hash;
 use dashcore::{ProTxHash, QuorumHash};
 use itertools::Itertools;
 #[cfg(feature = "serde-conversion")]

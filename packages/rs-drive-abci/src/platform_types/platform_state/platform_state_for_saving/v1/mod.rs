@@ -8,7 +8,6 @@ use bincode::Encode;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::core_types::validator_set::ValidatorSet;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{ProTxHash, QuorumHash};
 use dpp::fee::default_costs::EpochIndexFeeVersionsForStorage;
 use dpp::platform_serialization::de::Decode;

@@ -744,7 +744,7 @@ pub(crate) async fn run_chain_for_strategy<'a>(
                 // From DIP 8: https://github.com/dashpay/dips/blob/master/dip-0008.md#finalization-of-signed-blocks
                 // The request id is SHA256("clsig", blockHeight) and the message hash is the block hash of the previously successful attempt.
 
-                let mut engine = QuorumSigningRequestId::engine();
+                let mut engine = sha256d::Hash::engine();
 
                 // Prefix
                 let prefix_len = VarInt("clsig".len() as u64);
@@ -755,7 +755,8 @@ pub(crate) async fn run_chain_for_strategy<'a>(
                 engine.input("clsig".as_bytes());
                 engine.input(block_height.to_le_bytes().as_slice());
 
-                let request_id = QuorumSigningRequestId::from_engine(engine);
+                let request_id =
+                    QuorumSigningRequestId::from_raw_hash(sha256d::Hash::from_engine(engine));
 
                 // Based on the deterministic masternode list at the given height, a quorum must be selected that was active at the time this block was mined
 

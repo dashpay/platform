@@ -24,7 +24,6 @@ use drive::util::batch::IdentityOperationType::{
 
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 
-use dpp::dashcore::hashes::Hash;
 use drive::grovedb::Transaction;
 use std::collections::BTreeMap;
 use tracing::Level;

@@ -45,7 +45,6 @@ use std::str::FromStr;
 
 use dashcore::address::Payload;
 use dashcore::crypto::ecdsa::{EcdsaPublicKey, EcdsaRecSignature};
-use dashcore::hashes::Hash;
 use dashcore::sign_message::{self, signed_msg_hash};
 use dashcore::{Address as DashAddress, AddressType, PublicKey as DashPublicKey};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;

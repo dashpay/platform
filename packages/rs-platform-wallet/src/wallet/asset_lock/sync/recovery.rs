@@ -1932,7 +1932,6 @@ mod tests {
     use async_trait::async_trait;
     use dashcore::bls_sig_utils::BLSSignature;
     use dashcore::ephemerealdata::chain_lock::ChainLock;
-    use dashcore::hashes::Hash;
     use dashcore::prelude::CoreBlockHeight;
     use dashcore::{BlockHash, Network, OutPoint, Transaction, TxIn, Txid};
     use key_wallet::account::account_collection::AccountCollection;

@@ -26,7 +26,7 @@ use dashcore::blockdata::transaction::special_transaction::{
 };
 use dashcore::bls_sig_utils::BLSSignature;
 use dashcore::hash_types::{InputsHash, SpecialTransactionPayloadHash};
-use dashcore::hashes::Hash;
+use dashcore::hashes::sha256d;
 use dashcore::sml::masternode_list_entry::net_info::{
     Bip155Network, ExtNetInfo, NetInfoEntry, NetInfoPurpose,
 };
@@ -736,13 +736,14 @@ pub(crate) fn finalize_update_service_payload(
     // Encoding fails when the payload version and the address form
     // disagree. `base_payload_hash` panics on that, and across the FFI a
     // panic aborts the host app, so hash here and return the error.
-    let mut engine = SpecialTransactionPayloadHash::engine();
+    let mut engine = sha256d::Hash::engine();
     finalized
         .base_payload_data_encode(&mut engine)
         .map_err(|e| {
             BuilderError::InvalidData(format!("the ProUpServTx payload cannot be encoded: {e}"))
         })?;
-    let sign_hash = SpecialTransactionPayloadHash::from_engine(engine);
+    let sign_hash =
+        SpecialTransactionPayloadHash::from_raw_hash(sha256d::Hash::from_engine(engine));
 
     let secret = BlsSecretKey::from_be_bytes(operator_secret).ok_or_else(|| {
         BuilderError::SigningFailed("the operator key is not a valid BLS secret".into())
