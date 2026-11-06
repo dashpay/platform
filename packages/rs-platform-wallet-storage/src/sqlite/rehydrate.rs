@@ -568,16 +568,18 @@ fn owner_label(owner: &OwningAccount) -> String {
 /// run again: false once a refill was refused or a restore failed.
 ///
 /// Used addresses and the coins' own extend the reach as a rescan's would:
-/// each round marks the ones the funds pools now hold and extends every pool
-/// to its gap limit past its highest used address, until a round marks
-/// nothing and its refill derives nothing in a funds pool, so a run of spent
-/// addresses longer than one gap window still leads to the coins past it, and
-/// a coin's refill to the spent addresses past it. The final restore then
-/// marks no funds address the rounds left unused, so its refill derives
-/// nothing in a funds pool (it may still extend a DashPay contact pool, which
-/// the rounds do not cover). The first round looks up every address the
-/// funds pools hold; each later round only the ones the previous refill
-/// derived, so the rounds together look up each derived funds address once.
+/// each round marks the ones the funds pools now hold, and the address each
+/// coin's script pays wherever a funds or DashPay contact pool holds it, as
+/// the final restore marks it. It then extends every pool to its gap limit
+/// past its highest used address, until a round marks nothing and its refill
+/// derives nothing in any of those pools, so a run of spent addresses longer
+/// than one gap window still leads to the coins past it, and a coin's refill
+/// to the spent addresses past it. The final restore then marks nothing the
+/// rounds left unused, so its refill derives nothing: every pool it could
+/// grow was refilled first by a round, bounded as below. The first round
+/// looks up every address those pools hold; each later round only the ones
+/// the previous refill derived, so the rounds together look up each derived
+/// address once.
 ///
 /// Terminates: every round but the last marks at least one more address of a
 /// finite set, or is the call's first and its refill derived addresses no
@@ -592,9 +594,7 @@ fn owner_label(owner: &OwningAccount) -> String {
 /// does a derivation error, which is reported at
 /// [`LoadSite::RehydrationMaintainGapLimit`]. Either way the coins whose
 /// script a pool already holds are still placed, without growing any pool
-/// ([`place_held_coins`]), and only the others are returned unmatched. The
-/// final placement grows each pool at most one gap past each stored coin's
-/// address.
+/// ([`place_held_coins`]), and only the others are returned unmatched.
 fn restore_owned_utxos(
     wallet_info: &mut ManagedWalletInfo,
     wallet: &Wallet,
@@ -604,37 +604,52 @@ fn restore_owned_utxos(
     ctx: &LoadCtx,
     refused: &mut RefusedRefills,
 ) -> Result<(Vec<key_wallet::Utxo>, bool), WalletStorageError> {
-    let wanted: std::collections::HashSet<&key_wallet::Address> = (used.iter())
-        .chain(unspent.iter().map(|u| &u.address))
+    // The addresses the coins' scripts pay, which `restore_utxos` marks in
+    // every pool holding them.
+    let paid: HashSet<key_wallet::Address> = (unspent.iter())
+        .filter_map(|u| {
+            key_wallet::Address::from_script(&u.txout.script_pubkey, wallet.network).ok()
+        })
         .collect();
-    // Per funds pool, in `all_funding_accounts_mut` x `address_pools_mut`
-    // order, the highest index already looked up.
+    let paid: HashSet<&key_wallet::Address> = paid.iter().collect();
+    let wanted: HashSet<&key_wallet::Address> = (used.iter())
+        .chain(unspent.iter().map(|u| &u.address))
+        .chain(paid.iter().copied())
+        .collect();
+    // Per pool, funds pools in `all_funding_accounts_mut` x
+    // `address_pools_mut` order and then the contact pools, the highest index
+    // already looked up.
     let mut looked_up: Vec<Option<u32>> = Vec::new();
     loop {
         let mut marked_any = false;
         let mut slot = 0;
+        let mut look_up = |pool: &mut key_wallet::managed_account::address_pool::AddressPool,
+                           wanted: &HashSet<&key_wallet::Address>| {
+            if looked_up.len() == slot {
+                looked_up.push(None);
+            }
+            let seen = &mut looked_up[slot];
+            slot += 1;
+            let from = seen.map_or(0, |seen| seen.saturating_add(1));
+            *seen = pool.highest_generated;
+            let Some(to) = pool.highest_generated.filter(|to| from <= *to) else {
+                return false;
+            };
+            let hits: Vec<u32> = (pool.addresses.range(from..=to))
+                .filter(|(_, info)| wanted.contains(&info.address))
+                .map(|(index, _)| *index)
+                .collect();
+            hits.into_iter()
+                .fold(false, |marked, index| pool.mark_index_used(index) | marked)
+        };
         for funds in wallet_info.accounts.all_funding_accounts_mut() {
             for pool in funds.managed_account_type_mut().address_pools_mut() {
-                let from = looked_up
-                    .get(slot)
-                    .copied()
-                    .flatten()
-                    .map_or(0, |seen| seen.saturating_add(1));
-                let generated = pool.highest_generated;
-                if let Some(to) = generated.filter(|to| from <= *to) {
-                    let hits: Vec<u32> = (pool.addresses.range(from..=to))
-                        .filter(|(_, info)| wanted.contains(&info.address))
-                        .map(|(index, _)| *index)
-                        .collect();
-                    for index in hits {
-                        marked_any |= pool.mark_index_used(index);
-                    }
-                }
-                match looked_up.get_mut(slot) {
-                    Some(seen) => *seen = generated,
-                    None => looked_up.push(generated),
-                }
-                slot += 1;
+                marked_any |= look_up(pool, &wanted);
+            }
+        }
+        for contact in wallet_info.accounts.dashpay_external_accounts.values_mut() {
+            for pool in contact.managed_account_type_mut().address_pools_mut() {
+                marked_any |= look_up(pool, &paid);
             }
         }
         if !gap_refills_bounded(wallet_info, wallet_id, ctx, refused)? {
@@ -686,11 +701,13 @@ fn place_held_coins(
     }
 }
 
-/// Whether a funds pool holds addresses past the highest index `looked_up`
-/// records for it, in [`restore_owned_utxos`]'s pool order.
+/// Whether a funds or DashPay contact pool holds addresses past the highest
+/// index `looked_up` records for it, in [`restore_owned_utxos`]'s pool order.
 fn derived_past(wallet_info: &ManagedWalletInfo, looked_up: &[Option<u32>]) -> bool {
-    let pools = (wallet_info.accounts.all_funding_accounts().into_iter())
-        .flat_map(|funds| funds.managed_account_type().address_pools());
+    let accounts = &wallet_info.accounts;
+    let pools = (accounts.all_funding_accounts().into_iter())
+        .chain(accounts.dashpay_external_accounts.values())
+        .flat_map(|account| account.managed_account_type().address_pools());
     pools
         .zip(looked_up)
         .any(|(pool, seen)| pool.highest_generated > *seen)
@@ -919,9 +936,16 @@ const REHYDRATION_DEEP_SCAN_WARN_INDEX: u32 = 1_000;
 /// `Address` / `ScriptBuf` — so this holds a single refill near 100 MB.
 /// Legitimate refills span one gap window (tens of addresses); reaching
 /// this cap needs `highest_used` far past `highest_generated`, which
-/// `mark_used` — the only writer today — cannot produce. Defense in depth
-/// against a future upstream invariant break, not a currently reachable path.
+/// `mark_used` — the only writer today — cannot produce, or a gap limit near
+/// the cap, which key-wallet's own pools never have. Defense in depth
+/// against a future upstream invariant break or a caller-built pool, not a
+/// path a stored wallet reaches.
+#[cfg(not(test))]
 const MAX_REHYDRATION_GAP_REFILL: u32 = 250_000;
+/// The same bound, smaller in unit tests, so a test that crosses it derives
+/// little on the way.
+#[cfg(test)]
+const MAX_REHYDRATION_GAP_REFILL: u32 = 2_000;
 
 /// Highest BIP-32 non-hardened child index. A derivation target at or past
 /// `2^31` names a hardened child, which no address pool can derive from a
@@ -4443,6 +4467,8 @@ mod tests {
                         .insert(held.script_pubkey.clone(), index);
                     pool.addresses.insert(index, held);
                     pool.highest_generated = Some(index);
+                    // Unrefillable whether or not the coin marks it.
+                    pool.gap_limit = u32::MAX;
                 },
             );
             assert_held_by_coinjoin(&info, &coin);
@@ -4660,6 +4686,191 @@ mod tests {
                 assert_eq!(every_holder(&info, &deep.outpoint), vec![cj()]);
                 assert_eq!(info.balance.total(), 2 * VALUE);
             }
+        }
+
+        fn contact() -> AccountType {
+            AccountType::DashpayExternalAccount {
+                index: 0,
+                user_identity_id: [0xaa; 32],
+                friend_identity_id: [0xbb; 32],
+            }
+        }
+
+        /// The first pool of [`unrefillable_contact_fixture`]'s contact
+        /// account.
+        fn contact_pool(info: &ManagedWalletInfo) -> &AddressPool {
+            let contact = info.accounts.dashpay_external_accounts.values().next();
+            contact.unwrap().managed_account_type().address_pools()[0]
+        }
+
+        /// [`unrefillable_contact_fixture`]'s managed state with its contact
+        /// pool's gap limit one past the refill budget, derived through
+        /// `through` when given.
+        fn with_wide_contact_pool(wallet: &Wallet, through: Option<u32>) -> ManagedWalletInfo {
+            let mut info = ManagedWalletInfo::from_wallet(wallet, 1);
+            let account = info.accounts.dashpay_external_accounts.values_mut().next();
+            let mut pools = account
+                .unwrap()
+                .managed_account_type_mut()
+                .address_pools_mut();
+            let pool = &mut *pools[0];
+            pool.gap_limit = MAX_REHYDRATION_GAP_REFILL + 1;
+            if let Some(index) = through {
+                let key_source = wallet.key_source_for_account(contact());
+                ensure_derived(pool, &key_source, index).unwrap();
+            }
+            info
+        }
+
+        /// A coin on the last address a contact pool holds, whose gap limit
+        /// is one past the refill budget, would have that pool refilled past
+        /// the budget once marked. A strict load fails at the refill site,
+        /// and the pool derives nothing more.
+        #[test]
+        fn a_coin_cannot_push_a_contact_pool_refill_past_the_budget() {
+            let (wallet, manifest, own) = unrefillable_contact_fixture();
+            let budget = MAX_REHYDRATION_GAP_REFILL;
+            let mut info = with_wide_contact_pool(&wallet, Some(budget));
+            let theirs = utxo(2, &contact_pool(&info).address_at_index(budget).unwrap());
+            let err = load_into(
+                &mut info,
+                &manifest,
+                vec![own, theirs],
+                &HashMap::new(),
+                &HashMap::new(),
+                &LoadCtx::strict(),
+            )
+            .expect_err("a refill past the budget must fail a strict load");
+            assert!(
+                matches!(
+                    err,
+                    WalletStorageError::RehydrationGapLimitRefillTooLarge { .. }
+                ),
+                "{err:?}"
+            );
+            assert_eq!(contact_pool(&info).highest_generated, Some(budget));
+        }
+
+        /// Under recovery the same refusal is counted once, the contact pool
+        /// derives nothing more, and both coins are still placed: the BIP44
+        /// coin in BIP44 and the contact coin in the contact account.
+        #[test]
+        fn a_coin_cannot_push_a_contact_pool_refill_past_the_budget_in_recovery() {
+            let (wallet, manifest, own) = unrefillable_contact_fixture();
+            let budget = MAX_REHYDRATION_GAP_REFILL;
+            let mut info = with_wide_contact_pool(&wallet, Some(budget));
+            let theirs = utxo(2, &contact_pool(&info).address_at_index(budget).unwrap());
+            let ctx = LoadCtx::recovery();
+            load_into(
+                &mut info,
+                &manifest,
+                vec![own.clone(), theirs.clone()],
+                &HashMap::new(),
+                &HashMap::new(),
+                &ctx,
+            )
+            .expect("recovery tolerates the refusal");
+            assert_eq!(
+                ctx.degradation()
+                    .by_site
+                    .get(&LoadSite::RehydrationGapLimit),
+                Some(&1)
+            );
+            assert_eq!(contact_pool(&info).highest_generated, Some(budget));
+            assert_eq!(every_holder(&info, &own.outpoint), vec![bip44()]);
+            assert_eq!(every_holder(&info, &theirs.outpoint), vec![contact()]);
+            assert_eq!(info.balance.total(), VALUE);
+        }
+
+        /// A contact pool whose own refill first derives a coin's address
+        /// (its window, 0..=9, grows to the gap limit, one past the budget)
+        /// cannot then be refilled past the budget by that coin's mark: the
+        /// rounds look up what the refill derived before the final restore,
+        /// although the round before marked nothing.
+        #[test]
+        fn a_coin_a_contact_refill_reaches_cannot_push_it_past_the_budget() {
+            let (wallet, manifest, _) = unrefillable_contact_fixture();
+            let budget = MAX_REHYDRATION_GAP_REFILL;
+            let mut info = with_wide_contact_pool(&wallet, None);
+            assert_eq!(contact_pool(&info).highest_generated, Some(9));
+            let theirs = utxo(2, &first_pool_address(&wallet, &contact(), budget));
+            let err = load_into(
+                &mut info,
+                &manifest,
+                vec![theirs],
+                &HashMap::new(),
+                &HashMap::new(),
+                &LoadCtx::strict(),
+            )
+            .expect_err("a refill past the budget must fail a strict load");
+            assert!(
+                matches!(
+                    err,
+                    WalletStorageError::RehydrationGapLimitRefillTooLarge { .. }
+                ),
+                "{err:?}"
+            );
+            assert_eq!(contact_pool(&info).highest_generated, Some(budget));
+        }
+
+        /// A coin whose stored address (BIP44's at 5) differs from the one
+        /// its script pays (CoinJoin's last, in a pool whose gap limit is one
+        /// past the budget) cannot push the CoinJoin pool past the budget: the
+        /// rounds mark the script's address before any refill.
+        #[test]
+        fn a_coin_cannot_push_its_scripts_pool_past_the_budget_by_its_stored_address() {
+            let (wallet, manifest) = fixture(47);
+            let budget = MAX_REHYDRATION_GAP_REFILL;
+            let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+            let funds = info.accounts.funds_account_mut(&cj()).unwrap();
+            let mut pools = funds.managed_account_type_mut().address_pools_mut();
+            let pool = (pools.iter_mut())
+                .find(|p| p.pool_type == AddressPoolType::External)
+                .unwrap();
+            pool.gap_limit = budget + 1;
+            let key_source = wallet.key_source_for_account(cj());
+            let paid = ensure_derived(pool, &key_source, budget).unwrap();
+            let mut coin = utxo(1, &paid);
+            coin.address = external_address(&wallet, &bip44(), 5);
+            let err = load_into(
+                &mut info,
+                &manifest,
+                vec![coin],
+                &HashMap::new(),
+                &HashMap::new(),
+                &LoadCtx::strict(),
+            )
+            .expect_err("a refill past the budget must fail a strict load");
+            assert!(
+                matches!(
+                    err,
+                    WalletStorageError::RehydrationGapLimitRefillTooLarge { .. }
+                ),
+                "{err:?}"
+            );
+            assert_eq!(external_pool(&info, &cj()).highest_generated, Some(budget));
+        }
+
+        /// A coin on a contact address within the pool (9, its last) still
+        /// has the contact pool refilled one gap past it, marked used.
+        #[test]
+        fn a_contact_coin_keeps_its_pool_refilled_past_it() {
+            let (wallet, manifest, own) = unrefillable_contact_fixture();
+            let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+            let theirs = utxo(2, &contact_pool(&info).address_at_index(9).unwrap());
+            load_into(
+                &mut info,
+                &manifest,
+                vec![own, theirs.clone()],
+                &HashMap::new(),
+                &HashMap::new(),
+                &LoadCtx::strict(),
+            )
+            .unwrap();
+            let pool = contact_pool(&info);
+            assert_eq!(pool.highest_generated, Some(9 + pool.gap_limit));
+            assert!(pool.address_info(&theirs.address).unwrap().is_used());
+            assert_eq!(every_holder(&info, &theirs.outpoint), vec![contact()]);
         }
 
         /// A funds pool whose refill both its owner's extension and the
