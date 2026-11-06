@@ -13,7 +13,6 @@ Shows default group name or sets another group as default
         name: 'group',
         required: false,
         description: 'group name',
-        default: null, // only allow input to be from a discrete set
       },
     ),
   };
@@ -32,9 +31,17 @@ Shows default group name or sets another group as default
     configFile,
     configFileRepository,
   ) {
-    if (groupName === null) {
+    // The argument is omitted when only the current default group name is requested
+    if (groupName === undefined) {
+      const defaultGroupName = configFile.getDefaultGroupName();
+
+      // A new config file, or one whose default group was removed, has none
+      if (defaultGroupName === null) {
+        throw new Error("Default group is not set. Set it with 'dashmate group default <group>'");
+      }
+
       // eslint-disable-next-line no-console
-      console.log(configFile.getDefaultGroupName());
+      console.log(defaultGroupName);
     } else {
       // Read, change and save in one locked step, so pointing the default at a
       // group cannot revert a change another command saved in the meantime.
