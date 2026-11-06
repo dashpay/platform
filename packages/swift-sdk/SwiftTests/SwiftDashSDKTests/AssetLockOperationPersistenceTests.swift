@@ -86,7 +86,8 @@ final class AssetLockOperationPersistenceTests: XCTestCase {
         XCTAssertEqual(rows.count, 1)
         XCTAssertNil(rows.first?.operationId)
         XCTAssertEqual(rows.first?.amountDuffs, 1000)
-        XCTAssertEqual(DashModelContainer.schema.version, Schema.Version(4, 0, 0))
+        let currentSchema = try XCTUnwrap(DashMigrationPlan.schemas.last)
+        XCTAssertEqual(DashModelContainer.schema.version, currentSchema.versionIdentifier)
     }
 
     func testMalformedOperationIdFailsLoadInsteadOfBecomingAbsent() throws {

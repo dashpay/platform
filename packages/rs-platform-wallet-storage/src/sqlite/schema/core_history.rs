@@ -12,7 +12,7 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use super::accounts::DASHPAY_EXTERNAL_LABEL;
-use super::{blob, core_state, wallets};
+use super::{blob, core_history_aliases, core_state, wallets};
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::load_ctx::LoadCtx;
 use crate::sqlite::util::safe_cast::i64_to_u64;
@@ -23,10 +23,20 @@ pub(super) fn preserve_known_details(
     wallet_id: &WalletId,
     incoming: &TransactionRecord,
 ) -> Result<TransactionRecord, WalletStorageError> {
-    let mut merged = incoming.clone();
+    let merged = incoming.clone();
     let Some(previous) = prior_record(tx, wallet_id, &incoming.txid)? else {
         return Ok(merged);
     };
+    merge_known_details(wallet_id, &previous, incoming)
+}
+
+/// Merge accounting evidence without assigning identity or finality policy.
+pub(super) fn merge_known_details(
+    wallet_id: &WalletId,
+    previous: &TransactionRecord,
+    incoming: &TransactionRecord,
+) -> Result<TransactionRecord, WalletStorageError> {
+    let mut merged = incoming.clone();
     // Compare only txid-committed content: a peer may attach BIP144 witnesses
     // to a known txid, and that must neither conflict nor replace the stored body.
     if previous.transaction.txid() != incoming.transaction.txid() {
@@ -35,10 +45,11 @@ pub(super) fn preserve_known_details(
             txid: incoming.txid,
         });
     }
-    merged.transaction = previous.transaction;
+    merged.transaction = previous.transaction.clone();
     let mut inputs: BTreeMap<_, _> = previous
         .input_details
-        .into_iter()
+        .iter()
+        .cloned()
         .map(|d| (d.index, d))
         .collect();
     for detail in &incoming.input_details {
@@ -46,7 +57,8 @@ pub(super) fn preserve_known_details(
     }
     let mut outputs: BTreeMap<_, _> = previous
         .output_details
-        .into_iter()
+        .iter()
+        .cloned()
         .map(|d| (d.index, d))
         .collect();
     for detail in &incoming.output_details {
@@ -98,19 +110,61 @@ pub(crate) fn apply(
     wallet_id: &WalletId,
     cs: &CoreChangeSet,
 ) -> Result<(), WalletStorageError> {
+    apply_records(tx, wallet_id, cs, false)
+}
+
+/// Project live producer spends; V020 accounting backfill never calls this path.
+pub(super) fn apply_live(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    cs: &CoreChangeSet,
+) -> Result<(), WalletStorageError> {
+    apply_records(tx, wallet_id, cs, true)
+}
+
+fn apply_records(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    cs: &CoreChangeSet,
+    attribute_spends: bool,
+) -> Result<(), WalletStorageError> {
     let mut affected: HashSet<Txid> = cs.records.iter().map(|r| r.txid).collect();
     let mut consumers = tx.prepare_cached(
         "SELECT txid FROM core_transaction_inputs WHERE wallet_id = ?1 AND outpoint = ?2",
     )?;
-    for utxo in cs.new_utxos.iter().chain(&cs.spent_utxos) {
-        affected.insert(utxo.outpoint.txid);
-        let mut rows = consumers.query(params![
-            wallet_id.as_slice(),
-            blob::encode_outpoint(&utxo.outpoint)?
-        ])?;
-        while let Some(row) = rows.next()? {
-            let bytes: Vec<u8> = row.get(0)?;
-            affected.insert(Txid::from_slice(&bytes)?);
+    let mut funding: Vec<_> = cs
+        .new_utxos
+        .iter()
+        .chain(&cs.spent_utxos)
+        .map(|utxo| utxo.outpoint)
+        .collect();
+    // Adoption can connect already-stored coins to consumers without a new
+    // coin delivery. Ordinary records keep their existing scheduling policy.
+    for record in cs
+        .records
+        .iter()
+        .filter(|record| core_history_aliases::is_unlock(record))
+    {
+        funding.extend(
+            record
+                .transaction
+                .output
+                .iter()
+                .enumerate()
+                .map(|(index, _)| OutPoint::new(record.txid, index as u32)),
+        );
+    }
+    for changed in funding {
+        for outpoint in core_history_aliases::outpoints(tx, wallet_id, &changed)? {
+            affected.insert(outpoint.txid);
+            let mut rows = consumers.query(params![
+                wallet_id.as_slice(),
+                blob::encode_outpoint(&outpoint)?
+            ])?;
+            while let Some(row) = rows.next()? {
+                let bytes: Vec<u8> = row.get(0)?;
+                affected.insert(Txid::from_slice(&bytes)?);
+            }
         }
     }
     if affected.is_empty() {
@@ -118,7 +172,7 @@ pub(crate) fn apply(
     }
     let network = network(tx, wallet_id)?;
     for txid in affected {
-        repair_record(tx, wallet_id, &txid, network)?;
+        repair_record(tx, wallet_id, &txid, network, attribute_spends)?;
     }
     Ok(())
 }
@@ -139,6 +193,46 @@ fn network(
 }
 
 fn owned_output(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    outpoint: &OutPoint,
+    network: dashcore::Network,
+) -> Result<Option<(u64, Address)>, WalletStorageError> {
+    // Exact physical evidence keeps its existing semantics. Only a missing
+    // exact coin can use a validated active history family's equivalent key.
+    if let Some(output) = physical_owned_output(tx, wallet_id, outpoint, network)? {
+        return Ok(Some(output));
+    }
+    let equivalents = core_history_aliases::outpoints(tx, wallet_id, outpoint)?;
+    for alternative in equivalents.into_iter().filter(|other| other != outpoint) {
+        if let Some((value, address)) = physical_owned_output(tx, wallet_id, &alternative, network)?
+        {
+            let record = core_history_aliases::get_record(
+                tx,
+                wallet_id,
+                &outpoint.txid,
+                &LoadCtx::strict(),
+            )?
+            .ok_or_else(|| {
+                WalletStorageError::blob_decode(
+                    "active history alias disappeared during accounting",
+                )
+            })?;
+            let output = record.transaction.output.get(outpoint.vout as usize);
+            if !output.is_some_and(|output| {
+                output.value == value && output.script_pubkey == address.script_pubkey()
+            }) {
+                return Err(WalletStorageError::blob_decode(
+                    "alias accounting output disagrees with canonical transaction body",
+                ));
+            }
+            return Ok(Some((value, address)));
+        }
+    }
+    Ok(None)
+}
+
+fn physical_owned_output(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     outpoint: &OutPoint,
@@ -195,6 +289,7 @@ fn repair_record(
     wallet_id: &WalletId,
     txid: &Txid,
     network: dashcore::Network,
+    attribute_spends: bool,
 ) -> Result<(), WalletStorageError> {
     let Some(mut record) = prior_record(tx, wallet_id, txid)? else {
         return Ok(());
@@ -218,6 +313,21 @@ fn repair_record(
                     address,
                 },
             );
+            // Only the live projection attributes confirmed spends; accounting
+            // backfill stays read-only with respect to coins and reservations.
+            if attribute_spends && !matches!(record.context, TransactionContext::Mempool) {
+                tx.execute(
+                    "UPDATE core_utxos SET spent = 1, \
+                         spent_in_txid = CASE WHEN spent = 1 AND spent_in_txid IS NOT NULL \
+                             THEN spent_in_txid ELSE ?3 END \
+                     WHERE wallet_id = ?1 AND outpoint = ?2",
+                    params![
+                        wallet_id.as_slice(),
+                        blob::encode_outpoint(&input.previous_output)?,
+                        txid.as_byte_array().as_slice()
+                    ],
+                )?;
+            }
         }
     }
     let mut outputs = BTreeMap::new();
@@ -264,23 +374,9 @@ fn repair_record(
     }
     record.input_details = inputs.into_values().collect();
     record.output_details = outputs.into_values().collect();
-    // The live projection computes the same accounting, so repair never
-    // flips a row it just wrote; only the overflow policy differs.
-    let (net, direction) = wallet_accounting(&record);
-    record.net_amount = match i64::try_from(net) {
-        Ok(net) => net,
-        // Nothing authenticates a mempool transaction: this is peer-supplied data,
-        // not corruption. Keep its stored accounting until representable evidence arrives.
-        Err(_) if matches!(record.context, TransactionContext::Mempool) => return Ok(()),
-        Err(_) => {
-            return Err(WalletStorageError::NetAmountOverflow {
-                wallet_id: *wallet_id,
-                txid: *txid,
-                value: net,
-            })
-        }
-    };
-    record.direction = direction;
+    if !recompute_accounting(wallet_id, &mut record)? {
+        return Ok(());
+    }
     let repaired = blob::encode(&record)?;
     if repaired != original {
         // Append-only: the first pre-repair blob is kept verbatim and never
@@ -301,6 +397,35 @@ fn repair_record(
         )?;
     }
     Ok(())
+}
+
+/// Apply the existing history accounting policy to a merged snapshot. Returns
+/// false when absent or unrepresentable mempool evidence cannot replace it.
+pub(super) fn recompute_accounting(
+    wallet_id: &WalletId,
+    record: &mut TransactionRecord,
+) -> Result<bool, WalletStorageError> {
+    if record.input_details.is_empty() && record.output_details.is_empty() {
+        return Ok(false);
+    }
+    // The live projection computes the same accounting, so repair never
+    // flips a row it just wrote; only the overflow policy differs.
+    let (net, direction) = wallet_accounting(record);
+    record.net_amount = match i64::try_from(net) {
+        Ok(net) => net,
+        // Nothing authenticates a mempool transaction: this is peer-supplied data,
+        // not corruption. Keep its stored accounting until representable evidence arrives.
+        Err(_) if matches!(record.context, TransactionContext::Mempool) => return Ok(false),
+        Err(_) => {
+            return Err(WalletStorageError::NetAmountOverflow {
+                wallet_id: *wallet_id,
+                txid: record.txid,
+                value: net,
+            })
+        }
+    };
+    record.direction = direction;
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -487,8 +612,14 @@ mod tests {
             .unwrap();
         let tx = conn.transaction().unwrap();
 
-        let err =
-            repair_record(&tx, &WALLET_ID, &stored.txid, dashcore::Network::Testnet).unwrap_err();
+        let err = repair_record(
+            &tx,
+            &WALLET_ID,
+            &stored.txid,
+            dashcore::Network::Testnet,
+            false,
+        )
+        .unwrap_err();
 
         assert!(
             matches!(
@@ -502,10 +633,10 @@ mod tests {
         );
     }
 
-    /// Shared with the Swift SDK's `TransactionAccountingTests` direction
-    /// table; pins the rule repair takes from `platform_wallet`.
+    /// Direction case table; pins the rule repair takes from `platform_wallet`,
+    /// the same one the live projection and the host-history backfill use.
     #[test]
-    fn should_classify_repaired_direction_like_the_swift_sdk() {
+    fn should_classify_repaired_direction_like_the_live_projection() {
         use TransactionDirection::{CoinJoin, Incoming, Internal, Outgoing};
         use TransactionType::{AssetLock, Standard};
         // (type, spends ours, has owned output, has external output, expected)
@@ -701,7 +832,14 @@ mod tests {
             let mut conn = wallet_db("testnet");
             store(&conn, live);
             let tx = conn.transaction().unwrap();
-            repair_record(&tx, &WALLET_ID, &live.txid, dashcore::Network::Testnet).unwrap();
+            repair_record(
+                &tx,
+                &WALLET_ID,
+                &live.txid,
+                dashcore::Network::Testnet,
+                false,
+            )
+            .unwrap();
             let repaired = prior_record(&tx, &WALLET_ID, &live.txid).unwrap().unwrap();
 
             assert_eq!(

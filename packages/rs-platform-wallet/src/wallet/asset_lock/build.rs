@@ -1969,6 +1969,7 @@ mod tests {
                 state.wallets.insert(
                     wallet.compute_wallet_id(),
                     ClientWalletStartState {
+                        recorded_history: Default::default(),
                         dashpay_backfill: Default::default(),
                         wallet: wallet.clone(),
                         wallet_info: info.clone(),

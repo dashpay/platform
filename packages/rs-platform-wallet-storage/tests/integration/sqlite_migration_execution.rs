@@ -159,8 +159,8 @@ fn transaction_height_and_blob(conn: &Connection, wallet: &WalletId) -> (Option<
     .unwrap()
 }
 
-/// Assert the post-migration store carries the full fixture data intact.
-fn assert_full_data_preserved(conn: &Connection) {
+/// Assert V021 rewinds mined Core data while retaining wallet and identity state.
+fn assert_migrated_data(conn: &Connection) {
     let full = wid(FULL_WALLET);
     assert_eq!(
         schema_version(conn),
@@ -186,24 +186,22 @@ fn assert_full_data_preserved(conn: &Connection) {
         "SELECT COUNT(*) FROM core_utxos WHERE wallet_id = ?1",
         &full,
     );
-    assert_eq!(utxos, 1, "UTXO preserved");
+    assert_eq!(utxos, 0, "V021 rescans mined outputs from birth");
     assert_eq!(
         count(
             conn,
             "SELECT COUNT(*) FROM core_transactions WHERE wallet_id = ?1",
             &full
         ),
-        1
+        0,
+        "V021 rescans mined history with no retained unmined claims"
     );
-    let (height, record_blob) = transaction_height_and_blob(conn, &full);
-    assert_eq!(height, Some(200), "transaction height preserved by V010");
-    let record: key_wallet::managed_account::transaction_record::TransactionRecord =
-        platform_wallet_storage::sqlite::schema::blob::decode(&record_blob)
-            .expect("transaction record blob preserved by V010");
-    assert_eq!(
-        record.height(),
-        Some(200),
-        "transaction record blob retains its block context"
+    let (synced, birth): (i64, i64) = conn.query_row(
+        "SELECT s.synced_height, w.birth_height FROM core_sync_state s JOIN wallets w USING(wallet_id) WHERE wallet_id=?1",
+        rusqlite::params![full.as_slice()], |row| Ok((row.get(0)?, row.get(1)?))).unwrap();
+    assert!(
+        synced <= birth.saturating_sub(1).max(0),
+        "rescan must start at wallet birth"
     );
     assert_eq!(
         count(
@@ -257,17 +255,34 @@ fn v4_2_dev_database_opens_and_migrates_forward() {
         );
         transaction_height_and_blob(&pre, &wid(FULL_WALLET))
     };
-    let p = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    assert_eq!(original_transaction.0, Some(200));
+    let record: key_wallet::managed_account::transaction_record::TransactionRecord =
+        platform_wallet_storage::sqlite::schema::blob::decode(&original_transaction.1).unwrap();
+    assert_eq!(record.height(), Some(200));
+    // Pin preservation through V020 before the deliberate V021 rescan.
     {
-        let conn = p.lock_conn_for_test();
-        assert_full_data_preserved(&conn);
+        let mut conn = Connection::open(&path).unwrap();
+        mig::runner()
+            .set_target(refinery::Target::Version(20))
+            .run(&mut conn)
+            .unwrap();
         assert_eq!(
             transaction_height_and_blob(&conn, &wid(FULL_WALLET)),
             original_transaction,
-            "the rebuild must preserve the fixture transaction height and blob byte-for-byte"
+            "V010 rebuild and V020 accounting preserve this fixture byte-for-byte"
+        );
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM core_utxos WHERE wallet_id=?1",
+                &wid(FULL_WALLET)
+            ),
+            1
         );
     }
-    // The full wallet reconstructs; converted pool and UTXO usage agree.
+    let p = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    assert_migrated_data(&p.lock_conn_for_test());
+    // The full wallet reconstructs and retained pool usage still prevents address reuse.
     let state = p.load().unwrap();
     let full = wid(FULL_WALLET);
     assert!(
@@ -277,7 +292,7 @@ fn v4_2_dev_database_opens_and_migrates_forward() {
     assert_eq!(
         used_set(&p, &full).len(),
         1,
-        "migrated store falls back to the UTXO-derived used-set"
+        "persisted address usage survives the Core rescan"
     );
 }
 
@@ -329,8 +344,11 @@ fn v014_backfills_recordless_confirmed_utxo_height() {
         assert_eq!(schema_version(&conn), 13);
     }
 
-    let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
-    let conn = persister.lock_conn_for_test();
+    let mut conn = Connection::open(&path).unwrap();
+    mig::runner()
+        .set_target(refinery::Target::Version(20))
+        .run(&mut conn)
+        .unwrap();
     let (height, record_blob): (Option<i64>, Option<Vec<u8>>) = conn
         .query_row(
             "SELECT height, record_blob FROM core_transactions \
@@ -358,6 +376,24 @@ fn v014_backfills_recordless_confirmed_utxo_height() {
     assert_eq!(
         legacy_unconfirmed_rows, 0,
         "legacy height zero was the unconfirmed sentinel and must not be backfilled"
+    );
+    mig::run(&mut conn).unwrap();
+    assert_eq!(
+        count(
+            &conn,
+            "SELECT COUNT(*) FROM core_utxos WHERE wallet_id=?1",
+            &wallet_id
+        ),
+        0
+    );
+    assert_eq!(
+        count(
+            &conn,
+            "SELECT COUNT(*) FROM core_transactions WHERE wallet_id=?1",
+            &wallet_id
+        ),
+        0,
+        "V021 removes the height-only record when its funding is rescanned"
     );
 }
 
@@ -501,7 +537,7 @@ fn backup_restorable_and_remigration_deterministic() {
     }
     let p2 = SqlitePersister::open(SqlitePersisterConfig::new(&dest)).unwrap();
     let conn = p2.lock_conn_for_test();
-    assert_full_data_preserved(&conn);
+    assert_migrated_data(&conn);
 }
 
 /// The forward-version gate rejects at the newest embedded

@@ -51,7 +51,7 @@ class CheckTests(unittest.TestCase):
         shutil.copyfile(os.path.join(ROOT, gen.TEST_REGISTRY_FILE), target)
 
     def test_should_find_the_committed_files_are_the_generators_output(self):
-        self.assertEqual(len(gen.render_baseline(ROOT)), 71)
+        self.assertEqual(len(gen.render_baseline(ROOT)), 109)
         self.assertIn(gen.TEST_REGISTRY_FILE, self.files)
         self.assertEqual(gen.check_problems(ROOT, self.files), [])
 

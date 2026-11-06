@@ -3,6 +3,9 @@
 pub mod accessors;
 pub mod dashpay_sync;
 pub mod dpns_sync;
+mod history_authorization;
+mod history_claims;
+pub mod history_replay;
 pub mod identity_sync;
 mod load;
 #[cfg(test)]
@@ -600,7 +603,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         );
 
         // Build handler list: app handler + internal handlers.
-        // BalanceUpdateHandler holds a clone of the wallets map (a
+        // BalanceUpdateHandler weakly references the wallets map (a
         // wait-free `ArcSwap`, separate from the wallet_manager lock)
         // so it can look up PlatformWallets and write to their
         // lock-free balance atomics from broadcast-handler context

@@ -36,7 +36,7 @@ use key_wallet::{AddressInfo, Network, PlatformP2PKHAddress, Utxo};
 
 use crate::changeset::dashpay_backfill::DashPayBackfillRecord;
 use crate::changeset::identity_scan_state::IdentityScanStateEntry;
-use crate::changeset::wallet_accounting::apply_wallet_accounting;
+use crate::changeset::wallet_accounting::{apply_wallet_accounting, has_missing_accounting_inputs};
 use crate::wallet::platform_wallet::WalletId;
 
 use dpp::balances::credits::Credits;
@@ -460,7 +460,7 @@ impl HighestUsedIndexes {
 /// - identity fields (`transaction`, `txid`, `transaction_type`,
 ///   `label`, `account_type`) — from the FUNDING record (the one with
 ///   input details) so the row's account attribution names the spender,
-///   else the first record.
+///   else an incomplete restored funding record, else the first record.
 ///
 /// Then EVERY record — folded or single — gets its wallet-level
 /// `net_amount` and `direction` from its details via
@@ -510,11 +510,18 @@ fn fold_groups(records: &mut Vec<TransactionRecord>) {
     let mut drop_idx: BTreeSet<usize> = BTreeSet::new();
     let mut folded: BTreeMap<usize, TransactionRecord> = BTreeMap::new();
     for group in by_txid.values().filter(|g| g.len() >= 2) {
-        // Base: the funding record (has input details), else the first.
+        // Prefer complete funding evidence, then a restored funding record
+        // whose missing inputs must not be mistaken for a receipt.
         let base_pos = group
             .iter()
             .copied()
             .find(|&i| !records[i].input_details.is_empty())
+            .or_else(|| {
+                group
+                    .iter()
+                    .copied()
+                    .find(|&i| has_missing_accounting_inputs(&records[i]))
+            })
             .unwrap_or(group[0]);
         let mut merged = records[base_pos].clone();
         let mut net: i64 = 0;
@@ -571,9 +578,7 @@ fn fold_groups(records: &mut Vec<TransactionRecord>) {
             // The funding slice is not necessarily the newest one — a
             // group can pair a stale `Mempool` sighting with the
             // confirmed snapshot of the same transaction.
-            if context_rank(&r.context) > context_rank(&merged.context) {
-                merged.context = r.context.clone();
-            }
+            merged.context = most_advanced_transaction_context(&merged.context, &r.context).clone();
         }
         // The base record's own index was skipped by the `i != base_pos`
         // guard above; drop every group member except the fold's output
@@ -664,6 +669,21 @@ pub(crate) fn coalesce_account_records(records: &mut Vec<TransactionRecord>) {
             positions.insert(key, records.len());
             records.push(record);
         }
+    }
+}
+
+/// Select the more advanced observation of the same transaction, retaining
+/// `current` on a tie. This merges metadata only; it does not verify finality or
+/// resolve conflicting blocks. Callers must establish transaction identity and
+/// compatible block observations before using it.
+pub fn most_advanced_transaction_context<'a>(
+    current: &'a key_wallet::transaction_checking::TransactionContext,
+    incoming: &'a key_wallet::transaction_checking::TransactionContext,
+) -> &'a key_wallet::transaction_checking::TransactionContext {
+    if context_rank(incoming) > context_rank(current) {
+        incoming
+    } else {
+        current
     }
 }
 

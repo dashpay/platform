@@ -4,7 +4,14 @@
 
 #![allow(dead_code)]
 
+use dash_spv::test_utils::{InstantLockFixture, MockNetworkManager};
+use dash_spv::{ClientConfig, DashSpvClient};
+use dashcore::{InstantLock, Network, Transaction};
+use platform_wallet::changeset::recorded_history::ReplayEvidence;
+use platform_wallet::key_wallet_manager::test_utils::MockWallet;
 use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use platform_wallet::changeset::PlatformWalletPersistence;
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -256,4 +263,183 @@ pub fn store_and_flush(
 ) {
     persister.store(wallet_id, cs).expect("store");
     persister.flush(wallet_id).expect("flush");
+}
+
+/// Names a table case in the output of an assertion that fails under it.
+pub struct Case(pub String);
+
+impl Drop for Case {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            eprintln!("failed case: {}", self.0);
+        }
+    }
+}
+
+/// A wallet's first round: testnet metadata, its account manifest, and `core`.
+pub fn registration(
+    wallet: &key_wallet::Wallet,
+    core: Option<platform_wallet::changeset::CoreChangeSet>,
+) -> platform_wallet::changeset::PlatformWalletChangeSet {
+    use platform_wallet::changeset::{AccountRegistrationEntry, WalletMetadataEntry};
+    let accounts = wallet.accounts.all_accounts().into_iter();
+    platform_wallet::changeset::PlatformWalletChangeSet {
+        wallet_metadata: Some(WalletMetadataEntry {
+            network: dashcore::Network::Testnet,
+            wallet_group_id: [0; 32],
+            birth_height: 0,
+        }),
+        account_registrations: accounts
+            .map(|account| AccountRegistrationEntry {
+                account_type: account.account_type,
+                account_xpub: account.account_xpub,
+            })
+            .collect(),
+        core,
+        ..Default::default()
+    }
+}
+
+/// A ChainLock for `height` over a block hash of `[hash; 32]`, unsigned.
+pub fn chain_lock(height: u32, hash: u8) -> dashcore::ephemerealdata::chain_lock::ChainLock {
+    dashcore::ephemerealdata::chain_lock::ChainLock {
+        block_height: height,
+        block_hash: dashcore::BlockHash::from_byte_array([hash; 32]),
+        signature: dashcore::bls_sig_utils::BLSSignature::from([0; 96]),
+    }
+}
+
+/// A shared wallet manager, as the live event adapter holds it.
+pub type Manager = std::sync::Arc<
+    tokio::sync::RwLock<
+        platform_wallet::key_wallet_manager::WalletManager<
+            platform_wallet::wallet::platform_wallet::PlatformWalletInfo,
+        >,
+    >,
+>;
+
+/// Process `tx` alone in a block at `height` for `wallet_id`, as SPV would.
+pub async fn mine(manager: &Manager, wallet_id: [u8; 32], tx: dashcore::Transaction, height: u32) {
+    use dashcore::block::{Header, Version};
+    use dashcore::{Block, BlockHash, CompactTarget, TxMerkleNode};
+    use platform_wallet::key_wallet_manager::WalletInterface;
+    let block = Block {
+        header: Header {
+            version: Version::default(),
+            prev_blockhash: BlockHash::from_byte_array([height as u8; 32]),
+            merkle_root: TxMerkleNode::all_zeros(),
+            time: height,
+            bits: CompactTarget::from_consensus(0x1d00ffff),
+            nonce: 0,
+        },
+        txdata: vec![tx],
+    };
+    manager
+        .write()
+        .await
+        .process_block_for_wallets(
+            &block,
+            block.block_hash(),
+            height,
+            &std::collections::BTreeSet::from([wallet_id]),
+        )
+        .await;
+}
+
+/// Store every event `events` holds through the real wallet event adapter.
+pub async fn persist_events(
+    manager: &Manager,
+    persister: &std::sync::Arc<SqlitePersister>,
+    events: &mut tokio::sync::mpsc::UnboundedReceiver<
+        platform_wallet::key_wallet_manager::WalletEvent,
+    >,
+) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    // Close one finite batch so completion proves every real manager event was stored.
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+    while let Ok(event) = events.try_recv() {
+        sender.send(event).unwrap();
+    }
+    drop(sender);
+    let fault = Arc::new(AtomicBool::new(false));
+    platform_wallet::changeset::spawn_wallet_event_adapter(
+        Arc::clone(manager),
+        Arc::downgrade(persister),
+        receiver,
+        Arc::clone(&fault),
+        tokio_util::sync::CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert!(!fault.load(Ordering::Relaxed));
+}
+
+/// Sign the owned inputs in a fixture; peer-forgery regressions deliberately omit this.
+pub fn authorize(
+    wallet: &key_wallet::Wallet,
+    info: &key_wallet::wallet::ManagedWalletInfo,
+    address: &dashcore::Address,
+    tx: dashcore::Transaction,
+) -> dashcore::Transaction {
+    authorize_with_mode(wallet, info, address, tx, 1)
+}
+
+pub fn authorize_with_mode(
+    wallet: &key_wallet::Wallet,
+    info: &key_wallet::wallet::ManagedWalletInfo,
+    address: &dashcore::Address,
+    mut tx: dashcore::Transaction,
+    mode: u8,
+) -> dashcore::Transaction {
+    use dashcore::script::{Builder, PushBytesBuf};
+    use dashcore::sighash::SighashCache;
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    let path = info
+        .accounts
+        .all_funding_accounts()
+        .into_iter()
+        .find_map(|account| account.address_derivation_path(address))
+        .unwrap();
+    let key = wallet.derive_private_key(&path).unwrap();
+    for index in 0..tx.input.len() {
+        let hash = SighashCache::new(&tx)
+            .legacy_signature_hash(index, &address.script_pubkey(), u32::from(mode))
+            .unwrap();
+        let mut sig = key.sign(&hash.to_byte_array()).with_der(|der| der.to_vec());
+        sig.push(mode);
+        tx.input[index].script_sig = Builder::new()
+            .push_slice(PushBytesBuf::try_from(sig).unwrap())
+            .push_slice(PushBytesBuf::try_from(key.public_key().to_compressed().to_vec()).unwrap())
+            .into_script();
+    }
+    tx
+}
+
+/// Produce evidence through the public verifier; no synthetic token constructor.
+pub async fn checked_instant_lock(transaction: &Transaction) -> (InstantLock, ReplayEvidence) {
+    let fixture = InstantLockFixture::new(Network::Testnet, transaction).unwrap();
+    let directory = secure_tempdir().unwrap();
+    let client = DashSpvClient::new(
+        ClientConfig::new(Network::Testnet)
+            .without_filters()
+            .with_storage_path(directory.path()),
+        MockNetworkManager::new(),
+        Arc::new(RwLock::new(MockWallet::new())),
+        Vec::new(),
+    )
+    .await
+    .unwrap();
+    fixture.install(&client).await.unwrap();
+    let proof = client
+        .verify_instant_lock(fixture.instant_lock())
+        .await
+        .unwrap()
+        .unwrap();
+    (
+        fixture.instant_lock().clone(),
+        ReplayEvidence {
+            instant_locks: [(proof.txid(), proof)].into(),
+        },
+    )
 }

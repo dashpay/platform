@@ -12,6 +12,7 @@ use refinery_core::error::WrapMigrationError;
 
 mod legacy_v008;
 mod v020;
+mod v021;
 
 // Generates a `migrations` module with `runner()`; path is relative to
 // the crate root.
@@ -53,6 +54,7 @@ fn run_with_runner(
         registration_sql: hook_sql(8),
         pool_sql: hook_sql(11),
         accounting_sql: hook_sql(20),
+        rescan_sql: hook_sql(21),
         policy,
     };
     // Grouped reports never claim that rolled-back migrations were applied.
@@ -69,6 +71,7 @@ struct MigrationTransaction<'conn> {
     registration_sql: String,
     pool_sql: String,
     accounting_sql: String,
+    rescan_sql: String,
     policy: LoadPolicy,
 }
 
@@ -88,6 +91,8 @@ impl refinery_core::traits::sync::Transaction for MigrationTransaction<'_> {
                 legacy_v008::convert_pools(&self.tx)?;
             } else if query == self.accounting_sql {
                 v020::backfill_accounting(&self.tx, self.policy)?;
+            } else if query == self.rescan_sql {
+                v021::rescan(&self.tx, self.policy)?;
             }
             count += 1;
         }
@@ -439,6 +444,7 @@ pub fn embedded_migrations_sql() -> Vec<String> {
 pub(crate) fn rewind_v020(conn: &rusqlite::Connection) {
     conn.execute_batch(
         "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
+         DROP INDEX IF EXISTS idx_core_utxos_funding; DROP INDEX IF EXISTS idx_core_utxos_claimant; \
          DELETE FROM refinery_schema_history WHERE version >= 20;",
     )
     .unwrap();

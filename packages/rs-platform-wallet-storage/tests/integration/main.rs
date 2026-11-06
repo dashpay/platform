@@ -44,6 +44,7 @@ mod sqlite_error_classification;
 mod sqlite_fk_changeset_ordering;
 mod sqlite_foreign_db_rejection;
 mod sqlite_foreign_keys;
+mod sqlite_history_aliases;
 mod sqlite_identity_hard_delete;
 mod sqlite_identity_index_concurrency;
 mod sqlite_identity_index_uniqueness;
@@ -85,3 +86,14 @@ mod sqlite_v008_migration;
 mod sqlite_version_bump;
 mod sqlite_wallet_db_identity;
 mod tracked_masternodes_roundtrip;
+
+mod sqlite_spent_rehydration;
+
+mod sqlite_clean_restart;
+
+mod sqlite_core_rescan;
+
+mod sqlite_replay_migration;
+mod sqlite_shared_history_replay;
+
+mod sqlite_unverified_lock_producer;
