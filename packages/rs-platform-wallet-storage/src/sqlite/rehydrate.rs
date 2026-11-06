@@ -446,7 +446,14 @@ pub fn apply_persisted_core_state(
         )?;
         // Addresses still outside every funds pool, a coin's or a used one's,
         // are looked for past each pool as a rescan would reach them, and
-        // whatever that derives is marked, refilled and matched again. Up to
+        // whatever that derives is marked and refilled. Every coin is then
+        // offered to `restore_utxos` again, not only the unmatched ones: a
+        // coin the first restore placed in a DashPay contact account, outside
+        // the balance, moves to the funds account that now derives its
+        // script, which comes first in `restore_utxos` order, and the contact
+        // copy is removed. A coin already in its account is taken in again in
+        // its own place, keeping its flags (`take_in_output` carries them
+        // from the copy it replaces), so it is held and credited once. Up to
         // `MAX_REHYDRATION_DERIVATION_INDEX` one pass reaches as far as
         // repeating it would: past each find it probes one index beyond the
         // window the refill after it opens, which is where a next pass would
@@ -457,18 +464,16 @@ pub fn apply_persisted_core_state(
         if restorable {
             let mut outside = outside_funds_pools(
                 wallet_info,
-                (unmatched.iter().map(|u| &u.address)).chain(&used),
+                (unspent.iter().map(|u| &u.address)).chain(&used),
             );
             if !outside.is_empty()
                 && discover_in_funds_accounts(wallet_info, manifest, &mut outside, wallet_id, ctx)?
                     > 0
             {
-                let pending = std::mem::take(&mut unmatched);
-                let pending: Vec<&key_wallet::Utxo> = pending.iter().collect();
                 (unmatched, _) = restore_owned_utxos(
                     wallet_info,
                     &wallet,
-                    &pending,
+                    &unspent,
                     &used,
                     wallet_id,
                     ctx,
@@ -501,10 +506,12 @@ pub fn apply_persisted_core_state(
         // Degraded in BOTH policies, never fatal: a foreign address and a
         // legitimately-owned deep-and-sparse one look the same in the stored
         // rows, and no fix short of an unbounded scan tells them apart. The
-        // wallet total is exact either way, except after a refused or failed
-        // refill (Recovery only): a coin a contact pool already holds before
-        // its funds pool reaches it is placed there, outside the total
-        // (`place_held_coins`).
+        // wallet total is exact either way, except for a coin only a DashPay
+        // contact account holds: `restore_utxos` places it there, outside the
+        // total. Discovery moves one a funds account derives within its
+        // reach; one past that reach stays, as does one placed after a
+        // refused or failed refill (Recovery only), where discovery is
+        // skipped (`place_held_coins`).
         if unresolved > 0 {
             ctx.note_degraded(
                 LoadSite::UnresolvedUtxoAddress,
@@ -4489,6 +4496,147 @@ mod tests {
                 assert!(left.is_empty());
                 assert_held_by_coinjoin(&info, &coin);
                 assert_eq!(pool_heights(&info), heights, "refused: {refused}");
+            }
+        }
+
+        /// The address at `index` of `account`'s first pool, the DashPay
+        /// contact accounts included, derived on a copy of the pool.
+        fn first_pool_address(wallet: &Wallet, account: &AccountType, index: u32) -> Address {
+            let info = ManagedWalletInfo::from_wallet(wallet, 1);
+            let holder = (info.accounts.all_funding_accounts().into_iter())
+                .chain(info.accounts.dashpay_external_accounts.values())
+                .find(|a| a.managed_account_type().to_account_type() == *account)
+                .unwrap();
+            let mut probe = holder.managed_account_type().address_pools()[0].clone();
+            ensure_derived(&mut probe, &wallet.key_source_for_account(*account), index).unwrap()
+        }
+
+        /// A wallet with the DashPay receiving account of a friendship between
+        /// two of its identities and the reverse contact account it also
+        /// holds, added as key-wallet's `befriend_both_ways` adds them: both
+        /// derive the same addresses. Returns the wallet, its manifest, both
+        /// account types and their shared address one past the receiving
+        /// pool's window.
+        fn befriended_both_ways(
+            seed: u8,
+        ) -> (
+            Wallet,
+            Vec<AccountRegistrationEntry>,
+            AccountType,
+            AccountType,
+            Address,
+        ) {
+            let (mut wallet, _) = fixture(seed);
+            let (us, them) = ([0xaa; 32], [0xbb; 32]);
+            let receiving = AccountType::DashpayReceivingFunds {
+                index: 0,
+                user_identity_id: us,
+                friend_identity_id: them,
+            };
+            let reverse = AccountType::DashpayExternalAccount {
+                index: 0,
+                user_identity_id: them,
+                friend_identity_id: us,
+            };
+            for account in [receiving, reverse] {
+                wallet.add_account(account, None).unwrap();
+            }
+            let manifest = manifest_for(&wallet);
+            let past = key_wallet::gap_limit::DEFAULT_DASHPAY_GAP_LIMIT;
+            let shared = first_pool_address(&wallet, &receiving, past);
+            assert_eq!(first_pool_address(&wallet, &reverse, past), shared);
+            (wallet, manifest, receiving, reverse, shared)
+        }
+
+        /// `wallet`'s managed state with the reverse contact pool derived one
+        /// past the receiving pool's window, through their shared address.
+        fn with_deeper_contact_pool(
+            wallet: &Wallet,
+            receiving: &AccountType,
+            reverse: &AccountType,
+        ) -> ManagedWalletInfo {
+            let mut info = ManagedWalletInfo::from_wallet(wallet, 1);
+            let past = key_wallet::gap_limit::DEFAULT_DASHPAY_GAP_LIMIT;
+            let funds = info.accounts.funds_account(receiving).unwrap();
+            let window = funds.managed_account_type().address_pools()[0].highest_generated;
+            assert_eq!(window, Some(past - 1));
+            let contact = info.accounts.dashpay_external_accounts.values_mut().next();
+            let mut pools = contact
+                .unwrap()
+                .managed_account_type_mut()
+                .address_pools_mut();
+            let key_source = wallet.key_source_for_account(*reverse);
+            ensure_derived(&mut *pools[0], &key_source, past).unwrap();
+            info
+        }
+
+        /// A coin on the address the receiving and the reverse contact
+        /// accounts share, past the receiving pool's window but inside the
+        /// contact pool, ends in the receiving account, which discovery
+        /// derives it in: signable, in the balance, and gone from the contact
+        /// account. Strict and Recovery, with and without its address in the
+        /// used set.
+        #[test]
+        fn a_coin_a_deeper_contact_pool_holds_ends_in_the_receiving_account() {
+            let (wallet, manifest, receiving, reverse, shared) = befriended_both_ways(42);
+            let coin = utxo(1, &shared);
+            for ctx in [LoadCtx::strict(), LoadCtx::recovery()] {
+                for used in [HashMap::new(), ownerless(&[&coin.address])] {
+                    let mut info = with_deeper_contact_pool(&wallet, &receiving, &reverse);
+                    load_into(
+                        &mut info,
+                        &manifest,
+                        vec![coin.clone()],
+                        &HashMap::new(),
+                        &used,
+                        &ctx,
+                    )
+                    .unwrap();
+                    assert_eq!(every_holder(&info, &coin.outpoint), vec![receiving]);
+                    assert!(
+                        derives(&info, &receiving, &coin.address),
+                        "the coin is signable"
+                    );
+                    assert_eq!(info.balance.total(), VALUE);
+                }
+                assert_eq!(
+                    ctx.degradation()
+                        .by_site
+                        .get(&LoadSite::UnresolvedUtxoAddress),
+                    None
+                );
+            }
+        }
+
+        /// After discovery derives something every coin is offered to
+        /// key-wallet again, and a coin already in its account comes back
+        /// once, unchanged: a BIP44 coin, instant-locked, trusted and locked,
+        /// beside a CoinJoin coin one past its pool that only discovery
+        /// reaches.
+        #[test]
+        fn a_placed_coin_offered_again_after_discovery_is_held_once_unchanged() {
+            let (wallet, manifest) = fixture(43);
+            let mut placed = utxo(1, &external_address(&wallet, &bip44(), 3));
+            placed.is_instantlocked = true;
+            placed.is_trusted = true;
+            placed.is_locked = true;
+            let deep = utxo(2, &coinjoin_address(&wallet, 100));
+            for used in [HashMap::new(), ownerless(&[&placed.address, &deep.address])] {
+                let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+                load_into(
+                    &mut info,
+                    &manifest,
+                    vec![placed.clone(), deep.clone()],
+                    &HashMap::new(),
+                    &used,
+                    &LoadCtx::strict(),
+                )
+                .unwrap();
+                assert_eq!(every_holder(&info, &placed.outpoint), vec![bip44()]);
+                let funds = info.accounts.funds_account(&bip44()).unwrap();
+                assert_eq!(funds.utxos.get(&placed.outpoint), Some(&placed));
+                assert_eq!(every_holder(&info, &deep.outpoint), vec![cj()]);
+                assert_eq!(info.balance.total(), 2 * VALUE);
             }
         }
 
