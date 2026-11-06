@@ -633,7 +633,9 @@ pub enum PlatformWalletError {
     /// reservation, and a resume of a tracked `Built` / `Broadcast` row over
     /// the cap is refused instead of re-sent, leaving the row tracked and
     /// releasing nothing (an earlier attempt may still have reached peers).
-    /// Consolidating the coins lets a new lock fit.
+    /// Reservations do not survive a restart, so after one the row's inputs
+    /// are not held and may be spent elsewhere. Consolidating the coins
+    /// lets a new lock fit.
     #[error("Asset lock requires {count} inputs, exceeding the limit of {max}")]
     AssetLockTooManyInputs { count: usize, max: usize },
 

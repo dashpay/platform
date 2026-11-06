@@ -66,9 +66,9 @@ pub(crate) fn max_asset_lock_inputs(version: &dpp::version::PlatformVersion) -> 
 /// settles. `credit_output_index` is the lock's credit output.
 ///
 /// Any other verdict of that validator is not this question and is left to
-/// the submission layer; a validator the platform version does not know is
-/// reported and read as no verdict, which sends nothing new and abandons
-/// nothing.
+/// the submission layer. A validator the platform version does not know is
+/// logged and read as no verdict, so the caller proceeds as if the lock
+/// fits; every released version table selects a known validator.
 pub(crate) fn input_cap_violation(
     transaction: &Transaction,
     credit_output_index: u32,
