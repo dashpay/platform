@@ -4,7 +4,6 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use dpp::block::block_info::BlockInfo;
-use dpp::dashcore::hashes::Hash;
 use dpp::data_contracts::SystemDataContract;
 use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
