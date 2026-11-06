@@ -1935,7 +1935,7 @@ class PlatformWalletPersistenceHandler(
         // sibling wallet's concurrent store of the same alias to land
         // between a check and this store and be mis-classified. add-key
         // flows store the scalar before Rust persistence begins, and
-        // existing-key operations (disable_keys) re-emit breadcrumbs — an
+        // existing-key operations (a load or discovery) re-emit breadcrumbs — an
         // overwrite of an already-valid scalar must never become a
         // rollback-deletion candidate; a failed derive/store is treated as
         // "not newly created" (never wrongly delete; at worst the

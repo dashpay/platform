@@ -311,9 +311,12 @@ struct ShareLoginKeyView: View {
             )
 
             let signer = KeychainSigner(modelContainer: modelContext.container)
+            // The browser's key: the phone never holds its private key,
+            // so it is stored without a derivation path.
             try await wallet.updateIdentity(
                 identityId: identity.identityId,
                 addPublicKeys: [newKey],
+                externalKeyIds: [keyId],
                 signer: signer
             )
             _ = signer  // keepalive: see KeychainSigner lifetime contract.
