@@ -508,7 +508,6 @@ mod asset_lock_already_consumed_tests {
     use crate::error::StateTransitionBroadcastError;
     use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
     use dpp::consensus::basic::UnsupportedProtocolVersionError;
-    use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::Txid;
     use dpp::ProtocolError;
 

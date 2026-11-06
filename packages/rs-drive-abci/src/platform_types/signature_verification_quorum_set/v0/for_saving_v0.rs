@@ -5,7 +5,6 @@ use crate::platform_types::signature_verification_quorum_set::{
     VerificationQuorum,
 };
 use bincode::{Decode, Encode};
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::QuorumHash;
 use dpp::platform_value::Bytes32;
 

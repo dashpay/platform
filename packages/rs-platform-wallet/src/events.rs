@@ -13,6 +13,8 @@ use std::sync::Arc;
 
 use arc_swap::ArcSwap;
 
+use dash_spv::{SyncEvent, SyncProgress};
+
 pub use dash_spv::EventHandler;
 pub use key_wallet_manager::WalletEvent;
 
@@ -196,7 +198,7 @@ impl PlatformEventManager {
 }
 
 impl EventHandler for PlatformEventManager {
-    fn on_sync_event(&self, event: &dash_spv::sync::SyncEvent) {
+    fn on_sync_event(&self, event: &SyncEvent) {
         let handlers = self.handlers.load();
         for h in handlers.iter() {
             h.on_sync_event(event);
@@ -210,7 +212,7 @@ impl EventHandler for PlatformEventManager {
         }
     }
 
-    fn on_progress(&self, progress: &dash_spv::sync::SyncProgress) {
+    fn on_progress(&self, progress: &SyncProgress) {
         let handlers = self.handlers.load();
         for h in handlers.iter() {
             h.on_progress(progress);

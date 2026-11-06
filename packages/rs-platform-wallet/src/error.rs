@@ -626,6 +626,13 @@ pub enum PlatformWalletError {
     )]
     AssetLockInsufficientFunds { available: u64, required: u64 },
 
+    /// Only coins that are not final yet would fund the asset lock: `waiting`
+    /// duffs of them are neither confirmed nor InstantSend-locked. Unlike
+    /// [`Self::AssetLockInsufficientFunds`], the build can succeed once they
+    /// become final. Nothing was built for the wire.
+    #[error("asset lock funds awaiting finality: {waiting} duffs of coins not final yet")]
+    AssetLockFundsAwaitingFinality { waiting: u64 },
+
     /// An asset lock, whole-balance or of a fixed amount, needs more inputs
     /// than an asset lock may carry (`max_asset_lock_transaction_inputs`, 100:
     /// Dash Core relay policy and Platform consensus alike). Nothing was built
