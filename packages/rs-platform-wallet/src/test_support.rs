@@ -205,7 +205,6 @@ pub fn fold_wallet_records(records: &mut Vec<TransactionRecord>) {
 /// crate and of `platform-wallet-storage`.
 pub mod core_fixtures {
     use dashcore::address::Payload;
-    use dashcore::hashes::Hash;
     use dashcore::{
         Address, BlockHash, Network, OutPoint, PubkeyHash, Transaction, TxIn, TxOut, Txid,
     };

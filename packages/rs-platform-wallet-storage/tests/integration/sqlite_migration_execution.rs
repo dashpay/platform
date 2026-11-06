@@ -72,7 +72,6 @@ fn copy_fixture_as(dir: &Path, file_name: &str) -> PathBuf {
 /// The historical generator assigned a synthetic txid to an empty transaction.
 /// Preserve the committed schema fixture; make only this test copy self-consistent.
 fn correct_fixture_transaction_id(path: &Path) {
-    use dashcore::hashes::Hash;
     use key_wallet::managed_account::transaction_record::TransactionRecord;
     use platform_wallet_storage::sqlite::schema::blob;
 

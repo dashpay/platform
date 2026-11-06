@@ -3984,7 +3984,6 @@ mod utxo_credit_verdict_merge_tests {
 #[cfg(test)]
 mod coalesce_account_records_tests {
     use super::*;
-    use dashcore::hashes::Hash;
     use dashcore::{Address, BlockHash, Network, PubkeyHash, TxOut};
     use key_wallet::managed_account::transaction_record::{
         InputDetail, OutputDetail, OutputRole, TransactionDirection,

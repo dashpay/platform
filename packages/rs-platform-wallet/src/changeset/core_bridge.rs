@@ -9794,7 +9794,6 @@ mod no_change_asset_lock_block_projection_tests {
     use crate::wallet::identity::IdentityManager;
     use dashcore::blockdata::transaction::special_transaction::asset_lock::AssetLockPayload;
     use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
-    use dashcore::hashes::Hash;
     use dashcore::{BlockHash, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness};
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     use key_wallet::managed_account::transaction_record::{InputDetail, TransactionDirection};
