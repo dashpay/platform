@@ -1,7 +1,7 @@
 use dpp::bls::Signature;
 use std::fmt::{Debug, Formatter};
 
-use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
+use dpp::dashcore::hashes::{sha256d, HashEngine};
 use dpp::dashcore::InstantLock;
 
 use crate::error::execution::ExecutionError;

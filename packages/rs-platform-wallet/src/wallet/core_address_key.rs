@@ -355,7 +355,7 @@ mod tests {
         let seed = Mnemonic::from_phrase(TEST_PLATFORM_WALLET_MNEMONIC)
             .unwrap()
             .to_seed("");
-        let master = ExtendedPrivKey::new_master(Network::Testnet, &seed).unwrap();
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &*seed).unwrap();
         let account_path =
             |account_type: AccountType| account_type.derivation_path(Network::Testnet).unwrap();
         let bip44 = account_path(AccountType::Standard {
@@ -422,7 +422,7 @@ mod tests {
         // control the address, and both routes refuse it. A failing key
         // source reaches the caller unchanged.
         let foreign_seed = Mnemonic::from_phrase(FRENCH).unwrap().to_seed("");
-        let foreign_master = ExtendedPrivKey::new_master(Network::Testnet, &foreign_seed).unwrap();
+        let foreign_master = ExtendedPrivKey::new_master(Network::Testnet, &*foreign_seed).unwrap();
         let tracked_address = address_at(&tracked);
         for result in [
             wallet

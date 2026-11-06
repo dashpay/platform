@@ -139,7 +139,6 @@ fn forwarded(timeout: Option<Duration>) -> Option<Duration> {
 /// with a fallible return. Don't relax the signature without
 /// hardening the body.
 fn parse_outpoint(txid: *const [u8; 32], vout: u32) -> dashcore::OutPoint {
-    use dashcore::hashes::Hash;
     let txid_bytes = unsafe { *txid };
     dashcore::OutPoint {
         txid: dashcore::Txid::from_slice(&txid_bytes).expect("txid is 32 bytes"),

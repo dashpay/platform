@@ -473,7 +473,18 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     re-enables the key of the returning identity. Protocol v14 and earlier keep
 ///     `update_voter_identity` 0.
 ///
-/// 23. **Token listings**: three token transitions of a batch, `TokenPlaceAsk` (lists an amount
+/// 23. **An identity create's identity id is checked in basic structure**: the identity create
+///     `basic_structure` 1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuses, without a fee, an
+///     identity id other than the one the asset lock's outpoint derives, before the asset lock
+///     proof is verified; `advanced_structure` 2 drops that check, which advanced structure 1
+///     made after the asset lock proof, and still charges its double SHA-256, so fees do not
+///     change. Only the error a block reports for a transition with a wrong identity id and an
+///     asset lock that is spent or whose proof does not verify changes; an asset lock proof
+///     whose structure is invalid is still refused first, for its structure. Such a transition
+///     is refused unpaid either way. Protocol v14 and earlier keep `basic_structure` 0 and
+///     `advanced_structure` 0 or 1.
+///
+/// 24. **Token listings**: three token transitions of a batch, `TokenPlaceAsk` (lists an amount
 ///     of a tradeable token at a price in credits per whole token and moves it into escrow),
 ///     `TokenFillAsk` (buys part or all of a listing, paying the seller the change in the
 ///     listing's rounded-up running total) and `TokenCancelOrder` (returns what an order holds
@@ -502,7 +513,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; consensus_params_update 2 installs the full evidence policy (note 16); update_core_info 1 records the chain locked height at which Core's V24 is first seen active (note 18); build_untied_withdrawal_transactions_from_documents 1 emits asset unlock payload version 2 once V24 is recorded as active (note 20); update_voter_identity 1 re-enables the voter key of the address a masternode returns to (note 22)
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); data trigger bindings 3 refuse a replace or a delete of a token market order (note 17); document create state_validation 3 keeps a create outside a contest off the values of a live one its index values do not decide (note 19)
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); data trigger bindings 3 refuse a replace or a delete of a token market order (note 17); document create state_validation 3 keeps a create outside a contest off the values of a live one its index values do not decide (note 19); identity create basic_structure 1 checks the identity id before the asset lock proof and advanced_structure 2 no longer does (note 23)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,

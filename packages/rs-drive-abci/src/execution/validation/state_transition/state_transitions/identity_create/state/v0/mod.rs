@@ -7,7 +7,6 @@ use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointNotEnou
 use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::signer;
 use dpp::dashcore::{ScriptBuf, Txid};
 use dpp::identity::KeyType;

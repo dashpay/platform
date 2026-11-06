@@ -218,6 +218,10 @@ pub(crate) trait StateTransitionBasicStructureValidationV0 {
 `MasternodeVote` skips basic structure validation entirely. `DataContractCreate` and
 `DataContractUpdate` conditionally enable it based on the platform version.
 
+From protocol version 15, `IdentityCreate` basic structure also checks that the identity id is
+the one the asset lock's outpoint derives. The check reads only the transition, so a wrong
+identity id is refused, without a fee, before the asset lock proof is verified in Stage 9.
+
 ## Stage 7: Balance Pre-Check
 
 Before doing expensive state validation, the platform checks that the identity has
@@ -323,15 +327,15 @@ version 14 a failure is therefore refused without a fee, like a failed witness, 
 charging the inputs a penalty; check_tx runs this stage for the transition too, so such a
 transition does not reach a block.
 
-For `IdentityCreate` this stage checks that the identity id is the one the asset lock's outpoint
-derives, the structure of the keys, and the proof of possession of each key. The asset lock
-signature covers the keys but neither the identity id nor the key signatures, which are left
-out of the signable bytes. From protocol version 14 an identity id or proof of possession
+For `IdentityCreate` this stage checks the structure of the keys and the proof of possession
+of each key, and, up to protocol version 14, that the identity id is the one the asset lock's
+outpoint derives (from protocol version 15 basic structure checks it, see Stage 6). The asset
+lock signature covers the keys but neither the identity id nor the key signatures, which are
+left out of the signable bytes. From protocol version 14 an identity id or proof of possession
 failure is therefore refused without a fee instead of charging the asset lock a penalty, and
 the asset lock is left as it was; a key structure failure is still charged. A block holding
 such a transition is refused, as for any unpaid result. `check_tx` runs this stage for
-`IdentityCreate` too, at every protocol version, so such a transition does not reach a block; it
-checks the identity id first, before verifying the asset lock proof.
+`IdentityCreate` too, at every protocol version, so such a transition does not reach a block.
 
 ## Stage 10: State Validation
 

@@ -4,7 +4,7 @@
 //! instead of the standard 31-bit limitation.
 
 use dash_sdk::dpp::dashcore::ecdsa::{EcdsaPublicKey, EcdsaSecretKey};
-use dash_sdk::dpp::dashcore::hashes::{sha256, Hash};
+use dash_sdk::dpp::dashcore::hashes::sha256;
 use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::key_wallet;
 use dash_sdk::dpp::key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
@@ -152,9 +152,9 @@ impl Dip14ExtendedPrivKey {
         // Use sha256 then ripemd160 to create hash160
         let sha256_hash = sha256::Hash::hash(&parent_pubkey.to_compressed());
         let parent_pubkey_hash =
-            dash_sdk::dpp::dashcore::hashes::ripemd160::Hash::hash(&sha256_hash[..]);
+            dash_sdk::dpp::dashcore::hashes::ripemd160::Hash::hash(sha256_hash.as_byte_array());
         let mut parent_fingerprint = [0u8; 4];
-        parent_fingerprint.copy_from_slice(&parent_pubkey_hash[0..4]);
+        parent_fingerprint.copy_from_slice(&parent_pubkey_hash.as_byte_array()[0..4]);
 
         Ok(Self {
             network: self.network,

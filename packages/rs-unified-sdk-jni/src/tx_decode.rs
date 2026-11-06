@@ -202,7 +202,6 @@ mod tests {
     use super::*;
     use dashcore::consensus::serialize;
     use dashcore::ecdsa::EcdsaSecretKey;
-    use dashcore::hashes::Hash;
     use dashcore::{
         Address, Network, OutPoint, PublicKey, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness,
     };
