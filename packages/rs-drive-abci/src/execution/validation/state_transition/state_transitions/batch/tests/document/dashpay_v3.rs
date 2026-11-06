@@ -10,6 +10,8 @@
 //!   (10420), accepted up to protocol version 14.
 //! - A profile payment address whose type byte is not 0x00 or 0x01, on create and
 //!   on replace: the `byteAt` rules (10422), where the trigger refused it (40500).
+//! - A profile without either payment address or both, on create and on replace:
+//!   accepted by the trigger and by the rules alike.
 
 use super::*;
 
@@ -359,6 +361,68 @@ mod dashpay_v3_tests {
                 document.increment_revision().expect("expected a revision");
                 document.set(field, payment_address(0xff));
                 expect_refusal(paid_error(fixture.replace("profile", document, 4).await));
+            }
+        }
+    }
+
+    /// Both payment addresses are optional. The trigger checked only an address that
+    /// is present; from protocol version 15 a missing one reads as 0 in its rule's
+    /// `byteAt`, which the rule allows. So a profile without either address or both
+    /// is created, and a replace can add them and remove them again.
+    #[tokio::test]
+    async fn should_accept_a_profile_without_payment_addresses_on_create_and_replace() {
+        let omissions: [&[&str]; 3] = [
+            &["corePaymentAddress"],
+            &["platformPaymentAddress"],
+            &["corePaymentAddress", "platformPaymentAddress"],
+        ];
+        for omitted in omissions {
+            for fixture in [Fixture::with_triggers(), Fixture::latest()] {
+                let protocol_version = fixture.platform_version.protocol_version;
+                let remove_omitted = |document: &mut Document| {
+                    for field in omitted {
+                        document
+                            .remove(field)
+                            .unwrap_or_else(|| panic!("expected the profile to have {field}"));
+                    }
+                };
+
+                // one profile per identity (the unique `ownerId` index), so the
+                // replaces revise the one created without the addresses
+                let (mut document, entropy) = fixture.profile(2);
+                let with_addresses = document.clone();
+                remove_omitted(&mut document);
+                assert_matches!(
+                    fixture
+                        .create("profile", document.clone(), entropy, 2)
+                        .await,
+                    StateTransitionExecutionResult::SuccessfulExecution { .. },
+                    "a profile created without {omitted:?} at protocol version {protocol_version}"
+                );
+
+                for field in omitted {
+                    document.set(
+                        field,
+                        with_addresses
+                            .get(field)
+                            .cloned()
+                            .expect("expected the address"),
+                    );
+                }
+                document.increment_revision().expect("expected a revision");
+                assert_matches!(
+                    fixture.replace("profile", document.clone(), 3).await,
+                    StateTransitionExecutionResult::SuccessfulExecution { .. },
+                    "a replace adding {omitted:?} at protocol version {protocol_version}"
+                );
+
+                remove_omitted(&mut document);
+                document.increment_revision().expect("expected a revision");
+                assert_matches!(
+                    fixture.replace("profile", document, 4).await,
+                    StateTransitionExecutionResult::SuccessfulExecution { .. },
+                    "a replace removing {omitted:?} at protocol version {protocol_version}"
+                );
             }
         }
     }
