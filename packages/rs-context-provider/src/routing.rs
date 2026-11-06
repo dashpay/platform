@@ -49,9 +49,11 @@ pub trait ContractSource: Send + Sync {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 pub enum ContextProviderMode {
-    /// SPV once its source is published and synced, trusted until then.
+    /// SPV while its source is published and synced, trusted whenever it is
+    /// not. The fallback can be forced, see [`AdaptiveContextProvider`].
     Auto = 0,
-    /// SPV only; lookups fail until its source is published and synced.
+    /// SPV only; lookups fail whenever its source is not published and
+    /// synced, and never fall back to the trusted provider.
     Spv = 1,
     /// The trusted provider only.
     Trusted = 2,
@@ -283,6 +285,14 @@ impl ContextProvider for SpvContextProvider {
 /// Routes each quorum lookup to an SPV client or a trusted provider by
 /// [`ContextProviderMode`]; contracts and tokens come from a
 /// [`ContractSource`].
+///
+/// In [`ContextProviderMode::Auto`] it answers from the trusted provider
+/// whenever the SPV client is not ready: before it has synced, and again
+/// whenever it loses its peers or its sync fails. Someone who can cut the
+/// client off from its SPV peers can therefore move Auto onto the trusted
+/// provider, so Auto is only as strong as the trusted provider. Clients that
+/// must never verify proofs with the trusted provider's keys use
+/// [`ContextProviderMode::Spv`], which fails closed instead.
 ///
 /// It does not pass on [`ContextProvider::core_height_verified`]: it does not
 /// record which source supplied a quorum's key, and a verified height vouches
