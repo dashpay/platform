@@ -59,15 +59,15 @@ use tokio::sync::oneshot;
 /// hash of a [`PlatformAddress`] (P2PKH).
 ///
 /// This sits outside the standard `dpp::identity::KeyType` enum range
-/// (which only uses 0–4: `ECDSA_SECP256K1`, `BLS12_381`, `ECDSA_HASH160`,
-/// `BIP13_SCRIPT_HASH`, `EDDSA_25519_HASH160`). Picking 0xFF guarantees
-/// no collision with any future `KeyType` addition while still fitting
+/// (which only uses 0–5: `ECDSA_SECP256K1`, `BLS12_381`, `ECDSA_HASH160`,
+/// `BIP13_SCRIPT_HASH`, `EDDSA_25519_HASH160`, `REDPALLAS_HECATE`). Picking
+/// 0xFF guarantees no collision with any future `KeyType` addition while still fitting
 /// the existing `u8` slot in `SignAsyncCallback` / `CanSignCallback`,
 /// so the same C vtable can serve both `Signer<IdentityPublicKey>` and
 /// `Signer<PlatformAddress>` impls without an ABI change.
 ///
 /// The Swift side dispatches on this tag in the trampoline:
-/// `key_type < 5` → look up `PersistentPublicKey` by raw pubkey bytes;
+/// `key_type` 0–5 → look up `PersistentPublicKey` by raw pubkey bytes;
 /// `key_type == 0xFF` → look up `PersistentPlatformAddress` by the
 /// 20-byte address hash. See `KeychainSigner.swift`.
 pub const SIGNER_KEY_TYPE_PLATFORM_ADDRESS_HASH: u8 = 0xFF;
@@ -121,8 +121,8 @@ pub struct SignerVTable {
 /// `pubkey_bytes` / `pubkey_len` carry the **raw** public-key bytes as they
 /// appear in `IdentityPublicKey::data()` (e.g. 33-byte compressed secp256k1
 /// for `ECDSA_SECP256K1`, 20-byte hash for `ECDSA_HASH160`, 48 bytes for
-/// `BLS12_381`, etc.). `key_type` is the `dpp::identity::KeyType`
-/// discriminant byte (see [`KeyType`] in rs-dpp):
+/// `BLS12_381`, 64 bytes for `REDPALLAS_HECATE`, etc.). `key_type` is the
+/// `dpp::identity::KeyType` discriminant byte (see [`KeyType`] in rs-dpp):
 ///
 /// | byte | KeyType                 |
 /// |------|-------------------------|
@@ -131,6 +131,7 @@ pub struct SignerVTable {
 /// | 2    | `ECDSA_HASH160`         |
 /// | 3    | `BIP13_SCRIPT_HASH`     |
 /// | 4    | `EDDSA_25519_HASH160`   |
+/// | 5    | `REDPALLAS_HECATE`      |
 ///
 /// The two together are sufficient for an FFI signer to look up the
 /// matching private-key handle in its own store (e.g. iOS Keychain keyed
@@ -489,7 +490,7 @@ impl Signer<IdentityPublicKey> for VTableSigner {
 // The `Signer` trait in `rs-dpp` is generic over `K`, so the same
 // `VTableSigner` struct can satisfy both bounds — the FFI vtable
 // chooses what to do based on the `key_type` discriminant byte:
-// the standard `KeyType` values (0–4) for identity-key signing, and
+// the standard `KeyType` values (0–5) for identity-key signing, and
 // [`SIGNER_KEY_TYPE_PLATFORM_ADDRESS_HASH`] (0xFF) for address signing.
 // The byte payload across the FFI is the 20-byte address hash, so the
 // Swift side can look up the matching SwiftData
@@ -903,7 +904,7 @@ pub unsafe extern "C" fn dash_sdk_signer_destroy(handle: *mut SignerHandle) {
 /// - `Inner::Native` delegates to the wrapped Rust `Signer`, which compares
 ///   the key material it holds.
 ///
-/// `key_type` is the `dpp::identity::KeyType` discriminant byte (0–4). This
+/// `key_type` is the `dpp::identity::KeyType` discriminant byte (0–5). This
 /// FFI is for *identity* public keys only; the `0xFF` platform-address tag
 /// (and any other out-of-range byte) returns `false`.
 ///
@@ -930,7 +931,7 @@ pub unsafe extern "C" fn dash_sdk_signer_can_sign(
     }
 
     // This FFI is for identity public keys only. `KeyType::try_from` rejects
-    // anything outside 0–4 (including the 0xFF platform-address tag), so an
+    // anything outside 0–5 (including the 0xFF platform-address tag), so an
     // out-of-range byte fails closed.
     let key_type = match dash_sdk::dpp::identity::KeyType::try_from(key_type) {
         Ok(kt) => kt,
@@ -1537,8 +1538,8 @@ mod tests {
             "identity-key signing must NOT use the platform-address tag"
         );
         assert!(
-            key_type < 5,
-            "identity-key signing must use a real KeyType discriminant (0–4); got {key_type}"
+            KeyType::try_from(key_type).is_ok(),
+            "identity-key signing must use a real KeyType discriminant; got {key_type}"
         );
     }
 }

@@ -1,3 +1,4 @@
+use crate::consensus::signature::BasicRedPallasError;
 use crate::consensus::signature::ContractBoundedKeyNonBatchError;
 use crate::consensus::signature::ContractBoundedKeyOutOfBoundsError;
 use crate::consensus::signature::PublicKeyBudgetExhaustedError;
@@ -92,6 +93,10 @@ pub enum SignatureError {
     // Identity key limits update (protocol version 14).
     #[error(transparent)]
     PublicKeyWithLimitsCannotUpdateKeyLimitsError(PublicKeyWithLimitsCannotUpdateKeyLimitsError),
+
+    // Hecate signer keys (protocol version 15).
+    #[error(transparent)]
+    BasicRedPallasError(BasicRedPallasError),
 }
 
 impl From<SignatureError> for ConsensusError {
@@ -157,6 +162,12 @@ mod tests {
                 )
             ),
             17
+        );
+        assert_eq!(
+            discriminant_of(SignatureError::BasicRedPallasError(
+                BasicRedPallasError::new("bad".to_string())
+            )),
+            18
         );
     }
 }

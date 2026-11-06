@@ -8,7 +8,7 @@ const TS_TYPES: &str = r#"
 /**
  * Flexible input type for Purpose - accepts the enum, string name, or numeric value.
  */
-export type PurposeLike = Purpose | "authentication" | "encryption" | "decryption" | "transfer" | "system" | "voting" | "owner" | 0 | 1 | 2 | 3 | 4 | 5 | 6;
+export type PurposeLike = Purpose | "authentication" | "encryption" | "decryption" | "transfer" | "system" | "voting" | "owner" | "hecate_signer" | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 "#;
 
 #[wasm_bindgen]
@@ -35,6 +35,7 @@ impl TryFrom<PurposeLikeJs> for Purpose {
     }
 }
 
+#[allow(non_camel_case_types)]
 #[wasm_bindgen(js_name = "Purpose")]
 pub enum PurposeWasm {
     AUTHENTICATION = 0,
@@ -44,6 +45,7 @@ pub enum PurposeWasm {
     SYSTEM = 4,
     VOTING = 5,
     OWNER = 6,
+    HECATE_SIGNER = 7,
 }
 
 impl TryFrom<&JsValue> for PurposeWasm {
@@ -71,6 +73,7 @@ impl TryFrom<&JsValue> for PurposeWasm {
                 4 => Ok(PurposeWasm::SYSTEM),
                 5 => Ok(PurposeWasm::VOTING),
                 6 => Ok(PurposeWasm::OWNER),
+                7 => Ok(PurposeWasm::HECATE_SIGNER),
                 _ => Err(WasmDppError::invalid_argument(format!(
                     "unsupported purpose value ({})",
                     enum_val
@@ -102,6 +105,7 @@ impl From<PurposeWasm> for String {
             PurposeWasm::SYSTEM => String::from("SYSTEM"),
             PurposeWasm::VOTING => String::from("VOTING"),
             PurposeWasm::OWNER => String::from("OWNER"),
+            PurposeWasm::HECATE_SIGNER => String::from("HECATE_SIGNER"),
         }
     }
 }
@@ -116,6 +120,7 @@ impl From<PurposeWasm> for Purpose {
             PurposeWasm::SYSTEM => Purpose::SYSTEM,
             PurposeWasm::VOTING => Purpose::VOTING,
             PurposeWasm::OWNER => Purpose::OWNER,
+            PurposeWasm::HECATE_SIGNER => Purpose::HECATE_SIGNER,
         }
     }
 }
@@ -130,6 +135,7 @@ impl From<Purpose> for PurposeWasm {
             Purpose::SYSTEM => PurposeWasm::SYSTEM,
             Purpose::VOTING => PurposeWasm::VOTING,
             Purpose::OWNER => PurposeWasm::OWNER,
+            Purpose::HECATE_SIGNER => PurposeWasm::HECATE_SIGNER,
         }
     }
 }

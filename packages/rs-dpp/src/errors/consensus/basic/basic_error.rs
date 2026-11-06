@@ -98,6 +98,9 @@ use crate::consensus::basic::identity::{
     NotImplementedCreditWithdrawalTransitionPoolingError, TooManyMasterPublicKeyError,
     WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
 };
+use crate::consensus::basic::identity::{
+    InvalidIdentityPublicKeyTypeForPurposeError, TooManyHecateSignerKeysError,
+};
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::moderation_charter::{
     ModerationCharterMalformedFieldError, ModerationCharterRewardSplitNotOneHundredError,
@@ -891,6 +894,13 @@ pub enum BasicError {
     // A Batch document transition on a private document type (protocol version 15).
     #[error(transparent)]
     DocumentTypePrivateError(DocumentTypePrivateError),
+
+    // Hecate signer keys (protocol version 15).
+    #[error(transparent)]
+    InvalidIdentityPublicKeyTypeForPurposeError(InvalidIdentityPublicKeyTypeForPurposeError),
+
+    #[error(transparent)]
+    TooManyHecateSignerKeysError(TooManyHecateSignerKeysError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -903,6 +913,7 @@ impl From<BasicError> for ConsensusError {
 mod tests {
     use super::*;
     use crate::consensus::basic::document::PropertyConstraintViolation;
+    use crate::identity::{KeyType, Purpose};
     use platform_value::Identifier;
 
     /// `BasicError` is bincode-encoded positionally, so a variant inserted anywhere but the tail
@@ -1129,13 +1140,29 @@ mod tests {
             )),
             209
         );
-        // A Batch document transition on a private document type (protocol version 15): the
-        // tail of the enum.
+        // A Batch document transition on a private document type (protocol version 15).
         assert_eq!(
             discriminant_of(BasicError::DocumentTypePrivateError(
                 DocumentTypePrivateError::new(Identifier::from([1; 32]), "entry".to_string())
             )),
             210
+        );
+        // Hecate signer keys (protocol version 15): the tail of the enum.
+        assert_eq!(
+            discriminant_of(BasicError::InvalidIdentityPublicKeyTypeForPurposeError(
+                InvalidIdentityPublicKeyTypeForPurposeError::new(
+                    1,
+                    KeyType::REDPALLAS_HECATE,
+                    Purpose::AUTHENTICATION
+                )
+            )),
+            211
+        );
+        assert_eq!(
+            discriminant_of(BasicError::TooManyHecateSignerKeysError(
+                TooManyHecateSignerKeysError::new(vec![1, 2])
+            )),
+            212
         );
     }
 

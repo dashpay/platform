@@ -24,8 +24,10 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex as StdMutex};
 
 use dashcore::crypto::ecdsa::EcdsaPublicKey as PublicKey;
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::{IdentityPublicKey, KeyType};
+use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
+use dpp::identity::{IdentityPublicKey, KeyType, SecurityLevel};
 use dpp::prelude::Identifier;
 use key_wallet::bip32::{
     ApplicationKeyPurpose, ChildNumber, DerivationPath, Error as Bip32Error, ExtendedPrivKey,
@@ -40,12 +42,12 @@ use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::broadcaster::{SpvBroadcaster, TransactionBroadcaster};
 use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::manager::AssetLockManager;
-use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+use crate::wallet::platform_wallet::{PlatformWallet, PlatformWalletInfo, WalletId};
 
 /// Default gap limit for identity discovery scanning.
 ///
@@ -78,6 +80,28 @@ pub(crate) fn identity_auth_derivation_path(
         identity_index,
         key_index,
     )
+}
+
+/// The DIP-9 derivation the wallet derives an identity key of
+/// `key_type` with, at the identity's authentication key slots, or
+/// `None` for a key type the wallet does not derive. A key of such a
+/// type has no slot key to check it against or to re-derive it from.
+///
+/// [`IdentityWallet::derive_identity_key_bytes`] derives by this
+/// answer and [`check_identity_key_from_master`] checks by it, both
+/// through [`identity_key_derivation_path`].
+pub fn identity_key_derivation_type(key_type: KeyType) -> Option<KeyDerivationType> {
+    match key_type {
+        KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => Some(KeyDerivationType::ECDSA),
+        KeyType::BLS12_381 => Some(KeyDerivationType::BLS),
+        // EdDSA uses the ECDSA derivation path; the raw bytes are
+        // reinterpreted as an Ed25519 seed.
+        KeyType::EDDSA_25519_HASH160 => Some(KeyDerivationType::ECDSA),
+        // A script hash has no private key to derive.
+        KeyType::BIP13_SCRIPT_HASH => None,
+        // A Hecate signer key's derivation path is not settled yet.
+        KeyType::REDPALLAS_HECATE => None,
+    }
 }
 
 /// Build the DIP-9 identity-authentication derivation path for the
@@ -117,6 +141,32 @@ pub fn identity_auth_derivation_path_for_type(
             PlatformWalletError::InvalidIdentityData(format!("Invalid key index: {}", e))
         })?,
     ]))
+}
+
+/// The DIP-9 path the wallet derives `identity_public_key` at: the
+/// identity's authentication key slot for the key's id, under the
+/// derivation of the key's type ([`identity_key_derivation_type`]).
+/// `None` for a key type the wallet does not derive.
+///
+/// Signing ([`IdentityWallet::derive_identity_key_bytes`]) and the key
+/// check ([`check_identity_key_from_master`]) both pick the slot here,
+/// so they cannot disagree on which key belongs to an identity key.
+pub fn identity_key_derivation_path(
+    network: Network,
+    identity_index: u32,
+    identity_public_key: &IdentityPublicKey,
+) -> Result<Option<DerivationPath>, PlatformWalletError> {
+    let Some(key_derivation_type) = identity_key_derivation_type(identity_public_key.key_type())
+    else {
+        return Ok(None);
+    };
+    identity_auth_derivation_path_for_type(
+        network,
+        key_derivation_type,
+        identity_index,
+        identity_public_key.id(),
+    )
+    .map(Some)
 }
 
 /// A DashPay Connect key: the DIP-13 application sub-features
@@ -467,6 +517,247 @@ pub fn derive_identity_auth_key_hash_from_master(
     Ok(key_hash_array)
 }
 
+/// Whether an identity key is the key the wallet derives at the key's
+/// slot, from [`check_identity_key_from_master`].
+pub enum IdentityKeyWalletCheck {
+    /// The wallet derives no key at the key's slot, so there is nothing
+    /// to compare the key with: it does not derive keys of this type at
+    /// identity key slots, or the key's id is past the last hardened
+    /// index, which no slot has.
+    NotDerived,
+    /// The key is in an encoding the check does not compare (an
+    /// ECDSA_SECP256K1 key that is not 33 bytes), so it can't say
+    /// whether the key is the wallet's.
+    NotCompared,
+    /// The wallet's key at the slot is this key.
+    Matches {
+        /// The slot's full DIP-9 path.
+        derivation_path: DerivationPath,
+        /// The key's 32-byte private key, wiped on drop.
+        private_key: Zeroizing<[u8; 32]>,
+        /// The key's public key hash (DPP `public_key_hash`).
+        public_key_hash: [u8; 20],
+    },
+    /// The wallet derives a different key at the slot.
+    Mismatch {
+        /// The slot's full DIP-9 path.
+        derivation_path: DerivationPath,
+        /// The wallet's key at the slot in the key type's on-chain form.
+        derived_public_key_data: Vec<u8>,
+    },
+}
+
+// Manual `Debug` so the private key never reaches a log.
+impl std::fmt::Debug for IdentityKeyWalletCheck {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IdentityKeyWalletCheck::NotDerived => f.write_str("NotDerived"),
+            IdentityKeyWalletCheck::NotCompared => f.write_str("NotCompared"),
+            IdentityKeyWalletCheck::Matches {
+                derivation_path,
+                public_key_hash,
+                ..
+            } => f
+                .debug_struct("Matches")
+                .field("derivation_path", derivation_path)
+                .field("public_key_hash", &hex::encode(public_key_hash))
+                .finish_non_exhaustive(),
+            IdentityKeyWalletCheck::Mismatch {
+                derivation_path,
+                derived_public_key_data,
+            } => f
+                .debug_struct("Mismatch")
+                .field("derivation_path", derivation_path)
+                .field(
+                    "derived_public_key_data",
+                    &hex::encode(derived_public_key_data),
+                )
+                .finish(),
+        }
+    }
+}
+
+/// What checking a key needs: nothing, when the outcome is known
+/// without the seed, or the wallet's key at a slot.
+enum KeyComparison {
+    Known(IdentityKeyWalletCheck),
+    AtSlot(DerivationPath),
+}
+
+fn key_comparison(
+    network: Network,
+    identity_index: u32,
+    identity_public_key: &IdentityPublicKey,
+) -> Result<KeyComparison, PlatformWalletError> {
+    // The wallet derives at hardened slots only, so a key whose id is past
+    // the last hardened index is at none of them. Such a key, enabled or
+    // not, must not fail the check of the identity's other keys.
+    if ChildNumber::from_hardened_idx(identity_public_key.id()).is_err() {
+        return Ok(KeyComparison::Known(IdentityKeyWalletCheck::NotDerived));
+    }
+    let Some(derivation_path) =
+        identity_key_derivation_path(network, identity_index, identity_public_key)?
+    else {
+        return Ok(KeyComparison::Known(IdentityKeyWalletCheck::NotDerived));
+    };
+    // DPP compares an ECDSA_SECP256K1 key with the derived key's
+    // compressed 33-byte form only, and discovery and signing treat any
+    // other encoding as not wallet-derived, so the check can't say
+    // whether such a key is the wallet's.
+    if identity_public_key.key_type() == KeyType::ECDSA_SECP256K1
+        && identity_public_key.data().len() != KeyType::ECDSA_SECP256K1.default_size()
+    {
+        return Ok(KeyComparison::Known(IdentityKeyWalletCheck::NotCompared));
+    }
+    Ok(KeyComparison::AtSlot(derivation_path))
+}
+
+/// Check `identity_public_key` against the key the wallet derives from
+/// `master` at the key's slot ([`identity_key_derivation_path`]): the
+/// same path and bytes [`IdentityWallet::derive_identity_key_bytes`]
+/// signs with, compared by DPP's `validate_private_key_bytes`. Pure,
+/// like [`derive_ecdsa_identity_auth_keypair_from_master`], so it works
+/// for wallets whose seed the FFI resolves on demand.
+pub fn check_identity_key_from_master(
+    master: &ExtendedPrivKey,
+    network: Network,
+    identity_index: u32,
+    identity_public_key: &IdentityPublicKey,
+) -> Result<IdentityKeyWalletCheck, PlatformWalletError> {
+    let derivation_path = match key_comparison(network, identity_index, identity_public_key)? {
+        KeyComparison::Known(check) => return Ok(check),
+        KeyComparison::AtSlot(derivation_path) => derivation_path,
+    };
+    let key_id = identity_public_key.id();
+    // The derived scalar and its exported byte copy zeroize on drop.
+    let private_key = master
+        .derive_priv(&derivation_path)
+        .map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to derive private key for identity key {key_id}: {e}"
+            ))
+        })?
+        .private_key
+        .to_bytes();
+
+    let is_match = identity_public_key
+        .validate_private_key_bytes(&private_key, network)
+        .map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to compare identity key {key_id} with the wallet's key: {e}"
+            ))
+        })?;
+    if is_match {
+        let public_key_hash = identity_public_key.public_key_hash().map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to hash identity key {key_id}: {e}"
+            ))
+        })?;
+        return Ok(IdentityKeyWalletCheck::Matches {
+            derivation_path,
+            private_key,
+            public_key_hash,
+        });
+    }
+    let derived_public_key_data = identity_public_key
+        .key_type()
+        .public_key_data_from_private_key_data(&private_key, network)
+        .map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to put the wallet's key for identity key {key_id} in on-chain form: {e}"
+            ))
+        })?;
+    Ok(IdentityKeyWalletCheck::Mismatch {
+        derivation_path,
+        derived_public_key_data,
+    })
+}
+
+/// Whether an identity is this wallet's, from its enabled keys. The
+/// enabled master key decides; disabled keys never count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdentityWalletOwnership {
+    /// An enabled master key is the wallet's key at its slot.
+    Owned,
+    /// The identity has an enabled master key, every enabled master key
+    /// is another key than the wallet's at its slot, and no enabled key
+    /// is or could be the wallet's. The identity is not this wallet's,
+    /// so a client may offer to remove it.
+    NotOwned,
+    /// Neither: no enabled master key, an enabled master key the check
+    /// can't compare, or a foreign master key next to a key that is or
+    /// could be the wallet's (an enabled match, a key the check doesn't
+    /// compare, or a key the caller could not describe). Not a reason
+    /// to remove the identity.
+    Undetermined,
+}
+
+/// Every key of an identity checked against the wallet, and what that
+/// says about whose identity it is.
+#[derive(Debug)]
+pub struct IdentityWalletCheck {
+    /// One check per key, in the order the keys were given.
+    pub keys: Vec<IdentityKeyWalletCheck>,
+    pub ownership: IdentityWalletOwnership,
+}
+
+/// The ownership `checks` (one per key in `keys`, in order) give, when
+/// `unreadable_key_count` more keys of the identity could not be
+/// described to the check.
+fn identity_wallet_ownership(
+    keys: &[IdentityPublicKey],
+    checks: &[IdentityKeyWalletCheck],
+    unreadable_key_count: usize,
+) -> IdentityWalletOwnership {
+    let mut has_master = false;
+    let mut every_master_mismatches = true;
+    // A key the caller could not describe could be the wallet's.
+    let mut could_be_wallets = unreadable_key_count > 0;
+    for (key, check) in keys.iter().zip(checks) {
+        if key.is_disabled() {
+            continue;
+        }
+        let matches = matches!(check, IdentityKeyWalletCheck::Matches { .. });
+        if key.security_level() == SecurityLevel::MASTER {
+            if matches {
+                return IdentityWalletOwnership::Owned;
+            }
+            has_master = true;
+            if !matches!(check, IdentityKeyWalletCheck::Mismatch { .. }) {
+                every_master_mismatches = false;
+            }
+        }
+        could_be_wallets |= matches || matches!(check, IdentityKeyWalletCheck::NotCompared);
+    }
+    if has_master && every_master_mismatches && !could_be_wallets {
+        IdentityWalletOwnership::NotOwned
+    } else {
+        IdentityWalletOwnership::Undetermined
+    }
+}
+
+/// Check every key of the identity at `identity_index`, enabled or not,
+/// with [`check_identity_key_from_master`], and decide from them whether
+/// the identity is this wallet's ([`IdentityWalletOwnership`]).
+///
+/// `unreadable_key_count` is how many more keys the identity has that
+/// the caller could not describe (enabled or not). Any of them could be
+/// the wallet's, so they rule out `NotOwned`.
+pub fn check_identity_keys_from_master(
+    master: &ExtendedPrivKey,
+    network: Network,
+    identity_index: u32,
+    identity_public_keys: &[IdentityPublicKey],
+    unreadable_key_count: usize,
+) -> Result<IdentityWalletCheck, PlatformWalletError> {
+    let keys = identity_public_keys
+        .iter()
+        .map(|key| check_identity_key_from_master(master, network, identity_index, key))
+        .collect::<Result<Vec<_>, _>>()?;
+    let ownership = identity_wallet_ownership(identity_public_keys, &keys, unreadable_key_count);
+    Ok(IdentityWalletCheck { keys, ownership })
+}
+
 /// Identity + DashPay wallet facade.
 ///
 /// A view onto the shared `PlatformWalletInfo` state inside the wallet
@@ -592,9 +883,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 
     /// Derive the raw private key bytes for an identity authentication key.
     ///
-    /// Determines the correct [`KeyDerivationType`] from the public key's
-    /// [`KeyType`], builds the DIP-9 derivation path, and derives the
-    /// private key from the wallet.
+    /// Picks the DIP-9 path from the public key's [`KeyType`] and id
+    /// ([`identity_key_derivation_path`]) and derives the private key
+    /// from the wallet. Fails for a key type the wallet does not derive.
     ///
     /// Returns the bytes wrapped in [`Zeroizing`] so they are automatically
     /// wiped from memory when the value is dropped.
@@ -605,25 +896,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         identity_public_key: &IdentityPublicKey,
     ) -> Result<Zeroizing<[u8; 32]>, PlatformWalletError> {
         let key_id = identity_public_key.id();
-        let key_derivation_type = match identity_public_key.key_type() {
-            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => KeyDerivationType::ECDSA,
-            KeyType::BLS12_381 => KeyDerivationType::BLS,
-            // EdDSA uses the ECDSA derivation path; the raw bytes are
-            // reinterpreted as an Ed25519 seed.
-            KeyType::EDDSA_25519_HASH160 => KeyDerivationType::ECDSA,
-            KeyType::BIP13_SCRIPT_HASH => {
-                return Err(PlatformWalletError::InvalidIdentityData(
-                    "BIP13_SCRIPT_HASH keys are not supported for signing".to_string(),
-                ));
-            }
-        };
-
-        let path = Self::identity_auth_derivation_path(
-            network,
-            key_derivation_type,
-            identity_index,
-            key_id,
-        )?;
+        let path = identity_key_derivation_path(network, identity_index, identity_public_key)?
+            .ok_or_else(|| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "{} keys are not derived by the wallet",
+                    identity_public_key.key_type()
+                ))
+            })?;
 
         let secret_key = wallet.derive_private_key(&path).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!(
@@ -671,11 +950,196 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     pub fn wallet_id(&self) -> &WalletId {
         &self.wallet_id
     }
+
+    /// The network this wallet's keys are derived on.
+    async fn wallet_network(&self) -> Result<Network, PlatformWalletError> {
+        let guard = self.wallet_manager.read().await;
+        guard
+            .get_wallet(&self.wallet_id)
+            .map(|wallet| wallet.network)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))
+    }
+
+    /// Check every key of the identity at `identity_index`, enabled or
+    /// not, against this wallet's keys, and decide whether the identity is
+    /// this wallet's ([`check_identity_keys_from_master`]).
+    ///
+    /// `resolve_master` runs at most once, and only when a key needs
+    /// comparing; an identity with none is answered without the seed. It
+    /// is given the wallet's network to build the master key on. The
+    /// master it returns must be this wallet's (it derives the wallet's
+    /// account-0 xpub), or the check fails with
+    /// [`PlatformWalletError::SeedMismatch`], so another wallet's seed can
+    /// never make an identity look foreign. The master is wiped after the
+    /// check.
+    pub async fn check_identity_keys<E: From<PlatformWalletError>>(
+        &self,
+        identity_index: u32,
+        identity_public_keys: &[IdentityPublicKey],
+        unreadable_key_count: usize,
+        resolve_master: impl FnOnce(Network) -> Result<ExtendedPrivKey, E>,
+    ) -> Result<IdentityWalletCheck, E> {
+        let network = self.wallet_network().await?;
+        let comparisons = identity_public_keys
+            .iter()
+            .map(|key| key_comparison(network, identity_index, key))
+            .collect::<Result<Vec<_>, _>>()?;
+        if comparisons
+            .iter()
+            .all(|comparison| matches!(comparison, KeyComparison::Known(_)))
+        {
+            let keys: Vec<IdentityKeyWalletCheck> = comparisons
+                .into_iter()
+                .filter_map(|comparison| match comparison {
+                    KeyComparison::Known(check) => Some(check),
+                    KeyComparison::AtSlot(_) => None,
+                })
+                .collect();
+            let ownership =
+                identity_wallet_ownership(identity_public_keys, &keys, unreadable_key_count);
+            return Ok(IdentityWalletCheck { keys, ownership });
+        }
+
+        let mut master = resolve_master(network)?;
+        let check = match self.verify_master_binds(&master).await {
+            Ok(()) => check_identity_keys_from_master(
+                &master,
+                network,
+                identity_index,
+                identity_public_keys,
+                unreadable_key_count,
+            ),
+            Err(e) => Err(e),
+        };
+        master.private_key.zeroize();
+        Ok(check?)
+    }
+
+    /// [`Self::check_identity_keys`] for one key: whether it is the key
+    /// this wallet derives at its slot, from this wallet's seed only.
+    pub async fn check_identity_key<E: From<PlatformWalletError>>(
+        &self,
+        identity_index: u32,
+        identity_public_key: &IdentityPublicKey,
+        resolve_master: impl FnOnce(Network) -> Result<ExtendedPrivKey, E>,
+    ) -> Result<IdentityKeyWalletCheck, E> {
+        let check = self
+            .check_identity_keys(
+                identity_index,
+                std::slice::from_ref(identity_public_key),
+                0,
+                resolve_master,
+            )
+            .await?;
+        check.keys.into_iter().next().ok_or_else(|| {
+            E::from(PlatformWalletError::InvalidIdentityData(
+                "the key check returned no result".to_string(),
+            ))
+        })
+    }
+}
+
+// `refresh_identity` is defined for the production broadcaster only.
+impl IdentityWallet {
+    /// Re-fetch the identity from Platform ([`Self::refresh_identity`],
+    /// which also stores the refreshed key rows) and check every key it
+    /// holds afterwards with [`Self::check_identity_keys`], in key id
+    /// order, at the identity's slot in this wallet. Ask this before
+    /// removing an identity: the stored key rows can be stale (another
+    /// device rotated the master key).
+    ///
+    /// Each refusal is an error, never `NotOwned`: an identity the
+    /// manager doesn't hold (`IdentityNotFound`) or holds with no slot in
+    /// this wallet (`IdentityIndexNotSet`), both before the fetch, and one
+    /// Platform doesn't return. The seed is resolved only after the
+    /// refresh.
+    pub async fn check_identity_keys_on_platform<E: From<PlatformWalletError>>(
+        &self,
+        identity_id: &Identifier,
+        resolve_master: impl FnOnce(Network) -> Result<ExtendedPrivKey, E>,
+    ) -> Result<IdentityWalletCheck, E> {
+        self.wallet_identity_slot(identity_id).await?;
+        let identity = self.refresh_identity(identity_id).await?;
+        // The slot as the manager holds it after the refresh.
+        let identity_index = self.wallet_identity_slot(identity_id).await?;
+        let identity_public_keys: Vec<IdentityPublicKey> =
+            identity.public_keys().values().cloned().collect();
+        self.check_identity_keys(identity_index, &identity_public_keys, 0, resolve_master)
+            .await
+    }
+
+    /// The slot `identity_id` has in this wallet: `IdentityNotFound` when
+    /// the manager doesn't hold it, `IdentityIndexNotSet` when it holds it
+    /// with no slot in this wallet (observed, or another wallet's).
+    async fn wallet_identity_slot(
+        &self,
+        identity_id: &Identifier,
+    ) -> Result<u32, PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
+        let manager = &wm
+            .get_wallet_info(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?
+            .identity_manager;
+        if manager.identity(identity_id).is_none() {
+            return Err(PlatformWalletError::IdentityNotFound(*identity_id));
+        }
+        manager
+            .wallet_identity(&self.wallet_id, identity_id)
+            .and_then(|managed| managed.identity_index)
+            .ok_or(PlatformWalletError::IdentityIndexNotSet(*identity_id))
+    }
+}
+
+impl PlatformWallet {
+    /// Wallet-level entry point for [`IdentityWallet::check_identity_keys`].
+    pub async fn check_identity_keys<E: From<PlatformWalletError>>(
+        &self,
+        identity_index: u32,
+        identity_public_keys: &[IdentityPublicKey],
+        unreadable_key_count: usize,
+        resolve_master: impl FnOnce(Network) -> Result<ExtendedPrivKey, E>,
+    ) -> Result<IdentityWalletCheck, E> {
+        self.identity()
+            .check_identity_keys(
+                identity_index,
+                identity_public_keys,
+                unreadable_key_count,
+                resolve_master,
+            )
+            .await
+    }
+
+    /// Wallet-level entry point for
+    /// [`IdentityWallet::check_identity_keys_on_platform`].
+    pub async fn check_identity_keys_on_platform<E: From<PlatformWalletError>>(
+        &self,
+        identity_id: &Identifier,
+        resolve_master: impl FnOnce(Network) -> Result<ExtendedPrivKey, E>,
+    ) -> Result<IdentityWalletCheck, E> {
+        self.identity()
+            .check_identity_keys_on_platform(identity_id, resolve_master)
+            .await
+    }
+
+    /// Wallet-level entry point for [`IdentityWallet::check_identity_key`].
+    pub async fn check_identity_key<E: From<PlatformWalletError>>(
+        &self,
+        identity_index: u32,
+        identity_public_key: &IdentityPublicKey,
+        resolve_master: impl FnOnce(Network) -> Result<ExtendedPrivKey, E>,
+    ) -> Result<IdentityKeyWalletCheck, E> {
+        self.identity()
+            .check_identity_key(identity_index, identity_public_key, resolve_master)
+            .await
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
     use dpp::util::hash::ripemd160_sha256;
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
@@ -1086,6 +1550,1143 @@ mod tests {
                     .expect_err("invalid legacy purpose must be refused");
             assert!(
                 matches!(&err, PlatformWalletError::InvalidParameter(m) if m.contains(&format!("purpose {purpose}"))),
+                "{err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_say_which_identity_key_types_the_wallet_derives() {
+        for (key_type, expected) in [
+            (KeyType::ECDSA_SECP256K1, Some(KeyDerivationType::ECDSA)),
+            (KeyType::BLS12_381, Some(KeyDerivationType::BLS)),
+            (KeyType::ECDSA_HASH160, Some(KeyDerivationType::ECDSA)),
+            (KeyType::BIP13_SCRIPT_HASH, None),
+            (KeyType::EDDSA_25519_HASH160, Some(KeyDerivationType::ECDSA)),
+            (KeyType::REDPALLAS_HECATE, None),
+        ] {
+            assert_eq!(
+                identity_key_derivation_type(key_type),
+                expected,
+                "{key_type}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_refuse_to_derive_a_hecate_signer_key() {
+        let wallet = mnemonic_wallet(Network::Testnet);
+        let hecate_signer_key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 3,
+            purpose: Purpose::HECATE_SIGNER,
+            security_level: SecurityLevel::MEDIUM,
+            contract_bounds: None,
+            key_type: KeyType::REDPALLAS_HECATE,
+            read_only: false,
+            data: BinaryData::new(vec![1; 64]),
+            disabled_at: None,
+        }
+        .into();
+
+        let err = IdentityWallet::<SpvBroadcaster>::derive_identity_key_bytes(
+            &wallet,
+            Network::Testnet,
+            0,
+            &hecate_signer_key,
+        )
+        .expect_err("the wallet does not derive Hecate signer keys");
+        assert!(
+            matches!(&err, PlatformWalletError::InvalidIdentityData(m) if m.contains("REDPALLAS_HECATE")),
+            "{err:?}"
+        );
+    }
+
+    // ── Wallet key check ──────────────────────────────────────────────
+
+    fn identity_key(
+        id: u32,
+        key_type: KeyType,
+        purpose: Purpose,
+        data: Vec<u8>,
+    ) -> IdentityPublicKey {
+        IdentityPublicKeyV0 {
+            id,
+            purpose,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type,
+            read_only: false,
+            data: BinaryData::new(data),
+            disabled_at: None,
+        }
+        .into()
+    }
+
+    /// The wallet's 32 bytes at the `key_derivation_type` slot
+    /// `(identity_index, key_index)`.
+    fn slot_bytes(
+        master: &ExtendedPrivKey,
+        network: Network,
+        key_derivation_type: KeyDerivationType,
+        identity_index: u32,
+        key_index: u32,
+    ) -> (DerivationPath, [u8; 32]) {
+        let path = identity_auth_derivation_path_for_type(
+            network,
+            key_derivation_type,
+            identity_index,
+            key_index,
+        )
+        .expect("slot path");
+        let bytes = *master
+            .derive_priv(&path)
+            .expect("slot derive")
+            .private_key
+            .to_bytes();
+        (path, bytes)
+    }
+
+    fn check(key: &IdentityPublicKey, identity_index: u32) -> IdentityKeyWalletCheck {
+        check_identity_key_from_master(
+            &master_for(Network::Testnet),
+            Network::Testnet,
+            identity_index,
+            key,
+        )
+        .expect("check")
+    }
+
+    #[test]
+    fn should_not_check_a_key_of_a_type_the_wallet_does_not_derive() {
+        let hecate_signer_key = identity_key(
+            3,
+            KeyType::REDPALLAS_HECATE,
+            Purpose::HECATE_SIGNER,
+            vec![1; 64],
+        );
+        let script_hash_key = identity_key(
+            4,
+            KeyType::BIP13_SCRIPT_HASH,
+            Purpose::TRANSFER,
+            vec![2; 20],
+        );
+        for key in [hecate_signer_key, script_hash_key] {
+            assert!(
+                matches!(check(&key, 0), IdentityKeyWalletCheck::NotDerived),
+                "{key:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_match_an_ecdsa_key_the_wallet_derives_at_its_slot() {
+        let network = Network::Testnet;
+        let slot =
+            derive_ecdsa_identity_auth_keypair_from_master(&master_for(network), network, 2, 3)
+                .expect("slot keypair");
+        let key = identity_key(
+            3,
+            KeyType::ECDSA_SECP256K1,
+            Purpose::AUTHENTICATION,
+            slot.public_key.to_vec(),
+        );
+
+        match check(&key, 2) {
+            IdentityKeyWalletCheck::Matches {
+                derivation_path,
+                private_key,
+                public_key_hash,
+            } => {
+                assert_eq!(derivation_path, slot.derivation_path);
+                assert_eq!(*private_key, *slot.private_key);
+                assert_eq!(
+                    public_key_hash.as_slice(),
+                    ripemd160_sha256(&slot.public_key).as_slice()
+                );
+            }
+            other => panic!("expected Matches, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn should_match_an_ecdsa_hash160_key_the_wallet_derives_at_its_slot() {
+        let network = Network::Testnet;
+        let slot =
+            derive_ecdsa_identity_auth_keypair_from_master(&master_for(network), network, 1, 2)
+                .expect("slot keypair");
+        let pubkey_hash = ripemd160_sha256(&slot.public_key).to_vec();
+        let key = identity_key(
+            2,
+            KeyType::ECDSA_HASH160,
+            Purpose::TRANSFER,
+            pubkey_hash.clone(),
+        );
+
+        match check(&key, 1) {
+            IdentityKeyWalletCheck::Matches {
+                derivation_path,
+                private_key,
+                public_key_hash,
+            } => {
+                assert_eq!(derivation_path, slot.derivation_path);
+                assert_eq!(*private_key, *slot.private_key);
+                assert_eq!(public_key_hash.to_vec(), pubkey_hash);
+            }
+            other => panic!("expected Matches, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn should_report_a_mismatch_for_a_key_from_another_slot() {
+        let network = Network::Testnet;
+        let master = master_for(network);
+        let other_slot = derive_ecdsa_identity_auth_keypair_from_master(&master, network, 2, 3)
+            .expect("other slot keypair");
+        let own_slot = derive_ecdsa_identity_auth_keypair_from_master(&master, network, 2, 4)
+            .expect("own slot keypair");
+        // Key 4 carrying key 3's public key.
+        let key = identity_key(
+            4,
+            KeyType::ECDSA_SECP256K1,
+            Purpose::AUTHENTICATION,
+            other_slot.public_key.to_vec(),
+        );
+
+        match check(&key, 2) {
+            IdentityKeyWalletCheck::Mismatch {
+                derivation_path,
+                derived_public_key_data,
+            } => {
+                assert_eq!(derivation_path, own_slot.derivation_path);
+                assert_eq!(derived_public_key_data, own_slot.public_key.to_vec());
+            }
+            other => panic!("expected Mismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn should_match_a_bls_key_the_wallet_derives_at_its_bls_slot() {
+        let network = Network::Testnet;
+        let (path, bytes) = slot_bytes(&master_for(network), network, KeyDerivationType::BLS, 0, 2);
+        let data = KeyType::BLS12_381
+            .public_key_data_from_private_key_data(&bytes, network)
+            .expect("BLS public key");
+        let key = identity_key(2, KeyType::BLS12_381, Purpose::AUTHENTICATION, data.clone());
+
+        match check(&key, 0) {
+            IdentityKeyWalletCheck::Matches {
+                derivation_path,
+                private_key,
+                public_key_hash,
+            } => {
+                assert_eq!(derivation_path, path);
+                assert_eq!(*private_key, bytes);
+                assert_eq!(
+                    public_key_hash.as_slice(),
+                    ripemd160_sha256(&data).as_slice()
+                );
+            }
+            other => panic!("expected Matches, got {other:?}"),
+        }
+    }
+
+    /// A BLS key is compared with its own BLS slot, and the mismatch
+    /// reports that slot's BLS public key.
+    #[test]
+    fn should_report_a_mismatch_for_a_bls_key_holding_another_slots_bls_key() {
+        let network = Network::Testnet;
+        let master = master_for(network);
+        let (_, other_bytes) = slot_bytes(&master, network, KeyDerivationType::BLS, 0, 2);
+        let (own_path, own_bytes) = slot_bytes(&master, network, KeyDerivationType::BLS, 0, 3);
+        let bls_public_key = |bytes: &[u8; 32]| {
+            KeyType::BLS12_381
+                .public_key_data_from_private_key_data(bytes, network)
+                .expect("BLS public key")
+        };
+        let key = identity_key(
+            3,
+            KeyType::BLS12_381,
+            Purpose::AUTHENTICATION,
+            bls_public_key(&other_bytes),
+        );
+
+        match check(&key, 0) {
+            IdentityKeyWalletCheck::Mismatch {
+                derivation_path,
+                derived_public_key_data,
+            } => {
+                assert_eq!(derivation_path, own_path);
+                assert_eq!(derived_public_key_data, bls_public_key(&own_bytes));
+            }
+            other => panic!("expected Mismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn should_match_an_eddsa_key_the_wallet_derives_at_its_ecdsa_slot() {
+        let network = Network::Testnet;
+        let slot =
+            derive_ecdsa_identity_auth_keypair_from_master(&master_for(network), network, 0, 5)
+                .expect("slot keypair");
+        let data = KeyType::EDDSA_25519_HASH160
+            .public_key_data_from_private_key_data(&slot.private_key, network)
+            .expect("EdDSA public key hash");
+        let key = identity_key(5, KeyType::EDDSA_25519_HASH160, Purpose::TRANSFER, data);
+
+        match check(&key, 0) {
+            IdentityKeyWalletCheck::Matches {
+                derivation_path,
+                private_key,
+                ..
+            } => {
+                assert_eq!(derivation_path, slot.derivation_path);
+                assert_eq!(*private_key, *slot.private_key);
+            }
+            other => panic!("expected Matches, got {other:?}"),
+        }
+    }
+
+    /// Signing derives with `derive_identity_key_bytes` on a key-resident
+    /// wallet; the check derives from the master. Both must land on the
+    /// same key for every key type the wallet derives.
+    #[test]
+    fn should_sign_with_the_key_the_check_matches() {
+        let network = Network::Testnet;
+        let master = master_for(network);
+        let wallet = mnemonic_wallet(network);
+
+        let ecdsa = derive_ecdsa_identity_auth_keypair_from_master(&master, network, 0, 1)
+            .expect("slot keypair");
+        let (_, bls_bytes) = slot_bytes(&master, network, KeyDerivationType::BLS, 0, 1);
+        let keys = [
+            identity_key(
+                1,
+                KeyType::ECDSA_SECP256K1,
+                Purpose::AUTHENTICATION,
+                ecdsa.public_key.to_vec(),
+            ),
+            identity_key(
+                1,
+                KeyType::ECDSA_HASH160,
+                Purpose::TRANSFER,
+                ripemd160_sha256(&ecdsa.public_key).to_vec(),
+            ),
+            identity_key(
+                1,
+                KeyType::EDDSA_25519_HASH160,
+                Purpose::TRANSFER,
+                KeyType::EDDSA_25519_HASH160
+                    .public_key_data_from_private_key_data(&ecdsa.private_key, network)
+                    .expect("EdDSA public key hash"),
+            ),
+            identity_key(
+                1,
+                KeyType::BLS12_381,
+                Purpose::AUTHENTICATION,
+                KeyType::BLS12_381
+                    .public_key_data_from_private_key_data(&bls_bytes, network)
+                    .expect("BLS public key"),
+            ),
+        ];
+
+        for key in keys {
+            let signing_bytes = IdentityWallet::<SpvBroadcaster>::derive_identity_key_bytes(
+                &wallet, network, 0, &key,
+            )
+            .expect("resident derive");
+            match check(&key, 0) {
+                IdentityKeyWalletCheck::Matches { private_key, .. } => {
+                    assert_eq!(*private_key, *signing_bytes, "{key:?}")
+                }
+                other => panic!("expected Matches for {key:?}, got {other:?}"),
+            }
+        }
+    }
+    // ── Identity ownership ────────────────────────────────────────────
+
+    const DISABLED_AT: u64 = 1_700_000_000_000;
+
+    fn ecdsa_key(
+        id: u32,
+        security_level: SecurityLevel,
+        data: Vec<u8>,
+        disabled_at: Option<u64>,
+    ) -> IdentityPublicKey {
+        IdentityPublicKeyV0 {
+            id,
+            purpose: Purpose::AUTHENTICATION,
+            security_level,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(data),
+            disabled_at,
+        }
+        .into()
+    }
+
+    /// The compressed public key the wallet derives at the ECDSA slot
+    /// `(identity_index, key_index)` on testnet.
+    fn slot_public_key(identity_index: u32, key_index: u32) -> Vec<u8> {
+        derive_ecdsa_identity_auth_keypair_from_master(
+            &master_for(Network::Testnet),
+            Network::Testnet,
+            identity_index,
+            key_index,
+        )
+        .expect("slot keypair")
+        .public_key
+        .to_vec()
+    }
+
+    fn check_all(keys: &[IdentityPublicKey], identity_index: u32) -> IdentityWalletCheck {
+        check_identity_keys_from_master(
+            &master_for(Network::Testnet),
+            Network::Testnet,
+            identity_index,
+            keys,
+            0,
+        )
+        .expect("check")
+    }
+
+    fn a_match() -> IdentityKeyWalletCheck {
+        IdentityKeyWalletCheck::Matches {
+            derivation_path: DerivationPath::master(),
+            private_key: Zeroizing::new([1; 32]),
+            public_key_hash: [0; 20],
+        }
+    }
+
+    fn a_mismatch() -> IdentityKeyWalletCheck {
+        IdentityKeyWalletCheck::Mismatch {
+            derivation_path: DerivationPath::master(),
+            derived_public_key_data: vec![2; 33],
+        }
+    }
+
+    fn rule_key(id: u32, security_level: SecurityLevel, disabled: bool) -> IdentityPublicKey {
+        ecdsa_key(
+            id,
+            security_level,
+            vec![2; 33],
+            disabled.then_some(DISABLED_AT),
+        )
+    }
+
+    /// A master key rotation leaves the former master disabled. A foreign
+    /// former master must not make an identity whose enabled master is
+    /// the wallet's look foreign.
+    #[test]
+    fn should_own_an_identity_whose_enabled_master_replaced_a_foreign_one() {
+        let keys = [
+            ecdsa_key(
+                0,
+                SecurityLevel::MASTER,
+                slot_public_key(1, 9),
+                Some(DISABLED_AT),
+            ),
+            ecdsa_key(1, SecurityLevel::MASTER, slot_public_key(1, 1), None),
+        ];
+
+        let check = check_all(&keys, 1);
+
+        assert_eq!(check.ownership, IdentityWalletOwnership::Owned);
+        assert!(matches!(
+            check.keys[0],
+            IdentityKeyWalletCheck::Mismatch { .. }
+        ));
+        assert!(matches!(
+            check.keys[1],
+            IdentityKeyWalletCheck::Matches { .. }
+        ));
+    }
+
+    /// Keys added from elsewhere (ECDSA or BLS) do not make an identity
+    /// whose master is the wallet's look foreign.
+    #[test]
+    fn should_own_an_identity_whose_master_matches_beside_foreign_keys() {
+        let master = master_for(Network::Testnet);
+        let (_, foreign_bls_bytes) =
+            slot_bytes(&master, Network::Testnet, KeyDerivationType::BLS, 1, 8);
+        let foreign_bls = IdentityPublicKeyV0 {
+            id: 2,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::BLS12_381,
+            read_only: false,
+            data: BinaryData::new(
+                KeyType::BLS12_381
+                    .public_key_data_from_private_key_data(&foreign_bls_bytes, Network::Testnet)
+                    .expect("BLS public key"),
+            ),
+            disabled_at: None,
+        }
+        .into();
+        let keys = [
+            ecdsa_key(0, SecurityLevel::MASTER, slot_public_key(1, 0), None),
+            ecdsa_key(1, SecurityLevel::HIGH, slot_public_key(1, 7), None),
+            foreign_bls,
+        ];
+
+        let check = check_all(&keys, 1);
+
+        assert_eq!(check.ownership, IdentityWalletOwnership::Owned);
+        assert!(matches!(
+            check.keys[1],
+            IdentityKeyWalletCheck::Mismatch { .. }
+        ));
+        assert!(matches!(
+            check.keys[2],
+            IdentityKeyWalletCheck::Mismatch { .. }
+        ));
+    }
+
+    #[test]
+    fn should_not_own_an_identity_whose_only_enabled_master_is_foreign() {
+        let keys = [
+            rule_key(0, SecurityLevel::MASTER, false),
+            rule_key(1, SecurityLevel::HIGH, false),
+        ];
+        assert_eq!(
+            identity_wallet_ownership(&keys, &[a_mismatch(), a_mismatch()], 0),
+            IdentityWalletOwnership::NotOwned
+        );
+        assert_eq!(
+            identity_wallet_ownership(
+                &keys,
+                &[a_mismatch(), IdentityKeyWalletCheck::NotDerived],
+                0
+            ),
+            IdentityWalletOwnership::NotOwned
+        );
+    }
+
+    #[test]
+    fn should_leave_ownership_undetermined_when_another_enabled_key_is_the_wallets() {
+        let keys = [
+            rule_key(0, SecurityLevel::MASTER, false),
+            rule_key(1, SecurityLevel::HIGH, false),
+        ];
+        assert_eq!(
+            identity_wallet_ownership(&keys, &[a_mismatch(), a_match()], 0),
+            IdentityWalletOwnership::Undetermined
+        );
+    }
+
+    #[test]
+    fn should_leave_ownership_undetermined_without_an_enabled_master() {
+        let keys = [rule_key(0, SecurityLevel::MASTER, true)];
+        assert_eq!(
+            identity_wallet_ownership(&keys, &[a_mismatch()], 0),
+            IdentityWalletOwnership::Undetermined
+        );
+        assert_eq!(
+            identity_wallet_ownership(&[], &[], 0),
+            IdentityWalletOwnership::Undetermined
+        );
+    }
+
+    #[test]
+    fn should_leave_ownership_undetermined_for_a_master_the_wallet_does_not_derive() {
+        let keys = [rule_key(0, SecurityLevel::MASTER, false)];
+        assert_eq!(
+            identity_wallet_ownership(&keys, &[IdentityKeyWalletCheck::NotDerived], 0),
+            IdentityWalletOwnership::Undetermined
+        );
+    }
+
+    #[test]
+    fn should_not_let_a_disabled_matching_key_keep_a_foreign_identity() {
+        let keys = [
+            rule_key(0, SecurityLevel::MASTER, false),
+            rule_key(1, SecurityLevel::HIGH, true),
+        ];
+        assert_eq!(
+            identity_wallet_ownership(&keys, &[a_mismatch(), a_match()], 0),
+            IdentityWalletOwnership::NotOwned
+        );
+    }
+
+    #[test]
+    fn should_check_every_key_in_the_order_given() {
+        let hash160_key = IdentityPublicKeyV0 {
+            id: 2,
+            purpose: Purpose::TRANSFER,
+            security_level: SecurityLevel::CRITICAL,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_HASH160,
+            read_only: false,
+            data: BinaryData::new(ripemd160_sha256(&slot_public_key(0, 2)).to_vec()),
+            disabled_at: None,
+        }
+        .into();
+        let keys = [
+            identity_key(
+                3,
+                KeyType::REDPALLAS_HECATE,
+                Purpose::HECATE_SIGNER,
+                vec![1; 64],
+            ),
+            ecdsa_key(0, SecurityLevel::MASTER, slot_public_key(0, 0), None),
+            ecdsa_key(1, SecurityLevel::HIGH, slot_public_key(0, 4), None),
+            hash160_key,
+        ];
+
+        let check = check_all(&keys, 0);
+
+        assert_eq!(check.keys.len(), keys.len());
+        assert!(matches!(check.keys[0], IdentityKeyWalletCheck::NotDerived));
+        assert!(matches!(
+            check.keys[1],
+            IdentityKeyWalletCheck::Matches { .. }
+        ));
+        assert!(matches!(
+            check.keys[2],
+            IdentityKeyWalletCheck::Mismatch { .. }
+        ));
+        assert!(matches!(
+            check.keys[3],
+            IdentityKeyWalletCheck::Matches { .. }
+        ));
+        assert_eq!(check.ownership, IdentityWalletOwnership::Owned);
+    }
+
+    /// The uncompressed 65-byte encoding of the wallet's ECDSA key at
+    /// `(identity_index, key_index)` on testnet.
+    fn uncompressed_slot_public_key(identity_index: u32, key_index: u32) -> Vec<u8> {
+        dpp::secp256k1::PublicKey::from_slice(&slot_public_key(identity_index, key_index))
+            .expect("compressed slot key")
+            .serialize_uncompressed()
+            .to_vec()
+    }
+
+    /// No wallet slot has an id past the last hardened index, so such a
+    /// key is not derived, and it doesn't fail the check of the identity's
+    /// other keys whether it is disabled or enabled.
+    #[test]
+    fn should_not_derive_a_key_whose_id_is_past_the_last_hardened_index() {
+        let past_last_hardened = 1u32 << 31;
+        for disabled_at in [Some(DISABLED_AT), None] {
+            let keys = [
+                ecdsa_key(0, SecurityLevel::MASTER, slot_public_key(1, 0), None),
+                ecdsa_key(
+                    past_last_hardened,
+                    SecurityLevel::HIGH,
+                    slot_public_key(1, 1),
+                    disabled_at,
+                ),
+            ];
+
+            let check = check_all(&keys, 1);
+
+            assert!(matches!(
+                check.keys[0],
+                IdentityKeyWalletCheck::Matches { .. }
+            ));
+            assert!(matches!(check.keys[1], IdentityKeyWalletCheck::NotDerived));
+            assert_eq!(check.ownership, IdentityWalletOwnership::Owned);
+        }
+
+        // As the only master it leaves the identity undetermined, never
+        // foreign.
+        let keys = [ecdsa_key(
+            past_last_hardened,
+            SecurityLevel::MASTER,
+            vec![2; 33],
+            None,
+        )];
+        assert_eq!(
+            check_all(&keys, 1).ownership,
+            IdentityWalletOwnership::Undetermined
+        );
+    }
+
+    /// A key the caller could not describe could be the one that is the
+    /// wallet's, so it rules out NotOwned; it never undoes Owned.
+    #[test]
+    fn should_not_call_an_identity_foreign_beside_a_key_it_could_not_read() {
+        let foreign_master = [rule_key(0, SecurityLevel::MASTER, false)];
+        assert_eq!(
+            identity_wallet_ownership(&foreign_master, &[a_mismatch()], 1),
+            IdentityWalletOwnership::Undetermined
+        );
+        assert_eq!(
+            identity_wallet_ownership(&foreign_master, &[a_mismatch()], 0),
+            IdentityWalletOwnership::NotOwned
+        );
+        assert_eq!(
+            identity_wallet_ownership(&foreign_master, &[a_match()], 1),
+            IdentityWalletOwnership::Owned
+        );
+
+        let keys = [ecdsa_key(
+            0,
+            SecurityLevel::MASTER,
+            slot_public_key(1, 5),
+            None,
+        )];
+        let check = |unreadable_key_count| {
+            check_identity_keys_from_master(
+                &master_for(Network::Testnet),
+                Network::Testnet,
+                1,
+                &keys,
+                unreadable_key_count,
+            )
+            .expect("check")
+            .ownership
+        };
+        assert_eq!(check(1), IdentityWalletOwnership::Undetermined);
+        assert_eq!(check(0), IdentityWalletOwnership::NotOwned);
+    }
+
+    /// DPP compares an ECDSA key in its compressed form only, so the
+    /// wallet's own master encoded uncompressed is not compared, and it
+    /// can't make the identity look foreign.
+    #[test]
+    fn should_not_compare_an_uncompressed_ecdsa_master() {
+        let uncompressed_master = ecdsa_key(
+            0,
+            SecurityLevel::MASTER,
+            uncompressed_slot_public_key(1, 0),
+            None,
+        );
+
+        assert!(matches!(
+            check(&uncompressed_master, 1),
+            IdentityKeyWalletCheck::NotCompared
+        ));
+        let check = check_all(std::slice::from_ref(&uncompressed_master), 1);
+        assert!(matches!(
+            check.keys[..],
+            [IdentityKeyWalletCheck::NotCompared]
+        ));
+        assert_eq!(check.ownership, IdentityWalletOwnership::Undetermined);
+    }
+
+    #[test]
+    fn should_not_call_an_identity_foreign_beside_an_uncompressed_key() {
+        let keys = [
+            ecdsa_key(0, SecurityLevel::MASTER, slot_public_key(1, 5), None),
+            ecdsa_key(
+                1,
+                SecurityLevel::HIGH,
+                uncompressed_slot_public_key(1, 1),
+                None,
+            ),
+        ];
+
+        let check = check_all(&keys, 1);
+
+        assert!(matches!(
+            check.keys[..],
+            [
+                IdentityKeyWalletCheck::Mismatch { .. },
+                IdentityKeyWalletCheck::NotCompared
+            ]
+        ));
+        assert_eq!(check.ownership, IdentityWalletOwnership::Undetermined);
+        assert_eq!(
+            identity_wallet_ownership(
+                &[
+                    rule_key(0, SecurityLevel::MASTER, false),
+                    rule_key(1, SecurityLevel::HIGH, false)
+                ],
+                &[a_mismatch(), IdentityKeyWalletCheck::NotCompared],
+                0
+            ),
+            IdentityWalletOwnership::Undetermined
+        );
+    }
+
+    // ── Wallet-scoped check ───────────────────────────────────────────
+
+    /// A seed other than the test wallet's.
+    const OTHER_MNEMONIC: &str =
+        "legal winner thank year wave sausage worth useful legal winner thank yellow";
+
+    fn other_master() -> ExtendedPrivKey {
+        let seed = Mnemonic::from_phrase(OTHER_MNEMONIC)
+            .expect("valid other mnemonic")
+            .to_seed("");
+        ExtendedPrivKey::new_master(Network::Testnet, &*seed).expect("other master")
+    }
+
+    /// The testnet wallet `test_platform_wallet_manager` creates from
+    /// [`TEST_MNEMONIC`], and its manager (keep it alive).
+    async fn test_wallet() -> (
+        Arc<crate::PlatformWalletManager<crate::test_support::NoopTestPersister>>,
+        Arc<PlatformWallet>,
+    ) {
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("test wallet");
+        (manager, wallet)
+    }
+
+    /// Checked with another wallet's seed, the wallet's own identity
+    /// would look foreign, so the wallet refuses that seed instead.
+    #[tokio::test]
+    async fn should_refuse_another_wallets_seed_instead_of_calling_the_identity_foreign() {
+        let (_manager, wallet) = test_wallet().await;
+        let keys = [ecdsa_key(
+            0,
+            SecurityLevel::MASTER,
+            slot_public_key(0, 0),
+            None,
+        )];
+        // What the comparator alone says with the other seed.
+        let unbound =
+            check_identity_keys_from_master(&other_master(), Network::Testnet, 0, &keys, 0)
+                .expect("comparator");
+        assert_eq!(unbound.ownership, IdentityWalletOwnership::NotOwned);
+
+        let err = wallet
+            .check_identity_keys(
+                0,
+                &keys,
+                0,
+                |_| Ok::<_, PlatformWalletError>(other_master()),
+            )
+            .await
+            .expect_err("another wallet's seed must be refused");
+        assert!(
+            matches!(err, PlatformWalletError::SeedMismatch { .. }),
+            "{err:?}"
+        );
+
+        let check = wallet
+            .check_identity_keys(0, &keys, 0, |_| {
+                Ok::<_, PlatformWalletError>(master_for(Network::Testnet))
+            })
+            .await
+            .expect("the wallet's own seed");
+        assert_eq!(check.ownership, IdentityWalletOwnership::Owned);
+    }
+
+    /// Keys that need no comparison (not derived, not compared) are
+    /// answered without resolving the seed at all.
+    #[tokio::test]
+    async fn should_answer_without_the_seed_when_no_key_needs_comparing() {
+        let (_manager, wallet) = test_wallet().await;
+        let keys = [
+            identity_key(
+                3,
+                KeyType::REDPALLAS_HECATE,
+                Purpose::HECATE_SIGNER,
+                vec![1; 64],
+            ),
+            ecdsa_key(
+                0,
+                SecurityLevel::MASTER,
+                uncompressed_slot_public_key(0, 0),
+                None,
+            ),
+        ];
+        let mut resolves = 0;
+
+        let check = wallet
+            .check_identity_keys(0, &keys, 0, |_| {
+                resolves += 1;
+                Ok::<_, PlatformWalletError>(other_master())
+            })
+            .await
+            .expect("no seed needed");
+
+        assert_eq!(resolves, 0);
+        assert!(matches!(
+            check.keys[..],
+            [
+                IdentityKeyWalletCheck::NotDerived,
+                IdentityKeyWalletCheck::NotCompared
+            ]
+        ));
+        assert_eq!(check.ownership, IdentityWalletOwnership::Undetermined);
+    }
+
+    #[tokio::test]
+    async fn should_check_one_key_with_the_wallets_seed_only() {
+        let (_manager, wallet) = test_wallet().await;
+        let key = ecdsa_key(1, SecurityLevel::HIGH, slot_public_key(0, 1), None);
+
+        let err = wallet
+            .check_identity_key(0, &key, |_| Ok::<_, PlatformWalletError>(other_master()))
+            .await
+            .expect_err("another wallet's seed must be refused");
+        assert!(
+            matches!(err, PlatformWalletError::SeedMismatch { .. }),
+            "{err:?}"
+        );
+        assert!(matches!(
+            wallet
+                .check_identity_key(0, &key, |_| {
+                    Ok::<_, PlatformWalletError>(master_for(Network::Testnet))
+                })
+                .await
+                .expect("the wallet's own seed"),
+            IdentityKeyWalletCheck::Matches { .. }
+        ));
+
+        let uncompressed = ecdsa_key(
+            1,
+            SecurityLevel::HIGH,
+            uncompressed_slot_public_key(0, 1),
+            None,
+        );
+        assert!(matches!(
+            wallet
+                .check_identity_key(0, &uncompressed, |_| {
+                    Err(PlatformWalletError::InvalidParameter(
+                        "the seed must not be read".to_string(),
+                    ))
+                })
+                .await
+                .expect("no seed needed"),
+            IdentityKeyWalletCheck::NotCompared
+        ));
+    }
+    // ── Check after a Platform refresh ────────────────────────────────
+
+    const PLATFORM_IDENTITY: [u8; 32] = [0x11; 32];
+
+    fn platform_identity(keys: Vec<IdentityPublicKey>, revision: u64) -> dpp::identity::Identity {
+        dpp::identity::Identity::V0(dpp::identity::v0::IdentityV0 {
+            id: Identifier::from(PLATFORM_IDENTITY),
+            public_keys: keys.into_iter().map(|key| (key.id(), key)).collect(),
+            balance: 0,
+            revision,
+        })
+    }
+
+    /// Where the test wallet's identity manager holds the identity.
+    enum Held {
+        /// At this slot of the test wallet.
+        AtSlot(u32),
+        /// Observed, with no wallet slot.
+        OutOfWallet,
+        /// At slot 1 of another wallet's bucket.
+        InAnotherWallet,
+    }
+
+    /// The testnet wallet of [`TEST_MNEMONIC`], holding `stored` as given,
+    /// over a mock SDK that answers the identity's fetch with
+    /// `on_platform` when given.
+    async fn wallet_on_platform(
+        stored: Option<(dpp::identity::Identity, Held)>,
+        on_platform: Option<Option<dpp::identity::Identity>>,
+    ) -> (
+        Arc<crate::PlatformWalletManager<crate::test_support::NoopTestPersister>>,
+        Arc<PlatformWallet>,
+    ) {
+        struct Events;
+        impl crate::events::EventHandler for Events {}
+        impl crate::events::PlatformEventHandler for Events {}
+
+        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        if let Some(answer) = on_platform {
+            sdk.mock()
+                .expect_fetch(Identifier::from(PLATFORM_IDENTITY), answer)
+                .await
+                .expect("identity fetch expectation");
+        }
+        let manager = Arc::new(crate::PlatformWalletManager::new(
+            Arc::new(sdk),
+            Arc::new(crate::test_support::NoopTestPersister),
+            Arc::new(Events),
+        ));
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
+            .expect("valid test mnemonic")
+            .to_seed("");
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("wallet creation");
+        if let Some((stored, held)) = stored {
+            let mut wm = manager.wallet_manager.write().await;
+            let identity_manager = &mut wm
+                .get_wallet_info_mut(&wallet.wallet_id())
+                .expect("wallet info")
+                .identity_manager;
+            let persister = &wallet.identity().persister;
+            match held {
+                Held::AtSlot(slot) => {
+                    identity_manager.add_identity(stored, slot, wallet.wallet_id(), persister)
+                }
+                Held::OutOfWallet => identity_manager.add_out_of_wallet_identity(stored, persister),
+                Held::InAnotherWallet => {
+                    identity_manager.add_identity(stored, 1, [0x99; 32], persister)
+                }
+            }
+            .expect("store the identity");
+        }
+        (manager, wallet)
+    }
+
+    /// The stored rows still hold a foreign master that another device
+    /// has since replaced: they say NotOwned, but the identity Platform
+    /// returns has the wallet's master enabled, so the check after the
+    /// refresh says Owned.
+    #[tokio::test]
+    async fn should_check_the_identity_platform_returns_not_the_stale_rows() {
+        let stale_master = ecdsa_key(0, SecurityLevel::MASTER, slot_public_key(1, 9), None);
+        let stored = platform_identity(vec![stale_master.clone()], 0);
+        let on_platform = platform_identity(
+            vec![
+                ecdsa_key(
+                    0,
+                    SecurityLevel::MASTER,
+                    slot_public_key(1, 9),
+                    Some(DISABLED_AT),
+                ),
+                ecdsa_key(1, SecurityLevel::MASTER, slot_public_key(1, 1), None),
+            ],
+            1,
+        );
+        let (_manager, wallet) =
+            wallet_on_platform(Some((stored, Held::AtSlot(1))), Some(Some(on_platform))).await;
+
+        let stale = wallet
+            .check_identity_keys(1, &[stale_master], 0, |network| {
+                Ok::<_, PlatformWalletError>(master_for(network))
+            })
+            .await
+            .expect("check the stored rows");
+        assert_eq!(stale.ownership, IdentityWalletOwnership::NotOwned);
+
+        let refreshed = wallet
+            .check_identity_keys_on_platform(&Identifier::from(PLATFORM_IDENTITY), |network| {
+                Ok::<_, PlatformWalletError>(master_for(network))
+            })
+            .await
+            .expect("check after the refresh");
+        assert_eq!(refreshed.ownership, IdentityWalletOwnership::Owned);
+        assert!(matches!(
+            refreshed.keys[..],
+            [
+                IdentityKeyWalletCheck::Mismatch { .. },
+                IdentityKeyWalletCheck::Matches { .. }
+            ]
+        ));
+    }
+
+    /// An identity the wallet does not hold can't be refreshed, so the
+    /// check fails, before reading the seed, instead of saying NotOwned.
+    #[tokio::test]
+    async fn should_refuse_an_identity_the_wallet_does_not_hold_without_the_seed() {
+        let (_manager, wallet) = wallet_on_platform(None, None).await;
+
+        let err = wallet
+            .check_identity_keys_on_platform(&Identifier::from(PLATFORM_IDENTITY), |_| {
+                Err(PlatformWalletError::InvalidParameter(
+                    "the seed must not be read".to_string(),
+                ))
+            })
+            .await
+            .expect_err("an identity the wallet does not hold");
+        assert!(
+            matches!(err, PlatformWalletError::IdentityNotFound(id) if id == Identifier::from(PLATFORM_IDENTITY)),
+            "{err:?}"
+        );
+    }
+
+    /// An identity Platform doesn't return fails the refresh, so the check
+    /// fails, before reading the seed, instead of saying NotOwned.
+    #[tokio::test]
+    async fn should_refuse_an_identity_platform_does_not_return() {
+        let stored = platform_identity(
+            vec![ecdsa_key(
+                0,
+                SecurityLevel::MASTER,
+                slot_public_key(1, 9),
+                None,
+            )],
+            0,
+        );
+        let (_manager, wallet) =
+            wallet_on_platform(Some((stored, Held::AtSlot(1))), Some(None)).await;
+
+        let err = wallet
+            .check_identity_keys_on_platform(&Identifier::from(PLATFORM_IDENTITY), |_| {
+                Err(PlatformWalletError::InvalidParameter(
+                    "the seed must not be read".to_string(),
+                ))
+            })
+            .await
+            .expect_err("an identity Platform does not return");
+        assert!(
+            matches!(&err, PlatformWalletError::InvalidIdentityData(message) if message.contains("not found on Platform")),
+            "{err:?}"
+        );
+    }
+
+    /// The check uses the identity's own slot in the wallet, so a caller
+    /// can't ask about a contradictory one: checked at slot 0, the
+    /// identity at slot 1 would look foreign.
+    #[tokio::test]
+    async fn should_check_a_held_identity_at_its_own_wallet_slot() {
+        let master = ecdsa_key(0, SecurityLevel::MASTER, slot_public_key(1, 0), None);
+        let identity = platform_identity(vec![master.clone()], 0);
+        let (_manager, wallet) = wallet_on_platform(
+            Some((identity.clone(), Held::AtSlot(1))),
+            Some(Some(identity)),
+        )
+        .await;
+
+        let wrong_slot = wallet
+            .check_identity_keys(0, std::slice::from_ref(&master), 0, |network| {
+                Ok::<_, PlatformWalletError>(master_for(network))
+            })
+            .await
+            .expect("check at slot 0");
+        assert_eq!(wrong_slot.ownership, IdentityWalletOwnership::NotOwned);
+
+        let check = wallet
+            .check_identity_keys_on_platform(&Identifier::from(PLATFORM_IDENTITY), |network| {
+                Ok::<_, PlatformWalletError>(master_for(network))
+            })
+            .await
+            .expect("check after the refresh");
+        assert_eq!(check.ownership, IdentityWalletOwnership::Owned);
+        assert!(matches!(
+            check.keys[..],
+            [IdentityKeyWalletCheck::Matches { .. }]
+        ));
+    }
+
+    /// An identity the manager holds with no slot in this wallet
+    /// (observed, or another wallet's) is refused before the fetch and
+    /// before the seed is read, never called foreign.
+    #[tokio::test]
+    async fn should_refuse_a_held_identity_with_no_wallet_slot_without_the_seed() {
+        for held in [Held::OutOfWallet, Held::InAnotherWallet] {
+            let identity = platform_identity(
+                vec![ecdsa_key(
+                    0,
+                    SecurityLevel::MASTER,
+                    slot_public_key(1, 9),
+                    None,
+                )],
+                0,
+            );
+            // No fetch expectation: a fetch would fail with another error.
+            let (_manager, wallet) = wallet_on_platform(Some((identity, held)), None).await;
+
+            let err = wallet
+                .check_identity_keys_on_platform(&Identifier::from(PLATFORM_IDENTITY), |_| {
+                    Err(PlatformWalletError::InvalidParameter(
+                        "the seed must not be read".to_string(),
+                    ))
+                })
+                .await
+                .expect_err("an identity with no slot in this wallet");
+            assert!(
+                matches!(err, PlatformWalletError::IdentityIndexNotSet(id) if id == Identifier::from(PLATFORM_IDENTITY)),
                 "{err:?}"
             );
         }

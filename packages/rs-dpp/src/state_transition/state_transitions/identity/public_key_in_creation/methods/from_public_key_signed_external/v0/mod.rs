@@ -13,7 +13,7 @@ impl IdentityPublicKeyInCreation {
     ) -> Result<Self, ProtocolError> {
         let mut public_key_with_witness: Self = public_key.clone().into();
         match public_key.key_type() {
-            KeyType::ECDSA_SECP256K1 | KeyType::BLS12_381 => {
+            KeyType::ECDSA_SECP256K1 | KeyType::BLS12_381 | KeyType::REDPALLAS_HECATE => {
                 public_key_with_witness
                     .set_signature(signer.sign(&public_key, state_transition_bytes).await?);
             }

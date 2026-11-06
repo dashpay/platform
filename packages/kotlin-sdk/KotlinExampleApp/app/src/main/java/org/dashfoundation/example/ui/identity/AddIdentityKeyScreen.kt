@@ -403,6 +403,7 @@ private fun KeyType.displayName(): String = when (this) {
     KeyType.BLS12_381 -> "BLS12-381"
     KeyType.BIP13_SCRIPT_HASH -> "BIP13 Script Hash"
     KeyType.EDDSA_25519_HASH160 -> "EdDSA 25519 Hash160"
+    KeyType.REDPALLAS_HECATE -> "RedPallas Hecate"
 }
 
 private fun KeyPurpose.displayName(): String = when (this) {
@@ -413,6 +414,7 @@ private fun KeyPurpose.displayName(): String = when (this) {
     KeyPurpose.SYSTEM -> "System"
     KeyPurpose.VOTING -> "Voting"
     KeyPurpose.OWNER -> "Owner"
+    KeyPurpose.HECATE_SIGNER -> "Hecate Signer"
 }
 
 private fun SecurityLevel.displayName(): String = when (this) {

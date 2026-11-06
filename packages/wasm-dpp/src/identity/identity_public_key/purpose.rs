@@ -2,6 +2,7 @@ use dpp::identity::Purpose;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name = KeyPurpose)]
+#[allow(non_camel_case_types)]
 pub enum PurposeWasm {
     /// at least one authentication key must be registered for all security levels
     AUTHENTICATION = 0,
@@ -17,6 +18,8 @@ pub enum PurposeWasm {
     VOTING = 5,
     /// this key is only for masternode owners
     OWNER = 6,
+    /// this key lets a zero-knowledge proof show that some identity sent a private entry
+    HECATE_SIGNER = 7,
 }
 
 impl From<Purpose> for PurposeWasm {
@@ -29,6 +32,7 @@ impl From<Purpose> for PurposeWasm {
             Purpose::SYSTEM => PurposeWasm::SYSTEM,
             Purpose::VOTING => PurposeWasm::VOTING,
             Purpose::OWNER => PurposeWasm::OWNER,
+            Purpose::HECATE_SIGNER => PurposeWasm::HECATE_SIGNER,
         }
     }
 }

@@ -141,12 +141,14 @@ use dpp::consensus::state::identity::identity_public_key_already_exists_for_uniq
 use dpp::consensus::basic::identity::{
     IdentityKeyLimitsUpdateEmptyError, IdentityPublicKeyLimitsNotAllowedError,
     IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError,
-    InvalidIdentityPublicKeyBudgetError,
+    InvalidIdentityPublicKeyBudgetError, InvalidIdentityPublicKeyTypeForPurposeError,
+    TooManyHecateSignerKeysError,
 };
 use dpp::consensus::signature::{
-    PublicKeyBudgetExhaustedError, PublicKeyExpiredError,
+    BasicRedPallasError, PublicKeyBudgetExhaustedError, PublicKeyExpiredError,
     PublicKeyWithLimitsCannotUpdateKeyLimitsError,
 };
+use dpp::consensus::state::identity::identity_already_has_hecate_signer_key_error::IdentityAlreadyHasHecateSignerKeyError;
 use dpp::consensus::state::identity::identity_public_key_already_expired_error::IdentityPublicKeyAlreadyExpiredError;
 use dpp::consensus::state::identity::identity_public_key_limit_not_raised_error::IdentityPublicKeyLimitNotRaisedError;
 use dpp::consensus::state::identity::identity_public_key_limit_not_set_error::IdentityPublicKeyLimitNotSetError;
@@ -823,6 +825,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::ReferencedDocumentTypePrivateError(e) => {
             generic_consensus_error!(ReferencedDocumentTypePrivateError, e).into()
         }
+        StateError::IdentityAlreadyHasHecateSignerKeyError(e) => {
+            generic_consensus_error!(IdentityAlreadyHasHecateSignerKeyError, e).into()
+        }
     }
 }
 
@@ -1451,6 +1456,12 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::DocumentTypePrivateError(e) => {
             generic_consensus_error!(DocumentTypePrivateError, e).into()
         }
+        BasicError::InvalidIdentityPublicKeyTypeForPurposeError(e) => {
+            generic_consensus_error!(InvalidIdentityPublicKeyTypeForPurposeError, e).into()
+        }
+        BasicError::TooManyHecateSignerKeysError(e) => {
+            generic_consensus_error!(TooManyHecateSignerKeysError, e).into()
+        }
     }
 }
 
@@ -1501,6 +1512,9 @@ fn from_signature_error(signature_error: &SignatureError) -> JsValue {
         }
         SignatureError::PublicKeyWithLimitsCannotUpdateKeyLimitsError(e) => {
             generic_consensus_error!(PublicKeyWithLimitsCannotUpdateKeyLimitsError, e).into()
+        }
+        SignatureError::BasicRedPallasError(e) => {
+            generic_consensus_error!(BasicRedPallasError, e).into()
         }
     }
 }

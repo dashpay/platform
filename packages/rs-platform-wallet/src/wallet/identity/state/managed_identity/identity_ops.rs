@@ -3,9 +3,10 @@
 use super::key_storage::{DpnsFetch, DpnsNameInfo, IdentityStatus};
 use super::ManagedIdentity;
 use crate::changeset::{
-    IdentityChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet, KeyWithBreadcrumb,
-    PersistenceError,
+    IdentityChangeSet, IdentityEntry, IdentityKeyDerivationIndices, IdentityKeyEntry,
+    IdentityKeysChangeSet, KeyDerivationBreadcrumb, KeyWithBreadcrumb, PersistenceError,
 };
+use crate::wallet::identity::network::identity_key_derivation_type;
 use crate::wallet::persister::WalletPersister;
 use crate::BlockTime;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
@@ -26,6 +27,31 @@ fn pubkey_hash_of(pub_key: &dpp::identity::IdentityPublicKey) -> [u8; 20] {
     let mut out = [0u8; 20];
     out.copy_from_slice(ripemd160_sha256(pub_key.data().as_slice()).as_slice());
     out
+}
+
+/// The wallet id and derivation indices a key row stores for `breadcrumb`.
+/// A key of a type the wallet does not derive (a Hecate signer key, a
+/// script hash; see [`identity_key_derivation_type`]) gets neither, whatever
+/// breadcrumb it came with: no private key derives at its slot, and a client
+/// would otherwise derive and keep the slot's key for it.
+fn derivation_of(
+    public_key: &IdentityPublicKey,
+    breadcrumb: Option<KeyDerivationBreadcrumb>,
+) -> (Option<[u8; 32]>, Option<IdentityKeyDerivationIndices>) {
+    match breadcrumb {
+        Some((wallet_id, identity_index, key_index))
+            if identity_key_derivation_type(public_key.key_type()).is_some() =>
+        {
+            (
+                Some(wallet_id),
+                Some(IdentityKeyDerivationIndices {
+                    identity_index,
+                    key_index,
+                }),
+            )
+        }
+        _ => (None, None),
+    }
 }
 
 impl ManagedIdentity {
@@ -609,16 +635,7 @@ impl ManagedIdentity {
             let key_id = public_key.id();
             let public_key_hash = pubkey_hash_of(&public_key);
             current.insert(key_id, public_key.clone());
-            let (wallet_id, derivation_indices) = match breadcrumb {
-                Some((wallet_id, identity_index, key_index)) => (
-                    Some(wallet_id),
-                    Some(crate::changeset::IdentityKeyDerivationIndices {
-                        identity_index,
-                        key_index,
-                    }),
-                ),
-                None => (None, None),
-            };
+            let (wallet_id, derivation_indices) = derivation_of(&public_key, breadcrumb);
             keys_cs.upserts.insert(
                 (identity_id, key_id),
                 IdentityKeyEntry {
@@ -742,16 +759,10 @@ impl ManagedIdentity {
             public_key.set_disabled_at(disabled_at);
             let public_key_hash = pubkey_hash_of(public_key);
 
-            let (wallet_id, derivation_indices) = match breadcrumb {
-                Some((wallet_id, identity_index)) => (
-                    Some(wallet_id),
-                    Some(crate::changeset::IdentityKeyDerivationIndices {
-                        identity_index,
-                        key_index: key_id,
-                    }),
-                ),
-                None => (None, None),
-            };
+            let (wallet_id, derivation_indices) = derivation_of(
+                public_key,
+                breadcrumb.map(|(wallet_id, identity_index)| (wallet_id, identity_index, key_id)),
+            );
 
             keys_cs.upserts.insert(
                 (identity_id, key_id),

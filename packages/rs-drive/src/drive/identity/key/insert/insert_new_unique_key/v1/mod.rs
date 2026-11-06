@@ -65,10 +65,16 @@ impl Drive {
             platform_version,
         )?;
 
+        // A HECATE_SIGNER key is referenced from the identity's signer index, which holds its
+        // enabled signer keys. In place: no key has this purpose before protocol version 15,
+        // as a transition adding one is not active before it.
         if with_searchable_inner_references
             && matches!(
                 identity_key.purpose(),
-                Purpose::AUTHENTICATION | Purpose::TRANSFER | Purpose::VOTING
+                Purpose::AUTHENTICATION
+                    | Purpose::TRANSFER
+                    | Purpose::VOTING
+                    | Purpose::HECATE_SIGNER
             )
         {
             self.insert_key_searchable_references_operations(

@@ -85,6 +85,10 @@ impl IdentityPublicKeyInCreation {
                     identity_public_key.data().len() != HASH_KEY_DATA_SIZE
                 }
                 KeyType::ECDSA_SECP256K1 | KeyType::BLS12_381 => false,
+                // In place: a transition adding a REDPALLAS_HECATE key is inactive before
+                // protocol version 15, and version 15 selects generation 2, so no version that
+                // selects this generation reaches this arm. Refused all the same.
+                KeyType::REDPALLAS_HECATE => true,
             })
             .map(|identity_public_key| {
                 InvalidIdentityPublicKeyDataError::new(
@@ -135,11 +139,12 @@ mod tests {
         .into()
     }
 
+    /// Generation 1 is protocol version 14's.
     fn validate(keys: &[IdentityPublicKeyInCreation]) -> SimpleConsensusValidationResult {
         IdentityPublicKeyInCreation::validate_identity_public_keys_structure(
             keys,
             false,
-            PlatformVersion::latest(),
+            PlatformVersion::get(14).expect("protocol version 14"),
         )
         .expect("expected validation to run")
     }

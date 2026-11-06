@@ -18,6 +18,7 @@ state-transitions = [
 [dependencies]
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "ed25519-dalek",
+    "redpallas",
 ] }
 async-trait = { version = "0.1.79" }
 bincode = { workspace = true, features = ["serde"] }

@@ -68,6 +68,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
             },
             identity_update_state_transition: DriveAbciStateTransitionValidationVersion {
                 advanced_structure: Some(1), // added key proof of possession failures are refused unpaid
+                state: 2, // an identity keeps at most one enabled Hecate signer key
                 ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
                     .state_transitions
                     .identity_update_state_transition

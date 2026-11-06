@@ -14,6 +14,8 @@ use secp256k1::rand::SeedableRng;
 #[cfg(feature = "bls-signatures")]
 use crate::bls::{self, BlsError};
 use crate::fee::Credits;
+#[cfg(feature = "redpallas")]
+use crate::identity::identity_public_key::redpallas_hecate::RedPallasHecateSecretKey;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 #[cfg(feature = "random-public-keys")]
@@ -50,6 +52,12 @@ pub enum KeyType {
     ECDSA_HASH160 = 2,
     BIP13_SCRIPT_HASH = 3,
     EDDSA_25519_HASH160 = 4,
+    /// A Hecate signer key: a RedPallas spend-authorization key `ak` and a commitment to a
+    /// separate tag key, 64 bytes (see
+    /// [`redpallas_hecate`](crate::identity::identity_public_key::redpallas_hecate)). Only for
+    /// [`Purpose::HECATE_SIGNER`](crate::identity::Purpose::HECATE_SIGNER), from protocol
+    /// version 15.
+    REDPALLAS_HECATE = 5,
 }
 
 lazy_static! {
@@ -58,7 +66,8 @@ lazy_static! {
         (KeyType::BLS12_381, 48),
         (KeyType::ECDSA_HASH160, 20),
         (KeyType::BIP13_SCRIPT_HASH, 20),
-        (KeyType::EDDSA_25519_HASH160, 20)
+        (KeyType::EDDSA_25519_HASH160, 20),
+        (KeyType::REDPALLAS_HECATE, 64)
     ]
     .iter()
     .copied()
@@ -77,14 +86,36 @@ impl KeyType {
         KEY_TYPE_SIZES[self]
     }
 
+    /// The size in bytes of a private key of this type: the bytes that
+    /// [`public_key_data_from_private_key_data`](Self::public_key_data_from_private_key_data),
+    /// `IdentityPublicKey::validate_private_key_bytes` and `sign_by_private_key` take. SDKs and
+    /// FFI read the size from here instead of keeping their own.
+    pub const fn private_key_size(&self) -> usize {
+        match self {
+            // The secp256k1 secret scalar (`secp256k1::SecretKey::from_secret_bytes`).
+            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => 32,
+            // The BLS12-381 secret scalar, big-endian (`bls::SecretKey::from_be_bytes`).
+            KeyType::BLS12_381 => 32,
+            // A script hash has no private key and cannot sign; its slot takes the secp256k1
+            // secret scalar, the key `random_public_and_private_key_data` draws for it.
+            KeyType::BIP13_SCRIPT_HASH => 32,
+            // The Ed25519 secret key (`ed25519_dalek::SigningKey::from_bytes`).
+            KeyType::EDDSA_25519_HASH160 => 32,
+            // The Hecate secret (`RedPallasHecateSecretKey::from_secret`), from which the
+            // RedPallas signing key and the tag key derive.
+            KeyType::REDPALLAS_HECATE => 32,
+        }
+    }
+
     /// All key types
-    pub fn all_key_types() -> [KeyType; 5] {
+    pub fn all_key_types() -> [KeyType; 6] {
         [
             Self::ECDSA_SECP256K1,
             Self::BLS12_381,
             Self::ECDSA_HASH160,
             Self::BIP13_SCRIPT_HASH,
             Self::EDDSA_25519_HASH160,
+            Self::REDPALLAS_HECATE,
         ]
     }
 
@@ -96,6 +127,9 @@ impl KeyType {
             KeyType::ECDSA_HASH160 => false,
             KeyType::BIP13_SCRIPT_HASH => false,
             KeyType::EDDSA_25519_HASH160 => false,
+            // Its data is a public key, so one key belongs to one identity, and a signer leaf
+            // to one identity.
+            KeyType::REDPALLAS_HECATE => true,
         }
     }
 
@@ -107,6 +141,7 @@ impl KeyType {
             KeyType::ECDSA_HASH160 => true,
             KeyType::BIP13_SCRIPT_HASH => true,
             KeyType::EDDSA_25519_HASH160 => false,
+            KeyType::REDPALLAS_HECATE => false,
         }
     }
 
@@ -146,6 +181,12 @@ impl KeyType {
                         .signature
                         .verify_signature_eddsa25519_hash160
                 }
+                KeyType::REDPALLAS_HECATE => {
+                    platform_version
+                        .fee_version
+                        .signature
+                        .verify_signature_redpallas
+                }
             }),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "KeyType::signature_verify_cost".to_string(),
@@ -174,6 +215,7 @@ impl KeyType {
             KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
                 (0..self.default_size()).map(|_| rng.gen::<u8>()).collect()
             }
+            KeyType::REDPALLAS_HECATE => random_redpallas_hecate_key(rng).0,
         }
     }
 
@@ -253,6 +295,18 @@ impl KeyType {
             KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::NotSupported(
                 "Converting a private key to a script hash is not supported".to_string(),
             )),
+            KeyType::REDPALLAS_HECATE => {
+                #[cfg(feature = "redpallas")]
+                {
+                    Ok(RedPallasHecateSecretKey::from_secret(private_key_bytes)?
+                        .public_key_data()?
+                        .to_vec())
+                }
+                #[cfg(not(feature = "redpallas"))]
+                return Err(ProtocolError::NotSupported(
+                    "Converting a private key to a REDPALLAS_HECATE key is not supported without the redpallas feature".to_string(),
+                ));
+            }
         }
     }
 
@@ -306,6 +360,7 @@ impl KeyType {
                     secret_key.to_secret_bytes(),
                 )
             }
+            KeyType::REDPALLAS_HECATE => random_redpallas_hecate_key(rng),
         }
     }
 
@@ -347,7 +402,23 @@ impl TryFrom<u8> for KeyType {
             2 => Ok(Self::ECDSA_HASH160),
             3 => Ok(Self::BIP13_SCRIPT_HASH),
             4 => Ok(Self::EDDSA_25519_HASH160),
+            5 => Ok(Self::REDPALLAS_HECATE),
             value => bail!("unrecognized key type: {}", value),
+        }
+    }
+}
+
+/// A random Hecate signer key: its data and its 32-byte private key. Draws secrets until one
+/// derives a nonzero signing key, which the first does but with negligible probability.
+#[cfg(feature = "random-public-keys")]
+fn random_redpallas_hecate_key(rng: &mut StdRng) -> (Vec<u8>, [u8; 32]) {
+    loop {
+        let mut secret = [0u8; 32];
+        rng.fill(&mut secret);
+        if let Ok(data) =
+            RedPallasHecateSecretKey::from_secret(&secret).and_then(|key| key.public_key_data())
+        {
+            return (data.to_vec(), secret);
         }
     }
 }
@@ -393,9 +464,9 @@ mod tests {
     // -- all_key_types() --
 
     #[test]
-    fn test_all_key_types_has_five_elements() {
+    fn test_all_key_types_has_six_elements() {
         let types = KeyType::all_key_types();
-        assert_eq!(types.len(), 5);
+        assert_eq!(types.len(), 6);
     }
 
     #[test]
@@ -409,6 +480,7 @@ mod tests {
                 KeyType::ECDSA_HASH160,
                 KeyType::BIP13_SCRIPT_HASH,
                 KeyType::EDDSA_25519_HASH160,
+                KeyType::REDPALLAS_HECATE,
             ]
         );
     }
@@ -500,13 +572,65 @@ mod tests {
     // -- TryFrom<u8> invalid --
 
     #[test]
-    fn test_try_from_u8_invalid_5() {
-        assert!(KeyType::try_from(5u8).is_err());
+    fn test_try_from_u8_redpallas_hecate() {
+        assert_eq!(KeyType::try_from(5u8).unwrap(), KeyType::REDPALLAS_HECATE);
+    }
+
+    #[test]
+    fn test_try_from_u8_invalid_6() {
+        assert!(KeyType::try_from(6u8).is_err());
+    }
+
+    #[test]
+    fn should_size_a_redpallas_hecate_key_at_64_bytes_unique_and_not_a_core_address() {
+        assert_eq!(KeyType::REDPALLAS_HECATE.default_size(), 64);
+        assert!(KeyType::REDPALLAS_HECATE.is_unique_key_type());
+        assert!(!KeyType::REDPALLAS_HECATE.is_core_address_key_type());
+    }
+
+    #[cfg(feature = "random-public-keys")]
+    #[test]
+    fn should_derive_a_redpallas_hecate_key_from_its_random_private_key() {
+        let mut rng = <StdRng as rand::SeedableRng>::seed_from_u64(5);
+        let (data, private_key) = KeyType::REDPALLAS_HECATE
+            .random_public_and_private_key_data(&mut rng, PlatformVersion::latest())
+            .unwrap();
+        assert_eq!(data.len(), 64);
+        assert_eq!(
+            KeyType::REDPALLAS_HECATE
+                .public_key_data_from_private_key_data(&private_key, Network::Testnet)
+                .unwrap(),
+            data
+        );
     }
 
     #[test]
     fn test_try_from_u8_invalid_255() {
         assert!(KeyType::try_from(255u8).is_err());
+    }
+
+    // -- private_key_size() --
+
+    #[cfg(feature = "random-public-keys")]
+    #[test]
+    fn should_size_each_key_types_private_key_as_the_private_key_apis_take_it() {
+        let mut rng = <StdRng as rand::SeedableRng>::seed_from_u64(32);
+        for key_type in KeyType::all_key_types() {
+            let (data, private_key) = key_type
+                .random_public_and_private_key_data(&mut rng, PlatformVersion::latest())
+                .unwrap();
+            assert_eq!(private_key.len(), key_type.private_key_size(), "{key_type}");
+            // A script hash has no key to derive from its private key slot.
+            if key_type != KeyType::BIP13_SCRIPT_HASH {
+                assert_eq!(
+                    key_type
+                        .public_key_data_from_private_key_data(&private_key, Network::Testnet)
+                        .unwrap(),
+                    data,
+                    "{key_type}"
+                );
+            }
+        }
     }
 
     // -- Display --
@@ -553,7 +677,7 @@ mod tests {
 
     #[test]
     fn test_round_trip_all_valid() {
-        for val in 0u8..=4 {
+        for val in 0u8..=5 {
             let key_type = KeyType::try_from(val).unwrap();
             assert_eq!(key_type as u8, val);
         }

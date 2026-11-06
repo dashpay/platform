@@ -18,6 +18,12 @@ enum class KeyType(val ffiValue: Int) {
     ECDSA_HASH160(2),
     BIP13_SCRIPT_HASH(3),
     EDDSA_25519_HASH160(4),
+
+    /**
+     * A Hecate signer key (64 bytes: a RedPallas `ak` and `Poseidon(nk)`), only for
+     * [KeyPurpose.HECATE_SIGNER], from protocol version 15.
+     */
+    REDPALLAS_HECATE(5),
 }
 
 /**
@@ -32,6 +38,13 @@ enum class KeyPurpose(val ffiValue: Int) {
     SYSTEM(4),
     VOTING(5),
     OWNER(6),
+
+    /**
+     * Lets a zero-knowledge proof show that some identity sent a private entry
+     * without saying which: a [KeyType.REDPALLAS_HECATE] key, from protocol
+     * version 15.
+     */
+    HECATE_SIGNER(7),
 }
 
 /**

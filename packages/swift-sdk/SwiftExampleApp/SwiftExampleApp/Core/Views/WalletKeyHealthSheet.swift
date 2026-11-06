@@ -4,8 +4,8 @@ import SwiftDashSDK
 
 // MARK: - Reports
 
-/// Per-key diagnosis. Status drives the row's icon + the parent
-/// identity's roll-up severity.
+/// Per-key diagnosis. Status drives the row's icon and, through
+/// re-derive, the parent identity's roll-up severity.
 struct WalletKeyHealth: Identifiable {
     let id: Int32  // keyId (stable per identity)
     let keyId: UInt32
@@ -25,18 +25,26 @@ struct WalletKeyHealth: Identifiable {
         /// entry is missing or holds different bytes — a re-derive
         /// will repair it.
         case needsRederive(reason: String)
-        /// Stored pubkey doesn't match what this wallet's mnemonic
-        /// derives at `(identityIndex, keyId)`. The identity row
-        /// belongs to a different wallet (or a stale mnemonic).
-        /// Repair is destructive — only delete-identity.
-        case orphan(reason: String)
+        /// The key isn't the one this wallet derives at its slot
+        /// `(identityIndex, keyId)`, so the wallet can't sign with it.
+        /// Whose identity it is stays Rust's call (the report's
+        /// `ownership`); the key alone offers no repair.
+        case notWalletKey(reason: String)
+        /// A key with nothing to compare it with: a type the wallet
+        /// doesn't derive at the identity's key slots (Rust decides
+        /// which), a row whose key type the app can't read, or a check
+        /// that failed (a locked Keychain, say), which says nothing
+        /// about whose key it is. Shown, but it leaves the identity's
+        /// severity alone and offers no repair.
+        case unchecked(reason: String)
     }
 
     var iconName: String {
         switch status {
         case .healthy: return "checkmark.circle.fill"
         case .needsRederive: return "exclamationmark.triangle.fill"
-        case .orphan: return "xmark.circle.fill"
+        case .notWalletKey: return "xmark.circle"
+        case .unchecked: return "questionmark.circle.fill"
         }
     }
 
@@ -44,7 +52,8 @@ struct WalletKeyHealth: Identifiable {
         switch status {
         case .healthy: return .green
         case .needsRederive: return .orange
-        case .orphan: return .red
+        case .notWalletKey: return .orange
+        case .unchecked: return .secondary
         }
     }
 
@@ -52,7 +61,8 @@ struct WalletKeyHealth: Identifiable {
         switch status {
         case .healthy: return "Healthy"
         case .needsRederive(let reason): return "Needs re-derive — \(reason)"
-        case .orphan(let reason): return "Orphan — \(reason)"
+        case .notWalletKey(let reason): return "Not this wallet's key: \(reason)"
+        case .unchecked(let reason): return "Not checked: \(reason)"
         }
     }
 
@@ -65,21 +75,25 @@ struct WalletKeyHealth: Identifiable {
     }
 }
 
-/// Per-identity rollup. Severity is the highest-severity child key
-/// status; drives which repair action is offered (re-derive vs
-/// delete-identity).
+/// Per-identity rollup; drives which repair action is offered
+/// (re-derive vs delete-identity). Whose identity it is comes from
+/// Rust (`ownership`, decided from the identity's enabled master key),
+/// and the sheet offers delete only when Rust says it isn't the
+/// wallet's.
 struct WalletIdentityKeyHealthReport: Identifiable {
     let id: Data  // identity id bytes
     let identityIdBase58: String
     let identityIndex: UInt32
     let keys: [WalletKeyHealth]
+    /// Rust's verdict on whose identity this is.
+    let ownership: ManagedPlatformWallet.IdentityWalletOwnership
     /// Held so the delete-identity action can cascade-remove the row.
     let identityRow: PersistentIdentity
 
     enum Severity { case healthy, needsRederive, orphan }
 
     var severity: Severity {
-        if keys.contains(where: { if case .orphan = $0.status { true } else { false } }) {
+        if ownership == .notOwned {
             return .orphan
         }
         if keys.contains(where: { if case .needsRederive = $0.status { true } else { false } }) {
@@ -123,143 +137,201 @@ fileprivate func cleanupLegacyKeychainEntry(walletIdHex: String, derivationPath:
 /// background context.
 enum WalletKeyHealthChecker {
 
-    /// Derive each PersistentPublicKey's canonical key from the
-    /// wallet's mnemonic and classify against the stored row +
-    /// Keychain bytes. Pure read — does not mutate state.
+    /// Ask Rust (`checkIdentityKeys`) which of each identity's keys are
+    /// the wallet's keys at their slots and whether the identity is the
+    /// wallet's, and for a key that is, compare the Keychain entry with
+    /// its private bytes. Rust decides, and refuses a stored recovery
+    /// phrase that isn't this wallet's (every key then shows not
+    /// checked); this inspects the Keychain and renders. Pure read: does
+    /// not mutate state. An identity deleted since the sheet opened is
+    /// skipped: its model must not be read.
     @MainActor
     static func runCheck(
         wallet: ManagedPlatformWallet,
         walletId: Data,
-        identities: [PersistentIdentity],
-        network: Network
+        identities: [PersistentIdentity]
     ) -> [WalletIdentityKeyHealthReport] {
-        var reports: [WalletIdentityKeyHealthReport] = []
-        for identity in identities {
-            let sortedKeys = identity.publicKeys.sorted { $0.keyId < $1.keyId }
-            var keyHealths: [WalletKeyHealth] = []
-            for row in sortedKeys {
-                let kid = UInt32(bitPattern: row.keyId)
-                let purposeRaw = UInt8(row.purpose) ?? 0
-                let levelRaw = UInt8(row.securityLevel) ?? 0
-                let storedHex = row.publicKeyData.toHexString()
-
-                let status: WalletKeyHealth.Status
-                let derivedHex: String
-
-                do {
-                    let preview = try wallet.deriveIdentityAuthKeyAtSlot(
-                        identityIndex: identity.identityIndex,
-                        keyId: kid,
-                        network: network
-                    )
-
-                    // `row.publicKeyData` stores whatever shape was
-                    // registered on Platform — 33-byte compressed
-                    // pubkey for `.ecdsaSecp256k1`, 20-byte HASH160
-                    // for `.ecdsaHash160`. The Rust-derived preview
-                    // is always the raw 33-byte pubkey; hash it
-                    // ourselves before comparing for HASH160 rows.
-                    // (Other variants — BLS, BIP13 script-hash,
-                    // EdDSA — aren't produced by this preview path
-                    // today; treat them as `notSupported` so the
-                    // diagnostic surfaces them instead of silently
-                    // misclassifying them as orphans.)
-                    let derivedComparableHex: String?
-                    switch row.keyTypeEnum ?? .ecdsaSecp256k1 {
-                    case .ecdsaSecp256k1:
-                        derivedComparableHex = preview.publicKeyHex
-                        derivedHex = preview.publicKeyHex
-                    case .ecdsaHash160:
-                        let hashHex = SwiftDashSDK.KeychainManager
-                            .computePublicKeyHashHex(preview.publicKeyData)
-                        derivedComparableHex = hashHex.isEmpty ? nil : hashHex
-                        derivedHex = hashHex
-                    case .bls12_381, .bip13ScriptHash, .eddsa25519Hash160:
-                        derivedComparableHex = nil
-                        derivedHex = preview.publicKeyHex
-                    }
-
-                    if let derivedComparableHex,
-                       derivedComparableHex.caseInsensitiveCompare(storedHex) == .orderedSame {
-                        // pubkey matches the wallet's mnemonic →
-                        // look up the keychain bytes at the expected
-                        // walletId-namespaced account.
-                        //
-                        // We intentionally DON'T fall back to the
-                        // metadata-scan lookup
-                        // (`retrieveIdentityPrivateKey(publicKeyHex:)`)
-                        // here — that path also finds legacy
-                        // (non-namespaced) entries, which would
-                        // mask migration debt. Reporting legacy-only
-                        // keys as "needsRederive" surfaces them in
-                        // the sheet so the user can migrate them
-                        // explicitly.
-                        let expectedAccount = namespacedKeychainAccount(
-                            walletIdHex: walletId.toHexString(),
-                            derivationPath: preview.derivationPath
-                        )
-                        if let kcBytes = KeychainManager.shared
-                            .retrieveKeyData(identifier: expectedAccount)
-                        {
-                            if kcBytes == preview.privateKeyData {
-                                status = .healthy
-                            } else {
-                                status = .needsRederive(
-                                    reason: "Keychain bytes at \(expectedAccount.suffix(40)) don't match the derived private key"
-                                )
-                            }
-                        } else {
-                            status = .needsRederive(
-                                reason: "No new-format Keychain entry (legacy-only entries don't count)"
-                            )
-                        }
-                    } else if derivedComparableHex == nil {
-                        // Key type isn't one the diagnostic knows
-                        // how to compare against a Rust-derived
-                        // pubkey today (BLS / BIP13 / EdDSA). Report
-                        // it as orphan with a clear reason so the
-                        // user knows we can't verify it, rather than
-                        // silently passing.
-                        let label = row.keyTypeEnum?.name ?? "type \(row.keyType)"
-                        status = .orphan(
-                            reason: "Key type \(label) isn't supported by the diagnostic — can't verify against derived pubkey"
-                        )
-                    } else {
-                        status = .orphan(
-                            reason: "Stored \(storedHex.prefix(12))… doesn't match wallet's derivation \(derivedHex.prefix(12))…"
-                        )
-                    }
-                } catch {
-                    derivedHex = ""
-                    status = .orphan(
-                        reason: "Derivation failed: \(error.localizedDescription)"
-                    )
-                }
-
-                keyHealths.append(
-                    WalletKeyHealth(
-                        id: row.keyId,
-                        keyId: kid,
-                        purposeRaw: purposeRaw,
-                        securityLevelRaw: levelRaw,
-                        storedPublicKeyHex: storedHex,
-                        derivedPublicKeyHex: derivedHex,
-                        status: status,
-                        row: row
-                    )
-                )
+        identities
+            .filter { !$0.isDeleted && $0.modelContext != nil }
+            .map { identity in
+                checkIdentity(identity, wallet: wallet, walletId: walletId)
             }
-            reports.append(
-                WalletIdentityKeyHealthReport(
-                    id: identity.identityId,
-                    identityIdBase58: identity.identityIdBase58,
-                    identityIndex: identity.identityIndex,
-                    keys: keyHealths,
-                    identityRow: identity
+    }
+
+    /// One identity's report from a single Rust check of all its keys.
+    @MainActor
+    private static func checkIdentity(
+        _ identity: PersistentIdentity,
+        wallet: ManagedPlatformWallet,
+        walletId: Data
+    ) -> WalletIdentityKeyHealthReport {
+        let sortedKeys = identity.publicKeys.sorted { $0.keyId < $1.keyId }
+
+        // A row the app can't read is not handed to Rust under a guessed
+        // type, only counted: Rust can't call the identity foreign while
+        // a key it wasn't shown could be the wallet's.
+        var inputs: [ManagedPlatformWallet.IdentityKeyCheckInput] = []
+        var unreadableKeyCount = 0
+        for row in sortedKeys {
+            guard let keyType = row.keyTypeEnum,
+                  let purpose = UInt8(row.purpose),
+                  let securityLevel = UInt8(row.securityLevel)
+            else {
+                unreadableKeyCount += 1
+                continue
+            }
+            inputs.append(
+                ManagedPlatformWallet.IdentityKeyCheckInput(
+                    keyId: UInt32(bitPattern: row.keyId),
+                    keyType: keyType,
+                    purpose: purpose,
+                    securityLevel: securityLevel,
+                    publicKeyData: row.publicKeyData,
+                    disabledAt: row.disabledAt.map { UInt64(clamping: $0) }
                 )
             )
         }
-        return reports
+
+        var checks: [UInt32: ManagedPlatformWallet.IdentityKeyWalletCheck] = [:]
+        var ownership = ManagedPlatformWallet.IdentityWalletOwnership.undetermined
+        var failure: String?
+        do {
+            let result = try wallet.checkIdentityKeys(
+                identityIndex: identity.identityIndex,
+                keys: inputs,
+                unreadableKeyCount: unreadableKeyCount
+            )
+            for (input, check) in zip(inputs, result.keys) {
+                checks[input.keyId] = check
+            }
+            ownership = result.ownership
+        } catch {
+            // An error (a locked Keychain, or a recovery phrase that
+            // isn't this wallet's) says nothing about whose keys these
+            // are, so it must not offer to delete the identity.
+            failure = "couldn't check the keys: \(error.localizedDescription)"
+        }
+
+        let keyHealths = sortedKeys.map { row in
+            let keyId = UInt32(bitPattern: row.keyId)
+            let storedHex = row.publicKeyData.toHexString()
+            let (status, derivedHex) = keyStatus(
+                row: row,
+                check: checks[keyId],
+                failure: failure,
+                storedHex: storedHex,
+                walletId: walletId
+            )
+            return WalletKeyHealth(
+                id: row.keyId,
+                keyId: keyId,
+                purposeRaw: UInt8(row.purpose) ?? 0,
+                securityLevelRaw: UInt8(row.securityLevel) ?? 0,
+                storedPublicKeyHex: storedHex,
+                derivedPublicKeyHex: derivedHex,
+                status: status,
+                row: row
+            )
+        }
+        return WalletIdentityKeyHealthReport(
+            id: identity.identityId,
+            identityIdBase58: identity.identityIdBase58,
+            identityIndex: identity.identityIndex,
+            keys: keyHealths,
+            ownership: ownership,
+            identityRow: identity
+        )
+    }
+
+    /// One key's status from Rust's check of it (`nil` when it wasn't
+    /// sent or the check failed), and the wallet's key at its slot in
+    /// hex (empty when there is none to show).
+    @MainActor
+    private static func keyStatus(
+        row: PersistentPublicKey,
+        check: ManagedPlatformWallet.IdentityKeyWalletCheck?,
+        failure: String?,
+        storedHex: String,
+        walletId: Data
+    ) -> (WalletKeyHealth.Status, String) {
+        guard let check else {
+            if let failure {
+                return (.unchecked(reason: failure), "")
+            }
+            return (
+                .unchecked(
+                    reason: "the stored key type \(row.keyType), purpose \(row.purpose) or security level \(row.securityLevel) isn't one the app knows"
+                ),
+                ""
+            )
+        }
+        switch check {
+        case .notDerived:
+            let typeName = row.keyTypeEnum?.name ?? "type \(row.keyType)"
+            return (
+                .unchecked(
+                    reason: "the wallet doesn't derive \(typeName) keys from the identity's key slots"
+                ),
+                ""
+            )
+        case .notCompared:
+            return (
+                .unchecked(
+                    reason: "the check compares ECDSA keys only in their 33-byte compressed form"
+                ),
+                ""
+            )
+        case .mismatch(let derivationPath, let derivedPublicKeyData):
+            let derivedHex = derivedPublicKeyData.toHexString()
+            return (
+                .notWalletKey(
+                    reason: "Stored \(storedHex.prefix(12))… doesn't match the wallet's key at \(derivationPath) (\(derivedHex.prefix(12))…)"
+                ),
+                derivedHex
+            )
+        case .matches(let derivationPath, let privateKeyData, _):
+            return (
+                keychainStatus(
+                    walletId: walletId,
+                    derivationPath: derivationPath,
+                    privateKeyData: privateKeyData
+                ),
+                storedHex
+            )
+        }
+    }
+
+    /// The Keychain side of a key that is the wallet's: whether the
+    /// walletId-namespaced entry at `derivationPath` holds
+    /// `privateKeyData`.
+    ///
+    /// We intentionally DON'T fall back to the metadata-scan lookup
+    /// (`retrieveIdentityPrivateKey(publicKeyHex:)`) here: that path
+    /// also finds legacy (non-namespaced) entries, which would mask
+    /// migration debt. Reporting legacy-only keys as "needsRederive"
+    /// surfaces them in the sheet so the user can migrate them
+    /// explicitly.
+    @MainActor
+    private static func keychainStatus(
+        walletId: Data,
+        derivationPath: String,
+        privateKeyData: Data
+    ) -> WalletKeyHealth.Status {
+        let expectedAccount = namespacedKeychainAccount(
+            walletIdHex: walletId.toHexString(),
+            derivationPath: derivationPath
+        )
+        guard let kcBytes = KeychainManager.shared.retrieveKeyData(identifier: expectedAccount) else {
+            return .needsRederive(
+                reason: "No new-format Keychain entry (legacy-only entries don't count)"
+            )
+        }
+        if kcBytes == privateKeyData {
+            return .healthy
+        }
+        return .needsRederive(
+            reason: "Keychain bytes at \(expectedAccount.suffix(40)) don't match the derived private key"
+        )
     }
 
     /// Per-key result of a rederive pass. `success` is the count of
@@ -291,44 +363,57 @@ enum WalletKeyHealthChecker {
         report: WalletIdentityKeyHealthReport,
         wallet: ManagedPlatformWallet,
         walletId: Data,
-        network: Network,
         modelContext: ModelContext
     ) throws -> RederiveOutcome {
         var fixed = 0
         var failures: [(UInt32, String)] = []
         for key in report.keys {
             guard case .needsRederive = key.status else { continue }
-            let preview: ManagedPlatformWallet.IdentityRegistrationKeyPreview
-            do {
-                preview = try wallet.deriveIdentityAuthKeyAtSlot(
-                    identityIndex: report.identityIndex,
-                    keyId: key.keyId,
-                    network: network
-                )
-            } catch {
-                failures.append((key.keyId, "derivation failed: \(error.localizedDescription)"))
+            // Ask again rather than hold private bytes in the report.
+            guard let keyType = key.row.keyTypeEnum else {
+                failures.append((key.keyId, "unknown key type \(key.row.keyType)"))
                 continue
             }
-            let pubkeyHashHex = SwiftDashSDK.KeychainManager.computePublicKeyHashHex(preview.publicKeyData)
+            let check: ManagedPlatformWallet.IdentityKeyWalletCheck
+            do {
+                check = try wallet.checkIdentityKey(
+                    identityIndex: report.identityIndex,
+                    keyId: key.keyId,
+                    keyType: keyType,
+                    purpose: key.purposeRaw,
+                    securityLevel: key.securityLevelRaw,
+                    publicKeyData: key.row.publicKeyData
+                )
+            } catch {
+                failures.append((key.keyId, "couldn't check the key: \(error.localizedDescription)"))
+                continue
+            }
+            guard case let .matches(derivationPath, privateKeyData, publicKeyHashHex) = check else {
+                failures.append((key.keyId, "the wallet no longer derives this key at its slot"))
+                continue
+            }
             let metadata = IdentityPrivateKeyMetadata(
                 identityId: report.identityIdBase58,
                 keyId: key.keyId,
                 walletId: walletId.toHexString(),
                 identityIndex: report.identityIndex,
                 keyIndex: key.keyId,
-                derivationPath: preview.derivationPath,
-                publicKey: preview.publicKeyHex,
-                publicKeyHash: pubkeyHashHex,
-                keyType: UInt8(key.row.keyType) ?? 0,
+                derivationPath: derivationPath,
+                // The key's on-chain form, which `KeychainSigner` matches
+                // on (the 20-byte hash for an ECDSA_HASH160 key). On a
+                // match it is the wallet's key.
+                publicKey: key.row.publicKeyData.toHexString(),
+                publicKeyHash: publicKeyHashHex,
+                keyType: keyType.rawValue,
                 purpose: key.purposeRaw,
                 securityLevel: key.securityLevelRaw
             )
             guard let pkid = KeychainManager.shared.storeIdentityPrivateKey(
-                preview.privateKeyData,
-                derivationPath: preview.derivationPath,
+                privateKeyData,
+                derivationPath: derivationPath,
                 metadata: metadata
             ) else {
-                failures.append((key.keyId, "Keychain write at \(preview.derivationPath) returned nil"))
+                failures.append((key.keyId, "Keychain write at \(derivationPath) returned nil"))
                 continue
             }
             key.row.privateKeyKeychainIdentifier = pkid
@@ -341,7 +426,7 @@ enum WalletKeyHealthChecker {
             // account.
             cleanupLegacyKeychainEntry(
                 walletIdHex: walletId.toHexString(),
-                derivationPath: preview.derivationPath
+                derivationPath: derivationPath
             )
             fixed += 1
         }
@@ -358,17 +443,18 @@ enum WalletKeyHealthChecker {
     /// reactive). The caller can drop the row from the report
     /// list as long as `swiftDataDeleted == true`, even when
     /// `keychainError` is non-nil.
-    struct OrphanDeleteOutcome {
+    struct OrphanDeleteOutcome: Sendable {
         let swiftDataDeleted: Bool
         let keychainError: Error?
     }
 
-    /// Cascade-delete an orphan identity from SwiftData AND wipe its
-    /// associated Keychain entries.
+    /// Cascade-delete an orphan identity from SwiftData AND wipe this
+    /// wallet's Keychain entries for it.
     ///
     /// Ordering:
     ///  1. Wipe Keychain first (`identity_privkey.*` rows whose
-    ///     metadata matches this identity). Idempotent on retry.
+    ///     metadata names this identity and `walletId`; keys another
+    ///     wallet holds for the identity stay). Idempotent on retry.
     ///  2. Pre-delete the identity's cascade children that have
     ///     non-Optional inverses back to it — DPNS names, DashPay
     ///     profile, contact requests — and save. SwiftData fatals
@@ -388,6 +474,7 @@ enum WalletKeyHealthChecker {
     @MainActor
     static func deleteOrphan(
         identity: PersistentIdentity,
+        walletId: Data,
         modelContext: ModelContext
     ) throws -> OrphanDeleteOutcome {
         // Snapshot the base58 id BEFORE the delete — once the row
@@ -396,7 +483,8 @@ enum WalletKeyHealthChecker {
         var keychainError: Error?
         do {
             try KeychainManager.shared.deleteAllIdentityPrivateKeys(
-                forIdentityIdBase58: identityIdBase58
+                forIdentityIdBase58: identityIdBase58,
+                walletId: walletId
             )
         } catch {
             keychainError = error
@@ -444,7 +532,6 @@ struct WalletKeyHealthSheet: View {
     /// when opened, not what changes underneath. Re-fetch by closing
     /// and re-opening.
     let identities: [PersistentIdentity]
-    let network: Network
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
@@ -454,6 +541,8 @@ struct WalletKeyHealthSheet: View {
     @State private var actionMessage: String?
     @State private var errorMessage: String?
     @State private var pendingOrphanDelete: WalletIdentityKeyHealthReport?
+    /// One removal per identity at a time.
+    @State private var removalGate = IdentityRemovalGate()
 
     var body: some View {
         NavigationView {
@@ -514,6 +603,7 @@ struct WalletKeyHealthSheet: View {
                         pendingOrphanDelete = nil
                     }
                 }
+                .disabled(pendingOrphanDelete.map { removalGate.isInFlight($0.id) } ?? false)
             } message: {
                 if let report = pendingOrphanDelete {
                     Text(
@@ -605,6 +695,7 @@ struct WalletKeyHealthSheet: View {
             } label: {
                 Label("Delete this identity", systemImage: "trash")
             }
+            .disabled(removalGate.isInFlight(report.id))
         }
     }
 
@@ -635,8 +726,7 @@ struct WalletKeyHealthSheet: View {
         reports = WalletKeyHealthChecker.runCheck(
             wallet: wallet,
             walletId: walletId,
-            identities: identities,
-            network: network
+            identities: identities
         )
     }
 
@@ -647,7 +737,6 @@ struct WalletKeyHealthSheet: View {
                     report: report,
                     wallet: wallet,
                     walletId: walletId,
-                    network: network,
                     modelContext: modelContext
                 )
                 let fixed = outcome.success
@@ -669,36 +758,92 @@ struct WalletKeyHealthSheet: View {
         }
     }
 
+    /// Delete an identity Rust says isn't this wallet's, but only after
+    /// Rust has re-fetched it from Platform and checked it again: the
+    /// stored key rows can be stale (another device may have rotated the
+    /// master key). Anything but `.notOwned` from that check, or an
+    /// error, deletes nothing. `removalGate` runs one removal per
+    /// identity at a time, and the row deleted is the one the store holds
+    /// after the check, not the one the report captured.
     private func deleteIdentity(_ report: WalletIdentityKeyHealthReport) {
-        do {
-            let outcome = try WalletKeyHealthChecker.deleteOrphan(
-                identity: report.identityRow,
-                modelContext: modelContext
-            )
-            // SwiftData side succeeded → drop the now-deleted row
-            // from the report list regardless of the keychain
-            // side. Keeping it in `reports` after the SwiftData
-            // delete leaves stale UI (the row's relationship
-            // accessors are invalidated and any action against
-            // them throws). A keychain-only failure becomes a
-            // non-blocking warning instead of suppressing the
-            // success state.
-            if outcome.swiftDataDeleted {
-                reports.removeAll { $0.id == report.id }
+        let identityId = report.id
+        let identityLabel = "identity \(report.identityIdBase58.prefix(12))…"
+        let wallet = wallet
+        let walletId = walletId
+        let modelContext = modelContext
+        guard let removal = removalGate.start(
+            identityId,
+            check: { try await wallet.checkIdentityKeysOnPlatform(identityId: identityId).ownership },
+            liveRow: { try Self.liveIdentityRow(identityId, in: modelContext) },
+            delete: { row in
+                try WalletKeyHealthChecker.deleteOrphan(
+                    identity: row,
+                    walletId: walletId,
+                    modelContext: modelContext
+                )
             }
-            if let keychainError = outcome.keychainError {
+        ) else { return }
+        actionMessage = "Checking \(identityLabel) on Platform before deleting it…"
+        errorMessage = nil
+        Task { @MainActor in
+            switch await removal.value {
+            case .checkFailed(let error):
+                actionMessage = nil
+                errorMessage = "Not deleted: couldn't check \(identityLabel) on Platform: \(error.localizedDescription)"
+            case .kept(let ownership):
+                // The refresh stored the identity's current key rows:
+                // check again so the sheet shows them, then say why
+                // nothing was deleted.
+                await runCheck()
+                errorMessage = ownership == .owned
+                    ? "Not deleted: on Platform, \(identityLabel) has this wallet's master key."
+                    : "Not deleted: on Platform, \(identityLabel) can't be shown to belong to another wallet."
+            case .alreadyRemoved:
+                reports.removeAll { $0.id == identityId }
+                actionMessage = nil
+            case .lookupFailed(let error):
+                actionMessage = nil
+                errorMessage = "Not deleted: couldn't read \(identityLabel): \(error.localizedDescription)"
+            case .deleted(let outcome):
+                // SwiftData side succeeded → drop the now-deleted row
+                // from the report list regardless of the keychain
+                // side. Keeping it in `reports` after the SwiftData
+                // delete leaves stale UI (the row's relationship
+                // accessors are invalidated and any action against
+                // them throws). A keychain-only failure becomes a
+                // non-blocking warning instead of suppressing the
+                // success state.
+                if outcome.swiftDataDeleted {
+                    reports.removeAll { $0.id == identityId }
+                }
                 actionMessage = "Deleted orphan identity \(report.identityIdBase58.prefix(12))…"
-                errorMessage = "Keychain cleanup warning: \(keychainError.localizedDescription) — re-running Verify Identity Keys can retry."
-            } else {
-                actionMessage = "Deleted orphan identity \(report.identityIdBase58.prefix(12))…"
-                errorMessage = nil
+                if let keychainError = outcome.keychainError {
+                    errorMessage = "Keychain cleanup warning: \(keychainError.localizedDescription). Re-running Verify Identity Keys can retry."
+                } else {
+                    errorMessage = nil
+                }
+            case .deleteFailed(let error):
+                // SwiftData delete failed (the in-memory `reports`
+                // list is still authoritative); surface as a hard
+                // error and leave the row visible so the user can
+                // retry or escalate.
+                actionMessage = nil
+                errorMessage = "Delete failed: \(error.localizedDescription)"
             }
-        } catch {
-            // SwiftData delete failed (the in-memory `reports`
-            // list is still authoritative); surface as a hard
-            // error and leave the row visible so the user can
-            // retry or escalate.
-            errorMessage = "Delete failed: \(error.localizedDescription)"
         }
+    }
+
+    /// The identity's row as `modelContext` holds it now, or nil once it
+    /// is gone.
+    @MainActor
+    private static func liveIdentityRow(
+        _ identityId: Data,
+        in modelContext: ModelContext
+    ) throws -> PersistentIdentity? {
+        var descriptor = FetchDescriptor<PersistentIdentity>(
+            predicate: #Predicate { $0.identityId == identityId }
+        )
+        descriptor.fetchLimit = 1
+        return try modelContext.fetch(descriptor).first
     }
 }

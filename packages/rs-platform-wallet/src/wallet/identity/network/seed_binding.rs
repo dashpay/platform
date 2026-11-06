@@ -25,6 +25,7 @@
 
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
+use key_wallet::bip32::{DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
@@ -143,6 +144,51 @@ impl<'a, C> ProviderBinding<'a, C> {
 }
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+    /// What a seed must reproduce to own this wallet: the wallet's
+    /// persisted BIP44 account-0 xpub and the path it was derived at, read
+    /// from the same account so the two can't drift. The read lock is
+    /// released before this returns.
+    async fn seed_binding_xpub(
+        &self,
+    ) -> Result<(DerivationPath, ExtendedPubKey), PlatformWalletError> {
+        let guard = self.wallet_manager.read().await;
+        let wallet = guard
+            .get_wallet(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let account = wallet.get_bip44_account(0).ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(
+                "wallet has no BIP44 account 0 to verify the seed against".to_string(),
+            )
+        })?;
+        let path = account
+            .account_type
+            .derivation_path(wallet.network)
+            .map_err(|e| PlatformWalletError::KeyDerivation(e.to_string()))?;
+        Ok((path, account.account_xpub))
+    }
+
+    /// Verify `master` is the master key of the seed that owns this wallet:
+    /// it derives the wallet's persisted BIP44 account-0 xpub, exactly as
+    /// [`Self::verify_seed_binds`] derives it through a signer. Fails with
+    /// [`PlatformWalletError::SeedMismatch`] otherwise.
+    pub(crate) async fn verify_master_binds(
+        &self,
+        master: &ExtendedPrivKey,
+    ) -> Result<(), PlatformWalletError> {
+        let (path, expected) = self.seed_binding_xpub().await?;
+        // The derived key zeroizes on drop.
+        let derived = master
+            .derive_priv(&path)
+            .map_err(|e| PlatformWalletError::KeyDerivation(e.to_string()))?;
+        if ExtendedPubKey::from_priv(&derived) == expected {
+            Ok(())
+        } else {
+            Err(PlatformWalletError::SeedMismatch {
+                wallet_id: hex::encode(self.wallet_id),
+            })
+        }
+    }
+
     /// Verify the signer behind `crypto` resolves the seed that owns this wallet.
     ///
     /// Reads the wallet's persisted BIP44 account-0 xpub and the path it was
@@ -189,25 +235,8 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         marker: Option<&str>,
         keychain_stamp: Option<&str>,
     ) -> Result<(SeedBindingVerification, Option<String>), PlatformWalletError> {
-        // Read the binding xpub and its exact derivation path from the same
-        // account, so the two can never drift. Drop the lock before awaiting the
-        // signer — the guard is not held across `.await`.
-        let (path, expected) = {
-            let guard = self.wallet_manager.read().await;
-            let wallet = guard
-                .get_wallet(&self.wallet_id)
-                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-            let account = wallet.get_bip44_account(0).ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(
-                    "wallet has no BIP44 account 0 to verify the seed against".to_string(),
-                )
-            })?;
-            let path = account
-                .account_type
-                .derivation_path(wallet.network)
-                .map_err(|e| PlatformWalletError::KeyDerivation(e.to_string()))?;
-            (path, account.account_xpub)
-        };
+        // The lock is released before awaiting the signer.
+        let (path, expected) = self.seed_binding_xpub().await?;
 
         // The only marker that can match is the one for the CURRENT xpub and
         // the CURRENT Keychain item stamp. No stamp → no candidate → the full
@@ -728,6 +757,61 @@ mod tests {
             matches!(err, PlatformWalletError::SeedMismatch { .. }),
             "expected SeedMismatch, got: {err:?}"
         );
+    }
+
+    /// The master-based check derives the binding xpub exactly as the
+    /// signer-based one does, so both accept the wallet's own seed and
+    /// refuse another.
+    #[tokio::test]
+    async fn should_bind_a_master_exactly_as_the_signer_check_does() {
+        use crate::wallet::identity::network::contact_requests::ContactCryptoProvider;
+        use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
+
+        let manager = make_manager();
+        let network = Network::Testnet;
+        let seed = seed_for(TEST_MNEMONIC);
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                network,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("wallet creation");
+        let identity = wallet.identity();
+
+        let (path, expected) = identity.seed_binding_xpub().await.expect("binding xpub");
+        let master = ExtendedPrivKey::new_master(network, &*seed).expect("master");
+        let from_master =
+            ExtendedPubKey::from_priv(&master.derive_priv(&path).expect("derive account 0"));
+        let from_signer = SeedCryptoProvider::from_seed(*seed, network)
+            .receiving_xpub(&path)
+            .await
+            .expect("signer xpub");
+        assert_eq!(from_master, from_signer);
+        assert_eq!(from_master, expected);
+        identity
+            .verify_master_binds(&master)
+            .await
+            .expect("the wallet's own master binds");
+
+        let wrong_seed =
+            seed_for("legal winner thank year wave sausage worth useful legal winner thank yellow");
+        let wrong_master = ExtendedPrivKey::new_master(network, &*wrong_seed).expect("master");
+        let err = identity
+            .verify_master_binds(&wrong_master)
+            .await
+            .expect_err("another seed's master must be refused");
+        assert!(
+            matches!(err, PlatformWalletError::SeedMismatch { .. }),
+            "expected SeedMismatch, got: {err:?}"
+        );
+        let err = wallet
+            .verify_seed_binds(&SeedCryptoProvider::from_seed(*wrong_seed, network))
+            .await
+            .expect_err("the signer check refuses the same seed");
+        assert!(matches!(err, PlatformWalletError::SeedMismatch { .. }));
     }
 
     /// First launch (no marker): the full signer check runs, binds, and

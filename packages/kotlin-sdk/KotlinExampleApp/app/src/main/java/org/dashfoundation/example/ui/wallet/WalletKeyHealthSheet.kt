@@ -10,6 +10,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -53,8 +54,13 @@ import org.dashfoundation.example.util.Base58
  * resolver-keyed derive FFI (`dash_sdk_derive_identity_key_at_slot`,
  * surfaced as `PlatformWalletManager.repairIdentityKey`) and re-encrypts it
  * into `WalletStorage` — the Android realization of the iOS re-derive path
- * in `WalletKeyHealthSheet.swift` (`deriveIdentityAuthKeyAtSlot`). A
+ * in `WalletKeyHealthSheet.swift` (`checkIdentityKey`). A
  * successful repair flips the row to Healthy on the next check pass.
+ *
+ * The repair re-derives only at the wallet slot recorded on the key's row,
+ * and the wallet records none for a key it doesn't derive (a Hecate signer
+ * key, say). Such a key whose private key doesn't open shows as not checked,
+ * with no repair, instead of unrecoverable ([walletKeyHealthStatus]).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,9 +108,13 @@ fun WalletKeyHealthSheet(
                             // reported unrecoverable and gets the same repair as a
                             // truly-absent one (the cheap isPrivateKeyDecryptable
                             // is reserved for the signer's capability callback).
-                            isRecoverable = runCatching {
-                                container.walletStorage.probeIdentityKeyRecoverability(pubkeyHex)
-                            }.getOrDefault(false),
+                            status = walletKeyHealthStatus(
+                                isRecoverable = runCatching {
+                                    container.walletStorage.probeIdentityKeyRecoverability(pubkeyHex)
+                                }.getOrDefault(false),
+                                derivationIdentityIndex = row.derivationIdentityIndex,
+                                derivationKeyIndex = row.derivationKeyIndex,
+                            ),
                         )
                     }
                 IdentityKeyReport(
@@ -145,11 +155,17 @@ fun WalletKeyHealthSheet(
 
                 else -> {
                     // Summary (← summarySection).
-                    val healthy = current.count { report -> report.keys.all { it.isRecoverable } }
+                    val healthy = current.count { report ->
+                        isIdentityKeyHealthy(report.keys.map { it.status })
+                    }
+                    val notChecked = current.sumOf { report ->
+                        report.keys.count { it.status == WalletKeyHealthStatus.NotChecked }
+                    }
                     FormSection(title = "Summary") {
                         SummaryRow("Identities checked", current.size)
                         SummaryRow("Healthy", healthy)
                         SummaryRow("Unrecoverable key material", current.size - healthy)
+                        SummaryRow("Keys not checked", notChecked)
                     }
 
                     current.forEach { report ->
@@ -169,9 +185,14 @@ fun WalletKeyHealthSheet(
                                 val activeManager = manager
                                 KeyRow(
                                     key = key,
-                                    // Repair is available only when a manager
-                                    // is live (holds the resolver + storage).
-                                    onRepair = if (!key.isRecoverable && activeManager != null) {
+                                    // Repair is available only for a key with a
+                                    // recorded wallet slot, and only when a
+                                    // manager is live (holds the resolver +
+                                    // storage).
+                                    onRepair = if (
+                                        key.status == WalletKeyHealthStatus.Repairable &&
+                                        activeManager != null
+                                    ) {
                                         {
                                             scope.launch {
                                                 runCatching {
@@ -215,14 +236,16 @@ private data class KeyHealthRow(
     val pubkeyHex: String,
     val publicKeyData: ByteArray,
     /**
-     * Whether the private key actually opens on this device — the probe
-     * decrypts the stored blob. `false` covers BOTH a truly-absent key and a
-     * present-but-unrecoverable one (stranded ciphertext / sibling-alias blob
-     * that no longer decrypts); the probe can't tell them apart, so the row is
-     * labeled by recoverability, not presence, and both get the same re-derive
-     * repair (dashpay/platform#4183 review).
+     * Whether the private key actually opens on this device (the probe
+     * decrypts the stored blob), and if not, whether the row's recorded wallet
+     * slot lets a re-derive repair it. A key that doesn't open covers BOTH a
+     * truly-absent key and a present-but-unrecoverable one (stranded
+     * ciphertext / sibling-alias blob that no longer decrypts); the probe
+     * can't tell them apart, so the row is labeled by recoverability, not
+     * presence, and both get the same re-derive repair
+     * (dashpay/platform#4183 review).
      */
-    val isRecoverable: Boolean,
+    val status: WalletKeyHealthStatus,
 )
 
 private data class IdentityKeyReport(
@@ -256,9 +279,17 @@ private fun KeyRow(key: KeyHealthRow, onRepair: (() -> Unit)? = null) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Icon(
-                imageVector = if (key.isRecoverable) Icons.Default.CheckCircle else Icons.Default.Cancel,
+                imageVector = when (key.status) {
+                    WalletKeyHealthStatus.Recoverable -> Icons.Default.CheckCircle
+                    WalletKeyHealthStatus.Repairable -> Icons.Default.Cancel
+                    WalletKeyHealthStatus.NotChecked -> Icons.Default.Info
+                },
                 contentDescription = null,
-                tint = if (key.isRecoverable) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error,
+                tint = when (key.status) {
+                    WalletKeyHealthStatus.Recoverable -> Color(0xFF2E7D32)
+                    WalletKeyHealthStatus.Repairable -> MaterialTheme.colorScheme.error
+                    WalletKeyHealthStatus.NotChecked -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
             )
             Text(
                 "Key #${key.keyId} — purpose ${key.purpose}, level ${key.securityLevel}",
@@ -272,13 +303,17 @@ private fun KeyRow(key: KeyHealthRow, onRepair: (() -> Unit)? = null) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            if (key.isRecoverable) {
-                "Healthy — private key material recoverable on this device"
-            } else {
+            when (key.status) {
+                WalletKeyHealthStatus.Recoverable ->
+                    "Healthy — private key material recoverable on this device"
                 // Not necessarily absent: the blob may be present but stranded/
                 // undecryptable (sibling-alias or invalidated Keystore key).
                 // The probe can't distinguish, so don't claim "no entry".
-                "Unrecoverable — key material missing or stranded; re-derive to repair"
+                WalletKeyHealthStatus.Repairable ->
+                    "Unrecoverable — key material missing or stranded; re-derive to repair"
+                WalletKeyHealthStatus.NotChecked ->
+                    "Not checked — no wallet slot is recorded for this key (the wallet " +
+                        "doesn't derive it), so it can't be re-derived"
             },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

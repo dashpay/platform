@@ -1,5 +1,5 @@
 use crate::identity::contract_bounds::ContractBounds;
-use crate::identity::IdentityPublicKey;
+use crate::identity::{IdentityPublicKey, KeyType, Purpose};
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
@@ -88,6 +88,15 @@ impl IdentityPublicKeyInCreation {
     /// the shielded pool cannot register one; a version 1 key without limits is fine there.
     pub fn first_with_limits(keys: &[Self]) -> Option<&Self> {
         keys.iter().find(|key| key.has_limits())
+    }
+
+    /// The first of `keys` that is a Hecate signer key, by its type or its purpose, if any. A
+    /// transition carrying such a key is active from protocol version 15: a binary from before
+    /// cannot decode the key type or the purpose.
+    pub fn first_hecate_signer_key(keys: &[Self]) -> Option<&Self> {
+        keys.iter().find(|key| {
+            key.key_type() == KeyType::REDPALLAS_HECATE || key.purpose() == Purpose::HECATE_SIGNER
+        })
     }
 }
 

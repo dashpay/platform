@@ -84,6 +84,7 @@ use crate::consensus::state::document::referenced_document_removed_error::Refere
 use crate::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
 use crate::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
 use crate::consensus::state::document::referenced_document_type_private_error::ReferencedDocumentTypePrivateError;
+use crate::consensus::state::identity::identity_already_has_hecate_signer_key_error::IdentityAlreadyHasHecateSignerKeyError;
 use crate::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
 use crate::consensus::state::document::referenced_document_rule_read_invalid_error::ReferencedDocumentRuleReadInvalidError;
 use crate::consensus::state::document::referenced_document_preceded_error::ReferencedDocumentPrecededError;
@@ -761,6 +762,10 @@ pub enum StateError {
     // A document reference names a private document type (protocol version 15).
     #[error(transparent)]
     ReferencedDocumentTypePrivateError(ReferencedDocumentTypePrivateError),
+
+    // An identity holds at most one enabled Hecate signer key (protocol version 15).
+    #[error(transparent)]
+    IdentityAlreadyHasHecateSignerKeyError(IdentityAlreadyHasHecateSignerKeyError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1709,8 +1714,7 @@ mod tests {
             )),
             177
         );
-        // A document reference to a private document type (protocol version 15): the tail of
-        // the enum.
+        // A document reference to a private document type (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::ReferencedDocumentTypePrivateError(
                 ReferencedDocumentTypePrivateError::new(
@@ -1720,6 +1724,13 @@ mod tests {
                 )
             )),
             178
+        );
+        // Hecate signer keys (protocol version 15): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::IdentityAlreadyHasHecateSignerKeyError(
+                IdentityAlreadyHasHecateSignerKeyError::new(identity_id, 1)
+            )),
+            179
         );
     }
 }

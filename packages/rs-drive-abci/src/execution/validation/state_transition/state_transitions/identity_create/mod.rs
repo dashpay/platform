@@ -865,6 +865,206 @@ mod tests {
         }
     }
 
+    /// An identity created with a Hecate signer key, whose proof of possession is a RedPallas
+    /// signature; one created with two, or with a signer key whose proof does not verify, is
+    /// refused.
+    #[tokio::test]
+    async fn should_create_identity_with_one_hecate_signer_key() {
+        use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+        use dpp::consensus::codes::ErrorWithCode;
+        use dpp::consensus::signature::SignatureError;
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::{KeyType, Purpose, SecurityLevel};
+        use dpp::state_transition::public_key_in_creation::accessors::{
+            IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
+        };
+
+        /// The signer keys the identity create registers next to its master key.
+        #[derive(Clone, Copy, PartialEq)]
+        enum SignerKeys {
+            /// One, with its proof of possession: created
+            One,
+            /// Two: a key structure failure, charged
+            Two,
+            /// One whose proof of possession does not verify: refused unpaid
+            OneWithAnInvalidProof,
+        }
+
+        for signer_keys in [
+            SignerKeys::One,
+            SignerKeys::Two,
+            SignerKeys::OneWithAnInvalidProof,
+        ] {
+            let signer_key_count: u32 = if signer_keys == SignerKeys::Two { 2 } else { 1 };
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let platform_state = platform.state.load();
+
+            let mut signer = SimpleSigner::default();
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let (master_key, master_private_key) =
+                IdentityPublicKey::random_ecdsa_master_authentication_key(
+                    0,
+                    Some(58),
+                    platform_version,
+                )
+                .expect("expected to get key pair");
+            signer.add_identity_public_key(master_key.clone(), master_private_key);
+            let mut public_keys = BTreeMap::from([(0, master_key.clone())]);
+
+            for id in 1..=signer_key_count {
+                let (data, secret) = KeyType::REDPALLAS_HECATE
+                    .random_public_and_private_key_data(&mut rng, platform_version)
+                    .expect("expected a signer key");
+                let key: IdentityPublicKey = IdentityPublicKeyV0 {
+                    id,
+                    purpose: Purpose::HECATE_SIGNER,
+                    security_level: SecurityLevel::MEDIUM,
+                    contract_bounds: None,
+                    key_type: KeyType::REDPALLAS_HECATE,
+                    read_only: false,
+                    data: data.into(),
+                    disabled_at: None,
+                }
+                .into();
+                signer.add_identity_public_key(key.clone(), secret);
+                public_keys.insert(id, key);
+            }
+
+            let (_, pk) = ECDSA_SECP256K1
+                .random_public_and_private_key_data(&mut rng, platform_version)
+                .unwrap();
+            let asset_lock_proof = instant_asset_lock_proof_fixture(
+                Some(PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap()),
+                None,
+            );
+            let identity: Identity = IdentityV0 {
+                id: asset_lock_proof
+                    .create_identifier()
+                    .expect("expected an identifier"),
+                public_keys,
+                balance: 1000000000,
+                revision: 0,
+            }
+            .into();
+
+            let mut identity_create_transition: StateTransition =
+                IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
+                    &identity,
+                    asset_lock_proof,
+                    pk.as_slice(),
+                    &signer,
+                    &NativeBlsModule,
+                    0,
+                    platform_version,
+                )
+                .await
+                .expect("expected an identity create transition");
+
+            if signer_keys == SignerKeys::OneWithAnInvalidProof {
+                let StateTransition::IdentityCreate(IdentityCreateTransition::V0(v0)) =
+                    &mut identity_create_transition
+                else {
+                    panic!("expected an identity create v0 transition");
+                };
+                let key = v0
+                    .public_keys
+                    .iter_mut()
+                    .find(|key| key.key_type() == KeyType::REDPALLAS_HECATE)
+                    .expect("expected the signer key");
+                let mut signature = key.signature().to_vec();
+                signature[0] ^= 0x01;
+                key.set_signature(signature.into());
+            }
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![identity_create_transition
+                        .serialize_to_bytes()
+                        .expect("serialized state transition")],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            if signer_keys == SignerKeys::OneWithAnInvalidProof {
+                // Checked with every added key's proof of possession, before the asset lock is
+                // charged.
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::SignatureError(SignatureError::BasicRedPallasError(_))
+                    )]
+                );
+                continue;
+            }
+            if signer_keys == SignerKeys::Two {
+                // TooManyHecateSignerKeysError, charged as every key structure error in identity
+                // create is.
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::PaidConsensusError { error, .. }]
+                        if error.code() == 10541
+                );
+                continue;
+            }
+            assert_eq!(
+                processing_result.valid_count(),
+                1,
+                "{:?}",
+                processing_result.execution_results()
+            );
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit");
+
+            let stored = platform
+                .drive
+                .fetch_full_identity(identity.id().to_buffer(), None, platform_version)
+                .expect("expected to fetch")
+                .expect("expected the identity");
+            let key = stored.public_keys().get(&1).expect("the signer key");
+            assert_eq!(key.key_type(), KeyType::REDPALLAS_HECATE);
+            assert_eq!(key.purpose(), Purpose::HECATE_SIGNER);
+            let sent = identity.public_keys().get(&1).expect("the sent signer key");
+            assert_eq!(key.data(), sent.data());
+
+            // Identity create writes the signer key's entry in the signer index.
+            let (_, signer_key_ids) = platform
+                .drive
+                .fetch_identity_hecate_signer_key_ids_with_fee(
+                    identity.id().to_buffer(),
+                    10,
+                    &BlockInfo::default().epoch,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to read the signer index");
+            assert_eq!(signer_key_ids, vec![1]);
+        }
+    }
+
     #[tokio::test]
     async fn should_create_identity_with_an_authentication_key_bound_to_a_contract_group() {
         use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;

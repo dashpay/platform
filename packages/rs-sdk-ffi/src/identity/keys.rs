@@ -178,8 +178,8 @@ pub unsafe extern "C" fn dash_sdk_identity_public_key_get_id(
 ///
 /// # Parameters
 /// - `key_id`: The key ID
-/// - `key_type`: The key type (0 = ECDSA_SECP256K1, 1 = BLS12_381, 2 = ECDSA_HASH160, 3 = BIP13_SCRIPT_HASH, 4 = ED25519_HASH160)
-/// - `purpose`: The key purpose (0 = Authentication, 1 = Encryption, 2 = Decryption, 3 = Transfer, 4 = SystemTransfer, 5 = Voting)
+/// - `key_type`: The key type (0 = ECDSA_SECP256K1, 1 = BLS12_381, 2 = ECDSA_HASH160, 3 = BIP13_SCRIPT_HASH, 4 = ED25519_HASH160, 5 = REDPALLAS_HECATE)
+/// - `purpose`: The key purpose (0 = Authentication, 1 = Encryption, 2 = Decryption, 3 = Transfer, 4 = SystemTransfer, 5 = Voting, 7 = HecateSigner)
 /// - `security_level`: The security level (0 = Master, 1 = Critical, 2 = High, 3 = Medium)
 /// - `public_key_data`: The public key data
 /// - `public_key_data_len`: Length of the public key data
@@ -225,6 +225,7 @@ pub unsafe extern "C" fn dash_sdk_identity_public_key_create_from_data(
         2 => KeyType::ECDSA_HASH160,
         3 => KeyType::BIP13_SCRIPT_HASH,
         4 => KeyType::EDDSA_25519_HASH160,
+        5 => KeyType::REDPALLAS_HECATE,
         _ => {
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InvalidParameter,
@@ -241,6 +242,7 @@ pub unsafe extern "C" fn dash_sdk_identity_public_key_create_from_data(
         3 => DPPPurpose::TRANSFER,
         4 => DPPPurpose::SYSTEM,
         5 => DPPPurpose::VOTING,
+        7 => DPPPurpose::HECATE_SIGNER,
         _ => {
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InvalidParameter,

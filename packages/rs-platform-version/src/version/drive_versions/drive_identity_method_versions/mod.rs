@@ -2,6 +2,7 @@ use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
 pub mod v1;
 pub mod v2;
+pub mod v3;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveIdentityMethodVersions {
@@ -193,6 +194,9 @@ pub struct DriveIdentityKeysFetchMethodVersions {
     pub fetch_identities_all_keys: FeatureVersion,
     pub fetch_identity_keys: FeatureVersion,
     pub fetch_identities_contract_keys: FeatureVersion,
+    /// Reads the ids of an identity's enabled Hecate signer keys from its signer index. The
+    /// index exists from protocol version 15.
+    pub fetch_identity_hecate_signer_key_ids: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

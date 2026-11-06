@@ -8,6 +8,9 @@ public enum KeyType: UInt8, CaseIterable, Codable, Sendable {
     case ecdsaHash160 = 2
     case bip13ScriptHash = 3
     case eddsa25519Hash160 = 4
+    /// A Hecate signer key (64 bytes: a RedPallas `ak` and `Poseidon(nk)`), only for
+    /// `KeyPurpose.hecateSigner`, from protocol version 15.
+    case redpallasHecate = 5
 
     public var name: String {
         switch self {
@@ -16,6 +19,7 @@ public enum KeyType: UInt8, CaseIterable, Codable, Sendable {
         case .ecdsaHash160: return "ECDSA Hash160"
         case .bip13ScriptHash: return "BIP13 Script Hash"
         case .eddsa25519Hash160: return "EdDSA 25519 Hash160"
+        case .redpallasHecate: return "RedPallas Hecate"
         }
     }
 
@@ -35,6 +39,9 @@ public enum KeyPurpose: UInt8, CaseIterable, Codable, Sendable, CustomStringConv
     case system = 4
     case voting = 5
     case owner = 6
+    /// Lets a zero-knowledge proof show that some identity sent a private entry without
+    /// saying which; a `KeyType.redpallasHecate` key, from protocol version 15.
+    case hecateSigner = 7
 
     public var name: String {
         switch self {
@@ -45,6 +52,7 @@ public enum KeyPurpose: UInt8, CaseIterable, Codable, Sendable, CustomStringConv
         case .system: return "System"
         case .voting: return "Voting"
         case .owner: return "Owner"
+        case .hecateSigner: return "Hecate Signer"
         }
     }
 
@@ -57,6 +65,7 @@ public enum KeyPurpose: UInt8, CaseIterable, Codable, Sendable, CustomStringConv
         case .system: return "System level operations"
         case .voting: return "Used for voting (masternodes)"
         case .owner: return "Owner key (masternodes)"
+        case .hecateSigner: return "Used to prove an anonymous sender of private entries"
         }
     }
 

@@ -126,6 +126,7 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
                 fetch_identities_all_keys: 0,
                 fetch_identity_keys: 0,
                 fetch_identities_contract_keys: 0,
+                fetch_identity_hecate_signer_key_ids: None,
             },
             prove: DriveIdentityKeysProveMethodVersions {
                 prove_identities_all_keys: 0,
