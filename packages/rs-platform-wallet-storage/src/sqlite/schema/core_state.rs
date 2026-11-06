@@ -8,12 +8,13 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use dashcore::ephemerealdata::chain_lock::ChainLock;
 use dashcore::transaction::special_transaction::TransactionPayload;
-use dashcore::{OutPoint, Txid};
+use dashcore::{hashes::Hash, OutPoint, Txid};
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::Utxo;
 use platform_wallet::changeset::changeset::UtxoCreditVerdict;
 use platform_wallet::changeset::CoreChangeSet;
+use platform_wallet::manager::history_replay::held_sweep_claimant;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
@@ -703,12 +704,12 @@ fn apply_sweep(
     // query even if nothing had marked it spent yet (upstream sweeps only
     // unconfirmed records, whose spends this schema does not mark).
     // `spent_in_txid` moves with `spent`: a released input clears back to
-    // NULL (nobody's claim), a held one is attributed to `superseded_by` so
+    // NULL (nobody's claim), a held one is attributed to its surviving spender so
     // the claim outlives this row's own deletion below.
     // A held, never-materialised claim (`is_sweep_placeholder = 1`) is re-stamped
-    // with the NEW winner's mined height when this sweep has one — the
-    // claim now belongs to that winner, and its height is what the
-    // collector compares against the finality boundary. An IS-locked
+    // with the winner's height only when that winner spends the input.
+    // A surviving unmined spender's hold must outlive that winner's finality.
+    // An IS-locked
     // winner (`?5` NULL) re-points the claim but keeps the existing stamp:
     // the earlier block-context observation stands, exactly as upstream's
     // `observed_spent_outpoints` entry is never retracted by an
@@ -740,6 +741,9 @@ fn apply_sweep(
             (wallet_id, outpoint, value, script, is_sweep_placeholder, spent, spent_in_txid, \
              winner_mined_height) \
          VALUES (?1, ?2, 0, X'', 1, 1, ?3, ?4)",
+    )?;
+    let mut spenders_stmt = tx.prepare_cached(
+        "SELECT txid FROM core_transaction_inputs WHERE wallet_id = ?1 AND outpoint = ?2",
     )?;
     for input in &loser.transaction.input {
         let outpoint = input.previous_output;
@@ -776,17 +780,33 @@ fn apply_sweep(
         }
         let key = blob::encode_outpoint(&outpoint)?;
         let freed = released.contains(&outpoint);
-        let spent_in_txid: Option<&[u8]> = if freed {
+        let claimant = if freed {
             None
         } else {
-            Some(AsRef::<[u8]>::as_ref(superseded_by))
+            let spenders = spenders_stmt
+                .query_map(params![wallet_id.as_slice(), &key], |row| {
+                    row.get::<_, Vec<u8>>(0)
+                })?
+                .map(|row| Ok(Txid::from_slice(&row?)?))
+                .collect::<Result<Vec<_>, WalletStorageError>>()?;
+            Some(held_sweep_claimant(
+                *superseded_by,
+                spenders
+                    .into_iter()
+                    .filter(|spender| !swept_txids.contains(spender)),
+            ))
         };
+        let spent_in_txid = claimant.as_ref().map(AsRef::<[u8]>::as_ref);
+        // A winner's height cannot retire a hold belonging to another spender.
+        let stamp = winner_mined_height
+            .filter(|_| claimant.as_ref() == Some(superseded_by))
+            .map(i64::from);
         let affected = spend_stmt.execute(params![
             wallet_id.as_slice(),
             &key[..],
             !freed,
             spent_in_txid,
-            winner_mined_height.map(i64::from)
+            stamp
         ])?;
         if affected == 0 && !freed {
             // A held input with no row gets a placeholder in EVERY sweep
@@ -799,8 +819,8 @@ fn apply_sweep(
             tombstone_stmt.execute(params![
                 wallet_id.as_slice(),
                 &key[..],
-                AsRef::<[u8]>::as_ref(superseded_by),
-                winner_mined_height.map(i64::from)
+                spent_in_txid,
+                stamp
             ])?;
         }
     }
@@ -1389,7 +1409,7 @@ fn ensure_current_transaction_identity(
 }
 
 /// Diagnose typed txid/height columns that disagree with the authoritative blob.
-fn ensure_transaction_record_matches_columns(
+pub(crate) fn ensure_transaction_record_matches_columns(
     typed_txid: &dashcore::Txid,
     typed_height: Option<u32>,
     record: &TransactionRecord,
@@ -2049,7 +2069,7 @@ mod tests {
         migrations::run_for_open(&mut conn, LoadPolicy::Recovery)
             .expect("Recovery must complete V020 past an undecodable kept record");
 
-        assert_eq!(schema_version(&conn), 20);
+        assert_eq!(schema_version(&conn), migrations::max_supported_version());
     }
 
     #[test]
@@ -3413,55 +3433,77 @@ mod tests {
 
     #[test]
     fn should_hand_a_withheld_input_to_its_kept_survivor_after_migrating_to_v021() {
-        let wallet_id = [0xB7u8; 32];
-        let mut conn = wallet_db(&wallet_id);
-        let coin = |marker| sample_utxo(Txid::from_byte_array([marker; 32]), 150, true);
-        let (first, second, shared) = (coin(0x71), coin(0x72), coin(0x73));
-        // The shared coin is claimed by the first record listing it: `loser`.
-        let loser = spend(
-            &[first.outpoint, shared.outpoint],
-            TransactionContext::Mempool,
-        );
-        let survivor = spend(
-            &[second.outpoint, shared.outpoint],
-            TransactionContext::Mempool,
-        );
-        let coins = vec![first.clone(), second.clone(), shared.clone()];
-        let pending = CoreChangeSet {
-            spent_utxos: coins.clone(),
-            ..round(vec![loser.clone(), survivor.clone()], coins)
-        };
-        let tx = conn.transaction().unwrap();
-        apply(&tx, &wallet_id, &pending).unwrap();
-        tx.commit().unwrap();
-        let claimant = |txid: &Txid| (true, Some(txid.as_byte_array().to_vec()));
-        assert_eq!(
-            spend_claim(&conn, &wallet_id, &shared.outpoint),
-            claimant(&loser.txid)
-        );
-        rewind_v020(&conn);
-        migrations::run(&mut conn).unwrap();
+        for materialized in [true, false] {
+            let wallet_id = [0xB7u8; 32];
+            let mut conn = wallet_db(&wallet_id);
+            let coin = |marker| sample_utxo(Txid::from_byte_array([marker; 32]), 150, true);
+            let (first, second, shared) = (coin(0x71), coin(0x72), coin(0x73));
+            // The shared coin is claimed by the first record listing it: `loser`.
+            let loser = spend(
+                &[first.outpoint, shared.outpoint],
+                TransactionContext::Mempool,
+            );
+            let survivor = spend(
+                &[second.outpoint, shared.outpoint],
+                TransactionContext::Mempool,
+            );
+            let coins = if materialized {
+                vec![first.clone(), second.clone(), shared.clone()]
+            } else {
+                vec![]
+            };
+            let pending = CoreChangeSet {
+                spent_utxos: coins.clone(),
+                ..round(vec![loser.clone(), survivor.clone()], coins)
+            };
+            let tx = conn.transaction().unwrap();
+            apply(&tx, &wallet_id, &pending).unwrap();
+            tx.commit().unwrap();
+            let claimant = |txid: &Txid| (true, Some(txid.as_byte_array().to_vec()));
+            if materialized {
+                assert_eq!(
+                    spend_claim(&conn, &wallet_id, &shared.outpoint),
+                    claimant(&loser.txid)
+                );
+            }
+            rewind_v020(&conn);
+            migrations::run(&mut conn).unwrap();
 
-        let block = BlockInfo::new(160, BlockHash::all_zeros(), 1);
-        let winner = spend(&[first.outpoint], TransactionContext::InBlock(block));
-        let settled = CoreChangeSet {
-            sweeps: vec![SweepBatch {
-                txids: vec![loser.txid],
-                superseded_by: winner.txid,
-                winner_mined_height: Some(160),
-                released_outpoints: vec![],
-            }],
-            ..round(vec![winner], vec![])
-        };
-        let tx = conn.transaction().unwrap();
-        apply(&tx, &wallet_id, &settled).unwrap();
-        tx.commit().unwrap();
+            let block = BlockInfo::new(160, BlockHash::all_zeros(), 1);
+            let winner = spend(&[first.outpoint], TransactionContext::InBlock(block));
+            let settled = CoreChangeSet {
+                sweeps: vec![SweepBatch {
+                    txids: vec![loser.txid],
+                    superseded_by: winner.txid,
+                    winner_mined_height: Some(160),
+                    released_outpoints: vec![],
+                }],
+                ..round(vec![winner], vec![])
+            };
+            let tx = conn.transaction().unwrap();
+            apply(&tx, &wallet_id, &settled).unwrap();
+            tx.commit().unwrap();
 
-        assert_eq!(
-            spend_claim(&conn, &wallet_id, &shared.outpoint),
-            claimant(&survivor.txid),
-            "the kept survivor, not the winner, holds the withheld input"
-        );
+            assert_eq!(
+                spend_claim(&conn, &wallet_id, &shared.outpoint),
+                claimant(&survivor.txid),
+                "the kept survivor, not the winner, holds the withheld input"
+            );
+            let stamp: Option<i64> = conn
+                .query_row(
+                    "SELECT winner_mined_height FROM core_utxos WHERE wallet_id=?1 AND outpoint=?2",
+                    params![
+                        wallet_id.as_slice(),
+                        blob::encode_outpoint(&shared.outpoint).unwrap()
+                    ],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(
+                stamp, None,
+                "an unmined survivor cannot inherit the winner's height"
+            );
+        }
     }
     fn count_vm_ops(conn: &Connection) -> std::sync::Arc<std::sync::atomic::AtomicU64> {
         use std::sync::{

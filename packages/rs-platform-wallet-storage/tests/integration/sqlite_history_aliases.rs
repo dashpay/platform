@@ -965,7 +965,6 @@ async fn signed_history_load_and_reopen(adopted: bool) {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn should_load_literal_legacy_only_history_through_replay_manager_and_reopen() {
-    // TODO: verify alias replay and reopen under the required memory-capped runner.
     signed_history_load_and_reopen(false).await;
 }
 

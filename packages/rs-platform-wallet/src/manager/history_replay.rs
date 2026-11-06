@@ -34,7 +34,8 @@ use key_wallet::Utxo;
 use super::history_authorization::plan_history_authorization;
 pub use super::history_authorization::HistoryAuthorization;
 pub use super::history_claims::{
-    HistoryReplayEffects, HistoryReplayOperationEffects, ReplayClaimEffect, StoredReplayClaim,
+    held_sweep_claimant, HistoryReplayEffects, HistoryReplayOperationEffects, ReplayClaimEffect,
+    StoredReplayClaim,
 };
 use crate::changeset::changeset::SweepBatch;
 use crate::changeset::recorded_history::ReplayEvidence;
@@ -744,7 +745,14 @@ pub async fn replay_recorded_history_with_evidence(
             if unsafe_amounts.contains_key(&original.txid) {
                 sanitize_unsafe_record(&mut original);
             }
-            if let Some(replayed) = account.transactions_mut().get_mut(&original.txid) {
+            // The checker keys legacy bodies canonically; keep one logical record.
+            let canonical = original.transaction.txid();
+            let replayed_key = if account.transactions().contains_key(&canonical) {
+                canonical
+            } else {
+                original.txid
+            };
+            if let Some(replayed) = account.transactions_mut().get_mut(&replayed_key) {
                 replayed.label = original.label;
                 replayed.fee = original.fee.or(replayed.fee);
             } else {

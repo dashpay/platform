@@ -1,7 +1,8 @@
 //! Rewind coverage without discarding any wallet's unresolved InstantSend evidence.
 
+use dashcore::{hashes::Hash, Txid};
 use key_wallet::transaction_checking::TransactionContext;
-use rusqlite::{params, Transaction};
+use rusqlite::{params, Row, Transaction};
 
 use crate::sqlite::config::LoadPolicy;
 use crate::sqlite::error::WalletStorageError;
@@ -62,9 +63,18 @@ fn has_record_observation(
 ) -> Result<bool, WalletStorageError> {
     scan_observations(tx, wallet_id, policy,
         "SELECT CASE WHEN typeof(record_blob)='blob' THEN length(record_blob) END,
-                CASE WHEN typeof(record_blob)='blob' AND length(record_blob)<=?2 THEN record_blob END
+                CASE WHEN typeof(record_blob)='blob' AND length(record_blob)<=?2 THEN record_blob END,
+                length(txid), CASE WHEN length(txid)=32 THEN txid END, height
          FROM core_transactions WHERE wallet_id=?1 AND record_blob IS NOT NULL",
-        |bytes| Ok(matches!(core_state::decode_transaction_record(bytes)?.context, TransactionContext::InstantSend(_))))
+        |bytes, row| {
+            let record = core_state::decode_transaction_record(bytes)?;
+            blob::check_fixed_width(row.get(2)?, 32, "core_transactions.txid")?;
+            let txid = Txid::from_slice(&row.get::<_, Vec<u8>>(3)?)?;
+            let height = row.get::<_, Option<i64>>(4)?
+                .map(|height| i64_to_u32("core_transactions.height", height)).transpose()?;
+            core_state::ensure_transaction_record_matches_columns(&txid, height, &record)?;
+            Ok(matches!(record.context, TransactionContext::InstantSend(_)))
+        })
 }
 
 fn has_asset_observation(
@@ -76,7 +86,7 @@ fn has_asset_observation(
         "SELECT CASE WHEN typeof(lifecycle_blob)='blob' THEN length(lifecycle_blob) END,
                 CASE WHEN typeof(lifecycle_blob)='blob' AND length(lifecycle_blob)<=?2 THEN lifecycle_blob END
          FROM asset_locks WHERE wallet_id=?1",
-        asset_locks::has_instant_observation)
+        |bytes, _| asset_locks::has_instant_observation(bytes))
 }
 
 fn scan_observations(
@@ -84,7 +94,7 @@ fn scan_observations(
     wallet_id: &[u8; 32],
     policy: LoadPolicy,
     query: &str,
-    decode: impl Fn(&[u8]) -> Result<bool, WalletStorageError>,
+    decode: impl Fn(&[u8], &Row<'_>) -> Result<bool, WalletStorageError>,
 ) -> Result<bool, WalletStorageError> {
     let mut stmt = tx.prepare(query)?;
     let mut rows = stmt.query(params![
@@ -96,7 +106,7 @@ fn scan_observations(
         let decoded = match length {
             Some(length) => blob::check_size(length).and_then(|()| {
                 let bytes: Vec<u8> = row.get(1)?;
-                decode(&bytes)
+                decode(&bytes, row)
             }),
             None => Err(WalletStorageError::blob_decode(
                 "rescan evidence must be a BLOB",

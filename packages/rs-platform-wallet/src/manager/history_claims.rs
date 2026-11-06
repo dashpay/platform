@@ -13,6 +13,18 @@ use crate::changeset::{
 use crate::wallet::asset_lock::tracked::AssetLockStatus;
 use crate::wallet::identity::PaymentEntry;
 
+/// Attribute a withheld input to its surviving spender, or the external sweep winner.
+pub fn held_sweep_claimant(winner: Txid, survivors: impl Iterator<Item = Txid>) -> Txid {
+    let mut selected = None;
+    for survivor in survivors {
+        if survivor == winner {
+            return winner;
+        }
+        selected = Some(selected.map_or(survivor, |known: Txid| known.min(survivor)));
+    }
+    selected.unwrap_or(winner)
+}
+
 /// One durable hold, independent of a backend's physical row representation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StoredReplayClaim {
@@ -420,14 +432,28 @@ impl HistoryReplay {
                     pending.remove(&outpoint);
                     sweep_held.remove(&outpoint);
                 } else {
-                    let stamp = sweep
-                        .winner_mined_height
-                        .or_else(|| pending.get(&outpoint).and_then(|claim| claim.mined_height));
+                    let winner = records_by_key
+                        .get(&sweep.superseded_by)
+                        .map_or(sweep.superseded_by, |(body, _)| *body);
+                    let retained = survivors.get(&outpoint);
+                    let claimant = held_sweep_claimant(
+                        winner,
+                        retained
+                            .into_iter()
+                            .flat_map(|claims| claims.keys().copied()),
+                    );
+                    let stamp = if claimant == winner {
+                        sweep
+                            .winner_mined_height
+                            .or_else(|| pending.get(&outpoint).and_then(|claim| claim.mined_height))
+                    } else {
+                        retained.and_then(|claims| claims.get(&claimant).copied().flatten())
+                    };
                     pending.insert(
                         outpoint,
                         StoredReplayClaim {
                             outpoint,
-                            claimant: Some(sweep.superseded_by),
+                            claimant: Some(claimant),
                             mined_height: stamp,
                         },
                     );
