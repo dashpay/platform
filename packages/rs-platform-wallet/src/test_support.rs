@@ -20,10 +20,6 @@ use dashcore::Txid;
 use dashcore::{Address, Network, ScriptBuf, Transaction, TxOut};
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::bip32::ExtendedPubKey;
-// Only the `#[cfg(test)]` CoinJoin fixture needs the trait (for
-// `next_address_with_info` on a non-standard account); gate it to match so a
-// `test-utils`-only build does not flag it unused.
-#[cfg(test)]
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::{ExtendedPubKeySigner, Signer, SignerMethod};
 use key_wallet::test_utils::TestWalletContext;
@@ -189,6 +185,138 @@ impl ExtendedPubKeySigner for WalletSigner {
         self.wallet
             .derive_extended_public_key(path)
             .map_err(|e| e.to_string())
+    }
+}
+
+/// A testnet wallet manager holding `wallet` with fresh managed state
+/// (birth height 0), and the receiver of the manager's lossless persistence
+/// channel, which the event adapter drains in production.
+pub fn wallet_manager_with_persistence(
+    wallet: Wallet,
+) -> (
+    Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    WalletId,
+    tokio::sync::mpsc::UnboundedReceiver<key_wallet_manager::WalletEvent>,
+) {
+    let info = PlatformWalletInfo {
+        observed_input_conflicts: Default::default(),
+        core_wallet: key_wallet::wallet::ManagedWalletInfo::from_wallet(&wallet, 0),
+        generation: Arc::new(WalletGeneration::new()),
+        identity_manager: IdentityManager::new(),
+        tracked_asset_locks: BTreeMap::new(),
+        dpns_name_states: BTreeMap::new(),
+        dashpay_backfill: Default::default(),
+        rewind_barrier: Default::default(),
+    };
+    let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
+    let wallet_id = wm.insert_wallet(wallet, info).expect("insert wallet");
+    let receiver = wm
+        .take_persistence_receiver()
+        .expect("a new manager's persistence receiver is untaken");
+    (Arc::new(RwLock::new(wm)), wallet_id, receiver)
+}
+
+/// The addresses at indexes `0..count` of the external pool of `wallet`'s
+/// funds account `account`, derived from the account's key.
+pub fn external_addresses(
+    wallet: &Wallet,
+    account: key_wallet::account::AccountType,
+    count: u32,
+) -> Vec<dashcore::Address> {
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+
+    let info = key_wallet::wallet::ManagedWalletInfo::from_wallet(wallet, 0);
+    let mut pool = info
+        .accounts
+        .funds_account(&account)
+        .expect("the wallet has the account")
+        .managed_account_type()
+        .address_pools()
+        .into_iter()
+        .find(|p| p.pool_type == AddressPoolType::External)
+        .expect("an external pool")
+        .clone();
+    let have = pool.highest_generated.map_or(0, |h| h + 1);
+    pool.generate_addresses(
+        count.saturating_sub(have),
+        &wallet.key_source_for_account(account),
+        true,
+    )
+    .expect("derive the pool's addresses");
+    (0..count)
+        .map(|i| pool.address_at_index(i).expect("derived"))
+        .collect()
+}
+
+/// A transaction paying `value` to each of `addresses`, spending an
+/// outpoint no wallet holds (one per `input_vout`).
+pub fn transaction_paying(
+    addresses: &[dashcore::Address],
+    value: u64,
+    input_vout: u32,
+) -> Transaction {
+    Transaction {
+        version: 2,
+        lock_time: 0,
+        input: vec![dashcore::TxIn {
+            previous_output: dashcore::OutPoint {
+                txid: dashcore::Txid::from_byte_array([0xF0; 32]),
+                vout: input_vout,
+            },
+            script_sig: dashcore::ScriptBuf::new(),
+            sequence: u32::MAX,
+            witness: dashcore::Witness::new(),
+        }],
+        output: addresses
+            .iter()
+            .map(|a| dashcore::TxOut {
+                value,
+                script_pubkey: a.script_pubkey(),
+            })
+            .collect(),
+        special_transaction_payload: None,
+    }
+}
+
+/// A block at `height` holding one transaction that pays `value` to each of
+/// `addresses`.
+pub fn block_paying(addresses: &[dashcore::Address], value: u64, height: u32) -> dashcore::Block {
+    dashcore::Block::dummy(height, vec![transaction_paying(addresses, value, height)])
+}
+
+/// Processes `block` for `wallet_id` the way dash-spv's filter sync does:
+/// once, then again while a pass derives scripts the block pays (the batch
+/// rescan for new scripts re-fetches a block whose filter matches them).
+/// Returns how many passes ran.
+pub async fn process_block_with_rescans(
+    wallet_manager: &RwLock<WalletManager<PlatformWalletInfo>>,
+    wallet_id: WalletId,
+    block: &dashcore::Block,
+    height: u32,
+) -> usize {
+    use key_wallet_manager::WalletInterface;
+
+    let paid: std::collections::HashSet<&dashcore::ScriptBuf> = block
+        .txdata
+        .iter()
+        .flat_map(|tx| tx.output.iter().map(|o| &o.script_pubkey))
+        .collect();
+    let wallets = std::collections::BTreeSet::from([wallet_id]);
+    let mut passes = 0;
+    loop {
+        passes += 1;
+        let result = wallet_manager
+            .write()
+            .await
+            .process_block_for_wallets(block, block.block_hash(), height, &wallets)
+            .await;
+        let rescan = result
+            .new_scripts
+            .get(&wallet_id)
+            .is_some_and(|scripts| scripts.iter().any(|s| paid.contains(s)));
+        if !rescan {
+            return passes;
+        }
     }
 }
 
