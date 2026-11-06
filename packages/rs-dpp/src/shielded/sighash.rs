@@ -747,11 +747,11 @@ fn outputs_only_bundle_tag_v0(action_type: TokenTransitionActionType) -> Result<
         | TokenTransitionActionType::ShieldedTransfer
         | TokenTransitionActionType::PlaceAsk
         | TokenTransitionActionType::FillAsk
-        | TokenTransitionActionType::CancelOrder) => {
-            Err(ProtocolError::InvalidStateTransitionType(format!(
-                "{other} is not an outputs-only token pool transition and has no bundle tag"
-            )))
-        }
+        | TokenTransitionActionType::CancelOrder
+        | TokenTransitionActionType::PlaceBid
+        | TokenTransitionActionType::FillBid) => Err(ProtocolError::InvalidStateTransitionType(
+            format!("{other} is not an outputs-only token pool transition and has no bundle tag"),
+        )),
     }
 }
 

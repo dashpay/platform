@@ -29,8 +29,8 @@ impl TokenFillAskTransitionActionStateValidationV0 for TokenFillAskTransitionAct
     /// The transformer already read the listing and refused a fill it cannot meet, and the
     /// batch's advanced structure a token that is no longer tradeable. A fill also needs a token
     /// that is not paused, a seller whose account is not frozen, and a buyer whose account is not
-    /// frozen unless the token allows transfers to frozen balances. The buyer's credit balance is checked with the batch's fees, which count
-    /// the fill's cost as a purchase.
+    /// frozen unless the token allows transfers to frozen balances. The buyer's credit balance is
+    /// checked with the batch's fees, which count the fill's cost as a purchase.
     fn validate_state_v0(
         &self,
         platform: &PlatformStateRef,

@@ -5,6 +5,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::state_transition_action::shielded::ShieldedActionNote;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use dpp::balances::credits::TokenAmount;
+use dpp::fee::Credits;
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::prelude::{IdentityNonce, TimestampMillis};
@@ -219,6 +220,25 @@ pub enum TokenOperationType {
         /// What the escrow holds after the release
         remaining_after: TokenAmount,
     },
+    /// Holds `credits` in escrow for the new offer `order_id` (the token marketplace, protocol
+    /// version 15). The credits come out of the buyer's balance through an identity balance
+    /// operation of the same batch; the escrow sits under the prefunded specialized balances,
+    /// which the credit conservation check counts.
+    TokenHoldCreditsInOrderEscrow {
+        /// The offer's order id
+        order_id: Identifier,
+        /// The credits the offer holds
+        credits: Credits,
+    },
+    /// Sets what the offer `order_id` holds in escrow to `credits_after`, after a fill or a cancel
+    /// paid credits out of it through identity balance operations of the same batch (the token
+    /// marketplace, protocol version 15). At 0 its entry is removed.
+    TokenSetCreditsInOrderEscrow {
+        /// The offer's order id
+        order_id: Identifier,
+        /// What the escrow holds afterwards
+        credits_after: Credits,
+    },
 }
 
 impl DriveLowLevelOperationConverter for TokenOperationType {
@@ -231,6 +251,32 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
+            TokenOperationType::TokenHoldCreditsInOrderEscrow { order_id, credits } => drive
+                .add_to_credit_order_escrow_operations(
+                    order_id.to_buffer(),
+                    credits,
+                    estimated_costs_only_with_layer_info,
+                    platform_version,
+                ),
+            TokenOperationType::TokenSetCreditsInOrderEscrow {
+                order_id,
+                credits_after,
+            } => {
+                if credits_after > 0 {
+                    drive.set_credit_order_escrow_operations(
+                        order_id.to_buffer(),
+                        credits_after,
+                        estimated_costs_only_with_layer_info,
+                        platform_version,
+                    )
+                } else {
+                    drive.remove_credit_order_escrow_operations(
+                        order_id.to_buffer(),
+                        estimated_costs_only_with_layer_info,
+                        platform_version,
+                    )
+                }
+            }
             TokenOperationType::TokenPlaceInOrderEscrow {
                 token_id,
                 holder_id,

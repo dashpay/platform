@@ -35,6 +35,8 @@ use dpp::state_transition::batch_transition::document_create_transition::v0::v0_
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_burn_transition::v0::v0_methods::TokenBurnTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_cancel_order_transition::v0::v0_methods::TokenCancelOrderTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_fill_bid_transition::v0::v0_methods::TokenFillBidTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_place_bid_transition::v0::v0_methods::TokenPlaceBidTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_fill_ask_transition::v0::v0_methods::TokenFillAskTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_place_ask_transition::v0::v0_methods::TokenPlaceAskTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_claim_transition::v0::v0_methods::TokenClaimTransitionV0Methods;
@@ -157,14 +159,16 @@ pub struct BatchedTransitionSummary {
     pub target: BatchedTransitionTarget,
     /// Credits or tokens moved: a document purchase price or update-price
     /// value, a token transfer / mint / burn amount, a direct purchase's
-    /// total agreed price, the tokens a listing places in escrow, or the most
-    /// credits a listing fill spends.
+    /// total agreed price, the tokens a listing places in escrow, the most
+    /// credits a listing fill spends, the credits an offer moves into escrow,
+    /// or the most tokens a sale into an offer moves.
     pub amount: Option<u64>,
     /// The identity on the other side, read against `action`: a document
     /// transfer's new owner, a token transfer's recipient, a mint's issued-to
     /// identity, or the frozen identity of a freeze / unfreeze / destroy.
     pub recipient_id: Option<Identifier>,
-    /// Tokens bought by a direct purchase, or the most a listing fill buys.
+    /// Tokens bought by a direct purchase, the most a listing fill buys, or the tokens an
+    /// offer wants.
     pub token_count: Option<u64>,
     /// The material fields `amount` / `recipient_id` / `token_count` do not
     /// cover, one per line (document data, a config change item, a price
@@ -613,6 +617,27 @@ fn summarize_token_transition(
             lines.push(budget.write(format_args!("order: {} ({})", t.order_id(), t.side()))?);
             (None, None, None, None)
         }
+        // An offer wants `amount` tokens and moves what they are worth, at its price per whole
+        // token and the token's decimals when it is placed, from the buyer's credits into escrow.
+        // The decimals are the token's, not the transition's, so the credits it commits are not
+        // known from the transition alone.
+        TokenTransition::PlaceBid(t) => {
+            lines.push(budget.write(format_args!("price: {} credits per whole token", t.price()))?);
+            lines.push(budget.write(format_args!(
+                "escrow: the price of the tokens at the token's decimals"
+            ))?);
+            (None, None, Some(t.amount()), None)
+        }
+        // A sale moves at most `max_amount` tokens for at least `min_total_received` credits.
+        TokenTransition::FillBid(t) => {
+            lines.push(budget.write(format_args!("offer: {}", t.order_id()))?);
+            lines.push(budget.write(format_args!("minimum amount: {}", t.min_amount()))?);
+            lines.push(budget.write(format_args!(
+                "minimum received: {} credits",
+                t.min_total_received()
+            ))?);
+            (Some(t.max_amount()), None, None, None)
+        }
         // Shielded-pool operations carry notes, proofs and amounts with no typed projection: the
         // whole transition is rendered and the row is incomplete.
         TokenTransition::Shield(_)
@@ -689,6 +714,8 @@ mod tests {
     use dpp::state_transition::batch_transition::token_emergency_action_transition::v0::TokenEmergencyActionTransitionV0;
     use dpp::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::v0::TokenSetPriceForDirectPurchaseTransitionV0;
     use dpp::state_transition::batch_transition::token_transfer_transition::v0::TokenTransferTransitionV0;
+    use dpp::state_transition::batch_transition::token_place_bid_transition::v0::TokenPlaceBidTransitionV0;
+    use dpp::state_transition::batch_transition::TokenPlaceBidTransition;
     use dpp::state_transition::batch_transition::{
         BatchTransitionV1, DocumentCreateTransition, TokenClaimTransition,
         TokenConfigUpdateTransition, TokenDirectPurchaseTransition,
@@ -1011,6 +1038,31 @@ mod tests {
 
     /// Two config updates granting manual minting to different takers must not
     /// summarize the same; neither is complete from the typed fields alone.
+    /// An offer names no decimals: what it commits to escrow is its price at the token's
+    /// decimals when it is placed, which the transition alone does not tell, so its row shows the
+    /// tokens it wants and its price per whole token, and no credit amount.
+    #[test]
+    fn offer_rows_show_the_tokens_wanted_and_the_price() {
+        let offer = BatchedTransition::Token(TokenTransition::PlaceBid(
+            TokenPlaceBidTransition::V0(TokenPlaceBidTransitionV0 {
+                base: token_base(),
+                amount: 1_000,
+                price: 1_000_000_000,
+            }),
+        ));
+        let summary = summarize_bytes(&batch(vec![offer]));
+        let StateTransitionSummaryKind::Batch { transitions, .. } = summary.kind else {
+            panic!("expected a batch");
+        };
+        assert_eq!(transitions[0].token_count, Some(1_000));
+        assert_eq!(transitions[0].amount, None);
+        let details = transitions[0].details.clone().expect("details");
+        assert!(
+            details.contains("1000000000 credits per whole token"),
+            "{details}"
+        );
+    }
+
     #[test]
     fn token_details_cover_config_update_emergency_price_and_claim() {
         let config_update = |takers: AuthorizedActionTakers| {

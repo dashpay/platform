@@ -797,6 +797,8 @@ mod tests {
         use dpp::state_transition::batch_transition::batched_transition::token_config_update_transition::{TokenConfigUpdateTransition, TokenConfigUpdateTransitionV0};
         use dpp::state_transition::batch_transition::batched_transition::token_fill_ask_transition::{TokenFillAskTransition, TokenFillAskTransitionV0};
         use dpp::state_transition::batch_transition::batched_transition::token_place_ask_transition::{TokenPlaceAskTransition, TokenPlaceAskTransitionV0};
+        use dpp::state_transition::batch_transition::batched_transition::token_place_bid_transition::{TokenPlaceBidTransition, TokenPlaceBidTransitionV0};
+        use dpp::state_transition::batch_transition::batched_transition::token_fill_bid_transition::{TokenFillBidTransition, TokenFillBidTransitionV0};
         use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
         use dpp::state_transition::batch_transition::BatchTransitionV1;
         use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
@@ -970,6 +972,18 @@ mod tests {
                         TokenCancelOrderTransitionV0::default(),
                     )),
                     "TokenCancelOrder",
+                ),
+                (
+                    TokenTransition::PlaceBid(TokenPlaceBidTransition::V0(
+                        TokenPlaceBidTransitionV0::default(),
+                    )),
+                    "TokenPlaceBid",
+                ),
+                (
+                    TokenTransition::FillBid(TokenFillBidTransition::V0(
+                        TokenFillBidTransitionV0::default(),
+                    )),
+                    "TokenFillBid",
                 ),
             ]
         }

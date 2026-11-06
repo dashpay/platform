@@ -539,7 +539,7 @@ impl DriveOperation<'_> {
 
     /// Refuses a batch whose token operations write one identity's balance of a token, one
     /// token's total supply, the total one token's shielded pool holds, or what one marketplace
-    /// listing holds in escrow, more than once.
+    /// listing or offer holds in escrow, more than once.
     ///
     /// These writes compute the new value from the one committed before the batch too, but a
     /// transfer writes two balances, a mint or a burn a balance and the supply, and a shield
@@ -579,6 +579,8 @@ enum TokenBalanceKey {
     PoolTotal(Identifier),
     /// What one listing of the token marketplace holds in escrow (token, order)
     OrderEscrow(Identifier, Identifier),
+    /// What one offer of the token marketplace holds in escrow, in credits (order)
+    CreditOrderEscrow(Identifier),
 }
 
 /// The keys `operation` writes if it is a token operation that moves tokens
@@ -665,6 +667,12 @@ fn token_balance_writes(operation: &DriveOperation) -> Vec<TokenBalanceKey> {
             TokenBalanceKey::Holder(*token_id, *recipient_id),
             TokenBalanceKey::OrderEscrow(*token_id, *order_id),
         ],
+        // An offer's escrow holds credits, which its placement, fills and cancel move through
+        // identity balance operations of their own.
+        TokenOperationType::TokenHoldCreditsInOrderEscrow { order_id, .. }
+        | TokenOperationType::TokenSetCreditsInOrderEscrow { order_id, .. } => {
+            vec![TokenBalanceKey::CreditOrderEscrow(*order_id)]
+        }
         // A transfer inside the pool moves nothing in or out of it, so it leaves the pool
         // total where it stands and only records nullifiers and appends notes.
         TokenOperationType::TokenShieldedTransfer { .. }

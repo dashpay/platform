@@ -85,6 +85,7 @@ use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::verify::RootHash;
 use dpp::state_transition::batch_transition::token_cancel_order_transition::v0::v0_methods::TokenCancelOrderTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_place_ask_transition::v0::v0_methods::TokenPlaceAskTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_place_bid_transition::v0::v0_methods::TokenPlaceBidTransitionV0Methods;
 use dpp::tokens::token_order::TokenOrder;
 use dpp::tokens::token_order_side::TokenOrderSide;
 use crate::error::Error;
@@ -1398,6 +1399,60 @@ impl Drive {
                                     VerifiedDocuments(BTreeMap::from([(order_id, Some(document))])),
                                 ))
                             }
+                            // An offer is proven by its `bid` document, like a listing, after
+                            // sales too: they leave `remaining` lower and the escrow at what the
+                            // offer is worth less what was paid for what is filled.
+                            TokenTransition::PlaceBid(token_place_bid_transition) => {
+                                // A placement is never a group action: the node refuses group
+                                // information on it, so a transition carrying some was not
+                                // executed, and its proof must not borrow a group action's
+                                // evidence (which may stand without the placement's record).
+                                if token_transition.base().using_group_info().is_some() {
+                                    return Err(Error::Proof(ProofError::UnexpectedResultProof(
+                                        "a token offer placement carries group action information, which no executed placement has (token place bid)".to_string(),
+                                    )));
+                                }
+                                let order_id = TokenOrderSide::Bid.order_id(
+                                    token_id,
+                                    owner_id,
+                                    identity_contract_nonce,
+                                );
+                                let (root_hash, document) = verify_token_order_document(
+                                    proof,
+                                    TokenOrderSide::Bid,
+                                    order_id,
+                                    carries_owner_balance,
+                                    platform_version,
+                                )?;
+                                let Some(document) = document else {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                                        "proof did not contain the offer {} expected to exist because of state transition (token place bid)",
+                                        order_id
+                                    ))));
+                                };
+                                let order =
+                                    TokenOrder::from_document(&document, TokenOrderSide::Bid)?;
+                                // The decimals are the token's when the offer was placed, which
+                                // the platform recorded and the proof holds; the escrow is
+                                // checked at them.
+                                if order.token_id != token_id
+                                    || order.maker_id != owner_id
+                                    || order.price != token_place_bid_transition.price()
+                                    || order.amount != token_place_bid_transition.amount()
+                                    || order.remaining == 0
+                                    || order.remaining > order.amount
+                                    || Some(order.escrow) != order.escrow_after_fills()
+                                {
+                                    return Err(Error::Proof(ProofError::UnexpectedResultProof(format!(
+                                        "proof of the offer {} does not hold the terms of state transition (token place bid)",
+                                        order_id
+                                    ))));
+                                }
+                                Ok((
+                                    root_hash,
+                                    VerifiedDocuments(BTreeMap::from([(order_id, Some(document))])),
+                                ))
+                            }
                             // A cancel is proven by the order no longer existing.
                             TokenTransition::CancelOrder(token_cancel_order_transition) => {
                                 let order_id = token_cancel_order_transition.order_id();
@@ -1432,6 +1487,22 @@ impl Drive {
                                 else {
                                     return Err(Error::Proof(ProofError::IncorrectProof(
                                         format!("proof did not contain token balance for identity {} expected to exist because of state transition (token fill ask)", owner_id))));
+                                };
+                                Ok((root_hash, VerifiedTokenBalance(owner_id, balance)))
+                            }
+                            // A sale into an offer is proven by the seller's balance.
+                            TokenTransition::FillBid(_) => {
+                                let (root_hash, Some(balance)) =
+                                    Drive::verify_token_balance_for_identity_id(
+                                        proof,
+                                        token_id.into_buffer(),
+                                        owner_id.into_buffer(),
+                                        carries_owner_balance,
+                                        platform_version,
+                                    )?
+                                else {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(
+                                        format!("proof did not contain token balance for identity {} expected to exist because of state transition (token fill bid)", owner_id))));
                                 };
                                 Ok((root_hash, VerifiedTokenBalance(owner_id, balance)))
                             }
@@ -3301,10 +3372,12 @@ impl Drive {
                         TokenTransition::BurnFromPool(_) => grouped,
                         // A listing's document carries its id, derived from the signer and the
                         // nonce, and the transition's terms, which the verification compares.
-                        TokenTransition::PlaceAsk(_) => true,
+                        TokenTransition::PlaceAsk(_) | TokenTransition::PlaceBid(_) => true,
                         // A fill leaves a balance snapshot and a cancel an absence, which the
                         // order being filled entirely would leave too.
-                        TokenTransition::FillAsk(_) | TokenTransition::CancelOrder(_) => false,
+                        TokenTransition::FillAsk(_)
+                        | TokenTransition::FillBid(_)
+                        | TokenTransition::CancelOrder(_) => false,
                     }
                 }
             },
