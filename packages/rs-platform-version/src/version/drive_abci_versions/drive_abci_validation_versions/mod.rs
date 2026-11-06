@@ -315,6 +315,14 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub token_unshield_transition_state_validation: FeatureVersion,
     pub token_shielded_transfer_transition_structure_validation: FeatureVersion,
     pub token_shielded_transfer_transition_state_validation: FeatureVersion,
+    /// The token marketplace transitions (protocol version 15), refused before their
+    /// activation by the `is_allowed` gate, so these are 0 in every table.
+    pub token_place_ask_transition_structure_validation: FeatureVersion,
+    pub token_place_ask_transition_state_validation: FeatureVersion,
+    pub token_fill_ask_transition_structure_validation: FeatureVersion,
+    pub token_fill_ask_transition_state_validation: FeatureVersion,
+    pub token_cancel_order_transition_structure_validation: FeatureVersion,
+    pub token_cancel_order_transition_state_validation: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

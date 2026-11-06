@@ -241,8 +241,14 @@ public enum TokenDistributionRecipient: String, CaseIterable, Codable, Sendable 
 
 // MARK: - Token Trade Mode
 
-/// Trading modes for tokens. Raw values match rs-dpp's `TokenTradeMode` in
-/// contract JSON. `tradeable` is valid from protocol version 15.
+/// Trading modes for tokens. Raw values are the variant names of rs-dpp's
+/// `TokenTradeMode`. `tradeable` is valid from protocol version 15.
+///
+/// Contract JSON carries `NotTradeable` as a bare string and `Tradeable` as
+/// an object holding its `minFill`, `{"Tradeable": {"minFill": 1000}}`: the
+/// smallest amount, in base units, a fill of one of the token's listings or
+/// offers takes unless it takes all the order has left. Only the mode is
+/// kept here; `minFill` is not persisted.
 ///
 /// Stored on `PersistentToken` as its raw string, so a new case leaves the
 /// entity hash unchanged. The frozen schema copies keep only `notTradeable`.

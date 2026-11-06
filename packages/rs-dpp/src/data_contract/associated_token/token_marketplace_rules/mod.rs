@@ -120,28 +120,35 @@ mod json_convertible_tests {
     }
 
     #[test]
-    fn should_serialize_tradeable_as_a_bare_string_on_both_wire_formats() {
+    fn should_serialize_tradeable_with_its_minimum_fill_on_both_wire_formats() {
         use crate::serialization::{JsonConvertible, ValueConvertible};
-        let mut original = fixture();
-        let TokenMarketplaceRules::V0(v0) = &mut original;
-        v0.trade_mode = TokenTradeMode::Tradeable;
+        for min_fill in [1000, u64::MAX] {
+            let mut original = fixture();
+            let TokenMarketplaceRules::V0(v0) = &mut original;
+            v0.trade_mode = TokenTradeMode::Tradeable { min_fill };
 
-        let json = original.to_json().expect("to_json");
-        assert_eq!(json["tradeMode"], json!("Tradeable"));
-        assert_eq!(
-            TokenMarketplaceRules::from_json(json).expect("from_json"),
-            original
-        );
+            let json = original.to_json().expect("to_json");
+            // Past JavaScript's safe integers, JSON carries it as a string
+            let written = if min_fill > 9_007_199_254_740_991 {
+                json!(min_fill.to_string())
+            } else {
+                json!(min_fill)
+            };
+            assert_eq!(
+                json["tradeMode"],
+                json!({ "Tradeable": { "minFill": written } })
+            );
+            assert_eq!(
+                TokenMarketplaceRules::from_json(json).expect("from_json"),
+                original
+            );
 
-        let value = original.to_object().expect("to_object");
-        assert_eq!(
-            value.get_str("tradeMode").expect("expected a tradeMode"),
-            "Tradeable"
-        );
-        assert_eq!(
-            TokenMarketplaceRules::from_object(value).expect("from_object"),
-            original
-        );
+            let value = original.to_object().expect("to_object");
+            assert_eq!(
+                TokenMarketplaceRules::from_object(value).expect("from_object"),
+                original
+            );
+        }
     }
 
     /// `TokenTradeMode` is bincode-encoded positionally inside every stored token configuration
@@ -154,6 +161,9 @@ mod json_convertible_tests {
                 .expect("expected to encode the trade mode")
         };
         assert_eq!(tag_of(TokenTradeMode::NotTradeable), vec![0]);
-        assert_eq!(tag_of(TokenTradeMode::Tradeable), vec![1]);
+        assert_eq!(
+            tag_of(TokenTradeMode::Tradeable { min_fill: 5 }),
+            vec![1, 5]
+        );
     }
 }

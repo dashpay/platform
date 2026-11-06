@@ -424,7 +424,12 @@ describe('TokenConfiguration', () => {
   describe('tradeMode', () => {
     it('should name both trade modes', () => {
       expect(wasm.TokenTradeMode.NotTradeable().value).to.equal('NotTradeable');
-      expect(wasm.TokenTradeMode.Tradeable().value).to.equal('Tradeable');
+      expect(wasm.TokenTradeMode.Tradeable(BigInt(100)).value).to.equal('Tradeable');
+    });
+
+    it('should carry the minimum fill of a tradeable token', () => {
+      expect(wasm.TokenTradeMode.Tradeable(BigInt(100)).minFill).to.equal(BigInt(100));
+      expect(wasm.TokenTradeMode.NotTradeable().minFill).to.equal(undefined);
     });
 
     it('should keep a tradeable mode in the marketplace rules', () => {
@@ -436,7 +441,7 @@ describe('TokenConfiguration', () => {
         isSelfChangingAdminActionTakersAllowed: false,
       });
       const marketplaceRules = new wasm.TokenMarketplaceRules(
-        wasm.TokenTradeMode.Tradeable(),
+        wasm.TokenTradeMode.Tradeable(BigInt(1)),
         changeRules,
       );
 

@@ -116,6 +116,9 @@ use crate::consensus::basic::state_transition::{
     TransitionOverMaxInputsError, TransitionOverMaxOutputsError, WithdrawalBalanceMismatchError,
     WithdrawalBelowMinAmountError,
 };
+use crate::consensus::basic::token::{
+    InvalidTokenOrderFillRangeError, InvalidTokenOrderPriceError, InvalidTokenOrderValueError,
+};
 use crate::consensus::basic::{
     IncompatibleProtocolVersionError, UnsupportedFeatureError, UnsupportedProtocolVersionError,
 };
@@ -891,6 +894,18 @@ pub enum BasicError {
     // A Batch document transition on a private document type (protocol version 15).
     #[error(transparent)]
     DocumentTypePrivateError(DocumentTypePrivateError),
+
+    // A token order's structure (protocol version 15).
+    #[error(transparent)]
+    InvalidTokenOrderPriceError(InvalidTokenOrderPriceError),
+
+    // A token order's structure (protocol version 15).
+    #[error(transparent)]
+    InvalidTokenOrderFillRangeError(InvalidTokenOrderFillRangeError),
+
+    // A token order's structure (protocol version 15).
+    #[error(transparent)]
+    InvalidTokenOrderValueError(InvalidTokenOrderValueError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -1136,6 +1151,27 @@ mod tests {
                 DocumentTypePrivateError::new(Identifier::from([1; 32]), "entry".to_string())
             )),
             210
+        );
+        // A token order's structure (protocol version 15).
+        assert_eq!(
+            discriminant_of(BasicError::InvalidTokenOrderPriceError(
+                InvalidTokenOrderPriceError::new(0, 1)
+            )),
+            211
+        );
+        // A token order's structure (protocol version 15).
+        assert_eq!(
+            discriminant_of(BasicError::InvalidTokenOrderFillRangeError(
+                InvalidTokenOrderFillRangeError::new(0, 1)
+            )),
+            212
+        );
+        // A token order's structure (protocol version 15).
+        assert_eq!(
+            discriminant_of(BasicError::InvalidTokenOrderValueError(
+                InvalidTokenOrderValueError::new(u64::MAX, u64::MAX, 0)
+            )),
+            213
         );
     }
 

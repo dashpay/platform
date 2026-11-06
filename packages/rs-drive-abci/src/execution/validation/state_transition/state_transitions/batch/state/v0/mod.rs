@@ -41,6 +41,9 @@ use crate::execution::validation::state_transition::batch::action_validation::to
 use crate::execution::validation::state_transition::batch::action_validation::token::token_burn_from_pool_transition_action::TokenBurnFromPoolTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_claim_to_pool_transition_action::TokenClaimToPoolTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_direct_purchase_to_pool_transition_action::TokenDirectPurchaseToPoolTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_cancel_order_transition_action::TokenCancelOrderTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_fill_ask_transition_action::TokenFillAskTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_place_ask_transition_action::TokenPlaceAskTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::data_triggers::{data_trigger_bindings_list, DataTriggerExecutionContext, DataTriggerExecutor};
 use crate::execution::validation::state_transition::batch::state::v0::accepted_token_pool_nullifiers::{AcceptedTokenPoolNullifiers, TokenPoolNullifiers};
 use crate::execution::validation::state_transition::batch::state::v0::added_moderator_cap::AddedModeratorCap;
@@ -400,6 +403,36 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                         transaction,
                         platform_version,
                     )?,
+                    // The token marketplace arms are reached only from protocol version 15: the
+                    // batch's `is_allowed` gate refuses every order kind before it.
+                    TokenTransitionAction::PlaceAskAction(place_ask_action) => place_ask_action
+                        .validate_state(
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            transaction,
+                            platform_version,
+                        )?,
+                    TokenTransitionAction::FillAskAction(fill_ask_action) => fill_ask_action
+                        .validate_state(
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            transaction,
+                            platform_version,
+                        )?,
+                    TokenTransitionAction::CancelOrderAction(cancel_order_action) => {
+                        cancel_order_action.validate_state(
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            transaction,
+                            platform_version,
+                        )?
+                    }
                 },
                 BatchedTransitionAction::BumpIdentityDataContractNonce(_) => {
                     return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(

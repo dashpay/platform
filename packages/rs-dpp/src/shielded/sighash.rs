@@ -744,7 +744,10 @@ fn outputs_only_bundle_tag_v0(action_type: TokenTransitionActionType) -> Result<
         | TokenTransitionActionType::SetPriceForDirectPurchase
         | TokenTransitionActionType::BurnFromPool
         | TokenTransitionActionType::Unshield
-        | TokenTransitionActionType::ShieldedTransfer) => {
+        | TokenTransitionActionType::ShieldedTransfer
+        | TokenTransitionActionType::PlaceAsk
+        | TokenTransitionActionType::FillAsk
+        | TokenTransitionActionType::CancelOrder) => {
             Err(ProtocolError::InvalidStateTransitionType(format!(
                 "{other} is not an outputs-only token pool transition and has no bundle tag"
             )))

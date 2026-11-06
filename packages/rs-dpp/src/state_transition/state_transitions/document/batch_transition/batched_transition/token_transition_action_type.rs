@@ -66,6 +66,15 @@ pub enum TokenTransitionActionType {
 
     /// Indicates a transfer inside the token's shielded pool.
     ShieldedTransfer,
+
+    /// Indicates a token listed for sale on the token marketplace.
+    PlaceAsk,
+
+    /// Indicates a purchase from an open listing on the token marketplace.
+    FillAsk,
+
+    /// Indicates an open token marketplace order cancelled by its maker.
+    CancelOrder,
 }
 
 impl fmt::Display for TokenTransitionActionType {
@@ -89,6 +98,9 @@ impl fmt::Display for TokenTransitionActionType {
             TokenTransitionActionType::BurnFromPool => "BurnFromPool",
             TokenTransitionActionType::ClaimToPool => "ClaimToPool",
             TokenTransitionActionType::DirectPurchaseToPool => "DirectPurchaseToPool",
+            TokenTransitionActionType::PlaceAsk => "PlaceAsk",
+            TokenTransitionActionType::FillAsk => "FillAsk",
+            TokenTransitionActionType::CancelOrder => "CancelOrder",
         };
         write!(f, "{}", action_str)
     }
@@ -123,6 +135,9 @@ impl TokenTransitionActionTypeGetter for TokenTransition {
             TokenTransition::DirectPurchaseToPool(_) => {
                 TokenTransitionActionType::DirectPurchaseToPool
             }
+            TokenTransition::PlaceAsk(_) => TokenTransitionActionType::PlaceAsk,
+            TokenTransition::FillAsk(_) => TokenTransitionActionType::FillAsk,
+            TokenTransition::CancelOrder(_) => TokenTransitionActionType::CancelOrder,
         }
     }
 }
@@ -160,6 +175,9 @@ impl TryFrom<&str> for TokenTransitionActionType {
             "direct_purchase_to_pool" | "directPurchaseToPool" => {
                 Ok(TokenTransitionActionType::DirectPurchaseToPool)
             }
+            "place_ask" | "placeAsk" => Ok(TokenTransitionActionType::PlaceAsk),
+            "fill_ask" | "fillAsk" => Ok(TokenTransitionActionType::FillAsk),
+            "cancel_order" | "cancelOrder" => Ok(TokenTransitionActionType::CancelOrder),
             action_type => Err(ProtocolError::Generic(format!(
                 "unknown token transition action type {action_type}"
             ))),

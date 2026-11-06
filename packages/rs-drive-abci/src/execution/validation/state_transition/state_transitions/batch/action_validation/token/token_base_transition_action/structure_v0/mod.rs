@@ -1,8 +1,3 @@
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::basic::token::ContractHasNoTokensError;
-use dpp::consensus::basic::token::InvalidTokenPositionError;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::validation::{SimpleConsensusValidationResult};
 use drive::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
@@ -19,26 +14,11 @@ impl TokenBaseTransitionActionStructureValidationV0 for TokenBaseTransitionActio
         &self,
         _platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let token_position = self.token_position();
-        let contract = self.data_contract_fetch_info_ref();
-        if contract.contract.tokens().get(&token_position).is_none() {
-            return if contract.contract.tokens().is_empty() {
-                Ok(SimpleConsensusValidationResult::new_with_error(
-                    BasicError::ContractHasNoTokensError(ContractHasNoTokensError::new(
-                        contract.contract.id(),
-                    ))
-                    .into(),
-                ))
-            } else {
-                Ok(SimpleConsensusValidationResult::new_with_error(
-                    BasicError::InvalidTokenPositionError(InvalidTokenPositionError::new(
-                        contract.contract.tokens().keys().last().copied(),
-                        token_position,
-                    ))
-                    .into(),
-                ))
-            };
-        }
-        Ok(SimpleConsensusValidationResult::default())
+        // The rule lives with the action, where a transformer that needs the token's
+        // configuration earlier reads it too.
+        Ok(match self.token_configuration_or_position_error() {
+            Ok(_) => SimpleConsensusValidationResult::default(),
+            Err(error) => SimpleConsensusValidationResult::new_with_error(error),
+        })
     }
 }

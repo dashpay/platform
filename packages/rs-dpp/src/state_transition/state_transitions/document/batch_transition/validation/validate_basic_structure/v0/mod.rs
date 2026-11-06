@@ -46,6 +46,9 @@ use crate::state_transition::batch_transition::token_mint_to_pool_transition::va
 use crate::state_transition::batch_transition::token_burn_from_pool_transition::validate_structure::TokenBurnFromPoolTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_claim_to_pool_transition::validate_structure::TokenClaimToPoolTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_direct_purchase_to_pool_transition::validate_structure::TokenDirectPurchaseToPoolTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_place_ask_transition::validate_structure::TokenPlaceAskTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_fill_ask_transition::validate_structure::TokenFillAskTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_cancel_order_transition::validate_structure::TokenCancelOrderTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_shielded_transfer_transition::validate_structure::TokenShieldedTransferTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_unshield_transition::validate_structure::TokenUnshieldTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_transfer_transition::validate_structure::TokenTransferTransitionStructureValidation;
@@ -277,6 +280,18 @@ impl BatchTransition {
                 }
                 TokenTransition::DirectPurchaseToPool(direct_purchase_to_pool_transition) => {
                     direct_purchase_to_pool_transition.validate_structure(platform_version)?
+                }
+                // The token marketplace arms, like the pool arms above, are reached only from
+                // the version that admits them: the batch's `is_allowed` gate refuses every order
+                // kind before protocol version 15.
+                TokenTransition::PlaceAsk(place_ask_transition) => {
+                    place_ask_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::FillAsk(fill_ask_transition) => {
+                    fill_ask_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::CancelOrder(cancel_order_transition) => {
+                    cancel_order_transition.validate_structure(platform_version)?
                 }
             };
 

@@ -538,7 +538,8 @@ impl DriveOperation<'_> {
     }
 
     /// Refuses a batch whose token operations write one identity's balance of a token, one
-    /// token's total supply, or the total one token's shielded pool holds, more than once.
+    /// token's total supply, the total one token's shielded pool holds, or what one marketplace
+    /// listing holds in escrow, more than once.
     ///
     /// These writes compute the new value from the one committed before the batch too, but a
     /// transfer writes two balances, a mint or a burn a balance and the supply, and a shield
@@ -570,12 +571,14 @@ enum BalanceKey {
 }
 
 /// A key a token operation writes: an identity's balance of a token, a token's total supply,
-/// or the total a token's shielded pool holds
+/// the total a token's shielded pool holds, or what a token marketplace listing holds in escrow
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum TokenBalanceKey {
     Holder(Identifier, Identifier),
     Supply(Identifier),
     PoolTotal(Identifier),
+    /// What one listing of the token marketplace holds in escrow (token, order)
+    OrderEscrow(Identifier, Identifier),
 }
 
 /// The keys `operation` writes if it is a token operation that moves tokens
@@ -640,6 +643,27 @@ fn token_balance_writes(operation: &DriveOperation) -> Vec<TokenBalanceKey> {
         | TokenOperationType::TokenBurnFromPool { token_id, .. } => vec![
             TokenBalanceKey::Supply(*token_id),
             TokenBalanceKey::PoolTotal(*token_id),
+        ],
+        // Listing moves tokens from the seller's balance into the listing's escrow, and a fill or
+        // a cancel moves them out of it into a balance. Neither moves the total supply: the
+        // escrow is a term of the conservation sum beside the balances.
+        TokenOperationType::TokenPlaceInOrderEscrow {
+            token_id,
+            holder_id,
+            order_id,
+            ..
+        } => vec![
+            TokenBalanceKey::Holder(*token_id, *holder_id),
+            TokenBalanceKey::OrderEscrow(*token_id, *order_id),
+        ],
+        TokenOperationType::TokenReleaseFromOrderEscrow {
+            token_id,
+            order_id,
+            recipient_id,
+            ..
+        } => vec![
+            TokenBalanceKey::Holder(*token_id, *recipient_id),
+            TokenBalanceKey::OrderEscrow(*token_id, *order_id),
         ],
         // A transfer inside the pool moves nothing in or out of it, so it leaves the pool
         // total where it stands and only records nullifiers and appends notes.
