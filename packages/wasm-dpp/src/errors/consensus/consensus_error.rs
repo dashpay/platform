@@ -84,6 +84,12 @@ use dpp::consensus::state::document::referenced_document_removed_error::Referenc
 use dpp::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
 use dpp::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
 use dpp::consensus::state::document::referenced_document_type_private_error::ReferencedDocumentTypePrivateError;
+use dpp::consensus::state::document::document_type_not_private_error::DocumentTypeNotPrivateError;
+use dpp::consensus::state::document::private_document_entry_size_mismatch_error::PrivateDocumentEntrySizeMismatchError;
+use dpp::consensus::basic::document::{
+    DuplicatePrivateDocumentEntryError, InvalidPrivateDocumentEntryCountError,
+    InvalidPrivateDocumentEntrySizeError,
+};
 use dpp::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
 use dpp::consensus::state::document::referenced_document_rule_read_invalid_error::ReferencedDocumentRuleReadInvalidError;
 use dpp::consensus::state::document::referenced_document_preceded_error::ReferencedDocumentPrecededError;
@@ -825,6 +831,12 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::ReferencedDocumentTypePrivateError(e) => {
             generic_consensus_error!(ReferencedDocumentTypePrivateError, e).into()
         }
+        StateError::DocumentTypeNotPrivateError(e) => {
+            generic_consensus_error!(DocumentTypeNotPrivateError, e).into()
+        }
+        StateError::PrivateDocumentEntrySizeMismatchError(e) => {
+            generic_consensus_error!(PrivateDocumentEntrySizeMismatchError, e).into()
+        }
         StateError::IdentityAlreadyHasHecateSignerKeyError(e) => {
             generic_consensus_error!(IdentityAlreadyHasHecateSignerKeyError, e).into()
         }
@@ -1455,6 +1467,15 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::DocumentTypePrivateError(e) => {
             generic_consensus_error!(DocumentTypePrivateError, e).into()
+        }
+        BasicError::InvalidPrivateDocumentEntryCountError(e) => {
+            generic_consensus_error!(InvalidPrivateDocumentEntryCountError, e).into()
+        }
+        BasicError::InvalidPrivateDocumentEntrySizeError(e) => {
+            generic_consensus_error!(InvalidPrivateDocumentEntrySizeError, e).into()
+        }
+        BasicError::DuplicatePrivateDocumentEntryError(e) => {
+            generic_consensus_error!(DuplicatePrivateDocumentEntryError, e).into()
         }
         BasicError::InvalidIdentityPublicKeyTypeForPurposeError(e) => {
             generic_consensus_error!(InvalidIdentityPublicKeyTypeForPurposeError, e).into()

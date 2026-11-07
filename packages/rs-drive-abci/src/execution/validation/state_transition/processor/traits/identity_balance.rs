@@ -156,6 +156,7 @@ impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
             | StateTransition::TokenShieldedTransferWithShieldedFee(_)
             | StateTransition::TokenUnshieldWithShieldedFee(_)
             | StateTransition::TokenPurchaseFromShieldedPool(_)
+            | StateTransition::PrivateDocumentCreateFromShieldedPool(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_)

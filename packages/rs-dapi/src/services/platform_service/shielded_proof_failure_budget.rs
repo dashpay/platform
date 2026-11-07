@@ -22,6 +22,7 @@ use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::StateTransition;
 use dpp::state_transition::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
 use dpp::state_transition::identity_top_up_from_shielded_pool_transition::IdentityTopUpFromShieldedPoolTransition;
+use dpp::state_transition::private_document_create_from_shielded_pool_transition::PrivateDocumentCreateFromShieldedPoolTransition;
 use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
 use dpp::state_transition::shield_from_identity_transition::ShieldFromIdentityTransition;
 use dpp::state_transition::shield_transition::ShieldTransition;
@@ -135,6 +136,9 @@ pub(super) fn orchard_action_count(state_transition_bytes: &[u8]) -> usize {
         }
         StateTransition::IdentityTopUpFromShieldedPool(
             IdentityTopUpFromShieldedPoolTransition::V0(v0),
+        ) => v0.actions.len(),
+        StateTransition::PrivateDocumentCreateFromShieldedPool(
+            PrivateDocumentCreateFromShieldedPoolTransition::V0(v0),
         ) => v0.actions.len(),
         _ => 0,
     }
@@ -325,8 +329,10 @@ mod tests {
     use dpp::consensus::codes::ErrorWithCode;
     use dpp::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
     use dpp::consensus::state::state_error::StateError;
+    use dpp::platform_value::{BinaryData, Identifier};
     use dpp::serialization::PlatformSerializable;
     use dpp::shielded::SerializedAction;
+    use dpp::state_transition::private_document_create_from_shielded_pool_transition::v0::PrivateDocumentCreateFromShieldedPoolTransitionV0;
     use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
     use std::net::Ipv6Addr;
 
@@ -584,5 +590,47 @@ mod tests {
         let bytes = transfer.serialize_to_bytes().unwrap();
         assert_eq!(orchard_action_count(&bytes), 3);
         assert_eq!(orchard_action_count(&[0xff, 0x00]), 0);
+    }
+
+    /// A private document create is verified unpaid like the other pool-paid spends, so a
+    /// source whose type 29 proofs keep failing spends its allowance like any other.
+    #[test]
+    fn should_meter_a_private_document_create_and_refuse_a_source_whose_proofs_keep_failing() {
+        let create = StateTransition::PrivateDocumentCreateFromShieldedPool(
+            PrivateDocumentCreateFromShieldedPoolTransition::V0(
+                PrivateDocumentCreateFromShieldedPoolTransitionV0 {
+                    data_contract_id: Identifier::from([9; 32]),
+                    document_type_name: "privateContactRequest".to_string(),
+                    entries: vec![BinaryData::new(vec![1; 585])],
+                    actions: vec![
+                        SerializedAction {
+                            nullifier: [1; 32],
+                            rk: [2; 32],
+                            cmx: [3; 32],
+                            encrypted_note: vec![4; 216],
+                            cv_net: [5; 32],
+                            spend_auth_sig: [6; 64],
+                        };
+                        2
+                    ],
+                    value_balance: 1,
+                    anchor: [7; 32],
+                    proof: vec![0; 100],
+                    binding_signature: [0; 64],
+                },
+            ),
+        );
+        let actions = orchard_action_count(&create.serialize_to_bytes().unwrap());
+        assert_eq!(actions, 2);
+
+        let budget = budget();
+        let now = Instant::now();
+        broadcast(&budget, SOURCE, actions, true, now).unwrap();
+        broadcast(&budget, SOURCE, actions, true, now).unwrap();
+        assert_eq!(
+            broadcast(&budget, SOURCE, actions, true, now),
+            Err(ACTION_DRAIN_INTERVAL * 2),
+            "a third failing create waits until one bundle has drained"
+        );
     }
 }
