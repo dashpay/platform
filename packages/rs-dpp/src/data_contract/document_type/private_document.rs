@@ -12,7 +12,6 @@ use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
 use crate::data_contract::document_type::{property_names, DocumentTypeRef};
-use crate::data_contract::DataContract;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::DocumentV0;
 use crate::ProtocolError;
@@ -182,13 +181,12 @@ fn refuse_a_public_type(document_type: DocumentTypeRef) -> Result<(), ProtocolEr
     }
 }
 
-/// The payload a private document entry of `document_type` (of `data_contract`) carries for
-/// `properties`: the type's properties in the document property encoding, as a format 3 document
-/// writes them after its system fields. A value of the wrong type is refused; the schema's
-/// bounds are not checked here, so a sender validates `properties` against the type first
-/// (`DataContract::validate_document_properties`).
+/// The payload a private document entry of `document_type` carries for `properties`: the type's
+/// properties in the document property encoding, as a format 3 document writes them after its
+/// system fields, whatever the version of its contract's config. A value of the wrong type is
+/// refused; the schema's bounds are not checked here, so a sender validates `properties` against
+/// the type first (`DataContract::validate_document_properties`).
 pub fn encode_private_document_payload(
-    data_contract: &DataContract,
     document_type: DocumentTypeRef,
     properties: BTreeMap<String, Value>,
 ) -> Result<Vec<u8>, ProtocolError> {
@@ -197,11 +195,7 @@ pub fn encode_private_document_payload(
         properties,
         ..Default::default()
     };
-    let serialized = document.serialize_specific_version(
-        document_type,
-        data_contract,
-        PRIVATE_DOCUMENT_PAYLOAD_DOCUMENT_FORMAT,
-    )?;
+    let serialized = document.serialize_in_format_3(document_type)?;
     serialized
         .strip_prefix(private_document_payload_prefix().as_slice())
         .map(<[u8]>::to_vec)
@@ -214,13 +208,12 @@ pub fn encode_private_document_payload(
         })
 }
 
-/// The properties a private document payload of `document_type` (of `data_contract`) holds.
+/// The properties a private document payload of `document_type` holds.
 /// Only the encoding [`encode_private_document_payload`] gives back is read: a payload that does
 /// not decode, or that holds anything else, such as bytes after the last property, is refused.
 /// The schema's bounds are not checked here, so a recipient validates the properties against
 /// the type before trusting them (`DataContract::validate_document_properties`).
 pub fn decode_private_document_payload(
-    data_contract: &DataContract,
     document_type: DocumentTypeRef,
     payload: &[u8],
     platform_version: &PlatformVersion,
@@ -230,8 +223,7 @@ pub fn decode_private_document_payload(
     serialized.extend_from_slice(payload);
     let properties =
         DocumentV0::from_bytes(&serialized, document_type, platform_version)?.properties;
-    if encode_private_document_payload(data_contract, document_type, properties.clone())? != payload
-    {
+    if encode_private_document_payload(document_type, properties.clone())? != payload {
         return Err(ProtocolError::DecodingError(
             "a private document payload holds bytes its properties do not encode to".to_string(),
         ));
@@ -528,19 +520,18 @@ mod tests {
             .document_type_for_name("secret")
             .expect("the secret type");
 
-        let payload = encode_private_document_payload(&contract, secret, largest_values())
-            .expect("the values encode");
+        let payload =
+            encode_private_document_payload(secret, largest_values()).expect("the values encode");
         assert_eq!(
             payload.len() as u32,
             largest_private_document_payload_size(secret).expect("bounded")
         );
-        let decoded =
-            decode_private_document_payload(&contract, secret, &payload, platform_version)
-                .expect("the payload decodes");
+        let decoded = decode_private_document_payload(secret, &payload, platform_version)
+            .expect("the payload decodes");
         assert_eq!(decoded.get("label"), Some(&Value::Text(wide(10))));
         assert_eq!(decoded.get("key"), Some(&Value::Bytes(vec![1; 33])));
         assert_eq!(
-            encode_private_document_payload(&contract, secret, decoded).expect("re-encodes"),
+            encode_private_document_payload(secret, decoded).expect("re-encodes"),
             payload
         );
 
@@ -551,7 +542,7 @@ mod tests {
             ("key".to_string(), Value::Bytes(vec![1; 33])),
         ]);
         assert_eq!(
-            encode_private_document_payload(&contract, secret, smallest)
+            encode_private_document_payload(secret, smallest)
                 .expect("encodes")
                 .len(),
             1 + 8 + 33 + 8
@@ -567,17 +558,12 @@ mod tests {
         let secret = contract
             .document_type_for_name("secret")
             .expect("the secret type");
-        let payload =
-            encode_private_document_payload(&contract, secret, largest_values()).expect("encodes");
+        let payload = encode_private_document_payload(secret, largest_values()).expect("encodes");
 
         let mut trailing = payload.clone();
         trailing.push(0);
-        assert!(
-            decode_private_document_payload(&contract, secret, &trailing, platform_version)
-                .is_err()
-        );
+        assert!(decode_private_document_payload(secret, &trailing, platform_version).is_err());
         assert!(decode_private_document_payload(
-            &contract,
             secret,
             &payload[..payload.len() - 1],
             platform_version
@@ -588,13 +574,77 @@ mod tests {
             .document_type_for_name("note")
             .expect("the note type");
         assert!(matches!(
-            encode_private_document_payload(&contract, note, BTreeMap::new()),
+            encode_private_document_payload(note, BTreeMap::new()),
             Err(ProtocolError::NotSupported(_))
         ));
         assert!(matches!(
-            decode_private_document_payload(&contract, note, &[0], platform_version),
+            decode_private_document_payload(note, &[0], platform_version),
             Err(ProtocolError::NotSupported(_))
         ));
+    }
+
+    /// A payload is written in format 3 whatever the contract's config: a type of a contract
+    /// keeping a version 0 config, whose documents are written in format 0, encodes and decodes
+    /// its payload as well, its integers at the 8 bytes it counts them.
+    #[test]
+    fn should_encode_a_payload_whatever_the_version_of_the_contract_config() {
+        let platform_version = PlatformVersion::latest();
+        for config in [
+            json!({ "$formatVersion": "0" }),
+            json!({ "$formatVersion": "1", "sizedIntegerTypes": true }),
+        ] {
+            let contract = DataContract::from_value(
+                platform_value::to_value(json!({
+                    "$formatVersion": "1",
+                    "id": Identifier::from([7; 32]).to_string(Encoding::Base58),
+                    "ownerId": Identifier::from([8; 32]).to_string(Encoding::Base58),
+                    "version": 1,
+                    "config": config,
+                    "documentSchemas": {
+                        "secret": {
+                            "type": "object",
+                            "private": { "entrySize": 400 },
+                            "documentsMutable": false,
+                            "canBeDeleted": false,
+                            "properties": {
+                                "small": {
+                                    "type": "integer", "minimum": 0, "maximum": 255,
+                                    "position": 0
+                                },
+                                "label": { "type": "string", "maxLength": 4, "position": 1 }
+                            },
+                            "required": ["small"],
+                            "additionalProperties": false
+                        }
+                    }
+                }))
+                .expect("the contract converts"),
+                true,
+                platform_version,
+            )
+            .expect("the contract registers");
+            let secret = contract
+                .document_type_for_name("secret")
+                .expect("the secret type");
+            let properties = BTreeMap::from([
+                ("small".to_string(), Value::U64(255)),
+                ("label".to_string(), Value::Text(wide(4))),
+            ]);
+            let payload = encode_private_document_payload(secret, properties)
+                .unwrap_or_else(|error| panic!("{config}: encodes: {error}"));
+            assert_eq!(
+                payload.len() as u32,
+                largest_private_document_payload_size(secret).expect("bounded"),
+                "{config}"
+            );
+            let decoded = decode_private_document_payload(secret, &payload, platform_version)
+                .unwrap_or_else(|error| panic!("{config}: decodes: {error}"));
+            assert_eq!(
+                decoded.get("label"),
+                Some(&Value::Text(wide(4))),
+                "{config}"
+            );
+        }
     }
 
     /// The type's schema validates a payload's properties, before sealing and after opening:
