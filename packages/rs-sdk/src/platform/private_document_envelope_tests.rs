@@ -149,7 +149,7 @@ fn should_carry_the_largest_payload_in_an_entry_of_the_minimum_size() {
     opened
         .verify_sender(&PublicKey::from_secret_key(&sender_key), &recipient_key)
         .expect("from the sender");
-    let decoded = decode_private_document_payload(request, &opened.payload, platform_version)
+    let decoded = decode_private_document_payload(request, opened.payload(), platform_version)
         .expect("decodes");
     assert_eq!(
         decoded.get("accountLabel"),

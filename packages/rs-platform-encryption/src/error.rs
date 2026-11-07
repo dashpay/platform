@@ -14,28 +14,4 @@ pub enum CryptoError {
 
     #[error("Invalid compact xpub length (DIP-15 requires exactly 69 bytes, got {0})")]
     InvalidCompactXpubLength(usize),
-
-    #[error("a private document payload of {payload_len} bytes does not fit an entry that holds {capacity}")]
-    PrivateDocumentPayloadTooLarge { payload_len: usize, capacity: usize },
-
-    #[error("a private document entry of {0} bytes is shorter than the envelope's 299")]
-    InvalidPrivateDocumentEntryLength(usize),
-
-    #[error("the ephemeral seed derives no valid secret key; draw another")]
-    InvalidPrivateDocumentEphemeralSeed,
-
-    #[error("malformed private document entry: {0}")]
-    MalformedPrivateDocumentEntry(&'static str),
-
-    #[error("private document envelope version {0} is not supported")]
-    UnsupportedPrivateDocumentEnvelopeVersion(u8),
-
-    #[error("the private document entry names another recipient identity")]
-    WrongPrivateDocumentRecipient,
-
-    #[error("the private document entry is anonymous: it names no sender to check")]
-    AnonymousPrivateDocumentSender,
-
-    #[error("the private document entry's sender authentication does not verify")]
-    PrivateDocumentSenderNotAuthenticated,
 }

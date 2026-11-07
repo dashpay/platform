@@ -54,11 +54,41 @@
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
 use hmac::{Hmac, Mac};
+use secp256k1::ecdh::shared_secret_point;
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
-use secp256k1::{Message, PublicKey, Scalar, SecretKey};
+use secp256k1::{Message, PublicKey, SecretKey};
 use sha2::{Digest, Sha256};
 
-use crate::error::CryptoError;
+/// Why an entry could not be built, opened, recovered or checked.
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+pub enum PrivateDocumentEnvelopeError {
+    #[error("a private document payload of {payload_len} bytes does not fit an entry that holds {capacity}")]
+    PayloadTooLarge { payload_len: usize, capacity: usize },
+
+    #[error("a private document entry of {0} bytes is shorter than the envelope's 299")]
+    InvalidEntryLength(usize),
+
+    #[error("the ephemeral seed derives no valid secret key; draw another")]
+    InvalidEphemeralSeed,
+
+    #[error("a private document ciphertext does not decrypt")]
+    DecryptionFailed,
+
+    #[error("malformed private document entry: {0}")]
+    Malformed(&'static str),
+
+    #[error("private document envelope version {0} is not supported")]
+    UnsupportedVersion(u8),
+
+    #[error("the private document entry names another recipient identity")]
+    WrongRecipient,
+
+    #[error("the private document entry is anonymous: it names no sender to check")]
+    AnonymousSender,
+
+    #[error("the private document entry's sender authentication does not verify")]
+    SenderNotAuthenticated,
+}
 
 /// The envelope version this module builds and opens.
 pub const PRIVATE_DOCUMENT_ENVELOPE_VERSION: u8 = 1;
@@ -156,30 +186,68 @@ impl PrivateDocumentAuthMode {
 /// An entry its recipient opened, or its sender recovered.
 ///
 /// The sender fields are what the entry claims; [`Self::verify_sender`] checks the claim
-/// against the key the sender's identity holds under `sender_key_id`.
+/// against the key the sender's identity holds under `sender_key_id`. The fields are read-only,
+/// so what a caller reads is what was authenticated.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OpenedPrivateDocumentEntry {
-    /// The entry's commitment: two entries with the same one are copies.
-    pub commitment: [u8; 32],
-    /// Which of the keys given to [`open_private_document_entry`] opened it; `None` when the
-    /// sender recovered it.
-    pub recipient_key_index: Option<usize>,
-    /// The key the entry is encrypted to.
-    pub recipient_public_key: PublicKey,
-    pub recipient_identity_id: [u8; 32],
-    pub auth_mode: PrivateDocumentAuthMode,
-    /// Zeros when the entry is anonymous.
-    pub sender_identity_id: [u8; 32],
-    /// Zero when the entry is anonymous.
-    pub sender_key_id: u32,
-    /// The type's properties in the document property encoding, for the type's schema to
-    /// decode and validate.
-    pub payload: Vec<u8>,
+    commitment: [u8; 32],
+    recipient_key_index: Option<usize>,
+    recipient_public_key: PublicKey,
+    recipient_identity_id: [u8; 32],
+    auth_mode: PrivateDocumentAuthMode,
+    sender_identity_id: [u8; 32],
+    sender_key_id: u32,
+    payload: Vec<u8>,
     auth: [u8; AUTH_LEN],
     auth_message: [u8; 32],
 }
 
 impl OpenedPrivateDocumentEntry {
+    /// The entry's commitment: two entries with the same one are copies.
+    pub fn commitment(&self) -> &[u8; 32] {
+        &self.commitment
+    }
+
+    /// Which of the keys given to [`open_private_document_entry`] opened it; `None` when the
+    /// sender recovered it.
+    pub fn recipient_key_index(&self) -> Option<usize> {
+        self.recipient_key_index
+    }
+
+    /// The key the entry is encrypted to.
+    pub fn recipient_public_key(&self) -> &PublicKey {
+        &self.recipient_public_key
+    }
+
+    pub fn recipient_identity_id(&self) -> &[u8; 32] {
+        &self.recipient_identity_id
+    }
+
+    pub fn auth_mode(&self) -> PrivateDocumentAuthMode {
+        self.auth_mode
+    }
+
+    /// Zeros when the entry is anonymous.
+    pub fn sender_identity_id(&self) -> &[u8; 32] {
+        &self.sender_identity_id
+    }
+
+    /// Zero when the entry is anonymous.
+    pub fn sender_key_id(&self) -> u32 {
+        self.sender_key_id
+    }
+
+    /// The type's properties in the document property encoding, for the type's schema to
+    /// decode and validate.
+    pub fn payload(&self) -> &[u8] {
+        &self.payload
+    }
+
+    /// The payload, taking the entry.
+    pub fn into_payload(self) -> Vec<u8> {
+        self.payload
+    }
+
     /// Checks that the key the entry names wrote it: `sender_public_key` is the key the sender
     /// identity holds under `sender_key_id`, as it was when the entry was written (keys are
     /// disabled, never removed). A deniable MAC is checked with the recipient's own secret key,
@@ -188,30 +256,32 @@ impl OpenedPrivateDocumentEntry {
         &self,
         sender_public_key: &PublicKey,
         recipient_secret_key: &SecretKey,
-    ) -> Result<(), CryptoError> {
+    ) -> Result<(), PrivateDocumentEnvelopeError> {
         match self.auth_mode {
-            PrivateDocumentAuthMode::Anonymous => Err(CryptoError::AnonymousPrivateDocumentSender),
+            PrivateDocumentAuthMode::Anonymous => {
+                Err(PrivateDocumentEnvelopeError::AnonymousSender)
+            }
             PrivateDocumentAuthMode::DeniableMac => {
-                let mac_key = mac_key(&shared_point(recipient_secret_key, sender_public_key)?);
+                let mac_key = mac_key(&shared_point(recipient_secret_key, sender_public_key));
                 let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(&mac_key)
                     .expect("HMAC takes a key of any length");
                 mac.update(&self.auth_message);
                 mac.verify_slice(&self.auth[..MAC_LEN])
-                    .map_err(|_| CryptoError::PrivateDocumentSenderNotAuthenticated)
+                    .map_err(|_| PrivateDocumentEnvelopeError::SenderNotAuthenticated)
             }
             PrivateDocumentAuthMode::Signature => {
                 let recovery_id = RecoveryId::from_u8_masked(
                     self.auth[0].wrapping_sub(COMPACT_SIGNATURE_HEADER_BASE),
                 );
                 let signature = RecoverableSignature::from_compact(&self.auth[1..], recovery_id)
-                    .map_err(|_| CryptoError::PrivateDocumentSenderNotAuthenticated)?;
+                    .map_err(|_| PrivateDocumentEnvelopeError::SenderNotAuthenticated)?;
                 let signer = signature
                     .recover_ecdsa(Message::from_digest(self.auth_message))
-                    .map_err(|_| CryptoError::PrivateDocumentSenderNotAuthenticated)?;
+                    .map_err(|_| PrivateDocumentEnvelopeError::SenderNotAuthenticated)?;
                 if signer == *sender_public_key {
                     Ok(())
                 } else {
-                    Err(CryptoError::PrivateDocumentSenderNotAuthenticated)
+                    Err(PrivateDocumentEnvelopeError::SenderNotAuthenticated)
                 }
             }
         }
@@ -239,14 +309,15 @@ pub fn seal_private_document_entry(
     payload: &[u8],
     outgoing_viewing_key: &[u8; 32],
     esk_seed: &[u8; 32],
-) -> Result<Vec<u8>, CryptoError> {
-    let capacity = entry_size.saturating_sub(PRIVATE_DOCUMENT_ENVELOPE_OVERHEAD_LEN);
+) -> Result<Vec<u8>, PrivateDocumentEnvelopeError> {
+    if entry_size < PRIVATE_DOCUMENT_ENVELOPE_OVERHEAD_LEN {
+        return Err(PrivateDocumentEnvelopeError::InvalidEntryLength(entry_size));
+    }
+    let capacity = entry_size - PRIVATE_DOCUMENT_ENVELOPE_OVERHEAD_LEN;
     let payload_len = u16::try_from(payload.len())
         .ok()
-        .filter(|_| {
-            entry_size >= PRIVATE_DOCUMENT_ENVELOPE_OVERHEAD_LEN && payload.len() <= capacity
-        })
-        .ok_or(CryptoError::PrivateDocumentPayloadTooLarge {
+        .filter(|_| payload.len() <= capacity)
+        .ok_or(PrivateDocumentEnvelopeError::PayloadTooLarge {
             payload_len: payload.len(),
             capacity,
         })?;
@@ -256,7 +327,7 @@ pub fn seal_private_document_entry(
     let epk = PublicKey::from_secret_key(&esk).serialize();
     let recipient_key = recipient.public_key.serialize();
     let key = entry_key(
-        &shared_point(&esk, recipient.public_key)?,
+        &shared_point(&esk, recipient.public_key),
         &epk,
         &recipient_key,
     );
@@ -286,7 +357,7 @@ pub fn seal_private_document_entry(
     match sender {
         PrivateDocumentSender::Anonymous => {}
         PrivateDocumentSender::DeniableMac { secret_key, .. } => {
-            let mac_key = mac_key(&shared_point(secret_key, recipient.public_key)?);
+            let mac_key = mac_key(&shared_point(secret_key, recipient.public_key));
             let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(&mac_key)
                 .expect("HMAC takes a key of any length");
             mac.update(&auth_message);
@@ -347,7 +418,7 @@ pub fn open_private_document_entry(
     target: &PrivateDocumentTarget,
     recipient_identity_id: &[u8; 32],
     recipient_secret_keys: &[SecretKey],
-) -> Result<Option<OpenedPrivateDocumentEntry>, CryptoError> {
+) -> Result<Option<OpenedPrivateDocumentEntry>, PrivateDocumentEnvelopeError> {
     let parts = EntryParts::split(entry)?;
     let Ok(epk) = PublicKey::from_slice(parts.epk) else {
         // No key opens an entry whose ephemeral key is not a point.
@@ -356,7 +427,7 @@ pub fn open_private_document_entry(
     for (index, secret_key) in recipient_secret_keys.iter().enumerate() {
         let recipient_public_key = PublicKey::from_secret_key(secret_key);
         let recipient_key = recipient_public_key.serialize();
-        let key = entry_key(&shared_point(secret_key, &epk)?, parts.epk, &recipient_key);
+        let key = entry_key(&shared_point(secret_key, &epk), parts.epk, &recipient_key);
         let Ok(body) = decrypt(&key, parts.commitment, parts.body_ct) else {
             continue;
         };
@@ -371,7 +442,7 @@ pub fn open_private_document_entry(
             Some(index),
         )?;
         if opened.recipient_identity_id != *recipient_identity_id {
-            return Err(CryptoError::WrongPrivateDocumentRecipient);
+            return Err(PrivateDocumentEnvelopeError::WrongRecipient);
         }
         return Ok(Some(opened));
     }
@@ -385,7 +456,7 @@ pub fn recover_sent_private_document_entry(
     entry: &[u8],
     target: &PrivateDocumentTarget,
     outgoing_viewing_key: &[u8; 32],
-) -> Result<Option<OpenedPrivateDocumentEntry>, CryptoError> {
+) -> Result<Option<OpenedPrivateDocumentEntry>, PrivateDocumentEnvelopeError> {
     let parts = EntryParts::split(entry)?;
     let Ok(sender_recovery) = decrypt(
         &outgoing_cipher_key(outgoing_viewing_key, parts.epk),
@@ -394,7 +465,7 @@ pub fn recover_sent_private_document_entry(
     ) else {
         return Ok(None);
     };
-    let malformed = || CryptoError::MalformedPrivateDocumentEntry("sender recovery");
+    let malformed = || PrivateDocumentEnvelopeError::Malformed("sender recovery");
     let recipient_public_key =
         PublicKey::from_slice(&sender_recovery[..EPHEMERAL_KEY_LEN]).map_err(|_| malformed())?;
     let esk_seed: [u8; 32] = sender_recovery[EPHEMERAL_KEY_LEN..]
@@ -406,7 +477,7 @@ pub fn recover_sent_private_document_entry(
     }
     let recipient_key = recipient_public_key.serialize();
     let key = entry_key(
-        &shared_point(&esk, &recipient_public_key)?,
+        &shared_point(&esk, &recipient_public_key),
         parts.epk,
         &recipient_key,
     );
@@ -426,9 +497,11 @@ struct EntryParts<'a> {
 }
 
 impl<'a> EntryParts<'a> {
-    fn split(entry: &'a [u8]) -> Result<Self, CryptoError> {
+    fn split(entry: &'a [u8]) -> Result<Self, PrivateDocumentEnvelopeError> {
         if entry.len() < PRIVATE_DOCUMENT_ENVELOPE_OVERHEAD_LEN {
-            return Err(CryptoError::InvalidPrivateDocumentEntryLength(entry.len()));
+            return Err(PrivateDocumentEnvelopeError::InvalidEntryLength(
+                entry.len(),
+            ));
         }
         let (commitment, rest) = entry.split_at(COMMITMENT_LEN);
         let (epk, rest) = rest.split_at(EPHEMERAL_KEY_LEN);
@@ -449,15 +522,13 @@ fn parse_body(
     commitment: [u8; 32],
     recipient_public_key: PublicKey,
     recipient_key_index: Option<usize>,
-) -> Result<OpenedPrivateDocumentEntry, CryptoError> {
-    let malformed = CryptoError::MalformedPrivateDocumentEntry;
+) -> Result<OpenedPrivateDocumentEntry, PrivateDocumentEnvelopeError> {
+    let malformed = PrivateDocumentEnvelopeError::Malformed;
     if body.len() < PRIVATE_DOCUMENT_ENVELOPE_BODY_HEADER_LEN {
         return Err(malformed("body shorter than its header"));
     }
     if body[0] != PRIVATE_DOCUMENT_ENVELOPE_VERSION {
-        return Err(CryptoError::UnsupportedPrivateDocumentEnvelopeVersion(
-            body[0],
-        ));
+        return Err(PrivateDocumentEnvelopeError::UnsupportedVersion(body[0]));
     }
     let auth_mode =
         PrivateDocumentAuthMode::from_byte(body[1]).ok_or(malformed("unknown auth mode"))?;
@@ -520,19 +591,21 @@ fn type_name_length(target: &PrivateDocumentTarget) -> [u8; 4] {
     (target.document_type_name.len() as u32).to_le_bytes()
 }
 
-fn ephemeral_secret_key(esk_seed: &[u8; 32]) -> Result<SecretKey, CryptoError> {
+fn ephemeral_secret_key(esk_seed: &[u8; 32]) -> Result<SecretKey, PrivateDocumentEnvelopeError> {
     SecretKey::from_secret_bytes(hash(&[DOMAIN_ESK, esk_seed]))
-        .map_err(|_| CryptoError::InvalidPrivateDocumentEphemeralSeed)
+        .map_err(|_| PrivateDocumentEnvelopeError::InvalidEphemeralSeed)
 }
 
-/// `secret_key * public_key`, compressed.
-fn shared_point(secret_key: &SecretKey, public_key: &PublicKey) -> Result<[u8; 33], CryptoError> {
-    let scalar = Scalar::from_be_bytes(secret_key.to_secret_bytes())
-        .map_err(|_| CryptoError::MalformedPrivateDocumentEntry("secret key out of range"))?;
-    public_key
-        .mul_tweak(&scalar)
-        .map(|point| point.serialize())
-        .map_err(|_| CryptoError::MalformedPrivateDocumentEntry("shared point at infinity"))
+/// `secret_key * public_key`, compressed, computed in constant time: the secret keys are a
+/// wallet's long-lived keys and the points are an attacker's, so the multiplication must not leak
+/// the key through timing. libsecp256k1's ECDH multiplies in constant time; it hands back the
+/// point's coordinates, compressed here as `0x02 | (y & 1)` then `x`.
+fn shared_point(secret_key: &SecretKey, public_key: &PublicKey) -> [u8; 33] {
+    let xy = shared_secret_point(public_key, secret_key);
+    let mut point = [0u8; 33];
+    point[0] = 0x02 | (xy[63] & 1);
+    point[1..].copy_from_slice(&xy[..32]);
+    point
 }
 
 fn entry_key(shared_point: &[u8; 33], epk: &[u8; 33], recipient_key: &[u8; 33]) -> [u8; 32] {
@@ -586,7 +659,11 @@ fn auth_message(
     ])
 }
 
-fn encrypt(key: &[u8; 32], aad: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
+fn encrypt(
+    key: &[u8; 32],
+    aad: &[u8; 32],
+    plaintext: &[u8],
+) -> Result<Vec<u8>, PrivateDocumentEnvelopeError> {
     ChaCha20Poly1305::new(Key::from_slice(key))
         .encrypt(
             Nonce::from_slice(&[0; 12]),
@@ -595,10 +672,14 @@ fn encrypt(key: &[u8; 32], aad: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, 
                 aad,
             },
         )
-        .map_err(|_| CryptoError::MalformedPrivateDocumentEntry("encryption failed"))
+        .map_err(|_| PrivateDocumentEnvelopeError::Malformed("encryption failed"))
 }
 
-fn decrypt(key: &[u8; 32], aad: &[u8; 32], ciphertext: &[u8]) -> Result<Vec<u8>, CryptoError> {
+fn decrypt(
+    key: &[u8; 32],
+    aad: &[u8; 32],
+    ciphertext: &[u8],
+) -> Result<Vec<u8>, PrivateDocumentEnvelopeError> {
     ChaCha20Poly1305::new(Key::from_slice(key))
         .decrypt(
             Nonce::from_slice(&[0; 12]),
@@ -607,7 +688,7 @@ fn decrypt(key: &[u8; 32], aad: &[u8; 32], ciphertext: &[u8]) -> Result<Vec<u8>,
                 aad,
             },
         )
-        .map_err(|_| CryptoError::DecryptionFailed)
+        .map_err(|_| PrivateDocumentEnvelopeError::DecryptionFailed)
 }
 
 #[cfg(test)]
@@ -683,20 +764,24 @@ mod tests {
 
         let opened =
             open(&entry, &[secret_key(3), secret_key(2)]).expect("the second key opens it");
-        assert_eq!(opened.recipient_key_index, Some(1));
-        assert_eq!(opened.recipient_public_key, public_key(2));
-        assert_eq!(opened.recipient_identity_id, RECIPIENT_IDENTITY);
-        assert_eq!(opened.auth_mode, PrivateDocumentAuthMode::DeniableMac);
-        assert_eq!(opened.sender_identity_id, SENDER_IDENTITY);
-        assert_eq!(opened.sender_key_id, 4);
-        assert_eq!(opened.payload, payload());
+        assert_eq!(opened.recipient_key_index(), Some(1));
+        assert_eq!(opened.recipient_public_key(), &public_key(2));
+        assert_eq!(opened.recipient_identity_id(), &RECIPIENT_IDENTITY);
+        assert_eq!(opened.auth_mode(), PrivateDocumentAuthMode::DeniableMac);
+        assert_eq!(opened.sender_identity_id(), &SENDER_IDENTITY);
+        assert_eq!(opened.sender_key_id(), 4);
+        assert_eq!(opened.payload(), payload().as_slice());
 
         opened
             .verify_sender(&public_key(1), &secret_key(2))
             .expect("the sender's key wrote the MAC");
         assert!(matches!(
             opened.verify_sender(&public_key(5), &secret_key(2)),
-            Err(CryptoError::PrivateDocumentSenderNotAuthenticated)
+            Err(PrivateDocumentEnvelopeError::SenderNotAuthenticated)
+        ));
+        assert!(matches!(
+            opened.verify_sender(&public_key(1), &secret_key(3)),
+            Err(PrivateDocumentEnvelopeError::SenderNotAuthenticated)
         ));
     }
 
@@ -713,13 +798,13 @@ mod tests {
             9,
         );
         let opened = open(&entry, &[secret_key(2)]).expect("it opens");
-        assert_eq!(opened.auth_mode, PrivateDocumentAuthMode::Signature);
+        assert_eq!(opened.auth_mode(), PrivateDocumentAuthMode::Signature);
         opened
             .verify_sender(&public_key(1), &secret_key(2))
             .expect("the sender's key signed it");
         assert!(matches!(
             opened.verify_sender(&public_key(5), &secret_key(2)),
-            Err(CryptoError::PrivateDocumentSenderNotAuthenticated)
+            Err(PrivateDocumentEnvelopeError::SenderNotAuthenticated)
         ));
     }
 
@@ -728,13 +813,13 @@ mod tests {
     fn should_open_an_anonymous_entry_without_a_sender() {
         let entry = seal(&PrivateDocumentSender::Anonymous, 9);
         let opened = open(&entry, &[secret_key(2)]).expect("it opens");
-        assert_eq!(opened.auth_mode, PrivateDocumentAuthMode::Anonymous);
-        assert_eq!(opened.sender_identity_id, [0; 32]);
-        assert_eq!(opened.sender_key_id, 0);
-        assert_eq!(opened.payload, payload());
+        assert_eq!(opened.auth_mode(), PrivateDocumentAuthMode::Anonymous);
+        assert_eq!(opened.sender_identity_id(), &[0; 32]);
+        assert_eq!(opened.sender_key_id(), 0);
+        assert_eq!(opened.payload(), payload().as_slice());
         assert!(matches!(
             opened.verify_sender(&public_key(1), &secret_key(2)),
-            Err(CryptoError::AnonymousPrivateDocumentSender)
+            Err(PrivateDocumentEnvelopeError::AnonymousSender)
         ));
     }
 
@@ -784,7 +869,7 @@ mod tests {
         let entry = seal(&deniable_mac_sender(&sender_key), 9);
         assert!(matches!(
             open_private_document_entry(&entry, &target(), &[0xC0; 32], &[secret_key(2)]),
-            Err(CryptoError::WrongPrivateDocumentRecipient)
+            Err(PrivateDocumentEnvelopeError::WrongRecipient)
         ));
     }
 
@@ -799,15 +884,17 @@ mod tests {
             recover_sent_private_document_entry(&entry, &target(), &outgoing_viewing_key())
                 .expect("well formed")
                 .expect("the sender built it");
-        assert_eq!(recovered.recipient_key_index, None);
-        assert_eq!(recovered.recipient_public_key, public_key(2));
-        assert_eq!(recovered.payload, payload());
+        assert_eq!(recovered.recipient_key_index(), None);
+        assert_eq!(recovered.recipient_public_key(), &public_key(2));
+        assert_eq!(recovered.payload(), payload().as_slice());
+        let opened = open(&entry, &[secret_key(2)]).expect("it opens");
         assert_eq!(
-            recovered,
             OpenedPrivateDocumentEntry {
-                recipient_key_index: None,
-                ..open(&entry, &[secret_key(2)]).expect("it opens")
-            }
+                recipient_key_index: Some(0),
+                ..recovered.clone()
+            },
+            opened,
+            "the sender recovers what the recipient opens"
         );
 
         let other_sender = private_document_outgoing_viewing_key(&[0x1F; 32]);
@@ -825,40 +912,51 @@ mod tests {
         );
     }
 
-    /// An entry holds a payload of at most its size minus 299 bytes.
+    /// An entry holds a payload of at most its size minus 299 bytes: a larger payload is refused,
+    /// an entry smaller than the envelope is refused for its size, and the smallest entry, 299
+    /// bytes, carries an empty payload.
     #[test]
     fn should_refuse_a_payload_the_entry_cannot_hold() {
         assert_eq!(PRIVATE_DOCUMENT_ENVELOPE_WRAPPER_LEN, 162);
         assert_eq!(PRIVATE_DOCUMENT_ENVELOPE_BODY_HEADER_LEN, 137);
         assert_eq!(PRIVATE_DOCUMENT_ENVELOPE_OVERHEAD_LEN, 299);
-        for (entry_size, payload_len, capacity) in [
-            (ENTRY_SIZE, LARGEST_PAYLOAD + 1, LARGEST_PAYLOAD),
-            (298, 0, 0),
-        ] {
-            assert!(
-                matches!(
-                    seal_private_document_entry(
-                        &target(),
-                        entry_size,
-                        &PrivateDocumentRecipient {
-                            identity_id: RECIPIENT_IDENTITY,
-                            public_key: &public_key(2),
-                        },
-                        &PrivateDocumentSender::Anonymous,
-                        &vec![1; payload_len],
-                        &outgoing_viewing_key(),
-                        &[9; 32],
-                    ),
-                    Err(CryptoError::PrivateDocumentPayloadTooLarge { payload_len: refused, capacity: held })
-                        if refused == payload_len && held == capacity
-                ),
-                "{payload_len} bytes in {entry_size}"
-            );
-        }
-        assert!(matches!(
+        let seal_into = |entry_size: usize, payload: &[u8]| {
+            seal_private_document_entry(
+                &target(),
+                entry_size,
+                &PrivateDocumentRecipient {
+                    identity_id: RECIPIENT_IDENTITY,
+                    public_key: &public_key(2),
+                },
+                &PrivateDocumentSender::Anonymous,
+                payload,
+                &outgoing_viewing_key(),
+                &[9; 32],
+            )
+        };
+        assert_eq!(
+            seal_into(ENTRY_SIZE, &vec![1; LARGEST_PAYLOAD + 1]),
+            Err(PrivateDocumentEnvelopeError::PayloadTooLarge {
+                payload_len: LARGEST_PAYLOAD + 1,
+                capacity: LARGEST_PAYLOAD,
+            })
+        );
+        assert_eq!(
+            seal_into(298, &[]),
+            Err(PrivateDocumentEnvelopeError::InvalidEntryLength(298))
+        );
+        let smallest = seal_into(299, &[]).expect("an empty payload fills the smallest entry");
+        assert_eq!(smallest.len(), 299);
+        assert_eq!(
+            open(&smallest, &[secret_key(2)])
+                .expect("it opens")
+                .payload(),
+            &[] as &[u8]
+        );
+        assert_eq!(
             open_private_document_entry(&[0; 298], &target(), &RECIPIENT_IDENTITY, &[]),
-            Err(CryptoError::InvalidPrivateDocumentEntryLength(298))
-        ));
+            Err(PrivateDocumentEnvelopeError::InvalidEntryLength(298))
+        );
     }
 
     /// A body no sender of this version writes is refused once it decrypts: another version,
@@ -879,7 +977,7 @@ mod tests {
         other_version[0] = 2;
         assert!(matches!(
             parse(&other_version),
-            Err(CryptoError::UnsupportedPrivateDocumentEnvelopeVersion(2))
+            Err(PrivateDocumentEnvelopeError::UnsupportedVersion(2))
         ));
         for (position, value) in [
             (1, 3u8),              // auth mode
@@ -893,7 +991,7 @@ mod tests {
             assert!(
                 matches!(
                     parse(&body),
-                    Err(CryptoError::MalformedPrivateDocumentEntry(_))
+                    Err(PrivateDocumentEnvelopeError::Malformed(_))
                 ),
                 "byte {position}"
             );

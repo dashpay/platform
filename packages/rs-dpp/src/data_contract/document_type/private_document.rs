@@ -11,10 +11,12 @@
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
-use crate::data_contract::document_type::{property_names, DocumentTypeRef};
+use crate::data_contract::document_type::property::DocumentProperty;
+use crate::data_contract::document_type::{property_names, DocumentPropertyType, DocumentTypeRef};
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::DocumentV0;
 use crate::ProtocolError;
+use indexmap::IndexMap;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
@@ -181,16 +183,61 @@ fn refuse_a_public_type(document_type: DocumentTypeRef) -> Result<(), ProtocolEr
     }
 }
 
+/// Refuses a present object holding no member, at any depth: the document property encoding
+/// writes it, but a document's reader reads an object with no members back as absent, so the
+/// payload would not read back as it was written.
+fn refuse_present_empty_objects(
+    fields: &IndexMap<String, DocumentProperty>,
+    values: &BTreeMap<&str, &Value>,
+    path: &str,
+) -> Result<(), ProtocolError> {
+    for (name, field) in fields {
+        let DocumentPropertyType::Object(members) = &field.property_type else {
+            continue;
+        };
+        let Some(Value::Map(entries)) = values.get(name.as_str()).copied() else {
+            continue;
+        };
+        let object_path = if path.is_empty() {
+            name.clone()
+        } else {
+            format!("{path}.{name}")
+        };
+        let present: BTreeMap<&str, &Value> = entries
+            .iter()
+            .filter_map(|(key, value)| {
+                let key = key.as_text()?;
+                (members.contains_key(key) && !value.is_null()).then_some((key, value))
+            })
+            .collect();
+        if present.is_empty() {
+            return Err(ProtocolError::NotSupported(format!(
+                "object {object_path} holds no member: a document reads an object with no members \
+                 back as absent, so a private document payload cannot carry one"
+            )));
+        }
+        refuse_present_empty_objects(members, &present, &object_path)?;
+    }
+    Ok(())
+}
+
 /// The payload a private document entry of `document_type` carries for `properties`: the type's
 /// properties in the document property encoding, as a format 3 document writes them after its
 /// system fields, whatever the version of its contract's config. A value of the wrong type is
-/// refused; the schema's bounds are not checked here, so a sender validates `properties` against
-/// the type first (`DataContract::validate_document_properties`).
+/// refused, and so is a present object holding no member, which would read back as absent; the
+/// schema's bounds are not checked here, so a sender validates `properties` against the type
+/// first (`DataContract::validate_document_properties`).
 pub fn encode_private_document_payload(
     document_type: DocumentTypeRef,
     properties: BTreeMap<String, Value>,
 ) -> Result<Vec<u8>, ProtocolError> {
     refuse_a_public_type(document_type)?;
+    let present: BTreeMap<&str, &Value> = properties
+        .iter()
+        .filter(|(_, value)| !value.is_null())
+        .map(|(name, value)| (name.as_str(), value))
+        .collect();
+    refuse_present_empty_objects(document_type.properties(), &present, "")?;
     let document = DocumentV0 {
         properties,
         ..Default::default()
@@ -208,11 +255,13 @@ pub fn encode_private_document_payload(
         })
 }
 
-/// The properties a private document payload of `document_type` holds.
-/// Only the encoding [`encode_private_document_payload`] gives back is read: a payload that does
-/// not decode, or that holds anything else, such as bytes after the last property, is refused.
-/// The schema's bounds are not checked here, so a recipient validates the properties against
-/// the type before trusting them (`DataContract::validate_document_properties`).
+/// The properties a private document payload of `document_type` holds, read as a document's
+/// reader reads them after its system fields: a value cut short, or a byte after the last
+/// property, is refused. An entry is immutable while its type can gain optional properties, at
+/// the end of the type or of one of its objects, so a payload written before them ends before
+/// them, and reads them as absent. The schema's bounds are not checked here, so a recipient
+/// validates the properties against the type before trusting them
+/// (`DataContract::validate_document_properties`).
 pub fn decode_private_document_payload(
     document_type: DocumentTypeRef,
     payload: &[u8],
@@ -221,14 +270,7 @@ pub fn decode_private_document_payload(
     refuse_a_public_type(document_type)?;
     let mut serialized = private_document_payload_prefix().to_vec();
     serialized.extend_from_slice(payload);
-    let properties =
-        DocumentV0::from_bytes(&serialized, document_type, platform_version)?.properties;
-    if encode_private_document_payload(document_type, properties.clone())? != payload {
-        return Err(ProtocolError::DecodingError(
-            "a private document payload holds bytes its properties do not encode to".to_string(),
-        ));
-    }
-    Ok(properties)
+    Ok(DocumentV0::from_bytes(&serialized, document_type, platform_version)?.properties)
 }
 
 #[cfg(test)]
@@ -645,6 +687,163 @@ mod tests {
                 "{config}"
             );
         }
+    }
+
+    /// A contract with the private type `secret` of `properties`, `required` of them required.
+    fn private_type_contract(
+        properties: serde_json::Value,
+        required: serde_json::Value,
+    ) -> DataContract {
+        contract(1000, properties, required)
+    }
+
+    /// A present object holding no member, required or optional, at any depth, is refused: a
+    /// document reads it back as absent. One holding a member encodes and reads back.
+    #[test]
+    fn should_refuse_a_present_object_holding_no_member() {
+        let platform_version = PlatformVersion::latest();
+        let contract = private_type_contract(
+            json!({
+                "meta": {
+                    "type": "object",
+                    "properties": {
+                        "flag": { "type": "boolean", "position": 0 },
+                        "inner": {
+                            "type": "object",
+                            "properties": { "x": { "type": "boolean", "position": 0 } },
+                            "additionalProperties": false,
+                            "position": 1
+                        }
+                    },
+                    "additionalProperties": false,
+                    "position": 0
+                },
+                "more": {
+                    "type": "object",
+                    "properties": { "y": { "type": "boolean", "position": 0 } },
+                    "additionalProperties": false,
+                    "position": 1
+                }
+            }),
+            json!(["meta"]),
+        );
+        let secret = contract
+            .document_type_for_name("secret")
+            .expect("the secret type");
+        let object = |members: Vec<(&str, Value)>| {
+            Value::Map(
+                members
+                    .into_iter()
+                    .map(|(key, value)| (Value::Text(key.to_string()), value))
+                    .collect(),
+            )
+        };
+        for (case, properties) in [
+            ("an empty required object", vec![("meta", object(vec![]))]),
+            (
+                "an empty optional object",
+                vec![
+                    ("meta", object(vec![("flag", Value::Bool(true))])),
+                    ("more", object(vec![])),
+                ],
+            ),
+            (
+                "an empty object inside one",
+                vec![("meta", object(vec![("inner", object(vec![]))]))],
+            ),
+        ] {
+            let properties = properties
+                .into_iter()
+                .map(|(key, value)| (key.to_string(), value))
+                .collect();
+            assert!(
+                matches!(
+                    encode_private_document_payload(secret, properties),
+                    Err(ProtocolError::NotSupported(_))
+                ),
+                "{case}"
+            );
+        }
+
+        let properties = BTreeMap::from([(
+            "meta".to_string(),
+            object(vec![("inner", object(vec![("x", Value::Bool(false))]))]),
+        )]);
+        let payload =
+            encode_private_document_payload(secret, properties).expect("a member is present");
+        let decoded =
+            decode_private_document_payload(secret, &payload, platform_version).expect("decodes");
+        assert_eq!(
+            encode_private_document_payload(secret, decoded).expect("re-encodes"),
+            payload
+        );
+    }
+
+    /// An entry is immutable while its type can gain optional properties: a payload written
+    /// before the type gained one at its end and one at the end of its object reads under the
+    /// newer type, the new properties absent, and still refuses a byte after its last property.
+    #[test]
+    fn should_read_a_payload_written_before_the_type_gained_optional_properties() {
+        let platform_version = PlatformVersion::latest();
+        let meta = |with_member: bool| {
+            let mut properties = json!({
+                "a": { "type": "integer", "minimum": 0, "maximum": 255, "position": 0 }
+            });
+            if with_member {
+                properties["b"] = json!({ "type": "boolean", "position": 1 });
+            }
+            json!({
+                "type": "object",
+                "properties": properties,
+                "required": ["a"],
+                "additionalProperties": false,
+                "position": 1
+            })
+        };
+        let before = private_type_contract(
+            json!({ "flag": { "type": "boolean", "position": 0 }, "meta": meta(false) }),
+            json!(["flag", "meta"]),
+        );
+        let after = private_type_contract(
+            json!({
+                "flag": { "type": "boolean", "position": 0 },
+                "meta": meta(true),
+                "extra": { "type": "boolean", "position": 2 }
+            }),
+            json!(["flag", "meta"]),
+        );
+        let properties = BTreeMap::from([
+            ("flag".to_string(), Value::Bool(true)),
+            (
+                "meta".to_string(),
+                Value::Map(vec![(Value::Text("a".to_string()), Value::U64(7))]),
+            ),
+        ]);
+        let written = encode_private_document_payload(
+            before.document_type_for_name("secret").expect("the type"),
+            properties,
+        )
+        .expect("encodes");
+
+        let newer = after.document_type_for_name("secret").expect("the type");
+        let read = decode_private_document_payload(newer, &written, platform_version)
+            .expect("an older payload reads under the newer type");
+        assert_eq!(read.get("flag"), Some(&Value::Bool(true)));
+        assert_eq!(read.get("extra"), None);
+        assert_eq!(
+            read.get("meta")
+                .and_then(|meta| meta.get_optional_value("b").ok().flatten()),
+            None
+        );
+
+        let mut trailing = written.clone();
+        trailing.push(0);
+        assert!(decode_private_document_payload(
+            before.document_type_for_name("secret").expect("the type"),
+            &trailing,
+            platform_version
+        )
+        .is_err());
     }
 
     /// The type's schema validates a payload's properties, before sealing and after opening:
