@@ -2041,6 +2041,89 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun shieldedNoteResaveNeverClearsSpent() = runTest {
+        val nullifier = ByteArray(32) { 23 }
+        suspend fun saveNote(isSpent: Byte) {
+            handler.onChangesetBegin(walletId)
+            handler.onPersistShieldedNote(
+                walletId = walletId,
+                noteWalletId = walletId,
+                accountIndex = 0,
+                position = 8,
+                cmx = ByteArray(32) { 24 },
+                nullifier = nullifier,
+                blockHeight = 51,
+                isSpent = isSpent,
+                value = 200_000,
+                noteData = ByteArray(115) { 25 },
+            )
+            handler.onChangesetEnd(walletId, success = true)
+        }
+
+        saveNote(isSpent = 0)
+        // A send's round marks the note spent.
+        handler.onChangesetBegin(walletId)
+        handler.onPersistShieldedNullifierSpent(walletId, walletId, 0, nullifier)
+        handler.onChangesetEnd(walletId, success = true)
+        // A sync pass's later round re-saves it unspent.
+        saveNote(isSpent = 0)
+
+        assertTrue(db.shieldedDao().getNoteByNullifier(nullifier)!!.isSpent)
+    }
+
+    @Test
+    fun shieldedNoteReceiptAfterTheSpendRoundStaysSpent() = runTest {
+        // A send can confirm a note before the sync pass that found it has
+        // stored it: the spend's round inserts it spent, then the pass's
+        // receipt arrives unspent.
+        val nullifier = ByteArray(32) { 29 }
+        for (isSpent in listOf<Byte>(1, 0)) {
+            handler.onChangesetBegin(walletId)
+            handler.onPersistShieldedNote(
+                walletId = walletId,
+                noteWalletId = walletId,
+                accountIndex = 0,
+                position = 10,
+                cmx = ByteArray(32) { 30 },
+                nullifier = nullifier,
+                blockHeight = 53,
+                isSpent = isSpent,
+                value = 400_000,
+                noteData = ByteArray(115) { 31 },
+            )
+            handler.onChangesetEnd(walletId, success = true)
+        }
+
+        assertTrue(db.shieldedDao().getNoteByNullifier(nullifier)!!.isSpent)
+    }
+
+    @Test
+    fun shieldedNoteResaveStillMarksAnUnspentNoteSpent() = runTest {
+        val nullifier = ByteArray(32) { 26 }
+        suspend fun saveNote(isSpent: Byte) {
+            handler.onChangesetBegin(walletId)
+            handler.onPersistShieldedNote(
+                walletId = walletId,
+                noteWalletId = walletId,
+                accountIndex = 0,
+                position = 9,
+                cmx = ByteArray(32) { 27 },
+                nullifier = nullifier,
+                blockHeight = 52,
+                isSpent = isSpent,
+                value = 300_000,
+                noteData = ByteArray(115) { 28 },
+            )
+            handler.onChangesetEnd(walletId, success = true)
+        }
+
+        saveNote(isSpent = 0)
+        assertFalse(db.shieldedDao().getNoteByNullifier(nullifier)!!.isSpent)
+        saveNote(isSpent = 1)
+        assertTrue(db.shieldedDao().getNoteByNullifier(nullifier)!!.isSpent)
+    }
+
+    @Test
     fun shieldedSyncStateAdvancesMonotonically() = runTest {
         handler.onChangesetBegin(walletId)
         handler.onPersistShieldedSyncedIndex(walletId, walletId, 0, 100)
