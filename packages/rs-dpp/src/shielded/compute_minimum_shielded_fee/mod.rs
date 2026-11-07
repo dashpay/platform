@@ -367,7 +367,7 @@ mod tests {
                 base + entry_count as u64 * entry
             );
         }
-        assert_eq!(private_document.entry_processing_fee, 50_000_000);
+        assert_eq!(private_document.entry_processing_fee, 10_000_000);
     }
 
     #[test]

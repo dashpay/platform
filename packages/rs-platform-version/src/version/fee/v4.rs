@@ -9,7 +9,7 @@ pub const FEE_VERSION4: FeeVersion = FeeVersion {
     // are unchanged, so the fee_version_number inherited from FEE_VERSION3 stays.
     vote_resolution_fund_fees: VOTE_RESOLUTION_FUND_FEES_VERSION3,
     // Each private document entry (new in protocol version 15) pays its storage and a flat
-    // 50,000,000 credits; the earlier schedules carry the same group, unread before 15, so the
+    // 10,000,000 credits; the earlier schedules carry the same group, unread before 15, so the
     // table is spelled out here where it takes effect.
     private_document: FEE_PRIVATE_DOCUMENT_VERSION1,
     ..FEE_VERSION3

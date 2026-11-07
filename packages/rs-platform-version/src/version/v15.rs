@@ -520,7 +520,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     (`DuplicatePrivateDocumentEntryError`, 10428). The value balance must equal
 ///     `compute_private_document_create_from_shielded_pool_fee`: the bundle's shielded fee
 ///     plus, per entry, its bytes and 32 overhead bytes at the storage rate and a flat
-///     50,000,000 credits (`FEE_PRIVATE_DOCUMENT_VERSION1` in `FEE_VERSION4`). After the pool
+///     10,000,000 credits (`FEE_PRIVATE_DOCUMENT_VERSION1` in `FEE_VERSION4`). After the pool
 ///     checks a shielded transfer makes, the transform refuses, unpaid, a contract that does not
 ///     exist, a type it does not have (`InvalidDocumentTypeError`), a type that is not private
 ///     (`DocumentTypeNotPrivateError`, 40151) and entries of another size than the type's
@@ -575,7 +575,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12); the token market contract is selected (note 17); DashPay v3 states what its data triggers checked (note 24)
-    fee_version: FEE_VERSION4, // changed: decision proposals prefund their poll with 0.5 Dash (note 12); a private document entry pays its storage and 50,000,000 credits (note 25)
+    fee_version: FEE_VERSION4, // changed: decision proposals prefund their poll with 0.5 Dash (note 12); a private document entry pays its storage and 10,000,000 credits (note 25)
     system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes, and the private document store limits size its store (note 13); max_private_document_entries_per_transition caps a private document create at 16 entries (note 25)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
