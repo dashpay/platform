@@ -16,6 +16,7 @@ pub use index_level::IndexLevelTypeInfo;
 pub use index_level::IndexType;
 pub(crate) use private_document::PRIVATE_DOCUMENT_TYPE_KEYWORDS;
 pub use private_document::{
+    decode_private_document_payload, encode_private_document_payload,
     largest_private_document_payload_size, minimum_private_document_entry_size,
     validate_private_document_entry_size, PrivateDocumentConfig,
     PRIVATE_DOCUMENT_ENVELOPE_V1_BODY_HEADER_BYTES, PRIVATE_DOCUMENT_ENVELOPE_V1_OVERHEAD_BYTES,
