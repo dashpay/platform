@@ -796,7 +796,7 @@ internal object WalletManagerNative {
  * is broadcast. An exception thrown here is cleared by the trampoline and
  * does not stop the funding.
  */
-abstract class AssetLockBuiltBridge {
+fun interface AssetLockBuiltBridge {
     /** @param outPoint 36 bytes: 32-byte txid (wire order) then the 4-byte little-endian vout. */
-    abstract fun onAssetLockBuilt(outPoint: ByteArray)
+    fun onAssetLockBuilt(outPoint: ByteArray)
 }

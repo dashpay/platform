@@ -8,6 +8,7 @@ import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.TokensNative
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
 import org.dashfoundation.dashsdk.persistence.encodeOutPointHex
+import org.dashfoundation.dashsdk.persistence.outpointTxid
 import org.dashfoundation.dashsdk.tokens.translateManagedIdentityNotFoundToZero
 import java.util.concurrent.atomic.AtomicLong
 
@@ -736,15 +737,15 @@ class ManagedPlatformWallet internal constructor(
      * @property outPointHex `<display-order txid hex>:<vout>`, the key of the
      *   lock's persisted `AssetLockEntity` row.
      */
-    class AssetLockBuiltOutPoint private constructor(
-        val txid: ByteArray,
-        val vout: Int,
-        val outPointHex: String,
-    ) {
-        override fun equals(other: Any?): Boolean =
-            other is AssetLockBuiltOutPoint && txid.contentEquals(other.txid) && vout == other.vout
+    class AssetLockBuiltOutPoint private constructor(private val raw: ByteArray) {
+        val txid: ByteArray = outpointTxid(raw)
+        val vout: Int = java.nio.ByteBuffer.wrap(raw, 32, 4).order(java.nio.ByteOrder.LITTLE_ENDIAN).int
+        val outPointHex: String get() = encodeOutPointHex(raw)
 
-        override fun hashCode(): Int = 31 * txid.contentHashCode() + vout
+        override fun equals(other: Any?): Boolean =
+            other is AssetLockBuiltOutPoint && raw.contentEquals(other.raw)
+
+        override fun hashCode(): Int = raw.contentHashCode()
 
         override fun toString(): String = "AssetLockBuiltOutPoint($outPointHex)"
 
@@ -756,13 +757,7 @@ class ManagedPlatformWallet internal constructor(
              */
             fun fromRawBytes(raw: ByteArray): AssetLockBuiltOutPoint {
                 require(raw.size == 36) { "outpoint must be 36 bytes, got ${raw.size}" }
-                val vout = java.nio.ByteBuffer.wrap(raw, 32, 4)
-                    .order(java.nio.ByteOrder.LITTLE_ENDIAN).int
-                return AssetLockBuiltOutPoint(
-                    txid = raw.copyOfRange(0, 32),
-                    vout = vout,
-                    outPointHex = encodeOutPointHex(raw),
-                )
+                return AssetLockBuiltOutPoint(raw.copyOf())
             }
         }
     }
@@ -939,10 +934,7 @@ class ManagedPlatformWallet internal constructor(
             "platformAccountIndex must be non-negative, got $platformAccountIndex"
         }
         fundFromAssetLockExternalPreflight(recipients)
-        val bridge = object : AssetLockBuiltBridge() {
-            override fun onAssetLockBuilt(outPoint: ByteArray) =
-                onAssetLockBuilt(AssetLockBuiltOutPoint.fromRawBytes(outPoint))
-        }
+        val bridge = AssetLockBuiltBridge { onAssetLockBuilt(AssetLockBuiltOutPoint.fromRawBytes(it)) }
         val blob = mapNativeErrors {
             WalletManagerNative.walletFundFromAssetLockExternal(
                 walletHandle = handle,
@@ -1434,9 +1426,6 @@ class ManagedPlatformWallet internal constructor(
                 require(r.addressType == 0) {
                     "FundRecipient.addressType must be 0 (P2PKH) for platform-address " +
                         "funding (got ${r.addressType})"
-                }
-                require(r.hash.size == 20) {
-                    "FundRecipient.hash must be exactly 20 bytes (got ${r.hash.size})"
                 }
             }
         }

@@ -32,9 +32,7 @@ import java.nio.ByteBuffer
 @RunWith(AndroidJUnit4::class)
 class FundFromAssetLockBindingTest {
 
-    private val noopBridge = object : AssetLockBuiltBridge() {
-        override fun onAssetLockBuilt(outPoint: ByteArray) = Unit
-    }
+    private val noopBridge = AssetLockBuiltBridge { }
 
     /** One explicit-amount payee and one remainder, P2PKH. */
     private val validBlob: ByteArray = ByteBuffer.allocate(4 + 2 * 30).apply {
