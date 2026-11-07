@@ -300,7 +300,7 @@ pub fn private_document_outgoing_viewing_key(wallet_secret: &[u8; 32]) -> [u8; 3
 /// `esk_seed` must be 32 fresh random bytes for every entry built, never reused, not even on a
 /// retry: the entry's keys are derived from it, and a zero nonce is safe only because each key
 /// encrypts once. A seed whose hash is not a valid secret key (a chance of about 2^-128) is
-/// refused with `InvalidPrivateDocumentEphemeralSeed`; draw another.
+/// refused with [`PrivateDocumentEnvelopeError::InvalidEphemeralSeed`]; draw another.
 pub fn seal_private_document_entry(
     target: &PrivateDocumentTarget,
     entry_size: usize,

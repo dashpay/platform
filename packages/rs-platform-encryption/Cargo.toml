@@ -14,7 +14,9 @@ description = "Cryptographic utilities for Dash Platform (DIP-15 DashPay encrypt
 secp256k1 = { version = "0.33.1", features = ["std", "recovery"] }
 aes = "0.8"
 cbc = "0.1"
-chacha20poly1305 = "0.10"
+# The envelope supplies its own seed and nonces, so no `getrandom`: standalone wasm32 builds
+# without a JavaScript randomness backend still compile.
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
 hmac = "0.12"
 sha2 = "0.10"
 thiserror = "1.0"

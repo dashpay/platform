@@ -759,6 +759,13 @@ mod tests {
                 Some(&Value::Text(wide(4))),
                 "{config}"
             );
+            assert_eq!(
+                decoded
+                    .get("small")
+                    .map(|small| small.to_integer::<u64>().expect("an integer")),
+                Some(255),
+                "{config}"
+            );
         }
     }
 
@@ -993,10 +1000,21 @@ mod tests {
                 )
                 .expect("validation runs")
         };
-        assert!(validate(largest_values()).is_valid());
+        let secret = contract
+            .document_type_for_name("secret")
+            .expect("the secret type");
+        let round_trip = |properties: BTreeMap<String, Value>| {
+            let payload = encode_private_document_payload(secret, properties).expect("encodes");
+            decode_private_document_payload(secret, &payload, platform_version).expect("decodes")
+        };
+        assert!(validate(round_trip(largest_values())).is_valid());
+        // The codec does not check bounds: a label over its bound is written and read back
+        // whole, and the schema refuses what the recipient decoded.
         let mut too_long = largest_values();
         too_long.insert("label".to_string(), Value::Text(wide(11)));
-        assert!(!validate(too_long).is_valid());
+        let decoded = round_trip(too_long);
+        assert_eq!(decoded.get("label"), Some(&Value::Text(wide(11))));
+        assert!(!validate(decoded).is_valid());
     }
 
     /// Integers take the width the contract's documents store them in: with sized integer

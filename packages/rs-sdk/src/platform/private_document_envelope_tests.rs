@@ -112,7 +112,7 @@ fn should_carry_the_largest_payload_in_an_entry_of_the_minimum_size() {
         ("autoAcceptProof".to_string(), Value::Bytes(vec![2; 102])),
         ("shieldedAddress".to_string(), Value::Bytes(vec![3; 43])),
     ]);
-    let payload = encode_private_document_payload(request, properties).expect("encodes");
+    let payload = encode_private_document_payload(request, properties.clone()).expect("encodes");
     assert_eq!(
         payload.len(),
         entry_size - PRIVATE_DOCUMENT_ENVELOPE_OVERHEAD_LEN
@@ -152,7 +152,7 @@ fn should_carry_the_largest_payload_in_an_entry_of_the_minimum_size() {
     let decoded = decode_private_document_payload(request, opened.payload(), platform_version)
         .expect("decodes");
     assert_eq!(
-        decoded.get("accountLabel"),
-        Some(&Value::Text("a".repeat(63)))
+        decoded, properties,
+        "every property reads back as it was sealed"
     );
 }
