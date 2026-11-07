@@ -6,6 +6,7 @@
 // and while it will change the substance, the API structure will remain the same.
 
 pub mod address_sync;
+pub mod asset_lock_outpoint_info;
 pub mod block_info_from_metadata;
 pub mod contract_fee_pots;
 pub mod contract_groups;

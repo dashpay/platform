@@ -36,6 +36,20 @@ class PlatformPromiseClient {
   }
 
   /**
+   * @param {!GetAssetLockOutpointInfoRequest} getAssetLockOutpointInfoRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetAssetLockOutpointInfoResponse>}
+   */
+  getAssetLockOutpointInfo(getAssetLockOutpointInfoRequest, metadata = {}) {
+    return promisify(
+      this.client.getAssetLockOutpointInfo.bind(this.client),
+    )(
+      getAssetLockOutpointInfoRequest,
+      metadata,
+    );
+  }
+
+  /**
    * @param {!GetIdentityRequest} getIdentityRequest
    * @param {?Object<string, string>} metadata
    * @return {Promise<!GetIdentityResponse>}

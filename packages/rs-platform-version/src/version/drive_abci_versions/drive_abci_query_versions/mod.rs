@@ -9,6 +9,7 @@ pub struct DriveAbciQueryVersions {
     pub max_returned_elements: u16,
     pub response_metadata: FeatureVersion,
     pub proofs_query: FeatureVersion,
+    pub asset_lock_outpoint_info: FeatureVersionBounds,
     pub document_query: FeatureVersionBounds,
     /// Composite document queries: the `sub_queries` of a `getDocuments` V1 request. `None`
     /// at the protocol versions that nodes of a release without the field can sign: such a

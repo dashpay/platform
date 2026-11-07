@@ -2119,6 +2119,164 @@ export namespace GetDataContractsLatestVersionsRequest {
   }
 }
 
+export class GetAssetLockOutpointInfoRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0 | undefined;
+  setV0(value?: GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0): void;
+
+  getVersionCase(): GetAssetLockOutpointInfoRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetAssetLockOutpointInfoRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetAssetLockOutpointInfoRequest): GetAssetLockOutpointInfoRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetAssetLockOutpointInfoRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetAssetLockOutpointInfoRequest;
+  static deserializeBinaryFromReader(message: GetAssetLockOutpointInfoRequest, reader: jspb.BinaryReader): GetAssetLockOutpointInfoRequest;
+}
+
+export namespace GetAssetLockOutpointInfoRequest {
+  export type AsObject = {
+    v0?: GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0.AsObject,
+  }
+
+  export class GetAssetLockOutpointInfoRequestV0 extends jspb.Message {
+    getOutpoint(): Uint8Array | string;
+    getOutpoint_asU8(): Uint8Array;
+    getOutpoint_asB64(): string;
+    setOutpoint(value: Uint8Array | string): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetAssetLockOutpointInfoRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetAssetLockOutpointInfoRequestV0): GetAssetLockOutpointInfoRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetAssetLockOutpointInfoRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetAssetLockOutpointInfoRequestV0;
+    static deserializeBinaryFromReader(message: GetAssetLockOutpointInfoRequestV0, reader: jspb.BinaryReader): GetAssetLockOutpointInfoRequestV0;
+  }
+
+  export namespace GetAssetLockOutpointInfoRequestV0 {
+    export type AsObject = {
+      outpoint: Uint8Array | string,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetAssetLockOutpointInfoResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0 | undefined;
+  setV0(value?: GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0): void;
+
+  getVersionCase(): GetAssetLockOutpointInfoResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetAssetLockOutpointInfoResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetAssetLockOutpointInfoResponse): GetAssetLockOutpointInfoResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetAssetLockOutpointInfoResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetAssetLockOutpointInfoResponse;
+  static deserializeBinaryFromReader(message: GetAssetLockOutpointInfoResponse, reader: jspb.BinaryReader): GetAssetLockOutpointInfoResponse;
+}
+
+export namespace GetAssetLockOutpointInfoResponse {
+  export type AsObject = {
+    v0?: GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0.AsObject,
+  }
+
+  export class AssetLockOutpointInfo extends jspb.Message {
+    getStatus(): GetAssetLockOutpointInfoResponse.StatusMap[keyof GetAssetLockOutpointInfoResponse.StatusMap];
+    setStatus(value: GetAssetLockOutpointInfoResponse.StatusMap[keyof GetAssetLockOutpointInfoResponse.StatusMap]): void;
+
+    hasRemainingCredits(): boolean;
+    clearRemainingCredits(): void;
+    getRemainingCredits(): string;
+    setRemainingCredits(value: string): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): AssetLockOutpointInfo.AsObject;
+    static toObject(includeInstance: boolean, msg: AssetLockOutpointInfo): AssetLockOutpointInfo.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: AssetLockOutpointInfo, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): AssetLockOutpointInfo;
+    static deserializeBinaryFromReader(message: AssetLockOutpointInfo, reader: jspb.BinaryReader): AssetLockOutpointInfo;
+  }
+
+  export namespace AssetLockOutpointInfo {
+    export type AsObject = {
+      status: GetAssetLockOutpointInfoResponse.StatusMap[keyof GetAssetLockOutpointInfoResponse.StatusMap],
+      remainingCredits: string,
+    }
+  }
+
+  export class GetAssetLockOutpointInfoResponseV0 extends jspb.Message {
+    hasAssetLockOutpointInfo(): boolean;
+    clearAssetLockOutpointInfo(): void;
+    getAssetLockOutpointInfo(): GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo | undefined;
+    setAssetLockOutpointInfo(value?: GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetAssetLockOutpointInfoResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetAssetLockOutpointInfoResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetAssetLockOutpointInfoResponseV0): GetAssetLockOutpointInfoResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetAssetLockOutpointInfoResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetAssetLockOutpointInfoResponseV0;
+    static deserializeBinaryFromReader(message: GetAssetLockOutpointInfoResponseV0, reader: jspb.BinaryReader): GetAssetLockOutpointInfoResponseV0;
+  }
+
+  export namespace GetAssetLockOutpointInfoResponseV0 {
+    export type AsObject = {
+      assetLockOutpointInfo?: GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      ASSET_LOCK_OUTPOINT_INFO = 1,
+      PROOF = 2,
+    }
+  }
+
+  export interface StatusMap {
+    STATUS_UNSPECIFIED: 0;
+    NOT_PRESENT: 1;
+    PARTIALLY_CONSUMED: 2;
+    FULLY_CONSUMED: 3;
+  }
+
+  export const Status: StatusMap;
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export class GetDataContractsLatestVersionsResponse extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;
