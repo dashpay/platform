@@ -623,6 +623,59 @@ mod tests {
         assert!(!validate(too_long).is_valid());
     }
 
+    /// Integers take the width the contract's documents store them in: with sized integer
+    /// types off, as a version 0 config always has them and DashPay keeps them, a bounded
+    /// integer is an i64 of 8 bytes, as format 0 writes every integer.
+    #[test]
+    fn should_count_integers_at_the_width_the_contract_stores_them() {
+        for config in [
+            json!({ "$formatVersion": "0" }),
+            json!({ "$formatVersion": "1", "sizedIntegerTypes": false }),
+            json!({ "$formatVersion": "1", "sizedIntegerTypes": true }),
+        ] {
+            let sized = config.get("sizedIntegerTypes") == Some(&json!(true));
+            let contract = DataContract::from_value(
+                platform_value::to_value(json!({
+                    "$formatVersion": "1",
+                    "id": Identifier::from([7; 32]).to_string(Encoding::Base58),
+                    "ownerId": Identifier::from([8; 32]).to_string(Encoding::Base58),
+                    "version": 1,
+                    "config": config,
+                    "documentSchemas": {
+                        "secret": {
+                            "type": "object",
+                            "private": { "entrySize": 400 },
+                            "documentsMutable": false,
+                            "canBeDeleted": false,
+                            "properties": {
+                                "small": {
+                                    "type": "integer", "minimum": 0, "maximum": 255,
+                                    "position": 0
+                                }
+                            },
+                            "required": ["small"],
+                            "additionalProperties": false
+                        }
+                    }
+                }))
+                .expect("the contract converts"),
+                true,
+                PlatformVersion::latest(),
+            )
+            .expect("the contract registers");
+            assert_eq!(
+                largest_private_document_payload_size(
+                    contract
+                        .document_type_for_name("secret")
+                        .expect("the secret type")
+                )
+                .expect("bounded"),
+                if sized { 1 } else { 8 },
+                "{config}"
+            );
+        }
+    }
+
     /// A `Date` property carries a marker byte when it is optional; its largest size counts it,
     /// as its encoding writes it.
     #[test]
