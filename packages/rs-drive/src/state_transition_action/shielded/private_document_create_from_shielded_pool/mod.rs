@@ -6,6 +6,7 @@ pub mod v0;
 use crate::state_transition_action::shielded::private_document_create_from_shielded_pool::v0::PrivateDocumentCreateFromShieldedPoolTransitionActionV0;
 use crate::state_transition_action::shielded::ShieldedActionNote;
 use derive_more::From;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
 
@@ -20,7 +21,15 @@ impl PrivateDocumentCreateFromShieldedPoolTransitionAction {
     /// The contract that defines the private document type
     pub fn data_contract_id(&self) -> Identifier {
         match self {
-            PrivateDocumentCreateFromShieldedPoolTransitionAction::V0(t) => t.data_contract_id,
+            PrivateDocumentCreateFromShieldedPoolTransitionAction::V0(t) => {
+                t.data_contract.contract.id()
+            }
+        }
+    }
+    /// The chunk power the type's store committed
+    pub fn store_chunk_power(&self) -> u8 {
+        match self {
+            PrivateDocumentCreateFromShieldedPoolTransitionAction::V0(t) => t.store_chunk_power,
         }
     }
     /// The private document type the entries are appended to

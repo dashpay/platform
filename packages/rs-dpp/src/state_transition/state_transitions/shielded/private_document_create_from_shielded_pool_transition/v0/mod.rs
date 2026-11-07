@@ -1,5 +1,6 @@
 mod state_transition_like;
 mod state_transition_validation;
+pub use state_transition_validation::validate_private_document_create_entries;
 mod types;
 pub(super) mod v0_methods;
 mod version;

@@ -144,13 +144,14 @@ impl PrivateDocumentCreateFromShieldedPoolStateTransitionTransformIntoActionVali
 
         // Every path that registers a private type creates its store; one missing, or of
         // another entry size, is corrupted state, which no transition is executed against.
-        if !drive.private_document_store_takes_entries(
+        let Some(store_chunk_power) = drive.private_document_store_chunk_power_taking_entries(
             &v0.data_contract_id.to_buffer(),
             &v0.document_type_name,
             entry_size,
             transaction,
             platform_version,
-        )? {
+        )?
+        else {
             return Err(Error::Execution(ExecutionError::CorruptedDriveResponse(
                 format!(
                     "the private document type \"{}\" of contract {} has no store taking entries \
@@ -158,13 +159,15 @@ impl PrivateDocumentCreateFromShieldedPoolStateTransitionTransformIntoActionVali
                     v0.document_type_name, v0.data_contract_id, entry_size
                 ),
             )));
-        }
+        };
 
         // The minimum fee validation held the value balance to the fee for these entries at
         // the first entry's size, which is the type's `entrySize`, so the whole value balance
         // is the fee.
         let result = PrivateDocumentCreateFromShieldedPoolTransitionAction::try_from_transition(
             self,
+            contract_fetch_info.clone(),
+            store_chunk_power,
             current_total_balance,
             v0.value_balance,
         );

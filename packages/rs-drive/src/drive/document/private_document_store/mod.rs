@@ -13,6 +13,8 @@ use crate::error::Error;
 #[cfg(feature = "server")]
 use crate::fees::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
+use crate::util::estimated_layers::EstimatedLayers;
+#[cfg(feature = "server")]
 use crate::util::grove_operations::DirectQueryType;
 #[cfg(feature = "server")]
 use crate::util::storage_flags::StorageFlags;
@@ -20,6 +22,8 @@ use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{DocumentTypeRef, PrivateDocumentConfig};
+#[cfg(feature = "server")]
+use dpp::data_contract::DataContract;
 use dpp::version::PlatformVersion;
 #[cfg(feature = "server")]
 use grovedb::{Element, TransactionArg};
@@ -202,20 +206,21 @@ impl Drive {
         }
     }
 
-    /// Whether the store of the private type `document_type_name` of `contract_id` takes
-    /// entries of `entry_size` bytes: the element at the type's key `[0]` is a private document
-    /// store whose committed stored entry size is Drive's header and `entry_size`. A
-    /// `PrivateDocumentCreateFromShieldedPool` asks before execution, where an append to a
-    /// missing store, or one of another size, would fail. The read is not billed: the
-    /// transition pays a fixed fee.
-    pub fn private_document_store_takes_entries(
+    /// The chunk power the store of the private type `document_type_name` of `contract_id`
+    /// committed, if it takes entries of `entry_size` bytes: the element at the type's key `[0]`
+    /// is a private document store whose committed stored entry size is Drive's header and
+    /// `entry_size`. `None` otherwise. A `PrivateDocumentCreateFromShieldedPool` asks before
+    /// execution, where an append to a missing store, or one of another size, would fail, and
+    /// its append describes the store at this chunk power when it is estimated. The read is not
+    /// billed: the transition pays a fixed fee.
+    pub fn private_document_store_chunk_power_taking_entries(
         &self,
         contract_id: &[u8; 32],
         document_type_name: &str,
         entry_size: u32,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<bool, Error> {
+    ) -> Result<Option<u8>, Error> {
         let type_path = contract_document_type_path(contract_id, document_type_name);
         let element = self.grove_get_raw_optional(
             type_path.as_slice().into(),
@@ -227,13 +232,16 @@ impl Drive {
         )?;
         let Some(stored_entry_size) = entry_size.checked_add(PRIVATE_DOCUMENT_ENTRY_HEADER_SIZE)
         else {
-            return Ok(false);
+            return Ok(None);
         };
-        Ok(matches!(
-            element.as_ref().map(Element::underlying),
-            Some(Element::PrivateDocumentStore(_, committed_entry_size, _, _))
-                if *committed_entry_size == stored_entry_size
-        ))
+        Ok(match element.as_ref().map(Element::underlying) {
+            Some(Element::PrivateDocumentStore(_, committed_entry_size, chunk_power, _))
+                if *committed_entry_size == stored_entry_size =>
+            {
+                Some(*chunk_power)
+            }
+            _ => None,
+        })
     }
 }
 
@@ -299,17 +307,32 @@ pub fn insert_empty_private_document_store_operation(
 }
 
 /// The operations appending `entries`, in order, to the store of the private type
-/// `document_type_name` of `contract_id`, each after Drive's header: the height and then the
-/// time in milliseconds of `block_info` (`encode_stored_private_document_entry`). Every entry
-/// must take the type's `entrySize`; GroveDB refuses an entry of another size, so the caller
-/// checks it before execution. Only a protocol version admitting private types selects a
-/// version of it.
+/// `document_type_name` of `contract`, each after Drive's header: the height and then the time
+/// in milliseconds of `block_info` (`encode_stored_private_document_entry`). Every entry must
+/// take the type's `entrySize`; GroveDB refuses an entry of another size, so the caller checks
+/// it before execution. When the batch is estimated, it describes the layers down to the store,
+/// the store at `chunk_power`, the chunk power the store committed. Only a protocol version
+/// admitting private types selects a version of it.
+///
+/// # Parameters
+/// - `contract`: the contract defining the private type
+/// - `document_type_name`: the private type
+/// - `entries`: the client's entries, appended in this order
+/// - `chunk_power`: the chunk power the type's store committed
+/// - `block_info`: the block whose height and time head each entry
+/// - `estimated_costs_only_with_layer_info`: the layer descriptions of an estimated batch
+/// - `platform_version`: the protocol version
+///
+/// # Returns
+/// One GroveDB append per entry.
 #[cfg(feature = "server")]
 pub fn append_private_document_entries_operations(
-    contract_id: &[u8; 32],
+    contract: &DataContract,
     document_type_name: &str,
     entries: &[Vec<u8>],
+    chunk_power: u8,
     block_info: &BlockInfo,
+    estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
     platform_version: &PlatformVersion,
 ) -> Result<Vec<LowLevelDriveOperation>, Error> {
     match platform_version
@@ -318,12 +341,15 @@ pub fn append_private_document_entries_operations(
         .document
         .append_private_document_entries_operations
     {
-        Some(0) => Ok(append_private_document_entries_operations_v0(
-            contract_id,
+        Some(0) => append_private_document_entries_operations_v0(
+            contract,
             document_type_name,
             entries,
+            chunk_power,
             block_info,
-        )),
+            estimated_costs_only_with_layer_info,
+            platform_version,
+        ),
         Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
             method: "append_private_document_entries_operations".to_string(),
             known_versions: vec![0],

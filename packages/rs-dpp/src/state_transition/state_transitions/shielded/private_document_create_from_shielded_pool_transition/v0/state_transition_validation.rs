@@ -11,60 +11,76 @@ use crate::state_transition::state_transitions::shielded::common_validation::{
 };
 use crate::state_transition::StateTransitionStructureValidation;
 use crate::validation::SimpleConsensusValidationResult;
+use platform_value::BinaryData;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
+/// The checks a private document create's entries take without state, before the bundle's: from
+/// 1 to `max_private_document_entries_per_transition` entries, each as long as the first and from
+/// 1 to `max_private_document_entry_size` bytes, no two the same. Whether they take the type's
+/// `entrySize` needs the contract, so the transform checks it. Basic structure runs it, and the
+/// SDK builder runs it before proving, so a wallet never proves a bundle for entries consensus
+/// refuses.
+pub fn validate_private_document_create_entries(
+    entries: &[BinaryData],
+    platform_version: &PlatformVersion,
+) -> SimpleConsensusValidationResult {
+    let limits = &platform_version.system_limits;
+    // Both limits are `None` before protocol version 15, where the transition is refused
+    // before its structure is validated; refusing every entry there keeps it so.
+    let max_count = limits
+        .max_private_document_entries_per_transition
+        .unwrap_or(0);
+    let max_size = limits.max_private_document_entry_size.unwrap_or(0);
+
+    if entries.is_empty() || entries.len() > max_count as usize {
+        return SimpleConsensusValidationResult::new_with_error(
+            InvalidPrivateDocumentEntryCountError::new(entries.len() as u64, max_count).into(),
+        );
+    }
+
+    let first_entry_size = entries[0].len();
+    for (entry_index, entry) in entries.iter().enumerate() {
+        let size = entry.len();
+        if size == 0 || size != first_entry_size || size > max_size as usize {
+            return SimpleConsensusValidationResult::new_with_error(
+                InvalidPrivateDocumentEntrySizeError::new(
+                    // At most max_count (a u16) entries reach this loop.
+                    entry_index as u16,
+                    size.min(u32::MAX as usize) as u32,
+                    first_entry_size.min(u32::MAX as usize) as u32,
+                    max_size,
+                )
+                .into(),
+            );
+        }
+    }
+
+    let mut first_index_of_entry = BTreeMap::new();
+    for (entry_index, entry) in entries.iter().enumerate() {
+        if let Some(first_index) = first_index_of_entry.insert(entry.as_slice(), entry_index as u16)
+        {
+            return SimpleConsensusValidationResult::new_with_error(
+                DuplicatePrivateDocumentEntryError::new(first_index, entry_index as u16).into(),
+            );
+        }
+    }
+
+    SimpleConsensusValidationResult::new()
+}
+
 impl StateTransitionStructureValidation for PrivateDocumentCreateFromShieldedPoolTransitionV0 {
-    /// Checks what needs no state: from 1 to `max_private_document_entries_per_transition`
-    /// entries, each as long as the first and from 1 to `max_private_document_entry_size`
-    /// bytes, no two the same, then the bundle's actions, value balance, proof and anchor. Whether the entries
-    /// take the type's `entrySize` needs the contract, so the transform checks it.
+    /// Checks what needs no state: the entries (`validate_private_document_create_entries`),
+    /// then the bundle's actions, value balance, proof and anchor.
     fn validate_structure(
         &self,
         platform_version: &PlatformVersion,
     ) -> SimpleConsensusValidationResult {
+        let result = validate_private_document_create_entries(&self.entries, platform_version);
+        if !result.is_valid() {
+            return result;
+        }
         let limits = &platform_version.system_limits;
-        // Both limits are `None` before protocol version 15, where the transition is refused
-        // before its structure is validated; refusing every entry there keeps it so.
-        let max_count = limits
-            .max_private_document_entries_per_transition
-            .unwrap_or(0);
-        let max_size = limits.max_private_document_entry_size.unwrap_or(0);
-
-        if self.entries.is_empty() || self.entries.len() > max_count as usize {
-            return SimpleConsensusValidationResult::new_with_error(
-                InvalidPrivateDocumentEntryCountError::new(self.entries.len() as u64, max_count)
-                    .into(),
-            );
-        }
-
-        let first_entry_size = self.entries[0].len();
-        for (entry_index, entry) in self.entries.iter().enumerate() {
-            let size = entry.len();
-            if size == 0 || size != first_entry_size || size > max_size as usize {
-                return SimpleConsensusValidationResult::new_with_error(
-                    InvalidPrivateDocumentEntrySizeError::new(
-                        // At most max_count (a u16) entries reach this loop.
-                        entry_index as u16,
-                        size.min(u32::MAX as usize) as u32,
-                        first_entry_size.min(u32::MAX as usize) as u32,
-                        max_size,
-                    )
-                    .into(),
-                );
-            }
-        }
-
-        let mut first_index_of_entry = BTreeMap::new();
-        for (entry_index, entry) in self.entries.iter().enumerate() {
-            if let Some(first_index) =
-                first_index_of_entry.insert(entry.as_slice(), entry_index as u16)
-            {
-                return SimpleConsensusValidationResult::new_with_error(
-                    DuplicatePrivateDocumentEntryError::new(first_index, entry_index as u16).into(),
-                );
-            }
-        }
 
         let result = validate_actions_count(&self.actions, limits.max_shielded_transition_actions);
         if !result.is_valid() {

@@ -9,6 +9,7 @@ use crate::platform_types::state_transitions_processing_result::StateTransitionE
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::TempPlatform;
 use assert_matches::assert_matches;
+use dpp::address_funds::OrchardAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::state_error::StateError;
@@ -19,6 +20,9 @@ use dpp::data_contract::DataContract;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{BinaryData, Identifier};
 use dpp::serialization::PlatformSerializable;
+use dpp::shielded::builder::{
+    build_private_document_create_from_shielded_pool_transition, OrchardProver, SpendableNote,
+};
 use dpp::shielded::{
     compute_private_document_create_from_shielded_pool_fee,
     private_document_create_from_shielded_pool_extra_sighash_data_v0, SerializedAction,
@@ -30,7 +34,7 @@ use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
 use grovedb_commitment_tree::{
     Builder, BundleType, ClientMemoryCommitmentTree, DashMemo, ExtractedNoteCommitment,
-    FullViewingKey, Note, NoteValue, Position, RandomSeed, Retention, Rho, Scope,
+    FullViewingKey, Note, NoteValue, Position, ProvingKey, RandomSeed, Retention, Rho, Scope,
     SpendAuthorizingKey, SpendingKey,
 };
 use platform_version::version::PlatformVersion;
@@ -377,6 +381,98 @@ fn should_prove_the_spent_nullifiers_as_the_affected_state() {
         expected_nullifiers
     );
     assert!(statuses.iter().all(|(_, spent)| *spent));
+}
+
+struct Prover;
+
+impl OrchardProver for Prover {
+    fn proving_key(&self) -> &ProvingKey {
+        get_proving_key()
+    }
+}
+
+/// The SDK builder's transition goes through block processing as is: the fee it returns is the
+/// bundle's value balance and the fee for the bundle's actual action count, and its entries are
+/// appended.
+#[test]
+fn should_execute_the_transition_the_sdk_builder_builds() {
+    let platform_version = PlatformVersion::latest();
+    let platform = setup_platform();
+    let contract = register_contract(&platform);
+
+    let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+    let fvk = FullViewingKey::from(&sk);
+    let ask = SpendAuthorizingKey::from(&sk);
+    let address = fvk.address_at(0u32, Scope::External);
+    let mut rho_bytes = [0u8; 32];
+    rho_bytes[0] = 1;
+    let rho = Rho::from_bytes(&rho_bytes).unwrap();
+    let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
+    let note = Note::from_parts(address, NoteValue::from_raw(NOTE_VALUE), rho, rseed).unwrap();
+    let cmx = ExtractedNoteCommitment::from(note.commitment());
+    let mut tree = ClientMemoryCommitmentTree::new(100);
+    tree.append(cmx.to_bytes(), Retention::Marked).unwrap();
+    tree.checkpoint(0u32).unwrap();
+    let anchor = tree.anchor().unwrap();
+    let merkle_path = tree.witness(Position::from(0u64), 0).unwrap().unwrap();
+    let change_address = OrchardAddress::from_raw_bytes(&address.to_raw_address_bytes())
+        .expect("valid orchard address bytes");
+
+    let entries = entries(2, ENTRY_SIZE);
+    let (st, fee) = build_private_document_create_from_shielded_pool_transition(
+        vec![SpendableNote { note, merkle_path }],
+        contract.id(),
+        "secret".to_string(),
+        entries.clone(),
+        &change_address,
+        &fvk,
+        &ask,
+        anchor,
+        &Prover,
+        platform_version,
+    )
+    .expect("the builder builds the transition");
+    let StateTransition::PrivateDocumentCreateFromShieldedPool(
+        PrivateDocumentCreateFromShieldedPoolTransition::V0(v0),
+    ) = &st
+    else {
+        panic!("expected a private document create");
+    };
+    assert_eq!(v0.value_balance, fee, "the value balance is the fee");
+    assert_eq!(
+        fee,
+        compute_private_document_create_from_shielded_pool_fee(
+            v0.actions.len(),
+            2,
+            ENTRY_SIZE,
+            platform_version,
+        )
+        .expect("fee"),
+        "the fee is the one for the bundle's actual action count"
+    );
+    seed_pool(&platform, &anchor.to_bytes());
+
+    let platform_state = platform.state.load();
+    let (fee_results, _) =
+        process_state_transitions(&platform, &[st], BlockInfo::default(), &platform_state);
+    assert_eq!(fee_results[0].total_base_fee(), fee);
+    let secret = contract
+        .document_type_for_name("secret")
+        .expect("the secret type");
+    let page = platform
+        .drive
+        .fetch_private_document_entries(CONTRACT_ID, secret, 0, None, platform_version)
+        .expect("expected to read the store");
+    assert_eq!(
+        page.entries
+            .iter()
+            .map(|stored| stored.data.clone())
+            .collect::<Vec<_>>(),
+        entries
+            .iter()
+            .map(|entry| entry.to_vec())
+            .collect::<Vec<_>>()
+    );
 }
 
 // ==========================================
