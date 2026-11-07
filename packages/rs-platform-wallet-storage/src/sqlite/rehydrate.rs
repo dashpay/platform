@@ -4685,10 +4685,11 @@ mod tests {
         /// Payments to the contact in flight together whose reservations were
         /// released unsent before a later one was sent
         /// (`rs-platform-wallet` `prepared_payment.rs:671-708`), or a build
-        /// before key-wallet's DashPay gap limit (a fixed 20-address contact
-        /// window), leave this store; no writer in this crate makes it, so it
-        /// is built here. Only discovery reaches the address: a strict load
-        /// marks it used in the receiving pool, and never hands it out.
+        /// before dashpay/rust-dashcore#1035 (44fb0b1a8; a fixed 20-address
+        /// contact window, `managed_account_type.rs:734`, `:753` at its parent),
+        /// leave this store; no writer in this crate makes it, so it is built
+        /// here. Only discovery reaches the address: a strict load marks it
+        /// used in the receiving pool, and never hands it out.
         #[test]
         fn a_contact_owned_used_address_past_the_receiving_window_is_looked_for() {
             let (wallet, manifest, receiving, _, shared) = befriended_both_ways(50);

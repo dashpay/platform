@@ -7,10 +7,10 @@
 //! adapter, with no pool row written by hand. The receiving pool keeps the
 //! window its registration stored, so on disk the paid address is used only
 //! under the external account. A strict reopen must still load, and must
-//! leave that address used in the receiving pool. B's earlier reservations
-//! are used external rows too, so the reload's marking rounds reach the
-//! paid address from them; the store only discovery reaches is pinned in
-//! `rehydrate.rs`'s unit tests.
+//! leave that address used in the receiving pool. In the past-window test
+//! B's earlier reservations are used external rows too, so the reload's
+//! marking rounds reach the paid address from them; the store only
+//! discovery reaches is pinned in `rehydrate.rs`'s unit tests.
 
 use crate::common;
 
