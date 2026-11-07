@@ -1850,7 +1850,8 @@ class PlatformWalletManager(
      * @param recipientRaw43 the recipient's raw 43-byte Orchard payment
      *   address (11-byte diversifier + 32-byte pk_d), the same shape
      *   [shieldedTransfer] takes.
-     * @param amount credits to shield (1 DASH = 1e11), must be positive.
+     * @param amount credits to shield (1 DASH = 1e11). Negative values are
+     *   rejected here; Rust rejects zero.
      * @param memo optional UTF-8 memo for the recipient's note.
      */
     suspend fun shieldedShieldToRecipient(
@@ -1861,7 +1862,8 @@ class PlatformWalletManager(
         paymentAccount: Int = 0,
         memo: String? = null,
     ): Unit = teardownGate.op {
-        require(amount > 0) { "amount must be positive, got $amount" }
+        // Sign check only, before the native unsigned cast; zero is Rust's call.
+        require(amount >= 0) { "amount must be non-negative, got $amount" }
         require(shieldedAccount >= 0) {
             "shieldedAccount must be non-negative, got $shieldedAccount"
         }

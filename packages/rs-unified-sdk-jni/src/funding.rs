@@ -747,8 +747,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     guard(&mut env, (), |env| {
         // Reject sign errors at the boundary: negatives would otherwise
         // bit-cast to huge unsigned values (never clamp).
-        if amount <= 0 {
-            throw_sdk_exception(env, 1, "amount must be positive");
+        if amount < 0 {
+            throw_sdk_exception(env, 1, "amount must be non-negative");
             return;
         }
         if shielded_account < 0 {
