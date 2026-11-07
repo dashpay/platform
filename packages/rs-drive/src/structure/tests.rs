@@ -742,7 +742,6 @@ mod fixtures {
                 &BlockInfo::default(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to record a document removal");
         conformance_of(&drive, "contract_with_document_removals", run);
@@ -827,7 +826,6 @@ mod fixtures {
                 &BlockInfo::default(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to fill and claim the fee pots");
         conformance_of(&drive, "moderated_contract", run);
@@ -881,7 +879,6 @@ mod fixtures {
                 &BlockInfo::default(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to count a moderation action");
         conformance_of(&drive, "elected_contract", run);
@@ -993,7 +990,6 @@ mod fixtures {
                 &BlockInfo::default(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to record the proposals of two team actions");
         drive
@@ -1009,7 +1005,6 @@ mod fixtures {
                 &BlockInfo::default(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to record an approval of a team action");
         conformance_of(&drive, "contract_with_team_actions", run);
@@ -1226,7 +1221,6 @@ mod fixtures {
                 &BlockInfo::default(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to set address balances");
         conformance_of(&drive, "address_balances", run);
@@ -1894,7 +1888,6 @@ mod fixtures {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("expected to add the document");
         }

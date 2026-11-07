@@ -3,9 +3,7 @@
 //! Fee refunds are calculated based on removed bytes per epoch.
 //!
 
-use crate::block::epoch::{Epoch, EpochIndex};
-use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
-use crate::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
+use crate::block::epoch::EpochIndex;
 use crate::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
 use crate::fee::epoch::{BytesPerEpoch, CreditsPerEpoch};
 use crate::fee::Credits;
@@ -35,17 +33,20 @@ pub type BytesPerEpochByIdentifier = BTreeMap<[u8; 32], BytesPerEpoch>;
 pub struct FeeRefunds(pub CreditsPerEpochByIdentifier);
 
 impl FeeRefunds {
-    /// Create fee refunds from GroveDB's StorageRemovalPerEpochByIdentifier
-    pub fn from_storage_removal<I, C, E>(
+    /// Create fee refunds from GroveDB's StorageRemovalPerEpochByIdentifier, pricing the bytes
+    /// of each storing epoch at the storage rate `storage_rate_of_epoch` returns for it.
+    pub fn from_storage_removal<I, C, E, F, Err>(
         storage_removal: I,
         current_epoch_index: EpochIndex,
         epochs_per_era: u16,
-        previous_fee_versions: &CachedEpochIndexFeeVersions,
-    ) -> Result<Self, ProtocolError>
+        storage_rate_of_epoch: F,
+    ) -> Result<Self, Err>
     where
         I: IntoIterator<Item = ([u8; 32], C)>,
         C: IntoIterator<Item = (E, u32)>,
         E: TryInto<u16>,
+        F: Fn(EpochIndex) -> Result<Credits, Err>,
+        Err: From<ProtocolError>,
     {
         let refunds_per_epoch_by_identifier = storage_removal
             .into_iter()
@@ -59,7 +60,7 @@ impl FeeRefunds {
                         // TODO Add in multipliers once they have been made
 
                         let credits: Credits = (bytes as Credits)
-                            .checked_mul(Epoch::new(current_epoch_index)?.cost_for_known_cost_item(previous_fee_versions, StorageDiskUsageCreditPerByte))
+                            .checked_mul(storage_rate_of_epoch(epoch_index)?)
                             .ok_or(ProtocolError::Overflow("storage written bytes cost overflow"))?;
 
                         let (amount, _) = calculate_storage_fee_refund_amount_and_leftovers(
@@ -71,10 +72,10 @@ impl FeeRefunds {
 
                         Ok((epoch_index, amount))
                     })
-                    .collect::<Result<CreditsPerEpoch, ProtocolError>>()
+                    .collect::<Result<CreditsPerEpoch, Err>>()
                     .map(|credits_per_epochs| (identifier, credits_per_epochs))
             })
-            .collect::<Result<CreditsPerEpochByIdentifier, ProtocolError>>()?;
+            .collect::<Result<CreditsPerEpochByIdentifier, Err>>()?;
 
         Ok(Self(refunds_per_epoch_by_identifier))
     }
@@ -178,16 +179,18 @@ impl IntoIterator for FeeRefunds {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use once_cell::sync::Lazy;
-    use platform_version::version::fee::FeeVersion;
-
-    static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
-        Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
 
     mod from_storage_removal {
         use super::*;
         use nohash_hasher::IntMap;
+        use platform_version::version::fee::FeeVersion;
         use std::iter::FromIterator;
+
+        fn first_schedule_rate(_: EpochIndex) -> Result<Credits, ProtocolError> {
+            Ok(FeeVersion::first()
+                .storage
+                .storage_disk_usage_credit_per_byte)
+        }
 
         #[test]
         fn should_filter_out_refunds_under_the_limit() {
@@ -197,18 +200,47 @@ mod tests {
             let storage_removal =
                 BytesPerEpochByIdentifier::from_iter([(identity_id, bytes_per_epoch)]);
 
-            let fee_refunds = FeeRefunds::from_storage_removal(
-                storage_removal,
-                3,
-                20,
-                &EPOCH_CHANGE_FEE_VERSION_TEST,
-            )
-            .expect("should create fee refunds");
+            let fee_refunds =
+                FeeRefunds::from_storage_removal(storage_removal, 3, 20, first_schedule_rate)
+                    .expect("should create fee refunds");
 
             let credits_per_epoch = fee_refunds.get(&identity_id).expect("should exists");
 
             assert!(credits_per_epoch.get(&0).is_none());
             assert!(credits_per_epoch.get(&1).is_some());
+        }
+
+        #[test]
+        fn should_price_each_storing_epoch_at_its_own_storage_rate() {
+            let identity_id = [0; 32];
+            let rate = first_schedule_rate(0).expect("should have a rate");
+            // Bytes stored in epoch 1 were paid at twice the rate of bytes stored in epoch 2.
+            let storage_rate_of_epoch =
+                |epoch_index: EpochIndex| -> Result<Credits, ProtocolError> {
+                    Ok(if epoch_index == 1 { 2 * rate } else { rate })
+                };
+
+            let bytes_per_epoch = IntMap::from_iter([(1, 100), (2, 100)]);
+            let storage_removal =
+                BytesPerEpochByIdentifier::from_iter([(identity_id, bytes_per_epoch)]);
+            let fee_refunds =
+                FeeRefunds::from_storage_removal(storage_removal, 3, 20, storage_rate_of_epoch)
+                    .expect("should create fee refunds");
+            let credits_per_epoch = fee_refunds.get(&identity_id).expect("should exist");
+
+            for (storing_epoch, storing_rate) in [(1, 2 * rate), (2, rate)] {
+                let (expected_refund, _) = calculate_storage_fee_refund_amount_and_leftovers(
+                    100 * storing_rate,
+                    storing_epoch,
+                    3,
+                    20,
+                )
+                .expect("should calculate the refund");
+                assert_eq!(
+                    credits_per_epoch.get(&storing_epoch),
+                    Some(&expected_refund)
+                );
+            }
         }
     }
 }

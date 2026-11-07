@@ -185,7 +185,6 @@ impl Team {
                 &BlockInfo::default(),
                 Some(&transaction),
                 PlatformVersion::latest(),
-                None,
             )
             .expect("expected to store the approval");
         self.setup.commit(transaction);

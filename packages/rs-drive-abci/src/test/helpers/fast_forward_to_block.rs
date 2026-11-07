@@ -143,7 +143,6 @@ pub(crate) fn process_epoch_change(
             },
             None,
             platform_version,
-            None,
         )
         .expect("expected to apply drive operations");
 }

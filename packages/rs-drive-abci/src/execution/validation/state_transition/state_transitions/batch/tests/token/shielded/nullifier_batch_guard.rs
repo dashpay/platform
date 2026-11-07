@@ -24,7 +24,6 @@ use dpp::data_contract::accessors::v0::DataContractV0Setters;
 use dpp::data_contract::accessors::v1::DataContractV1Setters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
 use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -128,7 +127,6 @@ impl FundedPool {
                 true,
                 None,
                 version,
-                None,
             )
             .unwrap();
         if !shielded {
@@ -614,7 +612,6 @@ impl FundedPool {
                 &transaction,
                 &mut 0,
                 version,
-                &CachedEpochIndexFeeVersions::new(),
             )
             .expect("execute and charge real event");
         self.platform

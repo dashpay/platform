@@ -250,7 +250,6 @@ fn insert_widgets(
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert document");
     }
@@ -338,7 +337,6 @@ fn value_tree_for_range_countable_index_is_count_tree_after_insert() {
             true,
             None,
             pv,
-            None,
         )
         .expect("expected to insert document");
 
@@ -417,7 +415,6 @@ fn count_tree_value_count_excludes_compound_continuation_via_non_counted() {
             true,
             None,
             pv,
-            None,
         )
         .expect("expected to insert document");
 
@@ -510,7 +507,6 @@ fn delete_decrements_count_tree_and_provable_count_aggregate() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("expected to insert document");
     }
@@ -533,7 +529,6 @@ fn delete_decrements_count_tree_and_provable_count_aggregate() {
             true,
             None,
             pv,
-            None,
         )
         .expect("expected to delete document");
 
@@ -602,7 +597,6 @@ fn aggregate_count_grows_across_distinct_values() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("expected to insert document");
     }
@@ -680,7 +674,6 @@ fn range_count_executor_sums_and_splits_correctly() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("expected to insert document");
     }
@@ -861,7 +854,6 @@ fn range_count_executor_between_is_inclusive_on_both_bounds() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("expected to insert document");
     }
@@ -962,7 +954,6 @@ fn aggregate_count_proof_verifies_and_returns_correct_count() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("expected to insert document");
     }
@@ -1922,7 +1913,6 @@ fn range_count_executor_accepts_starts_with_in_all_four_modes() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("insert document");
     }
@@ -2169,7 +2159,6 @@ fn setup_widget_with_5_colors_2_docs_each() -> (Drive, DataContract) {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert document");
             seed += 1;
@@ -2592,7 +2581,6 @@ fn aggregate_count_proof_counts_cars_in_parking_lots_greater_than_b() {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert car document");
             seed += 1;
@@ -2857,7 +2845,6 @@ fn range_count_executor_returns_per_lot_counts_for_lots_greater_than_b() {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert car document");
             seed += 1;
@@ -3035,7 +3022,6 @@ fn distinct_count_proof_returns_per_lot_counts_for_lots_greater_than_b() {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert car document");
             seed += 1;
@@ -3379,7 +3365,6 @@ fn distinct_count_proof_honors_request_limit() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("insert");
     }
@@ -3536,7 +3521,6 @@ fn distinct_count_proof_descending_returns_last_limit_keys() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("insert");
     }
