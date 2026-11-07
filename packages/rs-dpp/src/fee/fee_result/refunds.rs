@@ -3,9 +3,7 @@
 //! Fee refunds are calculated based on removed bytes per epoch.
 //!
 
-use crate::block::epoch::{Epoch, EpochIndex};
-use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
-use crate::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
+use crate::block::epoch::EpochIndex;
 use crate::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
 use crate::fee::epoch::{BytesPerEpoch, CreditsPerEpoch};
 use crate::fee::Credits;
@@ -13,6 +11,7 @@ use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 
 use platform_value::Identifier;
+use platform_version::version::fee::FeeVersion;
 use serde::{Deserialize, Serialize};
 use std::collections::btree_map::Iter;
 use std::collections::BTreeMap;
@@ -40,7 +39,7 @@ impl FeeRefunds {
         storage_removal: I,
         current_epoch_index: EpochIndex,
         epochs_per_era: u16,
-        previous_fee_versions: &CachedEpochIndexFeeVersions,
+        fee_version: &FeeVersion,
     ) -> Result<Self, ProtocolError>
     where
         I: IntoIterator<Item = ([u8; 32], C)>,
@@ -59,7 +58,7 @@ impl FeeRefunds {
                         // TODO Add in multipliers once they have been made
 
                         let credits: Credits = (bytes as Credits)
-                            .checked_mul(Epoch::new(current_epoch_index)?.cost_for_known_cost_item(previous_fee_versions, StorageDiskUsageCreditPerByte))
+                            .checked_mul(fee_version.storage.storage_disk_usage_credit_per_byte)
                             .ok_or(ProtocolError::Overflow("storage written bytes cost overflow"))?;
 
                         let (amount, _) = calculate_storage_fee_refund_amount_and_leftovers(
@@ -178,11 +177,6 @@ impl IntoIterator for FeeRefunds {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use once_cell::sync::Lazy;
-    use platform_version::version::fee::FeeVersion;
-
-    static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
-        Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
 
     mod from_storage_removal {
         use super::*;
@@ -197,18 +191,46 @@ mod tests {
             let storage_removal =
                 BytesPerEpochByIdentifier::from_iter([(identity_id, bytes_per_epoch)]);
 
-            let fee_refunds = FeeRefunds::from_storage_removal(
-                storage_removal,
-                3,
-                20,
-                &EPOCH_CHANGE_FEE_VERSION_TEST,
-            )
-            .expect("should create fee refunds");
+            let fee_refunds =
+                FeeRefunds::from_storage_removal(storage_removal, 3, 20, FeeVersion::first())
+                    .expect("should create fee refunds");
 
             let credits_per_epoch = fee_refunds.get(&identity_id).expect("should exists");
 
             assert!(credits_per_epoch.get(&0).is_none());
             assert!(credits_per_epoch.get(&1).is_some());
+        }
+
+        #[test]
+        fn should_price_refunds_at_the_storage_rate_of_the_given_schedule() {
+            let identity_id = [0; 32];
+            let refund_at = |fee_version: &FeeVersion| {
+                let bytes_per_epoch = IntMap::from_iter([(1, 100)]);
+                let storage_removal =
+                    BytesPerEpochByIdentifier::from_iter([(identity_id, bytes_per_epoch)]);
+
+                FeeRefunds::from_storage_removal(storage_removal, 3, 20, fee_version)
+                    .expect("should create fee refunds")
+                    .get(&identity_id)
+                    .expect("should exist")
+                    .get(&1)
+                    .copied()
+                    .expect("should exist")
+            };
+            let expected_refund_at = |rate: Credits| {
+                calculate_storage_fee_refund_amount_and_leftovers(100 * rate, 1, 3, 20)
+                    .expect("should calculate the refund")
+                    .0
+            };
+
+            let schedule = FeeVersion::first();
+            let rate = schedule.storage.storage_disk_usage_credit_per_byte;
+            let mut doubled_schedule = schedule.clone();
+            doubled_schedule.storage.storage_disk_usage_credit_per_byte = 2 * rate;
+
+            assert_eq!(refund_at(schedule), expected_refund_at(rate));
+            assert_eq!(refund_at(&doubled_schedule), expected_refund_at(2 * rate));
+            assert!(refund_at(&doubled_schedule) > refund_at(schedule));
         }
     }
 }

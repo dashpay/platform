@@ -14,7 +14,6 @@ use dpp::version::PlatformVersion;
 use crate::util::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 
 impl Drive {
     /// Applies a list of high level DriveOperations to the drive, and calculates the fee for them.
@@ -41,7 +40,6 @@ impl Drive {
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         if operations.is_empty() {
             return Ok(FeeResult::default());
@@ -113,7 +111,6 @@ impl Drive {
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
-            previous_fee_versions,
         )
     }
 }

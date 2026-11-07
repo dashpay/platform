@@ -13,8 +13,6 @@ use dpp::prelude::Revision;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-
 impl Drive {
     /// Update revision for specific identity
     #[inline(always)]
@@ -27,7 +25,6 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
@@ -53,7 +50,6 @@ impl Drive {
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
-            previous_fee_versions,
         )?;
 
         Ok(fees)

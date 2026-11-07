@@ -39,7 +39,6 @@ pub(crate) fn fetch_contender(
         &block_info.epoch,
         drive.config.epochs_per_era,
         platform_version,
-        None,
     )?;
     match result.contenders.pop() {
         None => Ok((None, fee)),

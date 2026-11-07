@@ -149,7 +149,6 @@ pub fn consume_to_fees_v0(
     epoch: &Epoch,
     epochs_per_era: u16,
     fee_version: &FeeVersion,
-    previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
 ) -> Result<Vec<FeeResult>, Error> {
     drive_operations.into_iter().map(|operation| match operation {
         PreCalculatedFeeResult(f) => Ok(f),
@@ -180,7 +179,7 @@ pub fn consume_to_fees_v0(
                             removal_per_epoch_by_identifier,
                             epoch.index,
                             epochs_per_era,
-                            previous_fee_versions,
+                            fee_version,
                         )?, system_amount)
                     }
                 };

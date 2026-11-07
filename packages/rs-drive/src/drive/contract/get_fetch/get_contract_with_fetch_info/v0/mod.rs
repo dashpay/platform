@@ -100,7 +100,6 @@ impl Drive {
                 epoch,
                 self.config.epochs_per_era,
                 platform_version,
-                None,
             )
             .map(Some)
         })?;
@@ -171,7 +170,6 @@ impl Drive {
                             epoch,
                             self.config.epochs_per_era,
                             platform_version,
-                            None,
                         )?;
 
                         if add_to_cache_if_pulled {

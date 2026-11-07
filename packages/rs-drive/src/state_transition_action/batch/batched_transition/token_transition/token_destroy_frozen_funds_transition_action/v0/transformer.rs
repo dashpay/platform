@@ -96,7 +96,6 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
             &block_info.epoch,
             drive.config.epochs_per_era,
             platform_version,
-            None,
         )?;
 
         let Some(token_amount) = maybe_token_amount else {
@@ -243,7 +242,6 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
             &block_info.epoch,
             drive.config.epochs_per_era,
             platform_version,
-            None,
         )?;
 
         let Some(token_amount) = maybe_token_amount else {

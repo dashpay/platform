@@ -79,7 +79,6 @@ impl TokenTransferTransitionActionV0 {
             &block_info.epoch,
             drive.config.epochs_per_era,
             platform_version,
-            None,
         )?;
 
         // Return the TokenTransferTransitionActionV0 with the relevant data
@@ -163,7 +162,6 @@ impl TokenTransferTransitionActionV0 {
             &block_info.epoch,
             drive.config.epochs_per_era,
             platform_version,
-            None,
         )?;
 
         // Return the TokenTransferTransitionActionV0 with the relevant data

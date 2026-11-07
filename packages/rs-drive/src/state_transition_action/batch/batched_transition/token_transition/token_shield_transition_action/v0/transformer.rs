@@ -67,7 +67,6 @@ impl TokenShieldTransitionActionV0 {
             &block_info.epoch,
             drive.config.epochs_per_era,
             platform_version,
-            None,
         )?;
 
         // Shielded token transitions carry no public note to change.

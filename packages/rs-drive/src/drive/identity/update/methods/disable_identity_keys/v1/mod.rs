@@ -61,7 +61,6 @@ impl Drive {
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
-            None, // TODO: Does disable mean delete? Check if previous_fee_versions are required in this case
         )?;
 
         Ok(fees)

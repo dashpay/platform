@@ -253,7 +253,6 @@ mod tests {
                 &Epoch::new(0).unwrap(),
                 drive.config.epochs_per_era,
                 platform_version,
-                None,
             )
             .expect("expected fee result");
 
@@ -853,7 +852,6 @@ mod tests {
                     apply,
                     Some(&db_transaction),
                     platform_version,
-                    None,
                 )
                 .expect("should update revision");
 

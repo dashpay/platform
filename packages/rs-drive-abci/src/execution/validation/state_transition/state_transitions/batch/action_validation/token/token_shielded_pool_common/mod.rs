@@ -101,7 +101,6 @@ pub(crate) fn charge_drive_operations(
         &block_info.epoch,
         drive.config.epochs_per_era,
         platform_version,
-        None,
     )?;
     execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
     Ok(())

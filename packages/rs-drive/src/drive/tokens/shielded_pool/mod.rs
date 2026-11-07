@@ -260,7 +260,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("add token balance");
 
@@ -758,7 +757,6 @@ mod tests {
                 &BlockInfo::default().epoch,
                 drive.config.epochs_per_era,
                 platform_version,
-                None,
             )
             .expect("price the metered operations")
             .processing_fee;

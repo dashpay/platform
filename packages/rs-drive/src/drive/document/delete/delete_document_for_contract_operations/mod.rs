@@ -275,7 +275,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to store the document");
 
@@ -342,7 +341,6 @@ mod tests {
             &Epoch::new(0).expect("expected epoch 0"),
             drive.config.epochs_per_era,
             platform_version,
-            None,
         )
         .expect("expected the fee")
     }

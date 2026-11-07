@@ -98,7 +98,6 @@ impl TokenDirectPurchaseTransitionActionV0 {
             &block_info.epoch,
             drive.config.epochs_per_era,
             platform_version,
-            None,
         )?;
 
         // We can not change the note on a direct purchase

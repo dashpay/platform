@@ -35,20 +35,14 @@ use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::platform_value::{platform_value, Value};
 use dpp::tests::fixtures::get_data_contract_fixture;
-use dpp::version::fee::FeeVersion;
 use dpp::version::PlatformVersion;
 use grovedb::Element;
-use once_cell::sync::Lazy;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-
-static FEE_VERSIONS: Lazy<CachedEpochIndexFeeVersions> =
-    Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
 
 const POST: &str = "post";
 
@@ -200,7 +194,6 @@ fn apply(drive: &Drive, operations: Vec<DriveOperation>, apply: bool) -> FeeResu
             &BlockInfo::default_with_epoch(Epoch::new(3).expect("epoch")),
             None,
             PlatformVersion::latest(),
-            Some(&FEE_VERSIONS),
         )
         .expect("expected to apply the operations")
 }
@@ -306,7 +299,6 @@ fn should_create_the_removal_tree_of_a_document_type_an_update_adds() {
             false,
             None,
             platform_version,
-            Some(&FEE_VERSIONS),
         )
         .expect("expected to estimate the update");
     let applied = drive
@@ -316,7 +308,6 @@ fn should_create_the_removal_tree_of_a_document_type_an_update_adds() {
             true,
             None,
             platform_version,
-            Some(&FEE_VERSIONS),
         )
         .expect("expected to update the contract");
     assert!(estimated.storage_fee >= applied.storage_fee);
@@ -352,7 +343,6 @@ fn should_create_the_removals_tree_with_the_first_document_type_an_update_adds()
             true,
             None,
             platform_version,
-            Some(&FEE_VERSIONS),
         )
         .expect("expected to update the contract");
     assert!(has_removals_root(&drive, contract.id()));
@@ -902,7 +892,6 @@ fn add_post(drive: &Drive, contract: &DataContract, owner_id: Identifier) -> Doc
             true,
             None,
             platform_version,
-            None,
         )
         .expect("expected to add the post");
     document
@@ -1263,7 +1252,6 @@ fn should_delete_for_a_moderator_a_document_its_owner_can_not_delete() {
             &BlockInfo::default(),
             None,
             platform_version,
-            Some(&FEE_VERSIONS),
         )
         .expect_err("expected the owner's deletion to be refused");
 

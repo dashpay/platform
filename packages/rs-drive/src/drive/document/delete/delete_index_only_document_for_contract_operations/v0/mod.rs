@@ -27,7 +27,6 @@ use dpp::document::DocumentV0Getters;
 use dpp::version::PlatformVersion;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 
 impl Drive {
@@ -45,7 +44,6 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
@@ -86,7 +84,6 @@ impl Drive {
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
-            previous_fee_versions,
         )
     }
 

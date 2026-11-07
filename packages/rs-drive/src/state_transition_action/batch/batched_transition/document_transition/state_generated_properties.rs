@@ -86,7 +86,6 @@ pub(super) fn generate_state_read_properties(
                 &block_info.epoch,
                 drive.config.epochs_per_era,
                 platform_version,
-                None,
             )?)?;
             if calculate_token_id(token_contract_id.as_bytes(), position) != token_id.to_buffer() {
                 return Err(Error::Drive(DriveError::CorruptedDriveState(format!(

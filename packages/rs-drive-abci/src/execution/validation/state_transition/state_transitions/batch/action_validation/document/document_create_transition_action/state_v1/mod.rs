@@ -135,7 +135,6 @@ impl DocumentCreateTransitionActionStateValidationV1 for DocumentCreateTransitio
                 &block_info.epoch,
                 platform.drive.config.epochs_per_era,
                 platform_version,
-                None,
             )
             .map_err(Error::Drive)?;
             execution_context

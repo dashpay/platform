@@ -482,6 +482,12 @@ have elapsed since the data was stored — the longer the data has been stored, 
 smaller the refund, because more of the distributed fees have already been paid
 out to proposers.
 
+A refund is priced at the storage rate of the schedule of the block that removes
+the bytes. Every schedule has had the same rate so far, so that is also the rate
+the bytes were paid at. A schedule that changes the rate fails
+`should_keep_one_storage_rate_on_every_protocol_version` and has to make refunds
+use the storing epoch's rate first.
+
 There is a **dust limit**: refunds below 32 bytes worth of storage credits are
 discarded to prevent micro-refund spam.
 

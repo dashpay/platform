@@ -33,7 +33,6 @@ impl Drive {
             epoch,
             self.config.epochs_per_era,
             platform_version,
-            None,
         )?;
         Ok((maybe_identity, fee))
     }

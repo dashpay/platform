@@ -93,7 +93,6 @@ impl ShieldFromIdentityStateTransitionTransformIntoActionValidationV0
             &block_info.epoch,
             drive.config.epochs_per_era,
             platform_version,
-            None,
         )?;
         execution_context
             .add_operation(ValidationOperation::PrecalculatedOperation(state_read_fee));

@@ -347,7 +347,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
     }
@@ -574,7 +573,6 @@ mod tests {
                 false,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to apply contract successfully");
     }
@@ -651,7 +649,6 @@ mod tests {
                 true,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("should update contract");
 
@@ -979,7 +976,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -1030,7 +1026,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("should update contract with new document type");
 
@@ -1214,7 +1209,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("should update contract with history");
 
@@ -1813,8 +1807,7 @@ mod tests {
             .expect("should set document schema");
         contract.increment_version();
 
-        let result =
-            drive.update_contract(&contract, block_info, true, None, platform_version, None);
+        let result = drive.update_contract(&contract, block_info, true, None, platform_version);
 
         assert!(
             matches!(
@@ -2077,7 +2070,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2119,7 +2111,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2163,7 +2154,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2209,7 +2199,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2296,7 +2285,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2387,7 +2375,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2807,7 +2794,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2847,7 +2833,6 @@ mod tests {
                 false,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected update_contract(apply=false) to succeed via insert delegation");
 

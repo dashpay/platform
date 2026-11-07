@@ -474,7 +474,6 @@ fn read_aggregates(
         &block_info.epoch,
         drive.config.epochs_per_era,
         platform_version,
-        None,
     )?;
     execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
     Ok(aggregates)

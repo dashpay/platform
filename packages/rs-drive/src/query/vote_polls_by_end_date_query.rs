@@ -383,7 +383,6 @@ impl VotePollsByEndDateDriveQuery {
                 &block_info.epoch,
                 drive.config.epochs_per_era,
                 platform_version,
-                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -428,7 +427,6 @@ impl VotePollsByEndDateDriveQuery {
                 &block_info.epoch,
                 drive.config.epochs_per_era,
                 platform_version,
-                None,
             )?;
             fee_result.processing_fee
         } else {

@@ -3,7 +3,6 @@ use grovedb_costs::storage_cost::removal::Identifier;
 use grovedb_costs::storage_cost::removal::StorageRemovedBytes::{
     BasicStorageRemoval, NoStorageRemoval, SectionedStorageRemoval,
 };
-use std::collections::BTreeMap;
 
 use enum_map::Enum;
 use grovedb::batch::key_info::KeyInfo;
@@ -32,7 +31,6 @@ use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::grove_operations::pending_grove_operations::count_copied_pending_grove_operations;
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::refunds::FeeRefunds;
 use dpp::fee::fee_result::{FeeResult, LifetimeStorageFees};
 use dpp::fee::Credits;
@@ -318,7 +316,6 @@ impl LowLevelDriveOperation {
         epoch: &Epoch,
         epochs_per_era: u16,
         fee_version: &FeeVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<Vec<FeeResult>, Error> {
         drive_operations
             .into_iter()
@@ -328,10 +325,13 @@ impl LowLevelDriveOperation {
                     processing_fee: op.cost(fee_version),
                     ..Default::default()
                 }),
-                CalculatedEphemeralCostOperation(cost, EphemeralPricing::DocumentTtl {
-                    credit_per_byte,
-                    lifetime_epochs,
-                }) => {
+                CalculatedEphemeralCostOperation(
+                    cost,
+                    EphemeralPricing::DocumentTtl {
+                        credit_per_byte,
+                        lifetime_epochs,
+                    },
+                ) => {
                     // The writes of a document whose type declares a `ttl`:
                     // each added byte costs the price of the document's
                     // remaining lifetime, as a storage fee the pools pay
@@ -376,11 +376,7 @@ impl LowLevelDriveOperation {
                     // construction: TTL elements carry no storage flags,
                     // so their removal can only ever be basic.
                     let ephemeral_bytes_fee = (cost.storage_cost.added_bytes as u64)
-                        .checked_mul(
-                            fee_version
-                                .storage
-                                .ttl_ephemeral_disk_usage_credit_per_byte,
-                        )
+                        .checked_mul(fee_version.storage.ttl_ephemeral_disk_usage_credit_per_byte)
                         .ok_or(Error::Fee(FeeError::Overflow(
                             "overflow pricing ephemeral bytes",
                         )))?;
@@ -412,7 +408,8 @@ impl LowLevelDriveOperation {
                     let cost = operation.operation_cost()?;
                     // There is no need for a checked multiply here because added bytes are u64 and
                     // storage disk usage credit per byte should never be high enough to cause an overflow
-                    let storage_fee = cost.storage_cost.added_bytes as u64 * fee_version.storage.storage_disk_usage_credit_per_byte;
+                    let storage_fee = cost.storage_cost.added_bytes as u64
+                        * fee_version.storage.storage_disk_usage_credit_per_byte;
                     let processing_fee = cost.ephemeral_cost(fee_version)?;
                     let (fee_refunds, removed_bytes_from_system) =
                         match cost.storage_cost.removed_bytes {
@@ -422,32 +419,23 @@ impl LowLevelDriveOperation {
                                 (FeeRefunds::default(), amount)
                             }
                             SectionedStorageRemoval(mut removal_per_epoch_by_identifier) => {
-
                                 let system_amount = removal_per_epoch_by_identifier
                                     .remove(&Identifier::default())
                                     .map_or(0, |a| a.values().sum());
-                                if fee_version.fee_version_number == 1 {
-                                    (
-                                        FeeRefunds::from_storage_removal(
-                                            removal_per_epoch_by_identifier,
-                                            epoch.index,
-                                            epochs_per_era,
-                                            &BTreeMap::default(),
-                                        )?,
-                                        system_amount,
-                                    )
-                                } else {
-                                    let previous_fee_versions = previous_fee_versions.ok_or(Error::Drive(DriveError::CorruptedCodeExecution("expected previous epoch index fee versions to be able to offer refunds")))?;
-                                    (
-                                        FeeRefunds::from_storage_removal(
-                                            removal_per_epoch_by_identifier,
-                                            epoch.index,
-                                            epochs_per_era,
-                                            previous_fee_versions,
-                                        )?,
-                                        system_amount,
-                                    )
-                                }
+                                // Every shipped schedule has the same storage rate and this arm
+                                // used to price all of them against the first one, so reading it
+                                // from the block's schedule changes no refund at any protocol
+                                // version. `should_keep_one_storage_rate_on_every_protocol_version`
+                                // fails if a schedule ever changes the rate.
+                                (
+                                    FeeRefunds::from_storage_removal(
+                                        removal_per_epoch_by_identifier,
+                                        epoch.index,
+                                        epochs_per_era,
+                                        fee_version,
+                                    )?,
+                                    system_amount,
+                                )
                             }
                         };
                     Ok(FeeResult {

@@ -85,7 +85,6 @@ impl TokenConfigUpdateTransitionActionV0 {
             &block_info.epoch,
             drive.config.epochs_per_era,
             platform_version,
-            None,
         )?;
 
         let (base_action, change_note) = match base_action_validation_result.is_valid() {
@@ -194,7 +193,6 @@ impl TokenConfigUpdateTransitionActionV0 {
             &block_info.epoch,
             drive.config.epochs_per_era,
             platform_version,
-            None,
         )?;
 
         let (base_action, change_note) = match base_action_validation_result.is_valid() {

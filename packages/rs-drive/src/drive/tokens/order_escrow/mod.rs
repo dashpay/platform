@@ -440,7 +440,6 @@ mod tests {
                 &BlockInfo::default().epoch,
                 drive.config.epochs_per_era,
                 platform_version,
-                None,
             )
             .unwrap_or_else(|error| panic!("{name}: expected a fee: {error:?}"));
             assert!(
@@ -719,7 +718,6 @@ mod tests {
                 &BlockInfo::default().epoch,
                 drive.config.epochs_per_era,
                 platform_version,
-                None,
             )
             .expect("expected a fee")
         };
@@ -1087,7 +1085,6 @@ mod tests {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("expected to store the listing");
         }

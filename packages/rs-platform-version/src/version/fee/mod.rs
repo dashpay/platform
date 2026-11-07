@@ -46,13 +46,13 @@ pub type FeeVersionNumber = u32;
 /// number up by that position, which is correct exactly while this holds, so a new entry is
 /// appended with the next number and never skips or reuses one.
 ///
-/// A new number is needed only when a value the fee history serves changes (the storage,
-/// processing, hashing or signature costs), because saved state keeps only the number and
-/// reloads the entry registered here. Schedules that change other groups keep the previous
-/// number, which is why `FEE_VERSION2` to `FEE_VERSION4` all carry 1 and are not listed.
-/// Registering different storage rates also requires refunds priced at the rate active when the
-/// bytes were stored; `calculate_fee` generation 0 prices them at the removal epoch's rate
-/// (dashpay/platform#4703 has a version of that rule).
+/// Saved state keeps only the number and reloads the entry registered here, and block execution
+/// does not read what it reloads. A new number is needed only for a schedule that changes the
+/// storage rate, which also requires refunds priced at the rate active when the bytes were
+/// stored: they are priced at the rate of the block that removes the bytes, and
+/// `should_keep_one_storage_rate_on_every_protocol_version` fails on such a schedule
+/// (dashpay/platform#4703 has a version of that rule). Other schedules keep the previous number,
+/// which is why `FEE_VERSION2` to `FEE_VERSION4` all carry 1 and are not listed.
 pub const FEE_VERSIONS: &[FeeVersion] = &[FEE_VERSION1];
 
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
@@ -181,6 +181,35 @@ impl From<FeeVersionFieldsBeforeVersion4> for FeeVersion {
             document_ttl: FEE_DOCUMENT_TTL_VERSION1,
             // Nor do they parse `chooseFirst`; the group is unread there too.
             document_reference: FEE_DOCUMENT_REFERENCE_VERSION1,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::version::PLATFORM_VERSIONS;
+
+    /// A refund is priced at the storage rate of the block that removes the bytes, while the
+    /// owner paid the rate of the epoch that stored them. Those two only agree while the rate
+    /// never changes. A schedule that changes it has to make refunds use the storing epoch's rate
+    /// first; platform state keeps which fee version each epoch ran on for that.
+    #[test]
+    fn should_keep_one_storage_rate_on_every_protocol_version() {
+        let rate = FeeVersion::first()
+            .storage
+            .storage_disk_usage_credit_per_byte;
+
+        for platform_version in PLATFORM_VERSIONS {
+            assert_eq!(
+                platform_version
+                    .fee_version
+                    .storage
+                    .storage_disk_usage_credit_per_byte,
+                rate,
+                "protocol version {} changes the storage rate",
+                platform_version.protocol_version
+            );
         }
     }
 }

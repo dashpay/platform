@@ -3758,7 +3758,6 @@ impl<'a> DriveDocumentQuery<'a> {
                 &block_info.epoch,
                 drive.config.epochs_per_era,
                 platform_version,
-                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -3815,7 +3814,6 @@ impl<'a> DriveDocumentQuery<'a> {
                 &block_info.epoch,
                 drive.config.epochs_per_era,
                 platform_version,
-                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -3874,7 +3872,6 @@ impl<'a> DriveDocumentQuery<'a> {
                 &block_info.epoch,
                 drive.config.epochs_per_era,
                 platform_version,
-                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -5676,7 +5673,6 @@ mod tests {
                             true,
                             None,
                             platform_version,
-                            None,
                         )
                         .expect("expected to insert a tip");
                     tip.id()

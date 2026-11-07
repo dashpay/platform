@@ -30,7 +30,6 @@ use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identifier::Identifier;
@@ -38,12 +37,8 @@ use dpp::platform_value::{platform_value, Value};
 use dpp::tests::fixtures::get_data_contract_fixture;
 use dpp::version::fee::FeeVersion;
 use dpp::version::PlatformVersion;
-use once_cell::sync::Lazy;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
-
-static FEE_VERSIONS: Lazy<CachedEpochIndexFeeVersions> =
-    Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
 
 const POST: &str = "post";
 
@@ -207,7 +202,6 @@ fn apply(drive: &Drive, operations: Vec<DriveOperation>, apply: bool) -> FeeResu
             &BlockInfo::default_with_epoch(Epoch::new(3).expect("epoch")),
             None,
             PlatformVersion::latest(),
-            Some(&FEE_VERSIONS),
         )
         .expect("expected to apply the operations")
 }
@@ -726,7 +720,6 @@ fn add_post(drive: &Drive, contract: &DataContract, owner_id: Identifier) -> Doc
             true,
             None,
             platform_version,
-            None,
         )
         .expect("expected to add the post");
     document

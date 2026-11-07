@@ -14,7 +14,6 @@ use dpp::fee::fee_result::FeeResult;
 use crate::error::contract::DataContractError;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
 
@@ -50,7 +49,6 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         if !apply {
             return self.insert_contract(
@@ -133,7 +131,6 @@ impl Drive {
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
-            previous_fee_versions,
         )
     }
 
@@ -353,7 +350,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("update adding tokens should succeed");
     }
@@ -397,7 +393,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("update adding groups should succeed");
     }
@@ -460,7 +455,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("update keyword delta via update_contract should succeed");
     }
@@ -573,7 +567,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("clearing keywords via update_contract should succeed");
 
@@ -639,7 +632,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("update description via update_contract should succeed");
     }

@@ -142,7 +142,6 @@ impl DocumentIndexOnlyDeleteTransitionActionStateValidationV0
             &block_info.epoch,
             platform.drive.config.epochs_per_era,
             platform_version,
-            None,
         )
         .map_err(Error::Drive)?;
         execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));

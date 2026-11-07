@@ -163,7 +163,6 @@ impl TokenClaimTransitionActionV0 {
             &block_info.epoch,
             drive.config.epochs_per_era,
             platform_version,
-            None,
         )?;
 
         // We can not change the note on a claim
@@ -303,7 +302,6 @@ pub(crate) fn resolve_token_claim(
                 &block_info.epoch,
                 drive.config.epochs_per_era,
                 platform_version,
-                None,
             )?;
 
             fee_result.checked_add_assign(last_paid_time_fee_result)?;
@@ -426,7 +424,6 @@ pub(crate) fn resolve_token_claim(
                 &block_info.epoch,
                 drive.config.epochs_per_era,
                 platform_version,
-                None,
             )?;
 
             fee_result.checked_add_assign(last_paid_time_fee_result)?;
@@ -594,7 +591,6 @@ pub(crate) fn resolve_token_claim(
                 &block_info.epoch,
                 drive.config.epochs_per_era,
                 platform_version,
-                None,
             )?)?;
             if let Some(claimed_at_ms) = already_claimed_at {
                 return Ok(Err(

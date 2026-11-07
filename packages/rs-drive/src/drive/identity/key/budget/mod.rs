@@ -301,7 +301,6 @@ mod tests {
             &block().epoch,
             drive.config.epochs_per_era,
             platform_version,
-            None,
         )
         .expect("expected a fee");
         assert_eq!(fee.storage_fee, 0);

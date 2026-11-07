@@ -342,7 +342,6 @@ fn insert_claim(platform: &TempPlatform<MockCoreRPCLike>) {
             true,
             None,
             pv,
-            None,
         )
         .expect("persist legacy claim and indexes");
 }
