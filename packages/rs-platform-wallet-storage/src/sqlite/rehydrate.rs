@@ -256,11 +256,11 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///
 /// - **Deep-index address visibility**: a stored address no funds pool
 ///   holds after the marking rounds, a coin's, or a used one's unless its
-///   row names a non-funds account kind (a provider key, say: reported at
-///   [`LoadSite::OrphanedUtxoOwner`] only), is looked for in every funds
-///   account past each pool: through one index past what the pool holds, and one past a
-///   `gap_limit` beyond each address found, up to
-///   [`MAX_REHYDRATION_DERIVATION_INDEX`]
+///   row names a known non-funds account kind (a DashPay contact's or a
+///   provider key's: reported at [`LoadSite::OrphanedUtxoOwner`] only), is
+///   looked for in every funds account past each pool: through one index
+///   past what the pool holds, and one past a `gap_limit` beyond each
+///   address found, up to [`MAX_REHYDRATION_DERIVATION_INDEX`]
 ///   ([`discover_in_funds_accounts`]); what that derives is marked, refilled
 ///   and matched again, the refills carrying on past that index from each
 ///   stored address within a gap of the last. An address can still be left
@@ -393,12 +393,12 @@ pub fn apply_persisted_core_state(
         }
 
         // Degraded in BOTH policies, never fatal. An owner absent from the
-        // funds accounts is not necessarily corruption: provider accounts are
-        // first-class in the schema yet sit on a non-secp256k1 curve, so they
-        // are not `ManagedCoreFundsAccount` and a used provider-owned address
-        // has no funds account to route to. Telling that apart needs an
-        // upstream `key-wallet` enumerator over every account kind; until then,
-        // failing here would brick a masternode-operator wallet.
+        // funds accounts is not necessarily corruption: a DashPay contact's
+        // account or a provider key account owns addresses no funds account
+        // derives, and failing here would brick such a wallet. Those owners
+        // are recognised by their label (below, `placeable_used`); they stay
+        // at this site because it also carries store drift, a funds account
+        // the rows name and this wallet lacks.
         if !orphaned_owners.is_empty() {
             ctx.note_degraded(
                 LoadSite::OrphanedUtxoOwner,
@@ -409,8 +409,10 @@ pub fn apply_persisted_core_state(
                     detail: None,
                 },
                 "restored UTXOs or used addresses name owning accounts that are not funds \
-                 accounts of this wallet; they are placed in the funds account that derives \
-                 their address, or in the first one when the bounded search finds none",
+                 accounts of this wallet; such coins are placed in the funds account that \
+                 derives their address, or in the first one when the bounded search finds \
+                 none; used addresses of a non-funds account have no funds account to mark \
+                 them in",
             );
         }
 
@@ -445,6 +447,20 @@ pub fn apply_persisted_core_state(
             ctx,
             &mut refused,
         )?;
+        // The used addresses a funds account may derive: not those whose row
+        // names a known non-funds kind (a DashPay contact's or a provider
+        // key's), which no funds account derives and which are reported as
+        // orphaned owners above. An ownerless one stays, as does one whose
+        // owner label is unknown or names a funds kind this wallet lacks
+        // (store drift): only derivation can place them.
+        let placeable_used: Vec<&key_wallet::Address> = (used_pool_addresses.iter())
+            .filter(|(_, owner)| {
+                owner
+                    .as_ref()
+                    .is_none_or(|owner| !accounts::is_non_funds_account_label(&owner.account_type))
+            })
+            .map(|(address, _)| address)
+            .collect();
         // Addresses still outside every funds pool, a coin's or a used one's,
         // are looked for past each pool as a rescan would reach them, and
         // whatever that derives is marked and refilled. Every coin is then
@@ -462,19 +478,6 @@ pub fn apply_persisted_core_state(
         // rounds carry on from the refill past the deepest find, as a rescan
         // would. A restore that already failed would only fail, and be
         // reported, again.
-        // The used addresses a funds account may derive: not those whose row
-        // names a non-funds kind (a provider key, say), which no funds
-        // account derives and which are reported as orphaned owners above. An
-        // ownerless one stays, as does one whose owner is a funds kind this
-        // wallet lacks (store drift): only derivation can place them.
-        let placeable_used: Vec<&key_wallet::Address> = (used_pool_addresses.iter())
-            .filter(|(_, owner)| {
-                owner
-                    .as_ref()
-                    .is_none_or(|owner| accounts::is_funds_account_label(&owner.account_type))
-            })
-            .map(|(address, _)| address)
-            .collect();
         if restorable {
             let mut outside = outside_funds_pools(
                 wallet_info,
@@ -5272,6 +5275,45 @@ mod tests {
             assert!(used_in(&info, &bip44(), &drift));
             assert_eq!(holders(&info, &coin.outpoint), vec![cj()]);
             assert_eq!(info.balance.total(), VALUE);
+        }
+
+        /// A used address whose owner label names no kind this build knows
+        /// is looked for as an ownerless one is: found one past the pool of
+        /// the account that derives it, and marked used there.
+        #[test]
+        fn a_used_address_with_an_unknown_owner_label_is_still_looked_for() {
+            let (wallet, manifest) = fixture(49);
+            let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+            let window = external_pool(&info, &bip44()).highest_generated.unwrap();
+            let address = external_address(&wallet, &bip44(), window + 1);
+            let unknown = OwningAccount {
+                account_type: "a_future_kind".to_string(),
+                ..owner(&wallet, &bip44())
+            };
+            let used = HashMap::from([(address.clone(), Some(unknown))]);
+            let ctx = LoadCtx::strict();
+            load_into(
+                &mut info,
+                &manifest,
+                Vec::new(),
+                &HashMap::new(),
+                &used,
+                &ctx,
+            )
+            .unwrap();
+
+            let sites = &ctx.degradation().by_site;
+            assert_eq!(
+                sites.get(&LoadSite::OrphanedUtxoOwner),
+                Some(&1),
+                "{sites:?}"
+            );
+            assert_eq!(
+                sites.get(&LoadSite::UnresolvedUtxoAddress),
+                None,
+                "{sites:?}"
+            );
+            assert!(used_in(&info, &bip44(), &address));
         }
     }
 }
