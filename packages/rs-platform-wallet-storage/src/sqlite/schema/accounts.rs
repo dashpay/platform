@@ -747,6 +747,16 @@ pub(crate) fn is_non_funds_account_label(label: &str) -> bool {
     NON_FUNDS_ACCOUNT_LABELS.contains(&label)
 }
 
+/// Whether a used address whose stored owner carries `label` is left out of
+/// discovery: its kind holds no funds and derives no script a funds account
+/// derives. A DashPay external account is not one: its xpub is the contact's,
+/// which can equal one of this wallet's own receiving xpubs (two of its
+/// identities that are each other's contacts, a self-contact, or a contact
+/// that sends back our xpub for it).
+pub(crate) fn is_unplaceable_owner_label(label: &str) -> bool {
+    label != "dashpay_external" && is_non_funds_account_label(label)
+}
+
 /// Numeric account index embedded in an `AccountType`, persisted in the
 /// `account_registrations.account_index` column.
 pub(crate) fn account_index(at: &key_wallet::account::AccountType) -> u32 {

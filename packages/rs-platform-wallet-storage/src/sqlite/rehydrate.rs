@@ -256,8 +256,9 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///
 /// - **Deep-index address visibility**: a stored address no funds pool
 ///   holds after the marking rounds, a coin's, or a used one's unless its
-///   row names a known non-funds account kind (a DashPay contact's or a
-///   provider key's: reported at [`LoadSite::OrphanedUtxoOwner`] only), is
+///   row names a kind that derives no funds account's script (an identity,
+///   provider key, asset-lock or Platform payment account's: reported at
+///   [`LoadSite::OrphanedUtxoOwner`] only), is
 ///   looked for in every funds account past each pool: through one index
 ///   past what the pool holds, and one past a `gap_limit` beyond each
 ///   address found, up to [`MAX_REHYDRATION_DERIVATION_INDEX`]
@@ -394,11 +395,11 @@ pub fn apply_persisted_core_state(
 
         // Degraded in BOTH policies, never fatal. An owner absent from the
         // funds accounts is not necessarily corruption: a DashPay contact's
-        // account or a provider key account owns addresses no funds account
-        // derives, and failing here would brick such a wallet. Those owners
-        // are recognised by their label (below, `placeable_used`); they stay
-        // at this site because it also carries store drift, a funds account
-        // the rows name and this wallet lacks.
+        // account or a provider key account owns addresses, and failing here
+        // would brick such a wallet. The kinds that derive no funds
+        // account's script are recognised by their label (below,
+        // `placeable_used`); they stay at this site because it also carries
+        // store drift, a funds account the rows name and this wallet lacks.
         if !orphaned_owners.is_empty() {
             ctx.note_degraded(
                 LoadSite::OrphanedUtxoOwner,
@@ -448,16 +449,18 @@ pub fn apply_persisted_core_state(
             &mut refused,
         )?;
         // The used addresses a funds account may derive: not those whose row
-        // names a known non-funds kind (a DashPay contact's or a provider
-        // key's), which no funds account derives and which are reported as
-        // orphaned owners above. An ownerless one stays, as does one whose
-        // owner label is unknown or names a funds kind this wallet lacks
-        // (store drift): only derivation can place them.
+        // names a kind that derives no funds account's script (an identity,
+        // provider key, asset-lock or Platform payment account), which are
+        // reported as orphaned owners above. An ownerless one stays, as does
+        // one whose owner label is unknown or names a funds kind this wallet
+        // lacks (store drift), and one a DashPay contact's account owns: a
+        // contact's xpub can be one of this wallet's receiving xpubs, so a
+        // receiving pool may derive it. Only derivation can place them.
         let placeable_used: Vec<&key_wallet::Address> = (used_pool_addresses.iter())
             .filter(|(_, owner)| {
                 owner
                     .as_ref()
-                    .is_none_or(|owner| !accounts::is_non_funds_account_label(&owner.account_type))
+                    .is_none_or(|owner| !accounts::is_unplaceable_owner_label(&owner.account_type))
             })
             .map(|(address, _)| address)
             .collect();
