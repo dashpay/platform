@@ -2709,6 +2709,23 @@ mod tests {
                 "v3 must read the v2 {document_type_name} back unchanged"
             );
         }
+
+        // v3's new private type gets its store with the upgrade, as a contract update adding a
+        // private type creates one: 589-byte entries, 512 to a chunk.
+        assert_eq!(
+            platform
+                .drive
+                .private_document_store_chunk_power_taking_entries(
+                    SystemDataContract::Dashpay.id().as_bytes(),
+                    "privateContactRequest",
+                    589,
+                    None,
+                    platform_version_15,
+                )
+                .expect("expected to read the store"),
+            Some(9),
+            "the upgrade creates the privateContactRequest store"
+        );
     }
 
     // test_transition_to_version_9 removed: requires prior state from versions 4-8

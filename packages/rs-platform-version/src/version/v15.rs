@@ -483,7 +483,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     is refused unpaid either way. Protocol v14 and earlier keep `basic_structure` 0 and
 ///     `advanced_structure` 0 or 1.
 ///
-/// 24. **DashPay v3 states what its data triggers checked, and its ciphertexts' shape**:
+/// 24. **DashPay v3 states what its data triggers checked and its ciphertexts' shape, and adds
+///     private contact requests**:
 ///     `SYSTEM_DATA_CONTRACT_VERSIONS_V4` selects DashPay contract v3, loaded at
 ///     genesis and re-stored by `transition_to_version_15` (`apply_contract`, as the
 ///     upgrade to v2 did). A `contactRequest`'s `toUserId` refers to an identity
@@ -505,6 +506,14 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     profile create and replace triggers, which made the identity, writer and type byte
 ///     checks and refused with `DataTriggerConditionError` (40500). Protocol v14 keeps
 ///     DashPay v2 and bindings 2, and earlier versions the contract and bindings they had.
+///     DashPay v3 also declares `privateContactRequest`, a private type (note 13) of 589-byte
+///     entries whose properties describe a contact request only its recipient can read:
+///     `accountReference`, the DIP-15 compact `extendedPublicKey` (69 bytes), and the optional
+///     `accountLabel` (at most 63 bytes), `autoAcceptProof` (38 to 102) and `shieldedAddress`
+///     (43). At their largest they encode to 290 bytes, which with the private document
+///     envelope's 299 fill an entry. Genesis creates its store as a contract insert does, and
+///     `transition_to_version_15` as a contract update adding a private type does (note 13);
+///     only note 25's transition appends to it.
 ///
 /// 25. **Private document entries**: a new state transition,
 ///     `PrivateDocumentCreateFromShieldedPool` (type 29), appends entries to the store of a
