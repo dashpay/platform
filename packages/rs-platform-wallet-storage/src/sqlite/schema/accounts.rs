@@ -1331,7 +1331,8 @@ mod tests {
     /// The funds kinds are the kinds of key-wallet's funds accounts, on a
     /// wallet that also holds DashPay receiving and external accounts and an
     /// identity top-up account, and `NON_FUNDS_ACCOUNT_LABELS` names exactly
-    /// the other kinds.
+    /// the other kinds. An owner is unplaceable exactly when its kind is one
+    /// of those other than the DashPay external account.
     #[test]
     fn non_funds_labels_are_the_kinds_outside_the_funding_accounts() {
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
@@ -1393,6 +1394,27 @@ mod tests {
                 "{kind:?}"
             );
         }
+        let non_funds_kinds: HashSet<&str> = (all_account_type_variants().iter())
+            .filter(|kind| !is_funds_account_type(kind))
+            .map(account_type_db_label)
+            .collect();
+        let listed: HashSet<&str> = NON_FUNDS_ACCOUNT_LABELS.iter().copied().collect();
+        assert_eq!(
+            listed.len(),
+            NON_FUNDS_ACCOUNT_LABELS.len(),
+            "a label is listed twice"
+        );
+        assert_eq!(listed, non_funds_kinds);
+        for kind in all_account_type_variants() {
+            let contact = matches!(kind, AccountType::DashpayExternalAccount { .. });
+            assert_eq!(
+                is_unplaceable_owner_label(account_type_db_label(&kind)),
+                !is_funds_account_type(&kind) && !contact,
+                "{kind:?}"
+            );
+        }
+        assert!(!is_unplaceable_owner_label(LEGACY_STANDARD_LABEL));
+        assert!(!is_unplaceable_owner_label("unknown"));
         assert!(!is_non_funds_account_label(LEGACY_STANDARD_LABEL));
         assert!(!is_non_funds_account_label("unknown"));
     }
