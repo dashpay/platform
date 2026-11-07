@@ -78,11 +78,10 @@ impl Drive {
             self.commit_transaction(owned_transaction, &platform_version.drive)?;
         }
 
-        Drive::calculate_fee(
+        self.calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
-            self.config.epochs_per_era,
             platform_version,
         )
     }

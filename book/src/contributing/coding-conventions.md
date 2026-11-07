@@ -179,11 +179,9 @@ changing it. `FEE_VERSION1` and `FEE_VERSION2` both carry
 `fee_version_number: 1` because storage rates did not change between them, only
 a fee group did.
 
-A schedule must not change the storage rate on its own. Refunds are priced at
-the rate of the block that removes the bytes, which is right only while every
-schedule has the same rate, and
-`should_keep_one_storage_rate_on_every_protocol_version` fails otherwise. See
-the [Fee System Overview](../fees/overview.md).
+A schedule can change the storage rate without breaking refunds: from protocol
+version 15 a refund is priced at the rate of the protocol version that ran the
+epoch that stored the bytes. See the [Fee System Overview](../fees/overview.md).
 
 ### Consensus code reads the version from state
 

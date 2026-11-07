@@ -434,14 +434,14 @@ mod tests {
                     &platform_version.drive,
                 )
                 .unwrap_or_else(|error| panic!("{name}: expected to estimate: {error:?}"));
-            let fee = Drive::calculate_fee(
-                None,
-                Some(costs),
-                &BlockInfo::default().epoch,
-                drive.config.epochs_per_era,
-                platform_version,
-            )
-            .unwrap_or_else(|error| panic!("{name}: expected a fee: {error:?}"));
+            let fee = drive
+                .calculate_fee(
+                    None,
+                    Some(costs),
+                    &BlockInfo::default().epoch,
+                    platform_version,
+                )
+                .unwrap_or_else(|error| panic!("{name}: expected a fee: {error:?}"));
             assert!(
                 fee.processing_fee > 0,
                 "{name}: an estimated write costs something"
@@ -712,14 +712,14 @@ mod tests {
     ) -> (FeeResult, FeeResult) {
         let platform_version = PlatformVersion::latest();
         let fee = |costs: Vec<LowLevelDriveOperation>| {
-            Drive::calculate_fee(
-                None,
-                Some(costs),
-                &BlockInfo::default().epoch,
-                drive.config.epochs_per_era,
-                platform_version,
-            )
-            .expect("expected a fee")
+            drive
+                .calculate_fee(
+                    None,
+                    Some(costs),
+                    &BlockInfo::default().epoch,
+                    platform_version,
+                )
+                .expect("expected a fee")
         };
 
         let mut estimation = Some(EstimatedLayers::new());

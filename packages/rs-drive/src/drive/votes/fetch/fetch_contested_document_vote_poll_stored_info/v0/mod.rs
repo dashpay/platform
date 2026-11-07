@@ -38,15 +38,7 @@ impl Drive {
         )?;
 
         let fee_result = epoch
-            .map(|epoch| {
-                Drive::calculate_fee(
-                    None,
-                    Some(cost_operations),
-                    epoch,
-                    self.config.epochs_per_era,
-                    platform_version,
-                )
-            })
+            .map(|epoch| self.calculate_fee(None, Some(cost_operations), epoch, platform_version))
             .transpose()?;
         let Some(element) = maybe_element else {
             return Ok((fee_result, None));

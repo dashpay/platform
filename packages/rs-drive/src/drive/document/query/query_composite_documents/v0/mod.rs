@@ -33,14 +33,8 @@ impl Drive {
             platform_version,
         )?;
         let cost = if let Some(epoch) = epoch {
-            Drive::calculate_fee(
-                None,
-                Some(drive_operations),
-                epoch,
-                self.config.epochs_per_era,
-                platform_version,
-            )?
-            .processing_fee
+            self.calculate_fee(None, Some(drive_operations), epoch, platform_version)?
+                .processing_fee
         } else {
             0
         };

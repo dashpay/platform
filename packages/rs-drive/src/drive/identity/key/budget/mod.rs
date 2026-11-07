@@ -295,14 +295,14 @@ mod tests {
                 &platform_version.drive,
             )
             .expect("expected to apply");
-        let fee = Drive::calculate_fee(
-            None,
-            Some(applied_operations),
-            &block().epoch,
-            drive.config.epochs_per_era,
-            platform_version,
-        )
-        .expect("expected a fee");
+        let fee = drive
+            .calculate_fee(
+                None,
+                Some(applied_operations),
+                &block().epoch,
+                platform_version,
+            )
+            .expect("expected a fee");
         assert_eq!(fee.storage_fee, 0);
         assert!(fee.fee_refunds.0.is_empty());
     }

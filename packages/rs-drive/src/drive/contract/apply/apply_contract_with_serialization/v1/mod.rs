@@ -61,11 +61,10 @@ impl Drive {
         )?;
         cost_operations.push(CalculatedCostOperation(fetch_cost));
 
-        let fees = Drive::calculate_fee(
+        let fees = self.calculate_fee(
             None,
             Some(cost_operations),
             &block_info.epoch,
-            self.config.epochs_per_era,
             platform_version,
         )?;
         Ok(fees)

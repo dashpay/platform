@@ -279,11 +279,10 @@ impl Drive {
             }
         }
 
-        Drive::calculate_fee(
+        self.calculate_fee(
             None,
             Some(cost_operations),
             &block_info.epoch,
-            self.config.epochs_per_era,
             platform_version,
         )
     }

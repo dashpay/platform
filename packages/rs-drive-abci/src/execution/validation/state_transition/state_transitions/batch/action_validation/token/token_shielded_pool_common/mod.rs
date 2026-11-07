@@ -95,11 +95,10 @@ pub(crate) fn charge_drive_operations(
     if drive_operations.is_empty() {
         return Ok(());
     }
-    let fee_result = Drive::calculate_fee(
+    let fee_result = drive.calculate_fee(
         None,
         Some(drive_operations),
         &block_info.epoch,
-        drive.config.epochs_per_era,
         platform_version,
     )?;
     execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));

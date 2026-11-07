@@ -751,15 +751,15 @@ mod tests {
                 })
                 .collect();
             let reads = costs.len();
-            let fee = Drive::calculate_fee(
-                None,
-                Some(costs),
-                &BlockInfo::default().epoch,
-                drive.config.epochs_per_era,
-                platform_version,
-            )
-            .expect("price the metered operations")
-            .processing_fee;
+            let fee = drive
+                .calculate_fee(
+                    None,
+                    Some(costs),
+                    &BlockInfo::default().epoch,
+                    platform_version,
+                )
+                .expect("price the metered operations")
+                .processing_fee;
             (reads, fee)
         };
 

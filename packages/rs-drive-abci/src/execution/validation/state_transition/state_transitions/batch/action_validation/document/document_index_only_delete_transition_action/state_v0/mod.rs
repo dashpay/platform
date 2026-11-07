@@ -136,14 +136,15 @@ impl DocumentIndexOnlyDeleteTransitionActionStateValidationV0
         // Every probe is a stateful grove read (plus the row-commitment
         // hash) validators actually perform — bill them all, on the
         // not-found path included.
-        let fee_result = drive::drive::Drive::calculate_fee(
-            None,
-            Some(probe_operations),
-            &block_info.epoch,
-            platform.drive.config.epochs_per_era,
-            platform_version,
-        )
-        .map_err(Error::Drive)?;
+        let fee_result = platform
+            .drive
+            .calculate_fee(
+                None,
+                Some(probe_operations),
+                &block_info.epoch,
+                platform_version,
+            )
+            .map_err(Error::Drive)?;
         execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
         if missing_entry {

@@ -238,9 +238,8 @@ pub(crate) fn apply_drive_operations_v0(
         task.execute(self, platform_version);
     }
 
-    Drive::calculate_fee(
-        None, Some(cost_operations), &block_info.epoch,
-        self.config.epochs_per_era, platform_version,
+    self.calculate_fee(
+        None, Some(cost_operations), &block_info.epoch, platform_version,
     )
 }
 ```
@@ -302,11 +301,10 @@ At the end of `apply_drive_operations`, fees are calculated from the accumulated
 cost operations:
 
 ```rust
-Drive::calculate_fee(
+self.calculate_fee(
     None,
     Some(cost_operations),
     &block_info.epoch,
-    self.config.epochs_per_era,
     platform_version,
 )
 ```

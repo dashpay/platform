@@ -46,13 +46,7 @@ impl Drive {
                     "the fee_multiplier_permille must be set in fees to price document action fees",
                 )))?,
         };
-        let fee = Drive::calculate_fee(
-            None,
-            Some(drive_operations),
-            epoch,
-            self.config.epochs_per_era,
-            platform_version,
-        )?;
+        let fee = self.calculate_fee(None, Some(drive_operations), epoch, platform_version)?;
         Ok((fee, multiplier))
     }
 }

@@ -78,13 +78,12 @@ pub(super) fn generate_state_read_properties(
             let position = token_contract_info.token_contract_position();
             // The check recomputes the token id, a double SHA-256 the write pays for as Drive
             // prices a hash.
-            fee.checked_add_assign(Drive::calculate_fee(
+            fee.checked_add_assign(drive.calculate_fee(
                 None,
                 Some(vec![LowLevelDriveOperation::FunctionOperation(
                     FunctionOp::new_with_byte_count(HashFunction::Sha256_2, TOKEN_ID_PREIMAGE_SIZE),
                 )]),
                 &block_info.epoch,
-                drive.config.epochs_per_era,
                 platform_version,
             )?)?;
             if calculate_token_id(token_contract_id.as_bytes(), position) != token_id.to_buffer() {

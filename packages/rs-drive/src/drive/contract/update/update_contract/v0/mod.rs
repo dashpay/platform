@@ -129,11 +129,10 @@ impl Drive {
             .data_contracts
             .insert_rewritten(updated_contract_fetch_info, transaction.is_some());
 
-        Drive::calculate_fee(
+        self.calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
-            self.config.epochs_per_era,
             platform_version,
         )
     }

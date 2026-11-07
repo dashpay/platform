@@ -59,11 +59,10 @@ impl Drive {
             &mut drive_operations,
             platform_version,
         )?;
-        let fees = Drive::calculate_fee(
+        let fees = self.calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
-            self.config.epochs_per_era,
             platform_version,
         )?;
         Ok(fees)

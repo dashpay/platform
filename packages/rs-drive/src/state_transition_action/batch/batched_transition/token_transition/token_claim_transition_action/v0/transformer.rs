@@ -157,11 +157,10 @@ impl TokenClaimTransitionActionV0 {
                 platform_version,
             )?;
 
-        let mut fee_result = Drive::calculate_fee(
+        let mut fee_result = drive.calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
-            drive.config.epochs_per_era,
             platform_version,
         )?;
 
@@ -296,11 +295,10 @@ pub(crate) fn resolve_token_claim(
                     platform_version,
                 )?;
 
-            let last_paid_time_fee_result = Drive::calculate_fee(
+            let last_paid_time_fee_result = drive.calculate_fee(
                 None,
                 Some(last_paid_time_operations),
                 &block_info.epoch,
-                drive.config.epochs_per_era,
                 platform_version,
             )?;
 
@@ -418,11 +416,10 @@ pub(crate) fn resolve_token_claim(
             let start_from_moment_for_distribution =
                 last_paid_moment.unwrap_or(contract_creation_cycle_start);
 
-            let last_paid_time_fee_result = Drive::calculate_fee(
+            let last_paid_time_fee_result = drive.calculate_fee(
                 None,
                 Some(last_paid_time_operations),
                 &block_info.epoch,
-                drive.config.epochs_per_era,
                 platform_version,
             )?;
 
@@ -585,11 +582,10 @@ pub(crate) fn resolve_token_claim(
                 transaction,
                 platform_version,
             )?;
-            fee_result.checked_add_assign(Drive::calculate_fee(
+            fee_result.checked_add_assign(drive.calculate_fee(
                 None,
                 Some(claim_operations),
                 &block_info.epoch,
-                drive.config.epochs_per_era,
                 platform_version,
             )?)?;
             if let Some(claimed_at_ms) = already_claimed_at {

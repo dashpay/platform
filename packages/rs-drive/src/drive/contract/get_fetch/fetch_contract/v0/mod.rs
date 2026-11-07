@@ -89,11 +89,10 @@ impl Drive {
                 let fee = if let Some(epoch) = epoch {
                     Some(cost_return_on_error_no_add!(
                         cost,
-                        Drive::calculate_fee(
+                        self.calculate_fee(
                             None,
                             Some(vec![drive_operation]),
                             epoch,
-                            self.config.epochs_per_era,
                             platform_version,
                         )
                     ))
@@ -145,11 +144,10 @@ impl Drive {
                         let fee = if let Some(epoch) = epoch {
                             Some(cost_return_on_error_no_add!(
                                 cost,
-                                Drive::calculate_fee(
+                                self.calculate_fee(
                                     None,
                                     Some(vec![drive_operation]),
                                     epoch,
-                                    self.config.epochs_per_era,
                                     platform_version,
                                 )
                             ))

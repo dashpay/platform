@@ -149,7 +149,7 @@ pub(crate) fn apply_drive_operations_v0(
     }
 
     // Step 5: Calculate fees
-    Drive::calculate_fee(/* ... */)
+    self.calculate_fee(/* ... */)
 }
 ```
 

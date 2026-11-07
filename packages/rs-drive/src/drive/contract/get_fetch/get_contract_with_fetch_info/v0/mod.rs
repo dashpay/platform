@@ -94,14 +94,8 @@ impl Drive {
             platform_version,
         )?;
         let fee_result = epoch.map_or(Ok(None), |epoch| {
-            Drive::calculate_fee(
-                None,
-                Some(drive_operations),
-                epoch,
-                self.config.epochs_per_era,
-                platform_version,
-            )
-            .map(Some)
+            self.calculate_fee(None, Some(drive_operations), epoch, platform_version)
+                .map(Some)
         })?;
         Ok((fee_result, contract_fetch_info))
     }
@@ -164,13 +158,7 @@ impl Drive {
                     } else {
                         // we need to calculate new fee
                         let op = vec![CalculatedCostOperation(contract_fetch_info.cost.clone())];
-                        let fee = Drive::calculate_fee(
-                            None,
-                            Some(op),
-                            epoch,
-                            self.config.epochs_per_era,
-                            platform_version,
-                        )?;
+                        let fee = self.calculate_fee(None, Some(op), epoch, platform_version)?;
 
                         if add_to_cache_if_pulled {
                             let updated_contract_fetch_info = Arc::new(DataContractFetchInfo {

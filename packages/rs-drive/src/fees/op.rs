@@ -30,7 +30,7 @@ use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 #[cfg(test)]
 use crate::util::grove_operations::pending_grove_operations::count_copied_pending_grove_operations;
 use crate::util::storage_flags::StorageFlags;
-use dpp::block::epoch::Epoch;
+use dpp::block::epoch::{Epoch, EpochIndex};
 use dpp::fee::fee_result::refunds::FeeRefunds;
 use dpp::fee::fee_result::{FeeResult, LifetimeStorageFees};
 use dpp::fee::Credits;
@@ -422,17 +422,19 @@ impl LowLevelDriveOperation {
                                 let system_amount = removal_per_epoch_by_identifier
                                     .remove(&Identifier::default())
                                     .map_or(0, |a| a.values().sum());
-                                // Every shipped schedule has the same storage rate and this arm
-                                // used to price all of them against the first one, so reading it
-                                // from the block's schedule changes no refund at any protocol
-                                // version. `should_keep_one_storage_rate_on_every_protocol_version`
-                                // fails if a schedule ever changes the rate.
+                                // This arm used to price every refund against the first schedule,
+                                // for fee version number 1, the number of every schedule a
+                                // protocol version selecting this generation (up to 14) runs.
+                                // Those schedules all have the first one's storage rate, so the
+                                // block's rate here changes no refund.
+                                let storage_rate =
+                                    fee_version.storage.storage_disk_usage_credit_per_byte;
                                 (
                                     FeeRefunds::from_storage_removal(
                                         removal_per_epoch_by_identifier,
                                         epoch.index,
                                         epochs_per_era,
-                                        fee_version,
+                                        |_| Ok::<_, Error>(storage_rate),
                                     )?,
                                     system_amount,
                                 )
@@ -448,6 +450,64 @@ impl LowLevelDriveOperation {
                 }
             })
             .collect()
+    }
+
+    /// Returns a list of the costs of the Drive operations, pricing the bytes a refund returns
+    /// at the storage rate `storage_rate_of_epoch` gives for the epoch that stored them.
+    ///
+    /// Generation 1 wraps generation 0, which prices every refund at the block's rate. Each
+    /// calculated cost's sectioned removal is handed to generation 0 as a basic removal of as
+    /// many bytes, which it prices the same way apart from the refund, and the refund and the
+    /// system's removed bytes of that operation's fee result are then computed here.
+    /// Should only be used by Calculate fee
+    pub fn consume_to_fees_v1(
+        drive_operations: Vec<LowLevelDriveOperation>,
+        epoch: &Epoch,
+        epochs_per_era: u16,
+        fee_version: &FeeVersion,
+        storage_rate_of_epoch: impl Fn(EpochIndex) -> Result<Credits, Error>,
+    ) -> Result<Vec<FeeResult>, Error> {
+        let mut sectioned_removals = Vec::new();
+        let drive_operations = drive_operations
+            .into_iter()
+            .enumerate()
+            .map(|(position, operation)| {
+                let CalculatedCostOperation(mut cost) = operation else {
+                    return operation;
+                };
+                let removed_bytes = cost.storage_cost.removed_bytes.total_removed_bytes();
+                match std::mem::replace(
+                    &mut cost.storage_cost.removed_bytes,
+                    BasicStorageRemoval(removed_bytes),
+                ) {
+                    SectionedStorageRemoval(removal) => {
+                        sectioned_removals.push((position, removal))
+                    }
+                    other_removal => cost.storage_cost.removed_bytes = other_removal,
+                }
+                CalculatedCostOperation(cost)
+            })
+            .collect();
+
+        let mut fee_results =
+            Self::consume_to_fees_v0(drive_operations, epoch, epochs_per_era, fee_version)?;
+        for (position, mut removal) in sectioned_removals {
+            let fee_result = fee_results.get_mut(position).ok_or(Error::Drive(
+                DriveError::CorruptedCodeExecution(
+                    "fee generation 0 returns one fee result per operation",
+                ),
+            ))?;
+            fee_result.removed_bytes_from_system = removal
+                .remove(&Identifier::default())
+                .map_or(0, |bytes_per_epoch| bytes_per_epoch.values().sum());
+            fee_result.fee_refunds = FeeRefunds::from_storage_removal(
+                removal,
+                epoch.index,
+                epochs_per_era,
+                &storage_rate_of_epoch,
+            )?;
+        }
+        Ok(fee_results)
     }
 
     /// Returns the cost of this operation

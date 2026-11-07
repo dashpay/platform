@@ -14,7 +14,6 @@ mod tests {
 
     mod add_new_keys_to_identity {
         use super::*;
-        use crate::drive::Drive;
         use crate::fees::op::LowLevelDriveOperation;
         use dpp::block::block_info::BlockInfo;
         use dpp::block::epoch::Epoch;
@@ -247,14 +246,14 @@ mod tests {
                 )
                 .expect("expected to apply operations");
 
-            let fee_result = Drive::calculate_fee(
-                None,
-                Some(drive_operations),
-                &Epoch::new(0).unwrap(),
-                drive.config.epochs_per_era,
-                platform_version,
-            )
-            .expect("expected fee result");
+            let fee_result = drive
+                .calculate_fee(
+                    None,
+                    Some(drive_operations),
+                    &Epoch::new(0).unwrap(),
+                    platform_version,
+                )
+                .expect("expected fee result");
 
             assert_eq!(fee_result, expected_fee_result);
 
