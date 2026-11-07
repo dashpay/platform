@@ -4679,6 +4679,52 @@ mod tests {
             assert_ends_in_the_receiving_account(46, LoadCtx::recovery(), false);
         }
 
+        /// A used address the receiving account shares with the reverse
+        /// contact account, one past the receiving pool's window, whose row
+        /// names the contact account, with no used shared address below it.
+        /// Payments to the contact in flight together whose reservations were
+        /// released unsent before a later one was sent
+        /// (`rs-platform-wallet` `prepared_payment.rs:671-708`), or a build
+        /// before key-wallet's DashPay gap limit (a fixed 20-address contact
+        /// window), leave this store; no writer in this crate makes it, so it
+        /// is built here. Only discovery reaches the address: a strict load
+        /// marks it used in the receiving pool, and never hands it out.
+        #[test]
+        fn a_contact_owned_used_address_past_the_receiving_window_is_looked_for() {
+            let (wallet, manifest, receiving, _, shared) = befriended_both_ways(50);
+            let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+            let contact = info.accounts.dashpay_external_accounts.values().next();
+            let used = HashMap::from([(shared.clone(), Some(owning_account_of(contact.unwrap())))]);
+            let ctx = LoadCtx::strict();
+            load_into(
+                &mut info,
+                &manifest,
+                Vec::new(),
+                &HashMap::new(),
+                &used,
+                &ctx,
+            )
+            .unwrap();
+
+            let sites = &ctx.degradation().by_site;
+            assert_eq!(
+                sites.get(&LoadSite::UnresolvedUtxoAddress),
+                None,
+                "{sites:?}"
+            );
+            assert!(used_in(&info, &receiving, &shared));
+            let xpub = (manifest.iter())
+                .find(|e| e.account_type == receiving)
+                .map(|e| e.account_xpub)
+                .unwrap();
+            let funds = info.accounts.funds_account_mut(&receiving).unwrap();
+            for _ in 0..=key_wallet::gap_limit::DEFAULT_DASHPAY_GAP_LIMIT + 1 {
+                let next = funds.next_address(Some(&xpub), true).unwrap();
+                assert_ne!(next, shared, "the used address is handed out again");
+                assert!(funds.mark_address_used(&next));
+            }
+        }
+
         /// After discovery derives something every coin is offered to
         /// key-wallet again, and a coin already in its account comes back
         /// once, unchanged: a BIP44 coin, instant-locked, trusted and locked,

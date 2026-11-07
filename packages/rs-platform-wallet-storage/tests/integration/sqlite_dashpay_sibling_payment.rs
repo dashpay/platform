@@ -7,7 +7,10 @@
 //! adapter, with no pool row written by hand. The receiving pool keeps the
 //! window its registration stored, so on disk the paid address is used only
 //! under the external account. A strict reopen must still load, and must
-//! leave that address used in the receiving pool.
+//! leave that address used in the receiving pool. B's earlier reservations
+//! are used external rows too, so the reload's marking rounds reach the
+//! paid address from them; the store only discovery reaches is pinned in
+//! `rehydrate.rs`'s unit tests.
 
 use crate::common;
 
@@ -360,10 +363,11 @@ fn used_in_receiving_pool(account: &ManagedCoreFundsAccount, paid: &Address) -> 
 }
 
 /// B pays A at the first address past the receiving pool's window, and the
-/// coin is spent. No unspent coin and no receiving pool row name the address,
-/// so only discovery from the external account's used row can find it.
+/// coin is spent. No unspent coin and no receiving pool row name the address.
+/// A strict reload succeeds, the address reads used in the receiving pool,
+/// and it is not handed out again.
 #[test]
-fn a_spent_sibling_payment_past_the_receiving_window_is_used_there_after_a_reopen() {
+fn a_spent_sibling_payment_past_the_receiving_window_reloads_used_and_not_handed_out() {
     let stored = store_sibling_payment(true);
     let window = stored.receiving_window;
 
