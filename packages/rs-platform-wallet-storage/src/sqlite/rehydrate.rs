@@ -272,10 +272,11 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///   and re-warm on the next full sync, but for a used address whose row
 ///   names a DashPay contact account whose xpub no funds account shares: it
 ///   is the contact's key, reported at [`LoadSite::OrphanedUtxoOwner`]
-///   only. One of a shared xpub past discovery's reach stays counted. An unresolved coin falls back to its stored owner, else the
-///   first funds account. The wallet *total* stays exact
-///   (every UTXO is summed regardless of pool visibility); only the
-///   per-address view is incomplete until that sync.
+///   only. One of a shared xpub past discovery's reach stays counted. An
+///   unresolved coin falls back to its stored owner, else the first funds
+///   account. The wallet *total* stays exact (every UTXO is summed
+///   regardless of pool visibility); only the per-address view is
+///   incomplete until that sync.
 /// - **Per-UTXO `is_coinbase` / `is_trusted` flags**: not columns in
 ///   `core_utxos`; conservatively defaulted (non-coinbase,
 ///   confirmed-by-height) and refreshed on the next scan.
@@ -797,7 +798,6 @@ fn gap_refills_bounded(
     Ok(bounded)
 }
 
-/// The `addresses` no funds pool of `wallet_info` holds, once each.
 /// The DashPay contact accounts of `wallet_info` whose xpub in `manifest`
 /// derives none of the funds accounts' scripts: its key and chain code are
 /// none of theirs. A contact account with no manifest entry is not one.
@@ -820,6 +820,7 @@ fn foreign_contact_accounts(
         .collect()
 }
 
+/// The `addresses` no funds pool of `wallet_info` holds, once each.
 fn outside_funds_pools<'a>(
     wallet_info: &ManagedWalletInfo,
     addresses: impl IntoIterator<Item = &'a key_wallet::Address>,
