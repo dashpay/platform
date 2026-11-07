@@ -165,7 +165,7 @@ impl LoadSite {
             // describes an accepted-as-is degradation rather than a
             // tolerated inconsistency.
             Self::OrphanedUtxoOwner => {
-                "load degraded: placing addresses from an unavailable owner in the funds account that derives them, or in the first one when the bounded search finds none"
+                "load degraded: owners that are not funds accounts of this wallet (a funds account it lacks, or a DashPay contact, identity, provider-key, asset-lock or Platform payment account); their coins are placed in the funds account that derives them, else in the DashPay contact account that holds them, outside the balance, else in the first funds account; used addresses of an identity, provider-key, asset-lock or Platform payment account have no funds account to mark them in, and DashPay contact addresses are still looked for in the funds accounts"
             }
             Self::UnresolvedUtxoAddress => {
                 "load degraded: deferring addresses that did not resolve against the account xpub"
@@ -678,7 +678,7 @@ mod tests {
             "ambiguous owner",
         );
         assert!(logs_contain(
-            "load degraded: placing addresses from an unavailable owner in the funds account that derives them, or in the first one when the bounded search finds none"
+            "load degraded: owners that are not funds accounts of this wallet (a funds account it lacks, or a DashPay contact, identity, provider-key, asset-lock or Platform payment account); their coins are placed in the funds account that derives them, else in the DashPay contact account that holds them, outside the balance, else in the first funds account; used addresses of an identity, provider-key, asset-lock or Platform payment account have no funds account to mark them in, and DashPay contact addresses are still looked for in the funds accounts"
         ));
     }
 

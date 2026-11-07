@@ -411,9 +411,11 @@ pub fn apply_persisted_core_state(
                 },
                 "restored UTXOs or used addresses name owning accounts that are not funds \
                  accounts of this wallet; such coins are placed in the funds account that \
-                 derives their address, or in the first one when the bounded search finds \
-                 none; used addresses of a non-funds account have no funds account to mark \
-                 them in",
+                 derives their address, else in the DashPay contact account that holds it, \
+                 outside the balance, else in the first funds account; used addresses of an \
+                 identity, provider-key, asset-lock or Platform payment account have no funds \
+                 account to mark them in, and DashPay contact addresses are still looked for \
+                 in the funds accounts",
             );
         }
 
