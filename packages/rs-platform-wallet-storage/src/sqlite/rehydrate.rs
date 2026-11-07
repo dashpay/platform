@@ -255,9 +255,10 @@ pub(crate) fn restore_provider_platform_node_pool(
 /// # Deferred to the first post-load `sync` (safe re-warm)
 ///
 /// - **Deep-index address visibility**: a stored address no funds pool
-///   holds after the marking rounds, a coin's or a used one's, whatever
-///   owner its row names, is looked for in every funds account past each
-///   pool: through one index past what the pool holds, and one past a
+///   holds after the marking rounds, a coin's, or a used one's unless its
+///   row names a non-funds account kind (a provider key, say: reported at
+///   [`LoadSite::OrphanedUtxoOwner`] only), is looked for in every funds
+///   account past each pool: through one index past what the pool holds, and one past a
 ///   `gap_limit` beyond each address found, up to
 ///   [`MAX_REHYDRATION_DERIVATION_INDEX`]
 ///   ([`discover_in_funds_accounts`]); what that derives is marked, refilled
@@ -461,10 +462,23 @@ pub fn apply_persisted_core_state(
         // rounds carry on from the refill past the deepest find, as a rescan
         // would. A restore that already failed would only fail, and be
         // reported, again.
+        // The used addresses a funds account may derive: not those whose row
+        // names a non-funds kind (a provider key, say), which no funds
+        // account derives and which are reported as orphaned owners above. An
+        // ownerless one stays, as does one whose owner is a funds kind this
+        // wallet lacks (store drift): only derivation can place them.
+        let placeable_used: Vec<&key_wallet::Address> = (used_pool_addresses.iter())
+            .filter(|(_, owner)| {
+                owner
+                    .as_ref()
+                    .is_none_or(|owner| accounts::is_funds_account_label(&owner.account_type))
+            })
+            .map(|(address, _)| address)
+            .collect();
         if restorable {
             let mut outside = outside_funds_pools(
                 wallet_info,
-                (unspent.iter().map(|u| &u.address)).chain(&used),
+                (unspent.iter().map(|u| &u.address)).chain(placeable_used.iter().copied()),
             );
             if !outside.is_empty()
                 && discover_in_funds_accounts(wallet_info, manifest, &mut outside, wallet_id, ctx)?
@@ -490,11 +504,12 @@ pub fn apply_persisted_core_state(
                  were placed by their stored owner, or in the first funds account"
             );
         }
-        // Every stored address no funds pool holds now, counted once: the
-        // fallback coins' and the used ones', whatever owner their rows name.
+        // Every stored address no funds pool holds now that a funds account
+        // may derive, counted once: the fallback coins' and the placeable used
+        // ones'.
         let unresolved = outside_funds_pools(
             wallet_info,
-            (unmatched.iter().map(|u| &u.address)).chain(&used),
+            (unmatched.iter().map(|u| &u.address)).chain(placeable_used.iter().copied()),
         )
         .len();
         let mut funding = wallet_info.accounts.all_funding_accounts_mut();
@@ -522,7 +537,7 @@ pub fn apply_persisted_core_state(
                     detail: None,
                 },
                 "restored coin or used addresses did not resolve against any funds account's \
-                 xpub within its reach; they re-warm on the next full sync",
+                 xpub within its reach; a full sync re-warms those a funds account derives",
             );
         }
     }
@@ -5188,6 +5203,75 @@ mod tests {
         #[test]
         fn a_coinjoin_chain_below_the_discovery_ceiling_reaches_the_coins_past_it() {
             assert_chain_restored(47, cj(), AddressPoolType::External, 5_000);
+        }
+
+        /// A used address of a provider key account is reported as an
+        /// orphaned owner only: no funds account derives it, so it is not
+        /// counted unresolved. A used address whose owner is a funds account
+        /// this wallet lacks is still found past the pool of the account that
+        /// derives it.
+        #[test]
+        fn a_provider_owned_used_address_is_orphaned_not_unresolved() {
+            let opts = WalletAccountCreationOptions::SpecificAccounts(
+                BTreeSet::from([0]),
+                BTreeSet::new(),
+                BTreeSet::from([0]),
+                BTreeSet::new(),
+                BTreeSet::new(),
+                Some(vec![AccountType::ProviderOwnerKeys]),
+            );
+            let wallet = Wallet::from_seed_bytes([48; 64], Network::Testnet, opts).unwrap();
+            let manifest = manifest_for(&wallet);
+            let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+            let provider = (info.accounts.provider_owner_keys.as_ref())
+                .expect("a provider owner account")
+                .managed_account_type()
+                .address_pools()
+                .into_iter()
+                .find_map(|pool| pool.address_at_index(0))
+                .expect("a provider owner address");
+            let provider_owner = OwningAccount {
+                account_type: "provider_owner".to_string(),
+                account_index: 0,
+                user_identity_id: [0u8; 32],
+                friend_identity_id: [0u8; 32],
+            };
+            let drift_owner = OwningAccount {
+                account_index: 7,
+                ..owner(&wallet, &bip44())
+            };
+            let window = external_pool(&info, &bip44()).highest_generated.unwrap();
+            let drift = external_address(&wallet, &bip44(), window + 1);
+            let used = HashMap::from([
+                (provider, Some(provider_owner)),
+                (drift.clone(), Some(drift_owner)),
+            ]);
+            let coin = utxo(1, &coinjoin_address(&wallet, 5));
+            let ctx = LoadCtx::strict();
+            load_into(
+                &mut info,
+                &manifest,
+                vec![coin.clone()],
+                &HashMap::new(),
+                &used,
+                &ctx,
+            )
+            .unwrap();
+
+            let sites = &ctx.degradation().by_site;
+            assert_eq!(
+                sites.get(&LoadSite::OrphanedUtxoOwner),
+                Some(&2),
+                "{sites:?}"
+            );
+            assert_eq!(
+                sites.get(&LoadSite::UnresolvedUtxoAddress),
+                None,
+                "{sites:?}"
+            );
+            assert!(used_in(&info, &bip44(), &drift));
+            assert_eq!(holders(&info, &coin.outpoint), vec![cj()]);
+            assert_eq!(info.balance.total(), VALUE);
         }
     }
 }

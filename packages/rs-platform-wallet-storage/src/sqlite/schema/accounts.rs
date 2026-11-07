@@ -720,6 +720,105 @@ pub(crate) fn account_type_db_label(at: &key_wallet::account::AccountType) -> &'
     }
 }
 
+/// Whether accounts of this kind hold the wallet's funds: the kinds
+/// `ManagedAccountCollection::all_funding_accounts` visits. A DashPay
+/// external account is a contact's watch-only account, not one of them.
+/// Wildcard-free, so an added upstream variant must be classified here.
+pub(crate) fn is_funds_account_type(at: &key_wallet::account::AccountType) -> bool {
+    use key_wallet::account::AccountType;
+    match at {
+        AccountType::Standard { .. }
+        | AccountType::CoinJoin { .. }
+        | AccountType::DashpayReceivingFunds { .. } => true,
+        AccountType::IdentityRegistration
+        | AccountType::IdentityTopUp { .. }
+        | AccountType::IdentityTopUpNotBoundToIdentity
+        | AccountType::IdentityInvitation
+        | AccountType::AssetLockAddressTopUp
+        | AccountType::AssetLockShieldedAddressTopUp
+        | AccountType::ProviderVotingKeys
+        | AccountType::ProviderOwnerKeys
+        | AccountType::ProviderOperatorKeys
+        | AccountType::ProviderPlatformKeys
+        | AccountType::DashpayExternalAccount { .. }
+        | AccountType::PlatformPayment { .. } => false,
+    }
+}
+
+/// Whether a stored `account_type` label names a funds account kind
+/// ([`is_funds_account_type`]), the legacy `standard` label included. A label
+/// no kind carries names none.
+pub(crate) fn is_funds_account_label(label: &str) -> bool {
+    all_account_type_variants()
+        .iter()
+        .any(|kind| is_funds_account_type(kind) && db_label_matches_entry(label, kind))
+}
+
+/// Every [`key_wallet::account::AccountType`] variant; the wildcard-free
+/// match below fails to compile if upstream adds one. `Standard` appears
+/// twice — once per `StandardAccountType` — because both map to distinct
+/// labels.
+pub(crate) fn all_account_type_variants() -> Vec<key_wallet::account::AccountType> {
+    use key_wallet::account::{AccountType, StandardAccountType};
+    let variants = vec![
+        AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        },
+        AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP32Account,
+        },
+        AccountType::CoinJoin { index: 0 },
+        AccountType::IdentityRegistration,
+        AccountType::IdentityTopUp {
+            registration_index: 0,
+        },
+        AccountType::IdentityTopUpNotBoundToIdentity,
+        AccountType::IdentityInvitation,
+        AccountType::AssetLockAddressTopUp,
+        AccountType::AssetLockShieldedAddressTopUp,
+        AccountType::ProviderVotingKeys,
+        AccountType::ProviderOwnerKeys,
+        AccountType::ProviderOperatorKeys,
+        AccountType::ProviderPlatformKeys,
+        AccountType::DashpayReceivingFunds {
+            index: 0,
+            user_identity_id: [0u8; 32],
+            friend_identity_id: [0u8; 32],
+        },
+        AccountType::DashpayExternalAccount {
+            index: 0,
+            user_identity_id: [0u8; 32],
+            friend_identity_id: [0u8; 32],
+        },
+        AccountType::PlatformPayment {
+            account: 0,
+            key_class: 0,
+        },
+    ];
+    for v in &variants {
+        match v {
+            AccountType::Standard { .. }
+            | AccountType::CoinJoin { .. }
+            | AccountType::IdentityRegistration
+            | AccountType::IdentityTopUp { .. }
+            | AccountType::IdentityTopUpNotBoundToIdentity
+            | AccountType::IdentityInvitation
+            | AccountType::AssetLockAddressTopUp
+            | AccountType::AssetLockShieldedAddressTopUp
+            | AccountType::ProviderVotingKeys
+            | AccountType::ProviderOwnerKeys
+            | AccountType::ProviderOperatorKeys
+            | AccountType::ProviderPlatformKeys
+            | AccountType::DashpayReceivingFunds { .. }
+            | AccountType::DashpayExternalAccount { .. }
+            | AccountType::PlatformPayment { .. } => {}
+        }
+    }
+    variants
+}
+
 /// Numeric account index embedded in an `AccountType`, persisted in the
 /// `account_registrations.account_index` column.
 pub(crate) fn account_index(at: &key_wallet::account::AccountType) -> u32 {
@@ -1126,71 +1225,6 @@ mod tests {
         assert_eq!(loaded.len(), 1, "re-persist must not duplicate the row");
     }
 
-    /// Every [`key_wallet::account::AccountType`] variant; the wildcard-free
-    /// match below fails to compile if upstream adds one. `Standard` appears
-    /// twice — once per `StandardAccountType` — because both map to distinct
-    /// labels.
-    fn all_account_type_variants() -> Vec<key_wallet::account::AccountType> {
-        use key_wallet::account::{AccountType, StandardAccountType};
-        let variants = vec![
-            AccountType::Standard {
-                index: 0,
-                standard_account_type: StandardAccountType::BIP44Account,
-            },
-            AccountType::Standard {
-                index: 0,
-                standard_account_type: StandardAccountType::BIP32Account,
-            },
-            AccountType::CoinJoin { index: 0 },
-            AccountType::IdentityRegistration,
-            AccountType::IdentityTopUp {
-                registration_index: 0,
-            },
-            AccountType::IdentityTopUpNotBoundToIdentity,
-            AccountType::IdentityInvitation,
-            AccountType::AssetLockAddressTopUp,
-            AccountType::AssetLockShieldedAddressTopUp,
-            AccountType::ProviderVotingKeys,
-            AccountType::ProviderOwnerKeys,
-            AccountType::ProviderOperatorKeys,
-            AccountType::ProviderPlatformKeys,
-            AccountType::DashpayReceivingFunds {
-                index: 0,
-                user_identity_id: [0u8; 32],
-                friend_identity_id: [0u8; 32],
-            },
-            AccountType::DashpayExternalAccount {
-                index: 0,
-                user_identity_id: [0u8; 32],
-                friend_identity_id: [0u8; 32],
-            },
-            AccountType::PlatformPayment {
-                account: 0,
-                key_class: 0,
-            },
-        ];
-        for v in &variants {
-            match v {
-                AccountType::Standard { .. }
-                | AccountType::CoinJoin { .. }
-                | AccountType::IdentityRegistration
-                | AccountType::IdentityTopUp { .. }
-                | AccountType::IdentityTopUpNotBoundToIdentity
-                | AccountType::IdentityInvitation
-                | AccountType::AssetLockAddressTopUp
-                | AccountType::AssetLockShieldedAddressTopUp
-                | AccountType::ProviderVotingKeys
-                | AccountType::ProviderOwnerKeys
-                | AccountType::ProviderOperatorKeys
-                | AccountType::ProviderPlatformKeys
-                | AccountType::DashpayReceivingFunds { .. }
-                | AccountType::DashpayExternalAccount { .. }
-                | AccountType::PlatformPayment { .. } => {}
-            }
-        }
-        variants
-    }
-
     /// No two account types may share a full PK tuple, whatever axes they
     /// carry. This is the runtime half of the wildcard-free mappers: those
     /// make an untaught variant a compile error, and this makes a variant
@@ -1266,6 +1300,46 @@ mod tests {
         }
         let distinct: HashSet<_> = keys.iter().collect();
         assert_eq!(distinct.len(), 4, "provider PK tuples must not collide");
+    }
+
+    /// The funds kinds are the kinds of key-wallet's funds accounts, and a
+    /// stored label names a funds kind exactly when its kind is one.
+    #[test]
+    fn funds_kinds_are_the_funding_accounts_kinds() {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+        use key_wallet::wallet::Wallet;
+
+        let wallet = Wallet::from_seed_bytes(
+            [7u8; 64],
+            dashcore::Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let info = ManagedWalletInfo::from_wallet(&wallet, 1);
+        let funding: Vec<AccountType> = (info.accounts.all_funding_accounts().iter())
+            .map(|a| a.managed_account_type().to_account_type())
+            .collect();
+        let managed = info.all_managed_accounts();
+        assert!(managed.len() > funding.len());
+        for account in managed {
+            let kind = account.managed_account_type().to_account_type();
+            assert_eq!(
+                is_funds_account_type(&kind),
+                funding.contains(&kind),
+                "{kind:?}"
+            );
+        }
+        for kind in all_account_type_variants() {
+            assert_eq!(
+                is_funds_account_label(account_type_db_label(&kind)),
+                is_funds_account_type(&kind),
+                "{kind:?}"
+            );
+        }
+        assert!(is_funds_account_label(LEGACY_STANDARD_LABEL));
+        assert!(!is_funds_account_label("unknown"));
     }
 
     #[test]
