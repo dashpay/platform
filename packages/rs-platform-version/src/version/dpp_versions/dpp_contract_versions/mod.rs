@@ -289,7 +289,8 @@ mod tests {
     /// through `fetch_private_document_entries`, `prove_private_document_entries` and
     /// `verify_private_document_entries`, and appends a private document create's entries,
     /// at most `max_private_document_entries_per_transition` of them, through
-    /// `append_private_document_entries_operations`: a protocol version parsing private types without
+    /// `append_private_document_entries_operations`, after the transition's basic structure: a
+    /// protocol version parsing private types without
     /// them could not register or read one, and one setting them where no type is private
     /// states a rule nothing reads.
     #[test]
@@ -360,6 +361,16 @@ mod tests {
                 (
                     "max_private_document_entries_per_transition",
                     limits.max_private_document_entries_per_transition.is_some(),
+                ),
+                (
+                    "private_document_create_from_shielded_pool basic_structure",
+                    platform_version
+                        .drive_abci
+                        .validation_and_processing
+                        .state_transitions
+                        .private_document_create_from_shielded_pool_state_transition
+                        .basic_structure
+                        .is_some(),
                 ),
                 (
                     "verify_private_document_entries",

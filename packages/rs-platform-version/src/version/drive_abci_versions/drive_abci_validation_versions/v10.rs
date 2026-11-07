@@ -445,7 +445,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 },
             private_document_create_from_shielded_pool_state_transition:
                 DriveAbciStateTransitionValidationVersion {
-                    basic_structure: Some(0),
+                    basic_structure: None, // no private document create before protocol version 15
                     advanced_structure: None,
                     identity_signatures: None,
                     nonce: None,
