@@ -22,6 +22,7 @@ use dpp::prelude::Identifier;
 use key_wallet::account::AccountType;
 use key_wallet::bip32::{DerivationPath, ExtendedPubKey};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+use key_wallet::managed_account::ManagedCoreFundsAccount;
 use key_wallet::mnemonic::Mnemonic;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::Wallet;
@@ -158,15 +159,15 @@ struct Stored {
     receiving_xpub: ExtendedPubKey,
     receiving_window: u32,
     paid: Address,
-    payment: OutPoint,
+    payment_outpoint: OutPoint,
 }
 
 /// Stores a payment from B to A in a fresh wallet: B reserves addresses of
 /// its external account for A (each marked used, with the pool snapshot
-/// stored), as many as `reservations` picks from the highest index A's
-/// receiving pool registered; a block pays the last of them, and with `spend`
-/// a later block spends that coin.
-async fn store_sibling_payment(reservations: impl FnOnce(u32) -> u32, spend: bool) -> Stored {
+/// stored) and a block pays the last of them. With `spent_past_window` that
+/// is the first address past the window A's receiving pool registered, and a
+/// later block spends the coin; without, it is the first address, unspent.
+async fn store_sibling_payment(spent_past_window: bool) -> Stored {
     let tmp = secure_tempdir().expect("tempdir");
     let path = tmp.path().join("wallet.db");
     let persister =
@@ -237,7 +238,12 @@ async fn store_sibling_payment(reservations: impl FnOnce(u32) -> u32, spend: boo
         .expect("register B's external account for A");
 
     let mut paid = None;
-    for _ in 0..reservations(receiving_window) {
+    let reservations = if spent_past_window {
+        receiving_window + 2
+    } else {
+        1
+    };
+    for _ in 0..reservations {
         paid = Some(
             dashpay
                 .reserve_payment_address(&b, &a, &NoQueuedContactCrypto)
@@ -254,7 +260,7 @@ async fn store_sibling_payment(reservations: impl FnOnce(u32) -> u32, spend: boo
     );
     let payment_outpoint = OutPoint::new(payment.txid(), 0);
     let mut blocks = vec![Block::dummy(PAYMENT_HEIGHT, vec![payment])];
-    if spend {
+    if spent_past_window {
         blocks.push(Block::dummy(
             PAYMENT_HEIGHT + 1,
             vec![transfer(
@@ -293,7 +299,7 @@ async fn store_sibling_payment(reservations: impl FnOnce(u32) -> u32, spend: boo
         receiving_xpub: receiving_xpub.xpub,
         receiving_window,
         paid,
-        payment: payment_outpoint,
+        payment_outpoint,
     }
 }
 
@@ -324,10 +330,7 @@ fn reopen(stored: &Stored) -> SqlitePersister {
     SqlitePersister::open(SqlitePersisterConfig::new(&stored.path)).expect("reopen")
 }
 
-fn used_in_receiving_pool(
-    account: &key_wallet::managed_account::ManagedCoreFundsAccount,
-    paid: &Address,
-) -> bool {
+fn used_in_receiving_pool(account: &ManagedCoreFundsAccount, paid: &Address) -> bool {
     account
         .managed_account_type()
         .address_pools()
@@ -340,7 +343,7 @@ fn used_in_receiving_pool(
 /// so only discovery from the external account's used row can find it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_spent_sibling_payment_past_the_receiving_window_is_used_there_after_a_reopen() {
-    let stored = store_sibling_payment(|window| window + 2, true).await;
+    let stored = store_sibling_payment(true).await;
     let window = stored.receiving_window;
 
     let persister = reopen(&stored);
@@ -360,7 +363,7 @@ async fn a_spent_sibling_payment_past_the_receiving_window_is_used_there_after_a
             .accounts
             .all_funding_accounts()
             .iter()
-            .all(|account| !account.utxos.contains_key(&stored.payment)),
+            .all(|account| !account.utxos.contains_key(&stored.payment_outpoint)),
         "the spent coin is not restored as unspent"
     );
     let receiving = slice
@@ -386,7 +389,7 @@ async fn a_spent_sibling_payment_past_the_receiving_window_is_used_there_after_a
 /// row is used. The two owner resolvers must agree, so a strict load succeeds.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_unspent_sibling_payment_inside_the_receiving_window_loads_strictly() {
-    let stored = store_sibling_payment(|_| 1, false).await;
+    let stored = store_sibling_payment(false).await;
 
     let persister = reopen(&stored);
     assert_eq!(
@@ -411,7 +414,7 @@ async fn an_unspent_sibling_payment_inside_the_receiving_window_loads_strictly()
     assert_eq!(
         receiving
             .utxos
-            .get(&stored.payment)
+            .get(&stored.payment_outpoint)
             .map(|utxo| utxo.txout.value),
         Some(PAID),
         "the receiving account holds the coin"
