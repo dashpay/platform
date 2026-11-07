@@ -249,6 +249,11 @@ impl StateTransitionStateValidation for StateTransition {
                     "token purchase from shielded pool should not have state validation",
                 )))
             }
+            StateTransition::PrivateDocumentCreateFromShieldedPool(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "private document create from shielded pool should not have state validation",
+                )))
+            }
             StateTransition::ShieldFromAssetLock(_) => {
                 Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "shield from asset lock should not have state validation",
@@ -334,6 +339,7 @@ impl StateTransitionStateValidation for StateTransition {
             | StateTransition::TokenShieldedTransferWithShieldedFee(_)
             | StateTransition::TokenUnshieldWithShieldedFee(_)
             | StateTransition::TokenPurchaseFromShieldedPool(_)
+            | StateTransition::PrivateDocumentCreateFromShieldedPool(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_) => false,

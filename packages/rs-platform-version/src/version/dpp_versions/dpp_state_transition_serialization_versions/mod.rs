@@ -54,6 +54,7 @@ pub struct DPPStateTransitionSerializationVersions {
     pub token_shielded_transfer_with_shielded_fee_state_transition: FeatureVersionBounds,
     pub token_unshield_with_shielded_fee_state_transition: FeatureVersionBounds,
     pub token_purchase_from_shielded_pool_state_transition: FeatureVersionBounds,
+    pub private_document_create_from_shielded_pool_state_transition: FeatureVersionBounds,
     /// A token transfer or a token mint moving a random amount: format version 1 of either,
     /// which carries `random_minimum_amount`. `StateTransition::active_version_range` makes a
     /// batch carrying one active from the first protocol version whose table has this `Some`.

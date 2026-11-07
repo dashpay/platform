@@ -1127,6 +1127,7 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::DecisionProposalNotFound { .. } => {
                 PlatformWalletFFIResultCode::NotFound
             }
+            PlatformWalletError::AccountNotFound(..) => PlatformWalletFFIResultCode::NotFound,
             // The persister trio, split by the store's own retry
             // classification — flattened to ErrorUnknown a host could not tell
             // a busy database from a corrupt one. `PersisterRestore` carries
