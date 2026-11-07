@@ -1941,6 +1941,87 @@ class PlatformWalletManager(
         }
     }
 
+    /**
+     * Identity → EXTERNAL shielded (Type 21). The same `ShieldFromIdentity`
+     * transition as [shieldedShieldFromIdentity], with the same identity
+     * debit ([amount] plus the metered fee plus the shielded compute fee),
+     * the same Keystore identity signer ([signerHandle], TRANSFER key) and
+     * the same error shapes. The only difference is that the note is
+     * assigned to [recipientRaw43], a third party's raw 43-byte Orchard
+     * payment address, instead of this wallet's own default address.
+     *
+     * The recipient must actually be a third party: Rust rejects an address
+     * the account's own IVK recognizes (default or any diversified index).
+     * Self-shields must use [shieldedShieldFromIdentity]. A bound shielded
+     * account ([shieldedAccount]) is still required: the send is
+     * OVK-encrypted to that account and recorded there, which is how the
+     * wallet's own scan later shows it as sent history.
+     *
+     * [memo] is optional: null or empty means no memo. When set, its UTF-8
+     * byte length must be at most 32. Rust owns these rules, as it owns the
+     * zero-amount rejection, so a violation surfaces as a native error, not a
+     * Kotlin precondition.
+     *
+     * Do NOT retry on either of these; a retry could debit the identity
+     * twice, and the next sync reconciles the outcome:
+     *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed]:
+     *    the transition may already have executed.
+     *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedIdentityDebitPending]:
+     *    an earlier identity debit is still unresolved, so this one was
+     *    never built or broadcast.
+     *
+     * Cancelling the calling coroutine does not stop the native call: the
+     * identity can still be debited and the shield land after this function
+     * has thrown `CancellationException`. Treat a cancelled call like
+     * `ShieldedSpendUnconfirmed`: let the next sync reconcile the outcome
+     * before retrying.
+     *
+     * Blocks for the ~30s Halo 2 proof; the note arrives on the recipient's
+     * next shielded sync pass.
+     *
+     * @param walletId the 32-byte wallet id.
+     * @param identityId the 32-byte funding identity id; must be managed by
+     *   this wallet.
+     * @param recipientRaw43 the recipient's raw 43-byte Orchard payment
+     *   address (11-byte diversifier + 32-byte pk_d), the same shape
+     *   [shieldedTransfer] takes.
+     * @param amount credits to shield (1 DASH = 1e11).
+     * @param memo optional UTF-8 memo for the recipient's note.
+     * @return the identity's proven post-debit credit balance.
+     */
+    suspend fun shieldedShieldFromIdentityToRecipient(
+        walletId: ByteArray,
+        identityId: ByteArray,
+        recipientRaw43: ByteArray,
+        amount: Long,
+        shieldedAccount: Int = 0,
+        memo: String? = null,
+    ): Long = teardownGate.op {
+        require(identityId.size == 32) {
+            "identityId must be exactly 32 bytes, got ${identityId.size}"
+        }
+        require(recipientRaw43.size == 43) {
+            "recipientRaw43 must be exactly 43 bytes, got ${recipientRaw43.size}"
+        }
+        // Sign checks only, before the native unsigned casts; zero is Rust's call.
+        require(amount >= 0) { "amount must be non-negative, got $amount" }
+        require(shieldedAccount >= 0) {
+            "shieldedAccount must be non-negative, got $shieldedAccount"
+        }
+        mapNativeErrors {
+            FundingNative.shieldedShieldFromIdentityToRecipient(
+                managerHandle,
+                walletId,
+                shieldedAccount,
+                identityId,
+                recipientRaw43,
+                amount,
+                memo,
+                signerHandle,
+            )
+        }
+    }
+
     /** List active and archived durable identity-funded shields for this manager's wallet. */
     suspend fun shieldedIdentityDebitRecoveryRecords(
         walletId: ByteArray,
