@@ -411,4 +411,31 @@ mod tests {
             assert_eq!(store_count(&drive, Some(&transaction)), appended);
         }
     }
+
+    /// Basic structure refuses two identical entries in one transition, but the store takes
+    /// them: from protocol version 15, GroveDB V5 applies repeated appends of the same value to
+    /// one store in one batch, which earlier GroveDB versions refuse as the same operation twice.
+    #[test]
+    fn should_append_two_identical_entries_in_one_batch() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract, chunk_power) = drive_with_private_type(24);
+        drive
+            .apply_drive_operations(
+                vec![DriveOperation::PrivateDocumentOperation(
+                    PrivateDocumentOperationType::AppendEntries {
+                        contract,
+                        document_type_name: "secret".to_string(),
+                        entries: vec![vec![5u8; 24], vec![5u8; 24]],
+                        chunk_power,
+                    },
+                )],
+                true,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to append both entries");
+        assert_eq!(store_count(&drive, None), 2);
+    }
 }

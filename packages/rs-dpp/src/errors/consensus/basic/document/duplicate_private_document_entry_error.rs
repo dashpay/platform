@@ -9,8 +9,7 @@ use thiserror::Error;
 
 /// Two entries of a `PrivateDocumentCreateFromShieldedPool` are the same bytes (protocol version
 /// 15). A recipient keeps one copy of an entry, so a second copy in the same transition would
-/// only be stored for nothing, and Drive appends every entry of a transition in one batch, behind
-/// the same header, where two identical appends are the same operation twice.
+/// only be stored, and scanned by every wallet of the type, for nothing.
 #[derive(
     Error,
     Debug,

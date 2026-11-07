@@ -17,6 +17,7 @@ use crate::version::drive_versions::{
     DrivePlatformSystemMethodVersions, DrivePrefundedSpecializedMethodVersions,
     DriveSystemEstimationCostsMethodVersions, DriveVersion,
 };
+use grovedb_version::version::v5::GROVE_V5;
 
 /// Drive version 10, introduced in protocol v15:
 ///
@@ -80,6 +81,12 @@ use crate::version::drive_versions::{
 ///   `store_core_fork_activation_height` are `Some(0)` (`None` before): Drive keeps, in `Misc`,
 ///   the chain locked Core height at which Platform first saw each tracked Core fork active.
 ///
+/// * **GroveDB V5** (protocol v15 note 26): `grove_version` is `GROVE_V5` (`GROVE_V4` before).
+///   GroveDB reads and proves a private document store's entries by position range only under
+///   V5 (`private_document_store.get_range` and `range_proof`), prices a store's creation as it
+///   applies it (`merk_insert_element` 1 in both estimators), and lets a batch carry the same
+///   keyless append more than once (`apply_batch.keyless_append_repeats`).
+///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     methods: DriveMethodVersions {
@@ -123,5 +130,10 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
         },
         ..DRIVE_VERSION_V9.methods
     },
+    // changed in v10: GROVE_V5 (protocol v15 note 26), whose gates protocol v15 needs: a private
+    // document store's entries are read and proved by position range, a store's creation is
+    // estimated as it is applied, and a batch may repeat a keyless append. GROVE_V4, which v9
+    // keeps, refuses all three.
+    grove_version: GROVE_V5,
     ..DRIVE_VERSION_V9
 };
