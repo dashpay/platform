@@ -40,7 +40,7 @@
 //! manager's lifetime; on shutdown, fire the [`CancellationToken`] to
 //! make the task exit cleanly.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
@@ -61,8 +61,9 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::changeset::changeset::{
-    fold_same_txid_records, merge_payment_overlays, AssetLockChangeSet, CoreChangeSet,
-    HighestUsedIndexes, PaymentOverlay, PlatformWalletChangeSet, SweepBatch, UtxoCreditVerdict,
+    coalesce_account_records, fold_same_txid_records, merge_payment_overlays, AssetLockChangeSet,
+    CoreChangeSet, HighestUsedIndexes, PaymentOverlay, PlatformWalletChangeSet, SweepBatch,
+    UtxoCreditVerdict,
 };
 use crate::changeset::merge::Merge;
 use crate::changeset::persistence_capabilities::PersistenceCapabilities;
@@ -1772,7 +1773,16 @@ async fn build_core_changeset(
                     .filter(|r| !is_contact_watch_only(r))
                     .cloned(),
             );
-            cs.records = cs.account_records.clone();
+            coalesce_account_records(&mut cs.account_records);
+            // The wallet-level row folds every slice the manager holds for
+            // the transaction, not only the ones this block re-emitted (see
+            // `with_held_sibling_slices_and_verdicts`).
+            (cs.records, cs.utxo_credit_verdicts) = with_held_sibling_slices_and_verdicts(
+                wallet_manager,
+                wallet_id,
+                &cs.account_records,
+            )
+            .await;
             fold_same_txid_records(&mut cs.records);
             cs.last_processed_height = Some(*height);
             // Pool extensions triggered by any record in this block.
@@ -1793,17 +1803,6 @@ async fn build_core_changeset(
                 collect_usage_deltas(wallet_manager, wallet_id, records).await;
             cs.addresses_marked_used = addresses_marked_used;
             cs.account_highest_used = account_highest_used;
-            // The engine's verdict on the outputs the persister is about to
-            // materialise from these records — see
-            // `CoreChangeSet::utxo_credit_verdicts`. Over the owned slices
-            // only (`account_records` is already filtered): a contact's
-            // watch-only chain never defines the wallet's TXOs.
-            cs.utxo_credit_verdicts = utxo_credit_verdicts(
-                wallet_manager,
-                wallet_id,
-                &cs.account_records.iter().collect::<Vec<_>>(),
-            )
-            .await;
             cs
         }
         WalletEvent::TransactionsSwept {
@@ -2207,36 +2206,7 @@ async fn collect_usage_deltas(
     collect_usage_deltas_from_accounts(&info.core_wallet.accounts, &records)
 }
 
-/// The engine's credit verdict for every `Received` / `Change` output of
-/// `records` that the owning account does NOT hold — see
-/// [`CoreChangeSet::utxo_credit_verdicts`] for what a persister does with
-/// it. Empty when every output is credited, when the wallet is unknown
-/// (raced a removal — the next round re-emits), or when `records` is empty.
-///
-/// One read of the wallet lock per event, like [`collect_usage_deltas`];
-/// the walk itself is [`utxo_credit_verdicts_from_wallet`], factored so
-/// tests can drive it against a bare `ManagedWalletInfo`. `BlockProcessed`
-/// uses this over the event's own records (block records carry their
-/// block context and cannot read `Doomed`); `TransactionDetected` reads its
-/// slices and verdicts under one guard through
-/// [`wallet_slices_and_verdicts_for_txid`], and `TransactionInstantLocked`
-/// under its own guard through [`slices_and_verdicts_for_txid`].
-async fn utxo_credit_verdicts(
-    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    wallet_id: &WalletId,
-    records: &[&TransactionRecord],
-) -> BTreeMap<OutPoint, UtxoCreditVerdict> {
-    if records.is_empty() {
-        return BTreeMap::new();
-    }
-    let guard = wallet_manager.read().await;
-    let Some(info) = guard.get_wallet_info(wallet_id) else {
-        return BTreeMap::new();
-    };
-    utxo_credit_verdicts_from_wallet(&info.core_wallet, records)
-}
-
-/// Synchronous core of [`utxo_credit_verdicts`].
+/// Judge owned outputs against the same wallet snapshot as their account slices.
 ///
 /// For each record (a contact's watch-only slice excluded — its outputs
 /// are the contact's coins and never become this wallet's TXOs) and each
@@ -2492,6 +2462,62 @@ async fn wallet_slices_and_verdicts_for_txid(
     let guard = wallet_manager.read().await;
     let info = guard.get_wallet_info(wallet_id)?;
     Some(slices_and_verdicts_for_txid(info, txid))
+}
+
+/// Complete slices and their credit verdicts from one wallet snapshot.
+/// `slices` plus every slice the manager still holds, for the same
+/// transactions, under an account `slices` does not carry.
+///
+/// A block re-emits only the slices key-wallet's re-check still matches. A
+/// no-change spend (an asset lock draining its funding account, the burn as
+/// its only output) leaves the funding account nothing to match: the mempool
+/// check already removed the spent UTXO and no output of the account remains.
+/// The block then carries only the keys account's detail-less marker, and
+/// folded alone that marker becomes the wallet-level row, replacing the
+/// funding accounting the host already stored. The funding slice is still in
+/// the manager (at its earlier context), so folding it back in keeps the
+/// row's details and accounting while the fold takes the block's context
+/// from the marker.
+///
+/// The event's own slices stay authoritative for their accounts; only
+/// accounts it lacks are filled in. Contact watch-only slices stay out, as
+/// everywhere else in the projection. An unknown wallet (removed mid-flight,
+/// or a bare test manager) leaves `slices` as they are.
+async fn with_held_sibling_slices_and_verdicts(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: &WalletId,
+    slices: &[TransactionRecord],
+) -> (
+    Vec<TransactionRecord>,
+    BTreeMap<OutPoint, UtxoCreditVerdict>,
+) {
+    let mut complete = slices.to_vec();
+    if slices.is_empty() {
+        return (complete, BTreeMap::new());
+    }
+    let guard = wallet_manager.read().await;
+    let Some(info) = guard.get_wallet_info(wallet_id) else {
+        return (complete, BTreeMap::new());
+    };
+    let carried: HashSet<(Txid, AccountType)> = slices
+        .iter()
+        .map(|record| (record.txid, record.account_type))
+        .collect();
+    let txids: BTreeSet<Txid> = slices.iter().map(|record| record.txid).collect();
+    for account in info.core_wallet.accounts.all_accounts() {
+        for txid in &txids {
+            if let Some(record) = account.transactions().get(txid) {
+                if !is_contact_watch_only(record)
+                    && !carried.contains(&(record.txid, record.account_type))
+                {
+                    complete.push(record.clone());
+                }
+            }
+        }
+    }
+    let verdicts =
+        utxo_credit_verdicts_from_wallet(&info.core_wallet, &complete.iter().collect::<Vec<_>>());
+    (complete, verdicts)
 }
 
 /// The slices `info` holds of `txid` and the verdicts of their owned outputs.
@@ -4034,6 +4060,26 @@ mod contact_watch_only_projection_tests {
         assert_eq!(cs.records[0].direction, TransactionDirection::Outgoing);
     }
 
+    #[tokio::test]
+    async fn should_coalesce_repeated_account_corrections_within_one_block() {
+        let (_, corrected, _) = contact_payment_records();
+        let mut stale = corrected.clone();
+        stale.input_details.clear();
+        stale.net_amount = CHANGE as i64;
+        stale.direction = TransactionDirection::Incoming;
+        let mut event = block_processed(vec![stale]);
+        if let WalletEvent::BlockProcessed {
+            height, updated, ..
+        } = &mut event
+        {
+            (*height, *updated) = (1_001, vec![corrected.clone()]);
+        }
+        let cs = build_core_changeset(&test_manager(), &event).await;
+        assert_eq!(cs.records.len(), 1);
+        assert_eq!(cs.records[0].net_amount, corrected.net_amount);
+        assert_eq!(cs.account_records.len(), 1);
+    }
+
     /// A cross-account spend (CoinJoin-funded send with BIP44 change)
     /// emits one record per matched account, and the two slices DISAGREE
     /// on the change output's role: the funding account's slice carries it
@@ -4265,6 +4311,457 @@ mod contact_watch_only_projection_tests {
             TransactionDirection::CoinJoin,
             "a nonzero net must not rewrite a CoinJoin row as Outgoing/Incoming"
         );
+    }
+
+    /// Platform credits an asset lock moves into the wallet's own
+    /// keys account (`AssetLockPayload.credit_outputs`, mirrored by the
+    /// OP_RETURN output's value).
+    const LOCK_CREDIT: u64 = 60_000_000;
+    const LOCK_FEE: u64 = 1_000;
+
+    /// The credit an asset lock spending [`our_input`] burns: everything
+    /// but the fee when there is no change, else [`LOCK_CREDIT`].
+    fn lock_credit(change: bool) -> u64 {
+        if change {
+            LOCK_CREDIT
+        } else {
+            FUNDING - LOCK_FEE
+        }
+    }
+
+    /// An asset lock spending [`our_input`]: output 0 burns
+    /// [`lock_credit`] into the OP_RETURN, output 1 (when `change`) is
+    /// our change, and the rest is the fee.
+    fn asset_lock_tx(change: bool) -> Transaction {
+        let mut tx = tx_with(&[]);
+        tx.version = 3;
+        tx.output.push(TxOut {
+            value: lock_credit(change),
+            script_pubkey: ScriptBuf::new_op_return(&[]),
+        });
+        if change {
+            tx.output.push(TxOut {
+                value: FUNDING - LOCK_CREDIT - LOCK_FEE,
+                script_pubkey: our_change_address().script_pubkey(),
+            });
+        }
+        tx
+    }
+
+    /// The two per-account records upstream emits for an asset lock:
+    /// the funding account's slice (classified by upstream
+    /// `record_transaction`: `Unspendable` OP_RETURN, `Change` output,
+    /// `Outgoing` when nothing of ours comes back) and the keys
+    /// account's thin marker (`Internal`, no details, `+credit` net).
+    fn asset_lock_slices(change: bool) -> (TransactionRecord, TransactionRecord) {
+        let tx = asset_lock_tx(change);
+        let mut outputs = vec![OutputDetail {
+            index: 0,
+            role: OutputRole::Unspendable,
+            address: None,
+            value: lock_credit(change),
+        }];
+        let (direction, change_value) = if change {
+            let value = FUNDING - LOCK_CREDIT - LOCK_FEE;
+            outputs.push(output(1, OutputRole::Change, &our_change_address(), value));
+            (TransactionDirection::Internal, value)
+        } else {
+            (TransactionDirection::Outgoing, 0)
+        };
+        let funding = record_with(
+            &tx,
+            bip44_account_0(),
+            in_block(1_000),
+            TransactionType::AssetLock,
+            direction,
+            vec![our_input()],
+            outputs,
+            change_value as i64 - FUNDING as i64,
+        );
+        let keys = record_with(
+            &tx,
+            AccountType::AssetLockAddressTopUp,
+            in_block(1_000),
+            TransactionType::AssetLock,
+            TransactionDirection::Internal,
+            Vec::new(),
+            Vec::new(),
+            lock_credit(change) as i64,
+        );
+        (funding, keys)
+    }
+
+    /// The wallet's Core balance drops by the locked credit plus the fee
+    /// — the credit leaves Core for the wallet's own Platform keys, so
+    /// the move is `Internal` and the net is `-(credit + fee)`, with or
+    /// without change. The keys account's `+credit` marker net counts
+    /// Platform credits, not Core funds, and must not be summed in (it
+    /// made the live row read `-fee` while every repair path wrote
+    /// `-(credit + fee)`). A funding slice that never meets the keys
+    /// marker (the keys account did not match, or its slice lands in
+    /// another round) is projected with the same wallet rule — not left
+    /// on upstream's account-local `Outgoing`. The keys account's marker
+    /// alone carries no Core accounting evidence, so the projection leaves
+    /// upstream's verdict alone. An asset lock that also pays someone else
+    /// is a real outgoing payment; the asset-lock exception covers only the burn.
+    #[tokio::test]
+    async fn should_project_asset_lock_accounting_from_the_wallet_side() {
+        use TransactionDirection::{Internal, Outgoing};
+        let paid = 5_000_000;
+        let (mut paying, mut paying_keys) = asset_lock_slices(true);
+        let mut tx = paying.transaction.clone();
+        tx.output[1].value -= paid;
+        tx.output.push(TxOut {
+            value: paid,
+            script_pubkey: contact_address().script_pubkey(),
+        });
+        for slice in [&mut paying, &mut paying_keys] {
+            slice.transaction = tx.clone();
+            slice.txid = tx.txid();
+        }
+        paying.output_details[1].value -= paid;
+        paying.net_amount -= paid as i64;
+        let sent = output(2, OutputRole::Sent, &contact_address(), paid);
+        paying.output_details.push(sent);
+        let lock_net = |change| -((lock_credit(change) + LOCK_FEE) as i64);
+        let both = |change| {
+            let (funding, keys) = asset_lock_slices(change);
+            vec![funding, keys]
+        };
+        let funding_alone = |change| vec![asset_lock_slices(change).0];
+        let (bip44, keys_account) = (bip44_account_0(), AccountType::AssetLockAddressTopUp);
+        let keys_net = lock_credit(false) as i64;
+        let paying_net = -((LOCK_CREDIT + LOCK_FEE + paid) as i64);
+        for (case, records, expected) in [
+            ("no change", both(false), (Internal, lock_net(false), bip44)),
+            ("change", both(true), (Internal, lock_net(true), bip44)),
+            (
+                "lone funding slice",
+                funding_alone(false),
+                (Internal, lock_net(false), bip44),
+            ),
+            (
+                "lone funding slice, change",
+                funding_alone(true),
+                (Internal, lock_net(true), bip44),
+            ),
+            (
+                "lone keys marker",
+                vec![asset_lock_slices(false).1],
+                (Internal, keys_net, keys_account),
+            ),
+            (
+                "paying an external output",
+                vec![paying, paying_keys],
+                (Outgoing, paying_net, bip44),
+            ),
+        ] {
+            let cs = build_core_changeset(&test_manager(), &block_processed(records)).await;
+
+            assert_eq!(cs.records.len(), 1, "{case}");
+            let row = &cs.records[0];
+            assert_eq!(
+                (row.direction, row.net_amount, row.account_type),
+                expected,
+                "{case}"
+            );
+        }
+    }
+
+    /// The wallet-level accounting pass runs on every projected record,
+    /// singles included. Outside asset locks it must reproduce what the
+    /// projection emitted before the pass existed: a single record kept
+    /// upstream's own `net_amount`/`direction`, and a group summed its
+    /// slices' nets and re-derived direction over the merged details.
+    /// Each case feeds upstream-shaped records (upstream's own net and
+    /// direction for its account slice) through the live projection and
+    /// pins that prior output (verified against the pre-pass fold).
+    ///
+    /// One intentional difference: a group made only of keys-account
+    /// markers (no details) used to re-derive `Incoming` from its empty
+    /// details. It now keeps upstream's `Internal`, like a single marker
+    /// always did and like the SQLite repair, which ignores detail-less
+    /// records.
+    #[tokio::test]
+    async fn should_keep_live_fold_accounting_for_non_asset_lock_transactions() {
+        const PAID: u64 = 60_000_000;
+        const FEE: u64 = 1_000;
+        type Case = (Vec<TransactionRecord>, TransactionDirection, i64);
+        use TransactionDirection::{CoinJoin, Incoming, Internal, Outgoing};
+        use TransactionType::{
+            AssetUnlock, CoinJoin as CoinJoinTx, Coinbase, ProviderRegistration, Standard,
+        };
+        let external = contact_address;
+        let (ours, our_change) = (our_receive_address(), our_change_address());
+        let second_account = || AccountType::Standard {
+            index: 1,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let slice = |tx: &Transaction,
+                     account: AccountType,
+                     kind: TransactionType,
+                     direction: TransactionDirection,
+                     inputs: Vec<InputDetail>,
+                     outputs: Vec<OutputDetail>,
+                     net: i64| {
+            record_with(
+                tx,
+                account,
+                in_block(1_000),
+                kind,
+                direction,
+                inputs,
+                outputs,
+                net,
+            )
+        };
+        // A lone slice, whose own net and direction the projection keeps.
+        let single = |record: TransactionRecord| -> Case {
+            let (direction, net) = (record.direction, record.net_amount);
+            (vec![record], direction, net)
+        };
+        let received = |value| vec![output(0, OutputRole::Received, &ours, value)];
+        // A receipt of PAID into `account`, classified `kind`.
+        let incoming = |tx: &Transaction, account, kind| {
+            single(slice(
+                tx,
+                account,
+                kind,
+                Incoming,
+                vec![],
+                received(PAID),
+                PAID as i64,
+            ))
+        };
+        // A standard spend of our coin from the first BIP44 account.
+        let spend = |tx: &Transaction, direction, outputs, net| {
+            let record = slice(
+                tx,
+                bip44_account_0(),
+                Standard,
+                direction,
+                vec![our_input()],
+                outputs,
+                net,
+            );
+            single(record)
+        };
+        // A slice of a keys account: no details, upstream's own net.
+        let marker = |tx: &Transaction, account, net| {
+            slice(
+                tx,
+                account,
+                TransactionType::AssetLock,
+                Internal,
+                vec![],
+                vec![],
+                net,
+            )
+        };
+
+        let receive = tx_with(&[(&ours, PAID)]);
+        let send_change = tx_with(&[(&external(), PAID), (&our_change, CHANGE)]);
+        let send_all = tx_with(&[(&external(), FUNDING - FEE)]);
+        let self_send = tx_with(&[(&ours, FUNDING - FEE)]);
+        let cross = tx_with(&[(&ours, PAID), (&our_change, CHANGE)]);
+        let mix = tx_with(&[(&ours, FUNDING - FEE)]);
+        let provider = tx_with(&[(&ours, PAID), (&our_change, FUNDING - PAID - FEE)]);
+        let provider_ext = tx_with(&[(&external(), PAID), (&our_change, FUNDING - PAID - FEE)]);
+        let unlock = tx_with(&[(&ours, PAID)]);
+        let mut coinbase = tx_with(&[(&ours, PAID)]);
+        coinbase.lock_time = 9;
+        let keys_only = tx_with(&[]);
+        let (_, contact_funding, contact_watch_only) = contact_payment_records();
+        let from_contact = tx_with(&[(&ours, PAID)]);
+        let dashpay_receiving = AccountType::DashpayReceivingFunds {
+            index: 0,
+            user_identity_id: [2u8; 32],
+            friend_identity_id: [1u8; 32],
+        };
+        let provider_change = output(1, OutputRole::Change, &our_change, FUNDING - PAID - FEE);
+        let owner_marker = |tx: &Transaction| {
+            slice(
+                tx,
+                AccountType::ProviderOwnerKeys,
+                ProviderRegistration,
+                Internal,
+                vec![],
+                vec![],
+                0,
+            )
+        };
+
+        let cases: Vec<(&str, Case)> = vec![
+            (
+                "plain receive",
+                incoming(&receive, bip44_account_0(), Standard),
+            ),
+            (
+                "send with change",
+                spend(
+                    &send_change,
+                    Outgoing,
+                    vec![
+                        output(0, OutputRole::Sent, &external(), PAID),
+                        output(1, OutputRole::Change, &our_change, CHANGE),
+                    ],
+                    CHANGE as i64 - FUNDING as i64,
+                ),
+            ),
+            (
+                "send without change",
+                spend(
+                    &send_all,
+                    Outgoing,
+                    vec![output(0, OutputRole::Sent, &external(), FUNDING - FEE)],
+                    -(FUNDING as i64),
+                ),
+            ),
+            (
+                "self-transfer within one account",
+                spend(&self_send, Internal, received(FUNDING - FEE), -(FEE as i64)),
+            ),
+            (
+                "self-transfer between own accounts",
+                (
+                    vec![
+                        slice(
+                            &cross,
+                            bip44_account_0(),
+                            Standard,
+                            Outgoing,
+                            vec![our_input()],
+                            vec![
+                                output(0, OutputRole::Sent, &ours, PAID),
+                                output(1, OutputRole::Change, &our_change, CHANGE),
+                            ],
+                            CHANGE as i64 - FUNDING as i64,
+                        ),
+                        slice(
+                            &cross,
+                            second_account(),
+                            Standard,
+                            Incoming,
+                            vec![],
+                            received(PAID),
+                            PAID as i64,
+                        ),
+                    ],
+                    Internal,
+                    (PAID + CHANGE) as i64 - FUNDING as i64,
+                ),
+            ),
+            (
+                "coinjoin",
+                single(slice(
+                    &mix,
+                    AccountType::CoinJoin { index: 0 },
+                    CoinJoinTx,
+                    CoinJoin,
+                    vec![our_input()],
+                    received(FUNDING - FEE),
+                    -(FEE as i64),
+                )),
+            ),
+            (
+                "provider registration with owner-key marker",
+                (
+                    vec![
+                        slice(
+                            &provider,
+                            bip44_account_0(),
+                            ProviderRegistration,
+                            Internal,
+                            vec![our_input()],
+                            vec![
+                                output(0, OutputRole::Received, &ours, PAID),
+                                provider_change.clone(),
+                            ],
+                            -(FEE as i64),
+                        ),
+                        owner_marker(&provider),
+                    ],
+                    Internal,
+                    -(FEE as i64),
+                ),
+            ),
+            (
+                "provider registration paying external collateral",
+                (
+                    vec![
+                        slice(
+                            &provider_ext,
+                            bip44_account_0(),
+                            ProviderRegistration,
+                            Outgoing,
+                            vec![our_input()],
+                            vec![
+                                output(0, OutputRole::Sent, &external(), PAID),
+                                provider_change,
+                            ],
+                            -((PAID + FEE) as i64),
+                        ),
+                        owner_marker(&provider_ext),
+                    ],
+                    Outgoing,
+                    -((PAID + FEE) as i64),
+                ),
+            ),
+            (
+                "asset unlock",
+                incoming(&unlock, bip44_account_0(), AssetUnlock),
+            ),
+            ("coinbase", incoming(&coinbase, bip44_account_0(), Coinbase)),
+            (
+                "keys-only single marker",
+                single(marker(
+                    &keys_only,
+                    AccountType::IdentityRegistration,
+                    PAID as i64,
+                )),
+            ),
+            (
+                "payment to a contact (watch-only slice present)",
+                (
+                    vec![contact_funding, contact_watch_only],
+                    Outgoing,
+                    CHANGE as i64 - FUNDING as i64,
+                ),
+            ),
+            (
+                "payment from a contact into DashPay receiving funds",
+                incoming(&from_contact, dashpay_receiving, Standard),
+            ),
+            (
+                "keys-only group",
+                (
+                    vec![
+                        marker(&keys_only, AccountType::IdentityRegistration, PAID as i64),
+                        marker(
+                            &keys_only,
+                            AccountType::AssetLockAddressTopUp,
+                            CHANGE as i64,
+                        ),
+                    ],
+                    // Intentional change (see the doc comment): was `Incoming`.
+                    Internal,
+                    (PAID + CHANGE) as i64,
+                ),
+            ),
+        ];
+        let mut failures = Vec::new();
+        for (name, (records, direction, net)) in cases {
+            let cs = build_core_changeset(&test_manager(), &block_processed(records)).await;
+            assert_eq!(cs.records.len(), 1, "{name}");
+            let got = (cs.records[0].direction, cs.records[0].net_amount);
+            if got != (direction, net) {
+                failures.push(format!(
+                    "{name}: expected {:?}, got {got:?}",
+                    (direction, net)
+                ));
+            }
+        }
+        assert!(failures.is_empty(), "{failures:#?}");
     }
 
     /// A fold lands at the group's FIRST position even when the funding
@@ -9077,6 +9574,120 @@ mod utxo_credit_verdict_tests {
         assert!(unknown.utxo_credit_verdicts.is_empty());
     }
 
+    #[tokio::test]
+    async fn should_preserve_held_sibling_verdict_through_buffered_block_projection() {
+        use crate::wallet::core::WalletGeneration;
+        use crate::wallet::identity::IdentityManager;
+
+        for credited in [false, true] {
+            let mut ctx = TestWalletContext::new_random();
+            let funding = funding_of(ctx.receive_address.script_pubkey(), 71);
+            let coin = OutPoint::new(funding.txid(), 0);
+            let burn = ctx
+                .check_transaction(&collateral_burn(coin), in_block(100_001))
+                .await;
+            assert!(
+                !burn.is_relevant,
+                "there is no spender record to repair a lost verdict"
+            );
+            let result = ctx.check_transaction(&funding, in_block(100_000)).await;
+            let sibling = result.new_records[0].clone();
+            let mut marker = sibling.clone();
+            marker.account_type = AccountType::IdentityRegistration;
+            marker.input_details.clear();
+            marker.output_details.clear();
+            marker.net_amount = 0;
+            marker.context = in_block(100_002);
+            let info = PlatformWalletInfo {
+                core_wallet: ctx.managed_wallet,
+                generation: Arc::new(WalletGeneration::new()),
+                identity_manager: IdentityManager::new(),
+                tracked_asset_locks: BTreeMap::new(),
+                dpns_name_states: BTreeMap::new(),
+                dashpay_backfill: Default::default(),
+                rewind_barrier: Default::default(),
+                observed_input_conflicts: Default::default(),
+            };
+            let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
+            let wallet_id = wm.insert_wallet(ctx.wallet, info).unwrap();
+            let manager = Arc::new(RwLock::new(wm));
+            let block = |record| WalletEvent::BlockProcessed {
+                wallet_id,
+                height: 100_002,
+                chain_lock: None,
+                inserted: vec![],
+                updated: vec![record],
+                matured: vec![],
+                balance: WalletCoreBalance::default(),
+                account_balances: BTreeMap::new(),
+                addresses_derived: vec![],
+            };
+            let durable = DurableCursors::default();
+            let mut batch = BTreeMap::new();
+            project_event_into_batch(&manager, &durable, &block(sibling.clone()), &mut batch).await;
+            assert_eq!(
+                batch[&wallet_id].core.utxo_credit_verdicts.get(&coin),
+                Some(&UtxoCreditVerdict::ObservedSpent { height: 100_001 })
+            );
+            if credited {
+                manager
+                    .write()
+                    .await
+                    .get_wallet_info_mut(&wallet_id)
+                    .unwrap()
+                    .core_wallet
+                    .accounts
+                    .standard_bip44_accounts
+                    .get_mut(&0)
+                    .unwrap()
+                    .utxos
+                    .insert(
+                        coin,
+                        key_wallet::Utxo::new(
+                            coin,
+                            funding.output[0].clone(),
+                            ctx.receive_address.clone(),
+                            100_000,
+                            false,
+                        ),
+                    );
+            }
+            project_event_into_batch(&manager, &durable, &block(marker), &mut batch).await;
+            let merged = &batch[&wallet_id].core;
+            assert_eq!(merged.records.len(), 1);
+            assert_eq!(merged.records[0].net_amount, sibling.net_amount);
+            let outputs = |record: &TransactionRecord| {
+                record
+                    .output_details
+                    .iter()
+                    .map(|detail| {
+                        (
+                            detail.index,
+                            detail.role,
+                            detail.address.clone(),
+                            detail.value,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(outputs(&merged.records[0]), outputs(&sibling));
+            assert_eq!(merged.records[0].context, in_block(100_002));
+            assert!(
+                merged
+                    .account_records
+                    .iter()
+                    .any(|r| r.account_type == sibling.account_type
+                        && outputs(r) == outputs(&sibling)),
+                "the callback still carries the owned sibling output"
+            );
+            assert_eq!(
+                merged.utxo_credit_verdicts.get(&coin),
+                (!credited).then_some(&UtxoCreditVerdict::ObservedSpent { height: 100_001 }),
+                "only genuine current credit clears the buffered withholding verdict"
+            );
+        }
+    }
+
     /// `TransactionDetected` judges the outputs of the records it READS,
     /// under the guard it reads them with — never the event's own record,
     /// which is a clone taken at emit time and can be stale by drain time.
@@ -9163,5 +9774,318 @@ mod utxo_credit_verdict_tests {
             cs.records.iter().all(|r| r.context.block_info().is_some()),
             "the row is rebuilt from the manager's record, not the stale clone"
         );
+    }
+}
+
+#[cfg(test)]
+mod no_change_asset_lock_block_projection_tests {
+    //! A no-change asset lock (the wallet drain's shape: every input of the
+    //! funding account spent, only the OP_RETURN burn as an output) leaves
+    //! the funding account nothing key-wallet can match on a re-check: the
+    //! mempool check already removed the spent UTXO, and no output of the
+    //! account remains. So the block's `updated` list carries only the keys
+    //! account's detail-less marker, and the funding slice keeps its mempool
+    //! context in memory. Drives a real `ManagedWalletInfo` through
+    //! `check_core_transaction` and projects the block event exactly as the
+    //! event adapter does.
+
+    use super::*;
+    use crate::wallet::core::WalletGeneration;
+    use crate::wallet::identity::IdentityManager;
+    use dashcore::blockdata::transaction::special_transaction::asset_lock::AssetLockPayload;
+    use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
+    use dashcore::{BlockHash, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness};
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    use key_wallet::managed_account::transaction_record::{InputDetail, TransactionDirection};
+    use key_wallet::test_utils::TestWalletContext;
+    use key_wallet::transaction_checking::{BlockInfo, WalletTransactionChecker};
+    use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+    use key_wallet::{Wallet, WalletCoreBalance};
+
+    const FUNDING: u64 = 1_750_000;
+    const FEE: u64 = 229;
+    const BLOCK_HEIGHT: u32 = 100_001;
+
+    fn in_block(height: u32) -> TransactionContext {
+        TransactionContext::InBlock(BlockInfo::new(
+            height,
+            BlockHash::from_slice(&[1u8; 32]).expect("valid block hash"),
+            1_234_567_890,
+        ))
+    }
+
+    fn spend_of(previous_output: OutPoint) -> TxIn {
+        TxIn {
+            previous_output,
+            script_sig: ScriptBuf::new(),
+            sequence: 0xffffffff,
+            witness: Witness::new(),
+        }
+    }
+
+    /// A no-change asset lock after its mempool and block checks.
+    struct NoChangeLock {
+        managed_wallet: ManagedWalletInfo,
+        wallet: Wallet,
+        txid: Txid,
+        /// What the block check re-emitted (its `updated` records).
+        block_updated: Vec<TransactionRecord>,
+    }
+
+    /// Fund BIP44 with one UTXO, then lock all of it: one input, the burn as
+    /// the only output, the credit paid to the shielded top-up keys account.
+    async fn no_change_lock() -> NoChangeLock {
+        let TestWalletContext {
+            mut managed_wallet,
+            mut wallet,
+            receive_address,
+            ..
+        } = TestWalletContext::new_random();
+        let fund_tx = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![spend_of(OutPoint {
+                txid: Txid::from_slice(&[2u8; 32]).expect("valid txid"),
+                vout: 0,
+            })],
+            output: vec![TxOut {
+                value: FUNDING,
+                script_pubkey: receive_address.script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        };
+        assert!(
+            managed_wallet
+                .check_core_transaction(&fund_tx, in_block(100_000), &mut wallet, true, true)
+                .await
+                .is_relevant
+        );
+
+        let xpub = wallet
+            .accounts
+            .asset_lock_shielded_address_topup
+            .as_ref()
+            .map(|account| account.account_xpub)
+            .expect("shielded top-up account xpub");
+        let credit_address = managed_wallet
+            .accounts
+            .asset_lock_shielded_address_topup
+            .as_mut()
+            .expect("shielded top-up account")
+            .next_address(Some(&xpub), true)
+            .expect("credit address");
+        let credit = FUNDING - FEE;
+        let lock_tx = Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![spend_of(OutPoint {
+                txid: fund_tx.txid(),
+                vout: 0,
+            })],
+            output: vec![TxOut {
+                value: credit,
+                script_pubkey: ScriptBuf::new_op_return(&[]),
+            }],
+            special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(
+                AssetLockPayload::new(vec![TxOut {
+                    value: credit,
+                    script_pubkey: credit_address.script_pubkey(),
+                }]),
+            )),
+        };
+        assert!(
+            managed_wallet
+                .check_core_transaction(
+                    &lock_tx,
+                    TransactionContext::Mempool,
+                    &mut wallet,
+                    true,
+                    true
+                )
+                .await
+                .is_relevant
+        );
+        let block = managed_wallet
+            .check_core_transaction(&lock_tx, in_block(BLOCK_HEIGHT), &mut wallet, true, true)
+            .await;
+        // Precondition, the shape observed live (AL-002): only the keys
+        // marker is re-emitted for the block.
+        assert!(
+            block.new_records.is_empty()
+                && block.updated_records.len() == 1
+                && block.updated_records[0].input_details.is_empty()
+                && block.updated_records[0].output_details.is_empty(),
+            "precondition: the block re-emits only the detail-less keys marker, got {:?}",
+            block
+                .updated_records
+                .iter()
+                .map(|r| r.account_type)
+                .collect::<Vec<_>>()
+        );
+        NoChangeLock {
+            managed_wallet,
+            wallet,
+            txid: lock_tx.txid(),
+            block_updated: block.updated_records,
+        }
+    }
+
+    /// The held BIP44 slice of `txid`.
+    fn held_funding_slice(managed_wallet: &ManagedWalletInfo, txid: &Txid) -> TransactionRecord {
+        managed_wallet
+            .first_bip44_managed_account()
+            .expect("bip44 account")
+            .transactions()
+            .get(txid)
+            .cloned()
+            .expect("the funding account still holds the lock's slice")
+    }
+
+    /// An input detail no real slice of the lock carries: if a fold picks up
+    /// a slice holding it, the row shows two inputs.
+    fn foreign_input(template: &TransactionRecord) -> InputDetail {
+        InputDetail {
+            index: 1,
+            ..template.input_details[0].clone()
+        }
+    }
+
+    /// Project the block event over a manager holding `managed_wallet` and
+    /// return the lock's wallet-level row.
+    async fn project_block(
+        managed_wallet: ManagedWalletInfo,
+        wallet: Wallet,
+        txid: &Txid,
+        updated: Vec<TransactionRecord>,
+    ) -> TransactionRecord {
+        let info = PlatformWalletInfo {
+            core_wallet: managed_wallet,
+            generation: Arc::new(WalletGeneration::new()),
+            identity_manager: IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+            dpns_name_states: BTreeMap::new(),
+            dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
+            observed_input_conflicts: Default::default(),
+        };
+        let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
+        let wallet_id = wm.insert_wallet(wallet, info).expect("insert wallet");
+        let manager = Arc::new(RwLock::new(wm));
+        let cs = build_core_changeset(
+            &manager,
+            &WalletEvent::BlockProcessed {
+                wallet_id,
+                height: BLOCK_HEIGHT,
+                chain_lock: None,
+                inserted: vec![],
+                updated,
+                matured: vec![],
+                balance: WalletCoreBalance::default(),
+                account_balances: BTreeMap::new(),
+                addresses_derived: vec![],
+            },
+        )
+        .await;
+        let rows: Vec<&TransactionRecord> = cs.records.iter().filter(|r| r.txid == *txid).collect();
+        assert_eq!(rows.len(), 1, "one wallet-level row per transaction");
+        rows[0].clone()
+    }
+
+    #[tokio::test]
+    async fn should_keep_the_funding_accounting_when_a_block_updates_only_the_keys_marker() {
+        let lock = no_change_lock().await;
+        let row = project_block(
+            lock.managed_wallet,
+            lock.wallet,
+            &lock.txid,
+            lock.block_updated,
+        )
+        .await;
+
+        assert_eq!(
+            row.input_details.len(),
+            1,
+            "the wallet-level row must keep the funding input, not degrade to the keys \
+             marker (got {:?}, net {})",
+            row.account_type,
+            row.net_amount
+        );
+        assert_eq!(row.direction, TransactionDirection::Internal);
+        assert_eq!(
+            row.net_amount,
+            -(FUNDING as i64),
+            "a no-change lock costs the whole funding: credit + fee"
+        );
+        assert!(
+            row.context.block_info().is_some(),
+            "the row carries the block confirmation"
+        );
+    }
+
+    /// The event stays authoritative for the accounts it carries: a held
+    /// slice of an account the event already re-emitted is not folded in.
+    #[tokio::test]
+    async fn should_prefer_the_events_slice_over_a_held_slice_of_the_same_account() {
+        let mut lock = no_change_lock().await;
+        let mut from_event = held_funding_slice(&lock.managed_wallet, &lock.txid);
+        from_event.context = in_block(BLOCK_HEIGHT);
+        // Mark the held copy so folding it in would show.
+        let foreign = foreign_input(&from_event);
+        lock.managed_wallet
+            .first_bip44_managed_account_mut()
+            .expect("bip44 account")
+            .transactions_mut()
+            .get_mut(&lock.txid)
+            .expect("held funding slice")
+            .input_details
+            .push(foreign);
+
+        let mut updated = lock.block_updated;
+        updated.push(from_event);
+        let row = project_block(lock.managed_wallet, lock.wallet, &lock.txid, updated).await;
+
+        assert_eq!(
+            row.input_details.len(),
+            1,
+            "the held slice of an account the event carries must not be folded in"
+        );
+        assert_eq!(row.net_amount, -(FUNDING as i64));
+        assert!(row.context.block_info().is_some());
+    }
+
+    /// A contact's watch-only slice never defines the wallet's row, so a
+    /// held one is not folded in either.
+    #[tokio::test]
+    async fn should_not_fold_a_held_contact_watch_only_slice() {
+        let mut lock = no_change_lock().await;
+        let mut watch_only = held_funding_slice(&lock.managed_wallet, &lock.txid);
+        watch_only.account_type = AccountType::DashpayExternalAccount {
+            index: 0,
+            user_identity_id: [7u8; 32],
+            friend_identity_id: [8u8; 32],
+        };
+        let foreign = foreign_input(&watch_only);
+        watch_only.input_details.push(foreign);
+        assert!(is_contact_watch_only(&watch_only));
+        lock.managed_wallet
+            .first_coinjoin_managed_account_mut()
+            .expect("default wallet has CoinJoin account 0")
+            .transactions_mut()
+            .insert(lock.txid, watch_only);
+
+        let row = project_block(
+            lock.managed_wallet,
+            lock.wallet,
+            &lock.txid,
+            lock.block_updated,
+        )
+        .await;
+
+        assert_eq!(
+            row.input_details.len(),
+            1,
+            "a held contact watch-only slice must stay out of the row"
+        );
+        assert_eq!(row.net_amount, -(FUNDING as i64));
     }
 }
