@@ -944,6 +944,125 @@ fn should_refuse_an_update_changing_whether_a_type_is_private_or_its_entry_size(
     assert!(unchanged.is_valid(), "{:?}", unchanged.errors);
 }
 
+/// A private type of `properties`, in their map order.
+fn private_type_with(properties: Value) -> DocumentType {
+    parse(
+        private_schema(platform_value!({ "properties": properties })),
+        false,
+    )
+    .expect("parses")
+}
+
+fn account_reference() -> Value {
+    platform_value!({ "type": "integer", "minimum": 0, "maximum": 4_294_967_295u64, "position": 0 })
+}
+
+fn encrypted_public_key() -> Value {
+    platform_value!({ "type": "array", "byteArray": true, "minItems": 96, "maxItems": 96, "position": 1 })
+}
+
+/// An object property at `position` of `members`, in their map order.
+fn object(members: Value, position: u32) -> Value {
+    platform_value!({
+        "type": "object",
+        "properties": members,
+        "additionalProperties": false,
+        "position": position
+    })
+}
+
+fn boolean(position: u32) -> Value {
+    platform_value!({ "type": "boolean", "position": position })
+}
+
+/// An entry of a private type is immutable and is read with the type as it is now, in the order
+/// the type parses its properties (by `position`) and each object's members (in the schema's
+/// map order), so an update may only add properties after the existing ones, at the end of the
+/// type and of every object. One putting a property before them, or reordering them, is refused;
+/// appending is accepted, however the schema's map lists the type's own properties.
+#[test]
+fn should_refuse_an_update_that_does_not_keep_a_private_type_s_property_order() {
+    let platform_version = PlatformVersion::latest();
+    // `meta` at position 4 leaves positions 2 and 3 free for a property to sort before it.
+    let meta = |members: Value| object(members, 4);
+    let old = private_type_with(platform_value!({
+        "accountReference": account_reference(),
+        "encryptedPublicKey": encrypted_public_key(),
+        "meta": meta(platform_value!({ "y": boolean(0), "z": boolean(1) })),
+    }));
+    let update = |new: &DocumentType| {
+        old.as_ref()
+            .validate_update(new.as_ref(), 2, platform_version)
+            .expect("validate_update should not error")
+    };
+
+    for (case, new, list) in [
+        (
+            "a member put before the object's existing ones",
+            private_type_with(platform_value!({
+                "accountReference": account_reference(),
+                "encryptedPublicKey": encrypted_public_key(),
+                "meta": meta(platform_value!({ "x": boolean(2), "y": boolean(0), "z": boolean(1) })),
+            })),
+            "the object meta",
+        ),
+        (
+            "the object's members reordered",
+            private_type_with(platform_value!({
+                "accountReference": account_reference(),
+                "encryptedPublicKey": encrypted_public_key(),
+                "meta": meta(platform_value!({ "z": boolean(1), "y": boolean(0) })),
+            })),
+            "the object meta",
+        ),
+        (
+            "a property at a position before an existing one",
+            private_type_with(platform_value!({
+                "accountReference": account_reference(),
+                "encryptedPublicKey": encrypted_public_key(),
+                "meta": meta(platform_value!({ "y": boolean(0), "z": boolean(1) })),
+                "note": boolean(3),
+            })),
+            "the type",
+        ),
+    ] {
+        let result = update(&new);
+        assert!(
+            result.errors.iter().any(|error| matches!(
+                error,
+                ConsensusError::StateError(StateError::DocumentTypeUpdateError(error))
+                    if error.additional_message().contains("can only add properties after")
+                        && error.additional_message().contains(list)
+            )),
+            "{case}: expected the property order refusal naming {list}, got {:?}",
+            result.errors
+        );
+    }
+
+    for (case, new) in [
+        (
+            "a member added after the object's existing ones",
+            private_type_with(platform_value!({
+                "accountReference": account_reference(),
+                "encryptedPublicKey": encrypted_public_key(),
+                "meta": meta(platform_value!({ "y": boolean(0), "z": boolean(1), "x": boolean(2) })),
+            })),
+        ),
+        (
+            "a property at a position after the existing ones, listed first",
+            private_type_with(platform_value!({
+                "note": boolean(5),
+                "accountReference": account_reference(),
+                "encryptedPublicKey": encrypted_public_key(),
+                "meta": meta(platform_value!({ "y": boolean(0), "z": boolean(1) })),
+            })),
+        ),
+    ] {
+        let result = update(&new);
+        assert!(result.is_valid(), "{case}: {:?}", result.errors);
+    }
+}
+
 fn old_and_new_unchanged(
     document_type: &DocumentType,
     platform_version: &PlatformVersion,
