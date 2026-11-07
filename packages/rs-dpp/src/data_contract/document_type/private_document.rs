@@ -17,9 +17,11 @@ use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::DocumentV0;
 use crate::ProtocolError;
 use indexmap::IndexMap;
+use integer_encoding::VarIntReader;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
+use std::io::{BufReader, Read};
 use std::num::NonZeroU32;
 
 /// What a document type's `private` keyword declares (`{ "entrySize": n }`). Built only by the
@@ -255,19 +257,90 @@ pub fn encode_private_document_payload(
         })
 }
 
+/// Walks `fields` over `buf` as a document's reader frames them, and refuses an object whose
+/// body holds bytes its members do not read. The reader reads an object's whole length-framed
+/// body but not whether its members used all of it, so a payload written under a version of the
+/// type with more members than the reader's would lose them silently. Each value is read by
+/// the reader's own `read_optionally_from`; only the object frames are opened here. Optional
+/// members missing at the end of an object, or of the type, are absent, as the reader reads them.
+fn refuse_unread_object_bytes(
+    fields: &IndexMap<String, DocumentProperty>,
+    buf: &mut BufReader<&[u8]>,
+    top_level: bool,
+) -> Result<(), ProtocolError> {
+    let unread = |path: &str| {
+        ProtocolError::DecodingError(format!(
+            "the object {path} of a private document payload holds bytes its members do not \
+             read: the payload was written under a version of the type with more members; \
+             refetch the contract"
+        ))
+    };
+    for (name, field) in fields {
+        // A private type refuses `requiredSince`, so a property is required at every version.
+        let required = if top_level {
+            field.required && !field.transient
+        } else {
+            field.required
+        };
+        let DocumentPropertyType::Object(members) = &field.property_type else {
+            let (_, finished) = field.property_type.read_optionally_from(buf, required)?;
+            if finished {
+                return Ok(());
+            }
+            continue;
+        };
+        if !required {
+            let mut marker = [0u8; 1];
+            if buf.read(&mut marker).map_err(|_| unread(name))? == 0 {
+                return Ok(());
+            }
+            if marker[0] == 0 {
+                continue;
+            }
+        }
+        let object_len: usize = buf.read_varint().map_err(|_| {
+            ProtocolError::DecodingError(format!(
+                "the object {name} of a private document payload has no length"
+            ))
+        })?;
+        let mut body = Vec::new();
+        buf.by_ref()
+            .take(object_len as u64)
+            .read_to_end(&mut body)
+            .map_err(|_| unread(name))?;
+        if body.len() != object_len {
+            return Err(ProtocolError::DecodingError(format!(
+                "the object {name} of a private document payload is cut short"
+            )));
+        }
+        let mut object = BufReader::new(body.as_slice());
+        refuse_unread_object_bytes(members, &mut object, false)?;
+        if object.read(&mut [0u8; 1]).map_err(|_| unread(name))? > 0 {
+            return Err(unread(name));
+        }
+    }
+    Ok(())
+}
+
 /// The properties a private document payload of `document_type` holds, read as a document's
-/// reader reads them after its system fields: a value cut short, or a byte after the last
-/// property, is refused. An entry is immutable while its type can gain optional properties, at
-/// the end of the type or of one of its objects, so a payload written before them ends before
-/// them, and reads them as absent. The schema's bounds are not checked here, so a recipient
-/// validates the properties against the type before trusting them
-/// (`DataContract::validate_document_properties`).
+/// reader reads them after its system fields: a value cut short, a byte after the last property,
+/// or a byte inside an object its members do not read, is refused. An entry is immutable while
+/// its type can gain optional properties, at the end of the type or of one of its objects, so a
+/// payload written before them ends before them and reads them as absent, while one written after
+/// them is refused by a reader that does not know them, which should refetch the contract. The
+/// schema's bounds are not checked here, so a recipient validates the properties against the type
+/// before trusting them (`DataContract::validate_document_properties`).
 pub fn decode_private_document_payload(
     document_type: DocumentTypeRef,
     payload: &[u8],
     platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<String, Value>, ProtocolError> {
     refuse_a_public_type(document_type)?;
+    refuse_unread_object_bytes(
+        document_type.properties(),
+        &mut BufReader::new(payload),
+        true,
+    )?;
     let mut serialized = private_document_payload_prefix().to_vec();
     serialized.extend_from_slice(payload);
     Ok(DocumentV0::from_bytes(&serialized, document_type, platform_version)?.properties)
@@ -844,6 +917,49 @@ mod tests {
             platform_version
         )
         .is_err());
+
+        // The other way round: a payload written after the type gained them, read with the
+        // older type, holds members that type does not know. Inside the object, where the
+        // document reader would drop them silently, or at the type's end, it is refused, so a
+        // reader holding a stale contract refetches it rather than read part of the entry.
+        let older = before.document_type_for_name("secret").expect("the type");
+        for (case, properties) in [
+            (
+                "a member the object gained",
+                BTreeMap::from([
+                    ("flag".to_string(), Value::Bool(true)),
+                    (
+                        "meta".to_string(),
+                        Value::Map(vec![
+                            (Value::Text("a".to_string()), Value::U64(7)),
+                            (Value::Text("b".to_string()), Value::Bool(true)),
+                        ]),
+                    ),
+                ]),
+            ),
+            (
+                "a property the type gained",
+                BTreeMap::from([
+                    ("flag".to_string(), Value::Bool(true)),
+                    (
+                        "meta".to_string(),
+                        Value::Map(vec![(Value::Text("a".to_string()), Value::U64(7))]),
+                    ),
+                    ("extra".to_string(), Value::Bool(true)),
+                ]),
+            ),
+        ] {
+            let newer_payload =
+                encode_private_document_payload(newer, properties).expect("encodes");
+            assert!(
+                decode_private_document_payload(newer, &newer_payload, platform_version).is_ok(),
+                "{case}: the newer type reads it"
+            );
+            assert!(
+                decode_private_document_payload(older, &newer_payload, platform_version).is_err(),
+                "{case}: the older type refuses it"
+            );
+        }
     }
 
     /// The type's schema validates a payload's properties, before sealing and after opening:
