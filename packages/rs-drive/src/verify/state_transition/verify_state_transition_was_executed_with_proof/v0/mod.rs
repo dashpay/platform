@@ -2303,8 +2303,8 @@ impl Drive {
             }
             StateTransition::ShieldFromAssetLock(st) => {
                 use crate::drive::RootTree;
+                use crate::util::common::asset_lock::stored_asset_lock_info;
                 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
-                use dpp::asset_lock::StoredAssetLockInfo;
                 use dpp::identity::state_transition::AssetLockProved;
                 use dpp::serialization::PlatformDeserializableUntrusted;
                 use dpp::state_transition::proof_result::StateTransitionProofResult::{
@@ -2414,15 +2414,10 @@ impl Drive {
                         })?;
 
                         let info = match outpoint_element {
-                            Some(Element::Item(bytes, _)) => {
-                                if bytes.is_empty() {
-                                    StoredAssetLockInfo::FullyConsumed
-                                } else {
-                                    StoredAssetLockInfo::PartiallyConsumed(
-                                        AssetLockValue::deserialize_from_bytes_untrusted(&bytes)?,
-                                    )
-                                }
-                            }
+                            Some(Element::Item(bytes, _)) => stored_asset_lock_info(
+                                Some(&bytes),
+                                AssetLockValue::deserialize_from_bytes_untrusted,
+                            )?,
                             Some(_) => {
                                 return Err(Error::Proof(ProofError::CorruptedProof(
                                     "expected an item element for asset lock outpoint".to_string(),
@@ -2458,17 +2453,10 @@ impl Drive {
 
                         let info = if let Some(proved) = proved_key_values.pop() {
                             match proved.2 {
-                                Some(Element::Item(bytes, _)) => {
-                                    if bytes.is_empty() {
-                                        StoredAssetLockInfo::FullyConsumed
-                                    } else {
-                                        StoredAssetLockInfo::PartiallyConsumed(
-                                            AssetLockValue::deserialize_from_bytes_untrusted(
-                                                &bytes,
-                                            )?,
-                                        )
-                                    }
-                                }
+                                Some(Element::Item(bytes, _)) => stored_asset_lock_info(
+                                    Some(&bytes),
+                                    AssetLockValue::deserialize_from_bytes_untrusted,
+                                )?,
                                 Some(_) => {
                                     return Err(Error::Proof(ProofError::CorruptedProof(
                                         "expected an item element for asset lock outpoint"
