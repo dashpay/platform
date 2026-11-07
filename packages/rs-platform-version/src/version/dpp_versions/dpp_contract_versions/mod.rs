@@ -285,9 +285,11 @@ mod tests {
     }
 
     /// Drive creates a private type's store through `insert_empty_private_document_store_operation`,
-    /// sized from the private document store limits, and reads, proves and verifies a page of
-    /// it through `fetch_private_document_entries`, `prove_private_document_entries` and
-    /// `verify_private_document_entries`: a protocol version parsing private types without
+    /// sized from the private document store limits, reads, proves and verifies a page of it
+    /// through `fetch_private_document_entries`, `prove_private_document_entries` and
+    /// `verify_private_document_entries`, and appends a private document create's entries,
+    /// at most `max_private_document_entries_per_transition` of them, through
+    /// `append_private_document_entries_operations`: a protocol version parsing private types without
     /// them could not register or read one, and one setting them where no type is private
     /// states a rule nothing reads.
     #[test]
@@ -345,6 +347,19 @@ mod tests {
                         .document
                         .prove_private_document_entries
                         .is_some(),
+                ),
+                (
+                    "append_private_document_entries_operations",
+                    platform_version
+                        .drive
+                        .methods
+                        .document
+                        .append_private_document_entries_operations
+                        .is_some(),
+                ),
+                (
+                    "max_private_document_entries_per_transition",
+                    limits.max_private_document_entries_per_transition.is_some(),
                 ),
                 (
                     "verify_private_document_entries",

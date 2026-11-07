@@ -4,6 +4,8 @@
 //! `[0]`, where every other type keeps its primary-key tree, and the type has no index trees.
 
 #[cfg(feature = "server")]
+use crate::drive::document::paths::contract_document_type_path;
+#[cfg(feature = "server")]
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
@@ -14,11 +16,15 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::DirectQueryType;
 #[cfg(feature = "server")]
 use crate::util::storage_flags::StorageFlags;
+#[cfg(feature = "server")]
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{DocumentTypeRef, PrivateDocumentConfig};
 use dpp::version::PlatformVersion;
 #[cfg(feature = "server")]
 use grovedb::{Element, TransactionArg};
+#[cfg(feature = "server")]
+use v0::append_private_document_entries_operations_v0;
 #[cfg(feature = "server")]
 use v0::insert_empty_private_document_store_operation_v0;
 use v0::private_document_store_chunk_power_v0;
@@ -195,6 +201,40 @@ impl Drive {
             )))),
         }
     }
+
+    /// Whether the store of the private type `document_type_name` of `contract_id` takes
+    /// entries of `entry_size` bytes: the element at the type's key `[0]` is a private document
+    /// store whose committed stored entry size is Drive's header and `entry_size`. A
+    /// `PrivateDocumentCreateFromShieldedPool` asks before execution, where an append to a
+    /// missing store, or one of another size, would fail. The read is not billed: the
+    /// transition pays a fixed fee.
+    pub fn private_document_store_takes_entries(
+        &self,
+        contract_id: &[u8; 32],
+        document_type_name: &str,
+        entry_size: u32,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
+        let type_path = contract_document_type_path(contract_id, document_type_name);
+        let element = self.grove_get_raw_optional(
+            type_path.as_slice().into(),
+            &[PRIVATE_DOCUMENT_STORE_KEY],
+            DirectQueryType::StatefulDirectQuery,
+            transaction,
+            &mut vec![],
+            &platform_version.drive,
+        )?;
+        let Some(stored_entry_size) = entry_size.checked_add(PRIVATE_DOCUMENT_ENTRY_HEADER_SIZE)
+        else {
+            return Ok(false);
+        };
+        Ok(matches!(
+            element.as_ref().map(Element::underlying),
+            Some(Element::PrivateDocumentStore(_, committed_entry_size, _, _))
+                if *committed_entry_size == stored_entry_size
+        ))
+    }
 }
 
 /// The chunk power of a private type's store whose stored entries take `stored_entry_size`
@@ -253,6 +293,44 @@ pub fn insert_empty_private_document_store_operation(
         })),
         None => Err(Error::Drive(DriveError::VersionNotActive {
             method: "insert_empty_private_document_store_operation".to_string(),
+            known_versions: vec![0],
+        })),
+    }
+}
+
+/// The operations appending `entries`, in order, to the store of the private type
+/// `document_type_name` of `contract_id`, each after Drive's header: the height and then the
+/// time in milliseconds of `block_info` (`encode_stored_private_document_entry`). Every entry
+/// must take the type's `entrySize`; GroveDB refuses an entry of another size, so the caller
+/// checks it before execution. Only a protocol version admitting private types selects a
+/// version of it.
+#[cfg(feature = "server")]
+pub fn append_private_document_entries_operations(
+    contract_id: &[u8; 32],
+    document_type_name: &str,
+    entries: &[Vec<u8>],
+    block_info: &BlockInfo,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<LowLevelDriveOperation>, Error> {
+    match platform_version
+        .drive
+        .methods
+        .document
+        .append_private_document_entries_operations
+    {
+        Some(0) => Ok(append_private_document_entries_operations_v0(
+            contract_id,
+            document_type_name,
+            entries,
+            block_info,
+        )),
+        Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            method: "append_private_document_entries_operations".to_string(),
+            known_versions: vec![0],
+            received: version,
+        })),
+        None => Err(Error::Drive(DriveError::VersionNotActive {
+            method: "append_private_document_entries_operations".to_string(),
             known_versions: vec![0],
         })),
     }

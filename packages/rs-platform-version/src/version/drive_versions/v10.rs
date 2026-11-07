@@ -64,6 +64,10 @@ use crate::version::drive_versions::{
 ///   `prove_private_document_entries` there, and `verify_private_document_entries` in
 ///   `DRIVE_VERIFY_METHOD_VERSIONS_V4`, are `Some(0)` (`None` before): a page of the store
 ///   is read, proved and verified.
+/// * **Private document entries** (protocol v15 note 25): `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`
+///   sets `append_private_document_entries_operations` to `Some(0)` (`None` before): a
+///   `PrivateDocumentCreateFromShieldedPool` appends its entries to the store, each behind
+///   Drive's 16-byte header.
 /// * **A batch's fee estimate is resolved** (protocol v15 note 14): `apply_drive_operations` 2
 ///   resolves an estimated batch's layer descriptions once the whole batch is lowered, the root
 ///   also kept at the level of the deepest root key the batch writes under, so the estimate no

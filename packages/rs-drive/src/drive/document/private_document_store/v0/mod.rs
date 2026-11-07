@@ -1,6 +1,9 @@
 #[cfg(feature = "server")]
+use crate::drive::document::paths::contract_document_type_path_vec;
+#[cfg(feature = "server")]
 use crate::drive::document::private_document_store::{
-    private_document_stored_entry_size, PRIVATE_DOCUMENT_STORE_KEY,
+    encode_stored_private_document_entry, private_document_stored_entry_size,
+    PRIVATE_DOCUMENT_STORE_KEY,
 };
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -9,8 +12,12 @@ use crate::fees::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::util::storage_flags::StorageFlags;
 #[cfg(feature = "server")]
+use dpp::block::block_info::BlockInfo;
+#[cfg(feature = "server")]
 use dpp::data_contract::document_type::PrivateDocumentConfig;
 use dpp::version::PlatformVersion;
+#[cfg(feature = "server")]
+use grovedb::batch::QualifiedGroveDbOp;
 #[cfg(feature = "server")]
 use grovedb::Element;
 
@@ -61,4 +68,32 @@ pub(super) fn insert_empty_private_document_store_operation_v0(
         vec![PRIVATE_DOCUMENT_STORE_KEY],
         store,
     ))
+}
+
+/// One GroveDB append per entry, into the store at the type's key `[0]`, each entry after Drive's
+/// header. The entries land at consecutive positions in this order.
+#[cfg(feature = "server")]
+pub(super) fn append_private_document_entries_operations_v0(
+    contract_id: &[u8; 32],
+    document_type_name: &str,
+    entries: &[Vec<u8>],
+    block_info: &BlockInfo,
+) -> Vec<LowLevelDriveOperation> {
+    let mut store_path = contract_document_type_path_vec(contract_id, document_type_name);
+    store_path.push(vec![PRIVATE_DOCUMENT_STORE_KEY]);
+    entries
+        .iter()
+        .map(|entry| {
+            LowLevelDriveOperation::GroveOperation(
+                QualifiedGroveDbOp::private_document_store_insert_op(
+                    store_path.clone(),
+                    encode_stored_private_document_entry(
+                        block_info.height,
+                        block_info.time_ms,
+                        entry,
+                    ),
+                ),
+            )
+        })
+        .collect()
 }

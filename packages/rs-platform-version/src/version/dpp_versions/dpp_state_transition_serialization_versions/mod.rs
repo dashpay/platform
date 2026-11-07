@@ -54,6 +54,7 @@ pub struct DPPStateTransitionSerializationVersions {
     pub token_shielded_transfer_with_shielded_fee_state_transition: FeatureVersionBounds,
     pub token_unshield_with_shielded_fee_state_transition: FeatureVersionBounds,
     pub token_purchase_from_shielded_pool_state_transition: FeatureVersionBounds,
+    pub private_document_create_from_shielded_pool_state_transition: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

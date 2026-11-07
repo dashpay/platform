@@ -306,9 +306,80 @@ pub fn compute_token_purchase_from_shielded_pool_fee(
     )
 }
 
+/// The fee of a `PrivateDocumentCreateFromShieldedPool` (protocol version 15): the bundle's
+/// [`compute_minimum_shielded_fee`] plus, for each entry, its bytes and the per-entry overhead
+/// of `fee_version.private_document` at the storage rate, and that group's flat entry fee.
+///
+/// The bundle's value balance must equal this exactly: there is no recipient to take an
+/// excess, and an unusual fee would mark the sender. It depends only on the action count, the
+/// entry count and the entry size, so a wallet computes it before building the bundle; the SDK
+/// builder, the minimum-fee validation and the transformer all use it.
+///
+/// # Parameters
+/// - `num_actions` — number of Orchard actions in the bundle
+/// - `entry_count` — number of entries the transition appends
+/// - `entry_size` — the bytes each entry takes, the type's `entrySize`
+/// - `platform_version` — protocol version (determines the formula version and fee constants)
+pub fn compute_private_document_create_from_shielded_pool_fee(
+    num_actions: usize,
+    entry_count: usize,
+    entry_size: u32,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, ProtocolError> {
+    match platform_version.dpp.methods.compute_minimum_shielded_fee {
+        0 => v0::compute_private_document_create_from_shielded_pool_fee_v0(
+            num_actions,
+            entry_count,
+            entry_size,
+            platform_version,
+        ),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "compute_private_document_create_from_shielded_pool_fee".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn should_price_each_private_document_entry_at_its_bytes_and_the_flat_entry_fee() {
+        let platform_version = PlatformVersion::latest();
+        let storage = &platform_version.fee_version.storage;
+        let private_document = &platform_version.fee_version.private_document;
+        let per_byte =
+            storage.storage_disk_usage_credit_per_byte + storage.storage_processing_credit_per_byte;
+        let base = compute_minimum_shielded_fee(2, platform_version).expect("base fee");
+        let entry = (585 + private_document.entry_overhead_bytes) * per_byte
+            + private_document.entry_processing_fee;
+        for entry_count in [1, 2, 16] {
+            assert_eq!(
+                compute_private_document_create_from_shielded_pool_fee(
+                    2,
+                    entry_count,
+                    585,
+                    platform_version
+                )
+                .expect("private document create fee"),
+                base + entry_count as u64 * entry
+            );
+        }
+        assert_eq!(private_document.entry_processing_fee, 50_000_000);
+    }
+
+    #[test]
+    fn should_refuse_a_private_document_fee_that_overflows() {
+        assert!(compute_private_document_create_from_shielded_pool_fee(
+            2,
+            usize::MAX,
+            u32::MAX,
+            PlatformVersion::latest()
+        )
+        .is_err());
+    }
 
     #[test]
     fn should_preserve_token_purchase_fee_when_identity_shield_floor_changes() {
