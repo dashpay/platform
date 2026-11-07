@@ -444,9 +444,10 @@ impl SqlitePersister {
     /// database restored from a backup and reloaded clean reports clean. A
     /// `load()` that returns `Err` leaves it empty — the error is the
     /// verdict there, not a partial tally.
-    /// [`load_unowned_identities`](Self::load_unowned_identities) *adds*
-    /// into the current snapshot, so its counts read as "since the last
-    /// `load()`". Reading does not clear. The point read
+    /// [`load_unowned_identities`](Self::load_unowned_identities) and
+    /// [`asset_lock_status`](Self::asset_lock_status) *add* into the current
+    /// snapshot, so their counts read as "since the last `load()`". Reading
+    /// does not clear. The point read
     /// [`get_core_tx_record`](PlatformWalletPersistence::get_core_tx_record)
     /// is the exception: its tolerated drift is logged and never tallied,
     /// because one read per transaction folded into a per-load snapshot
@@ -645,6 +646,15 @@ impl SqlitePersister {
     ///
     /// Reads the *committed* table: in [`FlushMode::Manual`] a row still in
     /// the write buffer is not visible yet.
+    ///
+    /// Status drift between the typed column and the lifecycle blob follows
+    /// the load policy: under [`LoadPolicy::Strict`] it is
+    /// [`WalletStorageError::AssetLockStatusMismatch`]; under
+    /// [`LoadPolicy::Recovery`] the read returns the reconciled status
+    /// (consumption is sticky) and *adds* one `AssetLockStatusDrift` to
+    /// [`last_load_degradation`](Self::last_load_degradation). The tally
+    /// counts reads, not rows: reading the same drifted lock again counts it
+    /// again.
     pub fn asset_lock_status(
         &self,
         wallet_id: &WalletId,
