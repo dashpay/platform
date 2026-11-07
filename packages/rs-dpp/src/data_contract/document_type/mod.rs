@@ -14,8 +14,13 @@ pub mod property_constraints;
 pub use index_level::IndexLevel;
 pub use index_level::IndexLevelTypeInfo;
 pub use index_level::IndexType;
-pub use private_document::PrivateDocumentConfig;
 pub(crate) use private_document::PRIVATE_DOCUMENT_TYPE_KEYWORDS;
+pub use private_document::{
+    largest_private_document_payload_size, minimum_private_document_entry_size,
+    validate_private_document_entry_size, PrivateDocumentConfig,
+    PRIVATE_DOCUMENT_ENVELOPE_V1_BODY_HEADER_BYTES, PRIVATE_DOCUMENT_ENVELOPE_V1_OVERHEAD_BYTES,
+    PRIVATE_DOCUMENT_ENVELOPE_V1_WRAPPER_BYTES,
+};
 
 #[cfg(feature = "random-documents")]
 pub mod random_document;
