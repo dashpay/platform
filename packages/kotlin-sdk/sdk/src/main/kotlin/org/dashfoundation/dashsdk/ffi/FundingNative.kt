@@ -198,6 +198,26 @@ internal object FundingNative {
     ): Long
 
     /**
+     * Shield from a Platform IDENTITY's balance to a third-party Orchard
+     * address, Type 21 (bridges
+     * `platform_wallet_manager_shielded_shield_from_identity_to_recipient`).
+     * See
+     * [org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedShieldFromIdentityToRecipient].
+     * [memoText] null or empty means no memo. Blocks for the ~30s Halo 2
+     * proof; returns the identity's proven post-debit credit balance.
+     */
+    external fun shieldedShieldFromIdentityToRecipient(
+        managerHandle: Long,
+        walletId: ByteArray,
+        shieldedAccount: Int,
+        identityId: ByteArray,
+        recipientRaw43: ByteArray,
+        amount: Long,
+        memoText: String?,
+        signerIdentityHandle: Long,
+    ): Long
+
+    /**
      * Create an identity funded from the shielded pool, Type 20 (bridges
      * `platform_wallet_manager_shielded_identity_create_from_pool`). Spends a
      * note of the fixed exit [denomination] (credits — a member of the
