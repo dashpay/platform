@@ -32,8 +32,11 @@ impl Drive {
         // }
 
         if self.config.batching_consistency_verification {
-            let consistency_results =
-                QualifiedGroveDbOp::verify_consistency_of_operations(&ops.operations);
+            let consistency_results = QualifiedGroveDbOp::verify_consistency_of_operations(
+                &ops.operations,
+                &drive_version.grove_version,
+            )
+            .map_err(Error::from)?;
             if !consistency_results.is_empty() {
                 tracing::error!(
                     ?consistency_results,

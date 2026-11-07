@@ -37,6 +37,11 @@ pub struct DriveDocumentMethodVersions {
     /// `verify_private_document_entries` checks. `Some(0)` from
     /// `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (protocol version 15), `None` before.
     pub prove_private_document_entries: OptionalFeatureVersion,
+    /// `append_private_document_entries_operations`: the operations a
+    /// `PrivateDocumentCreateFromShieldedPool` appends its entries with, each after Drive's
+    /// header (the block's height and time). `Some(0)` from `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`
+    /// (protocol version 15), `None` before.
+    pub append_private_document_entries_operations: OptionalFeatureVersion,
     /// `draw_random_document_properties`: fills each `sys.random` property of the documents a
     /// block created with a value drawn from the block's random beacon, once every transition
     /// of the block is accepted, and `prepay_random_document_index_entries`, the same

@@ -223,6 +223,11 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
             max_version: 0,
             default_current_version: 0,
         },
+        private_document_create_from_shielded_pool_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
         // No binary of protocol version 14 decodes a random token amount; protocol version 15
         // admits it in V4
         random_token_amount: None,
