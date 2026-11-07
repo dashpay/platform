@@ -269,8 +269,11 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///   wallet's key, or corrupt), and (2) it is a *legitimately-owned but
 ///   deep-and-sparse* address, past that reach with no stored address
 ///   nearer to it. Both are counted at [`LoadSite::UnresolvedUtxoAddress`]
-///   and re-warm on the next full sync; such a coin falls back to its stored
-///   owner, else the first funds account. The wallet *total* stays exact
+///   and re-warm on the next full sync, but for a used address whose row
+///   names a DashPay contact's account: no funds account derived it, so it
+///   is the contact's key, reported at [`LoadSite::OrphanedUtxoOwner`]
+///   only. An unresolved coin falls back to its stored owner, else the
+///   first funds account. The wallet *total* stays exact
 ///   (every UTXO is summed regardless of pool visibility); only the
 ///   per-address view is incomplete until that sync.
 /// - **Per-UTXO `is_coinbase` / `is_trusted` flags**: not columns in
@@ -514,10 +517,17 @@ pub fn apply_persisted_core_state(
         }
         // Every stored address no funds pool holds now that a funds account
         // may derive, counted once: the fallback coins' and the placeable used
-        // ones'.
+        // ones', but for a DashPay contact's (the one non-funds kind left
+        // there). Discovery placed it if a receiving account shares its xpub;
+        // otherwise it is the contact's key, which no sync re-warms, and it is
+        // reported as an orphaned owner above.
+        let counted_used = (placeable_used.iter().copied()).filter(|address| {
+            !(used_pool_addresses[*address].as_ref())
+                .is_some_and(|owner| accounts::is_non_funds_account_label(&owner.account_type))
+        });
         let unresolved = outside_funds_pools(
             wallet_info,
-            (unmatched.iter().map(|u| &u.address)).chain(placeable_used.iter().copied()),
+            (unmatched.iter().map(|u| &u.address)).chain(counted_used),
         )
         .len();
         let mut funding = wallet_info.accounts.all_funding_accounts_mut();
@@ -4724,6 +4734,47 @@ mod tests {
                 assert_ne!(next, shared, "the used address is handed out again");
                 assert!(funds.mark_address_used(&next));
             }
+        }
+
+        /// A used address of a DashPay contact account whose xpub is none of
+        /// this wallet's receiving xpubs: discovery looks for it and finds it
+        /// in no funds account. It is the contact's key, which no sync
+        /// re-warms, so a strict load reports it as an orphaned owner only,
+        /// not as unresolved, and marks it in no funds pool.
+        #[test]
+        fn an_unrelated_contact_used_address_is_orphaned_not_unresolved() {
+            let (mut wallet, _) = fixture(51);
+            wallet.add_account(contact(), None).unwrap();
+            let manifest = manifest_for(&wallet);
+            let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+            let account = info.accounts.dashpay_external_accounts.values().next();
+            let theirs = (account.unwrap().managed_account_type().address_pools()[0])
+                .address_at_index(3)
+                .unwrap();
+            let used = HashMap::from([(theirs.clone(), Some(owning_account_of(account.unwrap())))]);
+            let ctx = LoadCtx::strict();
+            load_into(
+                &mut info,
+                &manifest,
+                Vec::new(),
+                &HashMap::new(),
+                &used,
+                &ctx,
+            )
+            .unwrap();
+
+            let sites = &ctx.degradation().by_site;
+            assert_eq!(
+                sites.get(&LoadSite::OrphanedUtxoOwner),
+                Some(&1),
+                "{sites:?}"
+            );
+            assert_eq!(
+                sites.get(&LoadSite::UnresolvedUtxoAddress),
+                None,
+                "{sites:?}"
+            );
+            assert!(outside_funds_pools(&info, [&theirs]).contains(&theirs));
         }
 
         /// After discovery derives something every coin is offered to
