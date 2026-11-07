@@ -55,6 +55,10 @@ use super::{
 ///   conversion 1 deletes the commitment from it without reading it again. Any other lookup reads
 ///   as v0's does.
 ///
+/// - the `PrivateDocumentCreateFromShieldedPool` (type 29) `basic_structure`, `Some(0)` rather
+///   than `None`: the transition, new at protocol version 15, has its entries, value balance,
+///   proof and anchor checked.
+///
 /// v10 remains unchanged for `PROTOCOL_VERSION_14` chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
@@ -104,6 +108,13 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                     .state_transitions
                     .batch_state_transition
             },
+            private_document_create_from_shielded_pool_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: Some(0), // a private document create (new in v15) has a basic structure
+                    ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
+                        .state_transitions
+                        .private_document_create_from_shielded_pool_state_transition
+                },
             ..DRIVE_ABCI_VALIDATION_VERSIONS_V10.state_transitions
         },
         ..DRIVE_ABCI_VALIDATION_VERSIONS_V10

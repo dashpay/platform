@@ -644,6 +644,21 @@ impl ExecutionEvent<'_> {
                     chargeable_failure: false,
                 })
             }
+            StateTransitionAction::PrivateDocumentCreateFromShieldedPoolAction(
+                ref private_document_action,
+            ) => {
+                // Pool-paid exactly like ShieldedTransfer: the whole value balance is the fee,
+                // routed to the fee pools. Nothing is credited outside the pool.
+                let fee_amount = private_document_action.fee_amount();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFromShieldedPool {
+                    operations,
+                    fees_to_add_to_pool: fee_amount,
+                    added_to_balance_outputs: None,
+                    chargeable_failure: false,
+                })
+            }
             StateTransitionAction::IdentityTopUpFromShieldedPoolAction(ref top_up_action) => {
                 // Pool-paid exactly like Unshield: the flat fee is carved from the value
                 // balance and routed to the fee pools; the identity receives the rest.

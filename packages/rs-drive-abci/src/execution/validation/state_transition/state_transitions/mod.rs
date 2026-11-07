@@ -57,6 +57,8 @@ mod identity_top_up_from_addresses;
 pub mod identity_create_from_shielded_pool;
 /// Identity top up from shielded pool (pool to an existing identity)
 pub mod identity_top_up_from_shielded_pool;
+/// Module for the private document create from shielded pool transition (protocol version 15)
+pub mod private_document_create_from_shielded_pool;
 /// Module for shield transition validation
 pub mod shield;
 /// Module for shield from asset lock transition validation

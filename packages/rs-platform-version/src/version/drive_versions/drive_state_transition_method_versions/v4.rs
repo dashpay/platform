@@ -80,6 +80,7 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4: DriveStateTransitionMethodV
                 token_shielded_transfer_with_shielded_fee_transition: 0,
                 token_unshield_with_shielded_fee_transition: 0,
                 token_purchase_from_shielded_pool_transition: 0,
+                private_document_create_from_shielded_pool_transition: 0,
             },
         document_from_action: DriveDocumentFromActionVersions {
             document_from_create_transition_action: 1,  // changed
