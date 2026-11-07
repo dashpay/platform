@@ -240,4 +240,88 @@ mod tests {
             ))
         ));
     }
+
+    /// A mock SDK at the latest protocol version, the first whose contracts declare private
+    /// types.
+    fn latest_mock_sdk() -> Sdk {
+        crate::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .expect("a mock SDK")
+    }
+
+    /// A contract holding only the public type `note`.
+    fn public_contract() -> DataContract {
+        let id = Identifier::from([7; 32]).to_string(Encoding::Base58);
+        let owner_id = Identifier::from([8; 32]).to_string(Encoding::Base58);
+        DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": id,
+                "ownerId": owner_id,
+                "version": 1,
+                "documentSchemas": {
+                    "note": {
+                        "type": "object",
+                        "properties": {
+                            "text": { "type": "string", "maxLength": 63, "position": 0 }
+                        },
+                        "additionalProperties": false
+                    }
+                }
+            }),
+            true,
+            PlatformVersion::latest(),
+        )
+        .expect("the contract registers")
+    }
+
+    /// An update declaring a private type is checked against the contract Platform holds,
+    /// fetched: an unchanged undersized type passes, a changed one is refused, every type is new
+    /// when Platform holds no such contract, and a fetch that fails stops the update. An update
+    /// declaring no private type fetches nothing.
+    #[tokio::test]
+    async fn should_check_an_update_against_the_contract_platform_holds() {
+        let stored = contract(375, false);
+        let mut sdk = latest_mock_sdk();
+        sdk.mock()
+            .expect_fetch(stored.id(), Some(stored.clone()))
+            .await
+            .expect("an expectation");
+        ensure_private_document_entries_fit_on_update(&sdk, &contract(375, false))
+            .await
+            .expect("an unchanged type is not checked");
+        assert!(matches!(
+            ensure_private_document_entries_fit_on_update(&sdk, &contract(375, true)).await,
+            Err(Error::Protocol(
+                ProtocolError::PrivateDocumentEntrySizeTooSmall {
+                    minimum_entry_size: 398,
+                    ..
+                }
+            ))
+        ));
+
+        let mut absent = latest_mock_sdk();
+        absent
+            .mock()
+            .expect_fetch(stored.id(), None::<DataContract>)
+            .await
+            .expect("an expectation");
+        assert!(matches!(
+            ensure_private_document_entries_fit_on_update(&absent, &contract(375, false)).await,
+            Err(Error::Protocol(
+                ProtocolError::PrivateDocumentEntrySizeTooSmall { .. }
+            ))
+        ));
+
+        // No expectation: the mock fails the fetch, and the update stops there.
+        let failing = latest_mock_sdk();
+        let error = ensure_private_document_entries_fit_on_update(&failing, &contract(376, false))
+            .await
+            .expect_err("the fetch fails");
+        assert!(!matches!(error, Error::Protocol(_)), "{error:?}");
+        ensure_private_document_entries_fit_on_update(&failing, &public_contract())
+            .await
+            .expect("a contract with no private type is not fetched");
+    }
 }

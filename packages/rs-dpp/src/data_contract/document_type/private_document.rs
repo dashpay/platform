@@ -86,10 +86,17 @@ pub const PRIVATE_DOCUMENT_ENVELOPE_V1_BODY_HEADER_BYTES: u32 = 1 + 1 + 32 + 4 +
 pub const PRIVATE_DOCUMENT_ENVELOPE_V1_OVERHEAD_BYTES: u32 =
     PRIVATE_DOCUMENT_ENVELOPE_V1_WRAPPER_BYTES + PRIVATE_DOCUMENT_ENVELOPE_V1_BODY_HEADER_BYTES;
 
-/// The most bytes a payload of `document_type` takes: its properties in the document property
-/// encoding, as a document writes them after its system fields, each one present at its largest
-/// and one written with a presence byte (optional or transient) counting that byte. A private
-/// type's entries carry their plaintext in this encoding.
+/// The most bytes a payload of `document_type` takes as its property types bound it: its
+/// properties in the document property encoding, as a document writes them after its system
+/// fields, each one present at its largest and one written with a presence byte (optional or
+/// transient) counting that byte. A private type's entries carry their plaintext in this
+/// encoding.
+///
+/// It is an upper bound, read from the property types alone: a schema's `enum`, or a
+/// `maxProperties` keeping some optional properties from appearing together, can only make the
+/// real largest payload smaller, and is not counted. A type sized between the two is refused by
+/// [`validate_private_document_entry_size`] although every payload its schema admits would fit;
+/// size it to this bound, or bound the property types themselves.
 ///
 /// Refused with `UnboundedPrivateDocumentProperty` when a property sets no largest value, since
 /// then no entry size holds every payload.
@@ -117,9 +124,10 @@ pub fn largest_private_document_payload_size(
     Ok(size)
 }
 
-/// The smallest `entrySize` that holds every payload of `document_type` in the standard private
-/// document envelope (version 1): its largest payload plus
-/// [`PRIVATE_DOCUMENT_ENVELOPE_V1_OVERHEAD_BYTES`].
+/// The smallest `entrySize` that holds every payload the property types of `document_type`
+/// allow in the standard private document envelope (version 1): its largest payload plus
+/// [`PRIVATE_DOCUMENT_ENVELOPE_V1_OVERHEAD_BYTES`]. As
+/// [`largest_private_document_payload_size`] says, `enum` and `maxProperties` are not counted.
 pub fn minimum_private_document_entry_size(
     document_type: DocumentTypeRef,
 ) -> Result<u32, ProtocolError> {
