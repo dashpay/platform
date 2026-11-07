@@ -223,6 +223,11 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
             max_version: 0,
             default_current_version: 0,
         },
+        private_document_create_from_shielded_pool_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
         // Protocol version 15 shares this table: random token amounts stay refused until block
         // execution settles them
         random_token_amount: None,
