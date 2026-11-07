@@ -62,8 +62,11 @@ pub enum LoadSite {
     RehydrationGapLimit,
     /// Rehydration could not maintain an address pool's gap limit.
     RehydrationMaintainGapLimit,
-    /// A restored UTXO or used address names an account this wallet lacks.
-    /// Counted per address, though one record covers a whole account's.
+    /// A restored UTXO or used address names an owner that is not a funds
+    /// account of this wallet: a funds account it lacks, or a DashPay
+    /// contact, identity, provider-key, asset-lock or Platform payment
+    /// account. Counted per address, though one record covers a whole
+    /// account's.
     OrphanedUtxoOwner,
     /// A restored address did not resolve against its account's xpub.
     /// Counted per address, though one record covers a whole account's.
@@ -165,7 +168,7 @@ impl LoadSite {
             // describes an accepted-as-is degradation rather than a
             // tolerated inconsistency.
             Self::OrphanedUtxoOwner => {
-                "load degraded: owners that are not funds accounts of this wallet (a funds account it lacks, or a DashPay contact, identity, provider-key, asset-lock or Platform payment account); their coins are placed in the funds account that derives them, else in the DashPay contact account that holds them, outside the balance, else in the first funds account; used addresses of an identity, provider-key, asset-lock or Platform payment account have no funds account to mark them in, and DashPay contact addresses are still looked for in the funds accounts"
+                "load degraded: non-funds owners; coins go to the funds account deriving them, else the DashPay contact account holding them (off-balance), else the first funds account; used identity, provider-key, asset-lock and Platform payment addresses aren't looked for"
             }
             Self::UnresolvedUtxoAddress => {
                 "load degraded: deferring addresses that did not resolve against the account xpub"
@@ -678,7 +681,7 @@ mod tests {
             "ambiguous owner",
         );
         assert!(logs_contain(
-            "load degraded: owners that are not funds accounts of this wallet (a funds account it lacks, or a DashPay contact, identity, provider-key, asset-lock or Platform payment account); their coins are placed in the funds account that derives them, else in the DashPay contact account that holds them, outside the balance, else in the first funds account; used addresses of an identity, provider-key, asset-lock or Platform payment account have no funds account to mark them in, and DashPay contact addresses are still looked for in the funds accounts"
+            "load degraded: non-funds owners; coins go to the funds account deriving them, else the DashPay contact account holding them (off-balance), else the first funds account; used identity, provider-key, asset-lock and Platform payment addresses aren't looked for"
         ));
     }
 
