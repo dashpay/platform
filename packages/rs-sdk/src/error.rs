@@ -144,6 +144,29 @@ pub enum Error {
         index: Option<String>,
     },
 
+    /// An identity funding submission was not made: its `user_fee_increase` floor is above
+    /// the cap, so no fee step is left for its proof
+    /// ([`FundingFailureKind::FeeCapReached`](crate::platform::transition::asset_lock_submission::FundingFailureKind::FeeCapReached)).
+    #[error("the user_fee_increase floor {floor} is above the cap {cap}: nothing was submitted")]
+    FeeIncreaseFloorAboveCap {
+        /// The floor the caller asked for.
+        floor: u16,
+        /// The most a funding transition states.
+        cap: u16,
+    },
+
+    /// A top-up was submitted and its wait answered, but Platform's proved record of its
+    /// asset lock does not show the lock used up, or could not be read.
+    #[error(
+        "the top-up was submitted, but asset lock {out_point} is not proved used up: {record}"
+    )]
+    AssetLockNotUsedUp {
+        /// The asset lock the top-up spent.
+        out_point: dpp::dashcore::OutPoint,
+        /// What its record says, or why it was not read.
+        record: crate::platform::transition::asset_lock_submission::UnsettledLockRecord,
+    },
+
     /// Remote node is stale; try another server
     #[error(transparent)]
     StaleNode(#[from] StaleNodeError),

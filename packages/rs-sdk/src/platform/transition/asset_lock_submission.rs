@@ -14,23 +14,56 @@
 //!   with a ChainLock proof for the same outpoint: a stale islock, or an
 //!   InstantSend proof that made the transition too large.
 //! - [`submit_with_cl_height_retry`] — retry-on-10506 wrapper that bumps
-//!   `user_fee_increase` between attempts so Tenderdash's invalid-tx hash
-//!   cache (24h on mainnet/testnet) can't silently drop resubmits.
+//!   `user_fee_increase` between attempts, so no attempt repeats the bytes
+//!   of one Platform refused (see "Refused transitions" below).
+//! - [`submit_funding_with_fee_floor`] — the same retry for an identity
+//!   funding transition, from the caller's floor and never above
+//!   [`MAX_FUNDING_FEE_INCREASE`], telling the caller each attempt's fee
+//!   before it is built and what to do next with the lock
+//!   ([`FundingFailureKind`]).
+//! - [`next_chain_lock_proof`] — the fresh ChainLock proof for a lock whose
+//!   fee steps are used up.
 //! - [`Sdk::asset_lock_outpoint_state`] — Platform's record of an outpoint,
 //!   read with a proof: whether a transition used the lock, and what is left.
+//!
+//! # Refused transitions
+//!
+//! Tenderdash keeps the hash of every transition its CheckTx refused
+//! (`keep-invalid-txs-in-cache = true` in dashmate's template) with no time
+//! limit. The hash leaves a node's cache only when the cache (15000 entries
+//! as dashmate configures it) evicts it as the least recently used, and a
+//! resubmission refreshes it, or when the node restarts. The mempool's
+//! `ttl-duration` (24 h on mainnet and testnet) covers admitted transactions
+//! only. A refused transition is never gossiped, so only the node that
+//! checked it holds its hash, and that node never admits the same bytes
+//! again: Tenderdash 1.8 drops them before CheckTx (DAPI answers that the
+//! transition must be created anew), and later releases answer the cached
+//! rejection again.
+//!
+//! So a submission is the pair (proof, `user_fee_increase`), and no pair is
+//! sent twice for one lock. Within one proof the fee only rises. Once its
+//! steps are used up ([`FundingFailureKind::FeeCapReached`]), the next proof
+//! is a ChainLock proof for the same outpoint at a height none carried
+//! before ([`next_chain_lock_proof`]). The height is part of the signed
+//! bytes, the identity a lock creates derives from the outpoint alone, and
+//! Platform accepts any height from the transaction's own up to the Core
+//! height it has seen.
 
+use std::future::Future;
 use std::time::Duration;
 
-use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
+use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
 use dpp::asset_lock::StoredAssetLockInfo;
 use dpp::consensus::basic::identity::InvalidAssetLockProofCoreChainHeightError;
 use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::OutPoint;
+use dpp::fee::Credits;
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
-use dpp::prelude::AssetLockProof;
+use dpp::prelude::{AssetLockProof, CoreBlockHeight, UserFeeIncrease};
 use dpp::serialization::PlatformDeserializableUntrusted;
+use dpp::ProtocolError;
 use drive::drive::RootTree;
 use drive::grovedb::Element;
 use drive_proof_verifier::types::{Elements, KeysInPath};
@@ -41,10 +74,11 @@ use crate::{Error, Sdk};
 
 /// Delay between retries when Platform rejected with CL-height-too-low.
 /// Each retry bumps `PutSettings::user_fee_increase` so the ST hash
-/// changes (Tenderdash caches rejected ST hashes for ~24h on
-/// mainnet/testnet — `keep-invalid-txs-in-cache = true` in dashmate's
-/// tenderdash template, hardcoded at
-/// `packages/dashmate/templates/platform/drive/tenderdash/config.toml.dot:355`).
+/// changes: the node that refused the transition keeps its hash
+/// (`keep-invalid-txs-in-cache = true` in dashmate's tenderdash template,
+/// hardcoded at
+/// `packages/dashmate/templates/platform/drive/tenderdash/config.toml.dot:355`;
+/// see the module doc).
 const CL_HEIGHT_RETRY_DELAY: Duration = Duration::from_secs(15);
 
 /// Total time we'll keep retrying before surfacing the error. Sized to
@@ -164,11 +198,10 @@ fn stored_asset_lock_info(
 ///
 /// Returns `None` for everything else. The check is stateless and
 /// re-evaluated on every CheckTx, so a resubmit after Platform
-/// catches up will pass — but Tenderdash's mempool caches rejected-tx
-/// hashes for ~24h on mainnet/testnet (`keep-invalid-txs-in-cache =
-/// true` in dashmate's tenderdash template), so the resubmit must
-/// carry a *different* signable-bytes hash to bypass the cache. The
-/// submission layer handles that by bumping
+/// catches up passes, but only with *different* bytes: the node that
+/// refused a transition keeps its hash with no time limit
+/// (`keep-invalid-txs-in-cache = true` in dashmate's tenderdash template;
+/// see the module doc). The submission layer handles that by bumping
 /// `PutSettings::user_fee_increase` before re-issuing.
 ///
 /// Companion to [`is_instant_lock_proof_invalid`]; both feed the
@@ -272,10 +305,11 @@ fn encoded_len(proof: &AssetLockProof) -> Option<u64> {
 /// `InvalidAssetLockProofCoreChainHeightError` (consensus code 10506).
 ///
 /// Each retry bumps `settings.user_fee_increase` so the resubmitted ST
-/// hashes differently — Tenderdash caches rejected ST hashes for ~24h
-/// on mainnet/testnet (`keep-invalid-txs-in-cache = true`), so an
-/// identical-bytes resubmit would be silently dropped before reaching
-/// Platform's CheckTx.
+/// hashes differently: the node that refused a transition keeps its hash
+/// with no time limit (`keep-invalid-txs-in-cache = true`; see the module
+/// doc), so an identical-bytes resubmit would be dropped before reaching
+/// Platform's CheckTx. Retries stop once `user_fee_increase` reaches
+/// `u16::MAX`, where a bump would repeat it.
 ///
 /// **Retry scope.** This wrapper retries ONLY consensus code 10506
 /// (CL-height-too-low). Every other `Error` — including
@@ -331,25 +365,59 @@ fn encoded_len(proof: &AssetLockProof) -> Option<u64> {
 /// should be prepared to either retry (settings reset to original)
 /// or accept that Platform may still execute the dropped attempt.
 pub async fn submit_with_cl_height_retry<F, Fut, R>(
-    mut settings: Option<PutSettings>,
+    settings: Option<PutSettings>,
     submit: F,
 ) -> Result<R, Error>
 where
     F: Fn(Option<PutSettings>) -> Fut,
-    Fut: std::future::Future<Output = Result<R, Error>>,
+    Fut: Future<Output = Result<R, Error>>,
+{
+    retry_cl_height_too_low(settings, UserFeeIncrease::MAX, submit)
+        .await
+        .map_err(|(error, _)| error)
+}
+
+/// The retry behind [`submit_with_cl_height_retry`] and
+/// [`submit_funding_with_fee_floor`]: no retry after an attempt whose
+/// `user_fee_increase` reached `max_fee`. A failure comes with its attempt's
+/// `user_fee_increase`.
+async fn retry_cl_height_too_low<F, Fut, R>(
+    mut settings: Option<PutSettings>,
+    max_fee: UserFeeIncrease,
+    submit: F,
+) -> Result<R, (Error, UserFeeIncrease)>
+where
+    F: Fn(Option<PutSettings>) -> Fut,
+    Fut: Future<Output = Result<R, Error>>,
 {
     let elapsed_since_start = retry_clock();
     let mut attempt: u32 = 0;
     loop {
         attempt += 1;
+        let fee = settings
+            .and_then(|s| s.user_fee_increase)
+            .unwrap_or_default();
         match submit(settings).await {
             Ok(r) => return Ok(r),
             Err(e) => {
                 let Some(detail) = as_asset_lock_proof_cl_height_too_low(&e) else {
-                    return Err(e);
+                    return Err((e, fee));
                 };
                 let elapsed = elapsed_since_start();
                 let remaining = CL_HEIGHT_RETRY_BUDGET.saturating_sub(elapsed);
+                if fee >= max_fee {
+                    tracing::error!(
+                        "Platform rejected ChainLock proof: CL height too low \
+                         (proof claimed height={}, Platform tip={}, attempt {}) at \
+                         user_fee_increase {}, the most this submission states; \
+                         surfacing error",
+                        detail.proof_core_chain_locked_height(),
+                        detail.current_core_chain_locked_height(),
+                        attempt,
+                        fee,
+                    );
+                    return Err((e, fee));
+                }
                 if remaining.is_zero() || attempt >= CL_HEIGHT_RETRY_MAX_ATTEMPTS {
                     tracing::error!(
                         "Platform rejected ChainLock proof: CL height too low \
@@ -363,7 +431,7 @@ where
                         elapsed.as_secs(),
                         CL_HEIGHT_RETRY_BUDGET.as_secs(),
                     );
-                    return Err(e);
+                    return Err((e, fee));
                 }
                 let sleep_for = remaining.min(CL_HEIGHT_RETRY_DELAY);
                 tracing::warn!(
@@ -405,6 +473,215 @@ fn bump_user_fee_increase(mut settings: PutSettings) -> PutSettings {
     settings
 }
 
+/// The most `user_fee_increase` an identity funding transition is built with
+/// by [`submit_funding_with_fee_floor`]: a percentage added to the processing
+/// fee, so at most double it, paid from the asset lock's own credits.
+pub const MAX_FUNDING_FEE_INCREASE: UserFeeIncrease = 100;
+
+/// The most transitions one [`submit_funding_with_fee_floor`] call builds:
+/// the first attempt and one per retry delay in the retry budget.
+pub const FUNDING_ATTEMPTS: u32 = CL_HEIGHT_RETRY_MAX_ATTEMPTS;
+
+/// What the caller does next with the asset lock a funding call submitted.
+/// Nothing here proves the lock unconsumed: the caller keeps the lock until
+/// a proof settles it, and never assumes that a call it dropped sent nothing.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FundingFailureKind {
+    /// Platform could not use the InstantSend proof (a stale islock, or one
+    /// that made the transition too large, see [`needs_chain_lock_proof`]):
+    /// submit a ChainLock proof for the same outpoint once the lock is
+    /// ChainLocked.
+    NeedsChainLockProof,
+    /// Platform's view of Core stayed below the ChainLock proof's height
+    /// (consensus 10506) through every attempt the retry budget allowed, all
+    /// below [`MAX_FUNDING_FEE_INCREASE`]. Retry later, one above the last
+    /// attempt's fee.
+    PlatformBehindCore,
+    /// No fee step is left for this proof: the floor is above
+    /// [`MAX_FUNDING_FEE_INCREASE`], so nothing was submitted, or the attempt
+    /// at it still met 10506. Any pair of this proof and a fee up to the cap
+    /// may be held by a node that refused it (see the module doc), so do not
+    /// resend this proof at any step: send a ChainLock proof for the same
+    /// outpoint at a height it has not carried ([`next_chain_lock_proof`]),
+    /// from floor 0. The lock is not settled.
+    FeeCapReached,
+    /// A node reported this exact outpoint already consumed
+    /// ([`is_asset_lock_already_consumed`]). Not authenticated: read
+    /// [`Sdk::asset_lock_outpoint_state`], or for a registration the identity
+    /// the outpoint derives.
+    ReportedConsumed,
+    /// Platform refused the transition with another consensus error.
+    Rejected,
+    /// Nothing settled: a transport failure, a timeout, a response that
+    /// failed verification, or bad input. A transition that was sent may
+    /// still execute.
+    Unavailable,
+    /// A top-up whose wait returned a verified snapshot of the identity's
+    /// balance, while its lock is not proved used up
+    /// ([`Error::AssetLockNotUsedUp`]). The snapshot binds neither the top-up
+    /// nor the lock.
+    Submitted,
+}
+
+/// A funding call that did not settle its lock.
+#[derive(Debug)]
+pub struct FundingFailure {
+    /// What the caller does next with the lock.
+    pub kind: FundingFailureKind,
+    /// The error the call ended with.
+    pub error: Error,
+}
+
+/// Why a top-up's asset lock is not proved used up ([`Error::AssetLockNotUsedUp`]).
+#[derive(Debug, thiserror::Error)]
+pub enum UnsettledLockRecord {
+    /// No transition has used the lock yet; one in flight still may.
+    #[error("Platform has no record of its use")]
+    NotPresent,
+    /// A transition that failed after its asset-lock signature checked out
+    /// used part of it; these credits can still fund one.
+    #[error("{0} of its credits are unspent")]
+    PartiallyConsumed(Credits),
+    /// The record could not be read.
+    #[error("its record could not be read: {0}")]
+    Unread(Box<Error>),
+}
+
+/// What the caller does next with the lock `proof` spends, after `error`. A
+/// 10506 reads as [`FundingFailureKind::PlatformBehindCore`] here: only
+/// [`submit_funding_with_fee_floor`], which knows the attempt's fee, reads
+/// one at the cap as [`FundingFailureKind::FeeCapReached`].
+pub fn funding_failure_kind(error: &Error, proof: &AssetLockProof) -> FundingFailureKind {
+    if matches!(error, Error::FeeIncreaseFloorAboveCap { .. }) {
+        FundingFailureKind::FeeCapReached
+    } else if matches!(error, Error::AssetLockNotUsedUp { .. }) {
+        FundingFailureKind::Submitted
+    } else if as_asset_lock_proof_cl_height_too_low(error).is_some() {
+        FundingFailureKind::PlatformBehindCore
+    } else if needs_chain_lock_proof(error, proof) {
+        FundingFailureKind::NeedsChainLockProof
+    } else if proof
+        .out_point()
+        .is_some_and(|out_point| is_asset_lock_already_consumed(error, &out_point))
+    {
+        FundingFailureKind::ReportedConsumed
+    } else if is_consensus_refusal(error) {
+        FundingFailureKind::Rejected
+    } else {
+        FundingFailureKind::Unavailable
+    }
+}
+
+/// Whether Platform refused with a consensus error, CheckTx's or the wait's,
+/// decoded or not, looking through the exhausted-retry envelope.
+fn is_consensus_refusal(error: &Error) -> bool {
+    match error {
+        Error::NoAvailableAddressesToRetry(last) => is_consensus_refusal(last),
+        Error::Protocol(ProtocolError::ConsensusError(_))
+        | Error::StateTransitionBroadcastError(_) => true,
+        _ => false,
+    }
+}
+
+/// Submits the identity funding transition `submit` builds, retrying a 10506
+/// as [`submit_with_cl_height_retry`] does: the first attempt at `floor`,
+/// each retry one higher, none above [`MAX_FUNDING_FEE_INCREASE`], at most
+/// [`FUNDING_ATTEMPTS`]. A floor above the cap submits nothing.
+///
+/// `on_attempt` gets each attempt's `user_fee_increase` before the attempt is
+/// built, so a caller that drops this future still knows the highest one it
+/// may have sent. The next call for the same proof starts one above it; once
+/// none is left, the next proof is [`next_chain_lock_proof`]'s, from floor 0.
+pub async fn submit_funding_with_fee_floor<F, Fut, R>(
+    proof: &AssetLockProof,
+    floor: UserFeeIncrease,
+    on_attempt: impl Fn(UserFeeIncrease),
+    submit: F,
+) -> Result<R, FundingFailure>
+where
+    F: Fn(PutSettings) -> Fut,
+    Fut: Future<Output = Result<R, Error>>,
+{
+    if floor > MAX_FUNDING_FEE_INCREASE {
+        return Err(FundingFailure {
+            kind: FundingFailureKind::FeeCapReached,
+            error: Error::FeeIncreaseFloorAboveCap {
+                floor,
+                cap: MAX_FUNDING_FEE_INCREASE,
+            },
+        });
+    }
+    let first = PutSettings {
+        user_fee_increase: Some(floor),
+        ..Default::default()
+    };
+    retry_cl_height_too_low(Some(first), MAX_FUNDING_FEE_INCREASE, |settings| {
+        let settings = settings.unwrap_or(first);
+        on_attempt(settings.user_fee_increase.unwrap_or(floor));
+        submit(settings)
+    })
+    .await
+    .map_err(|(error, fee)| {
+        let kind = match funding_failure_kind(&error, proof) {
+            FundingFailureKind::PlatformBehindCore if fee >= MAX_FUNDING_FEE_INCREASE => {
+                FundingFailureKind::FeeCapReached
+            }
+            kind => kind,
+        };
+        FundingFailure { kind, error }
+    })
+}
+
+/// The proof a lock whose fee steps are used up
+/// ([`FundingFailureKind::FeeCapReached`]) is submitted with next, from floor
+/// 0: a ChainLock proof for `out_point` at the transaction's `mined_height`
+/// while no ChainLock proof was sent for it (`last_chain_height` `None`),
+/// else one block above the last one sent. Its bytes are then new to every
+/// node, and Platform has to reach only one block more than the height it
+/// refused. `None` while that height is above `best_chain_locked_height`,
+/// the caller's best locally verified ChainLock: wait for a later one.
+///
+/// The caller has verified that the transaction is mined at `mined_height` on
+/// its ChainLocked chain, as for any ChainLock proof, and records the height
+/// it sends before sending, so that no height is used twice.
+pub fn next_chain_lock_proof(
+    out_point: OutPoint,
+    mined_height: CoreBlockHeight,
+    last_chain_height: Option<CoreBlockHeight>,
+    best_chain_locked_height: CoreBlockHeight,
+) -> Option<ChainAssetLockProof> {
+    let height = match last_chain_height {
+        None => mined_height,
+        Some(last) => last.checked_add(1)?.max(mined_height),
+    };
+    (height <= best_chain_locked_height).then_some(ChainAssetLockProof {
+        core_chain_locked_height: height,
+        out_point,
+    })
+}
+
+/// A top-up whose wait answered `balance` is settled only by `record`, the
+/// proved record of its lock `out_point`, showing the lock used up.
+pub(crate) fn settle_top_up(
+    out_point: OutPoint,
+    balance: Credits,
+    record: Result<StoredAssetLockInfo, Error>,
+) -> Result<Credits, FundingFailure> {
+    let record = match record {
+        Ok(StoredAssetLockInfo::FullyConsumed) => return Ok(balance),
+        Ok(StoredAssetLockInfo::NotPresent) => UnsettledLockRecord::NotPresent,
+        Ok(StoredAssetLockInfo::PartiallyConsumed(value)) => {
+            UnsettledLockRecord::PartiallyConsumed(value.remaining_credit_value())
+        }
+        Err(error) => UnsettledLockRecord::Unread(Box::new(error)),
+    };
+    Err(FundingFailure {
+        kind: FundingFailureKind::Submitted,
+        error: Error::AssetLockNotUsedUp { out_point, record },
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -431,7 +708,7 @@ mod tests {
     /// 1. Every retry under repeated `InvalidAssetLockProofCoreChainHeightError`
     ///    (consensus 10506) receives a `PutSettings::user_fee_increase`
     ///    strictly greater than the previous attempt. The retry's purpose
-    ///    is to bypass Tenderdash's 24h invalid-tx hash cache by changing
+    ///    is to get past Tenderdash's cache of refused hashes by changing
     ///    the ST signable bytes; if `user_fee_increase` weren't bumped,
     ///    every resubmit would hash identically and be silently dropped.
     ///    This invariant regressed silently once in the earlier
@@ -518,7 +795,7 @@ mod tests {
         // starting from Some(1) and bumping by 1 each retry. The exact
         // values are load-bearing: Tenderdash hashes the full ST bytes
         // including this field, so consecutive identical values would
-        // hit the 24h invalid-tx cache.
+        // hit its cache of refused hashes.
         for (i, val) in captured.iter().enumerate().skip(1) {
             let expected = Some(i as u16);
             assert_eq!(
@@ -838,5 +1115,586 @@ mod asset_lock_outpoint_state_tests {
             read(vec![(key.clone(), Some(Element::new_item(vec![0xff; 3])))]),
             Err(Error::InvalidProvedResponse(_))
         ));
+    }
+}
+
+// The fakes below answer with the SDK's own `Error`, which is large.
+#[cfg(test)]
+#[allow(clippy::result_large_err)]
+mod funding_tests {
+    use std::future::ready;
+    use std::sync::Mutex;
+
+    use dpp::consensus::basic::identity::{
+        IdentityAssetLockTransactionOutPointAlreadyConsumedError,
+        InvalidInstantAssetLockProofSignatureError,
+    };
+    use dpp::dashcore::{InstantLock, Transaction, Txid};
+    use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+    use dpp::version::PlatformVersion;
+    use rs_dapi_client::DapiClientError;
+    use tokio::time::Instant;
+
+    use super::*;
+    use crate::error::StateTransitionBroadcastError;
+
+    fn consensus(error: ConsensusError) -> Error {
+        Error::Protocol(ProtocolError::ConsensusError(Box::new(error)))
+    }
+
+    fn cl_height_too_low() -> Error {
+        consensus(InvalidAssetLockProofCoreChainHeightError::new(101, 100).into())
+    }
+
+    fn chain_proof(vout: u32) -> AssetLockProof {
+        AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 100,
+            out_point: OutPoint::new(Txid::from_byte_array([4; 32]), vout),
+        })
+    }
+
+    fn instant_proof() -> AssetLockProof {
+        AssetLockProof::Instant(InstantAssetLockProof::new(
+            InstantLock::default(),
+            Transaction {
+                version: 3,
+                lock_time: 0,
+                input: Vec::new(),
+                output: Vec::new(),
+                special_transaction_payload: None,
+            },
+            0,
+        ))
+    }
+
+    /// Runs [`submit_funding_with_fee_floor`] over `proof` from `floor`, each
+    /// attempt answered by `answer` (given its fee): the fee each attempt was
+    /// built with, the fees `on_attempt` was told, and the result.
+    async fn funded(
+        proof: &AssetLockProof,
+        floor: UserFeeIncrease,
+        answer: impl Fn(UserFeeIncrease) -> Result<u64, Error>,
+    ) -> (
+        Vec<UserFeeIncrease>,
+        Vec<UserFeeIncrease>,
+        Result<u64, FundingFailure>,
+    ) {
+        let built = Mutex::new(Vec::new());
+        let told = Mutex::new(Vec::new());
+        let result = submit_funding_with_fee_floor(
+            proof,
+            floor,
+            |fee| told.lock().unwrap().push(fee),
+            |settings| {
+                let fee = settings.user_fee_increase.expect("every attempt states it");
+                built.lock().unwrap().push(fee);
+                ready(answer(fee))
+            },
+        )
+        .await;
+        (
+            built.into_inner().unwrap(),
+            told.into_inner().unwrap(),
+            result,
+        )
+    }
+
+    /// Each attempt starts at the floor and is one higher than the last, so
+    /// none repeats a transition a node refused; the caller is told each fee
+    /// before it is built.
+    #[tokio::test(start_paused = true)]
+    async fn should_raise_the_fee_increase_from_the_floor_on_each_retry() {
+        let (built, told, result) = funded(&chain_proof(0), 7, |_| Err(cl_height_too_low())).await;
+        assert_eq!(built.len() as u32, FUNDING_ATTEMPTS);
+        assert_eq!(built.first(), Some(&7));
+        assert!(
+            built.windows(2).all(|pair| pair[1] == pair[0] + 1),
+            "{built:?}"
+        );
+        assert_eq!(told, built);
+        let failure = result.unwrap_err();
+        assert_eq!(failure.kind, FundingFailureKind::PlatformBehindCore);
+        assert!(as_asset_lock_proof_cl_height_too_low(&failure.error).is_some());
+
+        // The next call, from one above, never repeats an attempt.
+        let last = *built.last().unwrap();
+        let (next, _, _) = funded(&chain_proof(0), last + 1, |_| Ok(5)).await;
+        assert_eq!(next, vec![last + 1]);
+    }
+
+    /// Retries stop at the cap, and a call that leaves no fee step says so
+    /// rather than ask for the next floor, which would submit nothing.
+    #[tokio::test(start_paused = true)]
+    async fn should_stop_funding_retries_at_the_fee_cap() {
+        let started = Instant::now();
+        let (built, told, result) = funded(&chain_proof(0), MAX_FUNDING_FEE_INCREASE - 3, |_| {
+            Err(cl_height_too_low())
+        })
+        .await;
+        assert_eq!(built, vec![97, 98, 99, 100]);
+        assert_eq!(told, built);
+        let failure = result.unwrap_err();
+        assert_eq!(failure.kind, FundingFailureKind::FeeCapReached);
+        assert!(as_asset_lock_proof_cl_height_too_low(&failure.error).is_some());
+        // Three waits between four attempts, none after the last.
+        assert_eq!(started.elapsed(), Duration::from_secs(45));
+
+        // The floor after it submits nothing.
+        let (built, told, result) =
+            funded(&chain_proof(0), MAX_FUNDING_FEE_INCREASE + 1, |_| Ok(5)).await;
+        assert!(built.is_empty() && told.is_empty());
+        let failure = result.unwrap_err();
+        assert_eq!(failure.kind, FundingFailureKind::FeeCapReached);
+        assert!(matches!(
+            failure.error,
+            Error::FeeIncreaseFloorAboveCap {
+                floor: 101,
+                cap: 100
+            }
+        ));
+
+        // Any other answer at the cap is no claim about the fee steps.
+        let (built, _, result) = funded(&chain_proof(0), MAX_FUNDING_FEE_INCREASE, |_| {
+            Err(Error::TimeoutReached(Duration::from_secs(1), "t".into()))
+        })
+        .await;
+        assert_eq!(built, vec![100]);
+        assert_eq!(result.unwrap_err().kind, FundingFailureKind::Unavailable);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn should_report_a_funding_retry_that_lands() {
+        let (built, told, result) = funded(&chain_proof(0), 0, |fee| match fee {
+            0 => Err(cl_height_too_low()),
+            _ => Ok(5),
+        })
+        .await;
+        assert_eq!(built, vec![0, 1]);
+        assert_eq!(told, built);
+        assert_eq!(result.unwrap(), 5);
+    }
+
+    /// The caller learns an attempt's fee before the attempt is built, so a
+    /// call it drops while the attempt is in flight still reports it.
+    #[tokio::test]
+    async fn should_tell_each_attempt_before_it_is_built() {
+        let told = Mutex::new(Vec::new());
+        let proof = chain_proof(0);
+        let call = submit_funding_with_fee_floor(
+            &proof,
+            4,
+            |fee| told.lock().unwrap().push(fee),
+            |_| std::future::pending::<Result<u64, Error>>(),
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), call)
+                .await
+                .is_err(),
+            "the attempt never answers"
+        );
+        assert_eq!(told.into_inner().unwrap(), vec![4]);
+    }
+
+    /// Only the outpoint-matched report reads as consumed, and nothing but a
+    /// proof as done.
+    #[test]
+    fn should_map_funding_errors_to_what_the_caller_does_next() {
+        let consumed = |vout| -> ConsensusError {
+            IdentityAssetLockTransactionOutPointAlreadyConsumedError::new(
+                Txid::from_byte_array([4; 32]),
+                vout,
+            )
+            .into()
+        };
+        let broadcast = |cause| {
+            Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+                code: 10504,
+                message: "asset lock already consumed".to_string(),
+                cause,
+            })
+        };
+        let stale_islock = || consensus(InvalidInstantAssetLockProofSignatureError::new().into());
+        let out_point = OutPoint::new(Txid::from_byte_array([4; 32]), 1);
+        for (error, proof, kind) in [
+            (
+                cl_height_too_low(),
+                chain_proof(1),
+                FundingFailureKind::PlatformBehindCore,
+            ),
+            (
+                stale_islock(),
+                instant_proof(),
+                FundingFailureKind::NeedsChainLockProof,
+            ),
+            // A ChainLock proof has no smaller proof to fall back to.
+            (stale_islock(), chain_proof(1), FundingFailureKind::Rejected),
+            (
+                consensus(consumed(1)),
+                chain_proof(1),
+                FundingFailureKind::ReportedConsumed,
+            ),
+            (
+                broadcast(Some(consumed(1))),
+                chain_proof(1),
+                FundingFailureKind::ReportedConsumed,
+            ),
+            // Another outpoint, or a bare code, is no report about this lock.
+            (
+                consensus(consumed(2)),
+                chain_proof(1),
+                FundingFailureKind::Rejected,
+            ),
+            (
+                broadcast(None),
+                chain_proof(1),
+                FundingFailureKind::Rejected,
+            ),
+            (
+                Error::NoAvailableAddressesToRetry(Box::new(broadcast(None))),
+                chain_proof(1),
+                FundingFailureKind::Rejected,
+            ),
+            (
+                Error::DapiClientError(DapiClientError::NoAvailableAddresses),
+                chain_proof(1),
+                FundingFailureKind::Unavailable,
+            ),
+            (
+                Error::TimeoutReached(Duration::from_secs(1), "t".into()),
+                chain_proof(1),
+                FundingFailureKind::Unavailable,
+            ),
+            (
+                Error::InvalidProvedResponse("x".into()),
+                chain_proof(1),
+                FundingFailureKind::Unavailable,
+            ),
+            (
+                Error::Generic("x".into()),
+                chain_proof(1),
+                FundingFailureKind::Unavailable,
+            ),
+            (
+                Error::FeeIncreaseFloorAboveCap {
+                    floor: 101,
+                    cap: 100,
+                },
+                chain_proof(1),
+                FundingFailureKind::FeeCapReached,
+            ),
+            (
+                Error::AssetLockNotUsedUp {
+                    out_point,
+                    record: UnsettledLockRecord::NotPresent,
+                },
+                chain_proof(1),
+                FundingFailureKind::Submitted,
+            ),
+        ] {
+            assert_eq!(funding_failure_kind(&error, &proof), kind, "{error}");
+        }
+    }
+
+    /// A top-up settles only on a record showing its lock used up. Any other
+    /// record, or one that could not be read, leaves it submitted, with the
+    /// read's own error kept.
+    #[test]
+    fn should_settle_a_top_up_only_on_a_record_of_its_lock_used_up() {
+        let out_point = OutPoint::new(Txid::from_byte_array([4; 32]), 1);
+        let unsettled = |record| {
+            let failure = settle_top_up(out_point, 5, record).expect_err("not settled");
+            assert_eq!(failure.kind, FundingFailureKind::Submitted);
+            failure.error
+        };
+
+        assert_eq!(
+            settle_top_up(out_point, 5, Ok(StoredAssetLockInfo::FullyConsumed)).unwrap(),
+            5
+        );
+        let error = unsettled(Ok(StoredAssetLockInfo::NotPresent));
+        assert!(
+            error.to_string().ends_with(&format!(
+                "asset lock {out_point} is not proved used up: Platform has no record of its use"
+            )),
+            "{error}"
+        );
+        let left = AssetLockValue::new(2_000, vec![0x76], 1_500, vec![], PlatformVersion::latest())
+            .expect("an asset lock value");
+        let error = unsettled(Ok(StoredAssetLockInfo::PartiallyConsumed(left)));
+        assert!(
+            matches!(
+                error,
+                Error::AssetLockNotUsedUp {
+                    record: UnsettledLockRecord::PartiallyConsumed(1_500),
+                    ..
+                }
+            ),
+            "{error}"
+        );
+        assert!(error
+            .to_string()
+            .contains("1500 of its credits are unspent"));
+        let error = unsettled(Err(Error::TimeoutReached(
+            Duration::from_secs(1),
+            "down".into(),
+        )));
+        assert!(
+            matches!(
+                &error,
+                Error::AssetLockNotUsedUp {
+                    record: UnsettledLockRecord::Unread(read),
+                    ..
+                } if matches!(**read, Error::TimeoutReached(..))
+            ),
+            "{error}"
+        );
+        assert!(error.to_string().contains("its record could not be read"));
+    }
+
+    /// The next proof is at the mined height until a ChainLock proof was
+    /// sent, then one block above the last, never below the mined height,
+    /// and only once a ChainLock the caller verified covers it.
+    #[test]
+    fn should_give_the_next_chain_lock_proof_one_block_above_the_last() {
+        let out_point = OutPoint::new(Txid::from_byte_array([4; 32]), 1);
+        let height = |last, best| {
+            next_chain_lock_proof(out_point, 1_000, last, best).map(|proof| {
+                assert_eq!(proof.out_point, out_point);
+                proof.core_chain_locked_height
+            })
+        };
+        assert_eq!(height(None, 1_000), Some(1_000));
+        assert_eq!(height(None, 999), None);
+        assert_eq!(height(Some(1_000), 1_005), Some(1_001));
+        assert_eq!(height(Some(1_000), 1_000), None);
+        assert_eq!(height(Some(1_003), 1_005), Some(1_004));
+        assert_eq!(height(Some(900), 1_005), Some(1_000));
+        assert_eq!(height(Some(u32::MAX), u32::MAX), None);
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::result_large_err)]
+mod refused_transition_tests {
+    //! The recovery contract against nodes that keep every transition their
+    //! CheckTx refused, keyed as Tenderdash keys its cache: by the SHA-256 of
+    //! the transition's bytes, here those of a real IdentityTopUp signed by
+    //! the deterministic signer the SDK uses.
+
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+
+    use dpp::dashcore::hashes::sha256;
+    use dpp::dashcore::Txid;
+    use dpp::identity::Identity;
+    use dpp::serialization::PlatformSerializable;
+    use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
+    use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+    use dpp::version::PlatformVersion;
+    use dpp::ProtocolError;
+    use rs_dapi_client::transport::TransportError;
+    use rs_dapi_client::DapiClientError;
+
+    use super::*;
+
+    /// What a node answers to bytes whose hash it holds.
+    #[derive(Clone, Copy, Debug)]
+    enum Hit {
+        /// Tenderdash 1.8 with rs-dapi: the duplicate's CheckTx passes, and
+        /// DAPI answers Internal, which every node holding the hash repeats.
+        Internal,
+        /// Tenderdash after #1530: the cached rejection again.
+        CachedRejection,
+    }
+
+    /// Platform's nodes, all holding the hashes of the transitions their
+    /// CheckTx refused, with Platform's view of Core at `core_height`.
+    struct Network {
+        hit: Hit,
+        core_height: Mutex<CoreBlockHeight>,
+        refused: Mutex<HashSet<[u8; 32]>>,
+        /// The (proof height, fee) pairs that reached CheckTx.
+        checked: Mutex<Vec<(CoreBlockHeight, UserFeeIncrease)>>,
+    }
+
+    impl Network {
+        fn new(hit: Hit, core_height: CoreBlockHeight) -> Self {
+            Self {
+                hit,
+                core_height: Mutex::new(core_height),
+                refused: Mutex::new(HashSet::new()),
+                checked: Mutex::new(Vec::new()),
+            }
+        }
+
+        /// The top-up of one identity from `proof` at `fee`, as it is sent.
+        fn top_up(proof: &ChainAssetLockProof, fee: UserFeeIncrease) -> Vec<u8> {
+            let version = PlatformVersion::latest();
+            let identity =
+                Identity::create_basic_identity([3; 32].into(), version).expect("an identity");
+            IdentityTopUpTransition::try_from_identity_with_private_key(
+                &identity,
+                AssetLockProof::Chain(proof.clone()),
+                &[0x42; 32],
+                fee,
+                version,
+                None,
+            )
+            .expect("the top-up is signed")
+            .serialize_to_bytes()
+            .expect("the top-up serializes")
+        }
+
+        fn submit(&self, proof: &ChainAssetLockProof, fee: UserFeeIncrease) -> Result<(), Error> {
+            let key = sha256::Hash::hash(&Self::top_up(proof, fee)).to_byte_array();
+            let height = proof.core_chain_locked_height;
+            if self.refused.lock().unwrap().contains(&key) {
+                return Err(match self.hit {
+                    Hit::Internal => Error::from(DapiClientError::NoAvailableAddressesToRetry(
+                        Box::new(TransportError::Grpc(dapi_grpc::tonic::Status::internal(
+                            "State Transition processing error: the state transition is \
+                                 valid, create a new state transition with different hash",
+                        ))),
+                    )),
+                    Hit::CachedRejection => cl_height_too_low(height, height - 1),
+                });
+            }
+            self.checked.lock().unwrap().push((height, fee));
+            let core_height = *self.core_height.lock().unwrap();
+            if height > core_height {
+                self.refused.lock().unwrap().insert(key);
+                return Err(cl_height_too_low(height, core_height));
+            }
+            Ok(())
+        }
+
+        /// One funding call from `floor`: the fees it built, and its result.
+        async fn fund(
+            &self,
+            proof: &ChainAssetLockProof,
+            floor: UserFeeIncrease,
+        ) -> (Vec<UserFeeIncrease>, Result<(), FundingFailure>) {
+            let built = Mutex::new(Vec::new());
+            let result = submit_funding_with_fee_floor(
+                &AssetLockProof::Chain(proof.clone()),
+                floor,
+                |fee| built.lock().unwrap().push(fee),
+                |settings| {
+                    let fee = settings.user_fee_increase.expect("every attempt states it");
+                    std::future::ready(self.submit(proof, fee))
+                },
+            )
+            .await;
+            (built.into_inner().unwrap(), result)
+        }
+
+        /// Calls from floor 0 up, each from one above the last fee the one
+        /// before built, until one leaves no fee step or lands: the kinds of
+        /// the failures on the way, and the last call's result.
+        async fn fund_until_capped(
+            &self,
+            proof: &ChainAssetLockProof,
+        ) -> (Vec<FundingFailureKind>, Result<(), FundingFailure>) {
+            let (mut kinds, mut floor) = (Vec::new(), 0);
+            loop {
+                let (built, result) = self.fund(proof, floor).await;
+                match &result {
+                    Err(failure) if failure.kind != FundingFailureKind::FeeCapReached => {
+                        kinds.push(failure.kind);
+                        floor = built.last().expect("a call below the cap builds") + 1;
+                    }
+                    _ => return (kinds, result),
+                }
+            }
+        }
+    }
+
+    fn cl_height_too_low(proof: CoreBlockHeight, platform: CoreBlockHeight) -> Error {
+        Error::Protocol(ProtocolError::ConsensusError(Box::new(
+            InvalidAssetLockProofCoreChainHeightError::new(proof, platform).into(),
+        )))
+    }
+
+    /// A lock capped at proof height h while Platform was behind is never
+    /// funded by that proof again, at any fee, after Platform catches up: the
+    /// nodes hold every pair, and none reaches CheckTx. The proof at h+1, from
+    /// floor 0, lands at its first attempt.
+    #[tokio::test(start_paused = true)]
+    async fn should_fund_a_capped_lock_only_with_a_fresh_chain_lock_proof() {
+        let out_point = OutPoint::new(Txid::from_byte_array([4; 32]), 1);
+        let mined = 1_000;
+        for hit in [Hit::Internal, Hit::CachedRejection] {
+            let network = Network::new(hit, mined - 1);
+            let proof = next_chain_lock_proof(out_point, mined, None, mined)
+                .expect("the mined height is ChainLocked");
+            assert_eq!(proof.core_chain_locked_height, mined);
+
+            // Platform is behind: every fee step of the proof is refused.
+            let (kinds, capped) = network.fund_until_capped(&proof).await;
+            assert!(
+                kinds
+                    .iter()
+                    .all(|kind| *kind == FundingFailureKind::PlatformBehindCore),
+                "{hit:?}: {kinds:?}"
+            );
+            assert_eq!(
+                capped.unwrap_err().kind,
+                FundingFailureKind::FeeCapReached,
+                "{hit:?}"
+            );
+            let checked = network.checked.lock().unwrap().clone();
+            assert_eq!(
+                checked,
+                (0..=MAX_FUNDING_FEE_INCREASE)
+                    .map(|fee| (mined, fee))
+                    .collect::<Vec<_>>(),
+                "{hit:?}: each pair reaches CheckTx once"
+            );
+
+            // Platform catches up; the same proof from floor 0 never lands.
+            *network.core_height.lock().unwrap() = mined + 5;
+            let (_, again) = network.fund_until_capped(&proof).await;
+            assert!(again.is_err(), "{hit:?}: a refused pair was admitted");
+            assert_eq!(
+                network.checked.lock().unwrap().len(),
+                checked.len(),
+                "{hit:?}: a held pair reached CheckTx"
+            );
+
+            // One block above it, from floor 0, lands at the first attempt.
+            let next = next_chain_lock_proof(
+                out_point,
+                mined,
+                Some(proof.core_chain_locked_height),
+                mined + 5,
+            )
+            .expect("a ChainLock covers the next height");
+            assert_eq!(next.core_chain_locked_height, mined + 1);
+            let (built, landed) = network.fund(&next, 0).await;
+            assert!(landed.is_ok(), "{hit:?}");
+            assert_eq!(built, vec![0], "{hit:?}");
+        }
+    }
+
+    /// The pair (proof, fee) is the transition's identity: the same pair
+    /// gives the same bytes, and the next height gives new ones at fee 0.
+    #[test]
+    fn should_sign_new_bytes_only_for_a_new_proof_or_fee() {
+        let proof = |height| ChainAssetLockProof {
+            core_chain_locked_height: height,
+            out_point: OutPoint::new(Txid::from_byte_array([4; 32]), 1),
+        };
+        assert_eq!(
+            Network::top_up(&proof(1_000), 0),
+            Network::top_up(&proof(1_000), 0)
+        );
+        assert_ne!(
+            Network::top_up(&proof(1_000), 0),
+            Network::top_up(&proof(1_000), 1)
+        );
+        assert_ne!(
+            Network::top_up(&proof(1_000), 0),
+            Network::top_up(&proof(1_001), 0)
+        );
     }
 }
