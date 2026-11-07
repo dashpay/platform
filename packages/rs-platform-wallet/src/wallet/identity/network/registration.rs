@@ -24,7 +24,8 @@
 //!    consensus code 10506) — Platform's observed Core tip is briefly
 //!    behind the wallet's SPV-verified CL. Bump
 //!    `PutSettings::user_fee_increase` (changes ST signable bytes →
-//!    different ST hash → bypasses Tenderdash's 24h invalid-tx cache)
+//!    different ST hash → not dropped by Tenderdash's cache of refused
+//!    hashes, which keeps them with no time limit)
 //!    and resubmit the same proof. See
 //!    [`submit_with_cl_height_retry`].
 //!

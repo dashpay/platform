@@ -327,8 +327,8 @@ async fn identity_create_with_asset_lock_and_private_key<S: Signer<IdentityPubli
     // `settings` straight through honours that knob without the
     // pre-extraction dance. The CL-height retry path in
     // `platform-wallet` relies on `user_fee_increase` to change the
-    // ST's signable bytes (Tenderdash's 24h invalid-tx hash cache
-    // would silently drop identical-bytes resubmits).
+    // ST's signable bytes (the node that refused a transition keeps its
+    // hash, with no time limit, and drops identical-bytes resubmits).
     let (state_transition, _) = identity
         .broadcast_request_for_new_identity_with_private_key(
             asset_lock_proof,

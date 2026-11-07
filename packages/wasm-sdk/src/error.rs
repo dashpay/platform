@@ -296,7 +296,9 @@ impl From<SdkError> for WasmSdkError {
             ),
             EncryptedFor(e) => e.into(),
             // Refusals of SDK operations this binding does not expose.
-            error @ DpnsNameContested { .. } => Self::new(
+            error @ (DpnsNameContested { .. }
+            | FeeIncreaseFloorAboveCap { .. }
+            | AssetLockNotUsedUp { .. }) => Self::new(
                 WasmSdkErrorKind::Generic,
                 error.to_string(),
                 None,
