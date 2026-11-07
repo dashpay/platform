@@ -3052,20 +3052,17 @@ impl DocumentPropertyType {
 
     /// The most bytes [`Self::encode_value_ref_with_size`] writes for a value of this type, `None`
     /// when the type sets no largest value: a string with neither `maxLength` nor `maxBytes`, a byte
-    /// array without `maxItems`, or an untyped array. `required` is the flag the encoding is called
+    /// array without `maxItems`, an untyped array, or a typed array that may hold an element of
+    /// such a type. `required` is the flag the encoding is called
     /// with (an optional `Date` carries a marker byte); the presence byte a document writes before
     /// an optional property is not counted.
     ///
     /// Each arm is the largest output of the matching arm of the encoder, which this must follow
     /// when that changes.
-    pub fn max_encoded_value_size(
-        &self,
-        required: bool,
-        platform_version: &PlatformVersion,
-    ) -> Result<Option<u32>, ProtocolError> {
+    pub fn max_encoded_value_size(&self, required: bool) -> Option<u32> {
         // A varint length, then that many bytes.
         let length_prefixed = |bytes: u32| bytes.saturating_add(bytes.required_space() as u32);
-        Ok(match self {
+        match self {
             DocumentPropertyType::String(sizes) => {
                 // A character takes at most 4 bytes in UTF-8.
                 let max_bytes = match (sizes.max_length, sizes.max_bytes) {
@@ -3074,7 +3071,7 @@ impl DocumentPropertyType {
                             (u32::from(length) * 4).min(u32::from(max_bytes))
                         }),
                     (Some(max_length), None) => u32::from(max_length) * 4,
-                    (None, None) => return Ok(None),
+                    (None, None) => return None,
                 };
                 Some(length_prefixed(max_bytes))
             }
@@ -3101,12 +3098,7 @@ impl DocumentPropertyType {
             DocumentPropertyType::Object(inner_fields) => {
                 let mut inner = 0u32;
                 for field in inner_fields.values() {
-                    let Some(field_size) = field
-                        .property_type
-                        .max_encoded_value_size(field.required, platform_version)?
-                    else {
-                        return Ok(None);
-                    };
+                    let field_size = field.property_type.max_encoded_value_size(field.required)?;
                     inner = inner
                         .saturating_add(field_size)
                         .saturating_add(u32::from(!field.required));
@@ -3114,14 +3106,19 @@ impl DocumentPropertyType {
                 Some(length_prefixed(inner))
             }
             DocumentPropertyType::TypedArray(typed_array) => {
-                // It saturates at `u16::MAX`, which an unbounded element reports.
-                match typed_array.max_encoded_size(platform_version)? {
-                    u16::MAX => None,
-                    size => Some(u32::from(size)),
-                }
+                // A varint count, then each element encoded as a required property of its type.
+                // Counted here rather than by `max_encoded_size`, which saturates at `u16::MAX`.
+                let max_items = u32::from(typed_array.max_items);
+                let elements = if max_items == 0 {
+                    0
+                } else {
+                    let element = typed_array.item_type.max_encoded_value_size(true)?;
+                    max_items.saturating_mul(element)
+                };
+                Some(elements.saturating_add(max_items.required_space() as u32))
             }
             DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => None,
-        })
+        }
     }
 
     pub fn encode_value_ref_with_size(

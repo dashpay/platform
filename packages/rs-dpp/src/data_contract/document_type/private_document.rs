@@ -13,7 +13,6 @@ use crate::data_contract::document_type::accessors::{
 };
 use crate::data_contract::document_type::{property_names, DocumentTypeRef};
 use crate::ProtocolError;
-use platform_version::version::PlatformVersion;
 use std::num::NonZeroU32;
 
 /// What a document type's `private` keyword declares (`{ "entrySize": n }`). Built only by the
@@ -90,7 +89,6 @@ pub const PRIVATE_DOCUMENT_ENVELOPE_V1_OVERHEAD_BYTES: u32 =
 /// then no entry size holds every payload.
 pub fn largest_private_document_payload_size(
     document_type: DocumentTypeRef,
-    platform_version: &PlatformVersion,
 ) -> Result<u32, ProtocolError> {
     let mut size = 0u32;
     for (property_name, property) in document_type.properties() {
@@ -99,7 +97,7 @@ pub fn largest_private_document_payload_size(
         let presence_byte = !property.required || property.transient;
         let Some(value_size) = property
             .property_type
-            .max_encoded_value_size(property.required, platform_version)?
+            .max_encoded_value_size(property.required)
         else {
             return Err(ProtocolError::UnboundedPrivateDocumentProperty {
                 document_type_name: document_type.name().clone(),
@@ -118,12 +116,9 @@ pub fn largest_private_document_payload_size(
 /// [`PRIVATE_DOCUMENT_ENVELOPE_V1_OVERHEAD_BYTES`].
 pub fn minimum_private_document_entry_size(
     document_type: DocumentTypeRef,
-    platform_version: &PlatformVersion,
 ) -> Result<u32, ProtocolError> {
-    Ok(
-        largest_private_document_payload_size(document_type, platform_version)?
-            .saturating_add(PRIVATE_DOCUMENT_ENVELOPE_V1_OVERHEAD_BYTES),
-    )
+    Ok(largest_private_document_payload_size(document_type)?
+        .saturating_add(PRIVATE_DOCUMENT_ENVELOPE_V1_OVERHEAD_BYTES))
 }
 
 /// Refuses a private document type whose `entrySize` cannot hold its largest payload in the
@@ -133,12 +128,11 @@ pub fn minimum_private_document_entry_size(
 /// that is not private passes.
 pub fn validate_private_document_entry_size(
     document_type: DocumentTypeRef,
-    platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
     let Some(private_document) = document_type.private_document() else {
         return Ok(());
     };
-    let minimum_entry_size = minimum_private_document_entry_size(document_type, platform_version)?;
+    let minimum_entry_size = minimum_private_document_entry_size(document_type)?;
     if private_document.entry_size() < minimum_entry_size {
         return Err(ProtocolError::PrivateDocumentEntrySizeTooSmall {
             document_type_name: document_type.name().clone(),
@@ -160,6 +154,7 @@ mod tests {
     use crate::document::DocumentV0;
     use platform_value::string_encoding::Encoding;
     use platform_value::{Identifier, Value};
+    use platform_version::version::PlatformVersion;
     use serde_json::json;
     use std::collections::BTreeMap;
 
@@ -281,8 +276,8 @@ mod tests {
             .document_type_for_name("secret")
             .expect("the secret type");
 
-        let largest = largest_private_document_payload_size(secret, platform_version)
-            .expect("every property is bounded");
+        let largest =
+            largest_private_document_payload_size(secret).expect("every property is bounded");
         // 1 + 8 + (1 + 1 + 40) + (1 + 1 + 20) + (1 + 1 + 10) + 33 + (1 + 2 + 300) + (1 + 1)
         // + (1 + 32) + (1 + 1 + 2 + 1 + 1 + 20) + (1 + 1 + 3 * (1 + 32))
         assert_eq!(largest, 583);
@@ -307,14 +302,12 @@ mod tests {
     /// size passes, one byte less is refused with both numbers, and a public type always passes.
     #[test]
     fn should_refuse_a_private_type_whose_entries_cannot_hold_its_largest_payload() {
-        let platform_version = PlatformVersion::latest();
         assert_eq!(PRIVATE_DOCUMENT_ENVELOPE_V1_OVERHEAD_BYTES, 299);
         let required = json!(["small", "large", "key"]);
         let minimum = minimum_private_document_entry_size(
             contract(1000, every_bounded_kind(), required.clone())
                 .document_type_for_name("secret")
                 .expect("the secret type"),
-            platform_version,
         )
         .expect("every property is bounded");
         assert_eq!(minimum, 583 + 299);
@@ -323,7 +316,6 @@ mod tests {
         for name in ["secret", "note"] {
             validate_private_document_entry_size(
                 fitting.document_type_for_name(name).expect("the type"),
-                platform_version,
             )
             .unwrap_or_else(|error| panic!("{name} passes: {error}"));
         }
@@ -331,7 +323,6 @@ mod tests {
         let short = contract(minimum - 1, every_bounded_kind(), required);
         match validate_private_document_entry_size(
             short.document_type_for_name("secret").expect("the type"),
-            platform_version,
         ) {
             Err(ProtocolError::PrivateDocumentEntrySizeTooSmall {
                 document_type_name,
@@ -364,7 +355,6 @@ mod tests {
             );
             match validate_private_document_entry_size(
                 contract.document_type_for_name("secret").expect("the type"),
-                PlatformVersion::latest(),
             ) {
                 Err(ProtocolError::UnboundedPrivateDocumentProperty {
                     document_type_name,
@@ -378,16 +368,66 @@ mod tests {
         }
     }
 
+    /// A typed array is its varint count and that many of its largest element, as its encoder
+    /// writes it: one of no element takes 1 byte whatever its element type, and one larger than
+    /// `u16::MAX` bytes keeps its exact size.
+    #[test]
+    fn should_size_a_typed_array_as_its_encoding_takes_it() {
+        use crate::data_contract::document_type::property::array::TypedArrayProperty;
+        use crate::data_contract::document_type::{ByteArrayPropertySizes, StringPropertySizes};
+
+        let typed_array = |item_type: DocumentPropertyType, max_items: u16| {
+            DocumentPropertyType::TypedArray(TypedArrayProperty {
+                item_type: Box::new(item_type),
+                item_constraints: Default::default(),
+                min_items: None,
+                max_items,
+                unique_items: false,
+            })
+        };
+        let unbounded_string = DocumentPropertyType::String(StringPropertySizes {
+            min_length: None,
+            max_length: None,
+            max_bytes: None,
+        });
+        let hundred_bytes = DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+            min_size: Some(100),
+            max_size: Some(100),
+        });
+
+        for (array, value) in [
+            (
+                typed_array(unbounded_string.clone(), 0),
+                Value::Array(vec![]),
+            ),
+            (
+                typed_array(hundred_bytes, 1000),
+                Value::Array(vec![Value::Bytes(vec![1; 100]); 1000]),
+            ),
+        ] {
+            assert_eq!(
+                array.max_encoded_value_size(true),
+                Some(
+                    array
+                        .encode_value_ref_with_size(&value, true)
+                        .expect("encodes")
+                        .len() as u32
+                )
+            );
+        }
+        assert_eq!(
+            typed_array(unbounded_string, 1).max_encoded_value_size(true),
+            None
+        );
+    }
+
     /// A `Date` property carries a marker byte when it is optional; its largest size counts it,
     /// as its encoding writes it.
     #[test]
     fn should_size_a_date_with_its_optional_marker() {
-        let platform_version = PlatformVersion::latest();
         for required in [true, false] {
             assert_eq!(
-                DocumentPropertyType::Date
-                    .max_encoded_value_size(required, platform_version)
-                    .expect("sized"),
+                DocumentPropertyType::Date.max_encoded_value_size(required),
                 Some(
                     DocumentPropertyType::Date
                         .encode_value_ref_with_size(&Value::Float(1.5), required)

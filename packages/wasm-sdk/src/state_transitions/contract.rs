@@ -24,7 +24,7 @@ use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::contract_user_moderation::ModerateContractUser;
 use dash_sdk::platform::transition::put_contract::{
-    ensure_private_document_entries_fit, PutContract,
+    ensure_private_document_entries_fit_on_update, PutContract,
 };
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use std::collections::BTreeMap;
@@ -225,9 +225,9 @@ impl WasmSdk {
         let contract_id: Identifier = updated_contract.id();
         let owner_id: Identifier = updated_contract.owner_id();
 
-        // A private document type the update adds takes entries that must hold its largest
-        // payload, as on create.
-        ensure_private_document_entries_fit(&updated_contract, self.inner_sdk().version())?;
+        // A private document type the update adds, or whose properties it changes, takes entries
+        // that must hold its largest payload, as on create.
+        ensure_private_document_entries_fit_on_update(self.inner_sdk(), &updated_contract).await?;
 
         // Get identity contract nonce
         let identity_contract_nonce = self

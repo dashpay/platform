@@ -3,7 +3,9 @@ use std::collections::BTreeMap;
 use crate::{Error, Sdk};
 
 use crate::platform::transition::put_settings::PutSettings;
+use crate::platform::Fetch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::validate_private_document_entry_size;
 use dpp::data_contract::DataContract;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -12,7 +14,6 @@ use dpp::identity::{IdentityPublicKey, PartialIdentity};
 use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::StateTransition;
-use dpp::version::PlatformVersion;
 
 use super::broadcast::BroadcastStateTransition;
 use super::validation::ensure_valid_state_transition_structure;
@@ -22,14 +23,41 @@ use super::waitable::Waitable;
 /// its largest payload in the standard private document envelope, or has a property with no
 /// largest value. Platform registers such a type, since it never reads an entry, but no full
 /// entry fits it and its entry size can never change, so the SDK refuses it before signing.
+///
+/// For an update, `stored_contract` is the contract as Platform holds it: a type it already
+/// holds with the same properties is not checked, since the update does not change what its
+/// entries carry, so an update is never refused for a type registered before it.
 pub fn ensure_private_document_entries_fit(
     data_contract: &DataContract,
-    platform_version: &PlatformVersion,
+    stored_contract: Option<&DataContract>,
 ) -> Result<(), Error> {
-    for document_type in data_contract.document_types().values() {
-        validate_private_document_entry_size(document_type.as_ref(), platform_version)?;
+    for (name, document_type) in data_contract.document_types() {
+        let unchanged = stored_contract
+            .and_then(|stored| stored.document_types().get(name))
+            .is_some_and(|stored_type| stored_type.properties() == document_type.properties());
+        if !unchanged {
+            validate_private_document_entry_size(document_type.as_ref())?;
+        }
     }
     Ok(())
+}
+
+/// [`ensure_private_document_entries_fit`] for an update of `data_contract`, against the contract
+/// as Platform holds it. It fetches that only when `data_contract` declares a private document
+/// type, the one case with anything to check.
+pub async fn ensure_private_document_entries_fit_on_update(
+    sdk: &Sdk,
+    data_contract: &DataContract,
+) -> Result<(), Error> {
+    let declares_private_types = data_contract
+        .document_types()
+        .values()
+        .any(|document_type| document_type.private_document().is_some());
+    if !declares_private_types {
+        return Ok(());
+    }
+    let stored_contract = DataContract::fetch(sdk, data_contract.id()).await?;
+    ensure_private_document_entries_fit(data_contract, stored_contract.as_ref())
 }
 
 #[async_trait::async_trait]
@@ -64,7 +92,7 @@ impl<S: Signer<IdentityPublicKey>> PutContract<S> for DataContract {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
-        ensure_private_document_entries_fit(self, sdk.version())?;
+        ensure_private_document_entries_fit(self, None)?;
 
         let new_identity_nonce = sdk
             .get_identity_nonce(self.owner_id(), true, settings)
@@ -118,13 +146,30 @@ mod tests {
     use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use dpp::platform_value::string_encoding::Encoding;
     use dpp::platform_value::{platform_value, Identifier};
+    use dpp::version::PlatformVersion;
     use dpp::ProtocolError;
 
     /// A contract with the private type `request` of `entry_size`-byte entries, whose largest
-    /// payload is 8 + 69 = 77 bytes, so it needs 77 + 299 = 376.
-    fn contract(entry_size: u32) -> DataContract {
+    /// payload is 8 + 69 = 77 bytes, so it needs 77 + 299 = 376; with `label`, an optional string
+    /// of at most 20 bytes, 22 more.
+    fn contract(entry_size: u32, label: bool) -> DataContract {
         let id = Identifier::from([7; 32]).to_string(Encoding::Base58);
         let owner_id = Identifier::from([8; 32]).to_string(Encoding::Base58);
+        let mut properties = platform_value!({
+            "reference": { "type": "integer", "position": 0 },
+            "key": {
+                "type": "array", "byteArray": true,
+                "minItems": 69, "maxItems": 69, "position": 1
+            }
+        });
+        if label {
+            properties
+                .set_value(
+                    "label",
+                    platform_value!({ "type": "string", "maxBytes": 20, "position": 2 }),
+                )
+                .expect("a map");
+        }
         DataContract::from_value(
             platform_value!({
                 "$formatVersion": "1",
@@ -137,13 +182,7 @@ mod tests {
                         "private": { "entrySize": entry_size },
                         "documentsMutable": false,
                         "canBeDeleted": false,
-                        "properties": {
-                            "reference": { "type": "integer", "position": 0 },
-                            "key": {
-                                "type": "array", "byteArray": true,
-                                "minItems": 69, "maxItems": 69, "position": 1
-                            }
-                        },
+                        "properties": properties,
                         "required": ["reference", "key"],
                         "additionalProperties": false
                     }
@@ -157,10 +196,9 @@ mod tests {
 
     #[test]
     fn should_refuse_a_contract_whose_private_entries_cannot_hold_their_payload() {
-        let platform_version = PlatformVersion::latest();
-        ensure_private_document_entries_fit(&contract(376), platform_version)
+        ensure_private_document_entries_fit(&contract(376, false), None)
             .expect("376 bytes hold the largest payload");
-        match ensure_private_document_entries_fit(&contract(375), platform_version) {
+        match ensure_private_document_entries_fit(&contract(375, false), None) {
             Err(Error::Protocol(ProtocolError::PrivateDocumentEntrySizeTooSmall {
                 document_type_name,
                 entry_size,
@@ -173,5 +211,33 @@ mod tests {
             }
             other => panic!("expected the entry size refusal, got {other:?}"),
         }
+    }
+
+    /// An update checks the private types it adds or whose properties it changes, and leaves a
+    /// type Platform already holds unchanged, even one too small, since the update does not
+    /// change what its entries carry.
+    #[test]
+    fn should_check_only_the_private_types_an_update_adds_or_changes() {
+        let stored = contract(375, false);
+        ensure_private_document_entries_fit(&contract(375, false), Some(&stored))
+            .expect("an unchanged type is not checked");
+        assert!(matches!(
+            ensure_private_document_entries_fit(&contract(375, true), Some(&stored),),
+            Err(Error::Protocol(
+                ProtocolError::PrivateDocumentEntrySizeTooSmall {
+                    minimum_entry_size: 398,
+                    ..
+                }
+            ))
+        ));
+        // A type the stored contract does not hold is new, and checked.
+        let mut without_the_type = contract(4096, false);
+        without_the_type.document_types_mut().clear();
+        assert!(matches!(
+            ensure_private_document_entries_fit(&contract(375, false), Some(&without_the_type),),
+            Err(Error::Protocol(
+                ProtocolError::PrivateDocumentEntrySizeTooSmall { .. }
+            ))
+        ));
     }
 }
