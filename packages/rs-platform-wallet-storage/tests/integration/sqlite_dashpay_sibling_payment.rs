@@ -29,6 +29,7 @@ use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::managed_account::ManagedCoreFundsAccount;
 use key_wallet::mnemonic::Mnemonic;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 use platform_wallet::changeset::PlatformWalletPersistence;
@@ -362,6 +363,16 @@ fn used_in_receiving_pool(account: &ManagedCoreFundsAccount, paid: &Address) -> 
         .any(|pool| pool.address_info(paid).is_some_and(|info| info.is_used()))
 }
 
+/// Every account holding `outpoint`: the funds accounts and the DashPay
+/// contact accounts.
+fn holders(info: &ManagedWalletInfo, outpoint: &OutPoint) -> Vec<AccountType> {
+    (info.accounts.all_funding_accounts().into_iter())
+        .chain(info.accounts.dashpay_external_accounts.values())
+        .filter(|account| account.utxos.contains_key(outpoint))
+        .map(|account| account.managed_account_type().to_account_type())
+        .collect()
+}
+
 /// B pays A at the first address past the receiving pool's window, and the
 /// coin is spent. No unspent coin and no receiving pool row name the address.
 /// A strict reload succeeds, the address reads used in the receiving pool,
@@ -382,15 +393,12 @@ fn a_spent_sibling_payment_past_the_receiving_window_reloads_used_and_not_handed
         .wallets
         .get_mut(&stored.wallet_id)
         .expect("wallet slice");
-    assert!(
-        slice
-            .wallet_info
-            .accounts
-            .all_funding_accounts()
-            .iter()
-            .all(|account| !account.utxos.contains_key(&stored.payment_outpoint)),
+    assert_eq!(
+        holders(&slice.wallet_info, &stored.payment_outpoint),
+        Vec::<AccountType>::new(),
         "the spent coin is not restored as unspent"
     );
+    assert_eq!(slice.wallet_info.balance.total(), 0);
     let receiving = slice
         .wallet_info
         .accounts
@@ -444,4 +452,11 @@ fn an_unspent_sibling_payment_inside_the_receiving_window_loads_strictly() {
         Some(PAID),
         "the receiving account holds the coin"
     );
+    assert_eq!(
+        holders(&slice.wallet_info, &stored.payment_outpoint),
+        vec![receiving_account()],
+        "no other account holds the coin"
+    );
+    assert_eq!(slice.wallet_info.balance.confirmed(), PAID);
+    assert_eq!(slice.wallet_info.balance.total(), PAID);
 }
