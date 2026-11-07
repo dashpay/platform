@@ -66,6 +66,12 @@ pub enum PlatformWalletError {
     #[error("Wallet not found: {0}")]
     WalletNotFound(String),
 
+    /// The wallet lacks an account the operation needs, such as BIP-44
+    /// account 0. Distinct from [`Self::WalletNotFound`] because the wallet
+    /// itself is still there.
+    #[error("Account not found: {0}")]
+    AccountNotFound(String),
+
     /// A payment refused before anything reached the network: its wallet
     /// was removed or re-created after the handle it came through was
     /// taken. A prepared payment refused at send was abandoned; a build
