@@ -76,8 +76,8 @@ pub enum VerifiedContextProviderError {
 /// A [`ContextProvider`] that serves Platform quorum keys only after proving
 /// them with DIP 175 proofs from a checkpoint.
 ///
-/// Opt in with `SdkBuilder::with_context_provider` or
-/// `Sdk::set_context_provider`. Clones share their caches.
+/// Opt in with `SdkBuilder::with_context_provider`. Clones share their
+/// caches.
 ///
 /// Quorum keys:
 /// * [`get_quorum_public_key`](ContextProvider::get_quorum_public_key) serves

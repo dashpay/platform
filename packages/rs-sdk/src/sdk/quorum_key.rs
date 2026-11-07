@@ -510,8 +510,9 @@ mod tests {
                 metadata.height + 10,
             ));
         }
-        sdk.set_context_provider(provider.clone())
-            .expect("the test provider states no requirements");
+        // The provider reads this SDK's mock DAPI client, so it can only be
+        // installed after the SDK is built.
+        sdk.context_provider = provider.clone();
         let settings = PutSettings {
             request_settings: RequestSettings {
                 ban_failed_address: Some(true),

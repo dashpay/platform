@@ -59,13 +59,11 @@ final class WalletManagerStore: ObservableObject {
     /// re-checks it (alongside manager identity) after its off-main
     /// peer resolution; a mismatch means the start is stale and must
     /// not revive a stopped or replaced manager. Identity alone is not
-    /// enough because of the stop→activate gap: OptionsView's picker
-    /// stops the old manager synchronously but the store only swaps
-    /// `activeManager` later (from the app-level `onChange`), and the
-    /// devnet rebuild widens that gap with an `await` on the SDK
-    /// rebuild. This token is invalidated at the *earliest* synchronous
-    /// point of each such path, closing the window. See the guard in
-    /// `CoreSpvLauncher.start`.
+    /// enough because of the stop→activate gap: OptionsView stops the
+    /// old manager, then awaits the SDK rebuild, and the store swaps
+    /// `activeManager` only after that. This token is invalidated at
+    /// the *earliest* synchronous point of each such path, closing the
+    /// window. See the guard in `CoreSpvLauncher.start`.
     ///
     /// Not `@Published` — nothing renders off it; it's read
     /// synchronously by start call sites and their revalidation
@@ -152,7 +150,7 @@ final class WalletManagerStore: ObservableObject {
     /// of each network; lookup is O(1).
     private var managers: [Network: PlatformWalletManager] = [:]
 
-    /// SDK handle pointer the cached manager was configured against.
+    /// SDK the cached manager was configured against.
     /// Used in `activate()` to detect a stale cache when `AppState`
     /// rebuilds the SDK (network switch / `platformDAPIAddresses` or
     /// `platformQuorumURL` change in Options). On mismatch we tear
@@ -160,7 +158,11 @@ final class WalletManagerStore: ObservableObject {
     /// otherwise the cached manager keeps using its own Sdk clone
     /// with stale DAPI / quorum endpoints, and proof verification
     /// fails forever ("no available addresses to use").
-    private var managerSdkHandles: [Network: OpaquePointer] = [:]
+    ///
+    /// Held strongly and compared by identity: comparing raw handles
+    /// would let a new SDK allocated at a freed SDK's address pass as
+    /// the cached one.
+    private var managerSdks: [Network: SDK] = [:]
 
     /// SwiftData container shared across every manager. Each
     /// manager's persistence handler narrows its `loadWalletList`
@@ -181,27 +183,39 @@ final class WalletManagerStore: ObservableObject {
     /// one configured against `sdk` if it's not already warm.
     ///
     /// Idempotent: re-activating the current network is a no-op.
-    /// Failures during a fresh manager's `configure` /
-    /// `loadFromPersistor` propagate to the caller — the cache
-    /// stays untouched in that case so a later retry can succeed.
+    /// A failure in the fresh manager's `configure` propagates to the
+    /// caller. The cache and the active manager stay untouched in that
+    /// case, including a cached manager the fresh one would have
+    /// replaced, so a later retry can succeed.
+    ///
+    /// Replacing a cached manager configured against another SDK awaits
+    /// that manager's `shutdown()` after the fresh one is configured and
+    /// before it restores wallets, so the old manager's teardown has
+    /// finished before the fresh one touches the network's persisted
+    /// wallets. That can take as long as the old manager's workers need to
+    /// stop. Until then the old manager stays cached, and active if it
+    /// was, but its handle is already revoked: `manager(for:)` and
+    /// `backgroundManager(for:)` still return it, and calls on it fail
+    /// with `invalidHandle`. Calls must not overlap for the same network:
+    /// callers run one rebuild at a time.
     ///
     /// `makeActive == false` materializes the manager into the cache
-    /// without swapping `activeManager`. Used by background flows
-    /// (e.g. orphan recovery routing wallets to their original
-    /// network) that need a manager for a non-active network without
-    /// triggering a user-visible network switch.
-    func activate(network: Network, sdk: SDK, makeActive: Bool = true) throws {
+    /// without swapping `activeManager`, unless the manager it replaces is
+    /// the active one. Used by background flows (e.g. orphan recovery
+    /// routing wallets to their original network) that need a manager for
+    /// a non-active network without triggering a user-visible network
+    /// switch.
+    func activate(network: Network, sdk: SDK, makeActive: Bool = true) async throws {
         // Stale-cache check: the cached manager's Sdk clone is locked
         // in at `configure` time (the FFI is single-shot — see
         // `PlatformWalletManager.configure`'s `precondition(!isConfigured)`).
         // If `AppState` has rebuilt the SDK since (network switch or
         // UserDefaults endpoint override change), the cached manager
         // is still pointing at the old endpoints and would keep
-        // failing proof verification. Drop it so the rebuild below
-        // picks up the fresh SDK.
+        // failing proof verification. The manager built below against
+        // the fresh SDK replaces it once `configure` succeeds.
         if let existing = managers[network] {
-            let cachedHandle = managerSdkHandles[network]
-            if cachedHandle == sdk.handle {
+            if managerSdks[network] === sdk {
                 if makeActive && existing !== activeManager {
                     // Swapping to a different warm manager supersedes any
                     // in-flight SPV start against the outgoing one.
@@ -221,37 +235,36 @@ final class WalletManagerStore: ObservableObject {
                     "reason": .publicText("sdk_changed"),
                 ]
             )
-            // No `activeManager = nil` — the field isn't optional. The
-            // rebuild below will overwrite it via `if makeActive {
-            // activeManager = manager }`. Until that line runs, the
-            // old `activeManager` reference still points at the
-            // now-stale cached manager, but it'll be replaced before
-            // any caller observes it (this method is synchronous).
-            managers[network] = nil
-            managerSdkHandles[network] = nil
+            // The stale entry stays cached, and active if it was, until
+            // the manager built below replaces it. If `configure` throws,
+            // the store still tracks the manager that stays active on the
+            // SDK the app keeps.
         }
         let manager = PlatformWalletManager()
         try manager.configure(sdk: sdk, modelContainer: modelContainer)
-        // Best-effort: a fresh manager comes up with no wallets in
-        // memory; restore from the network-scoped persistence
-        // handler so reopening the app on this network resurfaces
-        // the wallets the user already created here. Failures here
-        // are non-fatal — the user can still create / import
-        // wallets, the in-memory set just starts empty.
-        do {
-            _ = try manager.loadFromPersistor()
-        } catch {
-            SDKLogger.event(
-                "manager_restore_failed",
-                category: .lifecycle,
-                severity: .error,
-                fields: ["network": .publicText(network.displayName)],
-                error: error
-            )
+        // A replaced active manager is shut down below, so its replacement
+        // must become active even if the caller did not ask for that.
+        let becomesActive = makeActive || managers[network] === activeManager
+        if let stale = managers[network] {
+            // Nothing below can fail the replacement, so the stale manager
+            // goes now, before the fresh one loads this network's wallets.
+            // Its sync workers keep writing them until its native teardown
+            // ends, and `deinit` only schedules that teardown for whenever
+            // the last reference is released. Configuring first leaves it
+            // usable if `configure` throws: creating a native manager reads
+            // and writes no persisted state and starts no sync.
+            if stale === activeManager {
+                // Shutting it down stops the active manager's SPV, so a
+                // start suspended in peer resolution must bail instead of
+                // resuming against the torn-down manager.
+                invalidatePendingSpvStarts()
+            }
+            await stale.shutdown()
         }
+        restoreWallets(into: manager, network: network)
         managers[network] = manager
-        managerSdkHandles[network] = sdk.handle
-        if makeActive {
+        managerSdks[network] = sdk
+        if becomesActive {
             // A freshly (re)built active manager supersedes any in-flight
             // SPV start against the previous one (defensive backstop; the
             // supersession call sites also invalidate at their earliest
@@ -263,11 +276,36 @@ final class WalletManagerStore: ObservableObject {
             "manager_materialized",
             category: .lifecycle,
             fields: [
-                "active": .boolean(makeActive),
+                "active": .boolean(becomesActive),
                 "network": .publicText(network.displayName),
                 "wallet_count": .integer(Int64(manager.wallets.count)),
             ]
         )
+    }
+
+    /// Best-effort: a fresh manager comes up with no wallets in
+    /// memory; restore from the network-scoped persistence
+    /// handler so reopening the app on this network resurfaces
+    /// the wallets the user already created here. Failures here
+    /// are non-fatal — the user can still create / import
+    /// wallets, the in-memory set just starts empty.
+    ///
+    /// Synchronous so the restore runs on the calling thread right before
+    /// `activate` caches and swaps the manager: called from `activate`'s
+    /// async body, `loadFromPersistor()` would resolve to its off-main
+    /// overload and add a suspension there.
+    private func restoreWallets(into manager: PlatformWalletManager, network: Network) {
+        do {
+            _ = try manager.loadFromPersistor()
+        } catch {
+            SDKLogger.event(
+                "manager_restore_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: ["network": .publicText(network.displayName)],
+                error: error
+            )
+        }
     }
 
     /// Manager for `network` if one has been activated this session;
@@ -290,12 +328,12 @@ final class WalletManagerStore: ObservableObject {
     /// manager stamps `wallet.network = self.sdk.network` at
     /// registration time, so a regtest mnemonic recovered through
     /// the testnet manager lands as a testnet row).
-    func backgroundManager(for network: Network) throws -> PlatformWalletManager {
+    func backgroundManager(for network: Network) async throws -> PlatformWalletManager {
         if let existing = managers[network] {
             return existing
         }
-        let sdk = try SDK(network: network)
-        try activate(network: network, sdk: sdk, makeActive: false)
+        let sdk = try SDK(network: network, contextProvider: .adaptive)
+        try await activate(network: network, sdk: sdk, makeActive: false)
         guard let manager = managers[network] else {
             throw PlatformWalletError.invalidParameter(
                 "Failed to materialize manager for \(network.displayName)"

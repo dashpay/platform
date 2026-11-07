@@ -16,7 +16,9 @@ use dashcore::sml::masternode_list_entry::MasternodeListEntry;
 use dashcore::{PubkeyHash, QuorumHash, Transaction};
 
 use dash_spv::network::PeerNetworkManager;
-use dash_spv::{BroadcastResult, ClientConfig, DashSpvClient, EventHandler, SyncProgress};
+use dash_spv::{
+    BroadcastResult, ClientConfig, DashSpvClient, EventHandler, SyncProgress, SyncState,
+};
 
 use key_wallet_manager::WalletManager;
 
@@ -28,6 +30,50 @@ use crate::spv::peers::{classify_peers, PeerTracker, SpvPeerInfo};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 type SpvClient = DashSpvClient<WalletManager<PlatformWalletInfo>, PeerNetworkManager>;
+
+/// Build the masternode-engine lookup key from a proof-supplied quorum hash.
+///
+/// The SDK's proof verifier supplies the quorum hash in display (big-endian)
+/// byte order — the same order the trusted HTTP provider matches against — but
+/// the masternode engine keys its quorum map in internal (little-endian) order.
+/// The bytes must therefore be reversed before building the [`QuorumHash`] key;
+/// without this every real quorum misses. Verified against a synced testnet
+/// node: the engine stores the reversed form of each requested hash (e.g.
+/// requested `0000…7f`, stored `…000000`).
+///
+/// [`SpvRuntime::get_quorum_public_key_with_status`] calls this so the
+/// byte-order regression test exercises the exact transform the production
+/// lookup uses.
+fn quorum_lookup_key(display_order: [u8; 32]) -> QuorumHash {
+    let mut internal_order = display_order;
+    internal_order.reverse();
+    QuorumHash::from_byte_array(internal_order)
+}
+
+/// How many blocks the newest masternode list may trail the header tip
+/// while SPV still counts as synced.
+///
+/// dash-spv requests a diff for each new tip, so the list normally trails
+/// the tip only while that diff is in flight, by a block or two. It keeps
+/// masternode sync `Synced` when those updates fail, so a list further
+/// behind no longer follows the chain: it misses every quorum mined since.
+const MASTERNODE_LIST_TIP_LAG: u32 = 2;
+
+/// Whether `progress` reports header and masternode-list synchronization
+/// complete, with the newest masternode list at most
+/// [`MASTERNODE_LIST_TIP_LAG`] blocks behind the header tip.
+fn is_synced_to_tip(progress: &SyncProgress) -> bool {
+    progress
+        .headers()
+        .is_ok_and(|headers| headers.state() == SyncState::Synced)
+        && progress.masternodes().is_ok_and(|masternodes| {
+            masternodes.state() == SyncState::Synced
+                && masternodes
+                    .current_height()
+                    .saturating_add(MASTERNODE_LIST_TIP_LAG)
+                    >= masternodes.block_header_tip_height()
+        })
+}
 
 /// A quorum public key from the SPV masternode state, see
 /// [`SpvRuntime::get_quorum_public_key_with_status`].
@@ -328,6 +374,22 @@ impl SpvRuntime {
         self.client.try_read().map(|c| c.is_some()).unwrap_or(false)
     }
 
+    /// Whether sync is running and dash-spv's current progress reports both
+    /// header and masternode-list synchronization complete, with the newest
+    /// masternode list at the header tip or just behind it.
+    ///
+    /// A failed sync keeps its last progress, and masternode sync stays
+    /// `Synced` when later list updates fail, so "synced" alone would vouch
+    /// for a masternode list that no longer follows the chain.
+    pub async fn is_ready(&self) -> bool {
+        if !self.is_running() {
+            return false;
+        }
+        self.sync_progress()
+            .await
+            .is_some_and(|progress| is_synced_to_tip(&progress))
+    }
+
     /// Whether SPV sync is running or starting. `false` once background sync
     /// has failed, although the client stays started until [`Self::stop`].
     /// Never waits, so an event handler may call it.
@@ -435,9 +497,11 @@ impl SpvRuntime {
     /// `Skipped`) fails with [`PlatformWalletError::QuorumNotVerified`]; that
     /// is usually transient, for example a freshly mined quorum whose
     /// work-block list has not arrived yet. A quorum dash-spv does not hold,
-    /// or found `Invalid`, fails with [`PlatformWalletError::SpvError`].
-    /// [`PlatformWalletError::quorum_lookup_context_error`] maps either to
-    /// the SDK error class a context provider reports.
+    /// or found `Invalid`, fails with [`PlatformWalletError::SpvError`], and a
+    /// `quorum_type` that names no LLMQ type with
+    /// [`PlatformWalletError::InvalidParameter`].
+    /// [`PlatformWalletError::quorum_lookup_context_error`] maps each to the
+    /// SDK error class a context provider reports.
     ///
     /// A caller that accepts unverified keys uses
     /// [`Self::get_quorum_public_key_with_status`].
@@ -476,19 +540,31 @@ impl SpvRuntime {
     /// other status is a key dash-spv holds but has not verified, which must
     /// not verify Platform proofs; [`Self::get_quorum_public_key`] enforces
     /// that.
+    ///
+    /// A `quorum_type` that names no LLMQ type, any value above 255
+    /// included, fails with [`PlatformWalletError::InvalidParameter`]
+    /// rather than aliasing another quorum type.
     pub async fn get_quorum_public_key_with_status(
         &self,
         quorum_type: u32,
         quorum_hash: [u8; 32],
         height: u32,
     ) -> Result<SpvQuorumPublicKey, PlatformWalletError> {
+        let llmq_type = match u8::try_from(quorum_type).map(LLMQType::from) {
+            Ok(LLMQType::LlmqtypeUnknown(_)) | Err(_) => {
+                return Err(PlatformWalletError::InvalidParameter(format!(
+                    "quorum type {quorum_type} is not an LLMQ type"
+                )));
+            }
+            Ok(llmq_type) => llmq_type,
+        };
+
         let client_guard = self.client.read().await;
         let client = client_guard.as_ref().ok_or(PlatformWalletError::SpvError(
             "SPV Client not started".to_string(),
         ))?;
 
-        let llmq_type = LLMQType::from(quorum_type as u8);
-        let qh = QuorumHash::from_byte_array(quorum_hash).reverse();
+        let qh = quorum_lookup_key(quorum_hash);
 
         let quorum = client
             .get_quorum_at_height(height, llmq_type, qh)
@@ -1022,12 +1098,17 @@ mod tests {
     use key_wallet_manager::WalletManager;
     use tokio::sync::RwLock;
 
-    use super::{classify_spv_send_error, SpvRuntime};
+    use super::{
+        classify_spv_send_error, is_synced_to_tip, quorum_lookup_key, SpvRuntime,
+        MASTERNODE_LIST_TIP_LAG,
+    };
     use crate::broadcaster::BroadcastError;
     use crate::error::PlatformWalletError;
     use crate::events::{EventHandler, PlatformEventHandler, PlatformEventManager};
     use crate::wallet::platform_wallet::PlatformWalletInfo;
-    use dash_spv::ClientConfig;
+    use dash_spv::{
+        BlockHeadersProgress, ClientConfig, MasternodesProgress, SyncProgress, SyncState,
+    };
 
     fn unstarted_runtime() -> SpvRuntime {
         let wallet_manager = Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
@@ -1493,6 +1574,81 @@ mod tests {
             matches!(invalid, Err(PlatformWalletError::SpvError(_))),
             "an Invalid quorum is not found, got {invalid:?}"
         );
+    }
+
+    /// A caller-supplied type that names no LLMQ type must fail instead of
+    /// aliasing another quorum family: 262 would otherwise wrap onto the held
+    /// type 6 quorum and hand back its key, and 7 or 255 would search the
+    /// quorums dash-spv files under an unknown type.
+    #[tokio::test]
+    async fn should_reject_a_quorum_type_above_one_byte() {
+        use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationStatus;
+
+        let (runtime, _storage) = offline_runtime().await;
+        hold_quorum(&runtime, LLMQEntryVerificationStatus::Verified).await;
+
+        for quorum_type in [0, 7, 255, 6 + 256, u32::MAX] {
+            let with_status = runtime
+                .get_quorum_public_key_with_status(
+                    quorum_type,
+                    QUORUM_FIXTURE_PLATFORM_HASH,
+                    QUORUM_FIXTURE_HEIGHT,
+                )
+                .await;
+            assert!(
+                matches!(with_status, Err(PlatformWalletError::InvalidParameter(_))),
+                "quorum type {quorum_type} must be rejected, got {with_status:?}"
+            );
+
+            let verified = runtime
+                .get_quorum_public_key(
+                    quorum_type,
+                    QUORUM_FIXTURE_PLATFORM_HASH,
+                    QUORUM_FIXTURE_HEIGHT,
+                )
+                .await;
+            assert!(
+                matches!(verified, Err(PlatformWalletError::InvalidParameter(_))),
+                "quorum type {quorum_type} must be rejected, got {verified:?}"
+            );
+        }
+    }
+
+    /// Progress with headers and masternode lists both `Synced`, the headers
+    /// at `tip` and the newest masternode list at `list_height`.
+    fn synced_progress(tip: u32, list_height: u32) -> SyncProgress {
+        let mut headers = BlockHeadersProgress::default();
+        headers.set_state(SyncState::Synced);
+        headers.update_tip_height(tip);
+        let mut masternodes = MasternodesProgress::default();
+        masternodes.set_state(SyncState::Synced);
+        masternodes.update_block_header_tip_height(tip);
+        masternodes.update_current_height(list_height);
+        let mut progress = SyncProgress::default();
+        progress.update_headers(headers);
+        progress.update_masternodes(masternodes);
+        progress
+    }
+
+    /// dash-spv keeps masternode sync `Synced` when later list updates fail,
+    /// for example a restored list whose every QRInfo attempt timed out. Such
+    /// a list misses every quorum mined since, and a miss on a ready source
+    /// is blamed on the node, so a list that stopped following the header tip
+    /// must not count as ready: lookups then fail as unavailable instead of
+    /// banning honest nodes.
+    #[test]
+    fn should_not_be_ready_while_the_masternode_list_trails_the_header_tip() {
+        let tip = 1_100_000;
+        assert!(is_synced_to_tip(&synced_progress(tip, tip)));
+        assert!(
+            is_synced_to_tip(&synced_progress(tip, tip - MASTERNODE_LIST_TIP_LAG)),
+            "a tip diff in flight must not drop readiness"
+        );
+        assert!(
+            !is_synced_to_tip(&synced_progress(tip, tip - MASTERNODE_LIST_TIP_LAG - 1)),
+            "a list behind the header tip must not be ready"
+        );
+        assert!(!is_synced_to_tip(&synced_progress(tip, 0)));
     }
 
     /// Drive the production startup path and wait for upstream `run` to return.
@@ -2360,5 +2516,53 @@ mod tests {
                 "non-NotConnected errors must stay MaybeSent, got {result:?}"
             );
         }
+    }
+
+    /// Regression guard for the quorum-hash byte order used by
+    /// [`SpvRuntime::get_quorum_public_key_with_status`].
+    ///
+    /// This exercises the production transform directly — [`quorum_lookup_key`]
+    /// is the exact function the lookup calls to build its engine key — so
+    /// dropping (or re-introducing a spurious) reversal there fails this test,
+    /// rather than the test asserting standalone `BTreeMap` semantics that
+    /// can't detect a change in the real code.
+    ///
+    /// The masternode engine keys its quorum map — `quorum_entry_of_type_for_quorum_hash`,
+    /// a `BTreeMap<QuorumHash, _>::get` — in internal byte order, but the SDK
+    /// proof verifier supplies the hash in display (reversed) order. Verified
+    /// end-to-end against a synced testnet node: the engine stores the reversed
+    /// form of each requested hash (requested `0000…`, stored `…0000`), so a
+    /// non-reversed lookup misses every real quorum and falls through to
+    /// fail-closed rejection.
+    #[test]
+    fn quorum_hash_reversed_to_internal_order_before_lookup() {
+        use dashcore::QuorumHash;
+        use std::collections::BTreeMap;
+
+        // The hash as the proof verifier supplies it (display order).
+        let display_bytes: [u8; 32] = std::array::from_fn(|i| (i as u8) + 1);
+        // The engine keys the quorum under the internal (reversed) order.
+        let mut internal_bytes = display_bytes;
+        internal_bytes.reverse();
+
+        let pubkey = [0xABu8; 48];
+        let mut quorums: BTreeMap<QuorumHash, [u8; 48]> = BTreeMap::new();
+        quorums.insert(QuorumHash::from_byte_array(internal_bytes), pubkey);
+
+        // The production key builder must land on the internally-keyed quorum.
+        assert_eq!(
+            quorums.get(&quorum_lookup_key(display_bytes)),
+            Some(&pubkey),
+            "quorum_lookup_key must reverse display order to the engine's internal key"
+        );
+
+        // Sanity: the un-reversed display-order key is absent — this is exactly
+        // the miss that `quorum_lookup_key`'s reversal exists to prevent, so if
+        // the reversal is removed the assertion above fails.
+        assert_eq!(
+            quorums.get(&QuorumHash::from_byte_array(display_bytes)),
+            None,
+            "using the hash without reversal must miss — this was the regression"
+        );
     }
 }

@@ -20,6 +20,16 @@ use {
 pub type QuorumKeyFuture =
     Pin<Box<dyn Future<Output = Result<Option<[u8; 48]>, ContextProviderError>> + Send + 'static>>;
 
+/// The Core height at which Platform activated (its L1 locked height) on
+/// `network`.
+pub fn platform_activation_height(network: Network) -> CoreBlockHeight {
+    match network {
+        Network::Mainnet => 2_132_092,
+        Network::Testnet => 1_090_319,
+        Network::Devnet | Network::Regtest => 1,
+    }
+}
+
 /// Interface between the Sdk and state of the application.
 ///
 /// ContextProvider is called by the [FromProof](crate::FromProof) trait (and similar) to get information about

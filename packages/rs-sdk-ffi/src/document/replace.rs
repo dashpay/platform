@@ -16,7 +16,6 @@ use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::{Identifier, UserFeeIncrease};
 use dash_sdk::platform::documents::transitions::DocumentReplaceTransitionBuilder;
 use dash_sdk::platform::IdentityPublicKey;
-use drive_proof_verifier::ContextProvider;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 use tracing::{debug, error, info};
@@ -77,23 +76,23 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform(
         let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
             .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
 
-        // Get contract from trusted context provider
-        let data_contract = if let Some(ref provider) = wrapper.trusted_provider {
+        // Get contract from the SDK's local contract cache
+        let data_contract = if let Some(ref provider) = wrapper.local_contracts {
             let platform_version = wrapper.sdk.version();
             provider
-                .get_data_contract(&contract_id, platform_version)
+                .data_contract(&contract_id, platform_version)
                 .map_err(|e| {
                     FFIError::InternalError(format!("Failed to get contract from context: {}", e))
                 })?
                 .ok_or_else(|| {
                     FFIError::InternalError(format!(
-                        "Contract {} not found in trusted context",
+                        "Contract {} not found in the local contract cache",
                         contract_id_str
                     ))
                 })?
         } else {
             return Err(FFIError::InternalError(
-                "No trusted context provider configured".to_string(),
+                "No local contract cache configured".to_string(),
             ));
         };
 
@@ -250,23 +249,23 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform_and_wait(
             FFIError::InternalError(format!("Failed to increment document revision: {}", e))
         })?;
 
-        // Get contract from trusted context provider
-        let data_contract = if let Some(ref provider) = wrapper.trusted_provider {
+        // Get contract from the SDK's local contract cache
+        let data_contract = if let Some(ref provider) = wrapper.local_contracts {
             let platform_version = wrapper.sdk.version();
             provider
-                .get_data_contract(&contract_id, platform_version)
+                .data_contract(&contract_id, platform_version)
                 .map_err(|e| {
                     FFIError::InternalError(format!("Failed to get contract from context: {}", e))
                 })?
                 .ok_or_else(|| {
                     FFIError::InternalError(format!(
-                        "Contract {} not found in trusted context",
+                        "Contract {} not found in the local contract cache",
                         contract_id_str
                     ))
                 })?
         } else {
             return Err(FFIError::InternalError(
-                "No trusted context provider configured".to_string(),
+                "No local contract cache configured".to_string(),
             ));
         };
 
@@ -726,15 +725,15 @@ mod tests {
             )
         };
 
-        // Mock SDK doesn't have trusted provider, so it will fail
+        // Mock SDK has no local contract cache, so it will fail
         assert!(!result.error.is_null());
         unsafe {
             let error = &*result.error;
             assert_eq!(error.code, DashSDKErrorCode::InternalError);
             let error_msg = CStr::from_ptr(error.message).to_str().unwrap();
             assert!(
-                error_msg.contains("trusted context provider"),
-                "Expected trusted provider error, got: '{}'",
+                error_msg.contains("No local contract cache configured"),
+                "Expected missing local contract cache error, got: '{}'",
                 error_msg
             );
         }
