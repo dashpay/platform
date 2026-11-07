@@ -64,9 +64,10 @@ use crate::consensus::basic::document::{
     DocumentPropertyNotDistinctError, DocumentPropertyNotGeneratedError,
     DocumentReferencePreimageInvalidError, DocumentTransitionsAreAbsentError,
     DocumentTypePrivateError, DuplicateDocumentTransitionsWithIdsError,
-    DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
-    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
-    InvalidDocumentTypeError, InvalidEncryptedPropertyShapeError,
+    DuplicateDocumentTransitionsWithIndicesError, DuplicatePrivateDocumentEntryError,
+    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
+    InvalidDocumentTransitionIdError, InvalidDocumentTypeError, InvalidEncryptedPropertyShapeError,
+    InvalidPrivateDocumentEntryCountError, InvalidPrivateDocumentEntrySizeError,
     MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
     MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
     MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
@@ -895,6 +896,17 @@ pub enum BasicError {
     #[error(transparent)]
     DocumentTypePrivateError(DocumentTypePrivateError),
 
+    // A `PrivateDocumentCreateFromShieldedPool` (protocol version 15) with no entry or too
+    // many, or an entry that is empty, over the cap or not the size of the first.
+    #[error(transparent)]
+    InvalidPrivateDocumentEntryCountError(InvalidPrivateDocumentEntryCountError),
+
+    #[error(transparent)]
+    InvalidPrivateDocumentEntrySizeError(InvalidPrivateDocumentEntrySizeError),
+
+    #[error(transparent)]
+    DuplicatePrivateDocumentEntryError(DuplicatePrivateDocumentEntryError),
+
     // A token order's structure (protocol version 15).
     #[error(transparent)]
     InvalidTokenOrderPriceError(InvalidTokenOrderPriceError),
@@ -1152,26 +1164,45 @@ mod tests {
             )),
             210
         );
+        // A `PrivateDocumentCreateFromShieldedPool`'s entries (protocol version 15).
+        assert_eq!(
+            discriminant_of(BasicError::InvalidPrivateDocumentEntryCountError(
+                InvalidPrivateDocumentEntryCountError::new(17, 16)
+            )),
+            211
+        );
+        assert_eq!(
+            discriminant_of(BasicError::InvalidPrivateDocumentEntrySizeError(
+                InvalidPrivateDocumentEntrySizeError::new(1, 584, 585, 4096)
+            )),
+            212
+        );
+        assert_eq!(
+            discriminant_of(BasicError::DuplicatePrivateDocumentEntryError(
+                DuplicatePrivateDocumentEntryError::new(0, 3)
+            )),
+            213
+        );
         // A token order's structure (protocol version 15).
         assert_eq!(
             discriminant_of(BasicError::InvalidTokenOrderPriceError(
                 InvalidTokenOrderPriceError::new(0, 1)
             )),
-            211
+            214
         );
         // A token order's structure (protocol version 15).
         assert_eq!(
             discriminant_of(BasicError::InvalidTokenOrderFillRangeError(
                 InvalidTokenOrderFillRangeError::new(0, 1)
             )),
-            212
+            215
         );
         // A token order's structure (protocol version 15).
         assert_eq!(
             discriminant_of(BasicError::InvalidTokenOrderValueError(
                 InvalidTokenOrderValueError::new(u64::MAX, u64::MAX, 0)
             )),
-            213
+            216
         );
     }
 

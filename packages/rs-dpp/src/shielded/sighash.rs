@@ -18,6 +18,7 @@ use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKe
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::withdrawal::Pooling;
 use crate::ProtocolError;
+use platform_value::BinaryData;
 use platform_version::version::PlatformVersion;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -32,6 +33,9 @@ pub const TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE: u8 = 26;
 pub const TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE: u8 = 27;
 /// The state transition type byte the token bundle of a `TokenPurchaseFromShieldedPool` commits to.
 pub const TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE: u8 = 28;
+/// The state transition type byte the bundle of a `PrivateDocumentCreateFromShieldedPool`
+/// commits to.
+pub const PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_TYPE: u8 = 29;
 
 /// Domain tag an outputs-only token pool bundle commits to. Unlike the three constants above
 /// these are not `StateTransitionType` bytes — every one of these bundles rides inside a batch
@@ -580,6 +584,59 @@ pub fn token_purchase_from_shielded_pool_extra_sighash_data_v0(
     data.extend_from_slice(token_id);
     data.extend_from_slice(&token_count.to_le_bytes());
     data.extend_from_slice(&total_agreed_price.to_le_bytes());
+    data
+}
+
+/// Builds the transparent `extra_data` bound into a `PrivateDocumentCreateFromShieldedPool`'s
+/// platform sighash: the target contract, the private document type and every entry, so the
+/// bundle pays for these entries of this type and nothing else. Changing any byte of the target
+/// or of any entry, or the entries' number or order, invalidates the bundle.
+///
+/// The signing (SDK builder) and verifying (consensus) sides both call this function.
+pub fn private_document_create_from_shielded_pool_extra_sighash_data(
+    data_contract_id: &[u8; 32],
+    document_type_name: &str,
+    entries: &[BinaryData],
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, ProtocolError> {
+    match platform_version.dpp.methods.shielded_extra_sighash_data {
+        0 => Ok(
+            private_document_create_from_shielded_pool_extra_sighash_data_v0(
+                data_contract_id,
+                document_type_name,
+                entries,
+            ),
+        ),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "private_document_create_from_shielded_pool_extra_sighash_data".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// Version 0 layout: `state transition type (1, = 29) || SHA-256(data_contract_id (32) ||
+/// type name length (4, LE) || type name || entry count (4, LE) || for each entry, in order:
+/// its length (4, LE) || the entry)`, 33 bytes. Every variable-length part carries its length,
+/// so no two targets or entry lists share a preimage. Frozen.
+pub fn private_document_create_from_shielded_pool_extra_sighash_data_v0(
+    data_contract_id: &[u8; 32],
+    document_type_name: &str,
+    entries: &[BinaryData],
+) -> Vec<u8> {
+    let mut hasher = Sha256::new();
+    hasher.update(data_contract_id);
+    hasher.update((document_type_name.len() as u32).to_le_bytes());
+    hasher.update(document_type_name.as_bytes());
+    hasher.update((entries.len() as u32).to_le_bytes());
+    for entry in entries {
+        hasher.update((entry.len() as u32).to_le_bytes());
+        hasher.update(entry.as_slice());
+    }
+    let digest: [u8; 32] = hasher.finalize().into();
+    let mut data = Vec::with_capacity(1 + 32);
+    data.push(PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_TYPE);
+    data.extend_from_slice(&digest);
     data
 }
 
@@ -1416,6 +1473,86 @@ mod tests {
                 StateTransitionType::try_from(tag).is_err(),
                 "state transition type {tag:#04x} now collides with an outputs-only bundle tag"
             );
+        }
+    }
+
+    mod private_document_create_from_shielded_pool {
+        use super::*;
+        use platform_value::BinaryData;
+
+        fn data(contract: [u8; 32], type_name: &str, entries: &[BinaryData]) -> Vec<u8> {
+            private_document_create_from_shielded_pool_extra_sighash_data(
+                &contract,
+                type_name,
+                entries,
+                PlatformVersion::latest(),
+            )
+            .expect("version 0")
+        }
+
+        #[test]
+        fn should_lead_with_type_29_and_hash_the_length_prefixed_target_and_entries() {
+            let entries = vec![
+                BinaryData::new(vec![1, 2, 3]),
+                BinaryData::new(vec![4, 5, 6]),
+            ];
+            let mut preimage = vec![9u8; 32];
+            preimage.extend_from_slice(&4u32.to_le_bytes());
+            preimage.extend_from_slice(b"note");
+            preimage.extend_from_slice(&2u32.to_le_bytes());
+            for entry in &entries {
+                preimage.extend_from_slice(&3u32.to_le_bytes());
+                preimage.extend_from_slice(entry.as_slice());
+            }
+            let mut expected = vec![PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_TYPE];
+            expected.extend_from_slice(&Sha256::digest(&preimage));
+            assert_eq!(data([9; 32], "note", &entries), expected);
+            assert_eq!(expected[0], 29);
+            assert_eq!(expected.len(), 33);
+        }
+
+        #[test]
+        fn should_change_with_the_contract_the_type_an_entry_byte_and_the_entries_order_and_split()
+        {
+            let a = BinaryData::new(vec![1, 2]);
+            let b = BinaryData::new(vec![3, 4]);
+            let base = data([9; 32], "note", &[a.clone(), b.clone()]);
+            assert_ne!(base, data([8; 32], "note", &[a.clone(), b.clone()]));
+            assert_ne!(base, data([9; 32], "notes", &[a.clone(), b.clone()]));
+            assert_ne!(
+                base,
+                data([9; 32], "note", &[a.clone(), BinaryData::new(vec![3, 5])])
+            );
+            assert_ne!(base, data([9; 32], "note", &[b.clone(), a.clone()]));
+            // The same bytes split into a different number of entries.
+            assert_ne!(
+                base,
+                data([9; 32], "note", &[BinaryData::new(vec![1, 2, 3, 4])])
+            );
+            // The type name's length prefix keeps it apart from the entries.
+            assert_ne!(
+                data([9; 32], "ab", &[BinaryData::new(vec![1])]),
+                data([9; 32], "a", &[BinaryData::new(vec![b'b', 1])])
+            );
+        }
+
+        #[test]
+        fn should_not_collide_with_an_outputs_only_bundle_tag() {
+            assert!(
+                StateTransitionType::try_from(PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_TYPE)
+                    .is_ok_and(|t| t == StateTransitionType::PrivateDocumentCreateFromShieldedPool)
+            );
+            for tag in [
+                TOKEN_SHIELD_BUNDLE_TAG,
+                TOKEN_MINT_TO_POOL_BUNDLE_TAG,
+                TOKEN_CLAIM_TO_POOL_BUNDLE_TAG,
+                TOKEN_DIRECT_PURCHASE_TO_POOL_BUNDLE_TAG,
+                SHIELD_BUNDLE_TAG,
+                SHIELD_FROM_IDENTITY_BUNDLE_TAG,
+                SHIELD_FROM_ASSET_LOCK_BUNDLE_TAG,
+            ] {
+                assert_ne!(tag, PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_TYPE);
+            }
         }
     }
 

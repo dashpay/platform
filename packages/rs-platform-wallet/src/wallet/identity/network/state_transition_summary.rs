@@ -368,7 +368,8 @@ fn carries_signature(transition: &StateTransition) -> bool {
         | StateTransition::ContractFeeClaim(_)
         | StateTransition::TokenShieldedTransferWithShieldedFee(_)
         | StateTransition::TokenUnshieldWithShieldedFee(_)
-        | StateTransition::TokenPurchaseFromShieldedPool(_) => false,
+        | StateTransition::TokenPurchaseFromShieldedPool(_)
+        | StateTransition::PrivateDocumentCreateFromShieldedPool(_) => false,
     };
     has_witness || transition.signature().is_some_and(|sig| !sig.is_empty())
 }

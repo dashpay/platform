@@ -88,6 +88,7 @@ pub struct DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions 
     pub token_shielded_transfer_with_shielded_fee_transition: FeatureVersion,
     pub token_unshield_with_shielded_fee_transition: FeatureVersion,
     pub token_purchase_from_shielded_pool_transition: FeatureVersion,
+    pub private_document_create_from_shielded_pool_transition: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

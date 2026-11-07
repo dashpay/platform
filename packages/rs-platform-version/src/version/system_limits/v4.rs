@@ -142,6 +142,7 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     private_document_store_target_chunk_bytes: None,
     private_document_store_min_chunk_power: None,
     private_document_store_max_chunk_power: None,
+    max_private_document_entries_per_transition: None,
     max_references_per_document: 256, // refersTo (new in v14): contract registration caps the references one document carries, a typed array of references counting its maxItems
     max_reference_operands: 4, // refersTo anyOf / allOf (new in v14): contract registration caps the operands one list holds
     max_reference_expression_depth: 4, // refersTo anyOf / allOf (new in v14): contract registration caps how deep they nest

@@ -9,6 +9,7 @@ pub(crate) mod finalize_task;
 mod group;
 mod identity;
 mod prefunded_specialized_balance;
+mod private_document;
 mod shielded;
 mod system;
 mod token;
@@ -38,6 +39,7 @@ pub use document::UpdateOperationInfo;
 pub use group::GroupOperationType;
 pub use identity::IdentityOperationType;
 pub use prefunded_specialized_balance::PrefundedSpecializedBalanceOperationType;
+pub use private_document::PrivateDocumentOperationType;
 pub use shielded::ShieldedPoolOperationType;
 pub use system::SystemOperationType;
 pub use token::TokenOperationType;
@@ -117,6 +119,8 @@ pub enum DriveOperation<'a> {
     AddressFundsOperation(AddressFundsOperationType),
     /// A shielded pool operation
     ShieldedPoolOperation(ShieldedPoolOperationType),
+    /// An operation on the store of a private document type
+    PrivateDocumentOperation(PrivateDocumentOperationType),
     /// A vote poll operation: the opening of a yes/no vote poll
     VotePollOperation(VotePollOperationType),
     /// A single low level groveDB operation
@@ -190,6 +194,15 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                 ),
             DriveOperation::ShieldedPoolOperation(shielded_pool_operation_type) => {
                 shielded_pool_operation_type.into_low_level_drive_operations(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                    platform_version,
+                )
+            }
+            DriveOperation::PrivateDocumentOperation(private_document_operation_type) => {
+                private_document_operation_type.into_low_level_drive_operations(
                     drive,
                     estimated_costs_only_with_layer_info,
                     block_info,
