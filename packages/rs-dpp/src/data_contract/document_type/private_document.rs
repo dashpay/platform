@@ -921,11 +921,21 @@ mod tests {
         // The other way round: a payload written after the type gained them, read with the
         // older type, holds members that type does not know. Inside the object, where the
         // document reader would drop them silently, or at the type's end, it is refused, so a
-        // reader holding a stale contract refetches it rather than read part of the entry.
+        // reader holding a stale contract refetches it rather than read part of the entry. The
+        // object's case is written under a type that gained only the object's member, so no
+        // top-level byte is left over for the reader's own trailing check to catch.
         let older = before.document_type_for_name("secret").expect("the type");
-        for (case, properties) in [
+        let object_only = private_type_contract(
+            json!({ "flag": { "type": "boolean", "position": 0 }, "meta": meta(true) }),
+            json!(["flag", "meta"]),
+        );
+        let object_only = object_only
+            .document_type_for_name("secret")
+            .expect("the type");
+        for (case, writer, properties) in [
             (
                 "a member the object gained",
+                object_only,
                 BTreeMap::from([
                     ("flag".to_string(), Value::Bool(true)),
                     (
@@ -939,6 +949,7 @@ mod tests {
             ),
             (
                 "a property the type gained",
+                newer,
                 BTreeMap::from([
                     ("flag".to_string(), Value::Bool(true)),
                     (
@@ -950,10 +961,10 @@ mod tests {
             ),
         ] {
             let newer_payload =
-                encode_private_document_payload(newer, properties).expect("encodes");
+                encode_private_document_payload(writer, properties).expect("encodes");
             assert!(
-                decode_private_document_payload(newer, &newer_payload, platform_version).is_ok(),
-                "{case}: the newer type reads it"
+                decode_private_document_payload(writer, &newer_payload, platform_version).is_ok(),
+                "{case}: the writer's type reads it"
             );
             assert!(
                 decode_private_document_payload(older, &newer_payload, platform_version).is_err(),
