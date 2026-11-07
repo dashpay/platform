@@ -270,9 +270,9 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///   deep-and-sparse* address, past that reach with no stored address
 ///   nearer to it. Both are counted at [`LoadSite::UnresolvedUtxoAddress`]
 ///   and re-warm on the next full sync, but for a used address whose row
-///   names a DashPay contact's account: no funds account derived it, so it
+///   names a DashPay contact account whose xpub no funds account shares: it
 ///   is the contact's key, reported at [`LoadSite::OrphanedUtxoOwner`]
-///   only. An unresolved coin falls back to its stored owner, else the
+///   only. One of a shared xpub past discovery's reach stays counted. An unresolved coin falls back to its stored owner, else the
 ///   first funds account. The wallet *total* stays exact
 ///   (every UTXO is summed regardless of pool visibility); only the
 ///   per-address view is incomplete until that sync.
@@ -517,13 +517,14 @@ pub fn apply_persisted_core_state(
         }
         // Every stored address no funds pool holds now that a funds account
         // may derive, counted once: the fallback coins' and the placeable used
-        // ones', but for a DashPay contact's (the one non-funds kind left
-        // there). Discovery placed it if a receiving account shares its xpub;
-        // otherwise it is the contact's key, which no sync re-warms, and it is
-        // reported as an orphaned owner above.
+        // ones', but for one owned by a DashPay contact account whose xpub no
+        // funds account shares. That is the contact's key, which no sync
+        // re-warms, and it is reported as an orphaned owner above. A contact
+        // address of a shared xpub that discovery's probe didn't reach, or of
+        // an account the wallet lacks, stays counted.
+        let foreign = foreign_contact_accounts(wallet_info, manifest);
         let counted_used = (placeable_used.iter().copied()).filter(|address| {
-            !(used_pool_addresses[*address].as_ref())
-                .is_some_and(|owner| accounts::is_non_funds_account_label(&owner.account_type))
+            !(used_pool_addresses[*address].as_ref()).is_some_and(|owner| foreign.contains(owner))
         });
         let unresolved = outside_funds_pools(
             wallet_info,
@@ -797,6 +798,28 @@ fn gap_refills_bounded(
 }
 
 /// The `addresses` no funds pool of `wallet_info` holds, once each.
+/// The DashPay contact accounts of `wallet_info` whose xpub in `manifest`
+/// derives none of the funds accounts' scripts: its key and chain code are
+/// none of theirs. A contact account with no manifest entry is not one.
+fn foreign_contact_accounts(
+    wallet_info: &ManagedWalletInfo,
+    manifest: &[AccountRegistrationEntry],
+) -> Vec<OwningAccount> {
+    let key_material = |account: &key_wallet::managed_account::ManagedCoreFundsAccount| {
+        let account_type = account.managed_account_type().to_account_type();
+        (manifest.iter())
+            .find(|e| e.account_type == account_type)
+            .map(|e| (e.account_xpub.public_key, e.account_xpub.chain_code))
+    };
+    let funds: Vec<_> = (wallet_info.accounts.all_funding_accounts().into_iter())
+        .filter_map(key_material)
+        .collect();
+    (wallet_info.accounts.dashpay_external_accounts.values())
+        .filter(|contact| key_material(contact).is_some_and(|key| !funds.contains(&key)))
+        .map(owning_account_of)
+        .collect()
+}
+
 fn outside_funds_pools<'a>(
     wallet_info: &ManagedWalletInfo,
     addresses: impl IntoIterator<Item = &'a key_wallet::Address>,
@@ -4775,6 +4798,47 @@ mod tests {
                 "{sites:?}"
             );
             assert!(outside_funds_pools(&info, [&theirs]).contains(&theirs));
+        }
+
+        /// A used address the receiving account shares with the reverse
+        /// contact account, two past the receiving pool's window, whose row
+        /// names the contact account, with nothing used at the index between:
+        /// the store a released reservation behind a paid one leaves.
+        /// Discovery probes only one index past the pool, so it isn't found;
+        /// it is ours, not the contact's, so a strict load counts it
+        /// unresolved as well as orphaned.
+        #[test]
+        fn a_shared_contact_used_address_past_discoverys_probe_stays_unresolved() {
+            let (wallet, manifest, receiving, reverse, _) = befriended_both_ways(52);
+            let past = key_wallet::gap_limit::DEFAULT_DASHPAY_GAP_LIMIT + 1;
+            let deep = first_pool_address(&wallet, &reverse, past);
+            assert_eq!(first_pool_address(&wallet, &receiving, past), deep);
+            let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+            let contact = info.accounts.dashpay_external_accounts.values().next();
+            let used = HashMap::from([(deep.clone(), Some(owning_account_of(contact.unwrap())))]);
+            let ctx = LoadCtx::strict();
+            load_into(
+                &mut info,
+                &manifest,
+                Vec::new(),
+                &HashMap::new(),
+                &used,
+                &ctx,
+            )
+            .unwrap();
+
+            let sites = &ctx.degradation().by_site;
+            assert_eq!(
+                sites.get(&LoadSite::UnresolvedUtxoAddress),
+                Some(&1),
+                "{sites:?}"
+            );
+            assert_eq!(
+                sites.get(&LoadSite::OrphanedUtxoOwner),
+                Some(&1),
+                "{sites:?}"
+            );
+            assert!(outside_funds_pools(&info, [&deep]).contains(&deep));
         }
 
         /// After discovery derives something every coin is offered to
