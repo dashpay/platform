@@ -13,7 +13,8 @@ use crate::common;
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
+use std::time::Duration;
 
 use common::secure_tempdir;
 use dashcore::{Address, Block, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness};
@@ -167,7 +168,26 @@ struct Stored {
 /// stored) and a block pays the last of them. With `spent_past_window` that
 /// is the first address past the window A's receiving pool registered, and a
 /// later block spends the coin; without, it is the first address, unspent.
-async fn store_sibling_payment(spent_past_window: bool) -> Stored {
+///
+/// The session runs on its own runtime, gone before the file is reopened, so
+/// nothing the manager spawned still holds the persister's claim on it.
+fn store_sibling_payment(spent_past_window: bool) -> Stored {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("session runtime");
+    let (stored, persister) = runtime.block_on(store_session(spent_past_window));
+    runtime.shutdown_timeout(Duration::from_secs(60));
+    assert_eq!(
+        persister.strong_count(),
+        0,
+        "the session's persister outlives its manager and runtime"
+    );
+    stored
+}
+
+async fn store_session(spent_past_window: bool) -> (Stored, Weak<SqlitePersister>) {
     let tmp = secure_tempdir().expect("tempdir");
     let path = tmp.path().join("wallet.db");
     let persister =
@@ -280,27 +300,28 @@ async fn store_sibling_payment(spent_past_window: bool) -> Stored {
     }
 
     drop(wallet);
+    // A registered wallet and the manager's event handlers keep each other,
+    // and with them the persister, alive past `shutdown`; removing it ends that.
+    drop(
+        manager
+            .remove_wallet(&wallet_id)
+            .await
+            .expect("remove the wallet"),
+    );
     assert!(manager.shutdown().await.all_clean(), "clean shutdown");
     persister.flush(wallet_id).expect("flush");
-    // Workers the manager started can outlive it while this runtime does, so
-    // the session's file is taken as a restart would find it: an online
-    // backup of what it committed.
-    let closed = persister
-        .backup_to(&tmp.path().join("closed.db"))
-        .expect("back up the session's file");
-    drop(manager);
-    drop(wallet_persister);
-    drop(persister);
+    let released = Arc::downgrade(&persister);
 
-    Stored {
+    let stored = Stored {
         _tmp: tmp,
-        path: closed,
+        path,
         wallet_id,
         receiving_xpub: receiving_xpub.xpub,
         receiving_window,
         paid,
         payment_outpoint,
-    }
+    };
+    (stored, released)
 }
 
 /// The paid script's pool rows on disk, as (account kind, used).
@@ -341,9 +362,9 @@ fn used_in_receiving_pool(account: &ManagedCoreFundsAccount, paid: &Address) -> 
 /// B pays A at the first address past the receiving pool's window, and the
 /// coin is spent. No unspent coin and no receiving pool row name the address,
 /// so only discovery from the external account's used row can find it.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_spent_sibling_payment_past_the_receiving_window_is_used_there_after_a_reopen() {
-    let stored = store_sibling_payment(true).await;
+#[test]
+fn a_spent_sibling_payment_past_the_receiving_window_is_used_there_after_a_reopen() {
+    let stored = store_sibling_payment(true);
     let window = stored.receiving_window;
 
     let persister = reopen(&stored);
@@ -387,9 +408,9 @@ async fn a_spent_sibling_payment_past_the_receiving_window_is_used_there_after_a
 /// B pays A at an address inside the receiving pool's window, and the coin
 /// stays unspent: its row and the receiving row exist, but only the external
 /// row is used. The two owner resolvers must agree, so a strict load succeeds.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn an_unspent_sibling_payment_inside_the_receiving_window_loads_strictly() {
-    let stored = store_sibling_payment(false).await;
+#[test]
+fn an_unspent_sibling_payment_inside_the_receiving_window_loads_strictly() {
+    let stored = store_sibling_payment(false);
 
     let persister = reopen(&stored);
     assert_eq!(
