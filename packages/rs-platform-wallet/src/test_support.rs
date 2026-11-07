@@ -198,9 +198,23 @@ pub fn wallet_manager_with_persistence(
     WalletId,
     tokio::sync::mpsc::UnboundedReceiver<key_wallet_manager::WalletEvent>,
 ) {
+    let core_wallet = key_wallet::wallet::ManagedWalletInfo::from_wallet(&wallet, 0);
+    wallet_manager_with_core_wallet(wallet, core_wallet)
+}
+
+/// As [`wallet_manager_with_persistence`], holding `core_wallet` as the
+/// wallet's managed state (for example the state a store reloads).
+pub fn wallet_manager_with_core_wallet(
+    wallet: Wallet,
+    core_wallet: key_wallet::wallet::ManagedWalletInfo,
+) -> (
+    Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    WalletId,
+    tokio::sync::mpsc::UnboundedReceiver<key_wallet_manager::WalletEvent>,
+) {
     let info = PlatformWalletInfo {
         observed_input_conflicts: Default::default(),
-        core_wallet: key_wallet::wallet::ManagedWalletInfo::from_wallet(&wallet, 0),
+        core_wallet,
         generation: Arc::new(WalletGeneration::new()),
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),

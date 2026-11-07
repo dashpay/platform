@@ -21,7 +21,7 @@ use platform_wallet::changeset::{
 use platform_wallet::key_wallet_manager::WalletEvent;
 use platform_wallet::test_support::{
     block_paying, external_addresses, process_block_with_rescans, transaction_paying,
-    wallet_manager_with_persistence,
+    wallet_manager_with_core_wallet, wallet_manager_with_persistence,
 };
 use platform_wallet::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
@@ -285,4 +285,111 @@ async fn coins_of_two_accounts_at_one_height_survive_a_reload() {
         txid: within_gap.txid(),
         vout
     })));
+}
+
+/// Where one transaction's coins sit across the wallet's funds accounts, and
+/// the wallet's total.
+#[derive(Debug, PartialEq)]
+struct Placement {
+    coinjoin: Vec<u32>,
+    bip44: Vec<u32>,
+    held: usize,
+    distinct: usize,
+    total: u64,
+}
+
+fn placement(info: &ManagedWalletInfo, txid: dashcore::Txid) -> Placement {
+    let vouts = |account: AccountType| -> Vec<u32> {
+        let mut vouts: Vec<u32> = info
+            .accounts
+            .funds_account(&account)
+            .expect("account")
+            .utxos
+            .keys()
+            .filter(|o| o.txid == txid)
+            .map(|o| o.vout)
+            .collect();
+        vouts.sort_unstable();
+        vouts
+    };
+    let held: Vec<OutPoint> = info
+        .accounts
+        .all_funding_accounts()
+        .into_iter()
+        .flat_map(|account| account.utxos.keys().copied())
+        .filter(|o| o.txid == txid)
+        .collect();
+    Placement {
+        coinjoin: vouts(AccountType::CoinJoin { index: 0 }),
+        bip44: vouts(bip44_account_0()),
+        held: held.len(),
+        distinct: held.iter().collect::<std::collections::HashSet<_>>().len(),
+        total: info.balance.total(),
+    }
+}
+
+/// CoinJoin coins past the registered pool snapshot, credited only by the
+/// block's re-scan passes, reload into the CoinJoin account, none into
+/// BIP44. Replaying the block over the reloaded state credits nothing
+/// twice: the coins, their accounts and the balance stay as reloaded.
+#[tokio::test]
+async fn coinjoin_coins_past_the_pool_snapshot_reload_into_coinjoin_and_replay_once() {
+    let (persister, _tmp, path) = fresh_persister();
+    let persister = Arc::new(persister);
+    let wallet = Wallet::new_random(
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .expect("wallet");
+    let coinjoin = AccountType::CoinJoin { index: 0 };
+    let count = external_gap(&wallet, coinjoin) + PAST_GAP;
+    let addresses = external_addresses(&wallet, coinjoin, count);
+    let manifest_wallet = wallet.clone();
+    let (manager, wallet_id, mut queued) = wallet_manager_with_persistence(wallet);
+    register(&persister, wallet_id, &manifest_wallet);
+
+    let block = block_paying(&addresses, VALUE, HEIGHT);
+    let passes = process_block_with_rescans(&manager, wallet_id, &block, HEIGHT).await;
+    assert!(passes > 1, "the block is re-scanned");
+    persist_queued(&manager, &mut queued, &persister).await;
+    persister.flush(wallet_id).expect("flush");
+    drop(persister);
+    drop(manager);
+
+    let txid = block.txdata[0].txid();
+    let expected = || Placement {
+        coinjoin: (0..count).collect(),
+        bip44: Vec::new(),
+        held: count as usize,
+        distinct: count as usize,
+        total: u64::from(count) * VALUE,
+    };
+    let reopened = SqlitePersister::open(SqlitePersisterConfig::new(&path)).expect("reopen");
+    let reloaded = reopened
+        .load()
+        .expect("load")
+        .wallets
+        .remove(&wallet_id)
+        .expect("the wallet loads")
+        .wallet_info;
+    drop(reopened);
+    let after_reload = placement(&reloaded, txid);
+
+    let (replaying, replay_id, _events) =
+        wallet_manager_with_core_wallet(manifest_wallet, reloaded);
+    assert_eq!(replay_id, wallet_id);
+    process_block_with_rescans(&replaying, wallet_id, &block, HEIGHT).await;
+    let guard = replaying.read().await;
+    let after_replay = placement(
+        &guard
+            .get_wallet_info(&wallet_id)
+            .expect("the wallet")
+            .core_wallet,
+        txid,
+    );
+    assert_eq!(
+        (after_reload, after_replay),
+        (expected(), expected()),
+        "(after the reload, after the replay)"
+    );
 }
