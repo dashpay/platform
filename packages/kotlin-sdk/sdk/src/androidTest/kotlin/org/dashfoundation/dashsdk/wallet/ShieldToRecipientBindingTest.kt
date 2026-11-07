@@ -19,11 +19,13 @@ import org.junit.runner.RunWith
  * `UnsatisfiedLinkError`), and pins each rejection to its layer. No network,
  * no wallet, no funds.
  *
- * Three layers are asserted apart:
+ * Each rejection is pinned to its layer:
  *  - the JNI trampoline's own boundary checks throw [DashSDKException] with
  *    RAW code 1 and a message naming the argument, BEFORE any FFI call. The
  *    message checks double as parameter-order pins: the two account ints share
  *    a descriptor slot type, so a swap would hit the wrong branch;
+ *  - a zero amount is not checked there (Rust owns it), so it reaches the
+ *    FFI and fails at the dead handle;
  *  - an over-limit memo crosses into the FFI and is rejected by Rust's
  *    `encode_memo_text` (the single owner of the 32-byte rule) as
  *    `ErrorInvalidParameter`, which the FFI checks before resolving the handle;
@@ -79,10 +81,16 @@ class ShieldToRecipientBindingTest {
     }
 
     @Test
-    fun shouldRejectNonPositiveAmountBeforeTheFfi() {
-        for (amount in longArrayOf(0L, -1L)) {
-            assertJniRejection(callExpectingThrow(amount = amount), "amount")
-        }
+    fun shouldRejectANegativeAmountBeforeTheFfi() {
+        assertJniRejection(callExpectingThrow(amount = -1L), "amount")
+    }
+
+    @Test
+    fun shouldLeaveAZeroAmountToRust() {
+        // The JNI layer only blocks negatives; zero crosses into the FFI and
+        // here fails at the dead handle, before the wallet's own > 0 check.
+        val e = callExpectingThrow(amount = 0L)
+        assertEquals("zero amount: ${e.message}", INVALID_HANDLE, e.code)
     }
 
     @Test
