@@ -2281,6 +2281,104 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     })
 }
 
+/// Shared body of the AUTO and EXPLICIT platform-address withdrawal exports:
+/// reject negative `jint`s (they would bit-cast to huge `u32`s), read the Core
+/// address, open the wallet's platform-address handle, call
+/// `platform_address_wallet_withdraw_to_address` and return the changeset
+/// blob. `inputs` is `None` for AUTO selection and the decoded rows for
+/// EXPLICIT. No fee strategy is passed, so the FFI applies its default
+/// `DeductFromInput(0)`.
+fn withdraw_platform_address_credits(
+    env: &mut JNIEnv,
+    wallet_handle: jlong,
+    account_index: jni::sys::jint,
+    inputs: Option<&[platform_wallet_ffi::ExplicitInputFFI]>,
+    core_address: &JString,
+    core_fee_per_byte: jni::sys::jint,
+    signer_handle: jlong,
+) -> jbyteArray {
+    if account_index < 0 {
+        throw_sdk_exception(env, 1, "accountIndex must be non-negative");
+        return ptr::null_mut();
+    }
+    if core_fee_per_byte < 0 {
+        throw_sdk_exception(env, 1, "coreFeePerByte must be non-negative");
+        return ptr::null_mut();
+    }
+    let Some(core_address_c) = read_cstring_required(env, core_address, "core_address") else {
+        return ptr::null_mut();
+    };
+    let (selection, inputs_ptr, inputs_len) = match inputs {
+        None => (
+            platform_wallet_ffi::InputSelectionType::Auto,
+            ptr::null(),
+            0,
+        ),
+        Some(rows) => (
+            platform_wallet_ffi::InputSelectionType::Explicit,
+            rows.as_ptr(),
+            rows.len(),
+        ),
+    };
+
+    let mut addr_handle: Handle = 0;
+    let result = unsafe {
+        platform_wallet_ffi::platform_wallet_get_platform(
+            wallet_handle as Handle,
+            &mut addr_handle as *mut Handle,
+        )
+    };
+    if take_pwffi_error(env, result) {
+        return ptr::null_mut();
+    }
+
+    let mut changeset = platform_wallet_ffi::PlatformAddressChangeSetFFI {
+        updated: ptr::null_mut(),
+        updated_count: 0,
+    };
+    let withdraw_result = unsafe {
+        platform_wallet_ffi::platform_address_wallet_withdraw_to_address(
+            addr_handle,
+            account_index as u32,
+            selection,
+            inputs_ptr,
+            inputs_len,
+            ptr::null(),
+            0,
+            core_address_c.as_ptr(),
+            core_fee_per_byte as u32,
+            ptr::null(), // fee strategy: FFI default `DeductFromInput(0)`
+            0,
+            signer_handle as *mut rs_sdk_ffi::SignerHandle,
+            &mut changeset as *mut platform_wallet_ffi::PlatformAddressChangeSetFFI,
+        )
+    };
+
+    let out = if take_pwffi_error(env, withdraw_result) {
+        ptr::null_mut()
+    } else {
+        let blob = unsafe { encode_changeset(&changeset) };
+        unsafe {
+            platform_wallet_ffi::platform_address_wallet_free_changeset(
+                &changeset as *const platform_wallet_ffi::PlatformAddressChangeSetFFI,
+            )
+        };
+        env.byte_array_from_slice(&blob)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    };
+
+    let destroy_result =
+        unsafe { platform_wallet_ffi::platform_address_wallet_destroy(addr_handle) };
+    if !env.exception_check().unwrap_or(false) {
+        let _ = take_pwffi_error(env, destroy_result);
+    } else {
+        unsafe { platform_wallet_ffi_result_free(&mut { destroy_result }) };
+    }
+
+    out
+}
+
 /// Withdraw platform-address credits (full account balance, AUTO input
 /// selection) to a Core L1 address, wallet-signed. The address is
 /// network-checked Rust-side against the wallet's own network. Returns the
@@ -2300,77 +2398,15 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     signer_handle: jlong,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
-        // Reject sign errors at the boundary — negatives would otherwise
-        // bit-cast to huge u32s on the FFI call.
-        if account_index < 0 {
-            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
-            return ptr::null_mut();
-        }
-        if core_fee_per_byte < 0 {
-            throw_sdk_exception(env, 1, "coreFeePerByte must be non-negative");
-            return ptr::null_mut();
-        }
-
-        let Some(core_address_c) = read_cstring_required(env, &core_address, "core_address") else {
-            return ptr::null_mut();
-        };
-
-        let mut addr_handle: Handle = 0;
-        let result = unsafe {
-            platform_wallet_ffi::platform_wallet_get_platform(
-                wallet_handle as Handle,
-                &mut addr_handle as *mut Handle,
-            )
-        };
-        if take_pwffi_error(env, result) {
-            return ptr::null_mut();
-        }
-
-        let mut changeset = platform_wallet_ffi::PlatformAddressChangeSetFFI {
-            updated: ptr::null_mut(),
-            updated_count: 0,
-        };
-        let withdraw_result = unsafe {
-            platform_wallet_ffi::platform_address_wallet_withdraw_to_address(
-                addr_handle,
-                account_index as u32,
-                platform_wallet_ffi::InputSelectionType::Auto,
-                ptr::null(),
-                0,
-                ptr::null(),
-                0,
-                core_address_c.as_ptr(),
-                core_fee_per_byte as u32,
-                ptr::null(),
-                0,
-                signer_handle as *mut rs_sdk_ffi::SignerHandle,
-                &mut changeset as *mut platform_wallet_ffi::PlatformAddressChangeSetFFI,
-            )
-        };
-
-        let out = if take_pwffi_error(env, withdraw_result) {
-            ptr::null_mut()
-        } else {
-            let blob = unsafe { encode_changeset(&changeset) };
-            unsafe {
-                platform_wallet_ffi::platform_address_wallet_free_changeset(
-                    &changeset as *const platform_wallet_ffi::PlatformAddressChangeSetFFI,
-                )
-            };
-            env.byte_array_from_slice(&blob)
-                .map(|a| a.into_raw())
-                .unwrap_or(ptr::null_mut())
-        };
-
-        let destroy_result =
-            unsafe { platform_wallet_ffi::platform_address_wallet_destroy(addr_handle) };
-        if !env.exception_check().unwrap_or(false) {
-            let _ = take_pwffi_error(env, destroy_result);
-        } else {
-            unsafe { platform_wallet_ffi_result_free(&mut { destroy_result }) };
-        }
-
-        out
+        withdraw_platform_address_credits(
+            env,
+            wallet_handle,
+            account_index,
+            None,
+            &core_address,
+            core_fee_per_byte,
+            signer_handle,
+        )
     })
 }
 
@@ -2407,13 +2443,10 @@ fn decode_withdrawal_inputs(
     let mut inputs = Vec::with_capacity(count);
     let (rows, _) = body.as_chunks::<WITHDRAWAL_INPUT_ROW_LEN>();
     for (i, row) in rows.iter().enumerate() {
-        let (type_byte, rest) = row.split_at(1);
-        let (hash, credit_bytes) = rest.split_at(20);
-        let mut hash_arr = [0u8; 20];
-        hash_arr.copy_from_slice(hash);
-        let mut credits_arr = [0u8; 8];
-        credits_arr.copy_from_slice(credit_bytes);
-        let credits = u64::from_be_bytes(credits_arr);
+        // The row is a `[u8; 29]`, so this pattern is irrefutable and binds
+        // `hash` as `[u8; 20]`.
+        let &[address_type, ref hash @ .., c0, c1, c2, c3, c4, c5, c6, c7] = row;
+        let credits = u64::from_be_bytes([c0, c1, c2, c3, c4, c5, c6, c7]);
         if credits & (1 << 63) != 0 {
             return Err(format!(
                 "withdrawal inputs blob row {i} credits amount out of range"
@@ -2421,8 +2454,8 @@ fn decode_withdrawal_inputs(
         }
         inputs.push(platform_wallet_ffi::ExplicitInputFFI {
             address: platform_wallet_ffi::PlatformAddressFFI {
-                address_type: type_byte[0],
-                hash: hash_arr,
+                address_type,
+                hash: *hash,
             },
             balance: credits,
         });
@@ -2434,24 +2467,11 @@ fn decode_withdrawal_inputs(
 /// (EXPLICIT input selection) to a Core L1 address, wallet-signed. Port of
 /// Swift's `ManagedPlatformAddressWallet.withdraw(accountIndex:coreAddress:
 /// inputs:…)`; sibling of [`walletPlatformAddressWithdraw`], which withdraws
-/// the full balance.
+/// the full balance. `inputs_blob` is decoded by [`decode_withdrawal_inputs`].
 ///
-/// The input sum is the gross withdrawal amount: from protocol version 14
-/// the Core fee (asset-unlock tx size × `core_fee_per_byte` duffs) is taken
-/// out of it before the Core output. The platform transition fee does not
-/// reduce it: the chain deducts that fee from the fee-source input's
-/// REMAINING balance, so that address must keep at least the fee after the
-/// withdrawal, or the transition is rejected. Rust re-fetches every input's on-chain balance
-/// before signing, so a stale caller-side balance fails with a typed error
-/// rather than a wrong-amount withdrawal.
-///
-/// Fee source: as in Swift, no fee strategy is passed, so the FFI applies
-/// its default `DeductFromInput(0)`. Consensus resolves index 0 against the
-/// inputs sorted by address, NOT the order of `inputs_blob`, so the input
-/// whose address sorts first pays the fee.
-///
-/// Same `core_address` network check, Fibonacci `core_fee_per_byte` rule and
-/// changeset blob as [`walletPlatformAddressWithdraw`].
+/// The amount and fee semantics (gross input sum, Core fee, which input pays
+/// the transition fee) are documented once, on the Kotlin
+/// `ManagedPlatformWallet.withdrawCredits(coreAddress, inputs, …)`.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletPlatformAddressWithdrawExplicit(
     mut env: JNIEnv,
@@ -2464,17 +2484,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     signer_handle: jlong,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
-        // Reject sign errors at the boundary — negatives would otherwise
-        // bit-cast to huge u32s on the FFI call.
-        if account_index < 0 {
-            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
-            return ptr::null_mut();
-        }
-        if core_fee_per_byte < 0 {
-            throw_sdk_exception(env, 1, "coreFeePerByte must be non-negative");
-            return ptr::null_mut();
-        }
-
         if inputs_blob.is_null() {
             throw_sdk_exception(env, 1, "withdrawal inputs blob was null");
             return ptr::null_mut();
@@ -2487,74 +2496,22 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 return ptr::null_mut();
             }
         };
-        let input = match decode_withdrawal_inputs(&blob_bytes) {
+        let inputs = match decode_withdrawal_inputs(&blob_bytes) {
             Ok(rows) => rows,
             Err(msg) => {
                 throw_sdk_exception(env, 1, &msg);
                 return ptr::null_mut();
             }
         };
-
-        let Some(core_address_c) = read_cstring_required(env, &core_address, "core_address") else {
-            return ptr::null_mut();
-        };
-
-        let mut addr_handle: Handle = 0;
-        let result = unsafe {
-            platform_wallet_ffi::platform_wallet_get_platform(
-                wallet_handle as Handle,
-                &mut addr_handle as *mut Handle,
-            )
-        };
-        if take_pwffi_error(env, result) {
-            return ptr::null_mut();
-        }
-
-        let mut changeset = platform_wallet_ffi::PlatformAddressChangeSetFFI {
-            updated: ptr::null_mut(),
-            updated_count: 0,
-        };
-        let withdraw_result = unsafe {
-            platform_wallet_ffi::platform_address_wallet_withdraw_to_address(
-                addr_handle,
-                account_index as u32,
-                platform_wallet_ffi::InputSelectionType::Explicit,
-                input.as_ptr(),
-                input.len(),
-                ptr::null(),
-                0,
-                core_address_c.as_ptr(),
-                core_fee_per_byte as u32,
-                ptr::null(), // fee strategy: FFI default `DeductFromInput(0)`
-                0,
-                signer_handle as *mut rs_sdk_ffi::SignerHandle,
-                &mut changeset as *mut platform_wallet_ffi::PlatformAddressChangeSetFFI,
-            )
-        };
-
-        let out = if take_pwffi_error(env, withdraw_result) {
-            ptr::null_mut()
-        } else {
-            let blob = unsafe { encode_changeset(&changeset) };
-            unsafe {
-                platform_wallet_ffi::platform_address_wallet_free_changeset(
-                    &changeset as *const platform_wallet_ffi::PlatformAddressChangeSetFFI,
-                )
-            };
-            env.byte_array_from_slice(&blob)
-                .map(|a| a.into_raw())
-                .unwrap_or(ptr::null_mut())
-        };
-
-        let destroy_result =
-            unsafe { platform_wallet_ffi::platform_address_wallet_destroy(addr_handle) };
-        if !env.exception_check().unwrap_or(false) {
-            let _ = take_pwffi_error(env, destroy_result);
-        } else {
-            unsafe { platform_wallet_ffi_result_free(&mut { destroy_result }) };
-        }
-
-        out
+        withdraw_platform_address_credits(
+            env,
+            wallet_handle,
+            account_index,
+            Some(&inputs),
+            &core_address,
+            core_fee_per_byte,
+            signer_handle,
+        )
     })
 }
 
