@@ -7,6 +7,7 @@
 //! build cannot make: a sealed entry is appended by a wallet that can, or broadcast in a
 //! transition built elsewhere.
 
+use crate::encrypted_for::secret_key_from_options;
 use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::identity::{Identity, KeyID};
@@ -29,9 +30,9 @@ use wasm_dpp2::identity::IdentityWasm;
 use wasm_dpp2::serialization::to_object;
 use wasm_dpp2::utils::{
     try_from_options_optional_with, try_from_options_with, try_to_array, try_to_bytes,
-    try_to_string, try_to_u32, try_to_u64,
+    try_to_fixed_bytes, try_to_string, try_to_u32, try_to_u64,
 };
-use wasm_dpp2::{IdentitySignerWasm, PrivateKeyWasm};
+use wasm_dpp2::IdentitySignerWasm;
 
 #[wasm_bindgen(typescript_custom_section)]
 const PRIVATE_CONTACT_REQUESTS_TS: &'static str = r#"
@@ -105,7 +106,11 @@ export interface PrivateContactRequestScanSender {
   encryptionKeys: { keyId: number; privateKey: PrivateKey }[];
 }
 
-/** Options for `WasmSdk.scanPrivateContactRequests`. */
+/**
+ * Options for `WasmSdk.scanPrivateContactRequests`. The scan fetches the identities the page's
+ * requests are checked against right after the page, so a node serving both can tell which
+ * identities the wallet looked up.
+ */
 export interface ScanPrivateContactRequestsOptions {
   /** The position to read from: 0, then the `nextPosition` of the previous scan. */
   startPosition: bigint | number;
@@ -343,17 +348,17 @@ fn rejection(reason: PrivateContactRequestRejection) -> (&'static str, Option<St
     }
 }
 
-fn secret_key(value: &JsValue, field: &str) -> Result<SecretKey, WasmSdkError> {
-    let key = PrivateKeyWasm::try_from(value)?;
-    SecretKey::from_secret_bytes(*key.inner().inner.to_bytes())
-        .map_err(|e| WasmSdkError::invalid_argument(format!("{field}: {e}")))
-}
+/// Secret keys read from the options, wiped when dropped, on every exit: `SecretKey` is `Copy`
+/// and erases nothing itself.
+#[derive(Default)]
+struct ReadSecretKeys(Vec<(KeyID, SecretKey)>);
 
-fn fixed_bytes<const N: usize>(value: &JsValue, field: &str) -> Result<[u8; N], WasmSdkError> {
-    let bytes = try_to_bytes(value.clone(), field)?;
-    bytes.as_slice().try_into().map_err(|_| {
-        WasmSdkError::invalid_argument(format!("{field} must be {N} bytes, not {}", bytes.len()))
-    })
+impl Drop for ReadSecretKeys {
+    fn drop(&mut self) {
+        for (_, secret_key) in &mut self.0 {
+            secret_key.non_secure_erase();
+        }
+    }
 }
 
 fn request_from_options(options: &JsValue) -> Result<PrivateContactRequest, WasmSdkError> {
@@ -366,7 +371,7 @@ fn request_from_options(options: &JsValue) -> Result<PrivateContactRequest, Wasm
             Ok(value.clone())
         })
         .map_err(WasmSdkError::from)
-        .and_then(|value| fixed_bytes(&value, "extendedPublicKey"))?,
+        .and_then(|value| Ok(try_to_fixed_bytes(value, "extendedPublicKey")?))?,
         account_label: try_from_options_optional_with(&request, "accountLabel", |value| {
             try_to_string(value, "accountLabel")
         })?,
@@ -376,7 +381,7 @@ fn request_from_options(options: &JsValue) -> Result<PrivateContactRequest, Wasm
         shielded_address: try_from_options_optional_with(&request, "shieldedAddress", |value| {
             Ok(value.clone())
         })?
-        .map(|value| fixed_bytes(&value, "shieldedAddress"))
+        .map(|value| try_to_fixed_bytes(value, "shieldedAddress"))
         .transpose()?,
     })
 }
@@ -389,25 +394,18 @@ fn scan_keys_from_options(options: &JsValue) -> Result<PrivateDocumentScanKeys, 
     for recipient in recipients.iter().flat_map(|array| array.iter()) {
         let identity_id: Identifier =
             IdentifierWasm::try_from_options(&recipient, "identityId")?.into();
-        let mut recipient_keys = try_from_options_with(&recipient, "keys", |value| {
+        let recipient_keys = try_from_options_with(&recipient, "keys", |value| {
             try_to_array(value, "recipients[].keys")
-        })?
-        .iter()
-        .map(|key| {
+        })?;
+        let mut read = ReadSecretKeys::default();
+        for key in recipient_keys.iter() {
             let key_id = try_from_options_with(&key, "keyId", |value| {
                 try_to_u32(value, "recipients[].keys[].keyId")
             })?;
-            let private_key = try_from_options_with(&key, "privateKey", |value| Ok(value.clone()))?;
-            Ok((
-                key_id,
-                secret_key(&private_key, "recipients[].keys[].privateKey")?,
-            ))
-        })
-        .collect::<Result<Vec<_>, WasmSdkError>>()?;
-        keys = keys.with_recipient(identity_id, &recipient_keys);
-        for (_, secret_key) in &mut recipient_keys {
-            secret_key.non_secure_erase();
+            read.0
+                .push((key_id, secret_key_from_options(&key, "privateKey")?));
         }
+        keys = keys.with_recipient(identity_id, &read.0);
     }
     let senders =
         try_from_options_optional_with(options, "senders", |value| try_to_array(value, "senders"))?;
@@ -421,14 +419,12 @@ fn scan_keys_from_options(options: &JsValue) -> Result<PrivateDocumentScanKeys, 
             let key_id = try_from_options_with(&key, "keyId", |value| {
                 try_to_u32(value, "senders[].encryptionKeys[].keyId")
             })?;
-            let private_key = try_from_options_with(&key, "privateKey", |value| Ok(value.clone()))?;
-            let mut secret_key = secret_key(&private_key, "senders[].encryptionKeys[].privateKey")?;
+            let read = ReadSecretKeys(vec![(key_id, secret_key_from_options(&key, "privateKey")?)]);
             keys = keys.with_sender(
                 identity_id,
                 key_id,
-                private_contact_request_outgoing_viewing_key(&secret_key),
+                private_contact_request_outgoing_viewing_key(&read.0[0].1),
             );
-            secret_key.non_secure_erase();
         }
     }
     Ok(keys)
@@ -450,6 +446,9 @@ impl WasmSdk {
         #[wasm_bindgen(js_name = "startPosition")] start_position: u64,
     ) -> Result<JsValue, WasmSdkError> {
         let data_contract_id: Identifier = IdentifierWasm::try_from(data_contract_id)?.into();
+        // The page's proof is checked against the contract, which the context provider holds
+        // only once loaded.
+        self.get_or_fetch_contract(data_contract_id).await?;
         let page = PrivateDocumentEntries::fetch(
             self.as_ref(),
             PrivateDocumentEntriesQuery::new(data_contract_id, document_type_name, start_position),
@@ -489,12 +488,6 @@ impl WasmSdk {
             try_from_options_with(&options, "senderEncryptionKeyId", |value| {
                 try_to_u32(value, "senderEncryptionKeyId")
             })?;
-        let sender_private_key =
-            try_from_options_with(&options, "senderEncryptionPrivateKey", |value| {
-                Ok(value.clone())
-            })?;
-        let mut encryption_secret_key =
-            secret_key(&sender_private_key, "senderEncryptionPrivateKey")?;
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
         let recipient_identity: Identity =
             IdentityWasm::try_from_options(&options, "recipientIdentity")?.into();
@@ -502,27 +495,35 @@ impl WasmSdk {
             try_to_u32(value, "recipientKeyId")
         })?;
         let request = request_from_options(&options)?;
+        // Read last, and wiped on every exit.
+        let encryption_key = ReadSecretKeys(vec![(
+            encryption_key_id,
+            secret_key_from_options(&options, "senderEncryptionPrivateKey")?,
+        )]);
 
         let sealed = self
             .as_ref()
             .seal_private_contact_request(
                 &sender_identity,
                 encryption_key_id,
-                &encryption_secret_key,
+                &encryption_key.0[0].1,
                 &signer,
                 &recipient_identity,
                 recipient_key_id,
                 &request,
             )
-            .await;
-        encryption_secret_key.non_secure_erase();
-        Ok(sealed?.to_vec())
+            .await?;
+        Ok(sealed.to_vec())
     }
 
     /// Reads the page of DashPay's `privateContactRequest` store from `startPosition` and
     /// returns what it holds for the wallet: the requests to its identities, each checked
     /// against its sender's signing keys and the recipient's key, and the requests its
     /// identities sent, recovered with their encryption keys and checked to be theirs.
+    ///
+    /// It fetches the identities the page's requests are checked against right after the page:
+    /// the senders, and the wallet's own identities. A node serving both can tell which
+    /// identities the wallet looked up, and so that someone it knows sent the wallet a request.
     #[wasm_bindgen(
         js_name = "scanPrivateContactRequests",
         unchecked_return_type = "PrivateContactRequestScanResult"

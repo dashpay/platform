@@ -48,7 +48,8 @@ export class PrivateDocumentsFacade {
   /**
    * Reads one page of DashPay's private contact request store for the wallet's identities: the
    * requests to them, each checked against its sender's signing keys, and the requests they
-   * sent. Keep `nextPosition` as the cursor once the page is stored, and scan
+   * sent. It fetches the identities those requests are checked against right after the page, so
+   * a node serving both can tell which identities the wallet looked up. Keep `nextPosition` as the cursor once the page is stored, and scan
    * again from it until `isComplete`.
    */
   async scanContactRequests(
