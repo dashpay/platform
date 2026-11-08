@@ -459,6 +459,38 @@ final class ErrorHandlingTests: XCTestCase {
         )
     }
 
+    func testShouldRouteAPrivatelyReceivedRequestByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_REQUEST_NEEDS_PRIVATE_REPLY
+        )
+        XCTAssertEqual(code, .errorPrivateContactRequestNeedsPrivateReply)
+        XCTAssertEqual(code.rawValue, 68)
+        let detail = "the contact request from 9fRYTJZW came privately; "
+            + "accept it with a private reply"
+        let error = PlatformWalletError(code: code, message: detail)
+        guard case .privateContactRequestNeedsPrivateReply(let message) = error else {
+            return XCTFail("lost typed private-reply error")
+        }
+        XCTAssertEqual(message, detail)
+        XCTAssertEqual(error.errorDescription, detail)
+    }
+
+    func testShouldReadEveryFieldOfAPrivateContact() {
+        var ffi = PrivateContactFFI()
+        ffi.received_privately = true
+        ffi.has_shielded_address = true
+        withUnsafeMutableBytes(of: &ffi.shielded_address) { raw in
+            for i in raw.indices { raw[i] = UInt8(i) }
+        }
+        let info = PrivateContactInfo(ffi: ffi)
+        XCTAssertTrue(info.receivedPrivately)
+        XCTAssertFalse(info.sentPrivately)
+        XCTAssertEqual(info.shieldedAddress, Data((0..<43).map { UInt8($0) }))
+
+        ffi.has_shielded_address = false
+        XCTAssertNil(PrivateContactInfo(ffi: ffi).shieldedAddress)
+    }
+
     func testShouldPreserveShieldedIdentityDebitPendingFFIResult() {
         let code = PlatformWalletResultCode(
             ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_IDENTITY_DEBIT_PENDING

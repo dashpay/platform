@@ -265,6 +265,9 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// An asset lock (a drain, or a fixed amount in many small coins) exceeds
     /// the input cap; nothing was broadcast.
     case errorAssetLockTooManyInputs = 60
+    /// The contact request came privately, so a public reply would publish
+    /// the relationship. Nothing was sent; accept it privately.
+    case errorPrivateContactRequestNeedsPrivateReply = 68
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -396,6 +399,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorSpvProcessRestartRequired
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_TOO_MANY_INPUTS:
             self = .errorAssetLockTooManyInputs
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_REQUEST_NEEDS_PRIVATE_REPLY:
+            self = .errorPrivateContactRequestNeedsPrivateReply
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -587,6 +592,10 @@ public enum PlatformWalletError: LocalizedError {
     /// tracked lock over the cap: it is not re-sent (an earlier attempt may
     /// have reached the network), it stays tracked, and nothing is released.
     case assetLockTooManyInputs(String)
+    /// The contact request came privately (protocol version 15): a public
+    /// reply would publish the relationship, so nothing was sent. Accept it
+    /// with `PlatformWalletManager.acceptPrivateContactRequest`.
+    case privateContactRequestNeedsPrivateReply(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition
     /// (identity-create or a spend — unshield / transfer / withdrawal) was
@@ -812,6 +821,7 @@ public enum PlatformWalletError: LocalizedError {
              .assetLockNotTracked(let m), .assetLockAlreadyConsumed(let m),
              .assetLockFundingMismatch(let m), .assetLockInsufficientFunds(let m),
              .assetLockTooManyInputs(let m),
+             .privateContactRequestNeedsPrivateReply(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
@@ -930,6 +940,8 @@ public enum PlatformWalletError: LocalizedError {
         case .errorAssetLockFundingMismatch: self = .assetLockFundingMismatch(detail)
         case .errorAssetLockInsufficientFunds: self = .assetLockInsufficientFunds(detail)
         case .errorAssetLockTooManyInputs: self = .assetLockTooManyInputs(detail)
+        case .errorPrivateContactRequestNeedsPrivateReply:
+            self = .privateContactRequestNeedsPrivateReply(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)
