@@ -665,8 +665,13 @@ pub enum PlatformWalletError {
 
     /// A private contact request to this identity is being paid for, or was
     /// paid for and is not yet read back from DashPay's store: no other one is
-    /// sent until the private sync reads it back or its payment definitely
-    /// fails, as the store keeps every entry appended.
+    /// sent, privately or publicly, until the private sync reads it back or
+    /// its payment definitely fails, as the store keeps every entry appended.
+    /// Also returned, with nothing sealed or paid, by the first private send
+    /// or accept from an identity since load while DashPay's store cannot yet
+    /// be read to its end for it: a request paid for in an earlier process
+    /// may be there unread. Syncing private contact requests and trying again
+    /// goes on from where that read stopped.
     #[error(
         "a private contact request to {0} is in flight or not yet read back from the store; sync \
          private contact requests to settle it"

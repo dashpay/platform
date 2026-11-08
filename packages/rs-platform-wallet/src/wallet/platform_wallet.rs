@@ -1770,6 +1770,12 @@ impl PlatformWallet {
     /// before a restart may still execute: then nothing is paid, and the
     /// recipient stays reserved for that request
     /// ([`PlatformWalletError::PrivateContactRequestPending`]).
+    ///
+    /// Holds the wallet generation's lifecycle gate from the liveness check
+    /// until the spend returns, so a removal waits for it. A wallet removed or
+    /// re-created since this handle was taken is refused with
+    /// [`PlatformWalletError::WalletRemovedBeforeSend`], with nothing
+    /// restored, recorded or paid. A caller must not hold the gate.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     async fn pay_private_contact_request<C, P>(
@@ -1787,6 +1793,17 @@ impl PlatformWallet {
         C: ContactCryptoProvider + Sync,
         P: OrchardProver,
     {
+        // The generation's lifecycle gate, held across the liveness check,
+        // the restore and the spend, before the wallet manager lock as the
+        // teardown takes them: a removal cannot complete in between, so a
+        // removed wallet's spend never records activity, recreating its
+        // shielded state, or reaches the network.
+        let _lifecycle = self.core().generation_payment_guard().await;
+        if !self.core().is_current_generation().await {
+            return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
+                self.wallet_id,
+            )));
+        }
         let unconfirmed = self
             .unconfirmed_private_contact_requests(coordinator)
             .await?;
@@ -2794,6 +2811,171 @@ mod private_contact_request_redrive_tests {
             private_contact_request_redrive_entries(&[] as &[PendingRedrive], dashpay_id),
             Vec::<BinaryData>::new()
         );
+    }
+}
+
+#[cfg(all(test, feature = "shielded"))]
+mod private_contact_request_payment_tests {
+    use super::*;
+    use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::wallet::identity::network::SeedCryptoProvider;
+    use crate::wallet::persister::NoPlatformPersistence;
+    use crate::wallet::shielded::FileBackedShieldedStore;
+    use crate::PlatformWalletManager;
+    use grovedb_commitment_tree::ProvingKey;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use std::time::Duration;
+
+    const SEED: [u8; 64] = [0x42; 64];
+
+    struct NoopEventHandler;
+    impl EventHandler for NoopEventHandler {}
+    impl PlatformEventHandler for NoopEventHandler {}
+
+    /// A prover the refused or unfunded payments here never reach.
+    struct UnreachableProver;
+    impl OrchardProver for UnreachableProver {
+        fn proving_key(&self) -> &ProvingKey {
+            panic!("nothing is proved")
+        }
+    }
+
+    fn coordinator_at(dir: &std::path::Path) -> Arc<NetworkShieldedCoordinator> {
+        let db_path = dir.join("tree.sqlite");
+        let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store");
+        Arc::new(NetworkShieldedCoordinator::new(
+            Arc::new(dash_sdk::Sdk::new_mock()),
+            dashcore::Network::Testnet,
+            db_path,
+            store,
+        ))
+    }
+
+    async fn manager_with_wallet() -> (
+        Arc<PlatformWalletManager<NoPlatformPersistence>>,
+        Arc<PlatformWallet>,
+    ) {
+        let manager = Arc::new(PlatformWalletManager::new(
+            Arc::new(dash_sdk::Sdk::new_mock()),
+            Arc::new(NoPlatformPersistence),
+            Arc::new(NoopEventHandler),
+        ));
+        let wallet = add_wallet(&manager).await;
+        (manager, wallet)
+    }
+
+    async fn add_wallet(
+        manager: &PlatformWalletManager<NoPlatformPersistence>,
+    ) -> Arc<PlatformWallet> {
+        manager
+            .create_wallet_from_seed_bytes(
+                dashcore::Network::Testnet,
+                &SEED,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("wallet")
+    }
+
+    /// Pay for a private contact request from `wallet`'s account 0.
+    async fn pay(
+        wallet: &PlatformWallet,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+    ) -> Result<ResponseMetadata, PlatformWalletError> {
+        let keyset =
+            OrchardKeySet::from_seed(&SEED, dashcore::Network::Testnet, 0).expect("keyset");
+        let crypto = SeedCryptoProvider::from_seed(SEED, dashcore::Network::Testnet);
+        wallet
+            .pay_private_contact_request(
+                coordinator,
+                keyset,
+                0,
+                &Identifier::from([0xA1; 32]),
+                &Identifier::from([0xB1; 32]),
+                &crypto,
+                BinaryData::new(vec![1; 589]),
+                UnreachableProver,
+            )
+            .await
+    }
+
+    /// A handle to a wallet removed, or re-created under the same id, since
+    /// it was taken pays nothing for a private contact request: it is
+    /// refused at the liveness check, before the spend.
+    #[tokio::test]
+    async fn should_refuse_a_private_payment_from_a_wallet_no_longer_current() {
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let coordinator = coordinator_at(dir.path());
+        let (manager, removed) = manager_with_wallet().await;
+        let wallet_id = removed.wallet_id();
+        manager.remove_wallet(&wallet_id).await.expect("removed");
+        let refused = pay(&removed, &coordinator).await;
+        assert!(
+            matches!(&refused, Err(PlatformWalletError::WalletRemovedBeforeSend(id))
+                if *id == hex::encode(wallet_id)),
+            "{refused:?}"
+        );
+
+        let recreated = add_wallet(&manager).await;
+        assert_eq!(recreated.wallet_id(), wallet_id);
+        let refused = pay(&removed, &coordinator).await;
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::WalletRemovedBeforeSend(_))
+            ),
+            "{refused:?}"
+        );
+        let current = pay(&recreated, &coordinator).await;
+        assert!(
+            !matches!(
+                current,
+                Err(PlatformWalletError::WalletRemovedBeforeSend(_))
+            ),
+            "the current wallet's payment goes on to the spend: {current:?}"
+        );
+    }
+
+    /// A removal waits for a private payment that entered its fenced section,
+    /// here held at the shielded store, and completes once it returns.
+    #[tokio::test]
+    async fn should_hold_a_wallets_removal_until_its_private_payment_returns() {
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let coordinator = coordinator_at(dir.path());
+        let (manager, wallet) = manager_with_wallet().await;
+        let wallet_id = wallet.wallet_id();
+
+        let store = coordinator.store().write().await;
+        let payment = {
+            let wallet = Arc::clone(&wallet);
+            let coordinator = Arc::clone(&coordinator);
+            tokio::spawn(async move { pay(&wallet, &coordinator).await })
+        };
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let removal = {
+            let manager = Arc::clone(&manager);
+            tokio::spawn(async move { manager.remove_wallet(&wallet_id).await.map(|_| ()) })
+        };
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(!payment.is_finished(), "the payment waits at the store");
+        assert!(
+            !removal.is_finished(),
+            "the removal waits for the payment in flight"
+        );
+        assert!(wallet.core().is_current_generation().await);
+
+        drop(store);
+        let paid = payment.await.expect("payment task");
+        assert!(
+            !matches!(paid, Err(PlatformWalletError::WalletRemovedBeforeSend(_))),
+            "the wallet was current when it was checked: {paid:?}"
+        );
+        removal
+            .await
+            .expect("removal task")
+            .expect("the removal completes");
+        assert!(!wallet.core().is_current_generation().await);
     }
 }
 
