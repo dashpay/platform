@@ -218,11 +218,11 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
         errorMessage = null
         scope.launch {
             try {
-                val ok = w.dashpay.acceptIncomingRequest(
+                val ok = acceptIncomingContactRequest(
+                    wallet = w,
+                    manager = m,
                     ourIdentityId = idBytes,
                     senderId = recipient,
-                    signerHandle = m.signerHandle,
-                    coreSignerHandle = m.mnemonicResolverHandle,
                 )
                 if (ok) {
                     kickDashPaySync(scope, m)

@@ -155,11 +155,11 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
         inFlightIds = inFlightIds + hex
         scope.launch {
             try {
-                val ok = w.dashpay.acceptIncomingRequest(
+                val ok = acceptIncomingContactRequest(
+                    wallet = w,
+                    manager = m,
                     ourIdentityId = idBytes,
                     senderId = contactId,
-                    signerHandle = m.signerHandle,
-                    coreSignerHandle = m.mnemonicResolverHandle,
                 )
                 if (ok) {
                     removedOverlayIds = removedOverlayIds + hex
@@ -209,7 +209,10 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
             onRefresh = {
                 scope.launch {
                     isRefreshing = true
-                    manager?.let { attachOrStartSync(it) }
+                    manager?.let { m ->
+                        attachOrStartSync(m)
+                        wallet?.let { syncPrivateContactRequests(it, m) }
+                    }
                     isRefreshing = false
                 }
             },
