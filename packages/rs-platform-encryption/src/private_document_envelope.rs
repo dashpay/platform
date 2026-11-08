@@ -60,7 +60,7 @@ use secp256k1::{Message, PublicKey, SecretKey};
 use sha2::{Digest, Sha256};
 
 /// Why an entry could not be built, opened, recovered or checked.
-#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum PrivateDocumentEnvelopeError {
     #[error("a private document payload of {payload_len} bytes does not fit an entry that holds {capacity}")]
     PayloadTooLarge { payload_len: usize, capacity: usize },
@@ -475,6 +475,23 @@ impl PrivateDocumentRecipientKeys {
             return Ok(Some(opened));
         }
         Ok(None)
+    }
+
+    /// [`OpenedPrivateDocumentEntry::verify_sender`] with the one of these keys that opened
+    /// `entry`, which a deniable MAC is checked with. An entry these keys did not open (one a
+    /// sender recovered, or that other keys opened) is refused with
+    /// `RecipientSecretKeyRequired`.
+    pub fn verify_sender(
+        &self,
+        entry: &OpenedPrivateDocumentEntry,
+        sender_public_key: &PublicKey,
+    ) -> Result<(), PrivateDocumentEnvelopeError> {
+        let (secret_key, _, _) = entry
+            .recipient_key_index
+            .and_then(|index| self.keys.get(index))
+            .filter(|(_, public_key, _)| *public_key == entry.recipient_public_key)
+            .ok_or(PrivateDocumentEnvelopeError::RecipientSecretKeyRequired)?;
+        entry.verify_sender(sender_public_key, Some(secret_key))
     }
 }
 
@@ -917,6 +934,42 @@ mod tests {
                 .open(&entries[0], &target(), &RECIPIENT_IDENTITY)
                 .expect("well formed"),
             None
+        );
+    }
+
+    /// Prepared keys check a deniable MAC with the key that opened the entry, without the caller
+    /// holding the secret key, and refuse an entry they did not open.
+    #[test]
+    fn should_check_the_sender_with_the_prepared_key_that_opened_the_entry() {
+        let sender_key = secret_key(1);
+        let entry = seal(&deniable_mac_sender(&sender_key), 9);
+        let prepared = PrivateDocumentRecipientKeys::new(&[secret_key(3), secret_key(2)]);
+        let opened = prepared
+            .open(&entry, &target(), &RECIPIENT_IDENTITY)
+            .expect("well formed")
+            .expect("for the second key");
+        prepared
+            .verify_sender(&opened, &public_key(1))
+            .expect("the sender's key wrote the MAC");
+        assert_eq!(
+            prepared.verify_sender(&opened, &public_key(5)),
+            Err(PrivateDocumentEnvelopeError::SenderNotAuthenticated)
+        );
+
+        // Other prepared keys do not check it, though they hold a key at the index it reports.
+        let others = PrivateDocumentRecipientKeys::new(&[secret_key(4), secret_key(5)]);
+        assert_eq!(
+            others.verify_sender(&opened, &public_key(1)),
+            Err(PrivateDocumentEnvelopeError::RecipientSecretKeyRequired)
+        );
+        // Nor do they for an entry the sender recovered.
+        let recovered =
+            recover_sent_private_document_entry(&entry, &target(), &outgoing_viewing_key())
+                .expect("well formed")
+                .expect("the sender built it");
+        assert_eq!(
+            prepared.verify_sender(&recovered, &public_key(1)),
+            Err(PrivateDocumentEnvelopeError::RecipientSecretKeyRequired)
         );
     }
 
