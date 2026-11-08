@@ -336,6 +336,23 @@ internal object DashpayNative {
      * result as for [acceptPrivateContactRequest].
      * ← Swift `PlatformWalletManager.acceptContactRequestReplyingInKind`.
      */
+    /**
+     * What a managed identity's private contact requests with [contactId]
+     * carry: a JSON object (`receivedPrivately`, `sentPrivately`,
+     * `shieldedAddress` lower hex or null), or null when neither tracked
+     * request between them came or went privately.
+     * ← Swift `ManagedIdentity.privateContact(contactId:)`.
+     */
+    external fun managedIdentityPrivateContact(identityHandle: Long, contactId: ByteArray): String?
+
+    /**
+     * Whether a private contact request from the managed identity to
+     * [contactId] is being paid for, or was paid for and is not yet read
+     * back from the store. A pure read; in memory only on the Rust side.
+     * ← Swift `ManagedIdentity.privateReplyPending(contactId:)`.
+     */
+    external fun managedIdentityPrivateReplyPending(identityHandle: Long, contactId: ByteArray): Boolean
+
     @Suppress("LongParameterList")
     external fun acceptContactRequestReplyingInKind(
         managerHandle: Long,

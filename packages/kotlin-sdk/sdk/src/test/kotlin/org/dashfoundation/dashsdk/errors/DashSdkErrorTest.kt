@@ -297,6 +297,17 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun shouldReportAPendingPrivateRequestByItsOwnCode() {
+        val detail = "a private contact request to 9fRYTJZW is in flight or not yet read " +
+            "back from the store; sync private contact requests to settle it"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 71, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.PrivateContactRequestPending)
+        assertEquals(detail, mapped.message)
+        assertFalse("pending, not a failure to retry", mapped.isRetryable)
+    }
+
+    @Test
     fun platformShieldCapacityCode41MapsTyped() {
         val message =
             "Platform shield capacity exceeded: available 3623849220, required 3623849221"

@@ -287,6 +287,45 @@ class Dashpay internal constructor(private val walletHandle: Long,
     // and [contacts] read it. The send and the private-reply accept are
     // shielded spends and live on `PlatformWalletManager`.
 
+    /**
+     * How an identity and one contact exchanged private contact requests.
+     * ← Swift `PrivateContactInfo`.
+     */
+    data class PrivateContactInfo(
+        /** The contact's request came privately, so accepting it replies privately. */
+        val receivedPrivately: Boolean,
+        /** This identity's request to the contact went privately. */
+        val sentPrivately: Boolean,
+        /** The 43-byte Orchard address the contact asked to be paid at privately. */
+        val shieldedAddress: ByteArray?,
+    ) {
+        override fun equals(other: Any?): Boolean =
+            other is PrivateContactInfo && receivedPrivately == other.receivedPrivately &&
+                sentPrivately == other.sentPrivately &&
+                (shieldedAddress?.contentEquals(other.shieldedAddress) ?: (other.shieldedAddress == null))
+
+        override fun hashCode(): Int =
+            (31 * receivedPrivately.hashCode() + sentPrivately.hashCode()) * 31 +
+                (shieldedAddress?.contentHashCode() ?: 0)
+
+        internal companion object {
+            /** Decode the JSON object `DashpayNative.managedIdentityPrivateContact` returns. */
+            fun fromJson(json: String): PrivateContactInfo {
+                val obj = org.json.JSONObject(json)
+                val address = if (obj.isNull("shieldedAddress")) {
+                    null
+                } else {
+                    obj.getString("shieldedAddress").chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+                }
+                return PrivateContactInfo(
+                    receivedPrivately = obj.getBoolean("receivedPrivately"),
+                    sentPrivately = obj.getBoolean("sentPrivately"),
+                    shieldedAddress = address,
+                )
+            }
+        }
+    }
+
     /** What one pass over DashPay's private contact request store did. */
     data class PrivateContactSyncResult(
         /** The requests the pass ingested, received and sent, including ones already held. */
@@ -333,6 +372,52 @@ class Dashpay internal constructor(private val walletHandle: Long,
             complete = counters[5] != 0L,
             unpersistedIdentityCount = counters[3],
         )
+    }
+
+    /**
+     * How [ourIdentityId] and [contactId] exchanged private contact
+     * requests: whether the contact's request came privately, whether ours
+     * went privately, and the shielded address the contact asked to be paid
+     * at (only when its request came privately, and only once a private
+     * sync this launch has read it). Null when neither tracked request
+     * between them came or went privately, or the identity isn't managed by
+     * this wallet. Read from a fresh managed-identity snapshot; local read.
+     * ← Swift `ManagedIdentity.privateContact(contactId:)`
+     * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift).
+     */
+    suspend fun privateContact(
+        ourIdentityId: ByteArray,
+        contactId: ByteArray,
+    ): PrivateContactInfo? = withContext(Dispatchers.IO) {
+        mapNativeErrors {
+            withManagedIdentity(ourIdentityId) { handle ->
+                DashpayNative.managedIdentityPrivateContact(handle, contactId)
+            }?.let(PrivateContactInfo::fromJson)
+        }
+    }
+
+    /**
+     * The contacts among [contactIds] that [ourIdentityId] has a private
+     * contact request to in flight, or paid for and not yet read back from
+     * the store, as the wallet records it, read from one fresh
+     * managed-identity snapshot. While one is, Rust refuses another private
+     * send or reply to it ([DashSdkError.PlatformWallet.PrivateContactRequestPending]),
+     * so a host shows it as pending and offers neither; a private sync
+     * settles it. Empty when the identity isn't managed. Rust keeps it in
+     * memory only, so it is empty after a relaunch.
+     * ← Swift `ManagedIdentity.privateReplyPending(contactId:)`
+     * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift).
+     */
+    suspend fun privateRepliesPending(
+        ourIdentityId: ByteArray,
+        contactIds: List<ByteArray>,
+    ): List<ByteArray> = withContext(Dispatchers.IO) {
+        if (contactIds.isEmpty()) return@withContext emptyList()
+        mapNativeErrors {
+            withManagedIdentity(ourIdentityId) { handle ->
+                contactIds.filter { DashpayNative.managedIdentityPrivateReplyPending(handle, it) }
+            } ?: emptyList()
+        }
     }
 
     /**

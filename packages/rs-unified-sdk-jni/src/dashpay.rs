@@ -23,15 +23,17 @@ use crate::identity::ManagedIdentityHandleGuard;
 use crate::pubkey_rows::decode_registration_pubkeys_blob;
 use crate::support::{guard, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JString, JValue};
-use jni::sys::{jboolean, jint, jlong, jlongArray, jobject, jstring};
+use jni::sys::{jboolean, jint, jlong, jlongArray, jobject, jstring, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
 use platform_wallet_ffi::core_wallet_types::OutPointFFI;
 use platform_wallet_ffi::dashpay_profile::DashPayProfileFFI;
-use platform_wallet_ffi::error::platform_wallet_ffi_result_free;
+use platform_wallet_ffi::error::{platform_wallet_ffi_result_free, PlatformWalletFFIResultCode};
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
 use platform_wallet_ffi::invitation::InvitationPreviewFFI;
-use platform_wallet_ffi::{ContactRequestHandleArray, PrivateContactSyncReportFFI};
+use platform_wallet_ffi::{
+    ContactRequestHandleArray, PrivateContactFFI, PrivateContactSyncReportFFI,
+};
 use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle};
 use std::ffi::CStr;
 use std::os::raw::c_char;
@@ -1313,6 +1315,102 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_syncPri
     })
 }
 
+/// A private contact read as the compact JSON object `managedIdentityPrivateContact`
+/// returns: `receivedPrivately`, `sentPrivately`, and `shieldedAddress` (the
+/// 43-byte Orchard address as lower hex, or `null`).
+fn private_contact_json(contact: &PrivateContactFFI) -> String {
+    let address = if contact.has_shielded_address {
+        let hex: String = contact
+            .shielded_address
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        json_string(&hex)
+    } else {
+        "null".to_string()
+    };
+    format!(
+        "{{\"receivedPrivately\":{},\"sentPrivately\":{},\"shieldedAddress\":{}}}",
+        contact.received_privately, contact.sent_privately, address
+    )
+}
+
+/// What this identity's private contact requests with `contactId` carry off a
+/// managed-identity handle (bridges `managed_identity_get_private_contact`):
+/// the JSON object of [`private_contact_json`], or null when neither tracked
+/// request between them came or went privately (the FFI's NotFound, benign
+/// here as for `TokensNative.getIncomingContactRequest`).
+/// ← Swift `ManagedIdentity.privateContact(contactId:)`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_managedIdentityPrivateContact(
+    mut env: JNIEnv,
+    _class: JClass,
+    identity_handle: jlong,
+    contact_id: JByteArray,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(id) = read_id32(env, &contact_id, "contactId") else {
+            return ptr::null_mut();
+        };
+        let mut contact = PrivateContactFFI {
+            received_privately: false,
+            sent_privately: false,
+            has_shielded_address: false,
+            shielded_address: [0; 43],
+        };
+        let mut result = unsafe {
+            platform_wallet_ffi::managed_identity_get_private_contact(
+                identity_handle as Handle,
+                id.as_ptr(),
+                &mut contact,
+            )
+        };
+        if result.code == PlatformWalletFFIResultCode::NotFound {
+            unsafe { platform_wallet_ffi_result_free(&mut result) };
+            return ptr::null_mut();
+        }
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        new_jstring(env, private_contact_json(&contact))
+    })
+}
+
+/// Whether a private contact request from this identity to `contactId` is
+/// being paid for, or was paid for and is not yet read back from the store,
+/// off a managed-identity handle (bridges
+/// `managed_identity_get_private_reply_pending`). A pure read; the wallet
+/// keeps it in memory only. ← Swift `ManagedIdentity.privateReplyPending(contactId:)`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_managedIdentityPrivateReplyPending(
+    mut env: JNIEnv,
+    _class: JClass,
+    identity_handle: jlong,
+    contact_id: JByteArray,
+) -> jboolean {
+    guard(&mut env, JNI_FALSE, |env| {
+        let Some(id) = read_id32(env, &contact_id, "contactId") else {
+            return JNI_FALSE;
+        };
+        let mut pending = false;
+        let result = unsafe {
+            platform_wallet_ffi::managed_identity_get_private_reply_pending(
+                identity_handle as Handle,
+                id.as_ptr(),
+                &mut pending,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return JNI_FALSE;
+        }
+        if pending {
+            JNI_TRUE
+        } else {
+            JNI_FALSE
+        }
+    })
+}
+
 /// Copy an optional Java `byte[]`; JVM null is `None`. Throws and returns
 /// `Err` on a JNI error. `field` names the argument in the message.
 fn read_opt_bytes(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Result<Option<Vec<u8>>, ()> {
@@ -1542,7 +1640,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_acceptC
 #[cfg(test)]
 mod tests {
     use super::*;
-    use platform_wallet_ffi::error::PlatformWalletFFIResultCode;
 
     // The natives above need a JVM; the counter layout Kotlin decodes and the
     // handle release are pure and are pinned here.
@@ -1613,6 +1710,29 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(private_contact_sync_longs(0, &report)[4], i64::MAX);
+    }
+
+    #[test]
+    fn should_render_a_private_contact_as_the_json_kotlin_reads() {
+        let mut contact = PrivateContactFFI {
+            received_privately: true,
+            sent_privately: false,
+            has_shielded_address: true,
+            shielded_address: [0xab; 43],
+        };
+        assert_eq!(
+            private_contact_json(&contact),
+            format!(
+                "{{\"receivedPrivately\":true,\"sentPrivately\":false,\"shieldedAddress\":\"{}\"}}",
+                "ab".repeat(43)
+            )
+        );
+        contact.has_shielded_address = false;
+        contact.sent_privately = true;
+        assert_eq!(
+            private_contact_json(&contact),
+            "{\"receivedPrivately\":true,\"sentPrivately\":true,\"shieldedAddress\":null}"
+        );
     }
 
     #[test]

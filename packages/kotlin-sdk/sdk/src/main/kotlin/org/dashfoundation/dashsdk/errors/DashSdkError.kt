@@ -689,6 +689,18 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorPrivateContactRequestPending` (native code 71). A private
+         * contact request to that identity is in flight (another private send
+         * or reply reserved it), or was paid for and is not yet read back from
+         * the store. Nothing new was paid; a later
+         * `Dashpay.syncPrivateContactRequests` settles it. Pending, not
+         * failed: do not submit it again.
+         * ← Swift `PlatformWalletError.privateContactRequestPending`.
+         */
+        class PrivateContactRequestPending(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -889,6 +901,7 @@ sealed class DashSdkError(
             68 -> PlatformWallet.PrivateContactRequestNeedsPrivateReply(message, cause)
             69 -> PlatformWallet.ShieldedBuildRequired(message, cause) // ErrorShieldedBuildRequired
             70 -> PlatformWallet.ProtocolVersionNotActive(message, cause) // ErrorProtocolVersionNotActive
+            71 -> PlatformWallet.PrivateContactRequestPending(message, cause) // ErrorPrivateContactRequestPending
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.
