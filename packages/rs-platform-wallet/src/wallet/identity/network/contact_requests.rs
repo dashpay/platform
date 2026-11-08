@@ -572,7 +572,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// be on chain. The refusal reads what the wallet tracks, so on a restored
     /// or second device it holds once the private sync
     /// (`sync_private_contact_requests`) has read the store. A pending request
-    /// is tracked in memory only: after a restart, only that read covers it.
+    /// is tracked in memory only: after a restart it holds once the host
+    /// restores it (`PlatformWallet::restore_pending_private_contact_requests`)
+    /// or that read reads it back.
     #[allow(clippy::type_complexity)]
     pub async fn send_contact_request_with_external_signer<S, C>(
         &self,
@@ -1212,7 +1214,7 @@ fn record_and_collapse_sent_requests(
 /// pair: by its account reference's version, which a rotation bumps, then by
 /// its creation time. A replay of an older request appended again later has a
 /// newer time but an older version.
-fn predates(candidate: &ContactRequest, tracked: &ContactRequest) -> bool {
+pub(super) fn predates(candidate: &ContactRequest, tracked: &ContactRequest) -> bool {
     freshness(candidate) < freshness(tracked)
 }
 

@@ -5,6 +5,7 @@
 //! - Receiving contact requests (incoming)
 //! - Automatically establishing contacts when both parties send requests
 
+use super::dashpay::PendingPrivateReply;
 use super::ManagedIdentity;
 use crate::changeset::{
     ContactChangeSet, ContactRequestEntry, ReceivedContactRequestKey, SentContactRequestKey,
@@ -841,42 +842,105 @@ impl ManagedIdentity {
         }
     }
 
-    /// Reserve the one private request to `recipient` that may be in flight;
-    /// `false` when one already is. See
+    /// Reserve the one private request to `recipient` that may be in flight,
+    /// returning the attempt that holds it; `None` when one already is. See
     /// [`DashPayState::private_reply_pending`](super::DashPayState::private_reply_pending).
-    pub(crate) fn reserve_private_reply(&mut self, recipient: Identifier) -> bool {
-        match self.dashpay.pending_private_replies.entry(recipient) {
-            std::collections::btree_map::Entry::Occupied(_) => false,
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(None);
-                true
-            }
+    pub(crate) fn reserve_private_reply(&mut self, recipient: Identifier) -> Option<u64> {
+        if self
+            .dashpay
+            .pending_private_replies
+            .contains_key(&recipient)
+        {
+            return None;
         }
+        Some(self.insert_private_reply(recipient, None))
     }
 
-    /// Note the commitment of the entry the pending request to `recipient`
-    /// was sealed as, which the private sync settles it by.
+    /// Reserve `recipient` under a new attempt, `commitment` its entry's.
+    fn insert_private_reply(&mut self, recipient: Identifier, commitment: Option<[u8; 32]>) -> u64 {
+        let attempt = self.dashpay.next_private_reply_attempt;
+        self.dashpay.next_private_reply_attempt = attempt.wrapping_add(1);
+        self.dashpay.pending_private_replies.insert(
+            recipient,
+            PendingPrivateReply {
+                attempt,
+                commitment,
+            },
+        );
+        attempt
+    }
+
+    /// Note the commitment of the entry `attempt` sealed its request to
+    /// `recipient` as, which the private sync settles it by. Nothing when the
+    /// recipient is not reserved by that attempt.
     pub(crate) fn note_private_reply_commitment(
         &mut self,
         recipient: Identifier,
+        attempt: u64,
         commitment: [u8; 32],
     ) {
-        if let Some(pending) = self.dashpay.pending_private_replies.get_mut(&recipient) {
-            *pending = Some(commitment);
+        if let Some(pending) = self
+            .dashpay
+            .pending_private_replies
+            .get_mut(&recipient)
+            .filter(|pending| pending.attempt == attempt)
+        {
+            pending.commitment = Some(commitment);
         }
     }
 
-    /// Drop the pending request to `recipient`: it was never paid for, or its
-    /// payment definitely failed, or it was read back from the store.
-    pub(crate) fn release_private_reply(&mut self, recipient: &Identifier) {
-        self.dashpay.pending_private_replies.remove(recipient);
+    /// Drop the reservation `attempt` holds on `recipient`: its request was
+    /// never paid for, or its payment definitely failed. Nothing when another
+    /// attempt holds the recipient by now.
+    pub(crate) fn release_private_reply(&mut self, recipient: &Identifier, attempt: u64) {
+        if self
+            .dashpay
+            .pending_private_replies
+            .get(recipient)
+            .is_some_and(|pending| pending.attempt == attempt)
+        {
+            self.dashpay.pending_private_replies.remove(recipient);
+        }
     }
 
     /// Settle the pending request to `recipient` sealed as `commitment`: the
     /// private sync read that entry back and recorded it.
     pub(crate) fn settle_private_reply(&mut self, recipient: &Identifier, commitment: &[u8; 32]) {
-        if self.dashpay.pending_private_replies.get(recipient) == Some(&Some(*commitment)) {
+        if self
+            .dashpay
+            .pending_private_replies
+            .get(recipient)
+            .is_some_and(|pending| pending.commitment == Some(*commitment))
+        {
             self.dashpay.pending_private_replies.remove(recipient);
+        }
+    }
+
+    /// Reserve `recipient` again for the entry sealed as `commitment`, whose
+    /// payment is unconfirmed since before a restart. A recipient already
+    /// reserved keeps its attempt, and gets the commitment only when it has
+    /// none yet.
+    pub(crate) fn restore_private_reply(&mut self, recipient: Identifier, commitment: [u8; 32]) {
+        match self.dashpay.pending_private_replies.get_mut(&recipient) {
+            Some(pending) => {
+                pending.commitment.get_or_insert(commitment);
+            }
+            None => {
+                self.insert_private_reply(recipient, Some(commitment));
+            }
+        }
+    }
+
+    /// Hold `recipient` for the entry sealed as `commitment`, whose payment is
+    /// unconfirmed since before a restart, instead of the one the attempt
+    /// reserving it sealed: that one is not paid for, so only this entry can
+    /// settle the reservation.
+    pub(crate) fn retarget_private_reply(&mut self, recipient: Identifier, commitment: [u8; 32]) {
+        match self.dashpay.pending_private_replies.get_mut(&recipient) {
+            Some(pending) => pending.commitment = Some(commitment),
+            None => {
+                self.insert_private_reply(recipient, Some(commitment));
+            }
         }
     }
 
@@ -2228,5 +2292,75 @@ mod tests {
             Some(100),
             "replay un-ignore must not rewind the live cursor"
         );
+    }
+
+    /// A reservation belongs to the attempt that made it: once attempt A's
+    /// request is read back and settled and B reserves the recipient, A's
+    /// late cleanup neither releases B's reservation nor notes a commitment
+    /// on it.
+    #[test]
+    fn should_keep_a_later_attempts_reservation_from_an_earlier_attempts_cleanup() {
+        let mut managed = create_test_identity([1u8; 32]);
+        let bob = Identifier::from([2u8; 32]);
+
+        let a = managed.reserve_private_reply(bob).expect("A reserves");
+        assert_eq!(managed.reserve_private_reply(bob), None, "one at a time");
+        managed.note_private_reply_commitment(bob, a, [0xA; 32]);
+        managed.settle_private_reply(&bob, &[0xA; 32]);
+        assert!(!managed.dashpay().private_reply_pending(&bob));
+
+        let b = managed.reserve_private_reply(bob).expect("B reserves");
+        assert_ne!(a, b);
+        managed.release_private_reply(&bob, a);
+        managed.note_private_reply_commitment(bob, a, [0xA; 32]);
+        assert!(
+            managed.dashpay().private_reply_pending(&bob),
+            "A's cleanup leaves B's reservation"
+        );
+        managed.settle_private_reply(&bob, &[0xA; 32]);
+        assert!(
+            managed.dashpay().private_reply_pending(&bob),
+            "A's entry does not settle B's request"
+        );
+
+        managed.note_private_reply_commitment(bob, b, [0xB; 32]);
+        managed.settle_private_reply(&bob, &[0xB; 32]);
+        assert!(!managed.dashpay().private_reply_pending(&bob));
+    }
+
+    /// A reservation restored from an unconfirmed payment takes the entry's
+    /// commitment; one already held keeps its attempt and gets a commitment
+    /// only when it has none, unless it is retargeted to the restored entry.
+    #[test]
+    fn should_restore_a_reservation_without_taking_over_a_held_one() {
+        let mut managed = create_test_identity([1u8; 32]);
+        let bob = Identifier::from([2u8; 32]);
+        let carol = Identifier::from([3u8; 32]);
+
+        managed.restore_private_reply(bob, [0xB; 32]);
+        assert!(managed.dashpay().private_reply_pending(&bob));
+        assert_eq!(managed.reserve_private_reply(bob), None);
+        managed.settle_private_reply(&bob, &[0xB; 32]);
+        assert!(!managed.dashpay().private_reply_pending(&bob));
+
+        let held = managed.reserve_private_reply(carol).expect("Carol is free");
+        managed.restore_private_reply(carol, [0xC; 32]);
+        managed.restore_private_reply(carol, [0xD; 32]);
+        managed.release_private_reply(&carol, held + 1);
+        assert!(
+            managed.dashpay().private_reply_pending(&carol),
+            "the attempt holding it is kept"
+        );
+        managed.settle_private_reply(&carol, &[0xD; 32]);
+        assert!(
+            managed.dashpay().private_reply_pending(&carol),
+            "only a missing commitment is filled in"
+        );
+
+        managed.retarget_private_reply(carol, [0xD; 32]);
+        managed.settle_private_reply(&carol, &[0xC; 32]);
+        assert!(managed.dashpay().private_reply_pending(&carol));
+        managed.settle_private_reply(&carol, &[0xD; 32]);
+        assert!(!managed.dashpay().private_reply_pending(&carol));
     }
 }

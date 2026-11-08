@@ -46,13 +46,17 @@ use dpp::prelude::Identifier;
 use {
     super::identity::network::dashpay_contract,
     super::shielded::operations::private_document_create_from_pool_with_metadata,
-    super::shielded::{NetworkShieldedCoordinator, OrchardKeySet},
+    super::shielded::store::PendingRedrive,
+    super::shielded::{NetworkShieldedCoordinator, OrchardKeySet, ShieldedStore},
     crate::{AutoAcceptProofSource, ContactCryptoProvider, ContactRequest, EstablishedContact},
     dash_sdk::dapi_grpc::platform::v0::ResponseMetadata,
     dash_sdk::platform::dashpay::PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
     dpp::data_contract::accessors::v0::DataContractV0Getters,
     dpp::platform_value::BinaryData,
+    dpp::serialization::PlatformDeserializableTrusted,
     dpp::shielded::builder::OrchardProver,
+    dpp::state_transition::private_document_create_from_shielded_pool_transition::accessors::PrivateDocumentCreateFromShieldedPoolTransitionAccessorsV0,
+    dpp::state_transition::StateTransition,
 };
 
 /// Unique identifier for a wallet (32-byte hash).
@@ -1596,7 +1600,16 @@ impl PlatformWallet {
                 signer,
                 crypto,
                 |entry| {
-                    self.pay_private_contact_request(coordinator, keyset, account, entry, prover)
+                    self.pay_private_contact_request(
+                        coordinator,
+                        keyset,
+                        account,
+                        sender_identity_id,
+                        recipient_identity_id,
+                        crypto,
+                        entry,
+                        prover,
+                    )
                 },
             )
             .await
@@ -1630,7 +1643,16 @@ impl PlatformWallet {
         self.identity
             .dashpay()
             .accept_private_contact_request(request, shielded_address, signer, crypto, |entry| {
-                self.pay_private_contact_request(coordinator, keyset, account, entry, prover)
+                self.pay_private_contact_request(
+                    coordinator,
+                    keyset,
+                    account,
+                    &request.recipient_id,
+                    &request.sender_id,
+                    crypto,
+                    entry,
+                    prover,
+                )
             })
             .await
     }
@@ -1677,25 +1699,112 @@ impl PlatformWallet {
                     } = payment().await?;
                     let keyset = self.derive_spend_keyset(seed.as_ref(), account).await?;
                     drop(seed);
-                    self.pay_private_contact_request(&coordinator, keyset, account, entry, prover)
-                        .await
+                    self.pay_private_contact_request(
+                        &coordinator,
+                        keyset,
+                        account,
+                        &request.recipient_id,
+                        &request.sender_id,
+                        crypto,
+                        entry,
+                        prover,
+                    )
+                    .await
                 },
             )
             .await
     }
 
-    /// Append the sealed private contact request `entry` to DashPay's store,
+    /// Restore, at startup, the pending DashPay private contact requests
+    /// whose payment is unconfirmed since before a restart, from the signed
+    /// transitions `coordinator`'s store keeps for this wallet's unconfirmed
+    /// spends: until a private sync reads each back, no other request to its
+    /// recipient is sent, privately or publicly. `crypto` opens the entries.
+    /// Returns the (sender, recipient) pairs restored. A private send runs
+    /// the same check right before it pays, so without this call a second
+    /// private request is still held; this call holds public ones too. See
+    /// [`DashPayView::restore_pending_private_contact_requests`](crate::DashPayView::restore_pending_private_contact_requests)
+    /// for what it does not cover.
+    #[cfg(feature = "shielded")]
+    pub async fn restore_pending_private_contact_requests<C>(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+        crypto: &C,
+    ) -> Result<Vec<(Identifier, Identifier)>, PlatformWalletError>
+    where
+        C: ContactCryptoProvider + Sync,
+    {
+        let entries = self
+            .unconfirmed_private_contact_requests(coordinator)
+            .await?;
+        self.identity
+            .dashpay()
+            .restore_pending_private_contact_requests(&entries, crypto)
+            .await
+    }
+
+    /// The entries of the private contact requests whose payment from this
+    /// wallet's notes `coordinator`'s store holds as unconfirmed.
+    #[cfg(feature = "shielded")]
+    async fn unconfirmed_private_contact_requests(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+    ) -> Result<Vec<BinaryData>, PlatformWalletError> {
+        let dashpay_id = dashpay_contract()?.id();
+        let store = coordinator.store().read().await;
+        let redrives = store
+            .pending_redrives_for_wallet(self.wallet_id)
+            .map_err(PlatformWalletError::from)?;
+        Ok(private_contact_request_redrive_entries(
+            redrives.iter().map(|(_, redrive)| redrive),
+            dashpay_id,
+        ))
+    }
+
+    /// Append the sealed private contact request `entry`, from
+    /// `sender_identity_id` to `recipient_identity_id`, to DashPay's store,
     /// paying from `account`'s notes, and return the metadata of the proof
     /// that it was appended.
+    ///
+    /// A request between the same pair whose payment is unconfirmed since
+    /// before a restart may still execute: then nothing is paid, and the
+    /// recipient stays reserved for that request
+    /// ([`PlatformWalletError::PrivateContactRequestPending`]).
     #[cfg(feature = "shielded")]
-    async fn pay_private_contact_request<P: OrchardProver>(
+    #[allow(clippy::too_many_arguments)]
+    async fn pay_private_contact_request<C, P>(
         &self,
         coordinator: &Arc<NetworkShieldedCoordinator>,
         keyset: OrchardKeySet,
         account: u32,
+        sender_identity_id: &Identifier,
+        recipient_identity_id: &Identifier,
+        crypto: &C,
         entry: BinaryData,
         prover: P,
-    ) -> Result<ResponseMetadata, PlatformWalletError> {
+    ) -> Result<ResponseMetadata, PlatformWalletError>
+    where
+        C: ContactCryptoProvider + Sync,
+        P: OrchardProver,
+    {
+        let unconfirmed = self
+            .unconfirmed_private_contact_requests(coordinator)
+            .await?;
+        if self
+            .identity
+            .dashpay()
+            .hold_for_restored_private_contact_request(
+                &unconfirmed,
+                crypto,
+                sender_identity_id,
+                recipient_identity_id,
+            )
+            .await?
+        {
+            return Err(PlatformWalletError::PrivateContactRequestPending(
+                *recipient_identity_id,
+            ));
+        }
         let dashpay_id = dashpay_contract()?.id();
         private_document_create_from_pool_with_metadata(
             &self.sdk,
@@ -2533,6 +2642,33 @@ impl DerefMut for WalletStateWriteGuard<'_> {
     }
 }
 
+/// The entries of every private document create (type 29) among `redrives`
+/// that appends to DashPay's `privateContactRequest` store, `dashpay_id`
+/// being DashPay's contract id. A record whose transition does not decode
+/// is skipped.
+#[cfg(feature = "shielded")]
+fn private_contact_request_redrive_entries<'a>(
+    redrives: impl IntoIterator<Item = &'a PendingRedrive>,
+    dashpay_id: Identifier,
+) -> Vec<BinaryData> {
+    redrives
+        .into_iter()
+        .filter_map(|redrive| {
+            match StateTransition::deserialize_from_bytes_trusted(&redrive.st_bytes) {
+                Ok(StateTransition::PrivateDocumentCreateFromShieldedPool(transition))
+                    if transition.data_contract_id() == dashpay_id
+                        && transition.document_type_name()
+                            == PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME =>
+                {
+                    Some(transition.entries().to_vec())
+                }
+                _ => None,
+            }
+        })
+        .flatten()
+        .collect()
+}
+
 /// Verify a bech32m recipient's network class matches `network` before decoding.
 ///
 /// The address decoder is network-agnostic (`tdash` is shared by
@@ -2562,6 +2698,103 @@ fn check_recipient_hrp(
         )));
     }
     Ok(())
+}
+
+#[cfg(all(test, feature = "shielded"))]
+mod private_contact_request_redrive_tests {
+    use super::*;
+    use dpp::serialization::PlatformSerializable;
+    use dpp::shielded::SerializedAction;
+    use dpp::state_transition::private_document_create_from_shielded_pool_transition::methods::PrivateDocumentCreateFromShieldedPoolTransitionMethodsV0;
+    use dpp::state_transition::private_document_create_from_shielded_pool_transition::PrivateDocumentCreateFromShieldedPoolTransition;
+    use dpp::version::PlatformVersion;
+
+    /// A type 29 transition appending `entries` to the store of
+    /// `document_type_name` of `data_contract_id`, with placeholder actions.
+    fn private_document_create(
+        data_contract_id: Identifier,
+        document_type_name: &str,
+        entries: Vec<BinaryData>,
+    ) -> StateTransition {
+        let action = SerializedAction {
+            nullifier: [1; 32],
+            rk: [2; 32],
+            cmx: [3; 32],
+            encrypted_note: vec![4; 216],
+            cv_net: [5; 32],
+            spend_auth_sig: [6; 64],
+        };
+        PrivateDocumentCreateFromShieldedPoolTransition::try_from_bundle(
+            data_contract_id,
+            document_type_name.to_string(),
+            entries,
+            vec![action.clone(), action],
+            0,
+            [7; 32],
+            vec![8; 64],
+            [9; 64],
+            PlatformVersion::latest(),
+        )
+        .expect("a type 29 transition")
+    }
+
+    /// The unconfirmed spend that broadcast `st_bytes`.
+    fn redrive(st_bytes: Vec<u8>) -> PendingRedrive {
+        PendingRedrive {
+            activity_id: [1; 32],
+            anchor: [7; 32],
+            nullifiers: vec![[1; 32]],
+            st_bytes,
+            attempts: 0,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
+        }
+    }
+
+    /// Only the entries of type 29 transitions to DashPay's private contact
+    /// request store are read: not another contract's, not another document
+    /// type's, and not a record that does not decode.
+    #[test]
+    fn should_read_dashpays_private_contact_requests_from_unconfirmed_spends() {
+        let dashpay_id = dashpay_contract().expect("bundled DashPay").id();
+        let entry = |byte: u8| BinaryData::new(vec![byte; 589]);
+        let serialized = |transition: StateTransition| {
+            transition
+                .serialize_to_bytes()
+                .expect("the transition serializes")
+        };
+        let redrives = [
+            redrive(serialized(private_document_create(
+                dashpay_id,
+                PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+                vec![entry(1), entry(2)],
+            ))),
+            redrive(serialized(private_document_create(
+                Identifier::new([4; 32]),
+                PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+                vec![entry(3)],
+            ))),
+            redrive(serialized(private_document_create(
+                dashpay_id,
+                "privateNote",
+                vec![entry(4)],
+            ))),
+            redrive(vec![0xFF; 16]),
+            redrive(serialized(private_document_create(
+                dashpay_id,
+                PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+                vec![entry(5)],
+            ))),
+        ];
+        assert_eq!(
+            private_contact_request_redrive_entries(&redrives, dashpay_id),
+            vec![entry(1), entry(2), entry(5)]
+        );
+        assert_eq!(
+            private_contact_request_redrive_entries(&[] as &[PendingRedrive], dashpay_id),
+            Vec::<BinaryData>::new()
+        );
+    }
 }
 
 #[cfg(all(test, feature = "shielded"))]
