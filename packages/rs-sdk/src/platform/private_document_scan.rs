@@ -20,8 +20,9 @@ use crate::{Error, Sdk};
 use dpp::identity::KeyID;
 use dpp::secp256k1::{PublicKey, SecretKey};
 use platform_encryption::{
-    recover_sent_private_document_entry, OpenedPrivateDocumentEntry, PrivateDocumentEnvelopeError,
-    PrivateDocumentRecipientKeys, PrivateDocumentTarget,
+    private_document_outgoing_viewing_key, recover_sent_private_document_entry,
+    OpenedPrivateDocumentEntry, PrivateDocumentEnvelopeError, PrivateDocumentRecipientKeys,
+    PrivateDocumentTarget,
 };
 use zeroize::Zeroize;
 
@@ -165,6 +166,53 @@ impl PrivateDocumentScanKeys {
             outgoing_viewing_key,
         });
         self
+    }
+
+    /// The scan keys a wallet's key paths derive to, with `derive` deriving the secret key at a
+    /// path: each of `recipients` with the keys entries to it may be sealed to, and each of
+    /// `senders` with the key its outgoing viewing key is derived from
+    /// (`platform_encryption::private_document_outgoing_viewing_key`). The secret keys derived
+    /// are wiped once used, on an error too. For a signer that keeps the keys: it builds the scan
+    /// keys and scans inside itself.
+    #[allow(clippy::type_complexity)]
+    pub fn derive<P, E>(
+        recipients: &[(Identifier, Vec<(KeyID, P)>)],
+        senders: &[(Identifier, KeyID, P)],
+        mut derive: impl FnMut(&P) -> Result<SecretKey, E>,
+    ) -> Result<Self, E> {
+        let mut keys = Self::new();
+        for (identity_id, paths) in recipients {
+            let mut secret_keys = Vec::with_capacity(paths.len());
+            let mut derived = Ok(());
+            for (key_id, path) in paths {
+                match derive(path) {
+                    Ok(secret_key) => secret_keys.push((*key_id, secret_key)),
+                    Err(error) => {
+                        derived = Err(error);
+                        break;
+                    }
+                }
+            }
+            if derived.is_ok() {
+                keys = keys.with_recipient(*identity_id, &secret_keys);
+            }
+            for (_, secret_key) in &mut secret_keys {
+                secret_key.non_secure_erase();
+            }
+            derived?;
+        }
+        for (identity_id, key_id, path) in senders {
+            let mut secret_key = derive(path)?;
+            let mut secret = secret_key.to_secret_bytes();
+            secret_key.non_secure_erase();
+            keys = keys.with_sender(
+                *identity_id,
+                *key_id,
+                private_document_outgoing_viewing_key(&secret),
+            );
+            secret.zeroize();
+        }
+        Ok(keys)
     }
 
     /// Sorts the entries of `page`, read from `start_position` of the store of `target`.
@@ -569,6 +617,48 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(carol, 4)]
         );
+    }
+
+    /// Keys derived from paths scan as the same keys added directly, and a derivation that
+    /// fails fails the whole set.
+    #[test]
+    fn should_derive_scan_keys_from_paths() {
+        let alice = Identifier::from([0xA0; 32]);
+        let derived = PrivateDocumentScanKeys::derive(
+            &[(alice, vec![(2u32, 20u8)])],
+            &[(alice, 6, 0xA1)],
+            |byte| Ok::<_, ()>(secret_key(*byte)),
+        )
+        .expect("every path derives");
+        let added = PrivateDocumentScanKeys::new()
+            .with_recipient(alice, &[(2, secret_key(20))])
+            .with_sender(
+                alice,
+                6,
+                private_document_outgoing_viewing_key(&secret_key(0xA1).to_secret_bytes()),
+            );
+        let entries = page(
+            0,
+            vec![
+                seal(0xC0, alice.to_buffer(), 20, 0xC1, 1),
+                seal(0xA0, [0xD0; 32], 40, 0xA1, 2),
+            ],
+            2,
+        );
+        assert_eq!(
+            derived.scan_page(&target(), 0, &entries),
+            added.scan_page(&target(), 0, &entries)
+        );
+        assert!(PrivateDocumentScanKeys::derive(
+            &[(alice, vec![(2u32, 20u8), (3, 0)])],
+            &[],
+            |byte| if *byte == 0 {
+                Err(())
+            } else {
+                Ok(secret_key(*byte))
+            },
+        )
+        .is_err());
     }
 
     /// A page at the store's end is empty: the cursor stays where it is.

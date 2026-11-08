@@ -192,6 +192,7 @@ pub trait ContactCryptoProvider {
         _recipient_key_id: KeyID,
         _request: &PrivateContactRequest,
         _esk_seed: &[u8; 32],
+        _platform_version: &dpp::version::PlatformVersion,
     ) -> Result<BinaryData, PlatformWalletError> {
         Err(private_documents_unsupported())
     }
@@ -401,6 +402,7 @@ impl ContactCryptoProvider for SeedCryptoProvider {
         recipient_key_id: KeyID,
         request: &PrivateContactRequest,
         esk_seed: &[u8; 32],
+        platform_version: &dpp::version::PlatformVersion,
     ) -> Result<BinaryData, PlatformWalletError> {
         let mut encryption_secret_key = self.secret_key_at(sender_encryption_key_path)?;
         let sealed = dash_sdk::platform::dashpay::seal_private_contact_request(
@@ -416,6 +418,7 @@ impl ContactCryptoProvider for SeedCryptoProvider {
             recipient_key_id,
             request,
             esk_seed,
+            platform_version,
         );
         encryption_secret_key.non_secure_erase();
         Ok(sealed?)
@@ -4792,6 +4795,48 @@ mod sweep_tests {
                 .map(|request| request.account_reference),
             Some(sent.account_reference),
             "a replay of an older sent request does not supersede the tracked one"
+        );
+    }
+
+    /// A paid sent request whose store fails is held in memory: the contact
+    /// it answers establishes, so a retry adopts it instead of paying again,
+    /// and the next add of the same request stores it, once.
+    #[test]
+    fn a_paid_sent_request_whose_store_fails_is_kept_and_stored_by_its_next_add() {
+        let our = 1u8;
+        let contact = 2u8;
+        let our_id = Identifier::from([our; 32]);
+        let contact_id = Identifier::from([contact; 32]);
+        let mut info = info_with_bare_identity(our);
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(&our_id)
+            .expect("managed identity");
+        managed
+            .add_incoming_contact_request(test_request(contact, our, 0), &noop_persister())
+            .expect("incoming request");
+
+        managed.add_paid_sent_contact_request(test_request(our, contact, 5), &failing_persister());
+        assert!(
+            managed
+                .dashpay()
+                .established_contacts()
+                .contains_key(&contact_id),
+            "the reply establishes the contact in memory"
+        );
+
+        let (persister, backend) = counting_persister();
+        managed
+            .add_sent_contact_request(test_request(our, contact, 5), &persister)
+            .expect("the next add");
+        assert_eq!(store_count(&backend), 1, "the next add stores it");
+        managed
+            .add_sent_contact_request(test_request(our, contact, 5), &persister)
+            .expect("a re-add");
+        assert_eq!(
+            store_count(&backend),
+            1,
+            "once stored, a re-add is a no-op again"
         );
     }
 

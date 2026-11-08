@@ -32,11 +32,10 @@ use std::future::Future;
 
 use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
 use dash_sdk::platform::dashpay::{
-    private_contact_request_identities, private_contact_request_outgoing_viewing_key,
-    private_contact_request_signature, private_contact_request_signing_data,
-    private_contact_request_signing_keys, private_contact_requests_from_scan,
-    recipient_key_purpose_is_valid, PrivateContactRequest, RejectedPrivateContactRequest,
-    PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+    private_contact_request_identities, private_contact_request_signature,
+    private_contact_request_signing_data, private_contact_request_signing_keys,
+    private_contact_requests_from_scan, recipient_key_purpose_is_valid, PrivateContactRequest,
+    ProvedIdentity, RejectedPrivateContactRequest, PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
 };
 use dash_sdk::platform::private_document_entries::{
     PrivateDocumentEntries, PrivateDocumentEntriesQuery,
@@ -89,26 +88,9 @@ impl PrivateDocumentKeyPaths {
     /// drop there.
     pub fn scan_keys<E>(
         &self,
-        mut derive: impl FnMut(&DerivationPath) -> Result<SecretKey, E>,
+        derive: impl FnMut(&DerivationPath) -> Result<SecretKey, E>,
     ) -> Result<PrivateDocumentScanKeys, E> {
-        let mut keys = PrivateDocumentScanKeys::new();
-        for (identity_id, paths) in &self.recipients {
-            let secret_keys = paths
-                .iter()
-                .map(|(key_id, path)| Ok((*key_id, derive(path)?)))
-                .collect::<Result<Vec<_>, E>>()?;
-            keys = keys.with_recipient(*identity_id, &secret_keys);
-        }
-        for (identity_id, key_id, path) in &self.senders {
-            let mut secret_key = derive(path)?;
-            keys = keys.with_sender(
-                *identity_id,
-                *key_id,
-                private_contact_request_outgoing_viewing_key(&secret_key),
-            );
-            secret_key.non_secure_erase();
-        }
-        Ok(keys)
+        PrivateDocumentScanKeys::derive(&self.recipients, &self.senders, derive)
     }
 }
 
@@ -296,6 +278,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             &recipient_identity,
             recipient_key_index,
             &request,
+            self.sdk.version(),
         )?;
         let signature =
             private_contact_request_signature(signer, &signing_key, &signing_data).await?;
@@ -314,6 +297,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 recipient_key_index,
                 &request,
                 &esk_seed,
+                self.sdk.version(),
             )
             .await;
         esk_seed.zeroize();
@@ -354,9 +338,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 None => Err("the sender identity is no longer in the wallet".to_string()),
                 Some(managed) => {
                     managed.note_sent_request_core_height(*recipient_identity_id, 0);
-                    managed
-                        .add_sent_contact_request(contact_request.clone(), &self.persister)
-                        .map_err(|e| e.to_string())
+                    // Paid for: held in memory even when its store fails, so the
+                    // contact establishes and a retry adopts it rather than paying
+                    // again. The next private sync stores it.
+                    managed.add_paid_sent_contact_request(contact_request.clone(), &self.persister);
+                    Ok(())
                 }
             }
         };
@@ -557,10 +543,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             )
         };
         let contract = dashpay_contract()?;
-        // Fetched once a pass: the senders, the wallet's own identities (whose
-        // keys a request is checked against as they are on chain), and the
-        // recipients of the requests they sent.
-        let mut fetched_identities: BTreeMap<Identifier, Option<Identity>> = BTreeMap::new();
+        // Fetched once a pass, and again when a later page's entries are newer
+        // than the proof: the senders and the wallet's own identities, whose
+        // keys a request is checked against as they were when it was appended.
+        let mut proved_identities: BTreeMap<Identifier, ProvedIdentity> = BTreeMap::new();
+        // The recipients of the requests the wallet's identities sent, read for
+        // the key id of the key a request is sealed to.
+        let mut recipients: BTreeMap<Identifier, Option<Identity>> = BTreeMap::new();
         let mut position = start;
         report.next_position = start;
 
@@ -588,19 +577,27 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     &page,
                 )
                 .await?;
-            for identity_id in private_contact_request_identities(&scan) {
-                if let Entry::Vacant(entry) = fetched_identities.entry(identity_id) {
-                    entry.insert(Identity::fetch(&self.sdk, identity_id).await?);
-                }
-            }
+            let stale: BTreeMap<Identifier, u64> = private_contact_request_identities(&scan)
+                .into_iter()
+                .filter(|(identity_id, height)| {
+                    proved_identities
+                        .get(identity_id)
+                        .is_none_or(|proved| proved.proved_at_height < *height)
+                })
+                .collect();
+            proved_identities.extend(
+                self.sdk
+                    .fetch_private_contact_request_identities(&stale)
+                    .await?,
+            );
             let read = private_contact_requests_from_scan(
                 &contract,
                 scan,
-                &fetched_identities,
+                &proved_identities,
                 self.sdk.version(),
             )?;
             for sent in &read.sent {
-                if let Entry::Vacant(entry) = fetched_identities.entry(sent.recipient_id) {
+                if let Entry::Vacant(entry) = recipients.entry(sent.recipient_id) {
                     entry.insert(Identity::fetch(&self.sdk, sent.recipient_id).await?);
                 }
             }
@@ -609,7 +606,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // keys the signer computes.
             let mut records: Vec<(Identifier, ContactRequest, bool, Option<[u8; 43]>)> = Vec::new();
             for received in &read.received {
-                let Some(Some(sender)) = fetched_identities.get(&received.sender_id) else {
+                let Some(sender) = proved_identities
+                    .get(&received.sender_id)
+                    .and_then(|proved| proved.identity.as_ref())
+                else {
                     continue;
                 };
                 let sender_key = identity_public_key(sender, received.sender_key_id)?;
@@ -640,7 +640,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             }
             for sent in &read.sent {
                 let recipient_key = sent.recipient_public_key.serialize();
-                let recipient_key_id = fetched_identities
+                let recipient_key_id = recipients
                     .get(&sent.recipient_id)
                     .and_then(Option::as_ref)
                     .and_then(|recipient| {
@@ -988,9 +988,11 @@ mod tests {
             entries: entries
                 .into_iter()
                 .zip(0u64..)
+                // The mock proves identities at height 0, which an entry's
+                // identities must be proved at or after.
                 .map(|(data, position)| PrivateDocumentEntry {
                     position,
-                    block_height: 10 + position,
+                    block_height: 0,
                     block_time_ms: BLOCK_TIME_MS,
                     data,
                 })
