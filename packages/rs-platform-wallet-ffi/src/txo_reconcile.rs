@@ -555,18 +555,21 @@ pub unsafe extern "C" fn platform_wallet_txo_reconcile_classify_page_applied(
             check_ptr!(out_may_continue);
             *out_may_continue = false;
             let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
-            let after: Option<Vec<u8>> = if is_last {
+            // Borrowed, not copied: the reconciler drops a cursor longer
+            // than TXO_RECONCILE_STORE_CURSOR_MAX, so an oversized one costs
+            // no allocation.
+            let after: Option<&[u8]> = if is_last {
                 None
             } else if next_after_len == 0 {
-                Some(Vec::new())
+                Some(&[])
             } else {
                 check_ptr!(next_after);
-                Some(std::slice::from_raw_parts(next_after, next_after_len).to_vec())
+                Some(std::slice::from_raw_parts(next_after, next_after_len))
             };
             let Some(may_continue) =
                 PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| {
                     m.txo_reconciler()
-                        .classify_page_applied(&wid, after.as_deref())
+                        .classify_page_applied(&wid, after)
                 })
             else {
                 return invalid_manager_handle();
