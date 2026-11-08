@@ -904,6 +904,13 @@ mod tests {
                 "prepared keys open the entry as the function does"
             );
         }
+        // The first key opens an entry too: the scan tries every key, from the first.
+        let first_key = PrivateDocumentRecipientKeys::new(&[secret_key(2), secret_key(3)]);
+        let opened = first_key
+            .open(&entries[0], &target(), &RECIPIENT_IDENTITY)
+            .expect("well formed")
+            .expect("for the first key");
+        assert_eq!(opened.recipient_key_index(), Some(0));
         let others = PrivateDocumentRecipientKeys::new(&[secret_key(4)]);
         assert_eq!(
             others
