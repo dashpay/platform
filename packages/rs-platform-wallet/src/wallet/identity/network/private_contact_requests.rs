@@ -217,33 +217,41 @@ impl Drop for PrivateReplyReservation {
         if !self.armed {
             return;
         }
-        if let Ok(mut wm) = self.wallet_manager.try_write() {
-            release_reservation(
-                &mut wm,
-                &self.wallet_id,
-                &self.sender,
-                &self.recipient,
-                self.attempt,
-            );
-            return;
-        }
-        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
-            tracing::warn!(
-                sender = %self.sender,
-                recipient = %self.recipient,
-                "a cancelled private contact request could not release its reservation; it stays \
-                 until restart"
-            );
-            return;
-        };
-        let wallet_manager = Arc::clone(&self.wallet_manager);
         let (wallet_id, sender, recipient, attempt) =
             (self.wallet_id, self.sender, self.recipient, self.attempt);
-        runtime.spawn(async move {
-            let mut wm = wallet_manager.write().await;
-            release_reservation(&mut wm, &wallet_id, &sender, &recipient, attempt);
-        });
+        apply_detached(
+            &self.wallet_manager,
+            "a cancelled private contact request's reservation",
+            move |wm| release_reservation(wm, &wallet_id, &sender, &recipient, attempt),
+        );
     }
+}
+
+/// Run `apply` on the wallet manager, for a guard released on drop, which
+/// cannot wait for the lock: now when the lock is free, otherwise on a
+/// spawned task. Outside a runtime it is logged, and `what` stays until
+/// restart.
+pub(super) fn apply_detached(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    what: &'static str,
+    apply: impl FnOnce(&mut WalletManager<PlatformWalletInfo>) + Send + 'static,
+) {
+    if let Ok(mut wm) = wallet_manager.try_write() {
+        apply(&mut wm);
+        return;
+    }
+    let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+        tracing::warn!(
+            what,
+            "released on drop outside a runtime; it stays until restart"
+        );
+        return;
+    };
+    let wallet_manager = Arc::clone(wallet_manager);
+    runtime.spawn(async move {
+        let mut wm = wallet_manager.write().await;
+        apply(&mut wm);
+    });
 }
 
 /// Release the reservation `attempt` holds on `sender`'s private request to
@@ -3497,6 +3505,284 @@ mod tests {
         assert_eq!(
             forgotten.dashpay().private_shielded_address(&alice.id()),
             None
+        );
+    }
+
+    /// A hook a [`HookedCrypto`] runs before one of its calls.
+    type Hook = Arc<dyn Fn() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+
+    /// A provider deriving from a test seed that runs hooks first: before
+    /// deriving a receiving xpub, as a slow or interactive signer pauses a
+    /// send's preparation, and before scanning pages.
+    struct HookedCrypto {
+        inner: SeedCryptoProvider,
+        before_receiving_xpub: Option<Hook>,
+        before_scan: Option<Hook>,
+    }
+
+    impl HookedCrypto {
+        fn new(phrase: &str) -> Self {
+            Self {
+                inner: SeedCryptoProvider::from_seed(seed(phrase), Network::Testnet),
+                before_receiving_xpub: None,
+                before_scan: None,
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ContactCryptoProvider for HookedCrypto {
+        async fn receiving_xpub(
+            &self,
+            path: &DerivationPath,
+        ) -> Result<key_wallet::bip32::ExtendedPubKey, PlatformWalletError> {
+            if let Some(hook) = &self.before_receiving_xpub {
+                hook().await;
+            }
+            self.inner.receiving_xpub(path).await
+        }
+
+        async fn ecdh_shared_secret(
+            &self,
+            path: &DerivationPath,
+            peer: &PublicKey,
+        ) -> Result<zeroize::Zeroizing<[u8; 32]>, PlatformWalletError> {
+            self.inner.ecdh_shared_secret(path, peer).await
+        }
+
+        async fn export_auto_accept_private_key(
+            &self,
+            path: &DerivationPath,
+        ) -> Result<SecretKey, PlatformWalletError> {
+            self.inner.export_auto_accept_private_key(path).await
+        }
+
+        async fn account_reference(
+            &self,
+            path: &DerivationPath,
+            compact_xpub: &[u8],
+            account_index: u32,
+            version: u32,
+        ) -> Result<u32, PlatformWalletError> {
+            self.inner
+                .account_reference(path, compact_xpub, account_index, version)
+                .await
+        }
+
+        async fn unmask_account_reference(
+            &self,
+            path: &DerivationPath,
+            compact_xpub: &[u8],
+            account_reference: u32,
+        ) -> Result<(u32, u32), PlatformWalletError> {
+            self.inner
+                .unmask_account_reference(path, compact_xpub, account_reference)
+                .await
+        }
+
+        async fn contact_info_seal(
+            &self,
+            root_path: &DerivationPath,
+            derivation_index: u32,
+            contact_id: &[u8; 32],
+            private_data_plaintext: &[u8],
+            private_data_iv: &[u8; 16],
+        ) -> Result<super::super::contact_requests::ContactInfoSealed, PlatformWalletError>
+        {
+            self.inner
+                .contact_info_seal(
+                    root_path,
+                    derivation_index,
+                    contact_id,
+                    private_data_plaintext,
+                    private_data_iv,
+                )
+                .await
+        }
+
+        async fn contact_info_open(
+            &self,
+            root_path: &DerivationPath,
+            derivation_index: u32,
+            enc_to_user_id: &[u8; 32],
+            private_data_blob: &[u8],
+        ) -> Result<super::super::contact_requests::ContactInfoOpened, PlatformWalletError>
+        {
+            self.inner
+                .contact_info_open(
+                    root_path,
+                    derivation_index,
+                    enc_to_user_id,
+                    private_data_blob,
+                )
+                .await
+        }
+
+        async fn scan_private_document_pages(
+            &self,
+            keys: &PrivateDocumentKeyPaths,
+            data_contract_id: Identifier,
+            document_type_name: &str,
+            pages: &[(u64, &PrivateDocumentEntries)],
+        ) -> Result<
+            Vec<dash_sdk::platform::private_document_scan::PrivateDocumentScan>,
+            PlatformWalletError,
+        > {
+            if let Some(hook) = &self.before_scan {
+                hook().await;
+            }
+            self.inner
+                .scan_private_document_pages(keys, data_contract_id, document_type_name, pages)
+                .await
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        async fn seal_private_contact_request(
+            &self,
+            sender_encryption_key_path: &DerivationPath,
+            dashpay_contract: &DataContract,
+            sender: &Identity,
+            sender_encryption_key_id: KeyID,
+            signing_key_id: KeyID,
+            signature: &[u8; 65],
+            recipient: &Identity,
+            recipient_key_id: KeyID,
+            request: &PrivateContactRequest,
+            esk_seed: &[u8; 32],
+            platform_version: &PlatformVersion,
+        ) -> Result<BinaryData, PlatformWalletError> {
+            self.inner
+                .seal_private_contact_request(
+                    sender_encryption_key_path,
+                    dashpay_contract,
+                    sender,
+                    sender_encryption_key_id,
+                    signing_key_id,
+                    signature,
+                    recipient,
+                    recipient_key_id,
+                    request,
+                    esk_seed,
+                    platform_version,
+                )
+                .await
+        }
+    }
+
+    /// A hook that, the first time it runs, says so on `reached` and waits
+    /// for `release`.
+    fn pause_once(reached: Arc<tokio::sync::Notify>, release: Arc<tokio::sync::Notify>) -> Hook {
+        let first = Arc::new(AtomicBool::new(true));
+        Arc::new(move || {
+            let (reached, release, first) = (
+                Arc::clone(&reached),
+                Arc::clone(&release),
+                Arc::clone(&first),
+            );
+            Box::pin(async move {
+                if first.swap(false, Ordering::SeqCst) {
+                    reached.notify_one();
+                    release.notified().await;
+                }
+            })
+        })
+    }
+
+    /// A public request that passed its channel check and is still being
+    /// prepared holds the pair: a private request started meanwhile is
+    /// refused before anything is paid, and only the public one goes on.
+    /// Once it ends, the pair is free again.
+    #[tokio::test]
+    async fn should_let_only_one_channel_send_to_a_pair_at_a_time() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (_manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let view = alice_wallet.identity().dashpay();
+        let reached = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let mut pausing = HookedCrypto::new(ALICE_PHRASE);
+        pausing.before_receiving_xpub =
+            Some(pause_once(Arc::clone(&reached), Arc::clone(&release)));
+        let paid = Arc::new(Mutex::new(Vec::new()));
+
+        let (alice_id, bob_id) = (alice.id(), bob.id());
+        let public = view.send_contact_request_with_external_signer(
+            &alice_id,
+            &bob_id,
+            None,
+            AutoAcceptProofSource::None,
+            &alice_signer,
+            &pausing,
+        );
+        let private = async {
+            reached.notified().await;
+            let claimed = managed(&alice_wallet, ALICE, |managed| {
+                managed.dashpay().public_contact_request_claimed(&bob.id())
+            })
+            .await;
+            let sent = view
+                .send_private_contact_request(
+                    &alice.id(),
+                    &bob.id(),
+                    None,
+                    AutoAcceptProofSource::None,
+                    None,
+                    &alice_signer,
+                    &alice_crypto,
+                    keep_entry(&paid),
+                )
+                .await;
+            release.notify_one();
+            (claimed, sent)
+        };
+        let (public, (claimed, private)) = tokio::join!(public, private);
+        assert!(claimed, "the paused public send holds the pair");
+        assert!(
+            matches!(&private, Err(PlatformWalletError::PrivateContactRequestPending(recipient))
+                if *recipient == bob.id()),
+            "{private:?}"
+        );
+        assert!(paid.lock().expect("paid").is_empty(), "nothing is paid");
+        assert!(
+            !matches!(
+                &public,
+                Err(PlatformWalletError::PrivateContactRequestPending(_)
+                    | PlatformWalletError::PrivateContactRequestNeedsPrivateReply(_))
+            ),
+            "the public send goes on to its submission, which this mock refuses: {public:?}"
+        );
+
+        assert!(!pending_to(&alice_wallet, ALICE, &bob).await);
+        managed(&alice_wallet, ALICE, |managed| {
+            assert!(!managed.dashpay().public_contact_request_claimed(&bob.id()));
+        })
+        .await;
+        let kept = Arc::new(Mutex::new(Vec::new()));
+        let after = view
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                keep_entry(&kept),
+            )
+            .await;
+        assert!(
+            matches!(
+                after,
+                Err(PlatformWalletError::PrivateContactRequestPending(_))
+            ),
+            "{after:?}"
+        );
+        assert_eq!(
+            kept.lock().expect("kept").len(),
+            1,
+            "the pair is free again"
         );
     }
 

@@ -891,14 +891,45 @@ impl ManagedIdentity {
     /// returning the attempt that holds it; `None` when one already is. See
     /// [`DashPayState::private_reply_pending`](super::DashPayState::private_reply_pending).
     pub(crate) fn reserve_private_reply(&mut self, recipient: Identifier) -> Option<u64> {
+        // A public request being sent to the recipient holds the pair too.
         if self
             .dashpay
             .pending_private_replies
             .contains_key(&recipient)
+            || self
+                .dashpay
+                .public_contact_request_claims
+                .contains_key(&recipient)
         {
             return None;
         }
         Some(self.insert_private_reply(recipient, None))
+    }
+
+    /// Claim the pair with `recipient` for a public request about to be
+    /// sent: until [`Self::release_public_contact_request`], no private
+    /// request to it is reserved. Claims count, so concurrent public sends
+    /// each hold one.
+    pub(crate) fn claim_public_contact_request(&mut self, recipient: Identifier) {
+        *self
+            .dashpay
+            .public_contact_request_claims
+            .entry(recipient)
+            .or_default() += 1;
+    }
+
+    /// Release one claim [`Self::claim_public_contact_request`] took.
+    pub(crate) fn release_public_contact_request(&mut self, recipient: &Identifier) {
+        if let Some(claims) = self
+            .dashpay
+            .public_contact_request_claims
+            .get_mut(recipient)
+        {
+            *claims = claims.saturating_sub(1);
+            if *claims == 0 {
+                self.dashpay.public_contact_request_claims.remove(recipient);
+            }
+        }
     }
 
     /// Reserve `recipient` under a new attempt, `commitment` its entry's.

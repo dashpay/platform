@@ -22,7 +22,12 @@ use crate::wallet::identity::types::dashpay::contact_request::ContactRequest;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
 use crate::wallet::identity::ManagedIdentity;
 use crate::wallet::persister::WalletPersister;
-use crate::wallet::platform_wallet::PlatformWalletInfo;
+use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+use key_wallet_manager::WalletManager;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
+use super::private_contact_requests::apply_detached;
 use dash_sdk::platform::dashpay::PrivateContactRequest;
 use dash_sdk::platform::private_document_entries::PrivateDocumentEntries;
 use dash_sdk::platform::private_document_scan::PrivateDocumentScan;
@@ -559,6 +564,57 @@ pub enum AutoAcceptProofSource {
     },
 }
 
+/// The claim a public request holds on its pair from before its channel is
+/// decided until it is submitted and recorded
+/// (`DashPayView::claim_public_pair`): while it is held no private request to
+/// the recipient is reserved. Released by [`Self::release`] or on drop.
+pub(super) struct PublicContactClaim {
+    wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: WalletId,
+    sender: Identifier,
+    recipient: Identifier,
+    held: bool,
+}
+
+impl PublicContactClaim {
+    /// Release the claim now. Dropped while it waits for the wallet lock,
+    /// the guard releases it.
+    pub(super) async fn release(mut self) {
+        let mut wm = self.wallet_manager.write().await;
+        release_public_claim(&mut wm, &self.wallet_id, &self.sender, &self.recipient);
+        self.held = false;
+    }
+}
+
+impl Drop for PublicContactClaim {
+    fn drop(&mut self) {
+        if !self.held {
+            return;
+        }
+        let (wallet_id, sender, recipient) = (self.wallet_id, self.sender, self.recipient);
+        apply_detached(
+            &self.wallet_manager,
+            "a dropped public contact request's claim",
+            move |wm| release_public_claim(wm, &wallet_id, &sender, &recipient),
+        );
+    }
+}
+
+/// Release one claim `sender` holds on its pair with `recipient`.
+fn release_public_claim(
+    wm: &mut WalletManager<PlatformWalletInfo>,
+    wallet_id: &WalletId,
+    sender: &Identifier,
+    recipient: &Identifier,
+) {
+    if let Some(managed) = wm
+        .get_wallet_info_mut(wallet_id)
+        .and_then(|info| info.identity_manager.managed_identity_mut(sender))
+    {
+        managed.release_public_contact_request(recipient);
+    }
+}
+
 /// What a contact request to send is built from, whether it is published as a
 /// `contactRequest` document or sealed privately: see
 /// `DashPayView::prepare_contact_request`.
@@ -643,35 +699,81 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
     {
-        // A contact whose requests came or went privately is kept off chain: a
-        // `contactRequest` document would publish the relationship. Replies
-        // and rotations go privately instead. A private request still pending
-        // counts too, as it may already be on chain. This reads what the
-        // wallet tracks, so on a restored or second device it holds only once
-        // the private sync has read the store.
-        let (private, private_pending) = {
-            let wm = self.wallet_manager.read().await;
-            wm.get_wallet_info(&self.wallet_id)
-                .and_then(|info| info.identity_manager.managed_identity(sender_identity_id))
-                .map_or((false, false), |managed| {
-                    let dashpay = managed.dashpay();
-                    (
-                        dashpay.private_contact(recipient_identity_id).is_some(),
-                        dashpay.private_reply_pending(recipient_identity_id),
-                    )
-                })
-        };
-        if private_pending {
-            return Err(PlatformWalletError::PrivateContactRequestPending(
-                *recipient_identity_id,
-            ));
-        }
-        if private {
-            return Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(
-                *recipient_identity_id,
-            ));
-        }
+        // The pair is claimed before its channel is decided and held until
+        // the request is submitted and recorded, so a private request cannot
+        // be reserved and paid for in between; the claim is released when
+        // the send ends, however it ends.
+        let claim = self
+            .claim_public_pair(sender_identity_id, recipient_identity_id)
+            .await?;
+        let sent = self
+            .send_claimed_contact_request(
+                sender_identity_id,
+                recipient_identity_id,
+                account_label,
+                auto_accept_proof,
+                signer,
+                crypto,
+            )
+            .await;
+        claim.release().await;
+        sent
+    }
 
+    /// Claim the pair `sender`, `recipient` for a public request: refused,
+    /// in the same lock, while a private request to the recipient is
+    /// reserved, or once their requests came or went privately, as a
+    /// `contactRequest` document would publish the relationship (replies and
+    /// rotations go privately instead). The refusal reads what the wallet
+    /// tracks, so on a restored or second device it holds only once the
+    /// private sync has read the store.
+    pub(super) async fn claim_public_pair(
+        &self,
+        sender: &Identifier,
+        recipient: &Identifier,
+    ) -> Result<PublicContactClaim, PlatformWalletError> {
+        let mut wm = self.wallet_manager.write().await;
+        let managed = wm
+            .get_wallet_info_mut(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?
+            .identity_manager
+            .managed_identity_mut(sender)
+            .ok_or(PlatformWalletError::IdentityNotFound(*sender))?;
+        if managed.dashpay().private_reply_pending(recipient) {
+            return Err(PlatformWalletError::PrivateContactRequestPending(
+                *recipient,
+            ));
+        }
+        if managed.dashpay().private_contact(recipient).is_some() {
+            return Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(
+                *recipient,
+            ));
+        }
+        managed.claim_public_contact_request(*recipient);
+        Ok(PublicContactClaim {
+            wallet_manager: Arc::clone(&self.wallet_manager),
+            wallet_id: self.wallet_id,
+            sender: *sender,
+            recipient: *recipient,
+            held: true,
+        })
+    }
+
+    /// The body of [`Self::send_contact_request_with_external_signer`], once
+    /// the pair is claimed.
+    async fn send_claimed_contact_request<S, C>(
+        &self,
+        sender_identity_id: &Identifier,
+        recipient_identity_id: &Identifier,
+        account_label: Option<String>,
+        auto_accept_proof: AutoAcceptProofSource,
+        signer: &S,
+        crypto: &C,
+    ) -> Result<ContactRequest, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+        C: ContactCryptoProvider + Sync,
+    {
         // 1-4c. The keys, the receiving xpub, the masked account reference and
         //       the auto-accept proof, as a private request is built from them too.
         let PreparedContactRequest {

@@ -141,6 +141,12 @@ pub struct DashPayState {
     /// restored from the shielded store's unconfirmed spends.
     pub(super) pending_private_replies: BTreeMap<Identifier, PendingPrivateReply>,
 
+    /// The public requests to each recipient being sent, counted: each claims
+    /// the pair from before its channel is decided until it is submitted and
+    /// recorded, and while one does no private request to the recipient is
+    /// reserved, as a reserved one refuses a public send. In memory only.
+    pub(super) public_contact_request_claims: BTreeMap<Identifier, u32>,
+
     /// Lowest Platform-assigned `$createdAtCoreBlockHeight` among OUR sent
     /// `contactRequest` docs to each recipient seen by a sweep this process.
     ///
@@ -321,6 +327,12 @@ impl DashPayState {
     /// contact's request to us came privately.
     pub(crate) fn private_shielded_address(&self, contact: &Identifier) -> Option<[u8; 43]> {
         self.private_shielded_addresses.get(contact).copied()
+    }
+
+    /// Whether a public request to `contact` is being sent; see the field
+    /// doc.
+    pub fn public_contact_request_claimed(&self, contact: &Identifier) -> bool {
+        self.public_contact_request_claims.contains_key(contact)
     }
 
     /// Whether a private sync read DashPay's private contact request store
