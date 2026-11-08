@@ -3,15 +3,20 @@
 //! A private contact request is an entry of the `privateContactRequest` store sealed to one of
 //! the recipient's DashPay keys: only the recipient learns that it exists, who sent it and what
 //! it holds. The sender pays for it from the shielded pool, so no identity appears on chain.
-//! Inside the entry the sender names its identity and DashPay encryption key, with a deniable
-//! MAC: the recipient learns who wrote it, but cannot prove that to anyone else.
+//! Inside the entry the sender names its identity and DashPay encryption key, which the pair's
+//! shared key is derived from, and signs it with one of its signing keys, as it signs a public
+//! request's transition. The signature is inside the encrypted entry: only the recipient sees
+//! it, and could show it to someone else. A stolen recipient key forges nothing, as it forges no
+//! public request.
 //!
-//! - Sending: [`seal_private_contact_request`] (or [`Sdk::seal_private_contact_request`]) builds
-//!   the entry, and a wallet appends it, paying from its notes, with
+//! - Sending: [`private_contact_request_signing_data`] is what the sender's identity signer
+//!   signs, [`seal_private_contact_request`] builds the entry with the signature (or
+//!   [`Sdk::seal_private_contact_request`] does both), and a wallet appends it, paying from its
+//!   notes, with
 //!   [`PrivateDocumentCreateFromShieldedPool`](crate::platform::transition::private_document_create_from_shielded_pool::PrivateDocumentCreateFromShieldedPool)
 //!   or the dpp builder.
 //! - Receiving: [`Sdk::scan_private_contact_requests`] reads a page of the store, opens the
-//!   wallet's entries, checks each sender against its identity's key and reads the request.
+//!   wallet's entries, checks each sender against its identity's keys and reads the request.
 //!
 //! Each identity seals with the outgoing viewing key of its DashPay encryption key
 //! ([`private_contact_request_outgoing_viewing_key`]), so a wallet restored from seed recovers
@@ -20,27 +25,31 @@
 use super::contact_request::{recipient_key_purpose_is_valid, sender_key_purpose_is_valid};
 use crate::platform::private_document_scan::{
     PrivateDocumentScan, PrivateDocumentScanKeys, ReceivedPrivateDocumentEntry,
+    SentPrivateDocumentEntry,
 };
 use crate::platform::{Fetch, Identifier};
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
     decode_private_document_payload, encode_private_document_payload, DocumentTypeRef,
 };
 use dpp::data_contract::DataContract;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType};
+use dpp::identity::signer::Signer;
+use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::{BinaryData, Value};
 use dpp::secp256k1::rand::rngs::StdRng;
 use dpp::secp256k1::rand::{RngCore, SeedableRng};
 use dpp::secp256k1::{PublicKey, SecretKey};
+use dpp::util::hash::ripemd160_sha256;
 use dpp::version::PlatformVersion;
 use platform_encryption::{
-    private_document_outgoing_viewing_key, seal_private_document_entry,
-    PrivateDocumentEnvelopeError, PrivateDocumentRecipient, PrivateDocumentSender,
-    PrivateDocumentTarget, COMPACT_XPUB_LEN,
+    private_document_outgoing_viewing_key, private_document_signing_data,
+    recover_private_document_signer, seal_private_document_entry, OpenedPrivateDocumentEntry,
+    PrivateDocumentAuthMode, PrivateDocumentEnvelopeError, PrivateDocumentRecipient,
+    PrivateDocumentSender, PrivateDocumentTarget, COMPACT_XPUB_LEN,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use zeroize::Zeroize;
@@ -210,21 +219,103 @@ pub fn private_contact_request_outgoing_viewing_key(encryption_secret_key: &Secr
     outgoing_viewing_key
 }
 
-/// The sender of a private contact request: its identity, and the id and secret key of the
-/// DashPay encryption key it names in the entry.
+/// The key types a private contact request may be signed with: those a public request's
+/// transition may be signed with, whose signatures recover their key.
+pub const PRIVATE_CONTACT_REQUEST_SIGNING_KEY_TYPES: [KeyType; 2] =
+    [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160];
+
+/// The security levels an `AUTHENTICATION` key may sign a private contact request at: the ones
+/// Platform lets a document of the type be signed at, from `CRITICAL` to the type's requirement
+/// (`HIGH` unless the contract sets another). `MASTER` keys sign no documents.
+pub fn private_contact_request_signing_security_levels(
+    dashpay_contract: &DataContract,
+) -> Result<Vec<SecurityLevel>, Error> {
+    let requirement = private_contact_request_type(dashpay_contract)?.security_level_requirement();
+    Ok(if requirement == SecurityLevel::MASTER {
+        vec![SecurityLevel::MASTER]
+    } else {
+        SecurityLevel::full_range()
+            .into_iter()
+            .filter(|level| *level != SecurityLevel::MASTER && *level as u8 <= requirement as u8)
+            .collect()
+    })
+}
+
+/// What a private contact request's sender signs, before sealing it: the entry's signing data
+/// for `request` from the encryption key `encryption_key_id` of `sender` to the key
+/// `recipient_key_id` of `recipient`. The sender's identity signer signs it as data, with one of
+/// its keys [`private_contact_request_signing_security_levels`] and
+/// [`PRIVATE_CONTACT_REQUEST_SIGNING_KEY_TYPES`] allow, as it signs a public request's
+/// transition; [`private_contact_request_signature`] does that.
+pub fn private_contact_request_signing_data(
+    dashpay_contract: &DataContract,
+    sender: &Identity,
+    encryption_key_id: KeyID,
+    recipient: &Identity,
+    recipient_key_id: KeyID,
+    request: &PrivateContactRequest,
+) -> Result<[u8; 32], Error> {
+    Ok(SealInputs::new(
+        dashpay_contract,
+        sender,
+        encryption_key_id,
+        recipient,
+        recipient_key_id,
+        request,
+    )?
+    .signing_data)
+}
+
+/// `signer`'s signature with `signing_key` of a private contact request's `signing_data`, in the
+/// 65-byte compact form the entry carries.
+pub async fn private_contact_request_signature<S>(
+    signer: &S,
+    signing_key: &IdentityPublicKey,
+    signing_data: &[u8; 32],
+) -> Result<[u8; 65], Error>
+where
+    S: Signer<IdentityPublicKey> + ?Sized,
+{
+    let signed = signer.sign(signing_key, signing_data).await?;
+    let mut signature: [u8; 65] = signed.as_slice().try_into().map_err(|_| {
+        Error::Generic(format!(
+            "the signer's signature with key {} is {} bytes, not a 65-byte compact signature",
+            signing_key.id(),
+            signed.len()
+        ))
+    })?;
+    // A header for an uncompressed key (27 + recovery id) names the same signature.
+    if (27..31).contains(&signature[0]) {
+        signature[0] += 4;
+    }
+    Ok(signature)
+}
+
+/// The sender of a private contact request: its identity, the DashPay encryption key it names
+/// in the entry, and its signature of the request.
 pub struct PrivateContactRequestSender<'a> {
     /// The sending identity.
     pub identity: &'a Identity,
-    /// The id of its enabled `ECDSA_SECP256K1` `ENCRYPTION` key.
+    /// The id of its enabled `ECDSA_SECP256K1` `ENCRYPTION` key, which the pair's shared key is
+    /// derived from.
     pub encryption_key_id: KeyID,
-    /// That key's secret key.
+    /// That key's secret key, which the outgoing viewing key is derived from.
     pub encryption_secret_key: &'a SecretKey,
+    /// The id of the enabled signing key that signed the request.
+    pub signing_key_id: KeyID,
+    /// That key's signature of [`private_contact_request_signing_data`].
+    pub signature: &'a [u8; 65],
 }
 
 /// Seals `request` from `sender` to the key `recipient_key_id` of `recipient`: an entry of the
-/// `privateContactRequest` store of `dashpay_contract`, of the type's entry size. The sender
-/// key must be the identity's enabled `ECDSA_SECP256K1` `ENCRYPTION` key whose secret key is
-/// given; the recipient key an enabled `ECDSA_SECP256K1` `DECRYPTION` or `ENCRYPTION` key.
+/// `privateContactRequest` store of `dashpay_contract`, of the type's entry size.
+///
+/// - The encryption key must be the sender's enabled `ECDSA_SECP256K1` `ENCRYPTION` key whose
+///   secret key is given.
+/// - The signature must be the signing key's, of [`private_contact_request_signing_data`]. The
+///   signing key must be an enabled `AUTHENTICATION` key of the sender at a level and of a type
+///   that may sign the type's documents.
+/// - The recipient key must be an enabled `ECDSA_SECP256K1` `DECRYPTION` or `ENCRYPTION` key.
 ///
 /// `esk_seed` must be 32 fresh random bytes for every entry, never reused, not even on a retry
 /// ([`Sdk::seal_private_contact_request`] draws one).
@@ -236,78 +327,61 @@ pub fn seal_private_contact_request(
     request: &PrivateContactRequest,
     esk_seed: &[u8; 32],
 ) -> Result<BinaryData, Error> {
-    let document_type = private_contact_request_type(dashpay_contract)?;
-    let entry_size = document_type
-        .private_document()
-        .map(|config| config.entry_size())
-        .ok_or_else(|| {
-            Error::Generic(format!(
-                "DashPay {PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME} is not a private type"
-            ))
-        })?;
-
-    let sender_key = sender
-        .identity
-        .get_public_key_by_id(sender.encryption_key_id)
-        .ok_or_else(|| {
-            Error::Generic(format!(
-                "the sender identity {} has no key {}",
-                sender.identity.id(),
-                sender.encryption_key_id
-            ))
-        })?;
-    if !sender_key_purpose_is_valid(sender_key.purpose()) {
-        return Err(Error::Generic(format!(
-            "the sender key {} is a {} key, not an ENCRYPTION key",
-            sender.encryption_key_id,
-            sender_key.purpose()
-        )));
-    }
-    if ecdh_public_key(sender_key, "sender")?
-        != PublicKey::from_secret_key(sender.encryption_secret_key)
-    {
+    let inputs = SealInputs::new(
+        dashpay_contract,
+        sender.identity,
+        sender.encryption_key_id,
+        recipient,
+        recipient_key_id,
+        request,
+    )?;
+    if inputs.encryption_public_key != PublicKey::from_secret_key(sender.encryption_secret_key) {
         return Err(Error::Generic(format!(
             "the secret key given is not the one of the sender key {}",
             sender.encryption_key_id
         )));
     }
-
-    let recipient_key = recipient
-        .get_public_key_by_id(recipient_key_id)
+    let signing_key = sender
+        .identity
+        .get_public_key_by_id(sender.signing_key_id)
         .ok_or_else(|| {
             Error::Generic(format!(
-                "the recipient identity {} has no key {recipient_key_id}",
-                recipient.id()
+                "the sender identity {} has no key {}",
+                sender.identity.id(),
+                sender.signing_key_id
             ))
         })?;
-    if !recipient_key_purpose_is_valid(recipient_key.purpose()) {
+    if let Some(problem) = signing_key_problem(
+        signing_key,
+        &private_contact_request_signing_security_levels(dashpay_contract)?,
+        None,
+    ) {
+        return Err(Error::Generic(problem));
+    }
+    let signer = recover_private_document_signer(sender.signature, &inputs.signing_data)
+        .map_err(|error| Error::Generic(format!("the request's signature: {error}")))?;
+    if !key_is(signing_key, &signer) {
         return Err(Error::Generic(format!(
-            "the recipient key {recipient_key_id} is a {} key, not a DECRYPTION or \
-             ENCRYPTION key",
-            recipient_key.purpose()
+            "the signature is not the sender key {}'s signature of this request",
+            sender.signing_key_id
         )));
     }
-    let recipient_public_key = ecdh_public_key(recipient_key, "recipient")?;
 
-    let payload = encode_private_document_payload(document_type, request.to_properties()?)?;
     let outgoing_viewing_key =
         private_contact_request_outgoing_viewing_key(sender.encryption_secret_key);
     let entry = seal_private_document_entry(
-        &PrivateDocumentTarget {
-            contract_id: dashpay_contract.id().to_buffer(),
-            document_type_name: PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
-        },
-        entry_size as usize,
+        &inputs.target(),
+        inputs.entry_size,
         &PrivateDocumentRecipient {
             identity_id: recipient.id().to_buffer(),
-            public_key: &recipient_public_key,
+            public_key: &inputs.recipient_public_key,
         },
-        &PrivateDocumentSender::DeniableMac {
+        &PrivateDocumentSender::Signature {
             identity_id: sender.identity.id().to_buffer(),
             key_id: sender.encryption_key_id,
-            secret_key: sender.encryption_secret_key,
+            signature: sender.signature,
         },
-        &payload,
+        &inputs.payload,
         &outgoing_viewing_key,
         esk_seed,
     )
@@ -315,27 +389,185 @@ pub fn seal_private_contact_request(
     Ok(BinaryData::new(entry))
 }
 
-/// The public key of an enabled `ECDSA_SECP256K1` identity key, which ECDH runs on.
-fn ecdh_public_key(key: &IdentityPublicKey, role: &str) -> Result<PublicKey, Error> {
+/// What sealing a request takes from its keys and the contract, once checked.
+struct SealInputs {
+    contract_id: [u8; 32],
+    entry_size: usize,
+    payload: Vec<u8>,
+    encryption_public_key: PublicKey,
+    recipient_public_key: PublicKey,
+    signing_data: [u8; 32],
+}
+
+impl SealInputs {
+    fn new(
+        dashpay_contract: &DataContract,
+        sender: &Identity,
+        encryption_key_id: KeyID,
+        recipient: &Identity,
+        recipient_key_id: KeyID,
+        request: &PrivateContactRequest,
+    ) -> Result<Self, Error> {
+        let document_type = private_contact_request_type(dashpay_contract)?;
+        let entry_size = document_type
+            .private_document()
+            .map(|config| config.entry_size())
+            .ok_or_else(|| {
+                Error::Generic(format!(
+                    "DashPay {PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME} is not a private type"
+                ))
+            })?;
+        let encryption_public_key =
+            encryption_key(sender, encryption_key_id, None).map_err(Error::Generic)?;
+
+        let recipient_key = recipient
+            .get_public_key_by_id(recipient_key_id)
+            .ok_or_else(|| {
+                Error::Generic(format!(
+                    "the recipient identity {} has no key {recipient_key_id}",
+                    recipient.id()
+                ))
+            })?;
+        if !recipient_key_purpose_is_valid(recipient_key.purpose()) {
+            return Err(Error::Generic(format!(
+                "the recipient key {recipient_key_id} is a {} key, not a DECRYPTION or \
+                 ENCRYPTION key",
+                recipient_key.purpose()
+            )));
+        }
+        let recipient_public_key =
+            ecdh_public_key(recipient_key, "recipient", None).map_err(Error::Generic)?;
+
+        let payload = encode_private_document_payload(document_type, request.to_properties()?)?;
+        let contract_id = dashpay_contract.id().to_buffer();
+        let signing_data = private_document_signing_data(
+            &PrivateDocumentTarget {
+                contract_id,
+                document_type_name: PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+            },
+            &sender.id().to_buffer(),
+            encryption_key_id,
+            &recipient.id().to_buffer(),
+            &payload,
+        );
+        Ok(Self {
+            contract_id,
+            entry_size: entry_size as usize,
+            payload,
+            encryption_public_key,
+            recipient_public_key,
+            signing_data,
+        })
+    }
+
+    fn target(&self) -> PrivateDocumentTarget<'static> {
+        PrivateDocumentTarget {
+            contract_id: self.contract_id,
+            document_type_name: PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+        }
+    }
+}
+
+/// The public key of `identity`'s DashPay encryption key `key_id`: an `ECDSA_SECP256K1`
+/// `ENCRYPTION` key, enabled at `at_ms` (now when `None`).
+fn encryption_key(
+    identity: &Identity,
+    key_id: KeyID,
+    at_ms: Option<u64>,
+) -> Result<PublicKey, String> {
+    let key = identity
+        .get_public_key_by_id(key_id)
+        .ok_or_else(|| format!("the sender identity {} has no key {key_id}", identity.id()))?;
+    if !sender_key_purpose_is_valid(key.purpose()) {
+        return Err(format!(
+            "the sender key {key_id} is a {} key, not an ENCRYPTION key",
+            key.purpose()
+        ));
+    }
+    ecdh_public_key(key, "sender", at_ms)
+}
+
+/// The public key of an `ECDSA_SECP256K1` identity key enabled at `at_ms` (now when `None`),
+/// which ECDH runs on. A key disabled after `at_ms` was enabled then: keys are disabled, never
+/// removed.
+fn ecdh_public_key(
+    key: &IdentityPublicKey,
+    role: &str,
+    at_ms: Option<u64>,
+) -> Result<PublicKey, String> {
     if key.key_type() != KeyType::ECDSA_SECP256K1 {
-        return Err(Error::Generic(format!(
+        return Err(format!(
             "the {role} key {} is a {} key, not ECDSA_SECP256K1",
             key.id(),
             key.key_type()
-        )));
+        ));
     }
-    if key.disabled_at().is_some() {
-        return Err(Error::Generic(format!(
-            "the {role} key {} is disabled",
-            key.id()
-        )));
+    if let Some(problem) = disabled_problem(key, role, at_ms) {
+        return Err(problem);
     }
     PublicKey::from_slice(key.data().as_slice()).map_err(|error| {
-        Error::Generic(format!(
+        format!(
             "the {role} key {} is not a secp256k1 point: {error}",
             key.id()
-        ))
+        )
     })
+}
+
+/// Why `key` was not enabled at `at_ms` (now when `None`), if it was not.
+fn disabled_problem(key: &IdentityPublicKey, role: &str, at_ms: Option<u64>) -> Option<String> {
+    let disabled_at = key.disabled_at()?;
+    match at_ms {
+        None => Some(format!("the {role} key {} is disabled", key.id())),
+        Some(at_ms) if disabled_at <= at_ms => Some(format!(
+            "the {role} key {} was disabled at {disabled_at}, before the entry",
+            key.id()
+        )),
+        Some(_) => None,
+    }
+}
+
+/// Why `key` may not sign a private contact request at `at_ms` (now when `None`), if it may
+/// not: it must be an `AUTHENTICATION` key at one of `levels`, of a signing key type, and
+/// enabled then.
+fn signing_key_problem(
+    key: &IdentityPublicKey,
+    levels: &[SecurityLevel],
+    at_ms: Option<u64>,
+) -> Option<String> {
+    if key.purpose() != Purpose::AUTHENTICATION {
+        return Some(format!(
+            "the signing key {} is a {} key, not an AUTHENTICATION key",
+            key.id(),
+            key.purpose()
+        ));
+    }
+    if !levels.contains(&key.security_level()) {
+        return Some(format!(
+            "the signing key {} is a {} key, which signs no {PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME}",
+            key.id(),
+            key.security_level()
+        ));
+    }
+    if !PRIVATE_CONTACT_REQUEST_SIGNING_KEY_TYPES.contains(&key.key_type()) {
+        return Some(format!(
+            "the signing key {} is a {} key, whose signature names no key",
+            key.id(),
+            key.key_type()
+        ));
+    }
+    disabled_problem(key, "signing", at_ms)
+}
+
+/// Whether the identity key `key` is the secp256k1 key `public_key`.
+fn key_is(key: &IdentityPublicKey, public_key: &PublicKey) -> bool {
+    match key.key_type() {
+        KeyType::ECDSA_SECP256K1 => PublicKey::from_slice(key.data().as_slice())
+            .is_ok_and(|key_public_key| key_public_key == *public_key),
+        KeyType::ECDSA_HASH160 => {
+            key.data().as_slice() == ripemd160_sha256(&public_key.serialize()).as_slice()
+        }
+        _ => false,
+    }
 }
 
 fn private_contact_request_type(
@@ -367,7 +599,7 @@ pub struct ReceivedPrivateContactRequest {
     pub recipient_key_id: KeyID,
     /// The identity that sent it.
     pub sender_id: Identifier,
-    /// The sender's encryption key it names, which wrote its MAC.
+    /// The sender's encryption key it names, which the pair's shared key is derived from.
     pub sender_key_id: KeyID,
     /// The entry's commitment: a copy of the entry appended again has the same one.
     pub commitment: [u8; 32],
@@ -407,16 +639,25 @@ pub enum PrivateContactRequestRejection {
     Envelope(PrivateDocumentEnvelopeError),
     /// It names no sender, and a contact request is from someone.
     AnonymousSender,
+    /// It carries a deniable MAC instead of a signature: anyone holding the recipient's key
+    /// could have written that, so it proves nothing about its sender.
+    NotSigned,
     /// The identity it names as its sender does not exist.
     SenderNotFound,
-    /// The sender key it names is missing, not an `ECDSA_SECP256K1` `ENCRYPTION` key, or was
-    /// disabled before the entry was appended.
+    /// The encryption key it names is missing, not an `ECDSA_SECP256K1` `ENCRYPTION` key, or
+    /// was disabled before the entry was appended; or the sender key that signed it may not
+    /// sign the type's documents, or was disabled before the entry was appended.
     SenderKeyNotUsable(String),
-    /// The sender key it names did not write it.
+    /// No key of the sender signed it; or, for a sent entry, it names another identity or key
+    /// than the outgoing viewing key that recovered it is derived from.
     SenderNotAuthenticated,
-    /// Its payload is not a valid private contact request. One written after DashPay gained a
-    /// property the contract the SDK holds lacks reads as invalid until the contract is
-    /// refetched, so a wallet keeps the position to read again.
+    /// The recipient key it is encrypted to was disabled before it was appended, or the
+    /// recipient identity was not given to check it.
+    RecipientKeyNotUsable(String),
+    /// Its payload is not a valid private contact request. The sender is checked first, so the
+    /// sender wrote it so. One written after DashPay gained a property the contract the SDK
+    /// holds lacks reads as invalid until the contract is refetched, so a wallet keeps the
+    /// position to read again.
     InvalidRequest(String),
     /// An earlier entry of the scan holds a request from the same sender to the same
     /// recipient for the same account reference, which is kept.
@@ -456,35 +697,58 @@ impl PrivateContactRequestScan {
     }
 }
 
-/// The identity ids the received entries of `scan` name as their senders, which
-/// [`private_contact_requests_from_scan`] checks them against.
-pub fn private_contact_request_senders(scan: &PrivateDocumentScan) -> BTreeSet<Identifier> {
+/// The identities whose keys [`private_contact_requests_from_scan`] checks the entries of
+/// `scan` against: the senders received entries name, the wallet's identities they are to, and
+/// the wallet's identities that sent the recovered ones.
+pub fn private_contact_request_identities(scan: &PrivateDocumentScan) -> BTreeSet<Identifier> {
     scan.received
         .iter()
-        .map(|received| Identifier::from(*received.entry.sender_identity_id()))
-        .filter(|sender_id| *sender_id != Identifier::default())
+        .flat_map(|received| {
+            [
+                Identifier::from(*received.entry.sender_identity_id()),
+                received.recipient_identity_id,
+            ]
+        })
+        .chain(scan.sent.iter().map(|sent| sent.sender_identity_id))
+        .filter(|identity_id| *identity_id != Identifier::default())
         .collect()
 }
 
-/// Reads the private contact requests of a scan of DashPay's `privateContactRequest` store:
-/// decodes each payload, checks each received entry's sender against the key its identity, as
-/// fetched into `sender_identities` (`None` for one that does not exist), holds under the id
-/// the entry names, and keeps the first request from a sender to a recipient for an account
-/// reference. A wallet keeps the requests it already holds from earlier scans, and drops a
-/// later one from the same sender for the same account reference as this does.
+/// Reads the private contact requests of a scan of DashPay's `privateContactRequest` store.
+///
+/// `identities` holds the identities [`private_contact_request_identities`] lists, as fetched
+/// (`None` for one that does not exist). Each entry, received or sent, is checked before its
+/// payload is read:
+/// - it must be signed, and its sender identity must exist;
+/// - the encryption key it names must be the sender's `ECDSA_SECP256K1` `ENCRYPTION` key,
+///   enabled when the entry was appended;
+/// - its signature must be by a key of the sender that may sign the type's documents, enabled
+///   then;
+/// - a received entry's recipient key must have been enabled then too;
+/// - a sent entry must name the identity and key its outgoing viewing key is derived from.
+///
+/// The first request from a sender to a recipient for an account reference is kept. A wallet
+/// keeps the requests it already holds from earlier scans, and drops a later one from the same
+/// sender for the same account reference as this does.
 pub fn private_contact_requests_from_scan(
     dashpay_contract: &DataContract,
     scan: PrivateDocumentScan,
-    keys: &PrivateDocumentScanKeys,
-    sender_identities: &BTreeMap<Identifier, Option<Identity>>,
+    identities: &BTreeMap<Identifier, Option<Identity>>,
     platform_version: &PlatformVersion,
 ) -> Result<PrivateContactRequestScan, Error> {
     let document_type = private_contact_request_type(dashpay_contract)?;
-    let decode = |payload: &[u8]| -> Result<PrivateContactRequest, PrivateContactRequestRejection> {
-        let properties = decode_private_document_payload(document_type, payload, platform_version)
-            .map_err(|error| PrivateContactRequestRejection::InvalidRequest(error.to_string()))?;
-        PrivateContactRequest::from_properties(properties)
-            .map_err(|error| PrivateContactRequestRejection::InvalidRequest(error.to_string()))
+    let signing_levels = private_contact_request_signing_security_levels(dashpay_contract)?;
+    let reader = EntryReader {
+        identities,
+        signing_levels: &signing_levels,
+        decode: &|payload: &[u8]| {
+            let properties =
+                decode_private_document_payload(document_type, payload, platform_version).map_err(
+                    |error| PrivateContactRequestRejection::InvalidRequest(error.to_string()),
+                )?;
+            PrivateContactRequest::from_properties(properties)
+                .map_err(|error| PrivateContactRequestRejection::InvalidRequest(error.to_string()))
+        },
     };
 
     let mut result = PrivateContactRequestScan {
@@ -509,7 +773,7 @@ pub fn private_contact_requests_from_scan(
             block_height: received.block_height,
             reason,
         };
-        match read_received(&received, keys, sender_identities, &decode) {
+        match reader.read_received(&received) {
             Ok(request) => {
                 let sender_id = Identifier::from(*received.entry.sender_identity_id());
                 if !seen.insert((
@@ -537,7 +801,7 @@ pub fn private_contact_requests_from_scan(
     }
 
     for sent in scan.sent {
-        match decode(sent.entry.payload()) {
+        match reader.read_sent(&sent) {
             Ok(request) => result.sent.push(SentPrivateContactRequest {
                 position: sent.position,
                 block_height: sent.block_height,
@@ -562,77 +826,166 @@ pub fn private_contact_requests_from_scan(
     Ok(result)
 }
 
-/// The request a received entry holds, once its sender is checked.
-fn read_received(
-    received: &ReceivedPrivateDocumentEntry,
-    keys: &PrivateDocumentScanKeys,
-    sender_identities: &BTreeMap<Identifier, Option<Identity>>,
-    decode: &impl Fn(&[u8]) -> Result<PrivateContactRequest, PrivateContactRequestRejection>,
-) -> Result<PrivateContactRequest, PrivateContactRequestRejection> {
-    let sender_id = Identifier::from(*received.entry.sender_identity_id());
-    if sender_id == Identifier::default() {
-        return Err(PrivateContactRequestRejection::AnonymousSender);
+type DecodeRequest<'a> =
+    dyn Fn(&[u8]) -> Result<PrivateContactRequest, PrivateContactRequestRejection> + 'a;
+
+/// Reads the entries of one scan against the identities fetched for it.
+struct EntryReader<'a> {
+    identities: &'a BTreeMap<Identifier, Option<Identity>>,
+    signing_levels: &'a [SecurityLevel],
+    decode: &'a DecodeRequest<'a>,
+}
+
+impl EntryReader<'_> {
+    fn identity(&self, identity_id: &Identifier) -> Option<&Identity> {
+        self.identities.get(identity_id).and_then(Option::as_ref)
     }
-    let request = decode(received.entry.payload())?;
-    let sender = sender_identities
-        .get(&sender_id)
-        .and_then(Option::as_ref)
-        .ok_or(PrivateContactRequestRejection::SenderNotFound)?;
-    let key_id = received.entry.sender_key_id();
-    let unusable = |message: String| PrivateContactRequestRejection::SenderKeyNotUsable(message);
-    let key = sender
-        .get_public_key_by_id(key_id)
-        .ok_or_else(|| unusable(format!("the sender has no key {key_id}")))?;
-    if !sender_key_purpose_is_valid(key.purpose()) {
-        return Err(unusable(format!(
-            "the sender key {key_id} is a {} key, not an ENCRYPTION key",
-            key.purpose()
-        )));
-    }
-    if key.key_type() != KeyType::ECDSA_SECP256K1 {
-        return Err(unusable(format!(
-            "the sender key {key_id} is a {} key, not ECDSA_SECP256K1",
-            key.key_type()
-        )));
-    }
-    // A key disabled after the entry was appended still wrote it: keys are disabled, never
-    // removed, and the entry is immutable.
-    if let Some(disabled_at) = key.disabled_at() {
-        if disabled_at <= received.block_time_ms {
-            return Err(unusable(format!(
-                "the sender key {key_id} was disabled at {disabled_at}, before the entry"
-            )));
+
+    /// The request a received entry holds, once its sender and recipient key are checked.
+    fn read_received(
+        &self,
+        received: &ReceivedPrivateDocumentEntry,
+    ) -> Result<PrivateContactRequest, PrivateContactRequestRejection> {
+        self.check_sender(&received.entry, received.block_time_ms)?;
+        let recipient_key_problem = match self.identity(&received.recipient_identity_id) {
+            None => Some("the recipient identity was not given".to_string()),
+            Some(recipient) => match recipient.get_public_key_by_id(received.recipient_key_id) {
+                None => Some(format!(
+                    "the recipient has no key {}",
+                    received.recipient_key_id
+                )),
+                Some(key) => disabled_problem(key, "recipient", Some(received.block_time_ms)),
+            },
+        };
+        if let Some(problem) = recipient_key_problem {
+            return Err(PrivateContactRequestRejection::RecipientKeyNotUsable(
+                problem,
+            ));
         }
+        (self.decode)(received.entry.payload())
     }
-    let sender_public_key = PublicKey::from_slice(key.data().as_slice()).map_err(|error| {
-        unusable(format!(
-            "the sender key {key_id} is not a secp256k1 point: {error}"
+
+    /// The request a sent entry holds, once it is checked to be the identity's own: someone
+    /// else holding its encryption key could build entries its outgoing viewing key recovers.
+    fn read_sent(
+        &self,
+        sent: &SentPrivateDocumentEntry,
+    ) -> Result<PrivateContactRequest, PrivateContactRequestRejection> {
+        if Identifier::from(*sent.entry.sender_identity_id()) != sent.sender_identity_id
+            || sent.entry.sender_key_id() != sent.outgoing_key_id
+        {
+            return Err(PrivateContactRequestRejection::SenderNotAuthenticated);
+        }
+        self.check_sender(&sent.entry, sent.block_time_ms)?;
+        (self.decode)(sent.entry.payload())
+    }
+
+    /// Checks that the identity an entry names as its sender wrote it, as the identity was
+    /// when the entry was appended at `block_time_ms`.
+    fn check_sender(
+        &self,
+        entry: &OpenedPrivateDocumentEntry,
+        block_time_ms: u64,
+    ) -> Result<(), PrivateContactRequestRejection> {
+        let sender_id = Identifier::from(*entry.sender_identity_id());
+        match entry.auth_mode() {
+            PrivateDocumentAuthMode::Anonymous => {
+                return Err(PrivateContactRequestRejection::AnonymousSender)
+            }
+            // Anyone holding the recipient's key could have written a deniable MAC.
+            PrivateDocumentAuthMode::DeniableMac => {
+                return Err(PrivateContactRequestRejection::NotSigned)
+            }
+            PrivateDocumentAuthMode::Signature => {}
+        }
+        if sender_id == Identifier::default() {
+            return Err(PrivateContactRequestRejection::AnonymousSender);
+        }
+        let sender = self
+            .identity(&sender_id)
+            .ok_or(PrivateContactRequestRejection::SenderNotFound)?;
+        encryption_key(sender, entry.sender_key_id(), Some(block_time_ms))
+            .map_err(PrivateContactRequestRejection::SenderKeyNotUsable)?;
+        let signer = entry
+            .recover_signer()
+            .map_err(|_| PrivateContactRequestRejection::SenderNotAuthenticated)?;
+        let mut problem = None;
+        for key in sender.public_keys().values() {
+            if !key_is(key, &signer) {
+                continue;
+            }
+            match signing_key_problem(key, self.signing_levels, Some(block_time_ms)) {
+                None => return Ok(()),
+                Some(key_problem) => {
+                    problem.get_or_insert(key_problem);
+                }
+            }
+        }
+        Err(problem.map_or(
+            PrivateContactRequestRejection::SenderNotAuthenticated,
+            PrivateContactRequestRejection::SenderKeyNotUsable,
         ))
-    })?;
-    keys.verify_sender(received, &sender_public_key)
-        .map_err(|_| PrivateContactRequestRejection::SenderNotAuthenticated)?;
-    Ok(request)
+    }
 }
 
 impl Sdk {
-    /// Seals `request` from `sender` to the key `recipient_key_id` of `recipient`, as
-    /// [`seal_private_contact_request`] does, with the DashPay contract and a fresh ephemeral
-    /// seed. The entry is appended by a transition paid from the sender's notes.
-    pub async fn seal_private_contact_request(
+    /// Seals `request` from the encryption key `encryption_key_id` of `sender`, whose secret key
+    /// is given, to the key `recipient_key_id` of `recipient`, as
+    /// [`seal_private_contact_request`] does: with the DashPay contract, a fresh ephemeral seed,
+    /// and `signer`'s signature with the first of the sender's keys that may sign the request
+    /// and that it holds. The entry is appended by a transition paid from the sender's notes.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn seal_private_contact_request<S>(
         &self,
-        sender: &PrivateContactRequestSender<'_>,
+        sender: &Identity,
+        encryption_key_id: KeyID,
+        encryption_secret_key: &SecretKey,
+        signer: &S,
         recipient: &Identity,
         recipient_key_id: KeyID,
         request: &PrivateContactRequest,
-    ) -> Result<BinaryData, Error> {
+    ) -> Result<BinaryData, Error>
+    where
+        S: Signer<IdentityPublicKey> + ?Sized,
+    {
         let dashpay_contract = self.fetch_dashpay_contract().await?;
+        let levels = private_contact_request_signing_security_levels(&dashpay_contract)?;
+        let signing_key = sender
+            .public_keys()
+            .values()
+            .find(|key| {
+                signing_key_problem(key, &levels, None).is_none() && signer.can_sign_with(key)
+            })
+            .ok_or_else(|| {
+                Error::Generic(format!(
+                    "the signer holds no key of {} that signs a private contact request: an \
+                     enabled AUTHENTICATION key at {levels:?}",
+                    sender.id()
+                ))
+            })?;
+        let signing_data = private_contact_request_signing_data(
+            &dashpay_contract,
+            sender,
+            encryption_key_id,
+            recipient,
+            recipient_key_id,
+            request,
+        )?;
+        let signature =
+            private_contact_request_signature(signer, signing_key, &signing_data).await?;
         // A seed whose hash is no secret key, a chance of about 2^-128, fails the seal, and a
         // retry draws another.
         let mut esk_seed = [0u8; 32];
         StdRng::from_os_rng().fill_bytes(&mut esk_seed);
         let sealed = seal_private_contact_request(
             &dashpay_contract,
-            sender,
+            &PrivateContactRequestSender {
+                identity: sender,
+                encryption_key_id,
+                encryption_secret_key,
+                signing_key_id: signing_key.id(),
+                signature: &signature,
+            },
             recipient,
             recipient_key_id,
             request,
@@ -644,8 +997,8 @@ impl Sdk {
 
     /// Reads the page of DashPay's `privateContactRequest` store from `start_position` and
     /// returns the requests it holds for the wallet whose `keys` are given: those to its
-    /// identities, each sender checked against the identity key the entry names, and those its
-    /// identities sent. The sender identities are fetched once each.
+    /// identities and those its identities sent, each checked against the identities' keys as
+    /// [`private_contact_requests_from_scan`] says. The identities are fetched once each.
     ///
     /// A wallet keeps [`PrivateContactRequestScan::next_position`] as its cursor once it has
     /// stored what the page held, and scans again from it until
@@ -665,17 +1018,11 @@ impl Sdk {
                 keys,
             )
             .await?;
-        let mut sender_identities = BTreeMap::new();
-        for sender_id in private_contact_request_senders(&scan) {
-            sender_identities.insert(sender_id, Identity::fetch(self, sender_id).await?);
+        let mut identities = BTreeMap::new();
+        for identity_id in private_contact_request_identities(&scan) {
+            identities.insert(identity_id, Identity::fetch(self, identity_id).await?);
         }
-        private_contact_requests_from_scan(
-            &dashpay_contract,
-            scan,
-            keys,
-            &sender_identities,
-            self.version(),
-        )
+        private_contact_requests_from_scan(&dashpay_contract, scan, &identities, self.version())
     }
 }
 
@@ -683,11 +1030,14 @@ impl Sdk {
 mod tests {
     use super::*;
     use crate::platform::private_document_entries::{PrivateDocumentEntries, PrivateDocumentEntry};
+    use dpp::address_funds::AddressWitness;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contract::document_type::DocumentPropertyType;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use dpp::identity::{IdentityV0, Purpose, SecurityLevel};
+    use dpp::identity::IdentityV0;
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dpp::ProtocolError;
+    use platform_encryption::sign_private_document_signing_data;
 
     const SENDER_ID: [u8; 32] = [0xA0; 32];
     const RECIPIENT_ID: [u8; 32] = [0xB0; 32];
@@ -713,7 +1063,12 @@ mod tests {
         IdentityPublicKey::V0(IdentityPublicKeyV0 {
             id,
             purpose,
-            security_level: SecurityLevel::MEDIUM,
+            // Signing keys sign at HIGH, which DashPay's types require.
+            security_level: if purpose == Purpose::AUTHENTICATION {
+                SecurityLevel::HIGH
+            } else {
+                SecurityLevel::MEDIUM
+            },
             contract_bounds: None,
             key_type,
             read_only: false,
@@ -731,7 +1086,14 @@ mod tests {
         })
     }
 
-    /// The sender, whose encryption key 1 is `secret_key(1)`, disabled at `disabled_at`.
+    /// `identity` with `key` added, or replacing its key of the same id.
+    fn with_key(mut identity: Identity, key: IdentityPublicKey) -> Identity {
+        identity.add_public_key(key);
+        identity
+    }
+
+    /// The sender, whose signing key 0 is `secret_key(9)` and whose encryption key 1 is
+    /// `secret_key(1)`, disabled at `disabled_at`.
     fn sender_identity(disabled_at: Option<u64>) -> Identity {
         identity(
             SENDER_ID,
@@ -816,6 +1178,30 @@ mod tests {
         }
     }
 
+    /// The signature by `signing_secret` of `request` from the sender's encryption key 1 to the
+    /// recipient's key 2, as an identity signer makes it.
+    fn signature(
+        contract: &DataContract,
+        sender: &Identity,
+        request: &PrivateContactRequest,
+        signing_secret: &SecretKey,
+    ) -> [u8; 65] {
+        sign_private_document_signing_data(
+            &private_contact_request_signing_data(
+                contract,
+                sender,
+                1,
+                &recipient_identity(),
+                2,
+                request,
+            )
+            .expect("the keys check"),
+            signing_secret,
+        )
+    }
+
+    /// `request` from the sender's encryption key 1, signed by its key 0, to the recipient's
+    /// key 2.
     fn seal(
         contract: &DataContract,
         sender: &Identity,
@@ -828,6 +1214,8 @@ mod tests {
                 identity: sender,
                 encryption_key_id: 1,
                 encryption_secret_key: &secret_key(1),
+                signing_key_id: 0,
+                signature: &signature(contract, sender, request, &secret_key(9)),
             },
             &recipient_identity(),
             2,
@@ -836,6 +1224,41 @@ mod tests {
         )
         .expect("the request seals")
         .to_vec()
+    }
+
+    /// An entry of `payload` to `recipient_key` of `recipient_id`, from `sender`, sealed with
+    /// the sender's outgoing viewing key: one no wallet of these tests' would build.
+    fn seal_raw(
+        contract: &DataContract,
+        recipient_id: [u8; 32],
+        recipient_key: &SecretKey,
+        sender: &PrivateDocumentSender,
+        payload: &[u8],
+    ) -> Vec<u8> {
+        seal_private_document_entry(
+            &PrivateDocumentTarget {
+                contract_id: contract.id().to_buffer(),
+                document_type_name: PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+            },
+            589,
+            &PrivateDocumentRecipient {
+                identity_id: recipient_id,
+                public_key: &PublicKey::from_secret_key(recipient_key),
+            },
+            sender,
+            payload,
+            &private_contact_request_outgoing_viewing_key(&secret_key(1)),
+            &[9; 32],
+        )
+        .expect("the payload fits")
+    }
+
+    fn payload(contract: &DataContract, request: &PrivateContactRequest) -> Vec<u8> {
+        encode_private_document_payload(
+            private_contact_request_type(contract).expect("DashPay v3"),
+            request.to_properties().expect("in bounds"),
+        )
+        .expect("the payload encodes")
     }
 
     fn page(entries: Vec<Vec<u8>>) -> PrivateDocumentEntries {
@@ -854,40 +1277,53 @@ mod tests {
         }
     }
 
-    /// The recipient's keys, and the sender's outgoing viewing key.
-    fn scan_keys() -> PrivateDocumentScanKeys {
+    /// The recipient's keys alone.
+    fn recipient_keys() -> PrivateDocumentScanKeys {
         PrivateDocumentScanKeys::new()
             .with_recipient(Identifier::from(RECIPIENT_ID), &[(2, secret_key(2))])
-            .with_sender(
-                Identifier::from(SENDER_ID),
-                private_contact_request_outgoing_viewing_key(&secret_key(1)),
-            )
     }
 
+    /// The recipient's keys, and the sender's outgoing viewing key, of its encryption key 1.
+    fn scan_keys() -> PrivateDocumentScanKeys {
+        recipient_keys().with_sender(
+            Identifier::from(SENDER_ID),
+            1,
+            private_contact_request_outgoing_viewing_key(&secret_key(1)),
+        )
+    }
+
+    /// Reads `entries` with `keys`, fetching the identities from `identities`: one not there
+    /// does not exist.
     fn read(
         contract: &DataContract,
         entries: Vec<Vec<u8>>,
-        sender: Option<Identity>,
+        keys: &PrivateDocumentScanKeys,
+        identities: &[Identity],
     ) -> PrivateContactRequestScan {
-        let keys = scan_keys();
         let target = PrivateDocumentTarget {
             contract_id: contract.id().to_buffer(),
             document_type_name: PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
         };
         let scan = keys.scan_page(&target, 0, &page(entries));
-        let senders = private_contact_request_senders(&scan);
-        let sender_identities = senders
+        let fetched = private_contact_request_identities(&scan)
             .into_iter()
-            .map(|sender_id| (sender_id, sender.clone()))
+            .map(|identity_id| {
+                let identity = identities
+                    .iter()
+                    .find(|identity| identity.id() == identity_id)
+                    .cloned();
+                (identity_id, identity)
+            })
             .collect();
-        private_contact_requests_from_scan(
-            contract,
-            scan,
-            &keys,
-            &sender_identities,
-            PlatformVersion::latest(),
-        )
-        .expect("DashPay declares private contact requests")
+        private_contact_requests_from_scan(contract, scan, &fetched, PlatformVersion::latest())
+            .expect("DashPay declares private contact requests")
+    }
+
+    fn reasons(scan: PrivateContactRequestScan) -> Vec<PrivateContactRequestRejection> {
+        scan.rejected
+            .into_iter()
+            .map(|rejected| rejected.reason)
+            .collect()
     }
 
     /// The bounds the request checks are DashPay's: the schema's sizes, as dpp parses them.
@@ -1060,7 +1496,12 @@ mod tests {
         let entry = seal(&contract, &sender, &largest_request(), 1);
         assert_eq!(entry.len(), 589);
 
-        let scan = read(&contract, vec![entry], Some(sender));
+        let scan = read(
+            &contract,
+            vec![entry],
+            &scan_keys(),
+            &[sender, recipient_identity()],
+        );
         assert_eq!(scan.rejected, vec![]);
         assert_eq!(scan.received.len(), 1);
         let received = &scan.received[0];
@@ -1087,63 +1528,317 @@ mod tests {
         assert!(scan.is_complete());
     }
 
-    /// A received request is refused when its sender does not exist, when the key it names was
-    /// disabled before it was appended, or when the identity's key under that id did not write
-    /// it; a key disabled after it was appended still wrote it.
+    /// A received request is refused when its sender does not exist; when the encryption key it
+    /// names is not an enabled encryption key of the sender; or when no key of the sender that
+    /// may sign DashPay's documents, enabled then, signed it. A key disabled after the entry was
+    /// appended was enabled when it was written.
     #[test]
     fn should_refuse_a_request_whose_sender_does_not_check() {
         let contract = dashpay();
         let entry = seal(&contract, &sender_identity(None), &smallest_request(1), 1);
-        let reasons = |sender: Option<Identity>| {
-            read(&contract, vec![entry.clone()], sender)
-                .rejected
-                .into_iter()
-                .map(|rejected| rejected.reason)
-                .collect::<Vec<_>>()
+        let reasons_with = |sender: Option<Identity>| {
+            let mut identities = vec![recipient_identity()];
+            identities.extend(sender);
+            reasons(read(
+                &contract,
+                vec![entry.clone()],
+                &recipient_keys(),
+                &identities,
+            ))
+        };
+        let not_usable = |reasons: Vec<PrivateContactRequestRejection>| {
+            matches!(
+                reasons.as_slice(),
+                [PrivateContactRequestRejection::SenderKeyNotUsable(_)]
+            )
+        };
+        let signing_key = |security_level, disabled_at| {
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id: 0,
+                purpose: Purpose::AUTHENTICATION,
+                security_level,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(
+                    PublicKey::from_secret_key(&secret_key(9))
+                        .serialize()
+                        .to_vec(),
+                ),
+                disabled_at,
+            })
         };
 
+        assert_eq!(reasons_with(Some(sender_identity(None))), vec![]);
         assert_eq!(
-            reasons(None),
+            reasons_with(None),
             vec![PrivateContactRequestRejection::SenderNotFound]
         );
-        assert!(matches!(
-            reasons(Some(sender_identity(Some(BLOCK_TIME_MS)))).as_slice(),
-            [PrivateContactRequestRejection::SenderKeyNotUsable(_)]
-        ));
+
+        // The encryption key named, disabled before and after the entry.
+        assert!(not_usable(reasons_with(Some(sender_identity(Some(
+            BLOCK_TIME_MS
+        ))))));
         assert_eq!(
-            reasons(Some(sender_identity(Some(BLOCK_TIME_MS + 1)))),
+            reasons_with(Some(sender_identity(Some(BLOCK_TIME_MS + 1)))),
             vec![]
         );
-        // The identity's key 1 is another key than the one that wrote the MAC.
-        let impostor = identity(
-            SENDER_ID,
-            vec![key(
-                1,
-                Purpose::ENCRYPTION,
-                KeyType::ECDSA_SECP256K1,
-                &secret_key(5),
-                None,
-            )],
-        );
-        assert_eq!(
-            reasons(Some(impostor)),
-            vec![PrivateContactRequestRejection::SenderNotAuthenticated]
-        );
         // Key 1 is not an encryption key.
-        let wrong_purpose = identity(
-            SENDER_ID,
-            vec![key(
+        assert!(not_usable(reasons_with(Some(with_key(
+            sender_identity(None),
+            key(
                 1,
                 Purpose::AUTHENTICATION,
                 KeyType::ECDSA_SECP256K1,
                 &secret_key(1),
                 None,
-            )],
+            ),
+        )))));
+
+        // The signing key, disabled before and after the entry, and at a level that signs no
+        // DashPay document.
+        assert!(not_usable(reasons_with(Some(with_key(
+            sender_identity(None),
+            signing_key(SecurityLevel::HIGH, Some(BLOCK_TIME_MS)),
+        )))));
+        assert_eq!(
+            reasons_with(Some(with_key(
+                sender_identity(None),
+                signing_key(SecurityLevel::HIGH, Some(BLOCK_TIME_MS + 1)),
+            ))),
+            vec![]
         );
+        assert!(not_usable(reasons_with(Some(with_key(
+            sender_identity(None),
+            signing_key(SecurityLevel::MEDIUM, None),
+        )))));
+        assert!(not_usable(reasons_with(Some(with_key(
+            sender_identity(None),
+            signing_key(SecurityLevel::MASTER, None),
+        )))));
+        // The signing key's public key under another purpose is no signing key.
+        assert!(not_usable(reasons_with(Some(with_key(
+            sender_identity(None),
+            key(
+                0,
+                Purpose::ENCRYPTION,
+                KeyType::ECDSA_SECP256K1,
+                &secret_key(9),
+                None,
+            ),
+        )))));
+        // The identity holds no key that signed it.
+        assert_eq!(
+            reasons_with(Some(with_key(
+                sender_identity(None),
+                key(
+                    0,
+                    Purpose::AUTHENTICATION,
+                    KeyType::ECDSA_SECP256K1,
+                    &secret_key(5),
+                    None,
+                ),
+            ))),
+            vec![PrivateContactRequestRejection::SenderNotAuthenticated]
+        );
+        // A hash160 signing key signs too: the signature recovers its key.
+        assert_eq!(
+            reasons_with(Some(with_key(
+                sender_identity(None),
+                IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                    id: 0,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::CRITICAL,
+                    contract_bounds: None,
+                    key_type: KeyType::ECDSA_HASH160,
+                    read_only: false,
+                    data: BinaryData::new(
+                        ripemd160_sha256(&PublicKey::from_secret_key(&secret_key(9)).serialize())
+                            .to_vec(),
+                    ),
+                    disabled_at: None,
+                }),
+            ))),
+            vec![]
+        );
+    }
+
+    /// A stolen recipient key forges nothing: an entry with a deniable MAC, which the
+    /// recipient's key computes, is refused, and so is one the recipient signed itself naming
+    /// the sender.
+    #[test]
+    fn should_refuse_an_entry_a_stolen_recipient_key_could_have_written() {
+        let contract = dashpay();
+        let request = smallest_request(1);
+        let mac = seal_raw(
+            &contract,
+            RECIPIENT_ID,
+            &secret_key(2),
+            &PrivateDocumentSender::DeniableMac {
+                identity_id: SENDER_ID,
+                key_id: 1,
+                secret_key: &secret_key(1),
+            },
+            &payload(&contract, &request),
+        );
+        let forged_signature =
+            signature(&contract, &sender_identity(None), &request, &secret_key(2));
+        let forged = seal_raw(
+            &contract,
+            RECIPIENT_ID,
+            &secret_key(2),
+            &PrivateDocumentSender::Signature {
+                identity_id: SENDER_ID,
+                key_id: 1,
+                signature: &forged_signature,
+            },
+            &payload(&contract, &request),
+        );
+        assert_eq!(
+            reasons(read(
+                &contract,
+                vec![mac, forged],
+                &recipient_keys(),
+                &[sender_identity(None), recipient_identity()],
+            )),
+            vec![
+                PrivateContactRequestRejection::NotSigned,
+                PrivateContactRequestRejection::SenderNotAuthenticated,
+            ]
+        );
+    }
+
+    /// A request is refused when the recipient key it is encrypted to was disabled before it
+    /// was appended, or when the recipient identity is not given to check it.
+    #[test]
+    fn should_refuse_a_request_to_a_recipient_key_disabled_before_it() {
+        let contract = dashpay();
+        let entry = seal(&contract, &sender_identity(None), &smallest_request(1), 1);
+        let reasons_with = |recipient: Option<Identity>| {
+            let mut identities = vec![sender_identity(None)];
+            identities.extend(recipient);
+            reasons(read(
+                &contract,
+                vec![entry.clone()],
+                &recipient_keys(),
+                &identities,
+            ))
+        };
+        let disabled_at = |disabled_at| {
+            with_key(
+                recipient_identity(),
+                key(
+                    2,
+                    Purpose::DECRYPTION,
+                    KeyType::ECDSA_SECP256K1,
+                    &secret_key(2),
+                    Some(disabled_at),
+                ),
+            )
+        };
         assert!(matches!(
-            reasons(Some(wrong_purpose)).as_slice(),
+            reasons_with(Some(disabled_at(BLOCK_TIME_MS))).as_slice(),
+            [PrivateContactRequestRejection::RecipientKeyNotUsable(_)]
+        ));
+        assert_eq!(reasons_with(Some(disabled_at(BLOCK_TIME_MS + 1))), vec![]);
+        assert!(matches!(
+            reasons_with(None).as_slice(),
+            [PrivateContactRequestRejection::RecipientKeyNotUsable(_)]
+        ));
+    }
+
+    /// An entry the sender's outgoing viewing key recovers is the sender's only when it names
+    /// the identity and key that key is derived from and one of the identity's signing keys
+    /// signed it: someone holding the encryption key could build the others.
+    #[test]
+    fn should_refuse_a_sent_entry_the_identity_did_not_write() {
+        let contract = dashpay();
+        let sender = sender_identity(None);
+        let request = smallest_request(1);
+        let signed_by = |identity_id: [u8; 32], key_id: KeyID, signing_secret: &SecretKey| {
+            let signing_data = private_document_signing_data(
+                &PrivateDocumentTarget {
+                    contract_id: contract.id().to_buffer(),
+                    document_type_name: PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+                },
+                &identity_id,
+                key_id,
+                &[0xD0; 32],
+                &payload(&contract, &request),
+            );
+            let signature = sign_private_document_signing_data(&signing_data, signing_secret);
+            seal_raw(
+                &contract,
+                [0xD0; 32],
+                &secret_key(40),
+                &PrivateDocumentSender::Signature {
+                    identity_id,
+                    key_id,
+                    signature: &signature,
+                },
+                &payload(&contract, &request),
+            )
+        };
+        let entries = vec![
+            signed_by(SENDER_ID, 1, &secret_key(9)),
+            // Another key than the outgoing viewing key's.
+            signed_by(SENDER_ID, 3, &secret_key(9)),
+            // Another identity.
+            signed_by([0xC0; 32], 1, &secret_key(9)),
+            // Signed by no key of the sender.
+            signed_by(SENDER_ID, 1, &secret_key(5)),
+        ];
+        let scan = read(&contract, entries.clone(), &scan_keys(), &[sender]);
+        assert_eq!(
+            scan.sent
+                .iter()
+                .map(|sent| (sent.position, sent.recipient_id))
+                .collect::<Vec<_>>(),
+            vec![(0, Identifier::from([0xD0; 32]))]
+        );
+        assert_eq!(
+            reasons(scan),
+            vec![PrivateContactRequestRejection::SenderNotAuthenticated; 3]
+        );
+        // The encryption key was disabled before the entry: a thief wrote it with the key.
+        assert!(matches!(
+            reasons(read(
+                &contract,
+                entries[..1].to_vec(),
+                &scan_keys(),
+                &[sender_identity(Some(BLOCK_TIME_MS))],
+            ))
+            .as_slice(),
             [PrivateContactRequestRejection::SenderKeyNotUsable(_)]
         ));
+    }
+
+    /// The sender is checked before the payload is read: an entry from no known sender is
+    /// refused as such, whatever it holds.
+    #[test]
+    fn should_check_the_sender_before_reading_the_payload() {
+        let contract = dashpay();
+        let garbage_signature = sign_private_document_signing_data(&[1; 32], &secret_key(5));
+        let entry = seal_raw(
+            &contract,
+            RECIPIENT_ID,
+            &secret_key(2),
+            &PrivateDocumentSender::Signature {
+                identity_id: [0xC0; 32],
+                key_id: 1,
+                signature: &garbage_signature,
+            },
+            &[0xFF; 40],
+        );
+        assert_eq!(
+            reasons(read(
+                &contract,
+                vec![entry],
+                &recipient_keys(),
+                &[recipient_identity()],
+            )),
+            vec![PrivateContactRequestRejection::SenderNotFound]
+        );
     }
 
     /// An anonymous entry is no contact request, and a second request from the same sender for
@@ -1152,27 +1847,13 @@ mod tests {
     fn should_refuse_an_anonymous_entry_and_a_duplicate_request() {
         let contract = dashpay();
         let sender = sender_identity(None);
-        let document_type = private_contact_request_type(&contract).expect("DashPay v3");
-        let anonymous = seal_private_document_entry(
-            &PrivateDocumentTarget {
-                contract_id: contract.id().to_buffer(),
-                document_type_name: PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
-            },
-            589,
-            &PrivateDocumentRecipient {
-                identity_id: RECIPIENT_ID,
-                public_key: &PublicKey::from_secret_key(&secret_key(2)),
-            },
+        let anonymous = seal_raw(
+            &contract,
+            RECIPIENT_ID,
+            &secret_key(2),
             &PrivateDocumentSender::Anonymous,
-            &encode_private_document_payload(
-                document_type,
-                smallest_request(1).to_properties().expect("in bounds"),
-            )
-            .expect("the payload encodes"),
-            &[0; 32],
-            &[9; 32],
-        )
-        .expect("the payload fits");
+            &payload(&contract, &smallest_request(1)),
+        );
 
         let scan = read(
             &contract,
@@ -1182,7 +1863,8 @@ mod tests {
                 seal(&contract, &sender, &smallest_request(1), 2),
                 seal(&contract, &sender, &smallest_request(2), 3),
             ],
-            Some(sender),
+            &recipient_keys(),
+            &[sender.clone(), recipient_identity()],
         );
         assert_eq!(
             scan.received
@@ -1209,53 +1891,213 @@ mod tests {
     }
 
     /// A request is sealed only from the sender's enabled ECDSA encryption key with its own
-    /// secret key, and only to an enabled ECDSA decryption or encryption key of the recipient.
+    /// secret key, signed by an enabled signing key of the sender at a level DashPay's documents
+    /// are signed at, and only to an enabled ECDSA decryption or encryption key of the
+    /// recipient.
     #[test]
     fn should_refuse_to_seal_with_keys_dashpay_does_not_use() {
         let contract = dashpay();
-        let sender = sender_identity(None);
-        let attempt = |encryption_key_id: KeyID, secret: u8, recipient_key_id: KeyID| {
+        let request = smallest_request(1);
+        let attempt = |sender: &Identity,
+                       encryption_key_id: KeyID,
+                       secret: u8,
+                       signing_key_id: KeyID,
+                       signing_secret: u8,
+                       recipient_key_id: KeyID| {
+            let signing_data = private_contact_request_signing_data(
+                &contract,
+                sender,
+                encryption_key_id,
+                &recipient_identity(),
+                recipient_key_id,
+                &request,
+            )?;
             seal_private_contact_request(
                 &contract,
                 &PrivateContactRequestSender {
-                    identity: &sender,
+                    identity: sender,
                     encryption_key_id,
                     encryption_secret_key: &secret_key(secret),
+                    signing_key_id,
+                    signature: &sign_private_document_signing_data(
+                        &signing_data,
+                        &secret_key(signing_secret),
+                    ),
                 },
                 &recipient_identity(),
                 recipient_key_id,
-                &smallest_request(1),
+                &request,
                 &[1; 32],
             )
         };
-        attempt(1, 1, 2).expect("the sender's encryption key to the recipient's decryption key");
-        for (case, encryption_key_id, secret, recipient_key_id) in [
-            ("the sender's authentication key", 0, 9, 2),
-            ("another secret key than the sender key's", 1, 5, 2),
-            ("a sender key the identity lacks", 7, 1, 2),
-            ("the recipient's authentication key", 1, 1, 0),
-            ("the recipient's BLS key", 1, 1, 3),
-            ("the recipient's disabled key", 1, 1, 4),
-            ("a recipient key the identity lacks", 1, 1, 9),
+        let sender = sender_identity(None);
+        attempt(&sender, 1, 1, 0, 9, 2).expect(
+            "the sender's encryption key, signed by its signing key, to the recipient's \
+             decryption key",
+        );
+        for (case, encryption_key_id, secret, signing_key_id, signing_secret, recipient_key_id) in [
+            (
+                "the sender's authentication key as the encryption key",
+                0,
+                9,
+                0,
+                9,
+                2,
+            ),
+            (
+                "another secret key than the encryption key's",
+                1,
+                5,
+                0,
+                9,
+                2,
+            ),
+            ("an encryption key the identity lacks", 7, 1, 0, 9, 2),
+            ("the encryption key as the signing key", 1, 1, 1, 1, 2),
+            (
+                "a signature by another key than the signing key",
+                1,
+                1,
+                0,
+                5,
+                2,
+            ),
+            ("a signing key the identity lacks", 1, 1, 8, 9, 2),
+            ("the recipient's authentication key", 1, 1, 0, 9, 0),
+            ("the recipient's BLS key", 1, 1, 0, 9, 3),
+            ("the recipient's disabled key", 1, 1, 0, 9, 4),
+            ("a recipient key the identity lacks", 1, 1, 0, 9, 9),
         ] {
             assert!(
-                attempt(encryption_key_id, secret, recipient_key_id).is_err(),
+                attempt(
+                    &sender,
+                    encryption_key_id,
+                    secret,
+                    signing_key_id,
+                    signing_secret,
+                    recipient_key_id
+                )
+                .is_err(),
                 "{case}"
             );
         }
-        let disabled = sender_identity(Some(1));
-        assert!(seal_private_contact_request(
+        assert!(
+            attempt(&sender_identity(Some(1)), 1, 1, 0, 9, 2).is_err(),
+            "a disabled encryption key"
+        );
+        let medium = with_key(
+            sender_identity(None),
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id: 0,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::MEDIUM,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(
+                    PublicKey::from_secret_key(&secret_key(9))
+                        .serialize()
+                        .to_vec(),
+                ),
+                disabled_at: None,
+            }),
+        );
+        assert!(
+            attempt(&medium, 1, 1, 0, 9, 2).is_err(),
+            "a MEDIUM signing key"
+        );
+    }
+
+    /// DashPay's documents are signed at HIGH or CRITICAL.
+    #[test]
+    fn should_sign_at_the_levels_dashpay_documents_are_signed_at() {
+        assert_eq!(
+            private_contact_request_signing_security_levels(&dashpay()).expect("DashPay v3"),
+            vec![SecurityLevel::CRITICAL, SecurityLevel::HIGH]
+        );
+    }
+
+    /// The signer a wallet signs its transitions with, as `SimpleSigner` signs: the data's
+    /// double SHA-256, in the compact form.
+    #[derive(Debug)]
+    struct TransitionSigner(BTreeMap<KeyID, SecretKey>);
+
+    #[async_trait::async_trait]
+    impl Signer<IdentityPublicKey> for TransitionSigner {
+        async fn sign(
+            &self,
+            key: &IdentityPublicKey,
+            data: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
+            let secret_key = self
+                .0
+                .get(&key.id())
+                .ok_or_else(|| ProtocolError::Generic(format!("no key {}", key.id())))?;
+            let signature = dpp::dashcore::signer::sign(data, &secret_key.to_secret_bytes())
+                .map_err(|error| ProtocolError::Generic(error.to_string()))?;
+            Ok(BinaryData::new(signature.to_vec()))
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            Err(ProtocolError::Generic("no witnesses".to_string()))
+        }
+
+        fn can_sign_with(&self, key: &IdentityPublicKey) -> bool {
+            self.0.contains_key(&key.id())
+        }
+    }
+
+    /// The signer a wallet signs a public request's transition with signs a private one: its
+    /// signature of the signing data is the one the entry carries.
+    #[tokio::test]
+    async fn should_seal_with_the_signature_of_a_transition_signer() {
+        let contract = dashpay();
+        let sender = sender_identity(None);
+        let request = largest_request();
+        let signing_key = sender.get_public_key_by_id(0).expect("key 0").clone();
+        let signer = TransitionSigner(BTreeMap::from([(0, secret_key(9))]));
+        let signing_data = private_contact_request_signing_data(
+            &contract,
+            &sender,
+            1,
+            &recipient_identity(),
+            2,
+            &request,
+        )
+        .expect("the keys check");
+        let signature = private_contact_request_signature(&signer, &signing_key, &signing_data)
+            .await
+            .expect("the signer signs");
+        assert_eq!(
+            signature,
+            sign_private_document_signing_data(&signing_data, &secret_key(9))
+        );
+        let entry = seal_private_contact_request(
             &contract,
             &PrivateContactRequestSender {
-                identity: &disabled,
+                identity: &sender,
                 encryption_key_id: 1,
                 encryption_secret_key: &secret_key(1),
+                signing_key_id: 0,
+                signature: &signature,
             },
             &recipient_identity(),
             2,
-            &smallest_request(1),
-            &[1; 32],
+            &request,
+            &[3; 32],
         )
-        .is_err());
+        .expect("the request seals");
+        let scan = read(
+            &contract,
+            vec![entry.to_vec()],
+            &recipient_keys(),
+            &[sender, recipient_identity()],
+        );
+        assert_eq!(scan.rejected, vec![]);
+        assert_eq!(scan.received[0].request, request);
     }
 }
