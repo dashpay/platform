@@ -48,8 +48,17 @@
 //!   `HMAC-SHA256(H("Dash/PrivDoc/v1/mac" || ser(sender key * R)), m)`, then zeros. The
 //!   recipient learns who sent the entry but could have computed the MAC itself, so it cannot
 //!   prove it to anyone;
-//! - signature (2): `auth` is a recoverable ECDSA signature of `m` by the sender key, in the
-//!   compact form (header byte `31 + recovery id`, then `r || s`), which anyone can check.
+//! - signature (2): `auth` is a recoverable ECDSA signature of `SHA-256(SHA-256(m))`, in the
+//!   compact form (header byte `31 + recovery id`, then `r || s`), which anyone who reads the
+//!   body can check. That is how a Dash identity signer signs the data `m`, so a wallet signs an
+//!   entry with the signer it signs transitions with. `m` is a 32-byte hash, which no
+//!   transition's signable bytes can be. The signing key is recovered from the signature. Which keys may sign, and what the sender key id names,
+//!   is the application's rule: the signer may be the named key, or another key of the sender
+//!   identity. DashPay contact requests name the sender's encryption key, which the pair's
+//!   shared key is derived from, and are signed by one of the sender's signing keys.
+//!
+//! Every auth mode sits inside the encrypted body: only the recipient, and the sender with its
+//! outgoing viewing key, see who wrote an entry or its signature.
 
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
@@ -91,6 +100,9 @@ pub enum PrivateDocumentEnvelopeError {
 
     #[error("a deniable MAC is checked with the recipient's secret key, and none was given")]
     RecipientSecretKeyRequired,
+
+    #[error("the private document entry carries a deniable MAC, not a signature")]
+    NotSigned,
 }
 
 /// The envelope version this module builds and opens.
@@ -152,18 +164,23 @@ pub enum PrivateDocumentSender<'a> {
     Anonymous,
     /// The sender's identity and key, with a MAC under the static ECDH of that key and the
     /// recipient's. The recipient learns who wrote the entry, but could have computed the MAC
-    /// itself, so it cannot prove that to anyone. DashPay contact requests use this, with the
-    /// sender's DashPay encryption key.
+    /// itself, so it cannot prove that to anyone. Anyone holding the recipient's key can compute
+    /// it as well, so a stolen recipient key forges entries from any sender.
     DeniableMac {
         identity_id: [u8; 32],
         key_id: u32,
         secret_key: &'a SecretKey,
     },
-    /// The sender's identity and key, with a signature by that key anyone can check.
+    /// The sender's identity and a key id, with a signature anyone who reads the body can
+    /// check: an identity signer's signature of [`private_document_signing_data`] for this
+    /// entry, or [`sign_private_document_signing_data`]'s. `key_id` names the signing key, or
+    /// another key of the sender identity when the application finds the signer with
+    /// [`OpenedPrivateDocumentEntry::recover_signer`]: DashPay names the sender's encryption key
+    /// and signs with one of its signing keys.
     Signature {
         identity_id: [u8; 32],
         key_id: u32,
-        secret_key: &'a SecretKey,
+        signature: &'a [u8; 65],
     },
 }
 
@@ -189,7 +206,8 @@ impl PrivateDocumentAuthMode {
 /// An entry its recipient opened, or its sender recovered.
 ///
 /// The sender fields are what the entry claims; [`Self::verify_sender`] checks the claim
-/// against the key the sender's identity holds under `sender_key_id`. The fields are read-only,
+/// against the key the sender's identity holds under `sender_key_id`, and
+/// [`Self::recover_signer`] gives the key that signed a signed entry. The fields are read-only,
 /// so what a caller reads is what was authenticated.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OpenedPrivateDocumentEntry {
@@ -277,15 +295,7 @@ impl OpenedPrivateDocumentEntry {
                     .map_err(|_| PrivateDocumentEnvelopeError::SenderNotAuthenticated)
             }
             PrivateDocumentAuthMode::Signature => {
-                let recovery_id = RecoveryId::from_u8_masked(
-                    self.auth[0].wrapping_sub(COMPACT_SIGNATURE_HEADER_BASE),
-                );
-                let signature = RecoverableSignature::from_compact(&self.auth[1..], recovery_id)
-                    .map_err(|_| PrivateDocumentEnvelopeError::SenderNotAuthenticated)?;
-                let signer = signature
-                    .recover_ecdsa(Message::from_digest(self.auth_message))
-                    .map_err(|_| PrivateDocumentEnvelopeError::SenderNotAuthenticated)?;
-                if signer == *sender_public_key {
+                if self.recover_signer()? == *sender_public_key {
                     Ok(())
                 } else {
                     Err(PrivateDocumentEnvelopeError::SenderNotAuthenticated)
@@ -293,6 +303,78 @@ impl OpenedPrivateDocumentEntry {
             }
         }
     }
+
+    /// The key that signed a signed entry, recovered from its signature. The signature is
+    /// valid under the key returned, so the caller's check is that the key is one the sender
+    /// identity may sign with, as it was when the entry was written. An anonymous entry is
+    /// refused with `AnonymousSender`, and one carrying a deniable MAC with `NotSigned`.
+    pub fn recover_signer(&self) -> Result<PublicKey, PrivateDocumentEnvelopeError> {
+        match self.auth_mode {
+            PrivateDocumentAuthMode::Anonymous => {
+                Err(PrivateDocumentEnvelopeError::AnonymousSender)
+            }
+            PrivateDocumentAuthMode::DeniableMac => Err(PrivateDocumentEnvelopeError::NotSigned),
+            PrivateDocumentAuthMode::Signature => {
+                recover_private_document_signer(&self.auth, &self.auth_message)
+            }
+        }
+    }
+}
+
+/// What the sender of a signed entry signs, `m` above: an identity signer signs it as data,
+/// that is its double SHA-256. The fields are the entry's, so it is computed before sealing.
+pub fn private_document_signing_data(
+    target: &PrivateDocumentTarget,
+    sender_identity_id: &[u8; 32],
+    sender_key_id: u32,
+    recipient_identity_id: &[u8; 32],
+    payload: &[u8],
+) -> [u8; 32] {
+    auth_message(
+        target,
+        PrivateDocumentAuthMode::Signature,
+        sender_identity_id,
+        sender_key_id,
+        recipient_identity_id,
+        payload,
+    )
+}
+
+/// Signs `signing_data` with `secret_key` as a Dash identity signer does: a recoverable ECDSA
+/// signature of its double SHA-256, in the compact form.
+pub fn sign_private_document_signing_data(
+    signing_data: &[u8; 32],
+    secret_key: &SecretKey,
+) -> [u8; 65] {
+    let (recovery_id, compact) =
+        RecoverableSignature::sign_ecdsa_recoverable(signed_digest(signing_data), secret_key)
+            .serialize_compact();
+    let mut signature = [0u8; AUTH_LEN];
+    signature[0] = COMPACT_SIGNATURE_HEADER_BASE + u8::from(recovery_id);
+    signature[1..].copy_from_slice(&compact);
+    signature
+}
+
+/// The digest a signature of `signing_data` signs: its double SHA-256.
+fn signed_digest(signing_data: &[u8; 32]) -> Message {
+    Message::from_digest(Sha256::digest(Sha256::digest(signing_data)).into())
+}
+
+/// The key a compact signature of `signing_data` recovers to, refused with
+/// `SenderNotAuthenticated` when it is no signature. A signer checks its own signature with it
+/// before sealing.
+pub fn recover_private_document_signer(
+    signature: &[u8; AUTH_LEN],
+    signing_data: &[u8; 32],
+) -> Result<PublicKey, PrivateDocumentEnvelopeError> {
+    if !(COMPACT_SIGNATURE_HEADER_BASE..COMPACT_SIGNATURE_HEADER_BASE + 4).contains(&signature[0]) {
+        return Err(PrivateDocumentEnvelopeError::SenderNotAuthenticated);
+    }
+    let recovery_id =
+        RecoveryId::from_u8_masked(signature[0].wrapping_sub(COMPACT_SIGNATURE_HEADER_BASE));
+    RecoverableSignature::from_compact(&signature[1..], recovery_id)
+        .and_then(|signature| signature.recover_ecdsa(signed_digest(signing_data)))
+        .map_err(|_| PrivateDocumentEnvelopeError::SenderNotAuthenticated)
 }
 
 /// The outgoing viewing key a sender derives from a secret of its wallet: with it, and nothing
@@ -370,14 +452,11 @@ pub fn seal_private_document_entry(
             mac.update(&auth_message);
             auth[..MAC_LEN].copy_from_slice(&mac.finalize().into_bytes());
         }
-        PrivateDocumentSender::Signature { secret_key, .. } => {
-            let (recovery_id, compact) = RecoverableSignature::sign_ecdsa_recoverable(
-                Message::from_digest(auth_message),
-                secret_key,
-            )
-            .serialize_compact();
-            auth[0] = COMPACT_SIGNATURE_HEADER_BASE + u8::from(recovery_id);
-            auth[1..].copy_from_slice(&compact);
+        PrivateDocumentSender::Signature { signature, .. } => {
+            // A signature of other data would recover to some other key: the caller checks the
+            // key, and this that the signature is one.
+            recover_private_document_signer(signature, &auth_message)?;
+            auth.copy_from_slice(*signature);
         }
     }
 
@@ -492,6 +571,14 @@ impl PrivateDocumentRecipientKeys {
             .filter(|(_, public_key, _)| *public_key == entry.recipient_public_key)
             .ok_or(PrivateDocumentEnvelopeError::RecipientSecretKeyRequired)?;
         entry.verify_sender(sender_public_key, Some(secret_key))
+    }
+}
+
+impl Drop for PrivateDocumentRecipientKeys {
+    fn drop(&mut self) {
+        for (secret_key, _, _) in &mut self.keys {
+            secret_key.non_secure_erase();
+        }
     }
 }
 
@@ -785,6 +872,20 @@ mod tests {
         private_document_outgoing_viewing_key(&[0x0F; 32])
     }
 
+    /// The signature by `secret_key` of the test entry's signing data, naming sender key 4.
+    fn signature(secret_key: &SecretKey) -> [u8; 65] {
+        sign_private_document_signing_data(
+            &private_document_signing_data(
+                &target(),
+                &SENDER_IDENTITY,
+                4,
+                &RECIPIENT_IDENTITY,
+                &payload(),
+            ),
+            secret_key,
+        )
+    }
+
     /// An entry to the recipient key `secret_key(2)` from `sender`, built from `esk_seed`.
     fn seal(sender: &PrivateDocumentSender, esk_seed: u8) -> Vec<u8> {
         seal_private_document_entry(
@@ -853,12 +954,12 @@ mod tests {
     /// A signed entry is checked against the sender's key alone.
     #[test]
     fn should_check_a_signature_against_the_sender_key() {
-        let sender_key = secret_key(1);
+        let signature = signature(&secret_key(1));
         let entry = seal(
             &PrivateDocumentSender::Signature {
                 identity_id: SENDER_IDENTITY,
                 key_id: 4,
-                secret_key: &sender_key,
+                signature: &signature,
             },
             9,
         );
@@ -881,6 +982,88 @@ mod tests {
             .expect("the sender built it")
             .verify_sender(&public_key(1), None)
             .expect("the sender checks its recovered entry with its own key alone");
+    }
+
+    /// The signer of a signed entry is recovered from its signature, whichever key the entry
+    /// names: DashPay names the encryption key and signs with a signing key.
+    #[test]
+    fn should_recover_the_signer_of_a_signed_entry() {
+        let signature = signature(&secret_key(1));
+        let entry = seal(
+            &PrivateDocumentSender::Signature {
+                identity_id: SENDER_IDENTITY,
+                key_id: 4,
+                signature: &signature,
+            },
+            9,
+        );
+        let opened = open(&entry, &[secret_key(2)]).expect("it opens");
+        assert_eq!(opened.sender_key_id(), 4);
+        assert_eq!(opened.recover_signer(), Ok(public_key(1)));
+        let recovered =
+            recover_sent_private_document_entry(&entry, &target(), &outgoing_viewing_key())
+                .expect("well formed")
+                .expect("the sender built it");
+        assert_eq!(recovered.recover_signer(), Ok(public_key(1)));
+
+        // A signature of other data recovers to another key, which the caller's check refuses;
+        // bytes that are no signature are refused when sealing.
+        let other_data = sign_private_document_signing_data(&[0x77; 32], &secret_key(1));
+        let entry = seal(
+            &PrivateDocumentSender::Signature {
+                identity_id: SENDER_IDENTITY,
+                key_id: 4,
+                signature: &other_data,
+            },
+            9,
+        );
+        let opened = open(&entry, &[secret_key(2)]).expect("it opens");
+        assert_ne!(opened.recover_signer(), Ok(public_key(1)));
+        let mut not_a_signature = signature;
+        not_a_signature[0] = 27;
+        assert_eq!(
+            seal_private_document_entry(
+                &target(),
+                ENTRY_SIZE,
+                &PrivateDocumentRecipient {
+                    identity_id: RECIPIENT_IDENTITY,
+                    public_key: &public_key(2),
+                },
+                &PrivateDocumentSender::Signature {
+                    identity_id: SENDER_IDENTITY,
+                    key_id: 4,
+                    signature: &not_a_signature,
+                },
+                &payload(),
+                &outgoing_viewing_key(),
+                &[9; 32],
+            ),
+            Err(PrivateDocumentEnvelopeError::SenderNotAuthenticated)
+        );
+
+        let mac_key = secret_key(3);
+        let mac_entry = seal(
+            &PrivateDocumentSender::DeniableMac {
+                identity_id: SENDER_IDENTITY,
+                key_id: 4,
+                secret_key: &mac_key,
+            },
+            9,
+        );
+        let opened = open(&mac_entry, &[secret_key(2)]).expect("it opens");
+        assert_eq!(
+            opened.recover_signer(),
+            Err(PrivateDocumentEnvelopeError::NotSigned)
+        );
+        let anonymous = open(
+            &seal(&PrivateDocumentSender::Anonymous, 9),
+            &[secret_key(2)],
+        )
+        .expect("it opens");
+        assert_eq!(
+            anonymous.recover_signer(),
+            Err(PrivateDocumentEnvelopeError::AnonymousSender)
+        );
     }
 
     /// An anonymous entry names no sender, and there is nothing to check.
@@ -1153,13 +1336,14 @@ mod tests {
     #[test]
     fn should_build_the_same_entry_from_the_same_inputs() {
         let sender_key = secret_key(1);
+        let signature = signature(&sender_key);
         let senders = [
             PrivateDocumentSender::Anonymous,
             deniable_mac_sender(&sender_key),
             PrivateDocumentSender::Signature {
                 identity_id: SENDER_IDENTITY,
                 key_id: 4,
-                secret_key: &sender_key,
+                signature: &signature,
             },
         ];
         let pinned: Vec<String> = senders
@@ -1178,7 +1362,7 @@ mod tests {
             [
                 "abb644128f3e73aade8b6210573fba942709e7e44eaeffef92dc02d5187f37d3",
                 "bedf5084aca776ae520e1395e4a4f92628f4589f04b244630acc890649f74a82",
-                "a1054055987e953aeeb76deb9998db79eebe3e798a7296eadeb90575bc6e0e56",
+                "17ce85ed9211640dc929b27aee7c4349208bda374cf9594f83e6c71b71d1d407",
             ]
         );
     }

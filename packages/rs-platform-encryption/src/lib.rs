@@ -42,9 +42,11 @@ pub use ecdh::derive_shared_key_ecdh;
 pub use error::CryptoError;
 pub use private_document_envelope::{
     open_private_document_entry, private_document_outgoing_viewing_key,
-    recover_sent_private_document_entry, seal_private_document_entry, OpenedPrivateDocumentEntry,
-    PrivateDocumentAuthMode, PrivateDocumentEnvelopeError, PrivateDocumentRecipient,
-    PrivateDocumentRecipientKeys, PrivateDocumentSender, PrivateDocumentTarget,
-    PRIVATE_DOCUMENT_ENVELOPE_BODY_HEADER_LEN, PRIVATE_DOCUMENT_ENVELOPE_OVERHEAD_LEN,
-    PRIVATE_DOCUMENT_ENVELOPE_VERSION, PRIVATE_DOCUMENT_ENVELOPE_WRAPPER_LEN,
+    private_document_signing_data, recover_private_document_signer,
+    recover_sent_private_document_entry, seal_private_document_entry,
+    sign_private_document_signing_data, OpenedPrivateDocumentEntry, PrivateDocumentAuthMode,
+    PrivateDocumentEnvelopeError, PrivateDocumentRecipient, PrivateDocumentRecipientKeys,
+    PrivateDocumentSender, PrivateDocumentTarget, PRIVATE_DOCUMENT_ENVELOPE_BODY_HEADER_LEN,
+    PRIVATE_DOCUMENT_ENVELOPE_OVERHEAD_LEN, PRIVATE_DOCUMENT_ENVELOPE_VERSION,
+    PRIVATE_DOCUMENT_ENVELOPE_WRAPPER_LEN,
 };

@@ -7,9 +7,10 @@
 //! fetches one proved page of the store from a cursor and sorts its entries.
 //!
 //! A scan only opens entries. What an entry claims about its sender is checked against the
-//! sender identity's key with [`PrivateDocumentScanKeys::verify_sender`], and the payload is the
-//! type's to decode and validate. `crate::platform::dashpay` does both for DashPay's private
-//! contact requests.
+//! sender identity's keys: a deniable MAC with [`PrivateDocumentScanKeys::verify_sender`], a
+//! signature with [`OpenedPrivateDocumentEntry::recover_signer`]. The payload is the type's to
+//! decode and validate. `crate::platform::dashpay` does both for DashPay's private contact
+//! requests.
 
 use crate::platform::private_document_entries::{
     PrivateDocumentEntries, PrivateDocumentEntriesQuery, PrivateDocumentEntry,
@@ -31,9 +32,10 @@ struct ScanRecipient {
     keys: PrivateDocumentRecipientKeys,
 }
 
-/// One identity of the wallet and the outgoing viewing key it seals entries with.
+/// One identity of the wallet and an outgoing viewing key it seals entries with.
 struct ScanSender {
     identity_id: Identifier,
+    key_id: KeyID,
     outgoing_viewing_key: [u8; 32],
 }
 
@@ -81,6 +83,9 @@ pub struct SentPrivateDocumentEntry {
     pub block_time_ms: u64,
     /// The identity whose outgoing viewing key recovered it.
     pub sender_identity_id: Identifier,
+    /// The key of that identity the outgoing viewing key is derived from. An entry naming
+    /// another sender identity or key was built by someone else holding the key.
+    pub outgoing_key_id: KeyID,
     /// The recovered entry, with its recipient and payload.
     pub entry: OpenedPrivateDocumentEntry,
 }
@@ -132,20 +137,31 @@ impl PrivateDocumentScanKeys {
     /// identity's key id with its secret key. Entries to it are tried with the keys in this
     /// order.
     pub fn with_recipient(mut self, identity_id: Identifier, keys: &[(KeyID, SecretKey)]) -> Self {
-        let secret_keys: Vec<SecretKey> = keys.iter().map(|(_, secret_key)| *secret_key).collect();
+        let mut secret_keys: Vec<SecretKey> =
+            keys.iter().map(|(_, secret_key)| *secret_key).collect();
         self.recipients.push(ScanRecipient {
             identity_id,
             key_ids: keys.iter().map(|(key_id, _)| *key_id).collect(),
             keys: PrivateDocumentRecipientKeys::new(&secret_keys),
         });
+        for secret_key in &mut secret_keys {
+            secret_key.non_secure_erase();
+        }
         self
     }
 
     /// Adds `identity_id` as a sender, which sealed its entries with `outgoing_viewing_key`
-    /// (`platform_encryption::private_document_outgoing_viewing_key`).
-    pub fn with_sender(mut self, identity_id: Identifier, outgoing_viewing_key: [u8; 32]) -> Self {
+    /// (`platform_encryption::private_document_outgoing_viewing_key`), derived from its key
+    /// `key_id`.
+    pub fn with_sender(
+        mut self,
+        identity_id: Identifier,
+        key_id: KeyID,
+        outgoing_viewing_key: [u8; 32],
+    ) -> Self {
         self.senders.push(ScanSender {
             identity_id,
+            key_id,
             outgoing_viewing_key,
         });
         self
@@ -182,12 +198,25 @@ impl PrivateDocumentScanKeys {
         received: &ReceivedPrivateDocumentEntry,
         sender_public_key: &PublicKey,
     ) -> Result<(), PrivateDocumentEnvelopeError> {
+        // The identity may have been added more than once, with other keys each time: the
+        // check is the one of the keys that opened the entry.
         self.recipients
             .iter()
-            .find(|recipient| recipient.identity_id == received.recipient_identity_id)
-            .ok_or(PrivateDocumentEnvelopeError::RecipientSecretKeyRequired)?
-            .keys
-            .verify_sender(&received.entry, sender_public_key)
+            .filter(|recipient| recipient.identity_id == received.recipient_identity_id)
+            .map(|recipient| {
+                recipient
+                    .keys
+                    .verify_sender(&received.entry, sender_public_key)
+            })
+            .find(|result| {
+                !matches!(
+                    result,
+                    Err(PrivateDocumentEnvelopeError::RecipientSecretKeyRequired)
+                )
+            })
+            .unwrap_or(Err(
+                PrivateDocumentEnvelopeError::RecipientSecretKeyRequired,
+            ))
     }
 
     fn scan_entry(
@@ -260,6 +289,7 @@ impl PrivateDocumentScanKeys {
                         block_height: entry.block_height,
                         block_time_ms: entry.block_time_ms,
                         sender_identity_id: sender.identity_id,
+                        outgoing_key_id: sender.key_id,
                         entry: recovered,
                     });
                     break;
@@ -395,7 +425,7 @@ mod tests {
         let keys = PrivateDocumentScanKeys::new()
             .with_recipient(alice, &[(2, secret_key(20)), (3, secret_key(21))])
             .with_recipient(bob, &[(1, secret_key(30))])
-            .with_sender(alice, ovk(0xA1));
+            .with_sender(alice, 6, ovk(0xA1));
         let entries = vec![
             // 10: to Alice's key 3, from Carol
             seal(0xC0, alice.to_buffer(), 21, 0xC1, 1),
@@ -427,9 +457,9 @@ mod tests {
         assert_eq!(
             scan.sent
                 .iter()
-                .map(|sent| (sent.position, sent.sender_identity_id))
+                .map(|sent| (sent.position, sent.sender_identity_id, sent.outgoing_key_id))
                 .collect::<Vec<_>>(),
-            vec![(12, alice), (14, alice)]
+            vec![(12, alice, 6), (14, alice, 6)]
         );
         assert_eq!(scan.sent[0].entry.recipient_identity_id(), &[0xD0; 32]);
         assert_eq!(
@@ -490,6 +520,20 @@ mod tests {
             others.verify_sender(received, &public_key(0xC0)),
             Err(PrivateDocumentEnvelopeError::RecipientSecretKeyRequired)
         );
+
+        // Added twice with other keys each time, the identity is checked with the keys that
+        // opened the entry, not the first it was added with.
+        let twice = PrivateDocumentScanKeys::new()
+            .with_recipient(alice, &[(1, secret_key(19))])
+            .with_recipient(alice, &[(2, secret_key(20))]);
+        let scan = twice.scan_page(
+            &target(),
+            0,
+            &page(0, vec![seal(0xC0, alice.to_buffer(), 20, 0xC1, 1)], 1),
+        );
+        twice
+            .verify_sender(&scan.received[0], &public_key(0xC0))
+            .expect("the second key set opened it and checks it");
     }
 
     /// A page at the store's end is empty: the cursor stays where it is.
