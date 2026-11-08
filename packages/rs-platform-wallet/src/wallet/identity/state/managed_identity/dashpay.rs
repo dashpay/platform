@@ -13,14 +13,15 @@ use crate::wallet::identity::{
 use dpp::prelude::Identifier;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// What the private contact requests between an identity and a contact
-/// (protocol version 15) carry beyond what a [`ContactRequest`] holds.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// How an identity and a contact exchanged private contact requests (protocol
+/// version 15), and what those carry beyond what a [`ContactRequest`] holds.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PrivateContact {
-    /// The contact's request to this identity came privately, so accepting it
-    /// replies privately too.
+    /// The contact's tracked request to this identity came privately
+    /// ([`ContactRequest::came_privately`]), so accepting it replies privately
+    /// too.
     pub received_privately: bool,
-    /// This identity's request to the contact went privately.
+    /// This identity's tracked request to the contact went privately.
     pub sent_privately: bool,
     /// The Orchard address the contact asked to be paid at privately: an
     /// 11-byte diversifier and a 32-byte transmission key.
@@ -103,11 +104,11 @@ pub struct DashPayState {
     /// [`ManagedIdentity::unignore_sender`]: super::ManagedIdentity::unignore_sender
     pub(super) private_contact_requests_position: u64,
 
-    /// What this identity's private contact requests carry beyond what a
-    /// [`ContactRequest`] holds, keyed by the contact: whether the requests
-    /// came or went privately, and the contact's shielded address. In memory
-    /// only, rebuilt by the scan a cold start runs.
-    pub(super) private_contacts: BTreeMap<Identifier, PrivateContact>,
+    /// The shielded address each contact's tracked private request to this
+    /// identity carries. In memory only, rebuilt by the scan a cold start
+    /// runs. Whether a request came privately is the request's own
+    /// ([`ContactRequest::came_privately`]), so it holds across restarts.
+    pub(super) private_shielded_addresses: BTreeMap<Identifier, [u8; 43]>,
 
     /// Lowest Platform-assigned `$createdAtCoreBlockHeight` among OUR sent
     /// `contactRequest` docs to each recipient seen by a sweep this process.
@@ -263,16 +264,39 @@ impl DashPayState {
             .or_else(|| self.sent_contact_requests.get(contact))
     }
 
+    /// The contact's tracked request to us: the established contact's
+    /// incoming side, else a pending incoming request.
+    pub fn incoming_request(&self, contact: &Identifier) -> Option<&ContactRequest> {
+        self.established_contacts
+            .get(contact)
+            .map(|established| &established.incoming_request)
+            .or_else(|| self.incoming_contact_requests.get(contact))
+    }
+
     /// The position of DashPay's private contact request store to scan from
     /// next for this identity; see the field doc.
     pub fn private_contact_requests_position(&self) -> u64 {
         self.private_contact_requests_position
     }
 
-    /// What this identity's private contact requests with `contact` carry; see
-    /// the field doc.
-    pub fn private_contact(&self, contact: &Identifier) -> Option<&PrivateContact> {
-        self.private_contacts.get(contact)
+    /// How this identity and `contact` exchanged private requests, from the
+    /// tracked requests either way; `None` when neither went privately.
+    pub fn private_contact(&self, contact: &Identifier) -> Option<PrivateContact> {
+        let received_privately = self
+            .incoming_request(contact)
+            .is_some_and(ContactRequest::came_privately);
+        let sent_privately = self
+            .outgoing_request(contact)
+            .is_some_and(ContactRequest::came_privately);
+        (received_privately || sent_privately).then(|| PrivateContact {
+            received_privately,
+            sent_privately,
+            shielded_address: self
+                .private_shielded_addresses
+                .get(contact)
+                .copied()
+                .filter(|_| received_privately),
+        })
     }
 
     /// Whether a sent-request sweep completed this process; see the field doc.

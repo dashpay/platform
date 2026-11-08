@@ -3,21 +3,26 @@
 //! A private contact request is an entry of DashPay's `privateContactRequest`
 //! store, sealed to one of the recipient's DashPay keys and appended by a
 //! transition paid from the shielded pool, so nothing on chain names either
-//! side. The sender names itself inside, with a deniable MAC by its encryption
-//! key, and seals with the outgoing viewing key of that key, so a wallet
-//! restored from seed recovers what it sent.
+//! side. The sender names itself and its encryption key inside, signs it with
+//! the identity signer it signs transitions with, and seals with the outgoing
+//! viewing key of the encryption key, so a wallet restored from seed recovers
+//! what it sent.
 //!
 //! The wallet keeps a private request as it keeps a public one, a
 //! [`ContactRequest`], so contacts establish, rotate and get their DashPay
 //! accounts the same way whichever way a request came. The entry carries the
 //! compact xpub and the label in the clear; the wallet encrypts them under the
 //! pair's DIP-15 shared key, as a `contactRequest` document carries them, with
-//! IVs from the entry's commitment so a rescan rebuilds the same record. What a
-//! `ContactRequest` has no field for (that the request came privately, and the
-//! contact's shielded address) is kept in [`PrivateContact`].
+//! IVs from the entry's commitment so a rescan rebuilds the same record, and at
+//! core height 0, which no `contactRequest` document has: that a request came
+//! privately is the record's own ([`ContactRequest::came_privately`]), so it
+//! holds across restarts. The contact's shielded address, which a
+//! `ContactRequest` has no field for, is kept in memory and read with
+//! [`PrivateContact`].
 //!
-//! All key material stays in the [`ContactCryptoProvider`]: the store is
-//! opened, senders are checked and requests are sealed inside it.
+//! The store is opened and requests are sealed inside the
+//! [`ContactCryptoProvider`], which keeps the key material; requests are signed
+//! by the identity signer. Checking an entry needs no secret key.
 //!
 //! [`PrivateContact`]: crate::wallet::identity::PrivateContact
 
@@ -27,9 +32,11 @@ use std::future::Future;
 
 use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
 use dash_sdk::platform::dashpay::{
-    private_contact_request_outgoing_viewing_key, private_contact_request_senders,
+    private_contact_request_identities, private_contact_request_outgoing_viewing_key,
+    private_contact_request_signature, private_contact_request_signing_data,
+    private_contact_request_signing_security_levels, private_contact_requests_from_scan,
     recipient_key_purpose_is_valid, PrivateContactRequest, RejectedPrivateContactRequest,
-    PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+    PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME, PRIVATE_CONTACT_REQUEST_SIGNING_KEY_TYPES,
 };
 use dash_sdk::platform::private_document_entries::{
     PrivateDocumentEntries, PrivateDocumentEntriesQuery,
@@ -40,7 +47,8 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::Purpose;
-use dpp::identity::{Identity, KeyID, KeyType};
+use dpp::identity::signer::Signer;
+use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
 use dpp::secp256k1::rand::rngs::StdRng;
@@ -55,6 +63,7 @@ use super::contact_requests::{
     newest_sent_per_recipient, tear_down_stale_external_accounts, AutoAcceptProofSource,
     ContactCryptoProvider, PreparedContactRequest,
 };
+use super::signing_key::AvailableSigningKey;
 use super::{dashpay_contract, DashPayView, IdentityWallet};
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
@@ -69,9 +78,9 @@ pub struct PrivateDocumentKeyPaths {
     /// Each identity entries may be sealed to, with the path of each of its
     /// keys an entry may be sealed to, by key id.
     pub recipients: Vec<(Identifier, Vec<(KeyID, DerivationPath)>)>,
-    /// Each identity that may have sealed entries, with the path of each of
-    /// its encryption keys: one outgoing viewing key each.
-    pub senders: Vec<(Identifier, DerivationPath)>,
+    /// Each identity that may have sealed entries, with the id and path of
+    /// each of its encryption keys: one outgoing viewing key each.
+    pub senders: Vec<(Identifier, KeyID, DerivationPath)>,
 }
 
 impl PrivateDocumentKeyPaths {
@@ -90,12 +99,14 @@ impl PrivateDocumentKeyPaths {
                 .collect::<Result<Vec<_>, E>>()?;
             keys = keys.with_recipient(*identity_id, &secret_keys);
         }
-        for (identity_id, path) in &self.senders {
-            let secret_key = derive(path)?;
+        for (identity_id, key_id, path) in &self.senders {
+            let mut secret_key = derive(path)?;
             keys = keys.with_sender(
                 *identity_id,
+                *key_id,
                 private_contact_request_outgoing_viewing_key(&secret_key),
             );
+            secret_key.non_secure_erase();
         }
         Ok(keys)
     }
@@ -136,7 +147,9 @@ struct ScannedIdentity {
 /// DIP-15 shared key, as a `contactRequest` document carries them. The IVs are
 /// the two halves of the entry's `commitment`, so a rescan of the entry
 /// rebuilds the same record, and the wallet's comparisons of a contact's
-/// encrypted xpub hold across passes.
+/// encrypted xpub hold across passes. Its core height is 0, which marks it
+/// private ([`ContactRequest::came_privately`]); our receiving account for the
+/// contact is then scanned from the wallet's birth.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn private_request_record(
     sender_id: Identifier,
@@ -146,16 +159,12 @@ pub(super) fn private_request_record(
     request: &PrivateContactRequest,
     commitment: &[u8; 32],
     shared_key: &[u8; 32],
-    core_height_created_at: u32,
     created_at: u64,
 ) -> ContactRequest {
-    let (xpub_iv, label_iv) = commitment.split_at(16);
-    let xpub_iv: [u8; 16] = xpub_iv
-        .try_into()
-        .expect("a 32-byte commitment splits in two");
-    let label_iv: [u8; 16] = label_iv
-        .try_into()
-        .expect("a 32-byte commitment splits in two");
+    let mut xpub_iv = [0u8; 16];
+    let mut label_iv = [0u8; 16];
+    xpub_iv.copy_from_slice(&commitment[..16]);
+    label_iv.copy_from_slice(&commitment[16..]);
     let mut record = ContactRequest::new(
         sender_id,
         recipient_id,
@@ -163,7 +172,7 @@ pub(super) fn private_request_record(
         recipient_key_index,
         request.account_reference,
         encrypt_extended_public_key(shared_key, &xpub_iv, &request.extended_public_key),
-        core_height_created_at,
+        0,
         created_at,
     );
     record.encrypted_account_label = request
@@ -197,8 +206,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Send a private contact request from `sender_identity_id` to
     /// `recipient_identity_id`: the request a `contactRequest` document would
     /// carry (our receiving xpub for the pair, the masked account reference,
-    /// the label and the auto-accept proof) plus our `shielded_address`, sealed
-    /// in the signer to the recipient's DashPay key, then appended by `pay`,
+    /// the label and the auto-accept proof) plus our `shielded_address`,
+    /// signed by `signer` with one of the sender's signing keys, sealed in the
+    /// crypto provider to the recipient's DashPay key, then appended by `pay`,
     /// which pays for it from the shielded pool and returns the metadata of
     /// the proof that it was appended
     /// (`PlatformWallet::send_private_contact_request`).
@@ -206,19 +216,24 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// The keys and the account reference are chosen as for a document send,
     /// so a later request to the same recipient, either way, rotates past this
     /// one. Once `pay` succeeds the request is recorded as sent and our
-    /// receiving account for the contact is registered.
+    /// receiving account for the contact is registered. Nothing after `pay`
+    /// fails the send, as the payment cannot be taken back: a record that does
+    /// not reach disk is logged, and the next private sync recovers it from
+    /// the store with the outgoing viewing key.
     #[allow(clippy::too_many_arguments)]
-    pub async fn send_private_contact_request<C, F, Fut>(
+    pub async fn send_private_contact_request<S, C, F, Fut>(
         &self,
         sender_identity_id: &Identifier,
         recipient_identity_id: &Identifier,
         account_label: Option<String>,
         auto_accept_proof: AutoAcceptProofSource,
         shielded_address: Option<[u8; 43]>,
+        signer: &S,
         crypto: &C,
         pay: F,
     ) -> Result<ContactRequest, PlatformWalletError>
     where
+        S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
         F: FnOnce(BinaryData) -> Fut + Send,
         Fut: Future<Output = Result<ResponseMetadata, PlatformWalletError>> + Send,
@@ -258,7 +273,37 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             shielded_address,
         };
 
+        // The request is signed as a public request's transition is: by a
+        // signing key of the sender the signer holds, at a level the type's
+        // documents are signed at.
         let contract = dashpay_contract()?;
+        let signing_levels = private_contact_request_signing_security_levels(&contract)?;
+        let signing_key = sender_identity
+            .available_signing_key(
+                signer,
+                Purpose::AUTHENTICATION,
+                &signing_levels,
+                &PRIVATE_CONTACT_REQUEST_SIGNING_KEY_TYPES,
+                false,
+            )?
+            .cloned()
+            .ok_or_else(|| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "the sender identity has no enabled AUTHENTICATION key at {signing_levels:?} \
+                     to sign a private contact request with"
+                ))
+            })?;
+        let signing_data = private_contact_request_signing_data(
+            &contract,
+            &sender_identity,
+            sender_key_index,
+            &recipient_identity,
+            recipient_key_index,
+            &request,
+        )?;
+        let signature =
+            private_contact_request_signature(signer, &signing_key, &signing_data).await?;
+
         let mut esk_seed = [0u8; 32];
         StdRng::from_os_rng().fill_bytes(&mut esk_seed);
         let sealed = crypto
@@ -267,6 +312,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 &contract,
                 &sender_identity,
                 sender_key_index,
+                signing_key.id(),
+                &signature,
                 &recipient_identity,
                 recipient_key_index,
                 &request,
@@ -285,14 +332,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     "the provider sealed an entry shorter than its commitment".to_string(),
                 )
             })?;
-
-        let metadata = pay(entry).await?;
-
+        // Everything the record needs is computed before paying.
         let shared_secret = crypto
             .ecdh_shared_secret(&sender_enc_path, &recipient_enc_pubkey)
             .await?;
-        // Its core height is unknown, so our receiving account for the contact
-        // is scanned from the wallet's birth (`receiving_scan_checkpoint`).
+
+        let metadata = pay(entry).await?;
+
         let contact_request = private_request_record(
             *sender_identity_id,
             *recipient_identity_id,
@@ -301,51 +347,69 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             &request,
             &commitment,
             &shared_secret,
-            0,
             metadata.time_ms,
         );
-
-        {
+        let recorded = {
             let mut wm = self.wallet_manager.write().await;
-            let managed = wm
-                .get_wallet_info_mut(&self.wallet_id)
-                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?
-                .identity_manager
-                .managed_identity_mut(sender_identity_id)
-                .ok_or(PlatformWalletError::IdentityNotFound(*sender_identity_id))?;
-            managed
-                .add_sent_contact_request(contact_request.clone(), &self.persister)
-                .map_err(|e| {
-                    PlatformWalletError::Persistence(format!(
-                        "sent private contact request not persisted: {e}"
-                    ))
-                })?;
-            managed.note_private_contact(*recipient_identity_id, false, None);
+            match wm.get_wallet_info_mut(&self.wallet_id).and_then(|info| {
+                info.identity_manager
+                    .managed_identity_mut(sender_identity_id)
+            }) {
+                None => Err("the sender identity is no longer in the wallet".to_string()),
+                Some(managed) => {
+                    managed.note_sent_request_core_height(*recipient_identity_id, 0);
+                    managed
+                        .add_sent_contact_request(contact_request.clone(), &self.persister)
+                        .map_err(|e| e.to_string())
+                }
+            }
+        };
+        match recorded {
+            Ok(()) => {
+                if let Err(e) = self
+                    .register_contact_account(
+                        sender_identity_id,
+                        recipient_identity_id,
+                        account_index,
+                        contact_xpub_ext,
+                    )
+                    .await
+                {
+                    tracing::warn!(
+                        sender = %sender_identity_id,
+                        recipient = %recipient_identity_id,
+                        error = %e,
+                        "private contact request sent; its receiving account is not registered \
+                         yet, the next sync registers it"
+                    );
+                }
+            }
+            Err(e) => tracing::warn!(
+                sender = %sender_identity_id,
+                recipient = %recipient_identity_id,
+                error = %e,
+                "private contact request sent but not recorded; the next private sync \
+                 recovers it from the store"
+            ),
         }
-
-        self.register_contact_account(
-            sender_identity_id,
-            recipient_identity_id,
-            account_index,
-            contact_xpub_ext,
-        )
-        .await?;
-
         Ok(contact_request)
     }
 
     /// Accept a contact request that came privately, replying privately: as
     /// [`Self::accept_contact_request_with_external_signer`], with the reply
-    /// sent by [`Self::send_private_contact_request`], `pay` paying for it and
-    /// `shielded_address` the address the contact may pay us at privately.
-    pub async fn accept_private_contact_request<C, F, Fut>(
+    /// sent by [`Self::send_private_contact_request`], signed by `signer`,
+    /// `pay` paying for it and `shielded_address` the address the contact may
+    /// pay us at privately.
+    pub async fn accept_private_contact_request<S, C, F, Fut>(
         &self,
         request: &ContactRequest,
         shielded_address: Option<[u8; 43]>,
+        signer: &S,
         crypto: &C,
         pay: F,
     ) -> Result<EstablishedContact, PlatformWalletError>
     where
+        S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
         F: FnOnce(BinaryData) -> Fut + Send,
         Fut: Future<Output = Result<ResponseMetadata, PlatformWalletError>> + Send,
@@ -357,6 +421,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 None,
                 AutoAcceptProofSource::None,
                 shielded_address,
+                signer,
                 crypto,
                 pay,
             )
@@ -371,7 +436,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// every `ECDSA_SECP256K1` decryption or encryption key, disabled ones
     /// included, as an entry sealed before a key was disabled still opens with
     /// it, and every such encryption key as a sender.
-    async fn private_contact_request_identities(
+    async fn private_scan_identities(
         &self,
     ) -> Result<(Vec<ScannedIdentity>, PrivateDocumentKeyPaths), PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
@@ -405,7 +470,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 }
                 recipient_paths.push((*key_id, path(*key_id)?));
                 if key.purpose() == Purpose::ENCRYPTION {
-                    paths.senders.push((identity_id, path(*key_id)?));
+                    paths.senders.push((identity_id, *key_id, path(*key_id)?));
                 }
             }
             if recipient_paths.is_empty() {
@@ -425,9 +490,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Read DashPay's private contact request store for the wallet's
     /// identities, at most `max_pages` pages from the earliest of their
     /// cursors, and ingest what it holds for them: requests to them, each
-    /// sender checked against the identity key the entry names, and requests
-    /// they sent, recovered from the store alone. Contacts establish, and their
-    /// DashPay accounts are queued, as the document sync does.
+    /// checked against the keys of its sender and of the identity it is to,
+    /// and requests they sent, recovered from the store alone and checked to
+    /// be theirs. Contacts establish, and their DashPay accounts are queued,
+    /// as the document sync does. A request older than the one tracked with
+    /// the same contact, either way and from either channel, is passed over.
     ///
     /// A request that came privately carries no auto-accept proof into the
     /// wallet: accepting it replies privately, which pays from the shielded
@@ -441,7 +508,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     where
         C: ContactCryptoProvider + Sync,
     {
-        let (mut identities, paths) = self.private_contact_request_identities().await?;
+        let (mut identities, paths) = self.private_scan_identities().await?;
         let mut report = PrivateContactSyncReport::default();
         let Some(start) = identities.iter().map(|identity| identity.position).min() else {
             report.complete = true;
@@ -464,6 +531,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             )
         };
         let contract = dashpay_contract()?;
+        // Fetched once a pass: the senders, the wallet's own identities (whose
+        // keys a request is checked against as they are on chain), and the
+        // recipients of the requests they sent.
         let mut fetched_identities: BTreeMap<Identifier, Option<Identity>> = BTreeMap::new();
         let mut position = start;
         report.next_position = start;
@@ -474,13 +544,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
                 position,
             );
-            let (page, metadata) =
-                PrivateDocumentEntries::fetch_with_metadata(&self.sdk, query, None).await?;
-            let page = page.ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "no page of DashPay's private contact requests from position {position}"
-                ))
-            })?;
+            let page = PrivateDocumentEntries::fetch(&self.sdk, query)
+                .await?
+                .ok_or_else(|| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "no page of DashPay's private contact requests from position {position}"
+                    ))
+                })?;
             report.pages_read += 1;
 
             let scan = crypto
@@ -492,20 +562,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     &page,
                 )
                 .await?;
-            for sender_id in private_contact_request_senders(&scan) {
-                if let Entry::Vacant(entry) = fetched_identities.entry(sender_id) {
-                    entry.insert(Identity::fetch(&self.sdk, sender_id).await?);
+            for identity_id in private_contact_request_identities(&scan) {
+                if let Entry::Vacant(entry) = fetched_identities.entry(identity_id) {
+                    entry.insert(Identity::fetch(&self.sdk, identity_id).await?);
                 }
             }
-            let read = crypto
-                .read_private_contact_requests(
-                    &paths,
-                    &contract,
-                    scan,
-                    &fetched_identities,
-                    self.sdk.version(),
-                )
-                .await?;
+            let read = private_contact_requests_from_scan(
+                &contract,
+                scan,
+                &fetched_identities,
+                self.sdk.version(),
+            )?;
             for sent in &read.sent {
                 if let Entry::Vacant(entry) = fetched_identities.entry(sent.recipient_id) {
                     entry.insert(Identity::fetch(&self.sdk, sent.recipient_id).await?);
@@ -514,7 +581,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
             // The wallet's records of the page's requests, under the shared
             // keys the signer computes.
-            let core_height = metadata.core_chain_locked_height;
             let mut records: Vec<(Identifier, ContactRequest, bool, Option<[u8; 43]>)> = Vec::new();
             for received in &read.received {
                 let Some(Some(sender)) = fetched_identities.get(&received.sender_id) else {
@@ -536,7 +602,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     &received.request,
                     &received.commitment,
                     &shared_secret,
-                    core_height,
                     received.block_time_ms,
                 );
                 record.auto_accept_proof = None;
@@ -575,8 +640,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         &sent.recipient_public_key,
                     )
                     .await?;
-                // Its core height is unknown: our receiving account for the
-                // contact is scanned from the wallet's birth.
                 let record = private_request_record(
                     sent.sender_id,
                     sent.recipient_id,
@@ -585,7 +648,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     &sent.request,
                     &sent.commitment,
                     &shared_secret,
-                    0,
                     sent.block_time_ms,
                 );
                 records.push((sent.sender_id, record, false, None));
@@ -616,16 +678,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         continue;
                     };
                     let mut received = Vec::new();
+                    let mut addresses = Vec::new();
                     let mut sent = Vec::new();
                     for (owner, record, is_received, shielded_address) in &records {
                         if *owner != identity_id {
                             continue;
                         }
                         if *is_received {
-                            managed.note_private_contact(record.sender_id, true, *shielded_address);
+                            addresses.push((record.clone(), *shielded_address));
                             received.push(record.clone());
                         } else {
-                            managed.note_private_contact(record.recipient_id, false, None);
+                            // Our receiving account for the contact is
+                            // scanned from the wallet's birth.
+                            managed.note_sent_request_core_height(record.recipient_id, 0);
                             sent.push(record.clone());
                         }
                     }
@@ -648,6 +713,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         identity_id,
                         newest_sent_per_recipient(sent),
                     );
+                    // The address of the request tracked from each contact,
+                    // once ingest decided which that is.
+                    for (record, shielded_address) in &addresses {
+                        managed.note_private_shielded_address(record, *shielded_address);
+                    }
                     if received_ok && sent_ok && !identity.failed {
                         managed.advance_private_contact_requests_position(
                             identity.position,
@@ -674,7 +744,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             report.next_position = read.next_position;
             position = read.next_position;
             if read.is_complete() {
-                report.complete = true;
+                // A pass whose ingest did not reach disk for an identity is
+                // not complete: that identity reads its entries again.
+                report.complete = report.unpersisted_identities.is_empty();
                 break;
             }
         }
@@ -716,7 +788,8 @@ mod tests {
     const BOB: [u8; 32] = [0xB1; 32];
     /// The time of the block that appends the test entries.
     const BLOCK_TIME_MS: u64 = 1_700_000_000_000;
-    /// The key ids of each test identity's DashPay keys.
+    /// The key ids of each test identity's signing key and DashPay keys.
+    const SIGNING_KEY_ID: KeyID = 0;
     const ENCRYPTION_KEY_ID: KeyID = 1;
     const DECRYPTION_KEY_ID: KeyID = 2;
 
@@ -786,42 +859,59 @@ mod tests {
             .to_seed("")
     }
 
-    /// The identity `id` whose DashPay keys are those of identity index 0 of
-    /// `phrase`'s seed: its encryption key 1 and decryption key 2.
-    fn identity(phrase: &str, id: [u8; 32]) -> Identity {
+    /// The secret key `key_id` of identity index 0 of `phrase`'s seed.
+    fn identity_secret_key(phrase: &str, key_id: KeyID) -> SecretKey {
         let wallet = key_wallet::wallet::Wallet::from_seed_bytes(
             seed(phrase),
             Network::Testnet,
             WalletAccountCreationOptions::None,
         )
         .expect("test wallet");
-        let key = |key_id: KeyID, purpose: Purpose| {
-            let path = identity_auth_derivation_path_for_type(
-                Network::Testnet,
-                KeyDerivationType::ECDSA,
-                0,
-                key_id,
-            )
-            .expect("identity key path");
-            let xprv = wallet
-                .derive_extended_private_key(&path)
-                .expect("identity key");
-            let secret_key =
-                SecretKey::from_secret_bytes(*xprv.private_key.to_bytes()).expect("secret key");
+        let path = identity_auth_derivation_path_for_type(
+            Network::Testnet,
+            KeyDerivationType::ECDSA,
+            0,
+            key_id,
+        )
+        .expect("identity key path");
+        let xprv = wallet
+            .derive_extended_private_key(&path)
+            .expect("identity key");
+        SecretKey::from_secret_bytes(*xprv.private_key.to_bytes()).expect("secret key")
+    }
+
+    /// The identity `id` whose keys are those of identity index 0 of
+    /// `phrase`'s seed: its HIGH signing key 0, encryption key 1 and
+    /// decryption key 2.
+    fn identity(phrase: &str, id: [u8; 32]) -> Identity {
+        let key = |key_id: KeyID, purpose: Purpose, security_level: SecurityLevel| {
             IdentityPublicKey::V0(IdentityPublicKeyV0 {
                 id: key_id,
                 purpose,
-                security_level: SecurityLevel::MEDIUM,
+                security_level,
                 contract_bounds: None,
                 key_type: KeyType::ECDSA_SECP256K1,
                 read_only: false,
-                data: BinaryData::new(PublicKey::from_secret_key(&secret_key).serialize().to_vec()),
+                data: BinaryData::new(
+                    PublicKey::from_secret_key(&identity_secret_key(phrase, key_id))
+                        .serialize()
+                        .to_vec(),
+                ),
                 disabled_at: None,
             })
         };
         let keys = [
-            key(ENCRYPTION_KEY_ID, Purpose::ENCRYPTION),
-            key(DECRYPTION_KEY_ID, Purpose::DECRYPTION),
+            key(SIGNING_KEY_ID, Purpose::AUTHENTICATION, SecurityLevel::HIGH),
+            key(
+                ENCRYPTION_KEY_ID,
+                Purpose::ENCRYPTION,
+                SecurityLevel::MEDIUM,
+            ),
+            key(
+                DECRYPTION_KEY_ID,
+                Purpose::DECRYPTION,
+                SecurityLevel::MEDIUM,
+            ),
         ];
         Identity::V0(IdentityV0 {
             id: Identifier::from(id),
@@ -829,6 +919,20 @@ mod tests {
             balance: 0,
             revision: 0,
         })
+    }
+
+    /// The signer holding `identity`'s signing key, as a host's signer holds
+    /// the keys it signs transitions with.
+    fn signer(phrase: &str, identity: &Identity) -> simple_signer::signer::SimpleSigner {
+        let mut signer = simple_signer::signer::SimpleSigner::default();
+        signer.add_identity_public_key(
+            identity
+                .get_public_key_by_id(SIGNING_KEY_ID)
+                .expect("the signing key")
+                .clone(),
+            identity_secret_key(phrase, SIGNING_KEY_ID).to_secret_bytes(),
+        );
+        signer
     }
 
     /// A wallet of `phrase` holding `own` at identity index 0, on a mock SDK that
@@ -949,6 +1053,8 @@ mod tests {
         let bob = identity(BOB_PHRASE, BOB);
         let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
         let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let bob_signer = signer(BOB_PHRASE, &bob);
         let shielded_address = [0x55; 43];
 
         let (_alice_manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[&bob], vec![]).await;
@@ -962,6 +1068,7 @@ mod tests {
                 Some("Alice".to_string()),
                 AutoAcceptProofSource::None,
                 Some(shielded_address),
+                &alice_signer,
                 &alice_crypto,
                 keep_entry(&kept),
             )
@@ -972,6 +1079,7 @@ mod tests {
         assert_eq!(sent.sender_key_index, ENCRYPTION_KEY_ID);
         assert_eq!(sent.recipient_key_index, DECRYPTION_KEY_ID);
         assert_eq!(sent.created_at, BLOCK_TIME_MS);
+        assert!(sent.came_privately(), "recorded at core height 0");
         managed(&alice_wallet, ALICE, |managed| {
             assert_eq!(
                 managed.dashpay().sent_contact_requests().get(&bob.id()),
@@ -981,11 +1089,28 @@ mod tests {
                 managed
                     .dashpay()
                     .private_contact(&bob.id())
-                    .expect("noted")
+                    .expect("the request went privately")
                     .sent_privately
             );
         })
         .await;
+        // Alice's public request to Bob would publish what she sent privately.
+        assert!(matches!(
+            alice_wallet
+                .identity()
+                .dashpay()
+                .send_contact_request_with_external_signer(
+                    &alice.id(),
+                    &bob.id(),
+                    None,
+                    AutoAcceptProofSource::None,
+                    &alice_signer,
+                    &alice_crypto,
+                )
+                .await,
+            Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(recipient))
+                if recipient == bob.id()
+        ));
 
         let (_bob_manager, bob_wallet) =
             wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![entry.to_vec()]).await;
@@ -1018,6 +1143,7 @@ mod tests {
         assert_eq!(received.recipient_key_index, DECRYPTION_KEY_ID);
         assert_eq!(received.account_reference, sent.account_reference);
         assert_eq!(received.created_at, BLOCK_TIME_MS);
+        assert!(received.came_privately(), "recorded at core height 0");
         assert_eq!(received.auto_accept_proof, None);
         // The shared key Bob's decryption key and Alice's encryption key agree
         // on opens the xpub and label, as it opens a document's.
@@ -1058,10 +1184,9 @@ mod tests {
         );
 
         // A public reply would publish the relationship.
-        let signer = simple_signer::signer::SimpleSigner::default();
         assert!(matches!(
             bob_view
-                .accept_contact_request_with_external_signer(&received, &signer, &bob_crypto)
+                .accept_contact_request_with_external_signer(&received, &bob_signer, &bob_crypto)
                 .await,
             Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(sender))
                 if sender == alice.id()
@@ -1069,7 +1194,13 @@ mod tests {
 
         let reply = Arc::new(Mutex::new(Vec::new()));
         let established = bob_view
-            .accept_private_contact_request(&received, None, &bob_crypto, keep_entry(&reply))
+            .accept_private_contact_request(
+                &received,
+                None,
+                &bob_signer,
+                &bob_crypto,
+                keep_entry(&reply),
+            )
             .await
             .expect("Bob accepts privately");
         assert_eq!(established.contact_identity_id, alice.id());
@@ -1130,6 +1261,7 @@ mod tests {
         let alice = identity(ALICE_PHRASE, ALICE);
         let bob = identity(BOB_PHRASE, BOB);
         let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
 
         let (_manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[&bob], vec![]).await;
         let kept = Arc::new(Mutex::new(Vec::new()));
@@ -1142,6 +1274,7 @@ mod tests {
                 None,
                 AutoAcceptProofSource::None,
                 None,
+                &alice_signer,
                 &alice_crypto,
                 keep_entry(&kept),
             )
@@ -1149,8 +1282,9 @@ mod tests {
             .expect("Alice sends the request");
         let entry = kept.lock().expect("kept entries").remove(0);
 
+        // The restored wallet checks its own identity's keys as on chain.
         let (_restored_manager, restored) =
-            wallet(ALICE_PHRASE, &alice, &[&bob], vec![entry.to_vec()]).await;
+            wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![entry.to_vec()]).await;
         let report = restored
             .identity()
             .dashpay()
@@ -1187,11 +1321,11 @@ mod tests {
                 &request,
                 &commitment,
                 &[9; 32],
-                0,
                 BLOCK_TIME_MS,
             )
         };
         assert_eq!(record([1; 32]), record([1; 32]));
+        assert!(record([1; 32]).came_privately());
         assert_ne!(
             record([1; 32]).encrypted_public_key,
             record([2; 32]).encrypted_public_key,

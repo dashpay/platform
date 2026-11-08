@@ -45,11 +45,14 @@ use dpp::prelude::Identifier;
 #[cfg(feature = "shielded")]
 use {
     super::identity::network::dashpay_contract,
+    super::shielded::operations::private_document_create_from_pool_with_metadata,
+    super::shielded::{NetworkShieldedCoordinator, OrchardKeySet},
     crate::{AutoAcceptProofSource, ContactCryptoProvider, ContactRequest, EstablishedContact},
     dash_sdk::dapi_grpc::platform::v0::ResponseMetadata,
     dash_sdk::platform::dashpay::PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
     dpp::data_contract::accessors::v0::DataContractV0Getters,
     dpp::platform_value::BinaryData,
+    dpp::shielded::builder::OrchardProver,
 };
 
 /// Unique identifier for a wallet (32-byte hash).
@@ -1542,15 +1545,16 @@ impl PlatformWallet {
     /// `sender_identity_id` to `recipient_identity_id`, paying for it from
     /// `account`'s shielded notes: nothing on chain names either identity. The
     /// request carries `account_label`, `auto_accept_proof` and our
-    /// `shielded_address` for the contact, and is sealed by `crypto`, which
-    /// keeps the keys. `seed` supplies the transient spend authority (see
+    /// `shielded_address` for the contact, is signed by `signer` as the
+    /// sender's transitions are, and is sealed by `crypto`, which keeps the
+    /// encryption key. `seed` supplies the transient spend authority (see
     /// [`shielded_transfer_to`](Self::shielded_transfer_to)). See
     /// [`DashPayView::send_private_contact_request`](crate::DashPayView::send_private_contact_request).
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
-    pub async fn send_private_contact_request<C, P>(
+    pub async fn send_private_contact_request<S, C, P>(
         &self,
-        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
         seed: &[u8],
         account: u32,
         sender_identity_id: &Identifier,
@@ -1558,12 +1562,14 @@ impl PlatformWallet {
         account_label: Option<String>,
         auto_accept_proof: AutoAcceptProofSource,
         shielded_address: Option<[u8; 43]>,
+        signer: &S,
         crypto: &C,
         prover: P,
     ) -> Result<ContactRequest, PlatformWalletError>
     where
+        S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
-        P: dpp::shielded::builder::OrchardProver + Send + Sync,
+        P: OrchardProver + Send + Sync,
     {
         let keyset = self.derive_spend_keyset(seed, account).await?;
         self.identity
@@ -1574,6 +1580,7 @@ impl PlatformWallet {
                 account_label,
                 auto_accept_proof,
                 shielded_address,
+                signer,
                 crypto,
                 |entry| {
                     self.pay_private_contact_request(coordinator, keyset, account, entry, prover)
@@ -1585,29 +1592,31 @@ impl PlatformWallet {
     /// Accept a DashPay contact request that came privately, replying
     /// privately and paying for the reply from `account`'s shielded notes, as
     /// [`send_private_contact_request`](Self::send_private_contact_request)
-    /// pays. `shielded_address` is the address the contact may pay us at
-    /// privately. See
+    /// pays and signing it with `signer`. `shielded_address` is the address
+    /// the contact may pay us at privately. See
     /// [`DashPayView::accept_private_contact_request`](crate::DashPayView::accept_private_contact_request).
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
-    pub async fn accept_private_contact_request<C, P>(
+    pub async fn accept_private_contact_request<S, C, P>(
         &self,
-        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
         seed: &[u8],
         account: u32,
         request: &ContactRequest,
         shielded_address: Option<[u8; 43]>,
+        signer: &S,
         crypto: &C,
         prover: P,
     ) -> Result<EstablishedContact, PlatformWalletError>
     where
+        S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
-        P: dpp::shielded::builder::OrchardProver + Send + Sync,
+        P: OrchardProver + Send + Sync,
     {
         let keyset = self.derive_spend_keyset(seed, account).await?;
         self.identity
             .dashpay()
-            .accept_private_contact_request(request, shielded_address, crypto, |entry| {
+            .accept_private_contact_request(request, shielded_address, signer, crypto, |entry| {
                 self.pay_private_contact_request(coordinator, keyset, account, entry, prover)
             })
             .await
@@ -1617,16 +1626,16 @@ impl PlatformWallet {
     /// paying from `account`'s notes, and return the metadata of the proof
     /// that it was appended.
     #[cfg(feature = "shielded")]
-    async fn pay_private_contact_request<P: dpp::shielded::builder::OrchardProver>(
+    async fn pay_private_contact_request<P: OrchardProver>(
         &self,
-        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
-        keyset: super::shielded::OrchardKeySet,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+        keyset: OrchardKeySet,
         account: u32,
         entry: BinaryData,
         prover: P,
     ) -> Result<ResponseMetadata, PlatformWalletError> {
         let dashpay_id = dashpay_contract()?.id();
-        super::shielded::operations::private_document_create_from_pool_with_metadata(
+        private_document_create_from_pool_with_metadata(
             &self.sdk,
             coordinator.store(),
             Some(&self.persister),

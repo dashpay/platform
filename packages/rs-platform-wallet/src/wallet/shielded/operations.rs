@@ -57,6 +57,7 @@ use dpp::identity::identity_nonce::{
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
+use dpp::platform_value::BinaryData;
 use dpp::prelude::{Identifier, IdentityNonce};
 use dpp::shielded::builder::{
     build_identity_create_from_shielded_pool_transition,
@@ -1584,7 +1585,7 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
     account: u32,
     data_contract_id: Identifier,
     document_type_name: &str,
-    entries: Vec<dpp::platform_value::BinaryData>,
+    entries: Vec<BinaryData>,
     prover: &P,
 ) -> Result<ResponseMetadata, PlatformWalletError> {
     let views = keys.viewing_keys();
@@ -3820,7 +3821,6 @@ mod redrive_tests {
     use dpp::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
-    use dpp::platform_value::BinaryData;
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::shield_from_identity_transition::v0::ShieldFromIdentityTransitionV0;
 
