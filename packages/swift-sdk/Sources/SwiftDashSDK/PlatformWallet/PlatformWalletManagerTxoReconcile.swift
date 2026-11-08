@@ -76,7 +76,11 @@ extension PlatformWalletManager {
     /// fault, and the wallet's own scan watermark, as the engine holds it,
     /// within the engine's margin of the tip. Each refusal is a `.skipped`
     /// outcome rather than an error; so are an unconfigured or shutting-down
-    /// manager and a wallet this manager has not loaded, checked here first.
+    /// manager, a wallet this manager has not loaded, and a second request
+    /// for a wallet whose earlier request here has not returned
+    /// (`alreadyRunning`, from `coreTxoReconcileInFlight`: runs share one
+    /// serial queue, so the engine would only see the second after the
+    /// first had finished), checked here first.
     ///
     /// How much the run does is native too: it reads at most the engine's
     /// page budget and stops between pages when that is spent, reporting
@@ -108,6 +112,14 @@ extension PlatformWalletManager {
         guard walletId.count == 32, wallets[walletId] != nil else {
             return logSkip(.walletUnknown, walletId: walletId)
         }
+        // A run for this wallet already requested here has not returned:
+        // it is running or queued on the serial reconcile queue, where a
+        // second one would only wait and then repeat it.
+        guard !coreTxoReconcileInFlight.contains(walletId) else {
+            return logSkip(.alreadyRunning, walletId: walletId)
+        }
+        coreTxoReconcileInFlight.insert(walletId)
+        defer { coreTxoReconcileInFlight.remove(walletId) }
 
         let epoch = coreTxoReconcileEpoch
         let generation = epoch.current()

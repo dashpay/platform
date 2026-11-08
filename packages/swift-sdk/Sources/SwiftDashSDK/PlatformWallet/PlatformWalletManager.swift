@@ -733,6 +733,13 @@ public class PlatformWalletManager: ObservableObject {
     /// this manager's own tasks only: whether and when a run may start is
     /// the engine's schedule and start gate.
     var coreTxoReconcileLaunched: Set<Data> = []
+    /// Wallets with a `reconcileCoreTxoStore(for:)` call between its checks
+    /// and its return, whoever called it. Runs execute one at a time on the
+    /// serial `coreTxoReconcileQueue`, so a second request for the same
+    /// wallet would queue behind the first and run in full after it — the
+    /// engine's own one-run-per-wallet check never sees the two overlap.
+    /// This set answers that request `alreadyRunning` instead.
+    var coreTxoReconcileInFlight: Set<Data> = []
     /// Test seam for the native calls that bracket a reconcile run; same
     /// contract as [`nativeTeardownCalls`].
     internal var nativeTxoReconcileCalls = PlatformWalletNativeTxoReconcileCalls.live

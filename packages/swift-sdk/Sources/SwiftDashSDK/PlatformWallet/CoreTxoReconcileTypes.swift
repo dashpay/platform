@@ -325,8 +325,9 @@ public struct CoreTxoReconcileReport: Equatable, Sendable {
 }
 
 /// Why `reconcileCoreTxoStore(for:)` did not run. Every reason but
-/// `notConfigured`, `shutdownRequested` and a wallet this manager has not
-/// loaded is `platform-wallet`'s start gate answering
+/// `notConfigured`, `shutdownRequested`, a wallet this manager has not
+/// loaded and a request already in flight on this manager is
+/// `platform-wallet`'s start gate answering
 /// (`platform_wallet_manager_txo_reconcile_begin`).
 public enum CoreTxoReconcileSkipReason: String, Sendable {
     case notConfigured
@@ -334,6 +335,8 @@ public enum CoreTxoReconcileSkipReason: String, Sendable {
     /// The manager has not loaded the wallet, or the engine does not hold
     /// it, or it was removed while the run waited to start.
     case walletUnknown
+    /// A run for the wallet is in flight: an earlier request on this
+    /// manager has not returned, or the engine holds the wallet's claim.
     case alreadyRunning
     /// No longer reported: the start gate answers `notSteadyState` for a
     /// client that is not running. Kept so existing `switch` statements

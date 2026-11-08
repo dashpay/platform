@@ -544,6 +544,47 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
         PlatformWalletManager.destroyQueue.sync {}
     }
 
+    /// A second request for a wallet whose first has not returned is
+    /// refused `alreadyRunning` by the manager: runs share the serial
+    /// reconcile queue, so it would otherwise wait there and repeat the
+    /// whole run, and the engine's own check would never see the overlap.
+    /// Once the first returns, the wallet may be asked for again.
+    func testASecondRequestWhileTheFirstIsInFlightIsRefused() async throws {
+        let (handler, _) = try makeHandler()
+        let beginGate = DispatchSemaphore(value: 0)
+        defer { beginGate.signal() }
+        let begun = expectation(description: "first begin entered")
+        let native = FakeReconcileNative(
+            engine: FakeCoreTxoEngine(), gate: .skip(code: UInt8(TXO_RECONCILE_SKIP_NOT_STEADY_STATE)))
+        let entries = Counter()
+        native.onBegin = {
+            if entries.next() == 1 {
+                begun.fulfill()
+                XCTAssertEqual(beginGate.wait(timeout: .now() + 5), .success)
+            }
+        }
+        let manager = try await makeManager(handle: 47, handler: handler, native: native)
+        let walletId = self.walletId
+
+        let first = Task { try await manager.reconcileCoreTxoStore(for: walletId) }
+        await fulfillment(of: [begun], timeout: 5)
+        let second = try await manager.reconcileCoreTxoStore(for: walletId)
+        XCTAssertEqual(second, .skipped(.alreadyRunning))
+        XCTAssertEqual(native.begins.count, 1, "the refused request never reached the queue")
+
+        beginGate.signal()
+        let firstOutcome = try await first.value
+        XCTAssertEqual(firstOutcome, .skipped(.notSteadyState))
+        XCTAssertEqual(native.begins.count, 1)
+
+        // The first returned: its in-flight mark is gone.
+        let third = try await manager.reconcileCoreTxoStore(for: walletId)
+        XCTAssertEqual(third, .skipped(.notSteadyState))
+        XCTAssertEqual(native.begins, [walletId, walletId])
+        _ = await manager.shutdown()
+        PlatformWalletManager.destroyQueue.sync {}
+    }
+
     func testTheManagerRefusesAReconcileOnceShutdownHasBegun() async throws {
         let manager = PlatformWalletManager.makeForTesting(handle: 42, calls: Self.okTeardownCalls())
         let epochBefore = manager.coreTxoReconcileEpoch.current()
