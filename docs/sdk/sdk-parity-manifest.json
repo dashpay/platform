@@ -795,13 +795,13 @@
           "sdk": "partial",
           "example_app": "partial",
           "restart": "required",
-          "reason": "PrivateContactRequests.swift wraps the store sync, the shielded send, the accept replying in kind (the wallet replies privately to a request that came privately, and with a document otherwise), the explicit private-reply accept and PrivateContactInfo, all signed with the identity signer the public calls take; code 68 is typed and pinned in ErrorHandlingTests. The sync, send and accepts have no automated or recorded gate: a private reply needs a protocol version 15 network with shielded funds. The private marker (core height 0) round-trips through the persisted coreHeightCreatedAt, but no test covers a restart. The example app has the send-privately toggle, accepts with acceptContactRequestReplyingInKind and syncs the private store on pull-to-refresh, with no recorded gate."
+          "reason": "PrivateContactRequests.swift wraps the store sync, the shielded send, the accept replying in kind (the wallet replies privately to a request that came privately, and with a document otherwise; a public or adopted reply needs no shielded support or payment mnemonic read, and a build without shielded support refuses only a private reply, with code 69), the explicit private-reply accept and PrivateContactInfo, all signed with the identity signer the public calls take and counted as native manager operations; codes 68 to 70 are typed and pinned in ErrorHandlingTests. The sync, send and accepts have no automated or recorded gate: a private reply needs a protocol version 15 network with shielded funds. The private marker (core height 0) round-trips through the persisted coreHeightCreatedAt, but no test covers a restart. The example app has the send-privately toggle, accepts with acceptContactRequestReplyingInKind, keeps an unconfirmed private send or reply pending, and reports private refresh failures (quiet before protocol version 15), with no recorded gate."
         },
         "kotlin": {
           "sdk": "partial",
           "example_app": "partial",
           "restart": "required",
-          "reason": "Dashpay.syncPrivateContactRequests and PlatformWalletManager.sendPrivateContactRequest / acceptContactRequestReplyingInKind / acceptPrivateContactRequest bridge the same FFI (signed with the manager's identity signer), and code 68 maps to PlatformWallet.PrivateContactRequestNeedsPrivateReply (DashSdkErrorTest). managed_identity_get_private_contact is not bridged: the Swift example app has no caller for it. JNI descriptors are covered only by the FfiSmokeTest symbol test; the flows need a protocol version 15 network with shielded funds and have no recorded gate, and no test covers a restart. The example app accepts with acceptContactRequestReplyingInKind and syncs the private store on pull-to-refresh; it has no send-privately toggle."
+          "reason": "Dashpay.syncPrivateContactRequests and PlatformWalletManager.sendPrivateContactRequest / acceptContactRequestReplyingInKind / acceptPrivateContactRequest bridge the same FFI (signed with the manager's identity signer, behind the manager's teardown gate); the in-kind accept is exported in every build, and codes 68 to 70 map to typed PlatformWallet errors (DashSdkErrorTest). managed_identity_get_private_contact is not bridged: the Swift example app has no caller for it. JNI descriptors are covered only by the FfiSmokeTest symbol test; the flows need a protocol version 15 network with shielded funds and have no recorded gate, and no test covers a restart. The example app accepts with acceptContactRequestReplyingInKind, keeps an unconfirmed reply pending, and reports private refresh failures (quiet before protocol version 15); it has no send-privately toggle."
         }
       },
       "verification": [
@@ -824,6 +824,14 @@
         {
           "host": "shared",
           "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
+          "id": "should_accept_publicly_without_shielded_support_or_a_mnemonic_read",
+          "command": "cargo test -p platform-wallet-ffi --lib should_accept_publicly_without_shielded_support_or_a_mnemonic_read",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
           "file": "packages/rs-platform-wallet-ffi/src/error.rs",
           "id": "should_tell_a_private_request_from_other_accept_failures_by_code",
           "command": "cargo test -p platform-wallet-ffi --lib should_tell_a_private_request_from_other_accept_failures_by_code",
@@ -838,11 +846,27 @@
           "covers_restart": false
         },
         {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ContactRequestOutcomesTests.swift",
+          "id": "testShouldKeepAnUnconfirmedPrivateSubmissionPending",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ContactRequestOutcomesTests",
+          "covers_restart": false
+        },
+        {
           "host": "kotlin",
           "kind": "unit",
           "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/errors/DashSdkErrorTest.kt",
           "id": "shouldRouteARequestThatNeedsAPrivateReplyByItsOwnCode",
           "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*DashSdkErrorTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/dashpay/ContactRequestOutcomesTest.kt",
+          "id": "shouldKeepAnUnconfirmedPrivateSubmissionPending",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*ContactRequestOutcomesTest*'",
           "covers_restart": false
         },
         {
