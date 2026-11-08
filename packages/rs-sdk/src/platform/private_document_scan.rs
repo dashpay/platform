@@ -369,7 +369,9 @@ impl PrivateDocumentScanKeys {
 
 impl Sdk {
     /// Fetches the proved page of the store of the private type `document_type_name` of
-    /// `data_contract_id` from `start_position`, and sorts its entries with `keys`.
+    /// `data_contract_id` from `start_position`, and sorts its entries with `keys`. The context
+    /// provider is given the contract with the type first when it lacks it
+    /// ([`Sdk::fetch_private_document_contract`]).
     ///
     /// A wallet keeps [`PrivateDocumentScan::next_position`] as its cursor once it has stored
     /// what the page held, and scans from it again until [`PrivateDocumentScan::is_complete`];
@@ -381,6 +383,9 @@ impl Sdk {
         start_position: u64,
         keys: &PrivateDocumentScanKeys,
     ) -> Result<PrivateDocumentScan, Error> {
+        // The page is verified against the contract the context provider holds.
+        self.fetch_private_document_contract(data_contract_id, document_type_name)
+            .await?;
         let query =
             PrivateDocumentEntriesQuery::new(data_contract_id, document_type_name, start_position);
         let page = PrivateDocumentEntries::fetch(self, query)
@@ -678,14 +683,34 @@ mod tests {
         assert!(scan.is_complete());
     }
 
+    /// DashPay as the latest version has it, under the test contract's id: a contract that
+    /// declares the private type the test entries are sealed for.
+    #[cfg(feature = "mocks")]
+    fn contract_with_the_private_type() -> dpp::data_contract::DataContract {
+        use dpp::data_contract::accessors::v0::DataContractV0Setters;
+        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+        use dpp::version::PlatformVersion;
+
+        let mut contract =
+            load_system_data_contract(SystemDataContract::Dashpay, PlatformVersion::latest())
+                .expect("DashPay loads at the latest version");
+        contract.set_id(Identifier::from(CONTRACT_ID));
+        contract
+    }
+
     #[cfg(feature = "mocks")]
     #[tokio::test]
     async fn should_scan_a_fetched_page_of_the_store() {
+        use crate::platform::private_document_entries::held_contract_provider::HeldContractProvider;
         use crate::SdkBuilder;
         use dpp::version::PlatformVersion;
 
         let mut sdk: Sdk = SdkBuilder::new_mock()
             .with_version(PlatformVersion::latest())
+            .with_context_provider(HeldContractProvider::new(
+                Some(contract_with_the_private_type()),
+                false,
+            ))
             .build()
             .expect("expected a mock sdk");
         let alice = Identifier::from([0xA0; 32]);
