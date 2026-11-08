@@ -1487,7 +1487,9 @@ mod tests {
         assert!(schedule.try_begin(A, t0));
         assert!(schedule.try_begin(B, t0));
         assert!(
-            schedule.due_wallets(true, 2, [A, B], t0 + second).is_empty(),
+            schedule
+                .due_wallets(true, 2, [A, B], t0 + second)
+                .is_empty(),
             "runs in flight are not reported"
         );
         // A went ahead and restarts its cadence; B's gate refused it in the

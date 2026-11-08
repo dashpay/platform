@@ -637,11 +637,9 @@ mod tests {
                 .await;
             assert!(result.is_relevant);
             assert!(
-                result
-                    .updated_records
-                    .iter()
-                    .any(|record| record.txid == spender.txid()
-                        && !record.context.is_chain_locked()),
+                result.updated_records.iter().any(
+                    |record| record.txid == spender.txid() && !record.context.is_chain_locked()
+                ),
                 "the funding attributes its input to the mempool spender"
             );
             assert!(
@@ -650,11 +648,7 @@ mod tests {
             );
         }
         assert_eq!(
-            classify_outpoints(
-                &wm,
-                &wallet_id,
-                &[query(bip44_account_0(), coin, &script)]
-            ),
+            classify_outpoints(&wm, &wallet_id, &[query(bip44_account_0(), coin, &script)]),
             vec![crate::manager::accessors::OutpointClass::Unknown]
         );
     }

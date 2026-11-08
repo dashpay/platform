@@ -566,10 +566,9 @@ pub unsafe extern "C" fn platform_wallet_txo_reconcile_classify_page_applied(
                 check_ptr!(next_after);
                 Some(std::slice::from_raw_parts(next_after, next_after_len))
             };
-            let Some(may_continue) =
-                PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| {
-                    m.txo_reconciler()
-                        .classify_page_applied(&wid, after)
+            let Some(may_continue) = PLATFORM_WALLET_MANAGER_STORAGE
+                .with_item(manager_handle, |m| {
+                    m.txo_reconciler().classify_page_applied(&wid, after)
                 })
             else {
                 return invalid_manager_handle();
