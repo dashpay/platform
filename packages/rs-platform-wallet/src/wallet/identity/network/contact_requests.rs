@@ -3746,25 +3746,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
     {
-        // A reply already sent, either way, is adopted without a broadcast, so
-        // only a reply still to send would publish anything.
-        let needs_private_reply = {
-            let wm = self.wallet_manager.read().await;
-            wm.get_wallet_info(&self.wallet_id)
-                .and_then(|info| {
-                    info.identity_manager
-                        .managed_identity(&request.recipient_id)
-                })
-                .is_some_and(|managed| {
-                    let dashpay = managed.dashpay();
-                    (request.came_privately()
-                        || dashpay
-                            .incoming_request(&request.sender_id)
-                            .is_some_and(ContactRequest::came_privately))
-                        && dashpay.outgoing_request(&request.sender_id).is_none()
-                })
-        };
-        if needs_private_reply {
+        if self.needs_private_reply(request).await {
             return Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(
                 request.sender_id,
             ));
@@ -3782,6 +3764,27 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .map(|_| ())
         })
         .await
+    }
+
+    /// Whether accepting `request` takes a private reply: it, or the request
+    /// tracked from its sender, came privately, and we have sent the sender
+    /// no request yet. A reply already sent, either way, is adopted without a
+    /// broadcast, so only a reply still to send would publish anything.
+    pub(super) async fn needs_private_reply(&self, request: &ContactRequest) -> bool {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .and_then(|info| {
+                info.identity_manager
+                    .managed_identity(&request.recipient_id)
+            })
+            .is_some_and(|managed| {
+                let dashpay = managed.dashpay();
+                (request.came_privately()
+                    || dashpay
+                        .incoming_request(&request.sender_id)
+                        .is_some_and(ContactRequest::came_privately))
+                    && dashpay.outgoing_request(&request.sender_id).is_none()
+            })
     }
 
     /// Accept `request`, with `send_reply` sending our reciprocal request to
