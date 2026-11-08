@@ -33,9 +33,11 @@ pub trait PrivateDocumentCreateFromShieldedPool {
         bundle: OrchardBundleParams,
     ) -> Result<StateTransition, Error>;
 
-    /// Build, broadcast, and wait for proven execution. Returns the `VerifiedShieldedNullifiers`
-    /// proof result (the spent nullifiers), so a wallet marks its notes spent only once the
-    /// entries are proven appended.
+    /// Build, broadcast, and wait for the proof of the affected state. Returns the
+    /// `VerifiedShieldedNullifiers` proof result: it proves the bundle's nullifiers spent, which
+    /// is when a wallet marks its notes spent. It does not prove that this transition was the
+    /// spend, nor that its entries were appended: another transition spending the same notes
+    /// proves the same. A wallet that needs the entries reads the store.
     #[allow(clippy::too_many_arguments)]
     async fn private_document_create_from_shielded_pool(
         &self,
