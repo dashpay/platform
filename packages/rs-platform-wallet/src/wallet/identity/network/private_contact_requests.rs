@@ -37,11 +37,10 @@ use dash_sdk::platform::dashpay::{
     private_contact_requests_from_scan, recipient_key_purpose_is_valid, PrivateContactRequest,
     ProvedIdentity, RejectedPrivateContactRequest, PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
 };
-use dash_sdk::platform::private_document_entries::{
-    PrivateDocumentEntries, PrivateDocumentEntriesQuery, PrivateDocumentEntry,
+use dash_sdk::platform::private_document_entries::{PrivateDocumentEntries, PrivateDocumentEntry};
+use dash_sdk::platform::private_document_scan::{
+    PrivateDocumentScanKeys, MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
 };
-use dash_sdk::platform::private_document_scan::PrivateDocumentScanKeys;
-use dash_sdk::platform::Fetch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::decode_private_document_payload;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -54,6 +53,7 @@ use dpp::prelude::Identifier;
 use dpp::secp256k1::rand::rngs::StdRng;
 use dpp::secp256k1::rand::{RngCore, SeedableRng};
 use dpp::secp256k1::{PublicKey, SecretKey};
+use futures::StreamExt;
 use key_wallet::bip32::{DerivationPath, KeyDerivationType};
 use key_wallet_manager::WalletManager;
 use platform_encryption::{encrypt_account_label, encrypt_extended_public_key, COMPACT_XPUB_LEN};
@@ -122,15 +122,21 @@ pub struct PrivateContactSyncReport {
     pub unpersisted_identities: Vec<Identifier>,
 }
 
-/// How many pages of the store a send reads back after paying: enough for an
-/// identity that synced recently, whose new entry is in the last page or two.
-/// A request not read back within them stays pending for a later sync.
-const POST_SEND_SYNC_PAGES: usize = 4;
+/// How many pages of the store a send reads back after paying: one window of
+/// pages fetched at once, enough for an identity that synced recently, whose
+/// new entry is in the last page or two. A request not read back within them
+/// stays pending for a later sync.
+const POST_SEND_SYNC_PAGES: usize = MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES;
 
 /// How many pages of the store each private sync reads that a private send
 /// runs, before it seals anything, when the store was not yet read to its end
-/// since load.
-const PRIVATE_STORE_READ_PAGES: usize = 16;
+/// since load: sixteen windows of pages fetched at once. With the read
+/// position kept across restarts, the read is from there to the end.
+const PRIVATE_STORE_READ_PAGES: usize = 16 * MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES;
+
+/// How many fetched pages a sync scans at once, one key derivation for them
+/// all: at most the pages in flight.
+const PRIVATE_SCAN_BATCH_PAGES: usize = MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES;
 
 /// How many such syncs a private send runs before it refuses with
 /// [`PlatformWalletError::PrivateContactRequestPending`]: a later send goes on
@@ -896,296 +902,332 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // the key id of the key a request is sealed to, as they were when it
         // was appended or later.
         let mut recipients: BTreeMap<Identifier, ProvedIdentity> = BTreeMap::new();
-        let mut position = start;
         report.next_position = start;
 
-        while report.pages_read < max_pages {
-            let query = PrivateDocumentEntriesQuery::new(
+        // The pages are fetched many at once while earlier ones are processed,
+        // and scanned in batches of those ready, one key derivation a batch.
+        let mut batches = std::pin::pin!(self
+            .sdk
+            .private_document_pages(
                 contract.id(),
                 PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
-                position,
-            );
-            let page = PrivateDocumentEntries::fetch(&self.sdk, query)
-                .await?
-                .ok_or_else(|| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "no page of DashPay's private contact requests from position {position}"
-                    ))
-                })?;
-            report.pages_read += 1;
-
-            let scan = crypto
-                .scan_private_document_page(
-                    &paths,
-                    contract.id(),
-                    PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
-                    position,
-                    &page,
-                )
-                .await?;
-            let stale: BTreeMap<Identifier, u64> = private_contact_request_identities(&scan)
-                .into_iter()
-                .filter(|(identity_id, height)| {
-                    proved_identities
-                        .get(identity_id)
-                        .is_none_or(|proved| proved.proved_at_height < *height)
-                })
-                .collect();
-            proved_identities.extend(
-                self.sdk
-                    .fetch_private_contact_request_identities(&stale)
-                    .await?,
-            );
-            let read = private_contact_requests_from_scan(
-                &contract,
-                scan,
-                &proved_identities,
-                self.sdk.version(),
-            )?;
-            // Each recipient is fetched on its own, so one that cannot be read
-            // holds back only the identities whose sent requests it is for.
-            let mut stale_recipients: BTreeMap<Identifier, u64> = BTreeMap::new();
-            for sent in &read.sent {
-                let height = stale_recipients.entry(sent.recipient_id).or_default();
-                *height = (*height).max(sent.block_height);
-            }
-            stale_recipients.retain(|recipient_id, height| {
-                recipients
-                    .get(recipient_id)
-                    .is_none_or(|proved| proved.proved_at_height < *height)
-            });
-            let mut unreadable_recipients = BTreeSet::new();
-            for (recipient_id, height) in stale_recipients {
-                match self
-                    .sdk
-                    .fetch_private_contact_request_identities(&BTreeMap::from([(
-                        recipient_id,
-                        height,
-                    )]))
-                    .await
-                {
-                    Ok(fetched) => recipients.extend(fetched),
+                start,
+                MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
+            )
+            .take(max_pages)
+            .ready_chunks(PRIVATE_SCAN_BATCH_PAGES));
+        while let Some(batch) = batches.next().await {
+            // The pages before a failed fetch are processed, then the error
+            // ends the pass.
+            let mut fetched = Vec::with_capacity(batch.len());
+            let mut failure = None;
+            for page in batch {
+                match page {
+                    Ok(page) => fetched.push(page),
                     Err(error) => {
-                        tracing::warn!(
-                            recipient = %recipient_id,
-                            %error,
-                            "the recipient of a sent private contact request could not be read; \
-                             its sender's cursor is held"
-                        );
-                        unreadable_recipients.insert(recipient_id);
+                        failure = Some(error);
+                        break;
                     }
                 }
             }
-            let held: BTreeSet<Identifier> = read
-                .sent
-                .iter()
-                .filter(|sent| unreadable_recipients.contains(&sent.recipient_id))
-                .map(|sent| sent.sender_id)
-                .collect();
-
-            // The wallet's records of the page's requests, under the shared
-            // keys the signer computes.
-            let mut records: Vec<(Identifier, ContactRequest, bool, Option<[u8; 43]>)> = Vec::new();
-            // The entry commitment of each sent request's record: a pending
-            // request is settled by it once that record is reconciled.
-            let mut sent_commitments: Vec<([u8; 32], ContactRequest)> = Vec::new();
-            for received in &read.received {
-                let Some(sender) = proved_identities
-                    .get(&received.sender_id)
-                    .and_then(|proved| proved.identity.as_ref())
-                else {
-                    continue;
-                };
-                let sender_key = identity_public_key(sender, received.sender_key_id)?;
-                let shared_secret = crypto
-                    .ecdh_shared_secret(
-                        &key_path(&received.recipient_id, received.recipient_key_id)?,
-                        &sender_key,
+            let scans = if fetched.is_empty() {
+                Vec::new()
+            } else {
+                let pages: Vec<(u64, &PrivateDocumentEntries)> = fetched
+                    .iter()
+                    .map(|page| (page.start_position, &page.entries))
+                    .collect();
+                crypto
+                    .scan_private_document_pages(
+                        &paths,
+                        contract.id(),
+                        PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+                        &pages,
                     )
-                    .await?;
-                // Accepting replies privately, by hand: no auto-accept.
-                let mut record = private_request_record(
-                    received.sender_id,
-                    received.recipient_id,
-                    received.sender_key_id,
-                    received.recipient_key_id,
-                    &received.request,
-                    &received.commitment,
-                    &shared_secret,
-                    received.block_time_ms,
-                );
-                record.auto_accept_proof = None;
-                records.push((
-                    received.recipient_id,
-                    record,
-                    true,
-                    received.request.shielded_address,
-                ));
+                    .await?
+            };
+            if scans.len() != fetched.len() {
+                return Err(PlatformWalletError::InvalidIdentityData(format!(
+                    "the crypto provider sorted {} pages into {} scans",
+                    fetched.len(),
+                    scans.len()
+                )));
             }
-            for sent in &read.sent {
-                if unreadable_recipients.contains(&sent.recipient_id) {
-                    continue;
+            let mut reached_end = false;
+            for scan in scans {
+                report.pages_read += 1;
+                let stale: BTreeMap<Identifier, u64> = private_contact_request_identities(&scan)
+                    .into_iter()
+                    .filter(|(identity_id, height)| {
+                        proved_identities
+                            .get(identity_id)
+                            .is_none_or(|proved| proved.proved_at_height < *height)
+                    })
+                    .collect();
+                proved_identities.extend(
+                    self.sdk
+                        .fetch_private_contact_request_identities(&stale)
+                        .await?,
+                );
+                let read = private_contact_requests_from_scan(
+                    &contract,
+                    scan,
+                    &proved_identities,
+                    self.sdk.version(),
+                )?;
+                // Each recipient is fetched on its own, so one that cannot be read
+                // holds back only the identities whose sent requests it is for.
+                let mut stale_recipients: BTreeMap<Identifier, u64> = BTreeMap::new();
+                for sent in &read.sent {
+                    let height = stale_recipients.entry(sent.recipient_id).or_default();
+                    *height = (*height).max(sent.block_height);
                 }
-                let recipient_key = sent.recipient_public_key.serialize();
-                let recipient_key_id = recipients
-                    .get(&sent.recipient_id)
-                    .and_then(|proved| proved.identity.as_ref())
-                    .and_then(|recipient| {
-                        recipient
-                            .public_keys()
-                            .iter()
-                            .find(|(_, key)| key.data().as_slice() == recipient_key.as_slice())
-                            .map(|(key_id, _)| *key_id)
-                    });
-                let Some(recipient_key_id) = recipient_key_id else {
-                    tracing::warn!(
-                        sender = %sent.sender_id,
-                        recipient = %sent.recipient_id,
-                        position = sent.position,
-                        "sent private contact request is sealed to a key its recipient does not \
-                         hold; not recorded"
-                    );
-                    continue;
-                };
-                let shared_secret = crypto
-                    .ecdh_shared_secret(
-                        &key_path(&sent.sender_id, sent.sender_key_id)?,
-                        &sent.recipient_public_key,
-                    )
-                    .await?;
-                let record = private_request_record(
-                    sent.sender_id,
-                    sent.recipient_id,
-                    sent.sender_key_id,
-                    recipient_key_id,
-                    &sent.request,
-                    &sent.commitment,
-                    &shared_secret,
-                    sent.block_time_ms,
-                );
-                sent_commitments.push((sent.commitment, record.clone()));
-                records.push((sent.sender_id, record, false, None));
-            }
-            for rejected in &read.rejected {
-                tracing::debug!(
-                    position = rejected.position,
-                    reason = ?rejected.reason,
-                    "private contact request refused"
-                );
-            }
-            report.rejected.extend(read.rejected.iter().cloned());
+                stale_recipients.retain(|recipient_id, height| {
+                    recipients
+                        .get(recipient_id)
+                        .is_none_or(|proved| proved.proved_at_height < *height)
+                });
+                let mut unreadable_recipients = BTreeSet::new();
+                for (recipient_id, height) in stale_recipients {
+                    match self
+                        .sdk
+                        .fetch_private_contact_request_identities(&BTreeMap::from([(
+                            recipient_id,
+                            height,
+                        )]))
+                        .await
+                    {
+                        Ok(fetched) => recipients.extend(fetched),
+                        Err(error) => {
+                            tracing::warn!(
+                                recipient = %recipient_id,
+                                %error,
+                                "the recipient of a sent private contact request could not be read; \
+                                 its sender's cursor is held"
+                            );
+                            unreadable_recipients.insert(recipient_id);
+                        }
+                    }
+                }
+                let held: BTreeSet<Identifier> = read
+                    .sent
+                    .iter()
+                    .filter(|sent| unreadable_recipients.contains(&sent.recipient_id))
+                    .map(|sent| sent.sender_id)
+                    .collect();
 
-            // Ingest what the page held for each identity, then advance its
-            // cursor past the page if that reached disk.
-            let mut candidates = Vec::new();
-            {
-                let mut wm = self.wallet_manager.write().await;
-                let (wallet, info) =
-                    wm.get_wallet_mut_and_info_mut(&self.wallet_id)
-                        .ok_or_else(|| {
-                            PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id))
-                        })?;
-                for identity in identities.iter_mut() {
-                    let identity_id = identity.identity_id;
-                    let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id)
+                // The wallet's records of the page's requests, under the shared
+                // keys the signer computes.
+                let mut records: Vec<(Identifier, ContactRequest, bool, Option<[u8; 43]>)> =
+                    Vec::new();
+                // The entry commitment of each sent request's record: a pending
+                // request is settled by it once that record is reconciled.
+                let mut sent_commitments: Vec<([u8; 32], ContactRequest)> = Vec::new();
+                for received in &read.received {
+                    let Some(sender) = proved_identities
+                        .get(&received.sender_id)
+                        .and_then(|proved| proved.identity.as_ref())
                     else {
                         continue;
                     };
-                    if held.contains(&identity_id) && !identity.failed {
-                        identity.failed = true;
-                        report.unpersisted_identities.push(identity_id);
-                    }
-                    let mut received = Vec::new();
-                    let mut addresses = Vec::new();
-                    let mut sent = Vec::new();
-                    for (owner, record, is_received, shielded_address) in &records {
-                        if *owner != identity_id {
-                            continue;
-                        }
-                        if *is_received {
-                            addresses.push((record.clone(), *shielded_address));
-                            received.push(record.clone());
-                        } else {
-                            // Our receiving account for the contact is
-                            // scanned from the wallet's birth.
-                            managed.note_sent_request_core_height(record.recipient_id, 0);
-                            sent.push(record.clone());
-                        }
-                    }
-                    let mut rotated = Vec::new();
-                    let mut ingested = Vec::new();
-                    let received_ok = ingest_received_requests(
-                        managed,
-                        &self.persister,
-                        identity_id,
-                        newest_received_per_sender(received),
-                        &mut rotated,
-                        &mut ingested,
+                    let sender_key = identity_public_key(sender, received.sender_key_id)?;
+                    let shared_secret = crypto
+                        .ecdh_shared_secret(
+                            &key_path(&received.recipient_id, received.recipient_key_id)?,
+                            &sender_key,
+                        )
+                        .await?;
+                    // Accepting replies privately, by hand: no auto-accept.
+                    let mut record = private_request_record(
+                        received.sender_id,
+                        received.recipient_id,
+                        received.sender_key_id,
+                        received.recipient_key_id,
+                        &received.request,
+                        &received.commitment,
+                        &shared_secret,
+                        received.block_time_ms,
                     );
-                    let sent_ok = ingest_sent_requests(
-                        managed,
-                        &self.persister,
-                        identity_id,
-                        newest_sent_per_recipient(sent),
-                        &mut ingested,
-                    );
-                    report.requests.extend(ingested);
-                    // The address of the request tracked from each contact,
-                    // once ingest decided which that is.
-                    for (record, shielded_address) in &addresses {
-                        managed.note_private_shielded_address(record, *shielded_address);
-                    }
-                    if received_ok && sent_ok {
-                        // A pending private request is settled once its
-                        // entry's record is reconciled: the request tracked
-                        // to the recipient is that record, carries its
-                        // account reference (another copy of it), or is
-                        // newer. An entry whose record was not built, its
-                        // recipient unreadable, settles nothing.
-                        for (commitment, record) in sent_commitments
-                            .iter()
-                            .filter(|(_, record)| record.sender_id == identity_id)
-                        {
-                            let reconciled = managed
-                                .dashpay()
-                                .outgoing_request(&record.recipient_id)
-                                .is_some_and(|tracked| {
-                                    tracked.account_reference == record.account_reference
-                                        || predates(record, tracked)
-                                });
-                            if reconciled {
-                                managed.settle_private_reply(&record.recipient_id, commitment);
-                            }
-                        }
-                        identity.advance(managed, read.next_position);
-                    } else if !identity.failed {
-                        identity.failed = true;
-                        report.unpersisted_identities.push(identity_id);
-                    }
-                    // Read to the store's end with nothing held back this
-                    // pass: every entry was ingested for this identity.
-                    if read.is_complete() && !identity.failed {
-                        managed.note_private_contact_requests_read();
-                    }
-                    tear_down_stale_external_accounts(wallet, info, &identity_id, rotated);
-                    candidates.push((
-                        identity_id,
-                        Self::collect_account_build_candidates(info, &identity_id),
+                    record.auto_accept_proof = None;
+                    records.push((
+                        received.recipient_id,
+                        record,
+                        true,
+                        received.request.shielded_address,
                     ));
                 }
-            }
-            for (identity_id, identity_candidates) in candidates {
-                for candidate in identity_candidates {
-                    self.build_contact_accounts(&identity_id, candidate).await;
+                for sent in &read.sent {
+                    if unreadable_recipients.contains(&sent.recipient_id) {
+                        continue;
+                    }
+                    let recipient_key = sent.recipient_public_key.serialize();
+                    let recipient_key_id = recipients
+                        .get(&sent.recipient_id)
+                        .and_then(|proved| proved.identity.as_ref())
+                        .and_then(|recipient| {
+                            recipient
+                                .public_keys()
+                                .iter()
+                                .find(|(_, key)| key.data().as_slice() == recipient_key.as_slice())
+                                .map(|(key_id, _)| *key_id)
+                        });
+                    let Some(recipient_key_id) = recipient_key_id else {
+                        tracing::warn!(
+                            sender = %sent.sender_id,
+                            recipient = %sent.recipient_id,
+                            position = sent.position,
+                            "sent private contact request is sealed to a key its recipient does not \
+                             hold; not recorded"
+                        );
+                        continue;
+                    };
+                    let shared_secret = crypto
+                        .ecdh_shared_secret(
+                            &key_path(&sent.sender_id, sent.sender_key_id)?,
+                            &sent.recipient_public_key,
+                        )
+                        .await?;
+                    let record = private_request_record(
+                        sent.sender_id,
+                        sent.recipient_id,
+                        sent.sender_key_id,
+                        recipient_key_id,
+                        &sent.request,
+                        &sent.commitment,
+                        &shared_secret,
+                        sent.block_time_ms,
+                    );
+                    sent_commitments.push((sent.commitment, record.clone()));
+                    records.push((sent.sender_id, record, false, None));
+                }
+                for rejected in &read.rejected {
+                    tracing::debug!(
+                        position = rejected.position,
+                        reason = ?rejected.reason,
+                        "private contact request refused"
+                    );
+                }
+                report.rejected.extend(read.rejected.iter().cloned());
+
+                // Ingest what the page held for each identity, then advance its
+                // cursor past the page if that reached disk.
+                let mut candidates = Vec::new();
+                {
+                    let mut wm = self.wallet_manager.write().await;
+                    let (wallet, info) = wm
+                        .get_wallet_mut_and_info_mut(&self.wallet_id)
+                        .ok_or_else(|| {
+                            PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id))
+                        })?;
+                    for identity in identities.iter_mut() {
+                        let identity_id = identity.identity_id;
+                        let Some(managed) =
+                            info.identity_manager.managed_identity_mut(&identity_id)
+                        else {
+                            continue;
+                        };
+                        if held.contains(&identity_id) && !identity.failed {
+                            identity.failed = true;
+                            report.unpersisted_identities.push(identity_id);
+                        }
+                        let mut received = Vec::new();
+                        let mut addresses = Vec::new();
+                        let mut sent = Vec::new();
+                        for (owner, record, is_received, shielded_address) in &records {
+                            if *owner != identity_id {
+                                continue;
+                            }
+                            if *is_received {
+                                addresses.push((record.clone(), *shielded_address));
+                                received.push(record.clone());
+                            } else {
+                                // Our receiving account for the contact is
+                                // scanned from the wallet's birth.
+                                managed.note_sent_request_core_height(record.recipient_id, 0);
+                                sent.push(record.clone());
+                            }
+                        }
+                        let mut rotated = Vec::new();
+                        let mut ingested = Vec::new();
+                        let received_ok = ingest_received_requests(
+                            managed,
+                            &self.persister,
+                            identity_id,
+                            newest_received_per_sender(received),
+                            &mut rotated,
+                            &mut ingested,
+                        );
+                        let sent_ok = ingest_sent_requests(
+                            managed,
+                            &self.persister,
+                            identity_id,
+                            newest_sent_per_recipient(sent),
+                            &mut ingested,
+                        );
+                        report.requests.extend(ingested);
+                        // The address of the request tracked from each contact,
+                        // once ingest decided which that is.
+                        for (record, shielded_address) in &addresses {
+                            managed.note_private_shielded_address(record, *shielded_address);
+                        }
+                        if received_ok && sent_ok {
+                            // A pending private request is settled once its
+                            // entry's record is reconciled: the request tracked
+                            // to the recipient is that record, carries its
+                            // account reference (another copy of it), or is
+                            // newer. An entry whose record was not built, its
+                            // recipient unreadable, settles nothing.
+                            for (commitment, record) in sent_commitments
+                                .iter()
+                                .filter(|(_, record)| record.sender_id == identity_id)
+                            {
+                                let reconciled = managed
+                                    .dashpay()
+                                    .outgoing_request(&record.recipient_id)
+                                    .is_some_and(|tracked| {
+                                        tracked.account_reference == record.account_reference
+                                            || predates(record, tracked)
+                                    });
+                                if reconciled {
+                                    managed.settle_private_reply(&record.recipient_id, commitment);
+                                }
+                            }
+                            identity.advance(managed, read.next_position);
+                        } else if !identity.failed {
+                            identity.failed = true;
+                            report.unpersisted_identities.push(identity_id);
+                        }
+                        // Read to the store's end with nothing held back this
+                        // pass: every entry was ingested for this identity.
+                        if read.is_complete() && !identity.failed {
+                            managed.note_private_contact_requests_read();
+                        }
+                        tear_down_stale_external_accounts(wallet, info, &identity_id, rotated);
+                        candidates.push((
+                            identity_id,
+                            Self::collect_account_build_candidates(info, &identity_id),
+                        ));
+                    }
+                }
+                for (identity_id, identity_candidates) in candidates {
+                    for candidate in identity_candidates {
+                        self.build_contact_accounts(&identity_id, candidate).await;
+                    }
+                }
+
+                report.next_position = read.next_position;
+                if read.is_complete() {
+                    // A pass whose ingest did not reach disk for an identity is
+                    // not complete: that identity reads its entries again.
+                    report.complete = report.unpersisted_identities.is_empty();
+                    reached_end = true;
+                    break;
                 }
             }
-
-            report.next_position = read.next_position;
-            position = read.next_position;
-            if read.is_complete() {
-                // A pass whose ingest did not reach disk for an identity is
-                // not complete: that identity reads its entries again.
-                report.complete = report.unpersisted_identities.is_empty();
+            if let Some(error) = failure {
+                return Err(error.into());
+            }
+            if reached_end {
                 break;
             }
         }
@@ -1376,7 +1418,9 @@ mod tests {
     use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
     use crate::PlatformWalletManager;
     use dash_sdk::error::ContextProviderError;
-    use dash_sdk::platform::private_document_entries::PrivateDocumentEntry;
+    use dash_sdk::platform::private_document_entries::{
+        PrivateDocumentEntriesQuery, PrivateDocumentEntry,
+    };
     use dash_sdk::platform::ContextProvider;
     use dpp::address_funds::AddressWitness;
     use dpp::data_contract::{DataContract, TokenConfiguration};
@@ -1402,6 +1446,9 @@ mod tests {
         "legal winner thank year wave sausage worth useful legal winner thank yellow";
     const ALICE: [u8; 32] = [0xA1; 32];
     const BOB: [u8; 32] = [0xB1; 32];
+    const CAROL_PHRASE: &str =
+        "letter advice cage absurd amount doctor acoustic avoid letter advice cage above";
+    const CAROL: [u8; 32] = [0xC2; 32];
     /// The time of the block that appends the test entries.
     const BLOCK_TIME_MS: u64 = 1_700_000_000_000;
     /// The key ids of each test identity's signing key and DashPay keys.
@@ -2914,6 +2961,161 @@ mod tests {
                 .expect("restored"),
             vec![],
             "a recorded rotation, and the request it rotated, restore nothing"
+        );
+    }
+
+    /// From now on, `wallet`'s mock SDK serves a store holding `entries` in
+    /// chunks of `chunk_size`, a page from each chunk's start to its end or
+    /// the store's.
+    async fn publish_chunked(wallet: &PlatformWallet, entries: &[Vec<u8>], chunk_size: usize) {
+        let total = entries.len() as u64;
+        for (index, chunk) in entries.chunks(chunk_size).enumerate() {
+            let start = (index * chunk_size) as u64;
+            let mut page = store_page(start, chunk.to_vec());
+            page.total_count = total;
+            let contract = dashpay_contract().expect("bundled DashPay");
+            let query = PrivateDocumentEntriesQuery::new(
+                contract.id(),
+                PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+                start,
+            );
+            let mut sdk = (*wallet.identity().sdk).clone();
+            let mut mock = sdk.mock();
+            mock.remove_fetch_expectation::<PrivateDocumentEntries, _>(query.clone())
+                .await;
+            mock.expect_fetch(query, Some(page))
+                .await
+                .expect("page expectation");
+        }
+    }
+
+    /// What `wallet` tracks with `contacts` after a sync: each one's requests
+    /// both ways.
+    async fn tracked(
+        wallet: &PlatformWallet,
+        identity_id: [u8; 32],
+        contacts: &[Identifier],
+    ) -> Vec<(Option<ContactRequest>, Option<ContactRequest>)> {
+        managed(wallet, identity_id, |managed| {
+            contacts
+                .iter()
+                .map(|contact| {
+                    (
+                        managed.dashpay().outgoing_request(contact).cloned(),
+                        managed.dashpay().incoming_request(contact).cloned(),
+                    )
+                })
+                .collect()
+        })
+        .await
+    }
+
+    /// A store of many pages is read in one pass, its pages fetched together
+    /// and scanned in batches: the wallet records what it records from the
+    /// same entries in one page, and derives the scan keys once a batch, not
+    /// once a page.
+    #[tokio::test]
+    async fn should_sync_a_store_of_many_pages_in_one_pass() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let carol = identity(CAROL_PHRASE, CAROL);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let bob_signer = signer(BOB_PHRASE, &bob);
+        let everyone = [&alice, &bob, &carol];
+
+        // Alice's requests to Bob and Carol, and Bob's to Alice.
+        let (_alice_manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &everyone, vec![]).await;
+        let kept = Arc::new(Mutex::new(Vec::new()));
+        for (start, recipient) in [(0, bob.id()), (1, carol.id())] {
+            alice_wallet
+                .identity()
+                .dashpay()
+                .send_private_contact_request(
+                    &alice.id(),
+                    &recipient,
+                    None,
+                    AutoAcceptProofSource::None,
+                    None,
+                    &alice_signer,
+                    &alice_crypto,
+                    append_entry(&alice_wallet, start, vec![], &kept),
+                )
+                .await
+                .expect("Alice sends");
+        }
+        let to_bob = kept.lock().expect("kept")[0].to_vec();
+        let (_bob_manager, bob_wallet) = wallet(BOB_PHRASE, &bob, &everyone, vec![to_bob]).await;
+        bob_wallet
+            .identity()
+            .dashpay()
+            .send_private_contact_request(
+                &bob.id(),
+                &alice.id(),
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &bob_signer,
+                &bob_crypto,
+                append_entry(&bob_wallet, 1, vec![], &kept),
+            )
+            .await
+            .expect("Bob sends");
+        let entries: Vec<Vec<u8>> = kept
+            .lock()
+            .expect("kept")
+            .iter()
+            .map(|entry| entry.to_vec())
+            .collect();
+        assert_eq!(entries.len(), 3);
+        let contacts = [bob.id(), carol.id()];
+
+        // Restored from seed, once with the store in one page and once in
+        // pages of one entry.
+        let (_one_manager, one_page) =
+            wallet(ALICE_PHRASE, &alice, &everyone, entries.clone()).await;
+        let one_page_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let one = one_page
+            .identity()
+            .dashpay()
+            .sync_private_contact_requests(&one_page_crypto, 64)
+            .await
+            .expect("the one-page store reads");
+        assert_eq!(one.pages_read, 1);
+
+        let (_many_manager, many_pages) = wallet(ALICE_PHRASE, &alice, &everyone, vec![]).await;
+        publish_chunked(&many_pages, &entries, 1).await;
+        let many_pages_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let many = many_pages
+            .identity()
+            .dashpay()
+            .sync_private_contact_requests(&many_pages_crypto, 64)
+            .await
+            .expect("the store of many pages reads");
+        assert_eq!(many.pages_read, 3);
+        assert!(many.complete);
+        assert_eq!(many.next_position, 3);
+        assert_eq!(many.rejected, vec![]);
+        assert_eq!(many.requests.len(), 3, "{:?}", many.requests);
+        // A page's received requests are recorded before its sent ones, so
+        // the order differs; the requests do not.
+        let sorted = |mut requests: Vec<ContactRequest>| {
+            requests.sort_by_key(|request| (request.sender_id, request.recipient_id));
+            requests
+        };
+        assert_eq!(sorted(many.requests.clone()), sorted(one.requests.clone()));
+        assert_eq!(
+            tracked(&many_pages, ALICE, &contacts).await,
+            tracked(&one_page, ALICE, &contacts).await
+        );
+        let derivations = many_pages_crypto
+            .scan_key_derivations
+            .load(std::sync::atomic::Ordering::SeqCst);
+        assert!(
+            (1..many.pages_read).contains(&derivations),
+            "{derivations} derivations for {} pages",
+            many.pages_read
         );
     }
 

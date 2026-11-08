@@ -170,6 +170,35 @@ pub trait ContactCryptoProvider {
         Err(private_documents_unsupported())
     }
 
+    /// Sorts each of `pages`, each read from its start position of the same store, as
+    /// [`Self::scan_private_document_page`] sorts one: one scan per page, in their order. A
+    /// provider derives the keys at `keys` once for all of them, rather than once a page.
+    ///
+    /// Defaulted to one [`Self::scan_private_document_page`] call per page, so a provider that
+    /// only implements that one keeps working.
+    async fn scan_private_document_pages(
+        &self,
+        keys: &PrivateDocumentKeyPaths,
+        data_contract_id: Identifier,
+        document_type_name: &str,
+        pages: &[(u64, &PrivateDocumentEntries)],
+    ) -> Result<Vec<PrivateDocumentScan>, PlatformWalletError> {
+        let mut scans = Vec::with_capacity(pages.len());
+        for (start_position, page) in pages {
+            scans.push(
+                self.scan_private_document_page(
+                    keys,
+                    data_contract_id,
+                    document_type_name,
+                    *start_position,
+                    page,
+                )
+                .await?,
+            );
+        }
+        Ok(scans)
+    }
+
     /// Seals `request` from `sender`, whose encryption key is the one at
     /// `sender_encryption_key_path`, to the key `recipient_key_id` of `recipient`, with
     /// `signature`, the signature of the request by the sender's key `signing_key_id`
@@ -233,6 +262,9 @@ pub struct ContactInfoOpened {
 #[cfg(test)]
 pub(crate) struct SeedCryptoProvider {
     wallet: key_wallet::wallet::Wallet,
+    /// How many times the private document scan keys were derived: once per scan call, a
+    /// page's or a batch's.
+    pub(crate) scan_key_derivations: std::sync::atomic::AtomicUsize,
 }
 
 #[cfg(test)]
@@ -243,6 +275,7 @@ impl SeedCryptoProvider {
         Self {
             wallet: Wallet::from_seed_bytes(seed, network, WalletAccountCreationOptions::None)
                 .expect("test seed wallet"),
+            scan_key_derivations: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 }
@@ -379,15 +412,36 @@ impl ContactCryptoProvider for SeedCryptoProvider {
         start_position: u64,
         page: &PrivateDocumentEntries,
     ) -> Result<PrivateDocumentScan, PlatformWalletError> {
+        self.scan_private_document_pages(
+            keys,
+            data_contract_id,
+            document_type_name,
+            &[(start_position, page)],
+        )
+        .await?
+        .pop()
+        .ok_or_else(|| PlatformWalletError::InvalidIdentityData("no scan".to_string()))
+    }
+
+    async fn scan_private_document_pages(
+        &self,
+        keys: &PrivateDocumentKeyPaths,
+        data_contract_id: Identifier,
+        document_type_name: &str,
+        pages: &[(u64, &PrivateDocumentEntries)],
+    ) -> Result<Vec<PrivateDocumentScan>, PlatformWalletError> {
+        // Once for the batch, as a signer-backed provider resolves its seed once.
+        self.scan_key_derivations
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let keys = keys.scan_keys(|path| self.secret_key_at(path))?;
-        Ok(keys.scan_page(
-            &platform_encryption::PrivateDocumentTarget {
-                contract_id: data_contract_id.to_buffer(),
-                document_type_name,
-            },
-            start_position,
-            page,
-        ))
+        let target = platform_encryption::PrivateDocumentTarget {
+            contract_id: data_contract_id.to_buffer(),
+            document_type_name,
+        };
+        Ok(pages
+            .iter()
+            .map(|(start_position, page)| keys.scan_page(&target, *start_position, page))
+            .collect())
     }
 
     async fn seal_private_contact_request(
