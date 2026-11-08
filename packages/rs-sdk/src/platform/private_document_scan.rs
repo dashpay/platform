@@ -5,12 +5,17 @@
 //! send with, which recover what the wallet sent after a restore from seed.
 //! [`PrivateDocumentScanKeys`] prepares both once, and [`Sdk::scan_private_document_page`]
 //! fetches one proved page of the store from a cursor and sorts its entries.
+//! [`Sdk::private_document_pages`] reads the store from a cursor to its end as a stream of
+//! proved pages in store order, many fetched at once.
 //!
 //! A scan only opens entries. What an entry claims about its sender is checked against the
 //! sender identity's keys: a deniable MAC with [`PrivateDocumentScanKeys::verify_sender`], a
 //! signature with [`OpenedPrivateDocumentEntry::recover_signer`]. The payload is the type's to
 //! decode and validate. `crate::platform::dashpay` does both for DashPay's private contact
 //! requests.
+
+use std::future::Future;
+use std::pin::Pin;
 
 use crate::platform::private_document_entries::{
     PrivateDocumentEntries, PrivateDocumentEntriesQuery, PrivateDocumentEntry,
@@ -19,6 +24,7 @@ use crate::platform::{Fetch, Identifier};
 use crate::{Error, Sdk};
 use dpp::identity::KeyID;
 use dpp::secp256k1::{PublicKey, SecretKey};
+use futures::stream::{self, Stream, StreamExt};
 use platform_encryption::{
     private_document_outgoing_viewing_key, recover_sent_private_document_entry,
     OpenedPrivateDocumentEntry, PrivateDocumentEnvelopeError, PrivateDocumentRecipientKeys,
@@ -367,7 +373,228 @@ impl PrivateDocumentScanKeys {
     }
 }
 
+/// How many pages of a private document type's store [`Sdk::private_document_pages`] keeps in
+/// flight, as the shielded note sync keeps as many chunk fetches. A page costs the node a
+/// proof, not the transfer, so pages in flight are what speeds a read up; and the stream holds
+/// no more pages than this unread, so its memory stays bounded.
+pub const MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES: usize = 16;
+
+/// One proved page of a private document type's store, as [`Sdk::private_document_pages`]
+/// yields it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PrivateDocumentPage {
+    /// The position the page was read from.
+    pub start_position: u64,
+    /// The page.
+    pub entries: PrivateDocumentEntries,
+}
+
+type PageFuture = Pin<Box<dyn Future<Output = Result<PrivateDocumentEntries, Error>> + Send>>;
+type PageStream = Pin<Box<dyn Stream<Item = Result<PrivateDocumentPage, Error>> + Send>>;
+
+/// Where a walk over a store's pages is.
+enum PageWalk {
+    /// Reading one page at a time from `start`, until the chunk size is known. `total` is
+    /// the store's size as the first page reported it, `None` before it; `aligned` says that
+    /// `start` is a chunk boundary, as the end of a page short of the store's end is.
+    Sequential {
+        start: u64,
+        total: Option<u64>,
+        aligned: bool,
+    },
+    /// The chunk size is known: every page left is fetched, several at once.
+    Concurrent(PageStream),
+    Done,
+}
+
+/// The pages of a store, read with `fetch` from `start_position` to the store's end as the
+/// first page reports it, in store order: one at a time until the chunk size is known, then
+/// up to `max_concurrent` at once ([`Sdk::private_document_pages`]).
+fn private_document_page_walk<F>(
+    fetch: F,
+    start_position: u64,
+    max_concurrent: usize,
+) -> impl Stream<Item = Result<PrivateDocumentPage, Error>> + Send
+where
+    F: Fn(u64) -> PageFuture + Clone + Send + Sync + 'static,
+{
+    let max_concurrent = max_concurrent.max(1);
+    stream::unfold(
+        PageWalk::Sequential {
+            start: start_position,
+            total: None,
+            aligned: false,
+        },
+        move |walk| {
+            let fetch = fetch.clone();
+            async move {
+                match walk {
+                    PageWalk::Done => None,
+                    PageWalk::Concurrent(mut pages) => match pages.next().await? {
+                        Ok(page) => Some((Ok(page), PageWalk::Concurrent(pages))),
+                        Err(error) => Some((Err(error), PageWalk::Done)),
+                    },
+                    PageWalk::Sequential {
+                        start,
+                        total,
+                        aligned,
+                    } => {
+                        let entries = match fetch(start).await {
+                            Ok(entries) => entries,
+                            Err(error) => return Some((Err(error), PageWalk::Done)),
+                        };
+                        let total = total.unwrap_or(entries.total_count);
+                        let len = entries.entries.len() as u64;
+                        let end = start.saturating_add(len);
+                        let page = PrivateDocumentPage {
+                            start_position: start,
+                            entries,
+                        };
+                        if end >= total {
+                            return Some((Ok(page), PageWalk::Done));
+                        }
+                        if len == 0 {
+                            return Some((
+                                Err(Error::Generic(format!(
+                                    "the page from position {start} of a store of {total} \
+                                     entries is empty"
+                                ))),
+                                PageWalk::Done,
+                            ));
+                        }
+                        // A page from a chunk boundary that stops short of the store's end is
+                        // one whole chunk, a power of two, and so is every page after it.
+                        let next = if aligned && len.is_power_of_two() && start % len == 0 {
+                            PageWalk::Concurrent(Box::pin(whole_chunk_pages(
+                                fetch,
+                                end,
+                                len,
+                                total,
+                                max_concurrent,
+                            )))
+                        } else {
+                            PageWalk::Sequential {
+                                start: end,
+                                total: Some(total),
+                                aligned: true,
+                            }
+                        };
+                        Some((Ok(page), next))
+                    }
+                }
+            }
+        },
+    )
+}
+
+/// The pages of `chunk_size` entries from `first`, a chunk boundary, to `total`, fetched up to
+/// `max_concurrent` at once and yielded in store order. A page that does not hold its whole
+/// chunk, short of the store's end, is an error: the walk would otherwise skip entries.
+fn whole_chunk_pages<F>(
+    fetch: F,
+    first: u64,
+    chunk_size: u64,
+    total: u64,
+    max_concurrent: usize,
+) -> impl Stream<Item = Result<PrivateDocumentPage, Error>> + Send
+where
+    F: Fn(u64) -> PageFuture + Clone + Send + Sync + 'static,
+{
+    let starts = std::iter::successors(Some(first), move |start| {
+        start.checked_add(chunk_size).filter(|next| *next < total)
+    })
+    .filter(move |start| *start < total);
+    stream::iter(starts)
+        .map(move |start| {
+            let page = fetch(start);
+            async move {
+                let entries = page.await?;
+                let len = entries.entries.len() as u64;
+                let first_position = entries.entries.first().map(|entry| entry.position);
+                let whole = len == chunk_size || start.saturating_add(len) >= total;
+                if len > chunk_size || !whole || first_position.is_some_and(|p| p != start) {
+                    return Err(Error::Generic(format!(
+                        "the page from position {start} holds {len} entries, not the chunk of \
+                         {chunk_size} the store's earlier pages set"
+                    )));
+                }
+                Ok(PrivateDocumentPage {
+                    start_position: start,
+                    entries,
+                })
+            }
+        })
+        .buffered(max_concurrent)
+}
+
 impl Sdk {
+    /// The proved pages of the store of the private type `document_type_name` of
+    /// `data_contract_id`, from `start_position` to the store's end as the first page reports
+    /// it, in store order, with up to `max_concurrent` fetched at once
+    /// ([`MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES`] is the wallet's choice). Entries
+    /// appended while the pages are read are left for the next read, unless the last page's
+    /// chunk holds them.
+    ///
+    /// A page reads to the end of the chunk holding its start, which the client does not
+    /// learn from the node: so the first page, and the next one from the chunk boundary it
+    /// ends at, are read one at a time. That second page, short of the store's end, is a whole
+    /// chunk, which sets the size of every page after it; those are then fetched at once. A
+    /// store with two chunks or fewer past `start_position` is read one page at a time.
+    ///
+    /// The context provider is given the contract with the type first when it lacks it
+    /// ([`Sdk::fetch_private_document_contract`]). A failed fetch ends the stream with its
+    /// error, after the pages before it.
+    pub fn private_document_pages(
+        &self,
+        data_contract_id: Identifier,
+        document_type_name: &str,
+        start_position: u64,
+        max_concurrent: usize,
+    ) -> impl Stream<Item = Result<PrivateDocumentPage, Error>> + Send {
+        let sdk = self.clone();
+        let document_type_name = document_type_name.to_string();
+        let resolve = {
+            let sdk = sdk.clone();
+            let document_type_name = document_type_name.clone();
+            async move {
+                sdk.fetch_private_document_contract(data_contract_id, &document_type_name)
+                    .await
+            }
+        };
+        stream::once(resolve).flat_map(move |resolved| -> PageStream {
+            match resolved {
+                Err(error) => Box::pin(stream::once(async move { Err(error) })),
+                Ok(_) => {
+                    let sdk = sdk.clone();
+                    let document_type_name = document_type_name.clone();
+                    let fetch = move |start: u64| -> PageFuture {
+                        let sdk = sdk.clone();
+                        let query = PrivateDocumentEntriesQuery::new(
+                            data_contract_id,
+                            document_type_name.clone(),
+                            start,
+                        );
+                        Box::pin(async move {
+                            PrivateDocumentEntries::fetch(&sdk, query)
+                                .await?
+                                .ok_or_else(|| {
+                                    Error::Generic(format!(
+                                        "no page of the private document type of contract \
+                                         {data_contract_id} from position {start}"
+                                    ))
+                                })
+                        })
+                    };
+                    Box::pin(private_document_page_walk(
+                        fetch,
+                        start_position,
+                        max_concurrent,
+                    ))
+                }
+            }
+        })
+    }
+
     /// Fetches the proved page of the store of the private type `document_type_name` of
     /// `data_contract_id` from `start_position`, and sorts its entries with `keys`. The context
     /// provider is given the contract with the type first when it lacks it
@@ -681,6 +908,233 @@ mod tests {
             }
         );
         assert!(scan.is_complete());
+    }
+
+    /// The page Drive serves from `start` of a store of `total` entries in chunks of
+    /// `chunk_size`: the rest of the chunk holding `start`, or to the store's end.
+    fn drive_page(chunk_size: u64, total: u64, start: u64) -> PrivateDocumentEntries {
+        let end = if start >= total {
+            start
+        } else {
+            (start - start % chunk_size + chunk_size).min(total)
+        };
+        PrivateDocumentEntries {
+            entries: (start..end)
+                .map(|position| PrivateDocumentEntry {
+                    position,
+                    block_height: position,
+                    block_time_ms: position,
+                    data: vec![position as u8; 4],
+                })
+                .collect(),
+            total_count: total,
+        }
+    }
+
+    /// Fetches with how many are in flight at once noted.
+    #[derive(Clone, Default)]
+    struct InFlight {
+        now: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        most: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        starts: std::sync::Arc<std::sync::Mutex<Vec<u64>>>,
+    }
+
+    impl InFlight {
+        /// A fetch of Drive's pages of a store of `total` entries in chunks of `chunk_size`,
+        /// each taking `delay`, failing from `failing` when given.
+        fn fetch(
+            &self,
+            chunk_size: u64,
+            total: u64,
+            delay: std::time::Duration,
+            failing: Option<u64>,
+        ) -> impl Fn(u64) -> PageFuture + Clone + Send + Sync + 'static {
+            let in_flight = self.clone();
+            move |start| {
+                let in_flight = in_flight.clone();
+                Box::pin(async move {
+                    use std::sync::atomic::Ordering::SeqCst;
+                    in_flight.starts.lock().expect("starts").push(start);
+                    let now = in_flight.now.fetch_add(1, SeqCst) + 1;
+                    in_flight.most.fetch_max(now, SeqCst);
+                    tokio::time::sleep(delay).await;
+                    in_flight.now.fetch_sub(1, SeqCst);
+                    if failing == Some(start) {
+                        return Err(Error::Generic(format!("no page from {start}")));
+                    }
+                    Ok(drive_page(chunk_size, total, start))
+                })
+            }
+        }
+
+        fn most(&self) -> usize {
+            self.most.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    /// Every page a walk yields, and the positions of their entries.
+    async fn walk(
+        fetch: impl Fn(u64) -> PageFuture + Clone + Send + Sync + 'static,
+        start: u64,
+        max_concurrent: usize,
+    ) -> Vec<Result<PrivateDocumentPage, Error>> {
+        private_document_page_walk(fetch, start, max_concurrent)
+            .collect()
+            .await
+    }
+
+    /// From a chunk boundary, from inside a chunk and from the store's last partial chunk,
+    /// the pages come in store order, each from where the last ended, and hold every entry
+    /// from the cursor to the store's end once.
+    #[tokio::test]
+    async fn should_read_a_store_s_pages_in_order_from_any_cursor() {
+        let (chunk_size, total) = (4, 30);
+        for cursor in [0, 6, 16, 26, 29, 30] {
+            let pages = walk(
+                InFlight::default().fetch(chunk_size, total, std::time::Duration::ZERO, None),
+                cursor,
+                MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
+            )
+            .await;
+            let mut expected_start = cursor;
+            let mut positions = Vec::new();
+            for page in pages {
+                let page = page.expect("every page reads");
+                assert_eq!(page.start_position, expected_start, "cursor {cursor}");
+                expected_start += page.entries.entries.len() as u64;
+                positions.extend(page.entries.entries.iter().map(|entry| entry.position));
+            }
+            assert_eq!(
+                positions,
+                (cursor..total).collect::<Vec<_>>(),
+                "cursor {cursor}"
+            );
+        }
+    }
+
+    /// A store of two chunks or fewer past the cursor is read one page at a time.
+    #[tokio::test]
+    async fn should_read_a_short_store_one_page_at_a_time() {
+        for (cursor, total) in [(1, 7), (0, 8), (3, 4)] {
+            let in_flight = InFlight::default();
+            let pages = walk(
+                in_flight.fetch(4, total, std::time::Duration::from_millis(5), None),
+                cursor,
+                MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
+            )
+            .await;
+            assert!(pages.iter().all(Result::is_ok));
+            assert_eq!(
+                pages
+                    .iter()
+                    .flatten()
+                    .map(|page| page.start_position)
+                    .collect::<Vec<_>>(),
+                *in_flight.starts.lock().expect("starts")
+            );
+            assert_eq!(in_flight.most(), 1, "cursor {cursor} of {total}");
+        }
+    }
+
+    /// Past the first two pages, several fetches are in flight at once, as many as allowed.
+    #[tokio::test]
+    async fn should_keep_several_page_fetches_in_flight() {
+        let in_flight = InFlight::default();
+        let pages = walk(
+            in_flight.fetch(4, 64, std::time::Duration::from_millis(20), None),
+            0,
+            5,
+        )
+        .await;
+        assert_eq!(pages.len(), 16);
+        assert!(pages.iter().all(Result::is_ok));
+        assert_eq!(in_flight.most(), 5);
+    }
+
+    /// A failed fetch ends the stream with its error, after every page before it.
+    #[tokio::test]
+    async fn should_end_with_a_later_page_s_error_after_the_pages_before_it() {
+        let pages = walk(
+            InFlight::default().fetch(4, 40, std::time::Duration::from_millis(1), Some(20)),
+            0,
+            MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
+        )
+        .await;
+        let starts: Vec<u64> = pages
+            .iter()
+            .take_while(|page| page.is_ok())
+            .flatten()
+            .map(|page| page.start_position)
+            .collect();
+        assert_eq!(starts, vec![0, 4, 8, 12, 16]);
+        assert_eq!(pages.len(), 6, "the error, then nothing");
+        assert!(pages[5].is_err());
+    }
+
+    /// A page short of its chunk, before the store's end, is an error rather than a gap.
+    #[tokio::test]
+    async fn should_refuse_a_page_short_of_its_chunk() {
+        let fetch = |start: u64| -> PageFuture {
+            Box::pin(async move {
+                let mut page = drive_page(4, 40, start);
+                if start == 12 {
+                    page.entries.truncate(2);
+                }
+                Ok(page)
+            })
+        };
+        let pages = walk(fetch, 0, 4).await;
+        assert!(pages[..3].iter().all(Result::is_ok));
+        let error = pages[3].as_ref().expect_err("a short page").to_string();
+        assert!(error.contains("not the chunk of 4"), "{error}");
+        assert_eq!(pages.len(), 4);
+    }
+
+    /// The pages read through the SDK, after the context provider is given the contract.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_stream_the_pages_of_a_store_through_the_sdk() {
+        use crate::platform::private_document_entries::held_contract_provider::HeldContractProvider;
+        use crate::SdkBuilder;
+        use dpp::version::PlatformVersion;
+
+        let mut sdk: Sdk = SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .with_context_provider(HeldContractProvider::new(
+                Some(contract_with_the_private_type()),
+                false,
+            ))
+            .build()
+            .expect("expected a mock sdk");
+        let contract_id = Identifier::from(CONTRACT_ID);
+        for start in [2, 4, 8, 12] {
+            sdk.mock()
+                .expect_fetch(
+                    PrivateDocumentEntriesQuery::new(contract_id, TYPE_NAME, start),
+                    Some(drive_page(4, 14, start)),
+                )
+                .await
+                .expect("expected to register the page");
+        }
+        let pages: Vec<PrivateDocumentPage> = sdk
+            .private_document_pages(contract_id, TYPE_NAME, 2, 3)
+            .map(|page| page.expect("every page reads"))
+            .collect()
+            .await;
+        assert_eq!(
+            pages
+                .iter()
+                .map(|page| page.start_position)
+                .collect::<Vec<_>>(),
+            vec![2, 4, 8, 12]
+        );
+        assert_eq!(
+            pages
+                .iter()
+                .flat_map(|page| page.entries.entries.iter().map(|entry| entry.position))
+                .collect::<Vec<_>>(),
+            (2..14).collect::<Vec<_>>()
+        );
     }
 
     /// DashPay as the latest version has it, under the test contract's id: a contract that
