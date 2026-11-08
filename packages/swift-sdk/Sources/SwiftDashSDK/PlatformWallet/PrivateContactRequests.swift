@@ -160,6 +160,10 @@ extension PlatformWalletManager {
             resolver: resolver,
             shieldedAddress: shieldedAddress
         )
+        // Counted as the other native manager operations are, so a teardown
+        // waits for this call to return before it frees the manager.
+        try admitNativeOp("sendPrivateContactRequest")
+        defer { finishNativeOp() }
         let signerHandle = signer.handle
         let requestHandle: Handle = try await Task.detached(priority: .userInitiated) {
             () -> Handle in
@@ -219,6 +223,10 @@ extension PlatformWalletManager {
             resolver: resolver,
             shieldedAddress: shieldedAddress
         )
+        // Counted as the other native manager operations are, so a teardown
+        // waits for this call to return before it frees the manager.
+        try admitNativeOp("acceptPrivateContactRequest")
+        defer { finishNativeOp() }
         let requestHandle = request.handle
         let signerHandle = signer.handle
         let establishedHandle: Handle = try await Task.detached(priority: .userInitiated) {
@@ -252,9 +260,12 @@ extension PlatformWalletManager {
     /// `signer`, or by adopting the reply already sent. Which reply a request
     /// takes is the wallet's decision, so this is the accept a host calls.
     /// `shieldedAddress` is the 43-byte Orchard address the contact may pay
-    /// us at privately; a public reply ignores it. Throws
-    /// `PlatformWalletError.shieldedSpendUnconfirmed` when a private reply
-    /// may already be on chain: do not accept again.
+    /// us at privately; a public reply ignores it. A public or adopted reply
+    /// needs neither shielded support nor a mnemonic read for the payment.
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when a private
+    /// reply may already be on chain: do not accept again; and
+    /// `PlatformWalletError.shieldedBuildRequired` when the request needs a
+    /// private reply and the native library has no shielded support.
     public func acceptContactRequestReplyingInKind(
         walletId: Data,
         resolver: MnemonicResolver,
@@ -268,6 +279,10 @@ extension PlatformWalletManager {
             resolver: resolver,
             shieldedAddress: shieldedAddress
         )
+        // Counted as the other native manager operations are, so a teardown
+        // waits for this call to return before it frees the manager.
+        try admitNativeOp("acceptContactRequestReplyingInKind")
+        defer { finishNativeOp() }
         let requestHandle = request.handle
         let signerHandle = signer.handle
         let establishedHandle: Handle = try await Task.detached(priority: .userInitiated) {

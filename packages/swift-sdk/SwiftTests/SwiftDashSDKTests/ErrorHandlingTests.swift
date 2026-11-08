@@ -475,6 +475,37 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(error.errorDescription, detail)
     }
 
+    func testShouldTellAPrivateReplyOnABuildWithoutShieldedSupportByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_BUILD_REQUIRED
+        )
+        XCTAssertEqual(code, .errorShieldedBuildRequired)
+        XCTAssertEqual(code.rawValue, 69)
+        let detail = "this contact request needs a private reply, which is paid "
+            + "from the shielded pool; this build has no shielded support"
+        let error = PlatformWalletError(code: code, message: detail)
+        guard case .shieldedBuildRequired(let message) = error else {
+            return XCTFail("lost typed shielded-build error")
+        }
+        XCTAssertEqual(message, detail)
+        XCTAssertEqual(error.errorDescription, detail)
+    }
+
+    func testShouldTellARequestTheNetworkDoesNotServeYetByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PROTOCOL_VERSION_NOT_ACTIVE
+        )
+        XCTAssertEqual(code, .errorProtocolVersionNotActive)
+        XCTAssertEqual(code.rawValue, 70)
+        let detail = "get_private_document_entries needs protocol version 15; "
+            + "the network is proven at protocol version 14"
+        let error = PlatformWalletError(code: code, message: detail)
+        guard case .protocolVersionNotActive(let message) = error else {
+            return XCTFail("lost typed protocol-version error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     func testShouldReadEveryFieldOfAPrivateContact() {
         var ffi = PrivateContactFFI()
         ffi.received_privately = true
