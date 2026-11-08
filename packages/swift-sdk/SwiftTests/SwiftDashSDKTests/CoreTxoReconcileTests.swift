@@ -648,8 +648,8 @@ final class CoreTxoReconcileTests: XCTestCase {
     /// A round still open when the verdicts come back may already have
     /// staged a re-credit, and the run holds the engine's guard across the
     /// apply, so it must not wait there for the round to close: the page is
-    /// stale, the guard goes, and the page is read again — the read waits
-    /// for the round, guard-free.
+    /// stale, the guard goes, and the page is read again — here after the
+    /// round closed, so the read is not deferred.
     func testARoundOpenAtTheApplyIsAStalePageNotAWaitUnderTheGuard() throws {
         let (handler, container) = try makeHandler()
         try seedWallet(in: container)
@@ -674,7 +674,7 @@ final class CoreTxoReconcileTests: XCTestCase {
 
         XCTAssertTrue(report.completed)
         XCTAssertEqual(report.staleRetries, 1)
-        XCTAssertEqual(report.retries, 0, "nothing waited for the round while the guard was held")
+        XCTAssertEqual(report.retries, 0, "no store step was deferred: the apply answered a stale page")
         XCTAssertEqual(report.flipped, 1, "the page read after the round closed is applied")
         XCTAssertEqual(engine.events, [
             "heal", "release", "healApplied",
@@ -1387,31 +1387,40 @@ final class CoreTxoReconcileTests: XCTestCase {
     }
 
     /// A heal step deferred for an open round must not wait for it under the
-    /// guard (the round's writer may need the engine's lock): the guard goes,
-    /// the run waits, and the same page is read again under a new one.
-    func testADeferredHealStepReleasesItsGuardBeforeWaiting() throws {
+    /// guard (the round's writer may need the engine's lock), and the run
+    /// does not wait for it at all: the guard goes, the run stops with the
+    /// page not reported applied, and the wallet's next run reads it again.
+    func testADeferredHealStepReleasesItsGuardAndStopsTheRun() throws {
         let (handler, container) = try makeHandler()
         try seedWallet(in: container)
         try fileAddress(in: container)
         let engine = FakeCoreTxoEngine(inventory: [engineUtxo(txid: txid(0x9a))])
         let walletId = self.walletId
-        let releases = Counter()
         handler.beginChangeset(walletId: walletId)
-        engine.onRelease = {
-            guard releases.next() == 1 else { return }
-            _ = handler.endChangeset(walletId: walletId, success: true)
-        }
-
         let report = run(handler, engine: engine)
+        _ = handler.endChangeset(walletId: walletId, success: true)
 
-        XCTAssertTrue(report.completed)
-        XCTAssertEqual(report.retries, 1, "one wait, taken after the guard was released")
-        XCTAssertEqual(report.engineRows, 1, "the page read again is counted once")
-        XCTAssertEqual(report.inserted, 1)
-        XCTAssertEqual(engine.pageCalls, 2)
-        XCTAssertEqual(engine.healApplied, 1, "the deferred read is not reported applied; the one that landed is")
-        XCTAssertEqual(Array(engine.events.prefix(5)), ["heal", "release", "heal", "release", "healApplied"])
-        XCTAssertEqual(engine.pagedWhileHeld, 0)
+        XCTAssertFalse(report.completed)
+        XCTAssertTrue(report.stoppedOnOpenRound)
+        XCTAssertFalse(report.stoppedOnBudget)
+        XCTAssertEqual(report.retries, 1)
+        XCTAssertEqual(report.engineRows, 0, "a deferred page is not walked")
+        XCTAssertEqual(report.inserted, 0)
+        XCTAssertEqual(engine.pageCalls, 1, "the run does not read the page again itself")
+        XCTAssertEqual(engine.healApplied, 0)
+        XCTAssertEqual(engine.events, ["heal", "release"], "the guard goes; nothing is reported applied")
+        XCTAssertNil(engine.checkpoint, "nothing moved: the next run starts at the same page")
+        XCTAssertFalse(engine.isHoldingVerdicts)
+        XCTAssertNil(try txo(container, txid: txid(0x9a)))
+
+        // The round closed: the wallet's next run reads the same page and
+        // applies it.
+        let next = run(handler, engine: engine)
+
+        XCTAssertTrue(next.completed)
+        XCTAssertFalse(next.stoppedOnOpenRound)
+        XCTAssertEqual(next.inserted, 1)
+        XCTAssertEqual(engine.healApplied, 1)
         XCTAssertNotNil(try txo(container, txid: txid(0x9a)))
     }
 
@@ -1503,30 +1512,44 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(txo(container, txid: txid(0x41))).isSpent)
     }
 
-    /// A heal page deferred behind an open round is read again, each read a
-    /// page of the budget, and never reported applied: when the budget runs
-    /// out the run stops, and the next run starts at the same page.
-    func testADeferredHealPageIsNeverReportedApplied() throws {
+    /// The classify pass's page read is a guard-free store step: a round
+    /// open when it runs stops the run before the page is classified, with
+    /// nothing reported applied past the heal pass, and the wallet's next
+    /// run starts at the classify pass's first page.
+    func testADeferredStorePageReadStopsTheRunBeforeItIsClassified() throws {
         let (handler, container) = try makeHandler()
         try seedWallet(in: container)
-        try fileAddress(in: container)
-        let engine = FakeCoreTxoEngine(inventory: [engineUtxo(txid: txid(0x42))], budget: 2)
+        try seedUnspentTxo(in: container, txid: txid(0x42))
+        let outpoint = PersistentTxo.makeOutpoint(txid: txid(0x42), vout: 0)
+        let engine = FakeCoreTxoEngine(verdicts: [outpoint: .knownUncredited])
         let walletId = self.walletId
+        // The heal page is empty, so it takes no store step and is reported
+        // applied; the first store step is the classify pass's page read.
         handler.beginChangeset(walletId: walletId)
-        defer { _ = handler.endChangeset(walletId: walletId, success: true) }
-
         let report = run(handler, engine: engine)
+        _ = handler.endChangeset(walletId: walletId, success: true)
 
         XCTAssertFalse(report.completed)
-        XCTAssertTrue(report.stoppedOnBudget)
-        XCTAssertEqual(report.retries, 2)
-        XCTAssertEqual(engine.pageCalls, 3)
-        XCTAssertEqual(engine.budgetSpentReads, 1)
-        XCTAssertEqual(engine.healApplied, 0)
-        XCTAssertEqual(report.inserted, 0)
-        XCTAssertNil(engine.checkpoint, "nothing moved: the next run starts a new cycle")
+        XCTAssertTrue(report.stoppedOnOpenRound)
+        XCTAssertFalse(report.stoppedOnBudget)
+        XCTAssertEqual(report.retries, 1)
+        XCTAssertEqual(report.storeRows, 0)
+        XCTAssertEqual(engine.classifyCalls, 0, "the deferred page is never classified")
+        XCTAssertTrue(engine.classifyApplied.isEmpty, "the deferred page is not reported applied")
+        XCTAssertEqual(engine.events, ["heal", "release", "healApplied"])
+        XCTAssertEqual(engine.checkpoint, .classify(Data()), "the next run classifies from the first row")
         XCTAssertFalse(engine.isHoldingVerdicts)
-        XCTAssertNil(try txo(container, txid: txid(0x42)))
+        XCTAssertFalse(try XCTUnwrap(txo(container, txid: txid(0x42))).isSpent)
+
+        // The round closed: the next run resumes at the classify pass.
+        let next = run(handler, engine: engine)
+
+        XCTAssertTrue(next.completed)
+        XCTAssertTrue(next.resumedFromCheckpoint)
+        XCTAssertFalse(next.stoppedOnOpenRound)
+        XCTAssertEqual(next.flipped, 1)
+        XCTAssertEqual(engine.classifyApplied, [nil])
+        XCTAssertTrue(try XCTUnwrap(txo(container, txid: txid(0x42))).isSpent)
     }
 
     /// The applied report says whether the run may read another page; when
@@ -1767,9 +1790,9 @@ final class CoreTxoReconcileTests: XCTestCase {
         }
     }
 
-    /// A run that stopped on its budget having written nothing is an
-    /// expected state, logged like a clean run; a write, or any other stop,
-    /// is a warning.
+    /// A run that stopped on its budget or on an open persistence round
+    /// having written nothing is an expected state, logged like a clean run;
+    /// a write, or any other stop, is a warning.
     func testABudgetStopWithNothingWrittenIsNotAWarning() {
         var clean = CoreTxoReconcileReport()
         XCTAssertEqual(PlatformWalletManager.summarySeverity(clean), .info)
@@ -1782,6 +1805,14 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertEqual(PlatformWalletManager.summarySeverity(budget), .info)
         budget.inserted = 1
         XCTAssertEqual(PlatformWalletManager.summarySeverity(budget), .warning)
+
+        var openRound = CoreTxoReconcileReport()
+        openRound.completed = false
+        openRound.stoppedOnOpenRound = true
+        openRound.retries = 1
+        XCTAssertEqual(PlatformWalletManager.summarySeverity(openRound), .info)
+        openRound.flipped = 1
+        XCTAssertEqual(PlatformWalletManager.summarySeverity(openRound), .warning)
 
         var failed = CoreTxoReconcileReport()
         failed.completed = false

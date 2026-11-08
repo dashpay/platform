@@ -9,7 +9,8 @@
 //!
 //! - **when to run** — [`TxoReconciler::due_wallets`] on every SPV progress
 //!   poll: each wallet on the rising edge into steady state, then again on
-//!   [`TXO_RECONCILE_CADENCE`] while it lasts;
+//!   [`TXO_RECONCILE_CADENCE`] while it lasts, and on the next poll while
+//!   its cycle is unfinished ([`TxoReconcileFinish`]);
 //! - **whether a run may start** — [`TxoReconciler::begin`]: one run per
 //!   wallet at a time, SPV in steady state with a scan tip, no latched sync
 //!   fault, and the wallet's own scan watermark within
@@ -30,7 +31,8 @@
 //!   checkpoint, moved only by a page the host reports applied
 //!   ([`TxoReconciler::heal_page_applied`],
 //!   [`TxoReconciler::classify_page_applied`]), says where the next run
-//!   starts ([`TxoReconcileStart`]).
+//!   starts ([`TxoReconcileStart`]). A run that used its budget with the
+//!   cycle unfinished leaves the wallet due, so the next poll continues it.
 //!
 //! The host keeps only what needs its store: paging its rows, resolving the
 //! account that owns each, its transactions, and the fences that keep its
@@ -137,7 +139,9 @@ pub const TXO_RECONCILE_MAX_STALE_RETRIES: u32 = 5;
 /// [`crate::manager::accessors::WALLET_UTXO_PAGE_MAX`] rows), so one run
 /// covers at most this many of them: a wallet whose heal and classify
 /// passes fit in that finishes a whole cycle in one run, and a larger one
-/// is covered over several, one budget per [`TXO_RECONCILE_CADENCE`].
+/// is covered over several on consecutive polls (the budget bounds one
+/// run, not the cycle), then waits [`TXO_RECONCILE_CADENCE`] for the next
+/// cycle.
 pub const TXO_RECONCILE_PAGE_BUDGET: u32 = 16;
 
 /// The longest store cursor a host may hand
@@ -288,6 +292,33 @@ pub enum TxoReconcileSkip {
 }
 
 impl TxoReconcileSkip {
+    pub fn as_u8(self) -> u8 {
+        self as u8
+    }
+}
+
+/// How a run [`TxoReconciler::begin`] granted ended, as its host reports it
+/// to [`TxoReconciler::finish`]: what the wallet's cadence does next.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TxoReconcileFinish {
+    /// The run did not go ahead: the cadence keeps the restart its claim
+    /// stamped.
+    NotRun = 0,
+    /// The run went ahead, even if it stopped early on a failure: the
+    /// cadence restarts now, so a persistent failure is not retried on
+    /// every poll. Except when the run applied its whole
+    /// [`TXO_RECONCILE_PAGE_BUDGET`] with the cycle unfinished (a
+    /// checkpoint still set): then the wallet stays due, and the next poll
+    /// continues the cycle where the run stopped.
+    Ran = 1,
+    /// The run stopped because the host's store deferred it (a persistence
+    /// round was open): the page was not applied. The wallet stays due, so
+    /// the next poll runs it again.
+    Deferred = 2,
+}
+
+impl TxoReconcileFinish {
     pub fn as_u8(self) -> u8 {
         self as u8
     }
@@ -446,8 +477,12 @@ pub struct TxoReconcileSchedule {
     steady_session: Option<u64>,
     in_flight: BTreeMap<WalletId, ReconcileClaim>,
     last_run: BTreeMap<WalletId, Instant>,
-    /// Where each wallet's next run picks up. In memory: a fresh process
-    /// starts a new cycle, which the budget still bounds.
+    /// Where each wallet's next run picks up. A run that used its budget
+    /// with the cycle unfinished leaves the wallet due ([`Self::finish`]),
+    /// so the cycle continues on the next poll and finishes within seconds
+    /// of consecutive runs, not one budget per cadence. In memory: a fresh
+    /// process starts a new cycle and finishes it the same way, so even a
+    /// session shorter than the cadence completes one.
     checkpoints: BTreeMap<WalletId, Checkpoint>,
     /// The id the next claim gets.
     next_claim: u64,
@@ -544,8 +579,9 @@ impl TxoReconcileSchedule {
     /// already in flight. The rising edge into steady state forgets every
     /// wallet's last run, so all of `wallets` are due from then on.
     /// Reporting a wallet consumes nothing: its cadence restarts only when a
-    /// run claims it ([`Self::try_begin`]), so a wallet the host cannot run
-    /// yet is reported again on the next poll, on the edge or not.
+    /// run claims it ([`Self::try_begin`]) or finishes ([`Self::finish`]),
+    /// so a wallet the host cannot run yet is reported again on the next
+    /// poll, on the edge or not.
     pub fn due_wallets(
         &mut self,
         steady: bool,
@@ -579,7 +615,9 @@ impl TxoReconcileSchedule {
     /// Claim the wallet for one run at `now`; `false` when a run is already
     /// in flight. The claim restarts the wallet's cadence whether or not the
     /// run goes ahead, so a run its gate refuses is not retried on every
-    /// poll.
+    /// poll — except a refusal for [`TxoReconcileSkip::NotSteadyState`],
+    /// whose release ([`TxoReconcileFinish::Deferred`]) leaves the wallet
+    /// due for the steady state to come.
     pub fn try_begin(&mut self, wallet_id: WalletId, now: Instant) -> bool {
         if self.in_flight.contains_key(&wallet_id) {
             return false;
@@ -594,20 +632,38 @@ impl TxoReconcileSchedule {
         true
     }
 
-    /// Release the claim [`Self::try_begin`] took. `ran_at` is when a run
-    /// that went ahead finished, which restarts the wallet's cadence from
-    /// then; `None` for one that did not. A claim whose wallet was
-    /// forgotten meanwhile records nothing. An engine guard the run still
-    /// holds is released.
-    pub fn finish(&mut self, wallet_id: &WalletId, ran_at: Option<Instant>) {
+    /// Release the claim [`Self::try_begin`] took, at `now`, as `outcome`
+    /// says the run ended ([`TxoReconcileFinish`]): `NotRun` keeps the
+    /// claim's stamp, `Ran` restarts the wallet's cadence from `now`, and
+    /// `Deferred` leaves the wallet due. So does `Ran` when the run read its
+    /// whole budget, applied its last page, and left the wallet's
+    /// checkpoint set: it stopped for the budget, mid-cycle, and the next
+    /// poll continues the cycle. A run that stopped on a page it never
+    /// applied restarts the cadence: each continuation has applied a page
+    /// past the last, so the wallet is never due again for no progress. A
+    /// claim whose wallet was forgotten meanwhile records nothing. An
+    /// engine guard the run still holds is released.
+    pub fn finish(&mut self, wallet_id: &WalletId, outcome: TxoReconcileFinish, now: Instant) {
         let Some(claim) = self.in_flight.remove(wallet_id) else {
             return;
         };
         if let Some(slot) = &claim.held {
             release_slot(slot);
         }
-        if let Some(at) = ran_at.filter(|_| !claim.forgotten) {
-            self.last_run.insert(*wallet_id, at);
+        if claim.forgotten {
+            return;
+        }
+        let cycle_unfinished = claim.pages_left == 0
+            && claim.pending.is_none()
+            && self.checkpoints.contains_key(wallet_id);
+        match outcome {
+            TxoReconcileFinish::NotRun => {}
+            TxoReconcileFinish::Ran if !cycle_unfinished => {
+                self.last_run.insert(*wallet_id, now);
+            }
+            TxoReconcileFinish::Ran | TxoReconcileFinish::Deferred => {
+                self.last_run.remove(wallet_id);
+            }
         }
     }
 
@@ -693,19 +749,28 @@ impl<'a> ProvisionalClaim<'a> {
     }
 }
 
-impl Drop for ProvisionalClaim<'_> {
-    fn drop(&mut self) {
+impl ProvisionalClaim<'_> {
+    /// Release the claim, if still armed, as a run that ended as `outcome`
+    /// says.
+    fn release(&mut self, outcome: TxoReconcileFinish) {
         if !self.armed {
             return;
         }
+        self.armed = false;
         let mut schedule = lock_schedule(self.schedule);
         if schedule
             .in_flight
             .get(&self.wallet_id)
             .is_some_and(|claim| claim.id == self.id)
         {
-            schedule.finish(&self.wallet_id, None);
+            schedule.finish(&self.wallet_id, outcome, Instant::now());
         }
+    }
+}
+
+impl Drop for ProvisionalClaim<'_> {
+    fn drop(&mut self) {
+        self.release(TxoReconcileFinish::NotRun);
     }
 }
 
@@ -747,6 +812,9 @@ impl TxoReconciler {
     /// checkpoint, and gives the run [`TXO_RECONCILE_PAGE_BUDGET`]
     /// pages. On `Ok` the claim holds until [`Self::finish`]; a refusal
     /// releases it, and so does dropping this future before it completes.
+    /// A refusal keeps the claim's cadence stamp, except
+    /// [`TxoReconcileSkip::NotSteadyState`]: SPV left its steady state, so
+    /// the wallet is due again once it is back, not a cadence later.
     pub async fn begin(&self, wallet_id: &WalletId) -> Result<TxoReconcileRun, TxoReconcileSkip> {
         self.claim_across(wallet_id, self.gate(wallet_id)).await
     }
@@ -759,9 +827,16 @@ impl TxoReconciler {
         wallet_id: &WalletId,
         gate: impl Future<Output = Result<u32, TxoReconcileSkip>>,
     ) -> Result<TxoReconcileRun, TxoReconcileSkip> {
-        let claim = ProvisionalClaim::take(&self.schedule, *wallet_id, Instant::now())
+        let mut claim = ProvisionalClaim::take(&self.schedule, *wallet_id, Instant::now())
             .ok_or(TxoReconcileSkip::AlreadyRunning)?;
-        let tip = gate.await?;
+        let tip = gate.await.inspect_err(|skip| {
+            // Not steady yet: no stamp, so the wallet is due as soon as it
+            // is (due_wallets reports nothing until then, so no poll loop).
+            // Every other refusal keeps the claim's stamp when it drops.
+            if *skip == TxoReconcileSkip::NotSteadyState {
+                claim.release(TxoReconcileFinish::Deferred);
+            }
+        })?;
         Ok(claim.hand_over(tip))
     }
 
@@ -974,10 +1049,13 @@ impl TxoReconciler {
     }
 
     /// Release the claim [`Self::begin`] granted, and the engine guard it
-    /// may still hold. `ran` is whether the run went ahead (even if it
-    /// stopped early): that restarts the wallet's cadence from now.
-    pub fn finish(&self, wallet_id: &WalletId, ran: bool) {
-        lock_schedule(&self.schedule).finish(wallet_id, ran.then(Instant::now));
+    /// may still hold. `outcome` is how the run ended, which says when the
+    /// wallet is due again ([`TxoReconcileFinish`]): a run that went ahead
+    /// restarts its cadence from now, unless it used its budget mid-cycle
+    /// or its store deferred it, which leave the wallet due on the next
+    /// poll.
+    pub fn finish(&self, wallet_id: &WalletId, outcome: TxoReconcileFinish) {
+        lock_schedule(&self.schedule).finish(wallet_id, outcome, Instant::now());
     }
 
     async fn gate(&self, wallet_id: &WalletId) -> Result<u32, TxoReconcileSkip> {
@@ -1355,7 +1433,7 @@ mod tests {
     fn run(schedule: &mut TxoReconcileSchedule, due: &[WalletId], at: Instant) {
         for wallet_id in due {
             assert!(schedule.try_begin(*wallet_id, at));
-            schedule.finish(wallet_id, Some(at));
+            schedule.finish(wallet_id, TxoReconcileFinish::Ran, at);
         }
     }
 
@@ -1398,7 +1476,7 @@ mod tests {
         // A finished run restarts that wallet's cadence from its finish.
         let a_ran = t0 + TXO_RECONCILE_CADENCE + half + half / 2;
         assert!(schedule.try_begin(A, a_ran - Duration::from_secs(60)));
-        schedule.finish(&A, Some(a_ran));
+        schedule.finish(&A, TxoReconcileFinish::Ran, a_ran);
         assert!(schedule
             .due_wallets(true, 1, [A, B], t0 + 2 * TXO_RECONCILE_CADENCE)
             .is_empty());
@@ -1422,7 +1500,7 @@ mod tests {
             vec![B],
             "not even on the rising edge"
         );
-        schedule.finish(&A, None);
+        schedule.finish(&A, TxoReconcileFinish::NotRun, Instant::now());
         assert!(schedule.try_begin(A, t0));
     }
 
@@ -1494,8 +1572,8 @@ mod tests {
         );
         // A went ahead and restarts its cadence; B's gate refused it in the
         // old session, so it never ran in the new one.
-        schedule.finish(&A, Some(t0 + 2 * second));
-        schedule.finish(&B, None);
+        schedule.finish(&A, TxoReconcileFinish::Ran, t0 + 2 * second);
+        schedule.finish(&B, TxoReconcileFinish::NotRun, Instant::now());
         assert_eq!(
             schedule.due_wallets(true, 2, [A, B], t0 + 3 * second),
             vec![B]
@@ -1510,7 +1588,7 @@ mod tests {
         let t0 = Instant::now();
         assert_eq!(schedule.due_wallets(true, 1, [A], t0), vec![A]);
         assert!(schedule.try_begin(A, t0));
-        schedule.finish(&A, None);
+        schedule.finish(&A, TxoReconcileFinish::NotRun, Instant::now());
         assert!(schedule
             .due_wallets(true, 1, [A], t0 + Duration::from_secs(1))
             .is_empty());
@@ -1591,14 +1669,14 @@ mod tests {
             "the old run holds the wallet until it exits"
         );
         assert!(schedule.due_wallets(true, 1, [A], t0 + second).is_empty());
-        schedule.finish(&A, Some(t0 + 2 * second));
+        schedule.finish(&A, TxoReconcileFinish::Ran, t0 + 2 * second);
         assert_eq!(
             schedule.due_wallets(true, 1, [A], t0 + 3 * second),
             vec![A],
             "the forgotten lifecycle's finish brought no history back"
         );
         assert!(schedule.try_begin(A, t0 + 3 * second));
-        schedule.finish(&A, Some(t0 + 4 * second));
+        schedule.finish(&A, TxoReconcileFinish::Ran, t0 + 4 * second);
         assert!(
             schedule
                 .due_wallets(true, 1, [A], t0 + 5 * second)
@@ -1651,7 +1729,7 @@ mod tests {
             reconciler.begin(&A).await,
             Err(TxoReconcileSkip::AlreadyRunning)
         );
-        reconciler.finish(&A, true);
+        reconciler.finish(&A, TxoReconcileFinish::Ran);
         assert_eq!(
             reconciler.begin(&A).await,
             Err(TxoReconcileSkip::NotSteadyState)
@@ -1702,7 +1780,7 @@ mod tests {
             "the granted claim outlives the begin that took it"
         );
         assert_eq!(claim_tip(), Some(TIP), "a refused claim leaves the tip");
-        reconciler.finish(&A, true);
+        reconciler.finish(&A, TxoReconcileFinish::Ran);
         assert!(reconciler
             .claim_across(&A, async { Ok(TIP + 1) })
             .await
@@ -1736,18 +1814,23 @@ mod tests {
             !holds_engine(&reconciler, &A),
             "a refused read holds nothing"
         );
-        reconciler.finish(&A, true);
+        reconciler.finish(&A, TxoReconcileFinish::Ran);
 
         assert!(reconciler.claim_without_gate(&A, TIP).is_some());
         drop(page(reconciler.heal_page_held(&A, 10).await));
-        reconciler.finish(&A, true);
+        reconciler.finish(&A, TxoReconcileFinish::Ran);
     }
 
     /// A wallet whose engine holds three coins.
     async fn wallet_with_three_coins() -> (WalletManager<PlatformWalletInfo>, WalletId) {
+        wallet_with_coins(3).await
+    }
+
+    /// A wallet whose engine holds `count` coins.
+    async fn wallet_with_coins(count: u8) -> (WalletManager<PlatformWalletInfo>, WalletId) {
         let mut ctx = TestWalletContext::new_random();
         let script = ctx.receive_address.script_pubkey();
-        for seed in 51u8..54 {
+        for seed in 51u8..51 + count {
             assert!(
                 ctx.check_transaction(&funding(script.clone(), seed, 3_000), in_block(100_000))
                     .await
@@ -1789,7 +1872,7 @@ mod tests {
         assert!(reconciler.heal_page_applied(&wallet_id));
         let (second, _) = heal_one(&reconciler, &wallet_id).await;
         assert_ne!(first, second, "the run moved past the applied page");
-        reconciler.finish(&wallet_id, true);
+        reconciler.finish(&wallet_id, TxoReconcileFinish::Ran);
 
         assert_eq!(
             start(&reconciler),
@@ -1804,7 +1887,7 @@ mod tests {
         let (_, more) = heal_one(&reconciler, &wallet_id).await;
         assert!(!more, "the last heal page");
         assert!(reconciler.heal_page_applied(&wallet_id));
-        reconciler.finish(&wallet_id, true);
+        reconciler.finish(&wallet_id, TxoReconcileFinish::Ran);
 
         assert_eq!(
             start(&reconciler),
@@ -1812,7 +1895,7 @@ mod tests {
         );
         drop(classify(&reconciler, &wallet_id, &[]).await);
         assert!(reconciler.classify_page_applied(&wallet_id, Some(b"store cursor")));
-        reconciler.finish(&wallet_id, true);
+        reconciler.finish(&wallet_id, TxoReconcileFinish::Ran);
 
         assert_eq!(
             start(&reconciler),
@@ -1822,13 +1905,228 @@ mod tests {
         );
         drop(classify(&reconciler, &wallet_id, &[]).await);
         assert!(reconciler.classify_page_applied(&wallet_id, None));
-        reconciler.finish(&wallet_id, true);
+        reconciler.finish(&wallet_id, TxoReconcileFinish::Ran);
 
         assert_eq!(
             start(&reconciler),
             TxoReconcileStart::Heal { resumed: false }
         );
-        reconciler.finish(&wallet_id, true);
+        reconciler.finish(&wallet_id, TxoReconcileFinish::Ran);
+    }
+
+    /// Whether the steady poll at `now` reports `wallet_id` due. The first
+    /// call is the rising edge into steady state.
+    fn due_at(reconciler: &TxoReconciler, wallet_id: &WalletId, now: Instant) -> bool {
+        lock_schedule(&reconciler.schedule)
+            .due_wallets(true, 1, [*wallet_id], now)
+            .contains(wallet_id)
+    }
+
+    fn due_now(reconciler: &TxoReconciler, wallet_id: &WalletId) -> bool {
+        due_at(reconciler, wallet_id, Instant::now())
+    }
+
+    /// One run as a host does it: heal pages of one row each until the heal
+    /// pass ends, then the classify pass as one store page (its last), each
+    /// page applied, until the cycle ends or the budget does; then finish
+    /// as ran. Adds the outpoints it healed to `healed`; returns whether
+    /// the classify pass ran, which ends the cycle.
+    async fn host_run(
+        reconciler: &TxoReconciler,
+        wallet_id: &WalletId,
+        healed: &mut std::collections::BTreeSet<OutPoint>,
+    ) -> bool {
+        let run = reconciler
+            .claim_without_gate(wallet_id, TIP)
+            .expect("claimed");
+        let mut healing = matches!(run.start, TxoReconcileStart::Heal { .. });
+        let mut classified = false;
+        loop {
+            let may_continue = if healing {
+                let Some(TxoReconcileRead::Page((rows, more), held)) =
+                    reconciler.heal_page_held(wallet_id, 1).await
+                else {
+                    break;
+                };
+                drop(held);
+                healed.extend(rows.iter().map(|(row, _)| row.outpoint));
+                healing = more;
+                reconciler.heal_page_applied(wallet_id)
+            } else {
+                let Some(TxoReconcileRead::Page(_, held)) =
+                    reconciler.classify_held(wallet_id, &[]).await
+                else {
+                    break;
+                };
+                drop(held);
+                reconciler.classify_page_applied(wallet_id, None);
+                classified = true;
+                false
+            };
+            if !may_continue {
+                break;
+            }
+        }
+        reconciler.finish(wallet_id, TxoReconcileFinish::Ran);
+        classified
+    }
+
+    /// A run that used its budget mid-cycle leaves the wallet due on the
+    /// next poll, with no cadence to wait out; the run that ends the cycle
+    /// restarts the cadence. The edge: a heal pass that exactly fills the
+    /// budget, whose last page's ack moves the wallet to the classify pass
+    /// with no budget left.
+    #[tokio::test]
+    async fn a_run_that_spends_its_budget_mid_cycle_leaves_the_wallet_due() {
+        let (wm, wallet_id) = wallet_with_coins(TXO_RECONCILE_PAGE_BUDGET as u8).await;
+        let reconciler = reconciler_over(wm);
+        assert!(due_now(&reconciler, &wallet_id), "the rising edge");
+        let mut healed = std::collections::BTreeSet::new();
+
+        assert!(!host_run(&reconciler, &wallet_id, &mut healed).await);
+        assert_eq!(healed.len(), TXO_RECONCILE_PAGE_BUDGET as usize);
+        assert_eq!(
+            lock_schedule(&reconciler.schedule)
+                .checkpoints
+                .get(&wallet_id),
+            Some(&Checkpoint::Classify(Vec::new())),
+            "the last heal page's ack moved the wallet to the classify pass"
+        );
+        assert!(
+            due_now(&reconciler, &wallet_id),
+            "the cycle is unfinished: due again on the next poll"
+        );
+
+        assert!(host_run(&reconciler, &wallet_id, &mut healed).await);
+        let finished = Instant::now();
+        assert!(
+            !due_now(&reconciler, &wallet_id),
+            "the cycle ended: the cadence restarted"
+        );
+        assert!(due_at(
+            &reconciler,
+            &wallet_id,
+            finished + TXO_RECONCILE_CADENCE
+        ));
+    }
+
+    /// An inventory larger than one budget is healed to its tail and the
+    /// store classified on consecutive polls, with no time passing; so is it
+    /// when the manager is recreated between two budget-spent runs, which
+    /// loses the in-memory checkpoint and starts a new cycle.
+    #[tokio::test]
+    async fn a_cycle_larger_than_the_budget_finishes_on_consecutive_polls() {
+        let coins = TXO_RECONCILE_PAGE_BUDGET as u8 + 4;
+        let (wm, wallet_id) = wallet_with_coins(coins).await;
+        let reconciler = reconciler_over(wm);
+        assert!(due_now(&reconciler, &wallet_id));
+        let mut healed = std::collections::BTreeSet::new();
+        assert!(!host_run(&reconciler, &wallet_id, &mut healed).await);
+        assert!(due_now(&reconciler, &wallet_id), "the heal pass continues");
+        assert!(host_run(&reconciler, &wallet_id, &mut healed).await);
+        assert_eq!(healed.len(), coins as usize, "every coin, the tail too");
+        assert!(!due_now(&reconciler, &wallet_id), "the cycle is over");
+
+        // The manager recreated after a budget-spent run: same engine, a
+        // fresh schedule.
+        let reconciler = TxoReconciler {
+            schedule: Arc::default(),
+            ..reconciler
+        };
+        assert!(due_now(&reconciler, &wallet_id));
+        let mut healed = std::collections::BTreeSet::new();
+        assert!(!host_run(&reconciler, &wallet_id, &mut healed).await);
+        let recreated = TxoReconciler {
+            schedule: Arc::default(),
+            ..reconciler
+        };
+        assert!(
+            due_now(&recreated, &wallet_id),
+            "a new process: due at once"
+        );
+        let mut healed = std::collections::BTreeSet::new();
+        let mut polls = 0;
+        while due_now(&recreated, &wallet_id) {
+            polls += 1;
+            assert!(polls <= 2, "the new cycle finishes in two runs");
+            host_run(&recreated, &wallet_id, &mut healed).await;
+        }
+        assert_eq!(polls, 2);
+        assert_eq!(healed.len(), coins as usize, "every coin, the tail too");
+    }
+
+    /// How a run ended decides when its wallet is due again: a deferred run
+    /// leaves it due, a run that went ahead (its cycle over) restarts the
+    /// cadence at its finish, and one that did not go ahead keeps its
+    /// claim's stamp.
+    #[test]
+    fn the_finish_outcome_says_when_the_wallet_is_due_again() {
+        let mut schedule = TxoReconcileSchedule::default();
+        let t0 = Instant::now();
+        let second = Duration::from_secs(1);
+        let minutes = |m: u64| Duration::from_secs(60 * m);
+        assert_eq!(schedule.due_wallets(true, 1, [A], t0), vec![A]);
+
+        assert!(schedule.try_begin(A, t0));
+        schedule.finish(&A, TxoReconcileFinish::Deferred, t0 + second);
+        assert_eq!(
+            schedule.due_wallets(true, 1, [A], t0 + 2 * second),
+            vec![A],
+            "deferred: due on the next poll"
+        );
+
+        let ran = t0 + 3 * second;
+        assert!(schedule.try_begin(A, ran));
+        schedule.finish(&A, TxoReconcileFinish::Ran, ran + minutes(5));
+        assert!(schedule
+            .due_wallets(true, 1, [A], ran + TXO_RECONCILE_CADENCE)
+            .is_empty());
+        assert_eq!(
+            schedule.due_wallets(true, 1, [A], ran + minutes(5) + TXO_RECONCILE_CADENCE),
+            vec![A],
+            "ran: the cadence restarts at the finish"
+        );
+
+        let claimed = ran + minutes(5) + TXO_RECONCILE_CADENCE;
+        assert!(schedule.try_begin(A, claimed));
+        schedule.finish(&A, TxoReconcileFinish::NotRun, claimed + minutes(5));
+        assert!(schedule
+            .due_wallets(true, 1, [A], claimed + second)
+            .is_empty());
+        assert_eq!(
+            schedule.due_wallets(true, 1, [A], claimed + TXO_RECONCILE_CADENCE),
+            vec![A],
+            "not run: the claim's stamp stands"
+        );
+    }
+
+    /// A begin refused because SPV is not steady leaves the wallet due, so a
+    /// new steady session runs it on its next poll rather than a cadence
+    /// later; any other refusal keeps the claim's stamp.
+    #[tokio::test]
+    async fn a_begin_refused_for_no_steady_state_leaves_the_wallet_due() {
+        let reconciler = reconciler();
+        assert!(due_now(&reconciler, &A), "a new steady session");
+        assert_eq!(
+            reconciler.begin(&A).await,
+            Err(TxoReconcileSkip::NotSteadyState),
+            "the client is not running yet"
+        );
+        assert!(
+            due_now(&reconciler, &A),
+            "the steady poll reports the wallet due"
+        );
+
+        assert_eq!(
+            reconciler
+                .claim_across(&A, async { Err(TxoReconcileSkip::WalletBehindTip) })
+                .await,
+            Err(TxoReconcileSkip::WalletBehindTip)
+        );
+        assert!(
+            !due_now(&reconciler, &A),
+            "another refusal restarts the cadence"
+        );
     }
 
     /// A page reported applied moves nothing when it is not the kind of
@@ -1866,7 +2164,7 @@ mod tests {
             None,
             "a removed wallet's run records nothing"
         );
-        reconciler.finish(&wallet_id, true);
+        reconciler.finish(&wallet_id, TxoReconcileFinish::Ran);
     }
 
     /// The ChainLock the fork tests park on the wallet.
@@ -1974,7 +2272,7 @@ mod tests {
             !holds_engine(&reconciler, &A),
             "dropping the verdicts released the guard"
         );
-        reconciler.finish(&A, true);
+        reconciler.finish(&A, TxoReconcileFinish::Ran);
     }
 
     /// A heal page is held like a classification: it needs the run's claim,
@@ -1999,7 +2297,7 @@ mod tests {
             .await
             .expect("the fork proceeds once the page is released")
             .expect("fork task");
-        reconciler.finish(&wallet_id, true);
+        reconciler.finish(&wallet_id, TxoReconcileFinish::Ran);
     }
 
     /// A provisional claim that a stray finish released while its gate
@@ -2016,14 +2314,14 @@ mod tests {
         };
 
         let stale = ProvisionalClaim::take(&schedule, A, Instant::now()).expect("claimed");
-        lock_schedule(&schedule).finish(&A, None);
+        lock_schedule(&schedule).finish(&A, TxoReconcileFinish::NotRun, Instant::now());
         assert!(lock_schedule(&schedule).try_begin(A, Instant::now()));
         stale.hand_over(TIP);
         assert_eq!(claim_tip(), Some(0), "the new claim keeps its own tip");
 
-        lock_schedule(&schedule).finish(&A, None);
+        lock_schedule(&schedule).finish(&A, TxoReconcileFinish::NotRun, Instant::now());
         let stale = ProvisionalClaim::take(&schedule, A, Instant::now()).expect("claimed");
-        lock_schedule(&schedule).finish(&A, None);
+        lock_schedule(&schedule).finish(&A, TxoReconcileFinish::NotRun, Instant::now());
         assert!(lock_schedule(&schedule).try_begin(A, Instant::now()));
         drop(stale);
         assert_eq!(claim_tip(), Some(0), "the new claim is still in flight");
@@ -2063,7 +2361,7 @@ mod tests {
             TxoHealVerdict::Immature,
             "the run's tip caps the depth, whatever the engine processed"
         );
-        reconciler.finish(&wallet_id, true);
+        reconciler.finish(&wallet_id, TxoReconcileFinish::Ran);
 
         assert!(reconciler.claim_without_gate(&wallet_id, TIP).is_some());
         assert_eq!(
@@ -2082,7 +2380,7 @@ mod tests {
             TxoHealVerdict::Immature,
             "the fork lowered the height the next page is measured against"
         );
-        reconciler.finish(&wallet_id, true);
+        reconciler.finish(&wallet_id, TxoReconcileFinish::Ran);
     }
 
     /// The race the guard closes: verdicts read, then a fork drops a
@@ -2130,7 +2428,7 @@ mod tests {
         let mut fork = spawn_fork(&reconciler);
         assert!(timeout(BLOCKED, &mut fork).await.is_err());
 
-        reconciler.finish(&wallet_id, true);
+        reconciler.finish(&wallet_id, TxoReconcileFinish::Ran);
         timeout(PROCEEDS, fork)
             .await
             .expect("the fork proceeds once the run finished")
@@ -2166,7 +2464,7 @@ mod tests {
             .expect("teardown's writers are not held off")
             .expect("fork task");
         drop(held);
-        reconciler.finish(&wallet_id, true);
+        reconciler.finish(&wallet_id, TxoReconcileFinish::Ran);
     }
 
     /// A failed or timed-out SPV stop leaves SPV work live, so the guard of
@@ -2199,7 +2497,7 @@ mod tests {
             .await
             .expect("the fork proceeds once the host released the page")
             .expect("fork task");
-        reconciler.finish(&wallet_id, true);
+        reconciler.finish(&wallet_id, TxoReconcileFinish::Ran);
     }
 
     /// The manager's shutdown, with an SPV client that never started (its
@@ -2230,7 +2528,7 @@ mod tests {
             .expect("an engine writer goes ahead after shutdown");
         drop(writer);
         drop(held);
-        reconciler.finish(&wallet_id, false);
+        reconciler.finish(&wallet_id, TxoReconcileFinish::NotRun);
     }
 
     /// The store keeps a verdict after the guard is gone, so a spend counts
@@ -2312,7 +2610,7 @@ mod tests {
         let mut cx = Context::from_waker(Waker::noop());
         assert!(waiting.as_mut().poll(&mut cx).is_pending());
 
-        reconciler.finish(&A, true);
+        reconciler.finish(&A, TxoReconcileFinish::Ran);
         assert!(
             reconciler.claim_without_gate(&A, TIP).is_some(),
             "a new run for the wallet"

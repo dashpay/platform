@@ -289,7 +289,8 @@ public struct CoreTxoReconcileReport: Equatable, Sendable {
     public var unresolvedAccount = 0
 
     // Run shape.
-    /// Store steps deferred because a Rust persistence round was open.
+    /// Store steps deferred because a Rust persistence round was open. The
+    /// run stops at the first (`stoppedOnOpenRound`), so this is 0 or 1.
     public var retries = 0
     /// Pages classified again because a persistence round committed between
     /// their read and their apply, or was still open at the apply.
@@ -299,7 +300,8 @@ public struct CoreTxoReconcileReport: Equatable, Sendable {
     /// Store reads or writes that failed; the run stops at the first.
     public var storeFailures = 0
     /// `false` when the run stopped before the end of the classify pass
-    /// (cancelled, a failed read or write, too many deferrals, a page that
+    /// (cancelled, a failed read or write, a store step deferred behind an
+    /// open persistence round — see `stoppedOnOpenRound` — a page that
     /// stayed stale for longer than the engine allows, or the page budget —
     /// see `stoppedOnBudget`); what landed before the stop stays. For a run
     /// that `resumedFromCheckpoint`, `true` means it reached the end of the
@@ -311,6 +313,11 @@ public struct CoreTxoReconcileReport: Equatable, Sendable {
     /// next run picks up at the first page this one did not apply.
     /// `completed` is `false`.
     public var stoppedOnBudget = false
+    /// A store step found a Rust persistence round open, and the run
+    /// stopped there, between pages, with that page not reported applied.
+    /// Not a fault: `platform-wallet` keeps the wallet due, and its next
+    /// run picks up at that page. `completed` is `false`.
+    public var stoppedOnOpenRound = false
     /// The run picked up where an earlier run of this wallet stopped,
     /// rather than at the first heal page. Its counts cover only the pages
     /// it walked itself.
@@ -418,14 +425,41 @@ enum CoreTxoReconcileGate: Equatable, Sendable {
     case skip(code: UInt8)
 }
 
+/// How a granted run ended, as `platform_wallet_manager_txo_reconcile_finish`
+/// takes it (`TXO_RECONCILE_FINISH_*`). What follows from each — when the
+/// wallet is next due, where its next run starts — is `platform-wallet`'s.
+enum CoreTxoReconcileFinish: Equatable, Sendable {
+    /// The run never walked: it was stopped between its begin and its walk,
+    /// or the begin named a start this build does not know.
+    case notRun
+    /// The run walked, however far it got.
+    case ran
+    /// The run stopped on a store step deferred behind an open Rust
+    /// persistence round (`CoreTxoReconcileReport.stoppedOnOpenRound`), with
+    /// that page not reported applied.
+    case deferred
+
+    /// The `TXO_RECONCILE_FINISH_*` code the finish call takes.
+    var code: UInt8 {
+        switch self {
+        case .notRun:
+            return UInt8(TXO_RECONCILE_FINISH_NOT_RUN)
+        case .ran:
+            return UInt8(TXO_RECONCILE_FINISH_RAN)
+        case .deferred:
+            return UInt8(TXO_RECONCILE_FINISH_DEFERRED)
+        }
+    }
+}
+
 /// The native calls that bracket one reconcile run; same seam shape as
 /// [`PlatformWalletNativePollCalls`]. Tests with a fake manager handle must
 /// inject this table: handles come from a process-global registry.
 struct PlatformWalletNativeTxoReconcileCalls: @unchecked Sendable {
     /// Claim the wallet and run the start gate.
     let begin: @Sendable (Handle, Data) throws -> CoreTxoReconcileGate
-    /// Release a `.run` claim; the flag is whether the run went ahead.
-    let finish: @Sendable (Handle, Data, Bool) throws -> Void
+    /// Release a `.run` claim, with how the run ended.
+    let finish: @Sendable (Handle, Data, CoreTxoReconcileFinish) throws -> Void
     /// The engine side of one run `begin` granted.
     let makeEngine: @Sendable (Handle, Data) -> any CoreTxoReconcileEngine
 
@@ -457,7 +491,7 @@ enum CoreTxoReconcileFFI {
     /// The start gate. On `RUN` the wallet is claimed; a start code this
     /// build does not know is a contract break with the native library it
     /// shipped with, so the claim is released (as a run that did not go
-    /// ahead) and the call throws.
+    /// ahead, `.notRun`) and the call throws.
     static func begin(_ handle: Handle, walletId: Data) throws -> CoreTxoReconcileGate {
         guard walletId.count == 32 else {
             return .skip(code: UInt8(TXO_RECONCILE_SKIP_WALLET_UNKNOWN))
@@ -482,19 +516,19 @@ enum CoreTxoReconcileFFI {
         guard gate == UInt8(TXO_RECONCILE_GATE_RUN) else { return .skip(code: gate) }
         let after = Data(storeAfter.prefix(min(Int(storeAfterLength), storeCursorMax)))
         guard let start = CoreTxoReconcileStart(code: startCode, storeAfter: after) else {
-            try? finish(handle, walletId: walletId, ran: false)
+            try? finish(handle, walletId: walletId, outcome: .notRun)
             throw PlatformWalletError.walletOperation("unknown TXO reconcile start code \(startCode)")
         }
         return .run(start: start)
     }
 
-    static func finish(_ handle: Handle, walletId: Data, ran: Bool) throws {
+    static func finish(_ handle: Handle, walletId: Data, outcome: CoreTxoReconcileFinish) throws {
         guard walletId.count == 32 else { return }
         let result = walletId.withUnsafeBytes { raw -> PlatformWalletFFIResult in
             platform_wallet_manager_txo_reconcile_finish(
                 handle,
                 raw.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                ran
+                outcome.code
             )
         }
         try result.check()

@@ -11540,11 +11540,12 @@ private struct UtxoCreditVerdictTally {
 /// closure so a Rust persistence round is never interleaved with a
 /// half-applied step (see `PlatformWalletManager.runCoreTxoReconcile`).
 enum CoreTxoReconcileStep<T: Sendable>: Sendable {
-    /// A Rust changeset round is open; nothing was read or written. The
-    /// caller retries shortly — saving mid-round would commit the round's
-    /// staged rows early. The run never waits for it while holding an
-    /// engine guard: the classify apply answers a stale page instead, and a
-    /// deferred heal step releases its page's guard before it waits.
+    /// A Rust changeset round is open; nothing was read or written — saving
+    /// mid-round would commit the round's staged rows early. The run does
+    /// not wait for it: a deferred page read or heal step stops the run with
+    /// that page not reported applied, and the run is finished as deferred,
+    /// so the wallet's next run reads the page again. The classify apply,
+    /// which runs under an engine guard, answers a stale page instead.
     case retryLater
     /// The run was stopped (`isCancelled`) by the time the step reached the
     /// queue; nothing was read or written.

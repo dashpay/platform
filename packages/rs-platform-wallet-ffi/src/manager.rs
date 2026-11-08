@@ -1587,6 +1587,7 @@ mod tests {
             platform_wallet_txo_reconcile_classify_outpoints,
             platform_wallet_txo_reconcile_held_verdicts_free, TxoReconcileHeldVerdictsFFI,
         };
+        use platform_wallet::manager::txo_reconcile::TxoReconcileFinish;
         let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
         let callbacks = persistence_callbacks();
         let event_cbs = event_callbacks();
@@ -1665,7 +1666,7 @@ mod tests {
         assert_eq!(out, [0, 0, 0]);
         assert!(!held.is_null());
         unsafe { platform_wallet_txo_reconcile_held_verdicts_free(held) };
-        reconciler.finish(&wallet_id, false);
+        reconciler.finish(&wallet_id, TxoReconcileFinish::NotRun);
         let destroyed = unsafe { platform_wallet_manager_destroy(handle) };
         assert_eq!(destroyed.code, PlatformWalletFFIResultCode::Success);
     }

@@ -4,16 +4,16 @@ import DashSDKFFI
 @testable import SwiftDashSDK
 
 /// The native side of a reconcile run's bracket, faked: the start gate's
-/// answer, and a record of every begin, every finish (with whether an
-/// engine guard was still held when it was called) and the tip each engine
-/// was made at.
+/// answer, and a record of every begin, every finish (with how the run
+/// ended, and whether an engine guard was still held when it was called)
+/// and the tip each engine was made at.
 final class FakeReconcileNative: @unchecked Sendable {
     private let lock = NSLock()
     let engine: any CoreTxoReconcileEngine
     private let holding: @Sendable () -> Bool
     private var _gate: CoreTxoReconcileGate
     private var _begins: [Data] = []
-    private var _finishes: [(walletId: Data, ran: Bool, guardHeld: Bool)] = []
+    private var _finishes: [(walletId: Data, outcome: CoreTxoReconcileFinish, guardHeld: Bool)] = []
     private var _enginesMade = 0
     /// Runs inside each begin, before it answers.
     var onBegin: (@Sendable () -> Void)?
@@ -36,7 +36,9 @@ final class FakeReconcileNative: @unchecked Sendable {
     }
 
     var begins: [Data] { lock.withLock { _begins } }
-    var finishes: [(walletId: Data, ran: Bool, guardHeld: Bool)] { lock.withLock { _finishes } }
+    var finishes: [(walletId: Data, outcome: CoreTxoReconcileFinish, guardHeld: Bool)] {
+        lock.withLock { _finishes }
+    }
     var enginesMade: Int { lock.withLock { _enginesMade } }
 
     func calls() -> PlatformWalletNativeTxoReconcileCalls {
@@ -48,9 +50,9 @@ final class FakeReconcileNative: @unchecked Sendable {
                     return _gate
                 }
             },
-            finish: { [self] _, walletId, ran in
+            finish: { [self] _, walletId, outcome in
                 let held = holding()
-                lock.withLock { _finishes.append((walletId, ran, held)) }
+                lock.withLock { _finishes.append((walletId, outcome, held)) }
             },
             makeEngine: { [self] _, _ in
                 lock.withLock { _enginesMade += 1 }
@@ -63,9 +65,10 @@ final class FakeReconcileNative: @unchecked Sendable {
 /// The run's bracket and its stops: a granted begin is always finished,
 /// after the last engine guard is released, whatever ends the run — a
 /// failure, the epoch, a cancelled caller; a skip claims nothing and is
-/// never finished; the run stops between pages when cancelled, defers a
-/// guard-free store step while a Rust persistence round is open, and the
-/// manager refuses it once shutdown has begun.
+/// never finished; the run stops between pages when cancelled, stops and
+/// finishes as deferred when a guard-free store step finds a Rust
+/// persistence round open, and the manager refuses it once shutdown has
+/// begun.
 @MainActor
 final class CoreTxoReconcileShutdownTests: XCTestCase {
     private let walletId = Data(repeating: 0x51, count: 32)
@@ -236,38 +239,53 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
         XCTAssertFalse(row.isSpent)
     }
 
-    /// A Rust round open on the persistence queue defers every guard-free
-    /// store step: the run retries until the round closes, then completes
-    /// normally.
-    func testAStepDeferredBehindAnOpenRoundCompletesOnceTheRoundCloses() throws {
+    /// A Rust round open on the persistence queue defers the run's first
+    /// guard-free store step: the run stops there without waiting, the page
+    /// not reported applied, and is finished as deferred, so the engine keeps
+    /// the wallet due. Once the round has closed, the next run reads the
+    /// same page and completes.
+    func testAStepDeferredBehindAnOpenRoundStopsTheRunAndFinishesItDeferred() throws {
         let (handler, container) = try makeHandler()
         try fileAddress(in: container)
-        // Each deferred heal step reads its page again, a page of the
-        // budget each time: room for however many the wait below allows.
-        let engine = FakeCoreTxoEngine(inventory: [engineUtxo(0x31)], budget: 1_000)
+        let engine = FakeCoreTxoEngine(inventory: [engineUtxo(0x31)])
+        let native = FakeReconcileNative(engine: engine)
 
         handler.beginChangeset(walletId: walletId)
-        let finished = expectation(description: "reconcile finished")
-        let box = ReportBox()
-        let walletId = self.walletId
-        DispatchQueue.global(qos: .utility).async {
-            let report = PlatformWalletManager.runCoreTxoReconcile(
-                walletId: walletId, engine: engine, handler: handler,
-                isCancelled: { false }
-            )
-            box.set(report)
-            finished.fulfill()
-        }
-        // Let the run hit the open round a few times, then close it.
-        Thread.sleep(forTimeInterval: 0.3)
-        XCTAssertNil(box.get(), "the run must not have completed while the round was open")
+        let deferred = try PlatformWalletManager.performCoreTxoReconcileRun(
+            handle: 42, walletId: walletId, calls: native.calls(), handler: handler,
+            isCancelled: { false })
         _ = handler.endChangeset(walletId: walletId, success: true)
-        wait(for: [finished], timeout: 15)
 
-        let report = try XCTUnwrap(box.get())
-        XCTAssertTrue(report.completed)
-        XCTAssertGreaterThan(report.retries, 0)
-        XCTAssertEqual(report.inserted, 1)
+        guard case .reconciled(let report) = deferred else {
+            return XCTFail("expected a run, got \(String(describing: deferred))")
+        }
+        XCTAssertFalse(report.completed)
+        XCTAssertTrue(report.stoppedOnOpenRound)
+        XCTAssertFalse(report.stoppedOnBudget)
+        XCTAssertEqual(report.retries, 1)
+        XCTAssertEqual(report.inserted, 0)
+        XCTAssertEqual(engine.pageCalls, 1, "the run does not read the page again itself")
+        XCTAssertEqual(engine.healApplied, 0, "the deferred page is not reported applied")
+        XCTAssertNil(engine.checkpoint, "nothing moved: the next run starts at the same page")
+        XCTAssertFalse(engine.isHoldingVerdicts)
+        XCTAssertEqual(native.finishes.map { $0.outcome }, [.deferred])
+        XCTAssertEqual(native.finishes.first?.guardHeld, false)
+        XCTAssertEqual(try txoCount(container), 0)
+
+        // The next poll's run, with the round closed: the same page, applied.
+        let next = try PlatformWalletManager.performCoreTxoReconcileRun(
+            handle: 42, walletId: walletId, calls: native.calls(), handler: handler,
+            isCancelled: { false })
+
+        guard case .reconciled(let rerun) = next else {
+            return XCTFail("expected a run, got \(String(describing: next))")
+        }
+        XCTAssertTrue(rerun.completed)
+        XCTAssertFalse(rerun.stoppedOnOpenRound)
+        XCTAssertEqual(rerun.retries, 0)
+        XCTAssertEqual(rerun.inserted, 1)
+        XCTAssertEqual(engine.healApplied, 1)
+        XCTAssertEqual(native.finishes.map { $0.outcome }, [.deferred, .ran])
         XCTAssertEqual(try txoCount(container), 1)
     }
 
@@ -310,7 +328,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
         XCTAssertEqual(engine.releases, 2, "the classified page's token is still freed, as is the heal page's")
         XCTAssertFalse(engine.isHoldingVerdicts)
         XCTAssertEqual(native.finishes.count, 1, "the claim is still finished")
-        XCTAssertEqual(native.finishes.first?.ran, true)
+        XCTAssertEqual(native.finishes.first?.outcome, .ran)
         XCTAssertEqual(native.finishes.first?.guardHeld, false)
         let row = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<PersistentTxo>()).first)
         XCTAssertFalse(row.isSpent, "no spend verdict is written once the run is stopped")
@@ -373,7 +391,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
         XCTAssertEqual(report.inserted, 1)
         XCTAssertEqual(native.enginesMade, 1)
         XCTAssertEqual(native.finishes.count, 1)
-        XCTAssertEqual(native.finishes.first?.ran, true)
+        XCTAssertEqual(native.finishes.first?.outcome, .ran)
         XCTAssertEqual(native.finishes.first?.guardHeld, false, "the guard goes before the finish resolves the manager")
         XCTAssertEqual(engine.events, [
             "heal", "release", "healApplied",
@@ -406,7 +424,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
         XCTAssertEqual(engine.pageCalls, 0, "no heal page")
         XCTAssertEqual(report.storeRows, 2, "the first row is behind the start cursor")
         XCTAssertEqual(engine.classifyApplied, [nil])
-        XCTAssertEqual(native.finishes.first?.ran, true)
+        XCTAssertEqual(native.finishes.first?.outcome, .ran)
     }
 
     /// A run staled between a granted begin and its walk walks nothing and
@@ -426,7 +444,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
 
         XCTAssertNil(outcome)
         XCTAssertEqual(native.finishes.count, 1)
-        XCTAssertEqual(native.finishes.first?.ran, false)
+        XCTAssertEqual(native.finishes.first?.outcome, .notRun)
         XCTAssertEqual(engine.pageCalls, 0)
         XCTAssertEqual(try txoCount(container), 0)
     }
@@ -495,7 +513,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
         XCTAssertEqual(try txoCount(container), 0)
         XCTAssertEqual(native.begins, [walletId])
         XCTAssertEqual(native.finishes.count, 1, "a granted begin is finished despite the cancellation")
-        XCTAssertEqual(native.finishes.first?.ran, true)
+        XCTAssertEqual(native.finishes.first?.outcome, .ran)
         _ = await manager.shutdown()
         PlatformWalletManager.destroyQueue.sync {}
     }
@@ -570,7 +588,9 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
         await fulfillment(of: [begun], timeout: 5)
         let second = try await manager.reconcileCoreTxoStore(for: walletId)
         XCTAssertEqual(second, .skipped(.alreadyRunning))
-        XCTAssertEqual(native.begins.count, 1, "the refused request never reached the queue")
+        // The first request is still parked inside its begin, before the
+        // fake records it, so no begin is recorded yet.
+        XCTAssertTrue(native.begins.isEmpty, "the refused request never reached native begin")
 
         beginGate.signal()
         let firstOutcome = try await first.value
@@ -667,7 +687,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
             platform_wallet_txo_reconcile_retry_stale_page(6)
         )
         XCTAssertThrowsError(try CoreTxoReconcileFFI.begin(NULL_HANDLE, walletId: walletId))
-        XCTAssertThrowsError(try CoreTxoReconcileFFI.finish(NULL_HANDLE, walletId: walletId, ran: false))
+        XCTAssertThrowsError(try CoreTxoReconcileFFI.finish(NULL_HANDLE, walletId: walletId, outcome: .notRun))
         XCTAssertThrowsError(try CoreTxoReconcileFFI.dueWallets(NULL_HANDLE))
     }
 

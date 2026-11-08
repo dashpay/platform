@@ -2610,7 +2610,10 @@ mod remove_versus_recreate_tests {
         };
         drop(held);
         reconciler.heal_page_applied(&wallet_id);
-        reconciler.finish(&wallet_id, true);
+        reconciler.finish(
+            &wallet_id,
+            crate::manager::txo_reconcile::TxoReconcileFinish::Ran,
+        );
         let next = reconciler
             .claim_without_gate(&wallet_id, 0)
             .expect("the run finished");
@@ -2620,6 +2623,9 @@ mod remove_versus_recreate_tests {
             "the removal forgot the recreated wallet's in-flight run, so its applied page was \
              not kept"
         );
-        reconciler.finish(&wallet_id, false);
+        reconciler.finish(
+            &wallet_id,
+            crate::manager::txo_reconcile::TxoReconcileFinish::NotRun,
+        );
     }
 }
