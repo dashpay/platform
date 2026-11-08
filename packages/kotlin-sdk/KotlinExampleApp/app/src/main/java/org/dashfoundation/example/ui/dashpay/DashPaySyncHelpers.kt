@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
+import org.dashfoundation.example.util.toHex
 
 /**
  * Shared DashPay sync helpers — port of the free functions in
@@ -33,6 +34,27 @@ suspend fun attachOrStartSync(manager: PlatformWalletManager) {
  */
 fun kickDashPaySync(scope: CoroutineScope, manager: PlatformWalletManager) {
     scope.launch { runCatching { manager.dashPaySyncNow() } }
+}
+
+/**
+ * The hex ids of the contacts among [contactIds] that [ourIdentityId] has a
+ * private request to in flight, or paid and not yet read back, as the wallet
+ * records it (one snapshot). While one is, Rust refuses another private send
+ * or reply to it, so the screens show it as pending and offer neither; a
+ * private sync settles it. Empty when the read fails or the identity is not
+ * managed.
+ * ← Swift `privateRepliesPending` (`ContactsView.swift`).
+ */
+suspend fun privateRepliesPending(
+    wallet: ManagedPlatformWallet,
+    ourIdentityId: ByteArray,
+    contactIds: List<ByteArray>,
+): Set<String> = try {
+    wallet.dashpay.privateRepliesPending(ourIdentityId, contactIds).map { it.toHex() }.toSet()
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    emptySet()
 }
 
 /**

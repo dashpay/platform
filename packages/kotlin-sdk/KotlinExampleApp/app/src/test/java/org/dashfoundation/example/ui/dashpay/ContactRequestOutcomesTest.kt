@@ -22,6 +22,28 @@ class ContactRequestOutcomesTest {
     }
 
     @Test
+    fun shouldKeepAPendingPrivateRequestPending() {
+        val error = DashSdkError.PlatformWallet.PrivateContactRequestPending("not yet read back from the store")
+        assertEquals(
+            ContactRequestSubmissionOutcome.MayHaveGoneThrough,
+            ContactRequestSubmissionOutcome.of(error),
+        )
+    }
+
+    @Test
+    fun shouldShowAWalletPendingReplyOverAnEarlierError() {
+        assertEquals(
+            ContactRequestSubmissionOutcome.MAY_HAVE_GONE_THROUGH_MESSAGE,
+            ContactRequestSubmissionOutcome.rowMessage(pending = true, error = "Accept failed: boom"),
+        )
+        assertEquals(
+            "Accept failed: boom",
+            ContactRequestSubmissionOutcome.rowMessage(pending = false, error = "Accept failed: boom"),
+        )
+        assertNull(ContactRequestSubmissionOutcome.rowMessage(pending = false, error = null))
+    }
+
+    @Test
     fun shouldOfferARetryForAnOrdinaryFailure() {
         val error = DashSdkError.PlatformWallet.ShieldedBroadcastFailed("rejected by the relay")
         assertEquals(

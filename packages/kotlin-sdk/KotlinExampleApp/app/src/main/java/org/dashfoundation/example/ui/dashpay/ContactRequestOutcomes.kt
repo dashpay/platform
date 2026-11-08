@@ -7,8 +7,10 @@ import org.dashfoundation.dashsdk.errors.DashSdkError
  * Follows the send screen (and iOS `SendViewModel.swift`): a shielded spend
  * whose result could not be confirmed may already be on chain (Rust keeps its
  * notes reserved), so the screen keeps it pending and never offers a fresh
- * submission; the next sync settles it. Every other error is an ordinary
- * failure the user may retry.
+ * submission; the next sync settles it. A private request Rust reports as
+ * pending (one to the same contact in flight, or paid and not yet read back)
+ * is the same outcome: nothing new was paid, and the next private sync
+ * settles it. Every other error is an ordinary failure the user may retry.
  * ← Swift `ContactRequestSubmissionOutcome` (`ContactRequestOutcomes.swift`).
  */
 sealed interface ContactRequestSubmissionOutcome {
@@ -22,12 +24,20 @@ sealed interface ContactRequestSubmissionOutcome {
         const val MAY_HAVE_GONE_THROUGH_MESSAGE = "This may have gone through. It shows up " +
             "after the next sync confirms it; do not submit it again."
 
-        fun of(error: Throwable): ContactRequestSubmissionOutcome =
-            if (error is DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed) {
-                MayHaveGoneThrough
-            } else {
-                Failed(error.message ?: "unknown error")
-            }
+        fun of(error: Throwable): ContactRequestSubmissionOutcome = when (error) {
+            is DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed,
+            is DashSdkError.PlatformWallet.PrivateContactRequestPending,
+            -> MayHaveGoneThrough
+            else -> Failed(error.message ?: "unknown error")
+        }
+
+        /**
+         * The message a request row shows: the pending notice while the
+         * wallet has a private reply to the contact pending, whatever error an
+         * earlier attempt left, and that error otherwise.
+         */
+        fun rowMessage(pending: Boolean, error: String?): String? =
+            if (pending) MAY_HAVE_GONE_THROUGH_MESSAGE else error
     }
 }
 

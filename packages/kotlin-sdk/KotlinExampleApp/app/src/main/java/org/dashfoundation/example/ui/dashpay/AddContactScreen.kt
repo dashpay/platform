@@ -102,6 +102,12 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
     // could not be confirmed): the screen only offers to close, never to
     // submit again, as the send screen does for an unconfirmed spend.
     var unconfirmedNotice by remember { mutableStateOf<String?>(null) }
+    // Whether the wallet has a private request to the resolved recipient in
+    // flight, or paid and not yet read back (`privateRepliesPending`). While
+    // it does, Send and the collision accept are off; a private sync settles
+    // it. Read from the wallet, so reopening this screen keeps it.
+    var recipientPending by remember { mutableStateOf(false) }
+    var pendingReadVersion by remember { mutableStateOf(0) }
     var collisionRecipient by remember { mutableStateOf<ByteArray?>(null) }
     var previewProfile by remember { mutableStateOf<DashPayProfile?>(null) }
 
@@ -112,7 +118,7 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
     }
     val recipientIsSelf = resolvedRecipient?.contentEquals(idBytes) == true
     val canSend = resolvedRecipient != null && !recipientIsSelf && !isSending &&
-        unconfirmedNotice == null
+        unconfirmedNotice == null && !recipientPending
 
     // Scan-to-send: consume the QR string handed back by the scanner screen
     // (the house pattern — observe the saved-state flow, then null it out).
@@ -173,6 +179,12 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
     // Cache-only profile for the preview card (local read; most unknown
     // identities won't have one).
     val recipientHex = resolvedRecipient?.toHex()
+    LaunchedEffect(recipientHex, wallet, pendingReadVersion) {
+        val recipient = resolvedRecipient
+        val w = wallet
+        recipientPending = recipient != null && w != null &&
+            recipient.toHex() in privateRepliesPending(w, idBytes, listOf(recipient))
+    }
     LaunchedEffect(recipientHex) {
         val recipient = resolvedRecipient
         val w = wallet
@@ -219,6 +231,8 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
     fun acceptIncoming(recipient: ByteArray) {
         val w = wallet ?: return
         val m = manager ?: return
+        // A private reply to this contact is already pending in the wallet.
+        if (recipientPending) return
         isSending = true
         errorMessage = null
         scope.launch {
@@ -248,6 +262,7 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                 }
             } finally {
                 isSending = false
+                pendingReadVersion++
             }
         }
     }
@@ -347,6 +362,13 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                     enabled = canSend,
                     modifier = Modifier.fillMaxWidth().testTag("dashpay.addContact.send"),
                 ) { attemptSend() }
+                if (recipientPending) {
+                    Text(
+                        ContactRequestSubmissionOutcome.MAY_HAVE_GONE_THROUGH_MESSAGE,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.testTag("dashpay.addContact.pending"),
+                    )
+                }
             }
 
             if (errorMessage != null) {

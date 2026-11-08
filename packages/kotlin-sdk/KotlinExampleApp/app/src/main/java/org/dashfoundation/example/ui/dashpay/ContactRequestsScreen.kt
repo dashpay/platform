@@ -92,10 +92,14 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
     var removedOverlayIds by remember { mutableStateOf(emptySet<String>()) }
     var rowErrors by remember { mutableStateOf(emptyMap<String, String>()) }
     var isRefreshing by remember { mutableStateOf(false) }
-    // Hex ids whose accept may have gone through (a private reply whose result
-    // could not be confirmed): the row stays pending, without its buttons,
-    // until the next sync settles it. Never offered again here.
-    var unconfirmedIds by remember { mutableStateOf(emptySet<String>()) }
+    // Hex ids with a private reply in flight, or paid and not yet read back,
+    // as the wallet records it (`privateRepliesPending`): the row stays
+    // pending, without its buttons, until a private sync settles it. Read
+    // from the wallet, not kept by this screen, so leaving and reopening it
+    // keeps the state. Re-read on composition and row changes, after an
+    // accept, on refresh and after each sync pass.
+    var walletPendingIds by remember { mutableStateOf(emptySet<String>()) }
+    var pendingReadVersion by remember { mutableStateOf(0) }
     // What the last private-store refresh has to tell the user, if anything.
     var privateRefreshNotice by remember { mutableStateOf<String?>(null) }
 
@@ -153,6 +157,22 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
             .sortedByDescending { it.createdAtMillis }
     }
 
+    LaunchedEffect(wallet, rows, pendingReadVersion) {
+        val w = wallet
+        walletPendingIds = if (w == null) {
+            emptySet()
+        } else {
+            privateRepliesPending(
+                wallet = w,
+                ourIdentityId = idBytes,
+                contactIds = rows.filter { !it.isOutgoing }.map { it.contactIdentityId },
+            )
+        }
+    }
+    LaunchedEffect(manager) {
+        manager?.dashPaySyncIsSyncing?.collect { syncing -> if (!syncing) pendingReadVersion++ }
+    }
+
     fun accept(contactId: ByteArray) {
         val w = wallet ?: return
         val m = manager ?: return
@@ -177,8 +197,8 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
                 when (val outcome = ContactRequestSubmissionOutcome.of(e)) {
                     ContactRequestSubmissionOutcome.MayHaveGoneThrough -> {
                         // As the send screen treats an unconfirmed spend: not
-                        // a failure to retry. The next sync settles it.
-                        unconfirmedIds = unconfirmedIds + hex
+                        // a failure to retry. The wallet keeps the reply
+                        // pending, and the row reads that.
                         kickDashPaySync(scope, m)
                     }
                     is ContactRequestSubmissionOutcome.Failed ->
@@ -186,6 +206,7 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
                 }
             } finally {
                 inFlightIds = inFlightIds - hex
+                pendingReadVersion++
             }
         }
     }
@@ -227,6 +248,7 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
                     manager?.let { m ->
                         attachOrStartSync(m)
                         wallet?.let { privateRefreshNotice = syncPrivateContactRequests(it, m) }
+                        pendingReadVersion++
                     }
                     isRefreshing = false
                 }
@@ -263,12 +285,11 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
                             val hex = row.contactId.toHex()
                             IncomingRequestRow(
                                 item = row,
-                                isInFlight = inFlightIds.contains(hex) || unconfirmedIds.contains(hex),
-                                errorMessage = if (unconfirmedIds.contains(hex)) {
-                                    ContactRequestSubmissionOutcome.MAY_HAVE_GONE_THROUGH_MESSAGE
-                                } else {
-                                    rowErrors[hex]
-                                },
+                                isInFlight = inFlightIds.contains(hex) || walletPendingIds.contains(hex),
+                                errorMessage = ContactRequestSubmissionOutcome.rowMessage(
+                                    pending = walletPendingIds.contains(hex),
+                                    error = rowErrors[hex],
+                                ),
                                 onAccept = { accept(row.contactId) },
                                 onIgnore = { ignore(row.contactId) },
                             )
