@@ -214,6 +214,8 @@ impl PrivateDocumentAuthMode {
 /// so what a caller reads is what was authenticated.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OpenedPrivateDocumentEntry {
+    contract_id: [u8; 32],
+    document_type_name: String,
     commitment: [u8; 32],
     recipient_key_index: Option<usize>,
     recipient_public_key: PublicKey,
@@ -227,6 +229,17 @@ pub struct OpenedPrivateDocumentEntry {
 }
 
 impl OpenedPrivateDocumentEntry {
+    /// The contract of the store the entry was opened for: its commitment binds that store, so
+    /// it opens for no other.
+    pub fn contract_id(&self) -> &[u8; 32] {
+        &self.contract_id
+    }
+
+    /// The private document type of the store the entry was opened for.
+    pub fn document_type_name(&self) -> &str {
+        &self.document_type_name
+    }
+
     /// The entry's commitment: two entries with the same one are copies.
     pub fn commitment(&self) -> &[u8; 32] {
         &self.commitment
@@ -721,6 +734,8 @@ fn parse_body(
         payload,
     );
     Ok(OpenedPrivateDocumentEntry {
+        contract_id: target.contract_id,
+        document_type_name: target.document_type_name.to_string(),
         commitment,
         recipient_key_index,
         recipient_public_key,

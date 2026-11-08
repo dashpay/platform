@@ -961,6 +961,26 @@ pub fn private_contact_requests_from_scan(
     identities: &BTreeMap<Identifier, ProvedIdentity>,
     platform_version: &PlatformVersion,
 ) -> Result<PrivateContactRequestScan, Error> {
+    // An entry opens only for the store it was sealed for, but a scan of another store's page
+    // would hold entries of that store: refused, not read as DashPay requests.
+    let dashpay_id = dashpay_contract.id().to_buffer();
+    if let Some(entry) = scan
+        .received
+        .iter()
+        .map(|received| &received.entry)
+        .chain(scan.sent.iter().map(|sent| &sent.entry))
+        .find(|entry| {
+            entry.contract_id() != &dashpay_id
+                || entry.document_type_name() != PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME
+        })
+    {
+        return Err(Error::Generic(format!(
+            "the scan holds an entry of the store {} {}, not DashPay's \
+             {PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME}",
+            Identifier::from(*entry.contract_id()),
+            entry.document_type_name()
+        )));
+    }
     for (identity_id, height) in private_contact_request_identities(&scan) {
         match identities.get(&identity_id) {
             None => {
@@ -1397,6 +1417,7 @@ mod tests {
     use super::*;
     use crate::platform::private_document_entries::{PrivateDocumentEntries, PrivateDocumentEntry};
     use dpp::address_funds::AddressWitness;
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contract::document_type::DocumentPropertyType;
     use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
@@ -2676,6 +2697,53 @@ mod tests {
                     "{case}: read to {read_to:?}"
                 );
             }
+        }
+    }
+
+    /// A scan of another store's page is refused, received and sent entries alike, rather
+    /// than read as DashPay requests: here a store of another contract with DashPay's types.
+    #[test]
+    fn should_refuse_a_scan_of_another_store() {
+        let dashpay_contract = dashpay();
+        let mut other = dashpay();
+        other.set_id(Identifier::from([0x55; 32]));
+        let entry = seal(&other, &sender_identity(None), &smallest_request(1), 1);
+        let target = PrivateDocumentTarget {
+            contract_id: other.id().to_buffer(),
+            document_type_name: PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+        };
+        let sender_keys = PrivateDocumentScanKeys::new().with_sender(
+            Identifier::from(SENDER_ID),
+            1,
+            private_contact_request_outgoing_viewing_key(&secret_key(1)),
+        );
+        for (case, keys) in [("received", recipient_keys()), ("sent", sender_keys)] {
+            let scan = keys.scan_page(&target, 0, &page(vec![entry.clone()]));
+            assert_eq!(scan.received.len() + scan.sent.len(), 1, "{case}: it opens");
+            let identities = private_contact_request_identities(&scan)
+                .into_keys()
+                .map(|identity_id| {
+                    let identity = [sender_identity(None), recipient_identity()]
+                        .into_iter()
+                        .find(|identity| identity.id() == identity_id);
+                    (
+                        identity_id,
+                        ProvedIdentity {
+                            identity,
+                            proved_at_height: PROVED_AT_HEIGHT,
+                        },
+                    )
+                })
+                .collect();
+            let error = private_contact_requests_from_scan(
+                &dashpay_contract,
+                scan,
+                &identities,
+                PlatformVersion::latest(),
+            )
+            .expect_err("another store")
+            .to_string();
+            assert!(error.contains("not DashPay's"), "{case}: {error}");
         }
     }
 
