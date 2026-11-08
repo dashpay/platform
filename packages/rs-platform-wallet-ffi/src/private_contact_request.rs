@@ -17,13 +17,16 @@
 //!   The request is signed by the identity signer the public send and accept
 //!   take, and sealed in the resolver-backed signer. Built with the
 //!   `shielded` feature only.
+//! - [`platform_wallet_manager_accept_contact_request_replying_in_kind`]:
+//!   the one accept a host calls. The wallet replies privately to a request
+//!   that came privately, and with a document otherwise. Built with the
+//!   `shielded` feature only.
 //! - [`managed_identity_get_private_contact`]: what a contact's private
 //!   requests carry beyond the `ContactRequest`: whether they came or went
 //!   privately, and the contact's shielded address.
 //!
-//! The public send and accept refuse a contact whose requests came or went
-//! privately with `ErrorPrivateContactRequestNeedsPrivateReply`; the host
-//! routes the request to the private send or accept.
+//! The explicitly public send and accept refuse a contact whose requests came
+//! or went privately with `ErrorPrivateContactRequestNeedsPrivateReply`.
 
 use platform_wallet::PrivateContact;
 use rs_sdk_ffi::MnemonicResolverHandle;
@@ -534,6 +537,126 @@ unsafe fn accept_private_contact_request_inner(
     }
 }
 
+/// Accept a DashPay contact request replying the way it came
+/// (`PlatformWallet::accept_contact_request_replying_in_kind`): privately,
+/// paid from `account`'s shielded notes, when it came privately and no reply
+/// exists yet; otherwise with a `contactRequest` document signed by
+/// `signer_handle`, or by adopting the reply already sent. Which reply a
+/// request takes is the wallet's decision: this is the one accept a host
+/// calls. `shielded_address` is the Orchard address the contact may pay us
+/// at privately; null omits it, and a public reply ignores it.
+///
+/// Arguments and outputs are as for
+/// [`platform_wallet_manager_accept_private_contact_request`]. The spend
+/// authority is derived only for a private reply. Errors follow the shielded
+/// spend contract: `ErrorShieldedSpendUnconfirmed` means the reply may
+/// already be on chain; do not accept again.
+///
+/// # Safety
+/// Identical contract to
+/// [`platform_wallet_manager_accept_private_contact_request`].
+#[cfg(feature = "shielded")]
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_manager_accept_contact_request_replying_in_kind(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    request_handle: Handle,
+    shielded_address: *const u8,
+    signer_handle: *mut SignerHandle,
+    out_established_handle: *mut Handle,
+) -> PlatformWalletFFIResult {
+    // Same panic contract as the private accept: a private reply's notes may
+    // be spent when it strikes.
+    catch_spend_panic("contact request accept", || {
+        accept_contact_request_replying_in_kind_inner(
+            handle,
+            wallet_id_bytes,
+            mnemonic_resolver_handle,
+            account,
+            request_handle,
+            shielded_address,
+            signer_handle,
+            out_established_handle,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_manager_accept_contact_request_replying_in_kind`],
+/// as an ordinary Rust function so a panic unwinds into [`catch_spend_panic`].
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+#[cfg(feature = "shielded")]
+#[allow(clippy::too_many_arguments)]
+unsafe fn accept_contact_request_replying_in_kind_inner(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    request_handle: Handle,
+    shielded_address: *const u8,
+    signer_handle: *mut SignerHandle,
+    out_established_handle: *mut Handle,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(mnemonic_resolver_handle);
+    check_ptr!(signer_handle);
+    check_ptr!(out_established_handle);
+    unsafe { *out_established_handle = NULL_HANDLE };
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+    let request = CONTACT_REQUEST_STORAGE.with_item(request_handle, |request| request.clone());
+    let request = unwrap_option_or_return!(request);
+    let shielded_address = read_shielded_address(shielded_address);
+
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(pair) => pair,
+        Err(result) => return result,
+    };
+    let seed = match resolve_seed_from_resolver(mnemonic_resolver_handle, &wallet_id) {
+        Ok(seed) => seed,
+        Err(result) => return result,
+    };
+    // SAFETY: the caller pins the resolver handle for the duration of this
+    // call.
+    let crypto = unsafe {
+        resolver_contact_crypto_provider(mnemonic_resolver_handle, wallet_id, wallet.network())
+    };
+    let signer_addr = signer_handle as usize;
+
+    let result = block_on_worker(async move {
+        // SAFETY: as in the private accept, the caller pins the signer for the
+        // call.
+        let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+        let prover = CachedOrchardProver::new();
+        let result = wallet
+            .accept_contact_request_replying_in_kind(
+                &coordinator,
+                seed.as_ref(),
+                account,
+                &request,
+                shielded_address,
+                signer,
+                &crypto,
+                &prover,
+            )
+            .await;
+        poke_sync_on_unconfirmed(&result, handle);
+        result
+    });
+    match result {
+        Ok(contact) => {
+            unsafe { *out_established_handle = ESTABLISHED_CONTACT_STORAGE.insert(contact) };
+            PlatformWalletFFIResult::ok()
+        }
+        Err(error) => map_spend_result(Err(error), "contact request accept"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -623,6 +746,29 @@ mod tests {
         let mut out = 0xDEAD_BEEF;
         let result = unsafe {
             platform_wallet_manager_accept_private_contact_request(
+                0xDEAD_BEEF,
+                wallet_id.as_ptr(),
+                resolver,
+                0,
+                0xDEAD_BEEF,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                &mut out,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
+
+    /// As the private accept: whichever reply the wallet picks is signed by
+    /// the identity signer.
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_reject_a_null_identity_signer_on_the_accept_replying_in_kind() {
+        let wallet_id = [1u8; 32];
+        let resolver = std::ptr::NonNull::<MnemonicResolverHandle>::dangling().as_ptr();
+        let mut out = 0xDEAD_BEEF;
+        let result = unsafe {
+            platform_wallet_manager_accept_contact_request_replying_in_kind(
                 0xDEAD_BEEF,
                 wallet_id.as_ptr(),
                 resolver,

@@ -427,6 +427,36 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         .await
     }
 
+    /// Accept `request` replying the way it came: privately, paid by `pay`,
+    /// when it came privately and we have sent its sender no request yet
+    /// ([`Self::accept_private_contact_request`]); otherwise with a
+    /// `contactRequest` document, or by adopting the reply already sent
+    /// ([`Self::accept_contact_request_with_external_signer`]). The one accept
+    /// a host calls: which reply a request takes is the wallet's decision.
+    /// `pay` runs only for a private reply.
+    pub async fn accept_contact_request_replying_in_kind<S, C, F, Fut>(
+        &self,
+        request: &ContactRequest,
+        shielded_address: Option<[u8; 43]>,
+        signer: &S,
+        crypto: &C,
+        pay: F,
+    ) -> Result<EstablishedContact, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+        C: ContactCryptoProvider + Sync,
+        F: FnOnce(BinaryData) -> Fut + Send,
+        Fut: Future<Output = Result<ResponseMetadata, PlatformWalletError>> + Send,
+    {
+        if self.needs_private_reply(request).await {
+            self.accept_private_contact_request(request, shielded_address, signer, crypto, pay)
+                .await
+        } else {
+            self.accept_contact_request_with_external_signer(request, signer, crypto)
+                .await
+        }
+    }
+
     /// The wallet's identities a pass reads the store for (those with an HD
     /// index, whose keys the signer can derive) and the paths of their keys:
     /// every `ECDSA_SECP256K1` decryption or encryption key, disabled ones
@@ -1188,9 +1218,10 @@ mod tests {
                 if sender == alice.id()
         ));
 
+        // The accept a host calls replies the way the request came.
         let reply = Arc::new(Mutex::new(Vec::new()));
         let established = bob_view
-            .accept_private_contact_request(
+            .accept_contact_request_replying_in_kind(
                 &received,
                 None,
                 &bob_signer,
@@ -1248,6 +1279,128 @@ mod tests {
             managed.unignore_sender(&alice.id());
             assert_eq!(managed.dashpay().private_contact_requests_position(), 0);
         }
+    }
+
+    /// A public request from `sender` to `recipient` for `account_reference`,
+    /// as a `contactRequest` document is recorded: with its core height.
+    fn public_request(
+        sender: &Identity,
+        recipient: &Identity,
+        account_reference: u32,
+    ) -> ContactRequest {
+        ContactRequest::new(
+            sender.id(),
+            recipient.id(),
+            ENCRYPTION_KEY_ID,
+            DECRYPTION_KEY_ID,
+            account_reference,
+            vec![7; 96],
+            100,
+            BLOCK_TIME_MS,
+        )
+    }
+
+    /// The accept a host calls replies to a public request publicly, without
+    /// paying: by adopting the reply already sent, or with a document whose
+    /// broadcast error comes back as it is. A request the wallet does not
+    /// hold is refused either way, and nothing is paid.
+    #[tokio::test]
+    async fn should_accept_a_public_request_replying_in_kind() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let bob_signer = signer(BOB_PHRASE, &bob);
+        let incoming = public_request(&alice, &bob, 3);
+        let add = |wallet: Arc<PlatformWallet>, requests: Vec<(bool, ContactRequest)>| async move {
+            let iw = wallet.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            let managed = wm
+                .get_wallet_info_mut(&wallet.wallet_id())
+                .expect("wallet info")
+                .identity_manager
+                .managed_identity_mut(&Identifier::from(BOB))
+                .expect("Bob");
+            for (incoming, request) in requests {
+                if incoming {
+                    managed
+                        .add_incoming_contact_request(request, &iw.persister)
+                        .expect("incoming request");
+                } else {
+                    managed
+                        .add_sent_contact_request(request, &iw.persister)
+                        .expect("sent request");
+                }
+            }
+        };
+
+        // Already reciprocated: adopted, no broadcast and no payment.
+        let (_manager, reciprocated) = wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![]).await;
+        add(
+            Arc::clone(&reciprocated),
+            vec![
+                (true, incoming.clone()),
+                (false, public_request(&bob, &alice, 4)),
+            ],
+        )
+        .await;
+        let paid = Arc::new(Mutex::new(Vec::new()));
+        let established = reciprocated
+            .identity()
+            .dashpay()
+            .accept_contact_request_replying_in_kind(
+                &incoming,
+                None,
+                &bob_signer,
+                &bob_crypto,
+                keep_entry(&paid),
+            )
+            .await
+            .expect("the reply already sent is adopted");
+        assert_eq!(established.contact_identity_id, alice.id());
+        assert!(paid.lock().expect("paid").is_empty(), "nothing is paid");
+
+        // Not reciprocated: a public reply, whose broadcast this mock refuses.
+        let (_manager, fresh) = wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![]).await;
+        add(Arc::clone(&fresh), vec![(true, incoming.clone())]).await;
+        let paid = Arc::new(Mutex::new(Vec::new()));
+        let result = fresh
+            .identity()
+            .dashpay()
+            .accept_contact_request_replying_in_kind(
+                &incoming,
+                None,
+                &bob_signer,
+                &bob_crypto,
+                keep_entry(&paid),
+            )
+            .await;
+        assert!(
+            matches!(&result, Err(error)
+                if !matches!(error, PlatformWalletError::PrivateContactRequestNeedsPrivateReply(_))),
+            "the public reply's error comes back: {result:?}"
+        );
+        assert!(paid.lock().expect("paid").is_empty(), "nothing is paid");
+
+        // A private request from a sender the wallet holds no request from.
+        let carol = identity(ALICE_PHRASE, [0xC1; 32]);
+        let mut unknown = public_request(&carol, &bob, 5);
+        unknown.core_height_created_at = 0;
+        let paid = Arc::new(Mutex::new(Vec::new()));
+        assert!(matches!(
+            fresh
+                .identity()
+                .dashpay()
+                .accept_contact_request_replying_in_kind(
+                    &unknown,
+                    None,
+                    &bob_signer,
+                    &bob_crypto,
+                    keep_entry(&paid),
+                )
+                .await,
+            Err(PlatformWalletError::ContactRequestNotFound(sender)) if sender == carol.id()
+        ));
+        assert!(paid.lock().expect("paid").is_empty(), "nothing is paid");
     }
 
     /// A wallet restored from seed recovers the private requests it sent from

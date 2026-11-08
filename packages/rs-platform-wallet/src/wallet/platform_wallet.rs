@@ -1622,6 +1622,46 @@ impl PlatformWallet {
             .await
     }
 
+    /// Accept a DashPay contact request replying the way it came: privately,
+    /// paid from `account`'s shielded notes, when it came privately and no
+    /// reply exists yet, else with a `contactRequest` document signed by
+    /// `signer`. The spend authority is derived from `seed` only when the
+    /// reply is private. See
+    /// [`DashPayView::accept_contact_request_replying_in_kind`](crate::DashPayView::accept_contact_request_replying_in_kind).
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn accept_contact_request_replying_in_kind<S, C, P>(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+        seed: &[u8],
+        account: u32,
+        request: &ContactRequest,
+        shielded_address: Option<[u8; 43]>,
+        signer: &S,
+        crypto: &C,
+        prover: P,
+    ) -> Result<EstablishedContact, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+        C: ContactCryptoProvider + Sync,
+        P: OrchardProver + Send + Sync,
+    {
+        self.identity
+            .dashpay()
+            .accept_contact_request_replying_in_kind(
+                request,
+                shielded_address,
+                signer,
+                crypto,
+                |entry| async move {
+                    let keyset = self.derive_spend_keyset(seed, account).await?;
+                    self.pay_private_contact_request(coordinator, keyset, account, entry, prover)
+                        .await
+                },
+            )
+            .await
+    }
+
     /// Append the sealed private contact request `entry` to DashPay's store,
     /// paying from `account`'s notes, and return the metadata of the proof
     /// that it was appended.

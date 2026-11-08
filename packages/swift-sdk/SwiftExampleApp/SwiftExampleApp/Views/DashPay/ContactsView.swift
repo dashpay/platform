@@ -235,29 +235,6 @@ func syncPrivateContactRequests(_ wallet: ManagedPlatformWallet) async {
     _ = try? await wallet.syncPrivateContactRequests()
 }
 
-/// Accept `request`. Rust refuses a public reply to a contact whose requests
-/// came privately, as it would publish the relationship; that one is accepted
-/// with a private reply instead, paid from the wallet's shielded balance and
-/// signed by the same `signer`.
-@MainActor
-func acceptIncomingContactRequest(
-    _ request: ContactRequest,
-    wallet: ManagedPlatformWallet,
-    walletManager: PlatformWalletManager,
-    signer: KeychainSigner
-) async throws {
-    do {
-        _ = try await wallet.acceptContactRequest(request, signer: signer)
-    } catch PlatformWalletError.privateContactRequestNeedsPrivateReply {
-        _ = try await walletManager.acceptPrivateContactRequest(
-            walletId: wallet.walletId,
-            resolver: MnemonicResolver(),
-            request: request,
-            signer: signer
-        )
-    }
-}
-
 // MARK: - Row model + view
 
 /// UI model for one established contact row, resolved from the
