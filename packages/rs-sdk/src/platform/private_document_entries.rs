@@ -16,7 +16,9 @@
 
 use std::sync::Arc;
 
-use crate::platform::{Fetch, FetchUnproved, Identifier, Query, QuerySettings};
+use crate::platform::{
+    Fetch, FetchUnproved, Identifier, ProtocolRequirement, Query, QuerySettings,
+};
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::get_private_document_entries_request::GetPrivateDocumentEntriesRequestV0;
 use dapi_grpc::platform::v0::{
@@ -26,6 +28,7 @@ use dash_context_provider::ContextProvider;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::DataContract;
+use dpp::version::feature_initial_protocol_versions::PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION;
 pub use drive_proof_verifier::types::private_document_entries::{
     PrivateDocumentEntries, PrivateDocumentEntry,
 };
@@ -84,6 +87,9 @@ impl FetchUnproved for PrivateDocumentEntries {
     type Request = GetPrivateDocumentEntriesRequest;
 }
 
+/// The gRPC method a page of a private document type's store is read with.
+const PRIVATE_DOCUMENT_ENTRIES_METHOD: &str = "get_private_document_entries";
+
 /// Whether `contract` declares `document_type_name` as a private type.
 fn declares_private_type(contract: &DataContract, document_type_name: &str) -> bool {
     contract
@@ -102,11 +108,26 @@ impl Sdk {
     /// refused when it does not declare the type, given to the provider and read back; the
     /// call fails when the provider then still holds none that declares it. Without a context
     /// provider the fetched contract is returned.
+    ///
+    /// Private types exist from protocol version 15. Below it, as the page fetch is, the call
+    /// is refused with [`Error::ProtocolVersionNotActive`], before anything is fetched on a
+    /// network that has not reached it, and when the contract declares no such type while
+    /// this SDK runs below it: a reader takes that as no store to read yet.
     pub async fn fetch_private_document_contract(
         &self,
         data_contract_id: Identifier,
         document_type_name: &str,
     ) -> Result<Arc<DataContract>, Error> {
+        self.ensure_network_serves(
+            Some(ProtocolRequirement {
+                protocol_version:
+                    PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+                method: PRIVATE_DOCUMENT_ENTRIES_METHOD,
+                feature: None,
+            }),
+            None,
+        )
+        .await?;
         let provider = self.context_provider();
         if let Some(provider) = &provider {
             if let Some(held) = provider.get_data_contract(&data_contract_id, self.version())? {
@@ -120,6 +141,15 @@ impl Sdk {
             .map(Arc::new)
             .ok_or_else(|| Error::Generic(format!("the contract {data_contract_id} is gone")))?;
         if !declares_private_type(&contract, document_type_name) {
+            if self.protocol_version_number()
+                < PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION
+            {
+                return Err(self.protocol_version_not_active(
+                    PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+                    PRIVATE_DOCUMENT_ENTRIES_METHOD,
+                    None,
+                ));
+            }
             return Err(Error::Generic(format!(
                 "the contract {data_contract_id} declares no private type \"{document_type_name}\""
             )));

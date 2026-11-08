@@ -3358,6 +3358,52 @@ mod tests {
         assert!(Arc::ptr_eq(&resolved, &held));
     }
 
+    /// Below protocol version 15 there is no private store: a contract that declares no
+    /// private type, on an SDK running 14, is refused as not active, and the page stream ends
+    /// with that refusal before any page is fetched, which the mock, answering none, would
+    /// fail otherwise.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_refuse_a_private_page_read_below_protocol_version_15() {
+        use futures::StreamExt;
+
+        let before = dashpay_without_private_requests();
+        let mut sdk: Sdk = crate::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::get(14).expect("protocol version 14"))
+            .with_context_provider(HeldContractProvider::new(Some(before.clone()), true))
+            .build()
+            .expect("a mock sdk");
+        sdk.mock()
+            .expect_fetch(before.id(), Some(before.clone()))
+            .await
+            .expect("the DashPay fetch is expected");
+
+        let refused = sdk
+            .fetch_private_document_contract(
+                before.id(),
+                PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+            )
+            .await;
+        assert!(
+            matches!(
+                &refused,
+                Err(Error::ProtocolVersionNotActive { required: 15, .. })
+            ),
+            "{refused:?}"
+        );
+        let mut pages = std::pin::pin!(sdk.private_document_pages(
+            before.id(),
+            PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+            0,
+            4,
+        ));
+        assert!(matches!(
+            pages.next().await,
+            Some(Err(Error::ProtocolVersionNotActive { .. }))
+        ));
+        assert!(pages.next().await.is_none());
+    }
+
     /// A DashPay the provider does not hold yet is fetched from the network and given to it,
     /// which the pages are then verified against.
     #[cfg(feature = "mocks")]
