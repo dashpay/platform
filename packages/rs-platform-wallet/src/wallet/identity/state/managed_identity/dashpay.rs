@@ -130,10 +130,6 @@ pub struct DashPayState {
     /// restored from the shielded store's unconfirmed spends.
     pub(super) pending_private_replies: BTreeMap<Identifier, PendingPrivateReply>,
 
-    /// The attempt id the next reservation in `pending_private_replies`
-    /// takes. In memory only.
-    pub(super) next_private_reply_attempt: u64,
-
     /// Lowest Platform-assigned `$createdAtCoreBlockHeight` among OUR sent
     /// `contactRequest` docs to each recipient seen by a sweep this process.
     ///

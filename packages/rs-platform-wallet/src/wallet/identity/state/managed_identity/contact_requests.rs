@@ -15,6 +15,12 @@ use crate::wallet::persister::WalletPersister;
 use crate::{ContactRequest, EstablishedContact};
 use dpp::prelude::Identifier;
 use platform_encryption::account_reference_version;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// The attempt id the next private request reservation takes. Process-wide,
+/// so a handle that outlived its wallet's removal and re-creation under the
+/// same id cannot release a reservation the new wallet made.
+static NEXT_PRIVATE_REPLY_ATTEMPT: AtomicU64 = AtomicU64::new(0);
 
 impl ManagedIdentity {
     /// The masked `accountReference` of the most recent request WE sent
@@ -858,8 +864,7 @@ impl ManagedIdentity {
 
     /// Reserve `recipient` under a new attempt, `commitment` its entry's.
     fn insert_private_reply(&mut self, recipient: Identifier, commitment: Option<[u8; 32]>) -> u64 {
-        let attempt = self.dashpay.next_private_reply_attempt;
-        self.dashpay.next_private_reply_attempt = attempt.wrapping_add(1);
+        let attempt = NEXT_PRIVATE_REPLY_ATTEMPT.fetch_add(1, Ordering::Relaxed);
         self.dashpay.pending_private_replies.insert(
             recipient,
             PendingPrivateReply {
