@@ -62,6 +62,12 @@ struct AddContactView: View {
     /// submit again, as `SendTransactionView` does for an unconfirmed spend.
     @State private var unconfirmedNotice: String?
 
+    /// Whether the wallet has a private request to the resolved recipient in
+    /// flight, or paid and not yet read back (`privateRepliesPending`). While
+    /// it does, Send is off; a private sync settles it. Read from the wallet,
+    /// so reopening this sheet keeps it.
+    @State private var recipientPending = false
+
     /// Send-collision flow.
     @State private var showCollisionAlert = false
     @State private var collisionRecipient: Identifier?
@@ -100,6 +106,7 @@ struct AddContactView: View {
             && resolvedRecipient != identity.identityId
             && !isSending
             && unconfirmedNotice == nil
+            && !recipientPending
     }
 
     var body: some View {
@@ -138,6 +145,7 @@ struct AddContactView: View {
                 }
             }
             .navigationTitle("Add Contact")
+            .task(id: resolvedRecipient) { reloadRecipientPending() }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -404,7 +412,26 @@ struct AddContactView: View {
             }
             .disabled(!canSend)
             .accessibilityIdentifier("dashpay.addContact.send")
+        } footer: {
+            if recipientPending {
+                Text(ContactRequestSubmissionOutcome.mayHaveGoneThroughMessage)
+                    .accessibilityIdentifier("dashpay.addContact.pending")
+            }
         }
+    }
+
+    /// Re-read from the wallet whether a private request to the resolved
+    /// recipient is pending.
+    private func reloadRecipientPending() {
+        guard let recipient = resolvedRecipient, let wallet = try? requireWallet() else {
+            recipientPending = false
+            return
+        }
+        recipientPending = privateRepliesPending(
+            wallet: wallet,
+            identityId: identity.identityId,
+            contactIds: [recipient]
+        ).contains(recipient)
     }
 
     private func previewDisplayName(
@@ -514,6 +541,7 @@ struct AddContactView: View {
                 case .failed(let message):
                     errorMessage = message
                 }
+                reloadRecipientPending()
             }
         }
     }
@@ -554,6 +582,7 @@ struct AddContactView: View {
                 case .failed(let message):
                     errorMessage = "Accept failed: \(message)"
                 }
+                reloadRecipientPending()
             }
         }
     }
