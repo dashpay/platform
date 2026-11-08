@@ -1544,9 +1544,52 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_acceptC
 #[cfg(test)]
 mod tests {
     use super::*;
+    use platform_wallet_ffi::error::PlatformWalletFFIResultCode;
 
-    // The natives above need a JVM; the counter layout Kotlin decodes is
-    // pure and is pinned here.
+    // The natives above need a JVM; the counter layout Kotlin decodes and the
+    // handle release are pure and are pinned here.
+
+    /// A real `ContactRequest` handle, registered through platform-wallet-ffi's
+    /// `contact_request_create` as the FFI's own enumerators register theirs.
+    fn registered_request(sender_byte: u8) -> Handle {
+        let sender = [sender_byte; 32];
+        let recipient = [0xB0; 32];
+        let encrypted_public_key = [0x33; 96];
+        let mut handle: Handle = 0;
+        let mut result = unsafe {
+            platform_wallet_ffi::contact_request_create(
+                sender.as_ptr(),
+                recipient.as_ptr(),
+                1,
+                2,
+                7,
+                encrypted_public_key.as_ptr(),
+                encrypted_public_key.len(),
+                100,
+                1_700_000_000_000,
+                &mut handle,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+        assert_ne!(handle, 0);
+        handle
+    }
+
+    /// The sender id a getter reads off `handle`, or the code it refuses with.
+    fn sender_id_of(handle: Handle) -> Result<[u8; 32], PlatformWalletFFIResultCode> {
+        let mut sender = [0u8; 32];
+        let mut result = unsafe {
+            platform_wallet_ffi::contact_request_get_sender_id(handle, sender.as_mut_ptr())
+        };
+        let code = result.code;
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+        if code == PlatformWalletFFIResultCode::Success {
+            Ok(sender)
+        } else {
+            Err(code)
+        }
+    }
 
     #[test]
     fn should_lay_out_the_private_sync_counters_in_the_order_kotlin_reads() {
@@ -1579,5 +1622,35 @@ mod tests {
         let mut array = ContactRequestHandleArray::empty();
         assert_eq!(unsafe { release_contact_request_handles(&mut array) }, 0);
         assert!(array.handles.is_null());
+    }
+
+    /// The sync bridge hands Kotlin no handles, so it must destroy every
+    /// handle the FFI registered as well as free the array: both handles read
+    /// before the release and are refused after it.
+    #[test]
+    fn should_destroy_every_handle_of_the_array_and_free_it() {
+        let handles = [registered_request(0xA1), registered_request(0xA2)];
+        assert_eq!(sender_id_of(handles[0]), Ok([0xA1; 32]));
+        assert_eq!(sender_id_of(handles[1]), Ok([0xA2; 32]));
+
+        // The `ContactRequestHandleArray` contract: a boxed slice of handles,
+        // as `ContactRequestHandleArray::from_requests` allocates it.
+        let boxed: Box<[Handle]> = handles.to_vec().into_boxed_slice();
+        let count = boxed.len();
+        let mut array = ContactRequestHandleArray {
+            handles: Box::into_raw(boxed) as *mut Handle,
+            count,
+        };
+
+        assert_eq!(unsafe { release_contact_request_handles(&mut array) }, 2);
+        assert!(array.handles.is_null());
+        assert_eq!(array.count, 0);
+        for handle in handles {
+            assert_eq!(
+                sender_id_of(handle),
+                Err(PlatformWalletFFIResultCode::NotFound),
+                "a released handle reads nothing"
+            );
+        }
     }
 }
