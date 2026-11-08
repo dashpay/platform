@@ -25,6 +25,9 @@
 //! - [`managed_identity_get_private_contact`]: what a contact's private
 //!   requests carry beyond the `ContactRequest`: whether they came or went
 //!   privately, and the contact's shielded address.
+//! - [`managed_identity_get_private_reply_pending`]: whether a private request
+//!   to a contact is in flight or not yet read back, so a host offers no
+//!   second send or reply.
 //!
 //! The explicitly public send and accept refuse a contact whose requests came
 //! or went privately with `ErrorPrivateContactRequestNeedsPrivateReply`.
@@ -39,7 +42,7 @@ use crate::dashpay::{resolver_contact_crypto_provider, ContactRequestHandleArray
 use crate::error::*;
 use crate::established_contact::ESTABLISHED_CONTACT_STORAGE;
 use crate::handle::*;
-use crate::runtime::{block_on_worker, run_on_big_stack_thread, runtime};
+use crate::runtime::block_on_worker;
 use crate::types::*;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 
@@ -152,26 +155,12 @@ pub unsafe extern "C" fn platform_wallet_sync_private_contact_requests(
     // call.
     let provider =
         unsafe { resolver_contact_crypto_provider(core_signer_handle, wallet_id, network) };
-    // `run_on_big_stack_thread` rather than `block_on_worker`: the pass's
-    // future trips rustc's implied-lifetime-bound limitation (rust-lang/rust
-    // issue #100013) against `block_on_worker`'s `Send + 'static` bounds,
-    // through the SDK's identity fetch stream.
-    let spawned = run_on_big_stack_thread(|| {
-        runtime().block_on(
-            identity
-                .dashpay()
-                .sync_private_contact_requests(&provider, max_pages as usize),
-        )
+    let result = block_on_worker(async move {
+        identity
+            .dashpay()
+            .sync_private_contact_requests(&provider, max_pages as usize)
+            .await
     });
-    let result = match spawned {
-        Ok(result) => result,
-        Err(error) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                format!("failed to spawn big-stack thread for the private contact sync: {error}"),
-            );
-        }
-    };
     let report = unwrap_result_or_return!(result);
     unsafe {
         *out_report = PrivateContactSyncReportFFI {
@@ -256,6 +245,35 @@ pub unsafe extern "C" fn managed_identity_get_private_contact(
     let inner = unwrap_option_or_return!(option);
     let contact = unwrap_option_or_return!(inner);
     unsafe { *out_contact = contact };
+    PlatformWalletFFIResult::ok()
+}
+
+/// Whether a private contact request from this identity to `contact_id` is
+/// being paid for, or was paid for and is not yet read back from the store
+/// (`DashPayState::private_reply_pending`), into `out_pending`. While it is,
+/// the wallet refuses another private send or reply to the contact with
+/// `ErrorPrivateContactRequestPending`, so a host shows the contact as pending
+/// and offers neither; a later `platform_wallet_sync_private_contact_requests`
+/// settles it. A pure read of the managed-identity snapshot. The wallet keeps
+/// it in memory only, so it is false after a restart.
+///
+/// # Safety
+/// - `contact_id` must point to 32 readable bytes.
+/// - `out_pending` must be a valid, writable pointer.
+#[no_mangle]
+pub unsafe extern "C" fn managed_identity_get_private_reply_pending(
+    identity_handle: Handle,
+    contact_id: *const u8,
+    out_pending: *mut bool,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_pending);
+    unsafe { *out_pending = false };
+    let contact_id = unwrap_result_or_return!(unsafe { read_identifier(contact_id) });
+    let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
+        identity.dashpay().private_reply_pending(&contact_id)
+    });
+    let pending = unwrap_option_or_return!(option);
+    unsafe { *out_pending = pending };
     PlatformWalletFFIResult::ok()
 }
 
@@ -1148,6 +1166,54 @@ mod tests {
             dash_sdk_mnemonic_resolver_destroy(resolver);
         }
         let _ = unsafe { platform_wallet_manager_destroy(manager) };
+    }
+
+    /// A managed identity with no private request in flight reports none; an
+    /// unknown handle is not found and leaves the flag false; a null output is
+    /// refused. Reserving a reply is the wallet's own (its tests pin the
+    /// reservation), so this pins the read.
+    #[test]
+    fn should_read_whether_a_private_reply_is_pending() {
+        use dpp::identity::{Identity, IdentityV0};
+        use platform_wallet::ManagedIdentity;
+
+        let identity = Identity::V0(IdentityV0 {
+            id: [0xB0; 32].into(),
+            public_keys: Default::default(),
+            balance: 0,
+            revision: 0,
+        });
+        let handle = MANAGED_IDENTITY_STORAGE.insert(ManagedIdentity::new(identity, 0));
+        let contact_id = [0xA0u8; 32];
+
+        let mut pending = true;
+        let result = unsafe {
+            managed_identity_get_private_reply_pending(handle, contact_id.as_ptr(), &mut pending)
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(!pending, "nothing is in flight to the contact");
+
+        let mut pending = true;
+        let result = unsafe {
+            managed_identity_get_private_reply_pending(
+                0xDEAD_BEEF,
+                contact_id.as_ptr(),
+                &mut pending,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
+        assert!(!pending);
+
+        let result = unsafe {
+            managed_identity_get_private_reply_pending(
+                handle,
+                contact_id.as_ptr(),
+                std::ptr::null_mut(),
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+
+        let _ = MANAGED_IDENTITY_STORAGE.remove(handle);
     }
 
     #[test]

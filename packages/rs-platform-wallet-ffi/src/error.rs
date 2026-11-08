@@ -650,6 +650,14 @@ pub enum PlatformWalletFFIResultCode {
     /// network's version could not be confirmed, keeps the catch-all code.
     ErrorProtocolVersionNotActive = 70,
 
+    /// Maps `PlatformWalletError::PrivateContactRequestPending`: a private
+    /// contact request to that identity is in flight (another send or reply
+    /// reserved it), or was paid for and is not yet read back from the store.
+    /// Nothing new was paid. Do not submit it again: a later private contact
+    /// request sync (`platform_wallet_sync_private_contact_requests`)
+    /// settles it.
+    ErrorPrivateContactRequestPending = 71,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1092,6 +1100,12 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // accept.
             PlatformWalletError::PrivateContactRequestNeedsPrivateReply(..) => {
                 PlatformWalletFFIResultCode::ErrorPrivateContactRequestNeedsPrivateReply
+            }
+            // A private request to the contact is in flight or paid and not
+            // yet read back: pending, not failed, so the host must not submit
+            // it again.
+            PlatformWalletError::PrivateContactRequestPending(..) => {
+                PlatformWalletFFIResultCode::ErrorPrivateContactRequestPending
             }
             // A signer failure can also reach this blanket impl wrapped as
             // `PlatformWalletError::Sdk(dash_sdk::Error::Protocol(..))` (any
@@ -2739,6 +2753,8 @@ mod identity_balance_error_tests {
 #[cfg(test)]
 mod private_contact_request_error_tests {
     use super::*;
+    #[cfg(feature = "shielded")]
+    use crate::shielded_send::map_spend_result;
 
     /// A store the network does not serve yet (DashPay's private contact
     /// requests before protocol version 15) is told apart from a failure, so
@@ -2782,5 +2798,24 @@ mod private_contact_request_error_tests {
         );
         assert_eq!(result.code as u32, 68);
         assert!(!result.message.is_null());
+    }
+
+    /// A private request in flight, or paid and not yet read back, is pending
+    /// rather than failed, whichever path reports it: the blanket conversion,
+    /// and the shielded spend contract the private send and accepts use.
+    #[test]
+    fn should_report_a_pending_private_request_by_its_own_code() {
+        let pending = || PlatformWalletError::PrivateContactRequestPending([7; 32].into());
+        let result = PlatformWalletFFIResult::from(pending());
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorPrivateContactRequestPending
+        );
+        assert_eq!(result.code as u32, 71);
+        #[cfg(feature = "shielded")]
+        assert_eq!(
+            map_spend_result(Err(pending()), "private contact request").code,
+            PlatformWalletFFIResultCode::ErrorPrivateContactRequestPending
+        );
     }
 }
