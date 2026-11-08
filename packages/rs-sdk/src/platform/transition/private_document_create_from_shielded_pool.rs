@@ -117,6 +117,7 @@ impl PrivateDocumentCreateFromShieldedPool for Sdk {
 #[cfg(all(test, feature = "mocks"))]
 mod tests {
     use super::*;
+    use crate::sdk::test::expect_epoch_refresh;
     use crate::SdkBuilder;
     use dpp::shielded::SerializedAction;
     use dpp::version::PlatformVersion;
@@ -186,5 +187,53 @@ mod tests {
             .expect_err("protocol version 14")
             .to_string();
         assert!(error.contains("exists from protocol version 15"), "{error}");
+    }
+
+    /// An unpinned SDK seeded below protocol version 15 learns the network's version before it
+    /// builds the send, and builds it against that version.
+    #[tokio::test]
+    async fn should_learn_the_network_version_before_building_a_send() {
+        let mut sdk: Sdk = SdkBuilder::new_mock()
+            .with_initial_version(PlatformVersion::get(14).expect("protocol version 14"))
+            .build()
+            .expect("expected a mock sdk");
+        // The mock network runs the latest version
+        expect_epoch_refresh(&mut sdk).await;
+        let entries = vec![BinaryData::new(vec![1; 589])];
+
+        let error = sdk
+            .private_document_create_from_shielded_pool(
+                Identifier::new([4; 32]),
+                "privateContactRequest".to_string(),
+                entries.clone(),
+                114_140_000,
+                bundle(),
+                None,
+            )
+            .await
+            .expect_err("the mock takes no broadcast")
+            .to_string();
+
+        assert_eq!(
+            sdk.protocol_version_number(),
+            PlatformVersion::latest().protocol_version
+        );
+        assert!(!error.contains("exists from protocol version"), "{error}");
+        let built = sdk
+            .private_document_create_from_shielded_pool_transition(
+                Identifier::new([4; 32]),
+                "privateContactRequest".to_string(),
+                entries,
+                114_140_000,
+                bundle(),
+            )
+            .expect("the send builds at the learned version");
+        assert!(
+            matches!(
+                built,
+                StateTransition::PrivateDocumentCreateFromShieldedPool(_)
+            ),
+            "{built:?}"
+        );
     }
 }
