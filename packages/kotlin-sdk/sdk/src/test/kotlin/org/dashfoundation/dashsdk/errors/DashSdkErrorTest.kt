@@ -276,6 +276,27 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun shouldTellAPrivateReplyOnABuildWithoutShieldedSupportByItsOwnCode() {
+        val detail = "this contact request needs a private reply, which is paid " +
+            "from the shielded pool; this build has no shielded support"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 69, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedBuildRequired)
+        assertEquals(detail, mapped.message)
+        assertFalse("the same build refuses it again", mapped.isRetryable)
+    }
+
+    @Test
+    fun shouldTellARequestTheNetworkDoesNotServeYetByItsOwnCode() {
+        val detail = "get_private_document_entries needs protocol version 15; " +
+            "the network is proven at protocol version 14"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 70, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.ProtocolVersionNotActive)
+        assertEquals(detail, mapped.message)
+    }
+
+    @Test
     fun platformShieldCapacityCode41MapsTyped() {
         val message =
             "Platform shield capacity exceeded: available 3623849220, required 3623849221"

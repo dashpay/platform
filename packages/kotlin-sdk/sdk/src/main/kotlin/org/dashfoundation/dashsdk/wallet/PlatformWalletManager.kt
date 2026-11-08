@@ -2231,8 +2231,12 @@ class PlatformWalletManager(
      * Orchard address the contact may pay us at privately; a public reply
      * ignores it.
      *
-     * Throws [DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed] when a
-     * private reply may already be on chain: do not accept again.
+     * A public or adopted reply needs neither shielded support nor a
+     * mnemonic read for the payment. Throws
+     * [DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed] when a private
+     * reply may already be on chain: do not accept again; and
+     * [DashSdkError.PlatformWallet.ShieldedBuildRequired] when the request
+     * needs a private reply and the native library has no shielded support.
      *
      * @return the established contact; close it (or `use {}`) when done.
      */

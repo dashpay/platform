@@ -1218,16 +1218,15 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_claimIn
 //
 // Mirrors Swift's `PrivateContactRequests.swift`: the store sync is a
 // wallet-handle call (`ManagedPlatformWallet.syncPrivateContactRequests`);
-// the send, the private-reply accept and the accept that replies the way a
-// request came are manager-handle shielded spends
+// the send and the private-reply accept are manager-handle shielded spends
 // (`PlatformWalletManager.sendPrivateContactRequest` /
-// `acceptPrivateContactRequest` / `acceptContactRequestReplyingInKind`),
-// gated like the other shielded spends.
+// `acceptPrivateContactRequest`), gated like the other shielded spends. The
+// accept that replies the way a request came
+// (`acceptContactRequestReplyingInKind`) is exported in every build.
 
 /// The bytes of an Orchard payment address the FFI reads from a
 /// `shielded_address` pointer: an 11-byte diversifier and a 32-byte
 /// transmission key.
-#[cfg(feature = "shielded")]
 const SHIELDED_ADDRESS_LEN: usize = 43;
 
 /// The longs [`Java_org_dashfoundation_dashsdk_ffi_DashpayNative_syncPrivateContactRequests`]
@@ -1316,7 +1315,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_syncPri
 
 /// Copy an optional Java `byte[]`; JVM null is `None`. Throws and returns
 /// `Err` on a JNI error. `field` names the argument in the message.
-#[cfg(feature = "shielded")]
 fn read_opt_bytes(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Result<Option<Vec<u8>>, ()> {
     if arr.is_null() {
         return Ok(None);
@@ -1335,7 +1333,6 @@ fn read_opt_bytes(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Result<Opt
 /// [`SHIELDED_ADDRESS_LEN`] bytes from the pointer it is given and has no
 /// length to check against, so any other length is refused here before the
 /// pointer crosses.
-#[cfg(feature = "shielded")]
 fn read_opt_shielded_address(env: &mut JNIEnv, arr: &JByteArray) -> Result<Option<Vec<u8>>, ()> {
     let address = read_opt_bytes(env, arr, "shieldedAddress")?;
     if let Some(address) = &address {
@@ -1492,9 +1489,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_acceptP
 /// privately, paid from `account`'s shielded notes, when it came privately
 /// and no reply exists yet; otherwise with a `contactRequest` document, or by
 /// adopting the reply already sent. The wallet decides; this is the accept a
-/// host calls. Arguments and result are as for
-/// [`Java_org_dashfoundation_dashsdk_ffi_DashpayNative_acceptPrivateContactRequest`].
-#[cfg(feature = "shielded")]
+/// host calls. Arguments and result are as for the private accept above.
+/// Exported in every build: without the `shielded` feature a request that
+/// needs a private reply is refused with `ErrorShieldedBuildRequired`, and a
+/// public or adopted reply works as in a shielded build.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_acceptContactRequestReplyingInKind(

@@ -663,6 +663,32 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorShieldedBuildRequired` (native code 69). The operation needs
+         * the shielded pool and the native library was built without the
+         * `shielded` feature (`./build_android.sh --no-shielded`): today,
+         * accepting a contact request that came privately with
+         * `PlatformWalletManager.acceptContactRequestReplyingInKind`. Nothing
+         * was sent; a public or adopted reply works on such a build. Not
+         * retryable on the same build.
+         * ← Swift `PlatformWalletError.shieldedBuildRequired`.
+         */
+        class ShieldedBuildRequired(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorProtocolVersionNotActive` (native code 70). The SDK did not
+         * send the request: the network is proven at a protocol version below
+         * the one that serves it, for example DashPay's private contact
+         * request store before protocol version 15. Expected on such a
+         * network, so a host may stay quiet about it; it lifts when the
+         * network upgrades. A refusal that may lift sooner (the version could
+         * not be confirmed) arrives as [Generic] instead.
+         * ← Swift `PlatformWalletError.protocolVersionNotActive`.
+         */
+        class ProtocolVersionNotActive(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -861,6 +887,8 @@ sealed class DashSdkError(
             // ErrorPrivateContactRequestNeedsPrivateReply: the explicitly
             // public accept or send refused a contact that went private.
             68 -> PlatformWallet.PrivateContactRequestNeedsPrivateReply(message, cause)
+            69 -> PlatformWallet.ShieldedBuildRequired(message, cause) // ErrorShieldedBuildRequired
+            70 -> PlatformWallet.ProtocolVersionNotActive(message, cause) // ErrorProtocolVersionNotActive
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.
