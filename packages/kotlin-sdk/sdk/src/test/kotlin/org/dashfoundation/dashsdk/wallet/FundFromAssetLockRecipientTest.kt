@@ -1,7 +1,6 @@
 package org.dashfoundation.dashsdk.wallet
 
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.Companion.encodeRecipients
-import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.Companion.fundFromAssetLockExternalPreflight
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.FundRecipient
 import org.junit.Assert.assertArrayEquals
@@ -11,9 +10,9 @@ import org.junit.Test
 import java.nio.ByteBuffer
 
 /**
- * Pins the two host-side responsibilities of the asset-lock funding surface —
- * marshalling recipients faithfully, and rejecting recipient lists Kotlin can
- * check synchronously. Port of Swift's `FundFromAssetLockRecipientTests`.
+ * Pins the host side of the asset-lock funding surface: marshalling
+ * recipients faithfully and decoding the reported outpoint. Recipient rules
+ * are platform-wallet's alone, so none are checked here.
  *
  * The fee-paying output (`ReduceOutput(index)`) is deliberately NOT derived
  * here: it is positional against the transition's outputs map (a consensus
@@ -21,8 +20,8 @@ import java.nio.ByteBuffer
  */
 class FundFromAssetLockRecipientTest {
 
-    private fun recipient(tag: Int, credits: Long?, type: Int = 0) =
-        FundRecipient(addressType = type, hash = ByteArray(20) { tag.toByte() }, credits = credits)
+    private fun recipient(tag: Int, credits: Long?) =
+        FundRecipient(addressType = 0, hash = ByteArray(20) { tag.toByte() }, credits = credits)
 
     private data class Row(val type: Int, val hash: ByteArray, val hasBalance: Boolean, val balance: Long)
 
@@ -65,50 +64,13 @@ class FundFromAssetLockRecipientTest {
         assertEquals(1, decode(blob).count { !it.hasBalance })
     }
 
-    // ── External pre-flight ───────────────────────────────────────────
-
     @Test
-    fun shouldAcceptThirdPartyPayeeWithOwnRemainder() {
-        fundFromAssetLockExternalPreflight(
-            listOf(recipient(0xBB, credits = 500), recipient(0x0A, credits = null)),
-        )
-    }
-
-    @Test
-    fun shouldRejectRemainderOnlyRequest() {
-        // Nothing is paid externally — a call-site mistake; fundFromAssetLock
-        // validates the destination properly.
-        assertThrows(IllegalArgumentException::class.java) {
-            fundFromAssetLockExternalPreflight(listOf(recipient(0x0A, credits = null)))
-        }
-    }
-
-    @Test
-    fun shouldRejectP2shAndBadHashLengths() {
-        assertThrows(IllegalArgumentException::class.java) {
-            fundFromAssetLockExternalPreflight(
-                listOf(recipient(0xBB, credits = 500, type = 1), recipient(0x0A, credits = null)),
-            )
-        }
-        // A wrong-length hash cannot even be constructed, so it never reaches
-        // the pre-flight or the native blob.
+    fun shouldNotConstructARecipientWithAWrongLengthHash() {
+        // So a malformed hash never reaches the native blob. Every recipient
+        // RULE (remainder count, P2PKH only, ownership) is platform-wallet's.
         listOf(19, 21, 0).forEach { size ->
             assertThrows(IllegalArgumentException::class.java) {
                 FundRecipient(addressType = 0, hash = ByteArray(size), credits = 500)
-            }
-        }
-    }
-
-    @Test
-    fun shouldRejectWrongRemainderCount() {
-        listOf(
-            emptyList(),
-            listOf(recipient(0x0A, credits = 500), recipient(0xBB, credits = 700)),
-            listOf(recipient(0x0A, credits = null), recipient(0xBB, credits = null)),
-            listOf(recipient(0x0A, credits = null), recipient(0xBB, credits = null), recipient(0xCC, credits = 1)),
-        ).forEach { recipients ->
-            assertThrows("accepted $recipients", IllegalArgumentException::class.java) {
-                fundFromAssetLockExternalPreflight(recipients)
             }
         }
     }

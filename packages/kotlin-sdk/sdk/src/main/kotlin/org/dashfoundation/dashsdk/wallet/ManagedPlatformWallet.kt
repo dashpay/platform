@@ -897,9 +897,10 @@ class ManagedPlatformWallet internal constructor(
      * @param platformAccountIndex Platform-payment account that owns the
      *   REMAINDER recipient. Explicit-amount recipients need not belong to it.
      * @param recipients exactly one entry with `credits = null` (the
-     *   remainder, an address of this wallet) and at least one entry with an
-     *   explicit amount; P2PKH (`addressType = 0`) only. A remainder-only
-     *   list is rejected: it pays nobody else, so use [fundFromAssetLock].
+     *   remainder, an address of this wallet) plus the explicit-amount
+     *   payees; P2PKH (`addressType = 0`) only. `platform-wallet` owns these
+     *   rules and rejects a violating list before any lock is built; its
+     *   error surfaces as a [org.dashfoundation.dashsdk.ffi.DashSDKException].
      * @param signerHandle the platform-address per-input `SignerHandle`.
      * @param coreSignerHandle the manager's `MnemonicResolverHandle` for the
      *   asset-lock's outer state-transition signature.
@@ -914,8 +915,8 @@ class ManagedPlatformWallet internal constructor(
      * @return updated balances for the recipients that belong to this wallet
      *   — in practice only the remainder address. The third party's credit
      *   is proven on Platform but has no local row, so it is not included.
-     * @throws IllegalArgumentException if the arguments fail the pre-flight
-     *   ([fundFromAssetLockExternalPreflight]); nothing is broadcast then.
+     * @throws IllegalArgumentException for a non-positive amount or a
+     *   negative index; nothing is built then.
      */
     suspend fun fundFromAssetLockExternal(
         amountDuffs: Long,
@@ -933,7 +934,6 @@ class ManagedPlatformWallet internal constructor(
         require(platformAccountIndex >= 0) {
             "platformAccountIndex must be non-negative, got $platformAccountIndex"
         }
-        fundFromAssetLockExternalPreflight(recipients)
         val bridge = AssetLockBuiltBridge { onAssetLockBuilt(AssetLockBuiltOutPoint.fromRawBytes(it)) }
         val blob = mapNativeErrors {
             WalletManagerNative.walletFundFromAssetLockExternal(
@@ -968,8 +968,10 @@ class ManagedPlatformWallet internal constructor(
      *
      * @param outPointTxid 32-byte raw txid (little-endian wire order).
      * @param outPointVout funding output index.
-     * @throws IllegalArgumentException if the arguments fail the pre-flight;
-     *   nothing is submitted then.
+     * @param recipients the persisted list; `platform-wallet` applies the
+     *   same rules as [fundFromAssetLockExternal] before submitting.
+     * @throws IllegalArgumentException for a txid that is not 32 bytes or a
+     *   negative vout or index; nothing is submitted then.
      */
     suspend fun resumeFundFromAssetLockExternal(
         outPointTxid: ByteArray,
@@ -986,7 +988,6 @@ class ManagedPlatformWallet internal constructor(
         require(platformAccountIndex >= 0) {
             "platformAccountIndex must be non-negative, got $platformAccountIndex"
         }
-        fundFromAssetLockExternalPreflight(recipients)
         val blob = mapNativeErrors {
             WalletManagerNative.walletResumeFundFromAssetLockExternal(
                 walletHandle = handle,
@@ -1395,39 +1396,6 @@ class ManagedPlatformWallet internal constructor(
                 dos.writeLong(r.credits ?: 0L)
             }
             return out.toByteArray()
-        }
-
-        /**
-         * Synchronous pre-flight for [fundFromAssetLockExternal] /
-         * [resumeFundFromAssetLockExternal] — port of Swift's
-         * `fundFromAssetLockExternalPreflight`. Rust enforces the same rules
-         * (plus "the remainder must be ours", which only it can check); this
-         * gives the caller an error before any native work.
-         *
-         * Rules: a non-empty list; exactly one remainder (`credits = null`);
-         * at least one explicit-amount recipient (a remainder-only request
-         * pays nobody else — use [fundFromAssetLock]); P2PKH
-         * (`addressType = 0`) only; 20-byte hashes.
-         *
-         * @throws IllegalArgumentException when a rule is violated.
-         */
-        internal fun fundFromAssetLockExternalPreflight(recipients: List<FundRecipient>) {
-            require(recipients.isNotEmpty()) { "recipients is empty" }
-            val remainderCount = recipients.count { it.credits == null }
-            require(remainderCount == 1) {
-                "Exactly one recipient must have credits = null (the remainder recipient), " +
-                    "found $remainderCount"
-            }
-            require(recipients.any { it.credits != null }) {
-                "fundFromAssetLockExternal requires at least one explicit-amount recipient; " +
-                    "a remainder-only request funds nothing externally — use fundFromAssetLock"
-            }
-            for (r in recipients) {
-                require(r.addressType == 0) {
-                    "FundRecipient.addressType must be 0 (P2PKH) for platform-address " +
-                        "funding (got ${r.addressType})"
-                }
-            }
         }
     }
 

@@ -2126,6 +2126,78 @@ unsafe extern "C" fn asset_lock_built_trampoline(context: *mut c_void, out_point
     }));
 }
 
+/// Test-only driver for [`asset_lock_built_trampoline`], bound by
+/// `AssetLockBuiltTrampolineDriver` in the Kotlin androidTest source set.
+///
+/// The funding path reaches the trampoline only after a wallet has built a
+/// lock, so the wallet-free binding tests could not run it. This export
+/// pins each bridge in a `GlobalRef` (as `fund_from_asset_lock` does) and
+/// invokes the production trampoline for each, in order, on ONE freshly
+/// spawned native thread with `out_point` as the payload, joining before it
+/// returns. A throwing bridge followed by a recording one therefore checks
+/// the exception is cleared on the same worker.
+///
+/// Compiled only with `debug_assertions` (`build_android.sh --profile dev`,
+/// which CI's emulator job uses); the release library does not export it.
+#[cfg(debug_assertions)]
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_AssetLockBuiltTrampolineDriver_invokeOnNativeThread(
+    mut env: JNIEnv,
+    _this: JObject,
+    bridges: JObjectArray,
+    out_point: JByteArray,
+) {
+    guard(&mut env, (), |env| {
+        let bytes = match env.convert_byte_array(&out_point) {
+            Ok(bytes) if bytes.len() == 36 => bytes,
+            _ => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "outPoint must be exactly 36 bytes");
+                return;
+            }
+        };
+        let pinned = (|| -> jni::errors::Result<Vec<GlobalRef>> {
+            let len = env.get_array_length(&bridges)?;
+            (0..len)
+                .map(|i| {
+                    let bridge = env.get_object_array_element(&bridges, i)?;
+                    env.new_global_ref(bridge)
+                })
+                .collect()
+        })();
+        let globals = match pinned {
+            Ok(globals) => globals,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "bridges could not be pinned");
+                return;
+            }
+        };
+        // Raw pointers are `!Send`; the addresses cross as `usize`. `globals`
+        // outlives the join, so each pointer stays live for the worker.
+        let contexts: Vec<usize> = globals
+            .iter()
+            .map(|global| global as *const GlobalRef as usize)
+            .collect();
+        let worker = std::thread::spawn(move || {
+            for context in contexts {
+                // SAFETY: `context` is a live GlobalRef (pinned by `globals`
+                // until after the join) and `bytes` holds 36 bytes.
+                unsafe { asset_lock_built_trampoline(context as *mut c_void, bytes.as_ptr()) };
+            }
+        });
+        let joined = worker.join();
+        drop(globals);
+        if joined.is_err() {
+            throw_sdk_exception(
+                env,
+                99,
+                "asset-lock-built trampoline driver thread panicked",
+            );
+        }
+    })
+}
+
 /// Shared body of `walletFundFromAssetLock` / `walletFundFromAssetLockExternal`.
 ///
 /// `on_built` is the optional Kotlin `AssetLockBuiltBridge`; it is held as a

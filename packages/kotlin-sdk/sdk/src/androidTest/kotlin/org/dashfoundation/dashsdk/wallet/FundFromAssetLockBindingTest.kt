@@ -3,16 +3,21 @@ package org.dashfoundation.dashsdk.wallet
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.ffi.AssetLockBuiltBridge
+import org.dashfoundation.dashsdk.ffi.AssetLockBuiltTrampolineDriver
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.nio.ByteBuffer
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Binding-level coverage for the four asset-lock funding JNI exports
@@ -27,7 +32,9 @@ import java.nio.ByteBuffer
  * the platform-wallet range).
  *
  * Which FFI each scope calls (owned vs external) is pinned Rust-side by
- * `wallet_manager::tests::should_route_each_*_scope_to_its_own_ffi`.
+ * `wallet_manager::tests::should_route_each_*_scope_to_its_own_ffi`. The
+ * asset-lock-built trampoline, which a dead handle never reaches, is driven
+ * directly through the debug-only [AssetLockBuiltTrampolineDriver].
  */
 @RunWith(AndroidJUnit4::class)
 class FundFromAssetLockBindingTest {
@@ -126,6 +133,39 @@ class FundFromAssetLockBindingTest {
             assertReachedFfi(fund(external))
             assertReachedFfi(resume(external))
         }
+    }
+
+    @Test
+    fun shouldDeliverTheOutpointFromANativeThreadBeforeReturning() {
+        val raw = ByteArray(32) { (it + 1).toByte() } + byteArrayOf(0x02, 0x01, 0x00, 0x00)
+        val received = CopyOnWriteArrayList<ByteArray>()
+        val callbackThread = AtomicReference<Thread>()
+        val recording = AssetLockBuiltBridge {
+            callbackThread.set(Thread.currentThread())
+            received += it
+        }
+
+        AssetLockBuiltTrampolineDriver.invokeOnNativeThread(arrayOf(recording), raw)
+
+        assertEquals("delivered exactly once, before the call returned", 1, received.size)
+        assertArrayEquals(raw, received.single())
+        assertNotEquals(Thread.currentThread(), callbackThread.get())
+        val outPoint = ManagedPlatformWallet.AssetLockBuiltOutPoint.fromRawBytes(received.single())
+        assertEquals(258, outPoint.vout)
+    }
+
+    @Test
+    fun shouldClearAThrowingCallbackSoTheNextCallbackOnTheWorkerRuns() {
+        val raw = ByteArray(36) { it.toByte() }
+        val received = CopyOnWriteArrayList<ByteArray>()
+        val throwing = AssetLockBuiltBridge { throw IllegalStateException("host failed") }
+        val recording = AssetLockBuiltBridge { received += it }
+
+        // Returns normally: the throw is cleared on the worker, never rethrown here.
+        AssetLockBuiltTrampolineDriver.invokeOnNativeThread(arrayOf(throwing, recording), raw)
+
+        assertEquals(1, received.size)
+        assertArrayEquals(raw, received.single())
     }
 
     @Test
