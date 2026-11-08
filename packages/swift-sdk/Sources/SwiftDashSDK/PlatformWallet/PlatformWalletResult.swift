@@ -597,7 +597,8 @@ public enum PlatformWalletError: LocalizedError {
     /// (protocol version 15): a public request to it, in reply or as a
     /// rotation, would publish the relationship, so the public accept and
     /// send refuse it and nothing was sent. Accept it with
-    /// `PlatformWalletManager.acceptPrivateContactRequest`, or send with
+    /// `PlatformWalletManager.acceptContactRequestReplyingInKind` (which picks
+    /// the reply itself) or `acceptPrivateContactRequest`, or send with
     /// `PlatformWalletManager.sendPrivateContactRequest`.
     case privateContactRequestNeedsPrivateReply(String)
     case walletAlreadyExists(String)

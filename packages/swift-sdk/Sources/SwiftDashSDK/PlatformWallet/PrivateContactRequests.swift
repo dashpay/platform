@@ -10,11 +10,13 @@ import DashSDKFFI
 // privately, and the contact's shielded address, are read with
 // `ManagedIdentity.privateContact(contactId:)`.
 //
-// Routing: the public `acceptContactRequest` and `sendContactRequest` throw
+// Accepting: `PlatformWalletManager.acceptContactRequestReplyingInKind` is
+// the one accept a host calls; the wallet replies privately to a request that
+// came privately, and with a document otherwise. The explicitly public
+// `acceptContactRequest` and `sendContactRequest` throw
 // `PlatformWalletError.privateContactRequestNeedsPrivateReply` for a contact
-// whose requests came or went privately; accept it with
-// `PlatformWalletManager.acceptPrivateContactRequest`, or send with
-// `PlatformWalletManager.sendPrivateContactRequest`, instead.
+// whose requests came or went privately; send to it with
+// `PlatformWalletManager.sendPrivateContactRequest` instead.
 
 /// How an identity and one contact exchanged private contact requests. Rust
 /// reads it from the stored requests, so it holds across launches; only the
@@ -227,6 +229,57 @@ extension PlatformWalletManager {
                 try walletId.withFFIBytes { widPtr in
                     try withOptionalBytes(shieldedAddress) { addressPtr, _ in
                         try platform_wallet_manager_accept_private_contact_request(
+                            handle,
+                            widPtr,
+                            resolverHandle,
+                            account,
+                            requestHandle,
+                            addressPtr,
+                            signerHandle,
+                            &outHandle
+                        ).check()
+                    }
+                }
+            }
+            return outHandle
+        }.value
+        return EstablishedContact(handle: establishedHandle)
+    }
+
+    /// Accept a DashPay contact request replying the way it came: privately,
+    /// paid from `account`'s shielded notes, when it came privately and no
+    /// reply exists yet; otherwise with a `contactRequest` document signed by
+    /// `signer`, or by adopting the reply already sent. Which reply a request
+    /// takes is the wallet's decision, so this is the accept a host calls.
+    /// `shieldedAddress` is the 43-byte Orchard address the contact may pay
+    /// us at privately; a public reply ignores it. Throws
+    /// `PlatformWalletError.shieldedSpendUnconfirmed` when a private reply
+    /// may already be on chain: do not accept again.
+    public func acceptContactRequestReplyingInKind(
+        walletId: Data,
+        resolver: MnemonicResolver,
+        account: UInt32 = 0,
+        request: ContactRequest,
+        shieldedAddress: Data? = nil,
+        signer: KeychainSigner
+    ) async throws -> EstablishedContact {
+        let handle = try privateContactRequestManagerHandle(
+            walletId: walletId,
+            resolver: resolver,
+            shieldedAddress: shieldedAddress
+        )
+        let requestHandle = request.handle
+        let signerHandle = signer.handle
+        let establishedHandle: Handle = try await Task.detached(priority: .userInitiated) {
+            () -> Handle in
+            var outHandle: Handle = NULL_HANDLE
+            let resolverHandle = resolver.handle
+            // Keep the resolver, the signer and the request alive across the
+            // FFI call, whose vtable callbacks fire during it.
+            try withExtendedLifetime((resolver, signer, request)) {
+                try walletId.withFFIBytes { widPtr in
+                    try withOptionalBytes(shieldedAddress) { addressPtr, _ in
+                        try platform_wallet_manager_accept_contact_request_replying_in_kind(
                             handle,
                             widPtr,
                             resolverHandle,
