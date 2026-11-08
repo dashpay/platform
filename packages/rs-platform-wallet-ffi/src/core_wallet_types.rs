@@ -2362,9 +2362,13 @@ pub const OUTPOINT_CLASS_UNKNOWN: u8 = 0;
 /// account's live UTXO set.
 pub const OUTPOINT_CLASS_UNSPENT: u8 = 1;
 /// `platform_wallet_txo_reconcile_classify_outpoints` answer: the owning account knows
-/// the funding txid, owns the script, and does not hold the coin — the
-/// engine skipped it for a spent reason or consumed it. The one class a
-/// reconciler may act on.
+/// the funding txid, owns the script, and does not hold the coin, AND a
+/// funds account holds a record whose transaction spends the outpoint in a
+/// block the wallet's last applied ChainLock covers (or held one the
+/// ChainLock already dropped), so no fork can give the coin back. A coin
+/// whose spender is not final yet — mempool, InstantSend-locked, or in a
+/// block no ChainLock covers — is [`OUTPOINT_CLASS_UNKNOWN`]. The one class
+/// a reconciler may act on.
 pub const OUTPOINT_CLASS_KNOWN_UNCREDITED: u8 = 2;
 /// `platform_wallet_txo_reconcile_classify_outpoints` answer: the owning account's pools
 /// do not monitor the script; the engine could never have credited it.
