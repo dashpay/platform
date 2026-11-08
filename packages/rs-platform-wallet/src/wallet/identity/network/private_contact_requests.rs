@@ -1231,7 +1231,9 @@ mod tests {
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::Network;
-    use platform_encryption::{decrypt_account_label, decrypt_extended_public_key};
+    use platform_encryption::{
+        account_reference_version, decrypt_account_label, decrypt_extended_public_key,
+    };
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Mutex;
     use std::time::Duration;
@@ -2564,6 +2566,70 @@ mod tests {
             .await
             .expect("the restarted wallet reads the store");
         assert!(!pending_to(&restarted, ALICE, &bob).await);
+    }
+
+    /// Once the account reference's rotation version is at its last, a
+    /// request with the same xpub and key would repeat the tracked one: it is
+    /// refused before anything is paid, and nothing stays pending.
+    #[tokio::test]
+    async fn should_refuse_a_request_once_every_rotation_version_is_used() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (_manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let view = alice_wallet.identity().dashpay();
+        let kept = Arc::new(Mutex::new(Vec::new()));
+        let sent = view
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                append_entry(&alice_wallet, 0, vec![], &kept),
+            )
+            .await
+            .expect("Alice sends the request, read back");
+        assert_eq!(account_reference_version(sent.account_reference), 0);
+
+        let mut exhausted = sent.clone();
+        exhausted.account_reference = (sent.account_reference & 0x0FFF_FFFF) | (15 << 28);
+        assert_eq!(account_reference_version(exhausted.account_reference), 15);
+        {
+            let iw = alice_wallet.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&alice_wallet.wallet_id())
+                .expect("wallet info")
+                .identity_manager
+                .managed_identity_mut(&alice.id())
+                .expect("Alice")
+                .add_sent_contact_request(exhausted, &iw.persister)
+                .expect("the version 15 request");
+        }
+
+        let result = view
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                |_: BinaryData| -> std::future::Ready<Result<ResponseMetadata, PlatformWalletError>> {
+                    panic!("a request that repeats the tracked one is not paid for")
+                },
+            )
+            .await;
+        assert!(
+            matches!(&result, Err(PlatformWalletError::InvalidParameter(message))
+                if message.contains("no account reference version is left")),
+            "{result:?}"
+        );
+        assert!(!pending_to(&alice_wallet, ALICE, &bob).await);
     }
 
     /// A cursor rewound under a pass is not advanced again that pass, so the

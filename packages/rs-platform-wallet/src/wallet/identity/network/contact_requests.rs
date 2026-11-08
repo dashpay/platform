@@ -781,6 +781,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// the pair, the DIP-15 masked account reference (its version bumped past
     /// the previous request to the recipient, public or private) and the
     /// auto-accept proof over it.
+    ///
+    /// Once the version is at its last, 15, a request with the same xpub and
+    /// key would repeat the previous one: it is refused with
+    /// [`PlatformWalletError::InvalidParameter`], before anything is signed,
+    /// sealed or paid.
     pub(super) async fn prepare_contact_request<C>(
         &self,
         sender_identity_id: &Identifier,
@@ -920,17 +925,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         //     identical resend, so the bump is what makes a superseding
         //     (rotation) request broadcastable. The HMAC+mask runs in the
         //     signer (keyed by the raw scalar at `sender_enc_path`).
+        let prior_reference = {
+            let wm = self.wallet_manager.read().await;
+            wm.get_wallet_info(&self.wallet_id)
+                .and_then(|info| info.identity_manager.managed_identity(sender_identity_id))
+                // Checks both the pending sent map AND the established
+                // contact's outgoing request: see the method doc for
+                // why consulting only the pending map breaks rotation
+                // on established contacts.
+                .and_then(|managed| managed.prior_sent_account_reference(recipient_identity_id))
+        };
         let account_reference = {
-            let prior_reference = {
-                let wm = self.wallet_manager.read().await;
-                wm.get_wallet_info(&self.wallet_id)
-                    .and_then(|info| info.identity_manager.managed_identity(sender_identity_id))
-                    // Checks both the pending sent map AND the established
-                    // contact's outgoing request — see the method doc for
-                    // why consulting only the pending map breaks rotation
-                    // on established contacts.
-                    .and_then(|managed| managed.prior_sent_account_reference(recipient_identity_id))
-            };
             let previous_version = match prior_reference {
                 Some(prior) => Some(
                     crypto
@@ -942,8 +947,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             };
             let version = match previous_version {
                 // 4-bit field; saturate rather than wrap so a 16th
-                // rotation fails loudly at the unique index instead of
-                // silently colliding with version 0.
+                // rotation is refused below instead of silently colliding
+                // with version 0.
                 Some(v) if v >= 15 => {
                     tracing::warn!(
                         recipient = %recipient_identity_id,
@@ -958,6 +963,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .account_reference(&sender_enc_path, &xpub_bytes, account_index, version)
                 .await?
         };
+        // Saturated, with the same xpub and key: the request would repeat the
+        // tracked one. A document send would fail at the unique index; a
+        // private one would be paid for and then ignored as already tracked.
+        if prior_reference == Some(account_reference) {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "no account reference version is left for another contact request to \
+                 {recipient_identity_id}: version 15 is used, and this request would repeat the \
+                 one already sent"
+            )));
+        }
 
         // 4c. Resolve the auto-accept proof now that `account_reference` is
         //     known. The QR-scanner variant signs `(sender, recipient,
