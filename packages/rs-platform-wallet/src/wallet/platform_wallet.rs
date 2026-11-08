@@ -46,7 +46,7 @@ use dpp::prelude::Identifier;
 use {
     super::identity::network::dashpay_contract,
     super::shielded::operations::private_document_create_from_pool_with_metadata,
-    super::shielded::store::PendingRedrive,
+    super::shielded::store::{PendingRedrive, PrivateContactPayment},
     super::shielded::{NetworkShieldedCoordinator, OrchardKeySet, ShieldedStore},
     crate::{
         AutoAcceptProofSource, ContactCryptoProvider, ContactRequest, EstablishedContact,
@@ -1016,8 +1016,44 @@ impl PlatformWallet {
     /// registration (which would leave sync decrypting under one key
     /// while addresses and spends use another), nor between the
     /// restore's registration check and its store write.
+    ///
+    /// Once installed, the reservations of the private contact requests the
+    /// store holds unconfirmed payments for are restored into this wallet's
+    /// identities ([`Self::restore_private_contact_payments`]), with no host
+    /// call and no crypto provider.
     #[cfg(feature = "shielded")]
     async fn install_shielded_views(
+        &self,
+        account_views: std::collections::BTreeMap<u32, super::shielded::AccountViewingKeys>,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        start: crate::changeset::ClientStartState,
+        snapshot_generation: u64,
+    ) -> Result<(), PlatformWalletError> {
+        self.install_shielded_views_in_one_transaction(
+            account_views,
+            coordinator,
+            start,
+            snapshot_generation,
+        )
+        .await?;
+        // After the install transaction: the restore takes the store and
+        // wallet locks on its own.
+        if let Err(error) = self.restore_private_contact_payments(coordinator).await {
+            tracing::warn!(
+                wallet_id = %hex::encode(self.wallet_id),
+                %error,
+                "private contact request reservations not restored at bind; a private send \
+                 still checks its own pair before it pays, a public one holds once the host \
+                 restores them or a private sync reads them back"
+            );
+        }
+        Ok(())
+    }
+
+    /// The body of [`Self::install_shielded_views`]: one coordinator install
+    /// transaction.
+    #[cfg(feature = "shielded")]
+    async fn install_shielded_views_in_one_transaction(
         &self,
         account_views: std::collections::BTreeMap<u32, super::shielded::AccountViewingKeys>,
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
@@ -1737,7 +1773,11 @@ impl PlatformWallet {
     /// recipient is sent, privately or publicly. `crypto` opens the entries.
     /// Returns the (sender, recipient) pairs restored. A private send runs
     /// the same check right before it pays, so without this call a second
-    /// private request is still held; this call holds public ones too. See
+    /// private request is still held; this call holds public ones too. A
+    /// payment saved with its request needs no call: binding restores it
+    /// ([`Self::restore_private_contact_payments`]). This call stays for
+    /// records saved before that, and for an identity added after the bind.
+    /// See
     /// [`DashPayView::restore_pending_private_contact_requests`](crate::DashPayView::restore_pending_private_contact_requests)
     /// for what it does not cover.
     #[cfg(feature = "shielded")]
@@ -1755,6 +1795,51 @@ impl PlatformWallet {
         self.identity
             .dashpay()
             .restore_pending_private_contact_requests(&entries, crypto)
+            .await
+    }
+
+    /// Restore the reservations of the private contact requests whose payment
+    /// from this wallet's notes `coordinator`'s store holds as unconfirmed,
+    /// from the request each record was saved with (sender, recipient,
+    /// account reference) and the commitments its transition carries: no
+    /// keys open anything. Run when the wallet binds to the coordinator, so
+    /// restored reservations hold every public and private send from then
+    /// on. Returns the (sender, recipient) pairs restored. A record saved
+    /// without its request (before it was kept with it) is restored by
+    /// [`Self::restore_pending_private_contact_requests`] or the payment's
+    /// own check. An identity added to the wallet after the bind is not
+    /// covered until the next bind or that call.
+    #[cfg(feature = "shielded")]
+    pub async fn restore_private_contact_payments(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+    ) -> Result<Vec<(Identifier, Identifier)>, PlatformWalletError> {
+        let dashpay_id = dashpay_contract()?.id();
+        let saved = {
+            let store = coordinator.store().read().await;
+            store
+                .private_contact_redrives_for_wallet(self.wallet_id)
+                .map_err(PlatformWalletError::from)?
+        };
+        let payments: Vec<(Identifier, Identifier, u32, [u8; 32])> = saved
+            .iter()
+            .flat_map(|(redrive, payment)| {
+                private_contact_request_redrive_entries([redrive], dashpay_id)
+                    .into_iter()
+                    .filter_map(move |entry| {
+                        let commitment: [u8; 32] = entry.as_slice().get(..32)?.try_into().ok()?;
+                        Some((
+                            Identifier::from(payment.sender),
+                            Identifier::from(payment.recipient),
+                            payment.account_reference,
+                            commitment,
+                        ))
+                    })
+            })
+            .collect();
+        self.identity
+            .dashpay()
+            .restore_private_payments(&payments)
             .await
     }
 
@@ -1847,6 +1932,16 @@ impl PlatformWallet {
             ));
         }
         let dashpay_id = dashpay_contract()?.id();
+        // Saved with the payment's record, so a restart restores the pair's
+        // reservation without opening the entry.
+        let private_contact =
+            started
+                .account_reference()
+                .map(|account_reference| PrivateContactPayment {
+                    sender: sender_identity_id.to_buffer(),
+                    recipient: recipient_identity_id.to_buffer(),
+                    account_reference,
+                });
         private_document_create_from_pool_with_metadata(
             &self.sdk,
             coordinator.store(),
@@ -1857,6 +1952,7 @@ impl PlatformWallet {
             dashpay_id,
             PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
             vec![entry],
+            private_contact,
             &started,
             &prover,
         )

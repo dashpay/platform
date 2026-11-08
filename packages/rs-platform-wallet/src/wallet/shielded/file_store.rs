@@ -23,8 +23,8 @@ use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retentio
 
 use super::balance::{ShieldedBalanceSource, ShieldedLocalAccountBalance};
 use super::store::{
-    PendingRedrive, ShieldedNote, ShieldedOutgoingNote, ShieldedStore, StalePendingSpend,
-    SubwalletId, SubwalletState,
+    PendingRedrive, PrivateContactPayment, ShieldedNote, ShieldedOutgoingNote, ShieldedStore,
+    StalePendingSpend, SubwalletId, SubwalletState,
 };
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::WalletId;
@@ -109,9 +109,58 @@ pub struct FileBackedShieldedStore {
     /// two-connection setup safe. `Mutex` for the same `Sync`-shim
     /// reason as `tree`.
     pending_conn: Mutex<rusqlite::Connection>,
+    /// The private contact request each armed record pays for, by subwallet
+    /// and activity id, as the `private_contact_payment` column keeps it.
+    /// Read joined with the live records, so an entry whose record was
+    /// dropped is passed over.
+    private_contact_payments: BTreeMap<(SubwalletId, [u8; 32]), PrivateContactPayment>,
 }
 
 impl FileBackedShieldedStore {
+    /// Persist `redrive`, with the private contact request it pays for when
+    /// it does, in one row write.
+    fn arm_redrive_paying_for(
+        &mut self,
+        id: SubwalletId,
+        redrive: PendingRedrive,
+        payment: Option<PrivateContactPayment>,
+    ) -> Result<(), FileShieldedStoreError> {
+        {
+            let conn = self.pending_conn.lock().expect("pending_conn mutex");
+            let nullifier_blob: Vec<u8> = redrive.nullifiers.iter().flatten().copied().collect();
+            conn.execute(
+                "INSERT OR REPLACE INTO shielded_pending_spends \
+                 (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts, identity_nonce_finalized, identity_user_abandoned, private_contact_payment) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                rusqlite::params![
+                    id.wallet_id.as_slice(),
+                    id.account_index,
+                    redrive.activity_id.as_slice(),
+                    redrive.anchor.as_slice(),
+                    nullifier_blob,
+                    redrive.st_bytes,
+                    redrive.attempts,
+                    redrive.identity_nonce_finalized,
+                    redrive.identity_user_abandoned,
+                    payment.map(|payment| payment.to_bytes().to_vec()),
+                ],
+            )
+            .map_err(|e| FileShieldedStoreError::Storage(format!("persist redrive: {e}")))?;
+        }
+        match payment {
+            Some(payment) => {
+                self.private_contact_payments
+                    .insert((id, redrive.activity_id), payment);
+            }
+            None => {
+                self.private_contact_payments
+                    .remove(&(id, redrive.activity_id));
+            }
+        }
+        self.subwallets.entry(id).or_default().arm_redrive(redrive);
+        Ok(())
+    }
+
     /// Called under the coordinator's store read guard so amount and provenance
     /// cannot straddle a sync or a pending-spend reservation.
     pub(super) fn local_account_balance(
@@ -215,12 +264,27 @@ impl FileBackedShieldedStore {
                     .map_err(|e| FileShieldedStoreError::Storage(format!("upgrade pending schema: {e}")))?;
             }
         }
+        // The private contact request a record pays for, when it does.
+        if !columns
+            .iter()
+            .any(|existing| existing == "private_contact_payment")
+        {
+            pending_conn
+                .execute(
+                    "ALTER TABLE shielded_pending_spends ADD COLUMN private_contact_payment BLOB",
+                    [],
+                )
+                .map_err(|e| {
+                    FileShieldedStoreError::Storage(format!("upgrade pending schema: {e}"))
+                })?;
+        }
         let mut store = Self {
             tree: Mutex::new(tree),
             path,
             max_checkpoints,
             subwallets: BTreeMap::new(),
             pending_conn: Mutex::new(pending_conn),
+            private_contact_payments: BTreeMap::new(),
         };
         store.rehydrate_pending_spends()?;
         Ok(store)
@@ -239,7 +303,8 @@ impl FileBackedShieldedStore {
         let mut stmt = conn
             .prepare(
                 "SELECT wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, \
-                 attempts, identity_nonce_finalized, identity_user_abandoned FROM shielded_pending_spends",
+                 attempts, identity_nonce_finalized, identity_user_abandoned, \
+                 private_contact_payment FROM shielded_pending_spends",
             )
             .map_err(|e| FileShieldedStoreError::Storage(format!("prepare rehydrate: {e}")))?;
         let rows = stmt
@@ -249,6 +314,12 @@ impl FileBackedShieldedStore {
                 // A malformed st_bytes value remains unclassifiable and must
                 // fail closed.
                 let classifiable_st_bytes = row.get::<_, Vec<u8>>(5).ok();
+                // A damaged association only loses the restore from it.
+                let private_contact_payment = row
+                    .get::<_, Option<Vec<u8>>>(9)
+                    .ok()
+                    .flatten()
+                    .and_then(|bytes| PrivateContactPayment::from_bytes(&bytes));
                 let decoded: rusqlite::Result<_> = (|| {
                     Ok((
                         row.get::<_, Vec<u8>>(0)?,
@@ -262,11 +333,11 @@ impl FileBackedShieldedStore {
                         row.get::<_, i64>(8)?,
                     ))
                 })();
-                Ok((classifiable_st_bytes, decoded))
+                Ok((classifiable_st_bytes, private_contact_payment, decoded))
             })
             .map_err(|e| FileShieldedStoreError::Storage(format!("query rehydrate: {e}")))?;
         for row in rows {
-            let (classifiable_st_bytes, decoded) =
+            let (classifiable_st_bytes, private_contact_payment, decoded) =
                 row.map_err(|e| FileShieldedStoreError::RecoveryCorrupted {
                     account_index: None,
                     reason: format!("cannot decode recovery row: {e}"),
@@ -371,6 +442,10 @@ impl FileBackedShieldedStore {
                     return Err(error);
                 }
             };
+            if let Some(payment) = private_contact_payment {
+                self.private_contact_payments
+                    .insert((id, redrive.activity_id), payment);
+            }
             let sw = self.subwallets.entry(id).or_default();
             for n in &redrive.nullifiers {
                 sw.mark_pending(n);
@@ -621,29 +696,31 @@ impl ShieldedStore for FileBackedShieldedStore {
     }
 
     fn arm_redrive(&mut self, id: SubwalletId, redrive: PendingRedrive) -> Result<(), Self::Error> {
-        {
-            let conn = self.pending_conn.lock().expect("pending_conn mutex");
-            let nullifier_blob: Vec<u8> = redrive.nullifiers.iter().flatten().copied().collect();
-            conn.execute(
-                "INSERT OR REPLACE INTO shielded_pending_spends \
-                 (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts, identity_nonce_finalized, identity_user_abandoned) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                rusqlite::params![
-                    id.wallet_id.as_slice(),
-                    id.account_index,
-                    redrive.activity_id.as_slice(),
-                    redrive.anchor.as_slice(),
-                    nullifier_blob,
-                    redrive.st_bytes,
-                    redrive.attempts,
-                    redrive.identity_nonce_finalized,
-                    redrive.identity_user_abandoned,
-                ],
-            )
-            .map_err(|e| FileShieldedStoreError::Storage(format!("persist redrive: {e}")))?;
-        }
-        self.subwallets.entry(id).or_default().arm_redrive(redrive);
-        Ok(())
+        self.arm_redrive_paying_for(id, redrive, None)
+    }
+
+    fn arm_private_contact_redrive(
+        &mut self,
+        id: SubwalletId,
+        redrive: PendingRedrive,
+        payment: PrivateContactPayment,
+    ) -> Result<(), Self::Error> {
+        self.arm_redrive_paying_for(id, redrive, Some(payment))
+    }
+
+    fn private_contact_redrives_for_wallet(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Vec<(PendingRedrive, PrivateContactPayment)>, Self::Error> {
+        Ok(self
+            .pending_redrives_for_wallet(wallet_id)?
+            .into_iter()
+            .filter_map(|(id, redrive)| {
+                self.private_contact_payments
+                    .get(&(id, redrive.activity_id))
+                    .map(|payment| (redrive, *payment))
+            })
+            .collect())
     }
 
     fn pending_redrives(&self, id: SubwalletId) -> Result<Vec<PendingRedrive>, Self::Error> {
@@ -1079,6 +1156,67 @@ mod tests {
                 store.stale_pending_spends(id).expect("stale").is_empty(),
                 "no reservations rehydrate once the record is gone"
             );
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// The private contact request a record pays for is saved with it: it
+    /// survives a reopen and an attempt bump, is listed only joined with its
+    /// live record, and goes with the record. A record armed without one is
+    /// not listed.
+    #[test]
+    fn should_keep_a_private_contact_payment_with_its_record_across_reopen() {
+        let path = temp_tree_path("private_contact_payment");
+        let wallet_id = [0x5A; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let record = |activity: u8, nullifier: u8| PendingRedrive {
+            activity_id: [activity; 32],
+            anchor: [2u8; 32],
+            nullifiers: vec![[nullifier; 32]],
+            st_bytes: vec![0xAB; 96],
+            attempts: 0,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
+        };
+        let payment = PrivateContactPayment {
+            sender: [0xB1; 32],
+            recipient: [0xA1; 32],
+            account_reference: 0x1000_0005,
+        };
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+            store
+                .arm_private_contact_redrive(id, record(1, 3), payment)
+                .expect("arm the payment");
+            store.arm_redrive(id, record(4, 6)).expect("arm a spend");
+            store.bump_redrive_attempts(id, &[1u8; 32]).expect("bump");
+        }
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+            let listed = store
+                .private_contact_redrives_for_wallet(wallet_id)
+                .expect("listed");
+            assert_eq!(listed.len(), 1, "only the payment: {listed:?}");
+            assert_eq!(listed[0].0.activity_id, [1u8; 32]);
+            assert_eq!(listed[0].0.attempts, 1);
+            assert_eq!(listed[0].1, payment);
+            assert!(store
+                .private_contact_redrives_for_wallet([0x5B; 32])
+                .expect("another wallet")
+                .is_empty());
+            assert!(store.clear_pending(id, &[3u8; 32]).expect("clear"));
+            assert!(store
+                .private_contact_redrives_for_wallet(wallet_id)
+                .expect("listed")
+                .is_empty());
+        }
+        {
+            let store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen 2");
+            assert!(store
+                .private_contact_redrives_for_wallet(wallet_id)
+                .expect("listed")
+                .is_empty());
+            assert_eq!(store.pending_redrives(id).expect("redrives").len(), 1);
         }
         let _ = std::fs::remove_file(&path);
     }

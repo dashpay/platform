@@ -173,6 +173,45 @@ pub struct PendingRedrive {
     pub identity_user_abandoned: bool,
 }
 
+/// The DashPay private contact request a saved spend pays for: which identity
+/// sends it to which, and its account reference. Kept with the spend's
+/// record, so a restart restores the pair's reservation from the record
+/// without the keys that open its entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrivateContactPayment {
+    /// The identity sending the request.
+    pub sender: [u8; 32],
+    /// The identity it is to.
+    pub recipient: [u8; 32],
+    /// The request's account reference, whose version tells a rotation from
+    /// the request it rotates.
+    pub account_reference: u32,
+}
+
+impl PrivateContactPayment {
+    /// The bytes the file store keeps it as: sender, recipient, then the
+    /// account reference little-endian.
+    pub(super) fn to_bytes(self) -> [u8; 68] {
+        let mut bytes = [0u8; 68];
+        bytes[..32].copy_from_slice(&self.sender);
+        bytes[32..64].copy_from_slice(&self.recipient);
+        bytes[64..].copy_from_slice(&self.account_reference.to_le_bytes());
+        bytes
+    }
+
+    /// The payment [`Self::to_bytes`] wrote, or `None` for other bytes.
+    pub(super) fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() != 68 {
+            return None;
+        }
+        Some(Self {
+            sender: bytes.get(..32)?.try_into().ok()?,
+            recipient: bytes.get(32..64)?.try_into().ok()?,
+            account_reference: u32::from_le_bytes(bytes.get(64..)?.try_into().ok()?),
+        })
+    }
+}
+
 /// What the wallet knows about an identity debit's local recovery state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdentityDebitRecoveryStatus {
@@ -303,6 +342,27 @@ pub trait ShieldedStore: Send + Sync {
     /// the linked activity row's eventual Confirmed/Failed flip —
     /// continue across relaunches.
     fn arm_redrive(&mut self, id: SubwalletId, redrive: PendingRedrive) -> Result<(), Self::Error>;
+
+    /// [`Self::arm_redrive`] for a spend paying for the DashPay private
+    /// contact request `payment`, kept with the record and dropped with it.
+    /// A store that keeps nothing across restarts keeps no association.
+    fn arm_private_contact_redrive(
+        &mut self,
+        id: SubwalletId,
+        redrive: PendingRedrive,
+        _payment: PrivateContactPayment,
+    ) -> Result<(), Self::Error> {
+        self.arm_redrive(id, redrive)
+    }
+
+    /// The armed records of `wallet_id` that pay for a private contact
+    /// request, each with the request ([`Self::arm_private_contact_redrive`]).
+    fn private_contact_redrives_for_wallet(
+        &self,
+        _wallet_id: WalletId,
+    ) -> Result<Vec<(PendingRedrive, PrivateContactPayment)>, Self::Error> {
+        Ok(Vec::new())
+    }
 
     /// Every armed redrive record for `id`.
     fn pending_redrives(&self, id: SubwalletId) -> Result<Vec<PendingRedrive>, Self::Error>;

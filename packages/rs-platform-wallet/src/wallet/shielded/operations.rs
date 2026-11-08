@@ -28,7 +28,9 @@ use super::note_selection::{
     ensure_allowed_denomination, ensure_positive_amount, select_notes_for_denomination,
     select_notes_with_fee, ShieldedFeeKind,
 };
-use super::store::{PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId};
+use super::store::{
+    PendingRedrive, PrivateContactPayment, ShieldedNote, ShieldedStore, SubwalletId,
+};
 use crate::broadcast_outcome::{broadcast_definitely_failed, carries_consensus_rejection};
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
 use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
@@ -1588,6 +1590,7 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
     data_contract_id: Identifier,
     document_type_name: &str,
     entries: Vec<BinaryData>,
+    private_contact: Option<PrivateContactPayment>,
     payment_started: &PaymentStarted,
     prover: &P,
 ) -> Result<ResponseMetadata, PlatformWalletError> {
@@ -1675,6 +1678,7 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
             selected_notes.iter().map(|note| note.nullifier).collect(),
             &state_transition,
             "private document create from shielded pool",
+            private_contact,
         )
         .await?;
         // Type 29 proves its spent nullifiers as a snapshot, which a competing
@@ -3189,9 +3193,11 @@ async fn broadcast_shielded_spend_with_redrive_with_metadata<S: ShieldedStore>(
 /// Save the re-drivable record of a spend durably before it is broadcast,
 /// as identity-funded shields arm theirs: an exit after the node admitted
 /// the transition, before its result returns, leaves the record. The record
-/// is keyed by the spend's `activity_id` and carries its `nullifiers`. A
-/// spend whose record cannot be saved is refused before anything is
-/// broadcast, as the unknown outcome could then not be recovered.
+/// is keyed by the spend's `activity_id` and carries its `nullifiers`, and
+/// the private contact request the spend pays for when it does. A spend
+/// whose record cannot be saved is refused before anything is broadcast, as
+/// the unknown outcome could then not be recovered.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn arm_redrive_before_broadcast<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
@@ -3200,6 +3206,7 @@ pub(crate) async fn arm_redrive_before_broadcast<S: ShieldedStore>(
     nullifiers: Vec<[u8; 32]>,
     state_transition: &StateTransition,
     operation: &'static str,
+    private_contact: Option<PrivateContactPayment>,
 ) -> Result<(), PlatformWalletError> {
     use dpp::serialization::PlatformSerializable;
 
@@ -3224,7 +3231,12 @@ pub(crate) async fn arm_redrive_before_broadcast<S: ShieldedStore>(
         identity_nonce_finalized: false,
         identity_user_abandoned: false,
     };
-    store.write().await.arm_redrive(id, redrive).map_err(|e| {
+    let mut store = store.write().await;
+    match private_contact {
+        Some(payment) => store.arm_private_contact_redrive(id, redrive, payment),
+        None => store.arm_redrive(id, redrive),
+    }
+    .map_err(|e| {
         PlatformWalletError::ShieldedStoreError(format!(
             "{operation}: the record of this spend could not be saved, so it is not broadcast: \
              {e}"
@@ -4242,6 +4254,7 @@ mod redrive_tests {
             vec![[1; 32]],
             &transition,
             "test spend",
+            None,
         )
         .await;
         assert!(
@@ -4263,6 +4276,7 @@ mod redrive_tests {
             vec![[1; 32]],
             &transition,
             "test spend",
+            None,
         )
         .await
         .expect("saved");

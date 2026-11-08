@@ -689,12 +689,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// So is one a private request is pending to
     /// ([`PlatformWalletError::PrivateContactRequestPending`]), until its
     /// payment fails for good or a private sync reads it back: it may already
-    /// be on chain. The refusal reads what the wallet tracks, so on a restored
-    /// or second device it holds once the private sync
-    /// (`sync_private_contact_requests`) has read the store. A pending request
-    /// is tracked in memory only: after a restart it holds once the host
-    /// restores it (`PlatformWallet::restore_pending_private_contact_requests`)
-    /// or that read reads it back.
+    /// be on chain. Before the pair is claimed, DashPay's private store is
+    /// read to its end when it was not since load, so a request sent
+    /// privately in an earlier process or on another device is tracked first;
+    /// while that read cannot finish the send is refused with
+    /// [`PlatformWalletError::PrivateContactRequestPending`], and on a network
+    /// that serves no private documents yet nothing is read. A request whose
+    /// payment is unconfirmed since before a restart holds the pair from the
+    /// moment the wallet binds to its shielded coordinator
+    /// (`PlatformWallet::restore_private_contact_payments`).
     #[allow(clippy::type_complexity)]
     pub async fn send_contact_request_with_external_signer<S, C>(
         &self,
@@ -749,6 +752,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
     {
+        self.read_private_store_before_deciding(sender_identity_id, recipient_identity_id, crypto)
+            .await?;
         self.release_rejected_private_requests().await?;
         let Some(claim) = self
             .claim_public_pair(sender_identity_id, recipient_identity_id, adopt_reply)
@@ -4023,7 +4028,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// [`PlatformWalletError::PrivateContactRequestNeedsPrivateReply`]: a
     /// `contactRequest` document in reply would publish the relationship the
     /// sender kept off chain. It is accepted with
-    /// `accept_private_contact_request`.
+    /// `accept_private_contact_request`. The store is read first as the send
+    /// reads it, so the refusal and the reply it adopts see a private reply
+    /// sent in an earlier process.
     pub async fn accept_contact_request_with_external_signer<S, C>(
         &self,
         request: &ContactRequest,
@@ -4034,6 +4041,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
     {
+        self.read_private_store_before_deciding(&request.recipient_id, &request.sender_id, crypto)
+            .await?;
         if self.needs_private_reply(request).await {
             return Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(
                 request.sender_id,
