@@ -92,6 +92,12 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
     var removedOverlayIds by remember { mutableStateOf(emptySet<String>()) }
     var rowErrors by remember { mutableStateOf(emptyMap<String, String>()) }
     var isRefreshing by remember { mutableStateOf(false) }
+    // Hex ids whose accept may have gone through (a private reply whose result
+    // could not be confirmed): the row stays pending, without its buttons,
+    // until the next sync settles it. Never offered again here.
+    var unconfirmedIds by remember { mutableStateOf(emptySet<String>()) }
+    // What the last private-store refresh has to tell the user, if anything.
+    var privateRefreshNotice by remember { mutableStateOf<String?>(null) }
 
     // Prune the optimistic-removal overlay against the backing query: keep a
     // hex only while its pair is STILL incoming-only, so an entry is dropped
@@ -168,7 +174,16 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
                     rowErrors = rowErrors + (hex to "Request not in local state — pull to refresh")
                 }
             } catch (e: Exception) {
-                rowErrors = rowErrors + (hex to "Accept failed: ${e.message ?: "unknown error"}")
+                when (val outcome = ContactRequestSubmissionOutcome.of(e)) {
+                    ContactRequestSubmissionOutcome.MayHaveGoneThrough -> {
+                        // As the send screen treats an unconfirmed spend: not
+                        // a failure to retry. The next sync settles it.
+                        unconfirmedIds = unconfirmedIds + hex
+                        kickDashPaySync(scope, m)
+                    }
+                    is ContactRequestSubmissionOutcome.Failed ->
+                        rowErrors = rowErrors + (hex to "Accept failed: ${outcome.message}")
+                }
             } finally {
                 inFlightIds = inFlightIds - hex
             }
@@ -211,7 +226,7 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
                     isRefreshing = true
                     manager?.let { m ->
                         attachOrStartSync(m)
-                        wallet?.let { syncPrivateContactRequests(it, m) }
+                        wallet?.let { privateRefreshNotice = syncPrivateContactRequests(it, m) }
                     }
                     isRefreshing = false
                 }
@@ -223,6 +238,16 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                privateRefreshNotice?.let { notice ->
+                    item {
+                        Text(
+                            notice,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.testTag("dashpay.requests.privateRefreshNotice"),
+                        )
+                    }
+                }
                 if (incomingPending.isEmpty() && outgoingPending.isEmpty()) {
                     item {
                         DashPayEmptyRow(
@@ -238,8 +263,12 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
                             val hex = row.contactId.toHex()
                             IncomingRequestRow(
                                 item = row,
-                                isInFlight = inFlightIds.contains(hex),
-                                errorMessage = rowErrors[hex],
+                                isInFlight = inFlightIds.contains(hex) || unconfirmedIds.contains(hex),
+                                errorMessage = if (unconfirmedIds.contains(hex)) {
+                                    ContactRequestSubmissionOutcome.MAY_HAVE_GONE_THROUGH_MESSAGE
+                                } else {
+                                    rowErrors[hex]
+                                },
                                 onAccept = { accept(row.contactId) },
                                 onIgnore = { ignore(row.contactId) },
                             )

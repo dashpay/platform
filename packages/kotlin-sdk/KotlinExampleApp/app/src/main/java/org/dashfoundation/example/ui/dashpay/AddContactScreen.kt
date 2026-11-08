@@ -98,6 +98,10 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
     var accountLabel by remember { mutableStateOf("") }
     var isSending by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    // Set when an accept's private reply may have gone through (its result
+    // could not be confirmed): the screen only offers to close, never to
+    // submit again, as the send screen does for an unconfirmed spend.
+    var unconfirmedNotice by remember { mutableStateOf<String?>(null) }
     var collisionRecipient by remember { mutableStateOf<ByteArray?>(null) }
     var previewProfile by remember { mutableStateOf<DashPayProfile?>(null) }
 
@@ -107,7 +111,8 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
         AddMode.IDENTITY_ID -> parsedIdentityId
     }
     val recipientIsSelf = resolvedRecipient?.contentEquals(idBytes) == true
-    val canSend = resolvedRecipient != null && !recipientIsSelf && !isSending
+    val canSend = resolvedRecipient != null && !recipientIsSelf && !isSending &&
+        unconfirmedNotice == null
 
     // Scan-to-send: consume the QR string handed back by the scanner screen
     // (the house pattern — observe the saved-state flow, then null it out).
@@ -232,7 +237,15 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                         "accept it from Requests."
                 }
             } catch (e: Exception) {
-                errorMessage = "Accept failed: ${e.message ?: "unknown error"}"
+                when (val outcome = ContactRequestSubmissionOutcome.of(e)) {
+                    ContactRequestSubmissionOutcome.MayHaveGoneThrough -> {
+                        // Pending, not failed: the next sync settles it.
+                        kickDashPaySync(scope, m)
+                        unconfirmedNotice = ContactRequestSubmissionOutcome.MAY_HAVE_GONE_THROUGH_MESSAGE
+                    }
+                    is ContactRequestSubmissionOutcome.Failed ->
+                        errorMessage = "Accept failed: ${outcome.message}"
+                }
             } finally {
                 isSending = false
             }
@@ -363,6 +376,17 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                     collisionRecipient = null
                     send(collision)
                 }) { Text("Continue anyway") }
+            },
+        )
+    }
+
+    unconfirmedNotice?.let { notice ->
+        AlertDialog(
+            onDismissRequest = { navController.popBackStack() },
+            title = { Text("Submitted") },
+            text = { Text(notice) },
+            confirmButton = {
+                TextButton(onClick = { navController.popBackStack() }) { Text("Done") }
             },
         )
     }

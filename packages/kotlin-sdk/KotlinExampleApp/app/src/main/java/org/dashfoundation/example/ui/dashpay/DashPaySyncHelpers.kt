@@ -1,5 +1,6 @@
 package org.dashfoundation.example.ui.dashpay
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -36,16 +37,23 @@ fun kickDashPaySync(scope: CoroutineScope, manager: PlatformWalletManager) {
 
 /**
  * Read DashPay's private contact request store (protocol version 15) for
- * [wallet]. Best effort: a network before protocol version 15 has no such
- * store. Private requests reach the wallet only through this read, so it
- * runs with every pull-to-refresh of the request list.
+ * [wallet], returning what the refresh should tell the user, or null.
+ * Private requests reach the wallet only through this read, so it runs with
+ * every pull-to-refresh of the request list. A network before protocol
+ * version 15 does not serve the store yet, which is expected and quiet; any
+ * other failure, or requests read but not saved, is reported.
  * ← Swift `syncPrivateContactRequests` (`ContactsView.swift`).
  */
 suspend fun syncPrivateContactRequests(
     wallet: ManagedPlatformWallet,
     manager: PlatformWalletManager,
-) {
-    runCatching { wallet.dashpay.syncPrivateContactRequests(manager.mnemonicResolverHandle) }
+): String? = try {
+    val result = wallet.dashpay.syncPrivateContactRequests(manager.mnemonicResolverHandle)
+    PrivateContactRefreshNotice.notice(result.unpersistedIdentityCount)
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    PrivateContactRefreshNotice.notice(e)
 }
 
 /**
