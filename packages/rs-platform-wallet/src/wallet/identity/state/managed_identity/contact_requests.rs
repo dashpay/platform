@@ -1054,6 +1054,19 @@ impl ManagedIdentity {
         }
     }
 
+    /// Release every pending request sealed as one of `commitments`, whose
+    /// payments were settled as never executing, whichever attempt holds it.
+    pub(crate) fn release_rejected_private_replies(
+        &mut self,
+        commitments: &std::collections::BTreeSet<[u8; 32]>,
+    ) {
+        self.dashpay.pending_private_replies.retain(|_, pending| {
+            pending
+                .commitment
+                .is_none_or(|commitment| !commitments.contains(&commitment))
+        });
+    }
+
     /// Settle the pending request to `recipient` sealed as `commitment`: the
     /// private sync read that entry back and recorded it.
     pub(crate) fn settle_private_reply(&mut self, recipient: &Identifier, commitment: &[u8; 32]) {

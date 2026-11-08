@@ -3517,6 +3517,7 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
                     "redrive: definitive consensus rejection; the spend can never execute — \
                      releasing the reservation"
                 );
+                note_rejected_private_documents(&st, persister);
                 {
                     let mut guard = store.write().await;
                     for n in &redrive.nullifiers {
@@ -3551,6 +3552,30 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
             }
         }
     }
+}
+
+/// Note on `persister` the commitments of the private document entries the
+/// transition `st` appends, when it is one (type 29): its payment was settled
+/// as never executing, so the wallet releases the private contact request
+/// reservations held for those entries. A commitment matching no
+/// reservation is passed over.
+pub(crate) fn note_rejected_private_documents(
+    st: &StateTransition,
+    persister: Option<&WalletPersister>,
+) {
+    use dpp::state_transition::private_document_create_from_shielded_pool_transition::accessors::PrivateDocumentCreateFromShieldedPoolTransitionAccessorsV0;
+
+    let (Some(persister), StateTransition::PrivateDocumentCreateFromShieldedPool(transition)) =
+        (persister, st)
+    else {
+        return;
+    };
+    persister.note_rejected_private_entries(transition.entries().iter().filter_map(|entry| {
+        entry
+            .as_slice()
+            .get(..32)
+            .and_then(|commitment| commitment.try_into().ok())
+    }));
 }
 
 /// Broadcast a built shielded spend transition (unshield / transfer /

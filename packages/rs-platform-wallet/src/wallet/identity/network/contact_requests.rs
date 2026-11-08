@@ -703,6 +703,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // the request is submitted and recorded, so a private request cannot
         // be reserved and paid for in between; the claim is released when
         // the send ends, however it ends.
+        self.release_rejected_private_requests().await?;
         let claim = self
             .claim_public_pair(sender_identity_id, recipient_identity_id)
             .await?;

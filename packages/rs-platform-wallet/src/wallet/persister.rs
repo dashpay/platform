@@ -4,6 +4,7 @@
 //! - [`WalletPersister`] — wraps the shared [`PlatformWalletPersistence`] with
 //!   a fixed `wallet_id` so callers don't need to pass the ID on every call.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use dashcore::Txid;
@@ -57,6 +58,12 @@ pub struct WalletPersister {
     wallet_id: WalletId,
     inner: Arc<dyn PlatformWalletPersistence>,
     contact_payment_gate: Arc<tokio::sync::Mutex<()>>,
+    /// Commitments of private document entries whose payment can never
+    /// execute: the shielded coordinator notes them when it settles an
+    /// unconfirmed spend as failed for good, and the wallet releases the
+    /// private contact request reservations held for them. Shared by the
+    /// clones the wallet and the coordinator hold. In memory only.
+    rejected_private_entries: Arc<std::sync::Mutex<BTreeSet<[u8; 32]>>>,
 }
 
 impl WalletPersister {
@@ -65,7 +72,33 @@ impl WalletPersister {
             wallet_id,
             inner,
             contact_payment_gate: Arc::new(tokio::sync::Mutex::new(())),
+            rejected_private_entries: Arc::new(std::sync::Mutex::new(BTreeSet::new())),
         }
+    }
+
+    /// Note the commitments of private document entries whose payment was
+    /// settled as never executing, for the wallet to release what it holds
+    /// for them ([`Self::take_rejected_private_entries`]).
+    #[cfg(feature = "shielded")]
+    pub(crate) fn note_rejected_private_entries(
+        &self,
+        commitments: impl IntoIterator<Item = [u8; 32]>,
+    ) {
+        self.rejected_private_entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .extend(commitments);
+    }
+
+    /// Take the commitments [`Self::note_rejected_private_entries`] noted
+    /// since the last take.
+    pub(crate) fn take_rejected_private_entries(&self) -> BTreeSet<[u8; 32]> {
+        std::mem::take(
+            &mut *self
+                .rejected_private_entries
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
     }
 
     /// Keep contact-pool snapshots in reservation order across Core and

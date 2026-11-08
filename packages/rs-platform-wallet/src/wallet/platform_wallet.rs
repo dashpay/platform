@@ -1824,6 +1824,10 @@ impl PlatformWallet {
                 self.wallet_id,
             )));
         }
+        self.identity
+            .dashpay()
+            .release_rejected_private_requests()
+            .await?;
         let unconfirmed = self
             .unconfirmed_private_contact_requests(coordinator)
             .await?;

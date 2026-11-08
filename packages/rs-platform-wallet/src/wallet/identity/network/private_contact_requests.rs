@@ -482,6 +482,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     {
         self.read_private_store_before_sending(sender_identity_id, recipient_identity_id, crypto)
             .await?;
+        self.release_rejected_private_requests().await?;
         let attempt = self
             .with_managed(sender_identity_id, |managed| {
                 managed.reserve_private_reply(*recipient_identity_id)
@@ -606,6 +607,39 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 if persists_scan_state {
                     store_private_position(&self.persister, identity_id, position);
                 }
+            }
+        }
+        Ok(())
+    }
+
+    /// Release the pending private requests whose payment the shielded
+    /// coordinator settled as never executing, for an entry a definitive
+    /// rejection or a pruned anchor left unappendable
+    /// (`WalletPersister::note_rejected_private_entries`): run before a
+    /// private request is reserved, before a public one claims its pair,
+    /// and before a private payment, so a retry needs no restart. A
+    /// reservation is released only on that word, never for a missing
+    /// unconfirmed spend: a request paid and not yet read back has none.
+    pub(crate) async fn release_rejected_private_requests(
+        &self,
+    ) -> Result<(), PlatformWalletError> {
+        let rejected = self.persister.take_rejected_private_entries();
+        if rejected.is_empty() {
+            return Ok(());
+        }
+        let mut wm = self.wallet_manager.write().await;
+        let info = wm
+            .get_wallet_info_mut(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let identity_ids: Vec<Identifier> = info
+            .identity_manager
+            .all_identities()
+            .iter()
+            .map(|identity| identity.id())
+            .collect();
+        for identity_id in identity_ids {
+            if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
+                managed.release_rejected_private_replies(&rejected);
             }
         }
         Ok(())
@@ -4109,6 +4143,106 @@ mod tests {
             "paid, not read back: {retried:?}"
         );
         assert_eq!(reply.lock().expect("reply").len(), 1, "the retry pays");
+    }
+
+    /// A private request whose payment was unconfirmed, and which the
+    /// shielded coordinator then settled as never executing (a definitive
+    /// consensus rejection of its saved transition), frees its pair without
+    /// a restart: the retry pays.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_free_a_pair_once_its_unconfirmed_payment_is_rejected_for_good() {
+        use crate::wallet::shielded::operations::note_rejected_private_documents;
+        use dpp::shielded::SerializedAction;
+        use dpp::state_transition::private_document_create_from_shielded_pool_transition::methods::PrivateDocumentCreateFromShieldedPoolTransitionMethodsV0;
+        use dpp::state_transition::private_document_create_from_shielded_pool_transition::PrivateDocumentCreateFromShieldedPoolTransition;
+
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (_manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let view = alice_wallet.identity().dashpay();
+        let kept = Arc::new(Mutex::new(Vec::new()));
+        let unconfirmed = {
+            let kept = Arc::clone(&kept);
+            move |entry: BinaryData, started: PaymentStarted| {
+                started.mark();
+                kept.lock().expect("kept").push(entry);
+                std::future::ready(Err::<ResponseMetadata, _>(
+                    PlatformWalletError::ShieldedSpendUnconfirmed {
+                        operation: "private document create",
+                        reason: "the proof fetch timed out".to_string(),
+                    },
+                ))
+            }
+        };
+        let sent = view
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                unconfirmed,
+            )
+            .await;
+        assert!(
+            matches!(
+                sent,
+                Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+            ),
+            "{sent:?}"
+        );
+        assert!(pending_to(&alice_wallet, ALICE, &bob).await);
+        let entry = kept.lock().expect("kept").remove(0);
+
+        // The redrive pass's definitive rejection of the saved transition.
+        let action = SerializedAction {
+            nullifier: [1; 32],
+            rk: [2; 32],
+            cmx: [3; 32],
+            encrypted_note: vec![4; 216],
+            cv_net: [5; 32],
+            spend_auth_sig: [6; 64],
+        };
+        let rejected = PrivateDocumentCreateFromShieldedPoolTransition::try_from_bundle(
+            dashpay_contract().expect("bundled DashPay").id(),
+            PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME.to_string(),
+            vec![entry],
+            vec![action.clone(), action],
+            0,
+            [7; 32],
+            vec![8; 64],
+            [9; 64],
+            PlatformVersion::latest(),
+        )
+        .expect("the saved transition");
+        note_rejected_private_documents(&rejected, Some(&alice_wallet.identity().persister));
+
+        let retry = Arc::new(Mutex::new(Vec::new()));
+        let retried = view
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                keep_entry(&retry),
+            )
+            .await;
+        assert!(
+            matches!(
+                retried,
+                Err(PlatformWalletError::PrivateContactRequestPending(_))
+            ),
+            "paid, not read back: {retried:?}"
+        );
+        assert_eq!(retry.lock().expect("retry").len(), 1, "the retry pays");
     }
 
     /// A `pay` that must not run.
