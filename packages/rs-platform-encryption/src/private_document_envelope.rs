@@ -39,9 +39,12 @@
 //!
 //! ```text
 //! m = H("Dash/PrivDoc/v1/auth" || version || auth mode || contract_id || u32le(len(type))
-//!       || type || sender identity id || sender key id || recipient identity id
+//!       || type || sender identity id || sender key id || recipient identity id || ser(R)
 //!       || payload length || payload)
 //! ```
+//!
+//! `m` names the recipient key, so an entry re-encrypted to another key of the same identity
+//! carries no valid authentication.
 //!
 //! - anonymous (0): sender fields and `auth` are zeros;
 //! - deniable MAC (1): `auth` is
@@ -322,12 +325,13 @@ impl OpenedPrivateDocumentEntry {
 }
 
 /// What the sender of a signed entry signs, `m` above: an identity signer signs it as data,
-/// that is its double SHA-256. The fields are the entry's, so it is computed before sealing.
+/// that is its double SHA-256. The fields are the entry's, `recipient` included, so it is
+/// computed before sealing.
 pub fn private_document_signing_data(
     target: &PrivateDocumentTarget,
     sender_identity_id: &[u8; 32],
     sender_key_id: u32,
-    recipient_identity_id: &[u8; 32],
+    recipient: &PrivateDocumentRecipient,
     payload: &[u8],
 ) -> [u8; 32] {
     auth_message(
@@ -335,7 +339,8 @@ pub fn private_document_signing_data(
         PrivateDocumentAuthMode::Signature,
         sender_identity_id,
         sender_key_id,
-        recipient_identity_id,
+        &recipient.identity_id,
+        &recipient.public_key.serialize(),
         payload,
     )
 }
@@ -440,6 +445,7 @@ pub fn seal_private_document_entry(
         &sender_identity_id,
         sender_key_id,
         &recipient.identity_id,
+        &recipient_key,
         payload,
     );
     let mut auth = [0u8; AUTH_LEN];
@@ -711,6 +717,7 @@ fn parse_body(
         &sender_identity_id,
         sender_key_id,
         &recipient_identity_id,
+        &recipient_public_key.serialize(),
         payload,
     );
     Ok(OpenedPrivateDocumentEntry {
@@ -791,6 +798,7 @@ fn auth_message(
     sender_identity_id: &[u8; 32],
     sender_key_id: u32,
     recipient_identity_id: &[u8; 32],
+    recipient_key: &[u8; 33],
     payload: &[u8],
 ) -> [u8; 32] {
     hash(&[
@@ -802,6 +810,7 @@ fn auth_message(
         sender_identity_id,
         &sender_key_id.to_le_bytes(),
         recipient_identity_id,
+        recipient_key,
         &(payload.len() as u16).to_le_bytes(),
         payload,
     ])
@@ -879,7 +888,10 @@ mod tests {
                 &target(),
                 &SENDER_IDENTITY,
                 4,
-                &RECIPIENT_IDENTITY,
+                &PrivateDocumentRecipient {
+                    identity_id: RECIPIENT_IDENTITY,
+                    public_key: &public_key(2),
+                },
                 &payload(),
             ),
             secret_key,
@@ -1018,6 +1030,27 @@ mod tests {
             9,
         );
         let opened = open(&entry, &[secret_key(2)]).expect("it opens");
+        assert_ne!(opened.recover_signer(), Ok(public_key(1)));
+        // The signature names the recipient key: the same body sealed to another key of the
+        // recipient identity is signed by no one.
+        let retargeted = seal_private_document_entry(
+            &target(),
+            ENTRY_SIZE,
+            &PrivateDocumentRecipient {
+                identity_id: RECIPIENT_IDENTITY,
+                public_key: &public_key(3),
+            },
+            &PrivateDocumentSender::Signature {
+                identity_id: SENDER_IDENTITY,
+                key_id: 4,
+                signature: &signature,
+            },
+            &payload(),
+            &outgoing_viewing_key(),
+            &[9; 32],
+        )
+        .expect("the payload fits");
+        let opened = open(&retargeted, &[secret_key(3)]).expect("it opens");
         assert_ne!(opened.recover_signer(), Ok(public_key(1)));
         let mut not_a_signature = signature;
         not_a_signature[0] = 27;
@@ -1361,8 +1394,8 @@ mod tests {
             pinned,
             [
                 "abb644128f3e73aade8b6210573fba942709e7e44eaeffef92dc02d5187f37d3",
-                "bedf5084aca776ae520e1395e4a4f92628f4589f04b244630acc890649f74a82",
-                "17ce85ed9211640dc929b27aee7c4349208bda374cf9594f83e6c71b71d1d407",
+                "7250a6613ff5aa57f28cc57bd3cdd37824e4f2d3ae634e623e53d032387ce261",
+                "05f544901039b5b112a0c55863db0bfd37951156f0639e94d65eb209da106502",
             ]
         );
     }
