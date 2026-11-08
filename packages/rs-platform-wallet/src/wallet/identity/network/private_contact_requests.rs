@@ -68,7 +68,7 @@ use super::contact_requests::{
 use super::signing_key::first_available;
 use super::{dashpay_contract, DashPayView, IdentityWallet};
 use crate::broadcaster::TransactionBroadcaster;
-use crate::changeset::ContactChangeSet;
+use crate::changeset::{ContactChangeSet, PrivateContactRequestsPosition};
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::dashpay::contact_request::ContactRequest;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
@@ -154,9 +154,14 @@ struct ScannedIdentity {
     position: u64,
     /// Its ingest failed this pass: it is not advanced again until the next.
     failed: bool,
-    /// Its cursor was rewound under the pass (unignoring a sender): it is not
-    /// advanced again this pass, so the next reads from the rewound position.
+    /// Its cursor was rewound under the pass (unignoring a sender, or its
+    /// scanning keys changing): it is not advanced again this pass, so the
+    /// next reads from the rewound position.
     rewound: bool,
+    /// The fingerprint of the keys the pass scans with for it
+    /// (`ManagedIdentity::private_scan_key_fingerprint`): progress made
+    /// with them holds only while they are still the identity's.
+    key_fingerprint: [u8; 32],
 }
 
 impl ScannedIdentity {
@@ -168,12 +173,27 @@ impl ScannedIdentity {
         if self.failed || self.rewound {
             return;
         }
+        // Keys added under the pass opened nothing it read.
+        if !self.keys_current(managed) {
+            self.rewound = true;
+            return;
+        }
         if managed.dashpay().private_contact_requests_position() != self.position {
             self.rewound = true;
             return;
         }
         managed.advance_private_contact_requests_position(self.position, next_position);
         self.position = managed.dashpay().private_contact_requests_position();
+    }
+
+    /// Whether the keys the pass scans with are still the identity's, and
+    /// the ones its read position holds for.
+    fn keys_current(&self, managed: &ManagedIdentity) -> bool {
+        managed.private_scan_key_fingerprint() == self.key_fingerprint
+            && managed
+                .private_contact_requests_position_record()
+                .key_fingerprint
+                == self.key_fingerprint
     }
 }
 
@@ -299,14 +319,18 @@ fn shielded_address_changeset(
 /// Store `owner`'s private read position. A failed store leaves the cursor
 /// advanced in memory: the next launch reads from the last position stored,
 /// and ingest is a fixpoint.
-fn store_private_position(persister: &WalletPersister, owner: Identifier, position: u64) {
+fn store_private_position(
+    persister: &WalletPersister,
+    owner: Identifier,
+    position: PrivateContactRequestsPosition,
+) {
     let mut changeset = ContactChangeSet::default();
     changeset
         .private_contact_requests_positions
         .insert(owner, position);
     if let Err(error) = persister.store(changeset.into()) {
         tracing::warn!(
-            owner = %owner, position, %error,
+            owner = %owner, position = position.position, %error,
             "private read position not stored; the next launch reads from the last one stored"
         );
     }
@@ -495,6 +519,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     where
         C: ContactCryptoProvider + Sync,
     {
+        // Keys added since the store was read clear the flag first.
+        self.reconcile_private_scan_keys().await?;
         if self.private_store_read(identity_id).await? {
             return Ok(());
         }
@@ -525,6 +551,36 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         Err(PlatformWalletError::PrivateContactRequestPending(
             *recipient,
         ))
+    }
+
+    /// Rewind the private read position and the read flag of each of the
+    /// wallet's identities whose scanning keys changed since they were set
+    /// (`ManagedIdentity::reconcile_private_scan_keys`), storing the rewind
+    /// for a backend that keeps the position. A refresh that folds in a key
+    /// another device added is caught here, before the next scan or send.
+    pub(crate) async fn reconcile_private_scan_keys(&self) -> Result<(), PlatformWalletError> {
+        let persists_scan_state = self.persister.persists_private_contact_scan_state();
+        let mut wm = self.wallet_manager.write().await;
+        let info = wm
+            .get_wallet_info_mut(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let identity_ids: Vec<Identifier> = info
+            .identity_manager
+            .all_identities()
+            .iter()
+            .map(|identity| identity.id())
+            .collect();
+        for identity_id in identity_ids {
+            let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) else {
+                continue;
+            };
+            if let Some(position) = managed.reconcile_private_scan_keys() {
+                if persists_scan_state {
+                    store_private_position(&self.persister, identity_id, position);
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Whether a private sync read DashPay's private contact request store
@@ -896,6 +952,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 position: managed.dashpay().private_contact_requests_position(),
                 failed: false,
                 rewound: false,
+                key_fingerprint: managed.private_scan_key_fingerprint(),
             });
         }
         Ok((identities, paths))
@@ -922,6 +979,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     where
         C: ContactCryptoProvider + Sync,
     {
+        self.reconcile_private_scan_keys().await?;
         let (mut identities, paths) = self.private_scan_identities().await?;
         let mut report = PrivateContactSyncReport::default();
         let Some(start) = identities.iter().map(|identity| identity.position).min() else {
@@ -1263,7 +1321,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             identity.advance(managed, read.next_position);
                             let after = managed.dashpay().private_contact_requests_position();
                             if persists_scan_state && after != before {
-                                store_private_position(&self.persister, identity_id, after);
+                                store_private_position(
+                                    &self.persister,
+                                    identity_id,
+                                    managed.private_contact_requests_position_record(),
+                                );
                             }
                         } else if !identity.failed {
                             identity.failed = true;
@@ -1271,7 +1333,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         }
                         // Read to the store's end with nothing held back this
                         // pass: every entry was ingested for this identity.
-                        if read.is_complete() && !identity.failed {
+                        if read.is_complete() && !identity.failed && identity.keys_current(managed)
+                        {
                             managed.note_private_contact_requests_read();
                         }
                         tear_down_stale_external_accounts(wallet, info, &identity_id, rotated);
@@ -3334,7 +3397,11 @@ mod tests {
                 == Some(&address)
         });
         let position = index_of(&|changeset| {
-            changeset.private_contact_requests_positions.get(&bob.id()) == Some(&1)
+            changeset
+                .private_contact_requests_positions
+                .get(&bob.id())
+                .map(|position| position.position)
+                == Some(1)
         });
         assert!(
             request < addresses && addresses < position,
@@ -3368,7 +3435,11 @@ mod tests {
                 .managed_identity_mut(&bob.id())
                 .expect("Bob");
             managed.apply_incoming_contact_request(received.clone());
-            managed.apply_private_contact_requests_position(1);
+            let key_fingerprint = managed.private_scan_key_fingerprint();
+            managed.apply_private_contact_requests_position(PrivateContactRequestsPosition {
+                position: 1,
+                key_fingerprint,
+            });
             managed.apply_private_shielded_address(alice.id(), address);
         }
         let contract = dashpay_contract().expect("bundled DashPay");
@@ -3438,7 +3509,10 @@ mod tests {
                 .identity_manager
                 .managed_identity_mut(&bob.id())
                 .expect("Bob")
-                .apply_private_contact_requests_position(7);
+                .apply_private_contact_requests_position(PrivateContactRequestsPosition {
+                    position: 7,
+                    key_fingerprint: [0; 32],
+                });
         }
         view.ignore_contact_sender(&bob.id(), &alice.id())
             .await
@@ -3452,8 +3526,12 @@ mod tests {
             .find(|changeset| changeset.unignored.contains(&(bob.id(), alice.id())))
             .expect("the un-ignore is stored");
         assert_eq!(
-            unignore.private_contact_requests_positions,
-            BTreeMap::from([(bob.id(), 0)])
+            unignore
+                .private_contact_requests_positions
+                .iter()
+                .map(|(owner, position)| (*owner, position.position))
+                .collect::<Vec<_>>(),
+            vec![(bob.id(), 0)]
         );
     }
 
@@ -3491,7 +3569,11 @@ mod tests {
         }));
 
         let mut loaded = ManagedIdentity::new(bob.clone(), 0);
-        loaded.apply_private_contact_requests_position(5);
+        let key_fingerprint = loaded.private_scan_key_fingerprint();
+        loaded.apply_private_contact_requests_position(PrivateContactRequestsPosition {
+            position: 5,
+            key_fingerprint,
+        });
         loaded.apply_private_shielded_address(alice.id(), [0x55; 43]);
         let mut start_state = IdentityManagerStartState::default();
         start_state
@@ -3784,6 +3866,143 @@ mod tests {
             1,
             "the pair is free again"
         );
+    }
+
+    /// `identity` without its key `key_id`, as a device that has not yet
+    /// fetched a key another device added holds it.
+    fn without_key(identity: &Identity, key_id: KeyID) -> Identity {
+        Identity::V0(IdentityV0 {
+            id: identity.id(),
+            public_keys: identity
+                .public_keys()
+                .iter()
+                .filter(|(id, _)| **id != key_id)
+                .map(|(id, key)| (*id, key.clone()))
+                .collect(),
+            balance: identity.balance(),
+            revision: identity.revision(),
+        })
+    }
+
+    /// A store read with keys missing one an entry is sealed to is read again
+    /// once a refresh brings the key: the refresh folds it in, the read
+    /// position and the read-to-the-end flag are rewound, and the next sync
+    /// records the request.
+    #[tokio::test]
+    async fn should_read_the_store_again_once_an_identity_gains_a_scanning_key() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let (entry, _) = alice_to_bob([0x55; 43]).await;
+        let stale = without_key(&bob, DECRYPTION_KEY_ID);
+        let (_manager, bob_wallet) = wallet(BOB_PHRASE, &stale, &[&alice, &bob], vec![entry]).await;
+        let view = bob_wallet.identity().dashpay();
+
+        let report = view
+            .sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("Bob reads the store with his older keys");
+        assert_eq!(
+            report.requests,
+            vec![],
+            "the entry opens with no key he holds"
+        );
+        assert!(store_read(&bob_wallet, BOB).await);
+        managed(&bob_wallet, BOB, |managed| {
+            assert_eq!(managed.dashpay().private_contact_requests_position(), 1);
+        })
+        .await;
+
+        bob_wallet
+            .identity()
+            .refresh_identity(&bob.id())
+            .await
+            .expect("the refresh folds in the decryption key");
+        view.reconcile_private_scan_keys()
+            .await
+            .expect("reconciled");
+        assert!(
+            !store_read(&bob_wallet, BOB).await,
+            "a send reads the store again"
+        );
+        managed(&bob_wallet, BOB, |managed| {
+            assert_eq!(managed.dashpay().private_contact_requests_position(), 0);
+        })
+        .await;
+
+        let report = view
+            .sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("Bob reads the store again");
+        assert_eq!(report.requests.len(), 1, "{:?}", report.requests);
+        managed(&bob_wallet, BOB, |managed| {
+            assert!(managed.dashpay().incoming_request(&alice.id()).is_some());
+        })
+        .await;
+    }
+
+    /// A pass that started with older keys commits no progress once a key
+    /// update lands under it, even when the rewind that update brings is
+    /// taken while the pass runs: the next pass reads with the new keys from
+    /// where the update left the position.
+    #[tokio::test]
+    async fn should_not_advance_over_a_key_update_during_a_pass() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let (entry, _) = alice_to_bob([0x55; 43]).await;
+        let stale = without_key(&bob, DECRYPTION_KEY_ID);
+        let (_manager, bob_wallet) = wallet(BOB_PHRASE, &stale, &[&alice, &bob], vec![entry]).await;
+
+        let mut updating = HookedCrypto::new(BOB_PHRASE);
+        updating.before_scan = Some({
+            let bob_wallet = Arc::clone(&bob_wallet);
+            let bob = bob.clone();
+            Arc::new(move || {
+                let (bob_wallet, bob) = (Arc::clone(&bob_wallet), bob.clone());
+                Box::pin(async move {
+                    let iw = bob_wallet.identity();
+                    let mut wm = iw.wallet_manager.write().await;
+                    let managed = wm
+                        .get_wallet_info_mut(&bob_wallet.wallet_id())
+                        .expect("wallet info")
+                        .identity_manager
+                        .managed_identity_mut(&bob.id())
+                        .expect("Bob");
+                    // A refresh's key, and a read before a send rewinding for it.
+                    managed.identity = bob;
+                    managed.reconcile_private_scan_keys();
+                })
+            })
+        });
+        bob_wallet
+            .identity()
+            .dashpay()
+            .sync_private_contact_requests(&updating, 4)
+            .await
+            .expect("the pass with older keys");
+        managed(&bob_wallet, BOB, |managed| {
+            assert_eq!(
+                managed.dashpay().private_contact_requests_position(),
+                0,
+                "no progress over the update"
+            );
+            assert!(!managed.dashpay().private_contact_requests_read());
+            assert!(managed.dashpay().incoming_request(&alice.id()).is_none());
+        })
+        .await;
+
+        bob_wallet
+            .identity()
+            .dashpay()
+            .sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("the pass with the new keys");
+        managed(&bob_wallet, BOB, |managed| {
+            assert!(managed.dashpay().incoming_request(&alice.id()).is_some());
+            assert_eq!(managed.dashpay().private_contact_requests_position(), 1);
+        })
+        .await;
     }
 
     /// A `pay` that must not run.
@@ -4173,6 +4392,7 @@ mod tests {
             .managed_identity_mut(&alice.id())
             .expect("Alice");
         let mut scanned = ScannedIdentity {
+            key_fingerprint: managed.private_scan_key_fingerprint(),
             identity_id: alice.id(),
             identity_index: 0,
             position: 0,

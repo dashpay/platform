@@ -8,13 +8,18 @@
 use super::dashpay::PendingPrivateReply;
 use super::ManagedIdentity;
 use crate::changeset::{
-    ContactChangeSet, ContactRequestEntry, ReceivedContactRequestKey, SentContactRequestKey,
+    ContactChangeSet, ContactRequestEntry, PrivateContactRequestsPosition,
+    ReceivedContactRequestKey, SentContactRequestKey,
 };
 use crate::wallet::identity::crypto::contact_info::ContactInfoPrivateData;
 use crate::wallet::persister::WalletPersister;
 use crate::{ContactRequest, EstablishedContact};
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::{KeyType, Purpose};
 use dpp::prelude::Identifier;
 use platform_encryption::account_reference_version;
+use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// The attempt id the next private request reservation takes. Process-wide,
@@ -825,8 +830,78 @@ impl ManagedIdentity {
     /// (`ContactChangeSet::private_contact_requests_positions`): the loader's
     /// replay, for a backend attesting
     /// [`PRIVATE_CONTACT_REQUEST_SCAN_STATE`](crate::changeset::PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE).
-    pub fn apply_private_contact_requests_position(&mut self, position: u64) {
-        self.dashpay.private_contact_requests_position = position;
+    pub fn apply_private_contact_requests_position(
+        &mut self,
+        position: PrivateContactRequestsPosition,
+    ) {
+        self.dashpay.private_contact_requests_position = position.position;
+        self.dashpay.private_scan_keys = Some(position.key_fingerprint);
+    }
+
+    /// The fingerprint of the keys a private sync scans DashPay's private
+    /// contact request store with for this identity: SHA-256 over its HD
+    /// index and each `ECDSA_SECP256K1` `ENCRYPTION` or `DECRYPTION` key, by
+    /// id, purpose and data, in key id order. Disabled keys count, as an
+    /// entry sealed before a key was disabled still opens with it.
+    pub fn private_scan_key_fingerprint(&self) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        match self.identity_index {
+            Some(index) => {
+                hasher.update([1]);
+                hasher.update(index.to_le_bytes());
+            }
+            None => hasher.update([0]),
+        }
+        for (key_id, key) in self.identity.public_keys() {
+            if key.key_type() != KeyType::ECDSA_SECP256K1
+                || !matches!(key.purpose(), Purpose::ENCRYPTION | Purpose::DECRYPTION)
+            {
+                continue;
+            }
+            let data = key.data().as_slice();
+            hasher.update(key_id.to_le_bytes());
+            hasher.update([key.purpose() as u8]);
+            hasher.update((data.len() as u64).to_le_bytes());
+            hasher.update(data);
+        }
+        hasher.finalize().into()
+    }
+
+    /// Tie the private read position and the read-to-the-end flag to the
+    /// identity's scanning keys: when the keys no longer match the ones they
+    /// hold for, entries to or from a key added since were never opened, so
+    /// both are rewound to read the store again from 0. Returns the position
+    /// record to store when it changed.
+    pub(crate) fn reconcile_private_scan_keys(&mut self) -> Option<PrivateContactRequestsPosition> {
+        let key_fingerprint = self.private_scan_key_fingerprint();
+        if self.dashpay.private_scan_keys == Some(key_fingerprint) {
+            return None;
+        }
+        if self.dashpay.private_scan_keys.is_some()
+            || self.dashpay.private_contact_requests_position > 0
+        {
+            self.dashpay.private_contact_requests_position = 0;
+            self.dashpay.private_contact_requests_read = false;
+        }
+        self.dashpay.private_scan_keys = Some(key_fingerprint);
+        Some(PrivateContactRequestsPosition {
+            position: self.dashpay.private_contact_requests_position,
+            key_fingerprint,
+        })
+    }
+
+    /// The private read position as a backend stores it: with the
+    /// fingerprint of the keys it holds for.
+    pub(crate) fn private_contact_requests_position_record(
+        &self,
+    ) -> PrivateContactRequestsPosition {
+        PrivateContactRequestsPosition {
+            position: self.dashpay.private_contact_requests_position,
+            key_fingerprint: self
+                .dashpay
+                .private_scan_keys
+                .unwrap_or_else(|| self.private_scan_key_fingerprint()),
+        }
     }
 
     /// Restore the shielded address `contact`'s tracked private request to
@@ -850,6 +925,7 @@ impl ManagedIdentity {
     /// them.
     pub(crate) fn forget_private_contact_scan_state(&mut self) {
         self.dashpay.private_contact_requests_position = 0;
+        self.dashpay.private_scan_keys = None;
         self.dashpay.private_shielded_addresses.clear();
     }
 

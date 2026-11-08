@@ -124,6 +124,14 @@ pub struct DashPayState {
     /// In memory only; a cursor rewind leaves it set.
     pub(super) private_contact_requests_read: bool,
 
+    /// The fingerprint of the scanning keys `private_contact_requests_position`
+    /// and `private_contact_requests_read` hold for
+    /// (`ManagedIdentity::private_scan_key_fingerprint`): entries to or from
+    /// a key added since were not opened. When the identity's keys no
+    /// longer match it, both are rewound (`reconcile_private_scan_keys`).
+    /// `None` before the first reconcile.
+    pub(super) private_scan_keys: Option<[u8; 32]>,
+
     /// The shielded address each contact's tracked private request to this
     /// identity carries. Persisted for a backend attesting
     /// `PRIVATE_CONTACT_REQUEST_SCAN_STATE`; otherwise rebuilt by the scan a

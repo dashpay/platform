@@ -4575,7 +4575,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         if self.persister.persists_private_contact_scan_state() {
             cs.private_contact_requests_positions.insert(
                 *identity_id,
-                managed.dashpay().private_contact_requests_position(),
+                managed.private_contact_requests_position_record(),
             );
         }
         self.persister.store(cs.into()).map_err(|e| {
