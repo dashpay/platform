@@ -56,7 +56,6 @@
 //! Combined, no private key bytes survive past the trait-method
 //! boundary.
 
-use std::collections::BTreeMap;
 use std::ffi::c_void;
 use std::os::raw::c_char;
 
@@ -66,11 +65,9 @@ use dash_sdk::dpp::identity::{Identity, KeyID};
 use dash_sdk::dpp::platform_value::BinaryData;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::dpp::secp256k1;
-use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::platform::dashpay::{
-    private_contact_request_outgoing_viewing_key, private_contact_requests_from_scan,
-    seal_private_contact_request, PrivateContactRequest, PrivateContactRequestScan,
-    PrivateContactRequestSender,
+    private_contact_request_outgoing_viewing_key, seal_private_contact_request,
+    PrivateContactRequest, PrivateContactRequestSender,
 };
 use dash_sdk::platform::private_document_entries::PrivateDocumentEntries;
 use dash_sdk::platform::private_document_scan::{PrivateDocumentScan, PrivateDocumentScanKeys};
@@ -181,9 +178,10 @@ pub enum MnemonicResolverSignerError {
     #[error("ECDSA signature conversion failed: {0}")]
     SignatureConversion(#[source] EcdsaError),
 
-    /// The SDK refused to read or seal a private contact request with the
-    /// derived keys: a malformed request, a key the identity does not hold,
-    /// or a contract without the private type.
+    /// The SDK refused to seal a private contact request with the derived
+    /// key: a malformed request, a key the identity does not hold, a
+    /// signature that is not the signing key's, or a contract without the
+    /// private type.
     #[error("private contact request: {0}")]
     PrivateContactRequest(dash_sdk::Error),
 }
@@ -623,13 +621,13 @@ impl MnemonicResolverCoreSigner {
     /// wallet's keys ([`PrivateDocumentScanKeys::scan_page`]). `recipients`
     /// are the identities entries may be sealed to, each with the paths of
     /// its keys by key id; `senders` the identities that may have sealed
-    /// entries, each with the path of an encryption key whose outgoing
-    /// viewing key recovers what it sent. Every key comes from one resolve
-    /// and is dropped here; only the sorted entries return.
+    /// entries, each with the id and path of an encryption key whose
+    /// outgoing viewing key recovers what it sent. Every key comes from one
+    /// resolve and is dropped here; only the sorted entries return.
     pub fn scan_private_document_page(
         &self,
         recipients: &[(Identifier, Vec<(KeyID, DerivationPath)>)],
-        senders: &[(Identifier, DerivationPath)],
+        senders: &[(Identifier, KeyID, DerivationPath)],
         data_contract_id: Identifier,
         document_type_name: &str,
         start_position: u64,
@@ -645,39 +643,15 @@ impl MnemonicResolverCoreSigner {
         })
     }
 
-    /// Read the private contact requests of `scan`, a scan of DashPay's
-    /// store made with the keys at `recipients`
-    /// ([`private_contact_requests_from_scan`]): each received request's
-    /// sender is checked with the recipient key that opened it, against the
-    /// key `sender_identities` holds under the id it names. Only the
-    /// recipient keys are derived, from one resolve, and dropped here.
-    pub fn read_private_contact_requests(
-        &self,
-        recipients: &[(Identifier, Vec<(KeyID, DerivationPath)>)],
-        dashpay_contract: &DataContract,
-        scan: PrivateDocumentScan,
-        sender_identities: &BTreeMap<Identifier, Option<Identity>>,
-        platform_version: &PlatformVersion,
-    ) -> Result<PrivateContactRequestScan, MnemonicResolverSignerError> {
-        self.resolve_master(|master| {
-            let keys = private_document_scan_keys(master, recipients, &[])?;
-            private_contact_requests_from_scan(
-                dashpay_contract,
-                scan,
-                &keys,
-                sender_identities,
-                platform_version,
-            )
-            .map_err(MnemonicResolverSignerError::PrivateContactRequest)
-        })
-    }
-
     /// Seal `request` from `sender`, whose encryption key
     /// `sender_encryption_key_id` is the one at `sender_encryption_key_path`,
-    /// to the key `recipient_key_id` of `recipient`
-    /// ([`seal_private_contact_request`]). `esk_seed` is 32 fresh random
-    /// bytes, never reused. The encryption key, and the outgoing viewing key
-    /// the SDK derives from it, stay here; only the sealed entry returns.
+    /// to the key `recipient_key_id` of `recipient`, with `signature`, the
+    /// signature of the request by the sender's key `signing_key_id`
+    /// ([`seal_private_contact_request`]). The signature comes from the
+    /// identity signer, as a transition's does; this signs nothing.
+    /// `esk_seed` is 32 fresh random bytes, never reused. The encryption key,
+    /// and the outgoing viewing key the SDK derives from it, stay here; only
+    /// the sealed entry returns.
     #[allow(clippy::too_many_arguments)]
     pub fn seal_private_contact_request(
         &self,
@@ -685,6 +659,8 @@ impl MnemonicResolverCoreSigner {
         dashpay_contract: &DataContract,
         sender: &Identity,
         sender_encryption_key_id: KeyID,
+        signing_key_id: KeyID,
+        signature: &[u8; 65],
         recipient: &Identity,
         recipient_key_id: KeyID,
         request: &PrivateContactRequest,
@@ -698,6 +674,8 @@ impl MnemonicResolverCoreSigner {
                 identity: sender,
                 encryption_key_id: sender_encryption_key_id,
                 encryption_secret_key: &secret.0,
+                signing_key_id,
+                signature,
             },
             recipient,
             recipient_key_id,
@@ -723,13 +701,13 @@ fn secret_key_at(
 }
 
 /// The scan keys of `recipients` and `senders`, derived below `master`: each
-/// recipient's secret keys, and each sender's outgoing viewing key
-/// ([`private_contact_request_outgoing_viewing_key`]). The copies made here
-/// are wiped before this returns.
+/// recipient's secret keys, and the outgoing viewing key of each sender
+/// encryption key ([`private_contact_request_outgoing_viewing_key`]). The
+/// copies made here are wiped before this returns.
 fn private_document_scan_keys(
     master: &ExtendedPrivKey,
     recipients: &[(Identifier, Vec<(KeyID, DerivationPath)>)],
-    senders: &[(Identifier, DerivationPath)],
+    senders: &[(Identifier, KeyID, DerivationPath)],
 ) -> Result<PrivateDocumentScanKeys, MnemonicResolverSignerError> {
     let mut keys = PrivateDocumentScanKeys::new();
     for (identity_id, paths) in recipients {
@@ -741,11 +719,11 @@ fn private_document_scan_keys(
         }
         keys = keys.with_recipient(*identity_id, &secret_keys.0);
     }
-    for (identity_id, path) in senders {
+    for (identity_id, key_id, path) in senders {
         let secret = secret_key_at(master, path)?;
         let outgoing_viewing_key =
             Zeroizing::new(private_contact_request_outgoing_viewing_key(&secret.0));
-        keys = keys.with_sender(*identity_id, *outgoing_viewing_key);
+        keys = keys.with_sender(*identity_id, *key_id, *outgoing_viewing_key);
     }
     Ok(keys)
 }
@@ -1407,16 +1385,24 @@ mod tests {
         use super::*;
         use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
+        use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
         use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
         use dash_sdk::dpp::identity::{
             IdentityPublicKey, IdentityV0, KeyType, Purpose, SecurityLevel,
         };
         use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
-        use dash_sdk::platform::dashpay::PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME;
+        use dash_sdk::dpp::version::PlatformVersion;
+        use dash_sdk::platform::dashpay::{
+            private_contact_request_identities, private_contact_request_signature,
+            private_contact_request_signing_data, private_contact_requests_from_scan,
+            PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+        };
         use dash_sdk::platform::private_document_entries::PrivateDocumentEntry;
         use key_wallet::mnemonic::Mnemonic;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
         use key_wallet::wallet::Wallet;
+        use simple_signer::SingleKeySigner;
+        use std::collections::BTreeMap;
         use std::sync::atomic::{AtomicUsize, Ordering};
 
         const SENDER_ID: [u8; 32] = [0xA0; 32];
@@ -1424,6 +1410,8 @@ mod tests {
         /// Two identities of another wallet, whose entry the scan passes over.
         const OUTSIDER_ID: [u8; 32] = [0xC0; 32];
         const CAROL_ID: [u8; 32] = [0xD0; 32];
+        /// The authentication key a sender signs its requests with.
+        const SIGNING_KEY_ID: KeyID = 0;
         const SENDER_KEY_ID: KeyID = 1;
         const RECIPIENT_KEY_ID: KeyID = 2;
         const BLOCK_TIME_MS: u64 = 1_700_000_000_000;
@@ -1456,19 +1444,34 @@ mod tests {
                 .expect("a valid scalar")
         }
 
+        fn fixed_secret_key(byte: u8) -> secp256k1::SecretKey {
+            secp256k1::SecretKey::from_secret_bytes([byte; 32]).expect("a valid scalar")
+        }
+
+        /// The sender's signing key, which the identity signer holds, not the
+        /// resolver.
+        fn sender_signing_secret_key() -> secp256k1::SecretKey {
+            fixed_secret_key(0x51)
+        }
+
         fn outsider_secret_key() -> secp256k1::SecretKey {
-            secp256k1::SecretKey::from_secret_bytes([0x41; 32]).expect("a valid scalar")
+            fixed_secret_key(0x41)
+        }
+
+        fn outsider_signing_secret_key() -> secp256k1::SecretKey {
+            fixed_secret_key(0x52)
         }
 
         fn key(
             id: KeyID,
             purpose: Purpose,
+            security_level: SecurityLevel,
             secret_key: &secp256k1::SecretKey,
         ) -> IdentityPublicKey {
             IdentityPublicKey::V0(IdentityPublicKeyV0 {
                 id,
                 purpose,
-                security_level: SecurityLevel::MEDIUM,
+                security_level,
                 contract_bounds: None,
                 key_type: KeyType::ECDSA_SECP256K1,
                 read_only: false,
@@ -1481,16 +1484,20 @@ mod tests {
             })
         }
 
-        fn identity(
-            id: [u8; 32],
-            key_id: KeyID,
-            purpose: Purpose,
-            secret_key: &secp256k1::SecretKey,
-        ) -> Identity {
-            let key = key(key_id, purpose, secret_key);
+        /// A `HIGH` authentication key, which may sign DashPay's documents.
+        fn signing_key(secret_key: &secp256k1::SecretKey) -> IdentityPublicKey {
+            key(
+                SIGNING_KEY_ID,
+                Purpose::AUTHENTICATION,
+                SecurityLevel::HIGH,
+                secret_key,
+            )
+        }
+
+        fn identity(id: [u8; 32], keys: Vec<IdentityPublicKey>) -> Identity {
             Identity::V0(IdentityV0 {
                 id: Identifier::from(id),
-                public_keys: BTreeMap::from([(key_id, key)]),
+                public_keys: keys.into_iter().map(|key| (key.id(), key)).collect(),
                 balance: 0,
                 revision: 0,
             })
@@ -1499,36 +1506,54 @@ mod tests {
         fn sender() -> Identity {
             identity(
                 SENDER_ID,
-                SENDER_KEY_ID,
-                Purpose::ENCRYPTION,
-                &seed_secret_key(&sender_key_path()),
+                vec![
+                    signing_key(&sender_signing_secret_key()),
+                    key(
+                        SENDER_KEY_ID,
+                        Purpose::ENCRYPTION,
+                        SecurityLevel::MEDIUM,
+                        &seed_secret_key(&sender_key_path()),
+                    ),
+                ],
             )
         }
 
         fn recipient() -> Identity {
             identity(
                 RECIPIENT_ID,
-                RECIPIENT_KEY_ID,
-                Purpose::DECRYPTION,
-                &seed_secret_key(&recipient_key_path()),
+                vec![key(
+                    RECIPIENT_KEY_ID,
+                    Purpose::DECRYPTION,
+                    SecurityLevel::MEDIUM,
+                    &seed_secret_key(&recipient_key_path()),
+                )],
             )
         }
 
         fn outsider() -> Identity {
             identity(
                 OUTSIDER_ID,
-                SENDER_KEY_ID,
-                Purpose::ENCRYPTION,
-                &outsider_secret_key(),
+                vec![
+                    signing_key(&outsider_signing_secret_key()),
+                    key(
+                        SENDER_KEY_ID,
+                        Purpose::ENCRYPTION,
+                        SecurityLevel::MEDIUM,
+                        &outsider_secret_key(),
+                    ),
+                ],
             )
         }
 
         fn carol() -> Identity {
             identity(
                 CAROL_ID,
-                RECIPIENT_KEY_ID,
-                Purpose::DECRYPTION,
-                &secp256k1::SecretKey::from_secret_bytes([0x42; 32]).expect("a valid scalar"),
+                vec![key(
+                    RECIPIENT_KEY_ID,
+                    Purpose::DECRYPTION,
+                    SecurityLevel::MEDIUM,
+                    &fixed_secret_key(0x42),
+                )],
             )
         }
 
@@ -1554,12 +1579,47 @@ mod tests {
             }
         }
 
-        /// `request` sealed by `sender` with `secret_key`, the key a resident
-        /// wallet holds, to the decryption key of `recipient`.
+        /// The signature of `request()` from `sender`'s encryption key to the
+        /// decryption key of `recipient`, as the wallet gets it: an identity
+        /// signer holding `signing_secret_key` signs the request's signing
+        /// data with `sender`'s signing key, as it signs a transition.
+        async fn signature(
+            contract: &DataContract,
+            sender: &Identity,
+            recipient: &Identity,
+            signing_secret_key: &secp256k1::SecretKey,
+        ) -> [u8; 65] {
+            let signing_key = sender
+                .get_public_key_by_id(SIGNING_KEY_ID)
+                .expect("the sender has a signing key")
+                .clone();
+            let signer = SingleKeySigner::new_from_slice(
+                &signing_secret_key.to_secret_bytes(),
+                Network::Testnet,
+            )
+            .expect("a valid signing key");
+            let signing_data = private_contact_request_signing_data(
+                contract,
+                sender,
+                SENDER_KEY_ID,
+                recipient,
+                RECIPIENT_KEY_ID,
+                &request(),
+            )
+            .expect("the keys check");
+            private_contact_request_signature(&signer, &signing_key, &signing_data)
+                .await
+                .expect("the identity signer signs")
+        }
+
+        /// `request` sealed by `sender` with `secret_key`, the encryption key
+        /// a resident wallet holds, and `signature`, to the decryption key of
+        /// `recipient`.
         fn seed_sealed(
             contract: &DataContract,
             sender: &Identity,
             secret_key: &secp256k1::SecretKey,
+            signature: &[u8; 65],
             recipient: &Identity,
             esk_seed: u8,
         ) -> BinaryData {
@@ -1569,6 +1629,8 @@ mod tests {
                     identity: sender,
                     encryption_key_id: SENDER_KEY_ID,
                     encryption_secret_key: secret_key,
+                    signing_key_id: SIGNING_KEY_ID,
+                    signature,
                 },
                 recipient,
                 RECIPIENT_KEY_ID,
@@ -1579,12 +1641,39 @@ mod tests {
         }
 
         /// The test entry: the sender's request to the recipient.
-        fn sent_to_recipient(contract: &DataContract, esk_seed: u8) -> BinaryData {
+        async fn sent_to_recipient(contract: &DataContract, esk_seed: u8) -> BinaryData {
+            let signature = signature(
+                contract,
+                &sender(),
+                &recipient(),
+                &sender_signing_secret_key(),
+            )
+            .await;
             seed_sealed(
                 contract,
                 &sender(),
                 &seed_secret_key(&sender_key_path()),
+                &signature,
                 &recipient(),
+                esk_seed,
+            )
+        }
+
+        /// Another wallet's entry: the outsider's request to carol.
+        async fn sent_to_carol(contract: &DataContract, esk_seed: u8) -> BinaryData {
+            let signature = signature(
+                contract,
+                &outsider(),
+                &carol(),
+                &outsider_signing_secret_key(),
+            )
+            .await;
+            seed_sealed(
+                contract,
+                &outsider(),
+                &outsider_secret_key(),
+                &signature,
+                &carol(),
                 esk_seed,
             )
         }
@@ -1614,8 +1703,12 @@ mod tests {
         }
 
         /// The wallet's sender key paths: the sender's encryption key.
-        fn sender_paths() -> Vec<(Identifier, DerivationPath)> {
-            vec![(Identifier::from(SENDER_ID), sender_key_path())]
+        fn sender_paths() -> Vec<(Identifier, KeyID, DerivationPath)> {
+            vec![(
+                Identifier::from(SENDER_ID),
+                SENDER_KEY_ID,
+                sender_key_path(),
+            )]
         }
 
         /// The scan keys a resident wallet of the same seed builds.
@@ -1627,6 +1720,7 @@ mod tests {
                 )
                 .with_sender(
                     Identifier::from(SENDER_ID),
+                    SENDER_KEY_ID,
                     private_contact_request_outgoing_viewing_key(&seed_secret_key(
                         &sender_key_path(),
                     )),
@@ -1644,12 +1738,20 @@ mod tests {
             english_resolve(ctx, wallet_id_bytes, out_buf, out_capacity, out_len)
         }
 
-        /// The entry the signer seals is byte for byte the one a resident
-        /// wallet seals with the key at the same path, so a request sent
-        /// through the Keychain opens and authenticates for every client.
-        #[test]
-        fn should_seal_the_entry_a_seed_derived_sender_key_seals() {
+        /// The entry the signer seals with the identity signer's signature is
+        /// byte for byte the one a resident wallet seals with the encryption
+        /// key at the same path, so a request sent through the Keychain opens
+        /// and authenticates for every client.
+        #[tokio::test]
+        async fn should_seal_the_entry_a_seed_derived_sender_key_seals() {
             let contract = dashpay();
+            let signature = signature(
+                &contract,
+                &sender(),
+                &recipient(),
+                &sender_signing_secret_key(),
+            )
+            .await;
             let resolver = make_resolver(english_resolve);
             let signer =
                 unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
@@ -1660,29 +1762,31 @@ mod tests {
                     &contract,
                     &sender(),
                     SENDER_KEY_ID,
+                    SIGNING_KEY_ID,
+                    &signature,
                     &recipient(),
                     RECIPIENT_KEY_ID,
                     &request(),
                     &[7; 32],
                 )
                 .expect("the signer seals the request");
-            assert_eq!(sealed, sent_to_recipient(&contract, 7));
+            assert_eq!(sealed, sent_to_recipient(&contract, 7).await);
 
             unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
         }
 
-        /// A page scanned and read through the signer sorts and reads as with
-        /// a resident wallet's scan keys: the request to the recipient, with
-        /// its sender checked, and the same request recovered as sent by the
-        /// sender's outgoing viewing key, while another wallet's entry is
-        /// passed over.
-        #[test]
-        fn should_scan_and_read_a_page_as_seed_derived_scan_keys_do() {
+        /// A page scanned through the signer sorts as with a resident wallet's
+        /// scan keys: the request to the recipient, and the same request
+        /// recovered as sent by the sender's outgoing viewing key, while
+        /// another wallet's entry is passed over. Both read as the sender's
+        /// signed request, which needs no secret key.
+        #[tokio::test]
+        async fn should_scan_a_page_as_seed_derived_scan_keys_do() {
             let contract = dashpay();
             let target = target(&contract);
             let page = page(vec![
-                seed_sealed(&contract, &outsider(), &outsider_secret_key(), &carol(), 1),
-                sent_to_recipient(&contract, 2),
+                sent_to_carol(&contract, 1).await,
+                sent_to_recipient(&contract, 2).await,
             ]);
             let resolver = make_resolver(english_resolve);
             let signer =
@@ -1698,51 +1802,54 @@ mod tests {
                     &page,
                 )
                 .expect("the signer scans the page");
-            let seed_keys = seed_scan_keys();
-            let expected_scan = seed_keys.scan_page(&target, 0, &page);
-            assert_eq!(scan, expected_scan);
+            assert_eq!(scan, seed_scan_keys().scan_page(&target, 0, &page));
             assert_eq!(scan.received.len(), 1, "the request to the recipient");
             assert_eq!(scan.sent.len(), 1, "the request the sender sent");
             assert!(scan.rejected.is_empty());
             assert!(scan.is_complete());
 
-            let sender_identities = BTreeMap::from([(Identifier::from(SENDER_ID), Some(sender()))]);
-            let read = signer
-                .read_private_contact_requests(
-                    &recipient_paths(),
-                    &contract,
-                    scan,
-                    &sender_identities,
-                    PlatformVersion::latest(),
-                )
-                .expect("the signer reads the requests");
-            let expected_read = private_contact_requests_from_scan(
+            let identities: BTreeMap<_, _> = [sender(), recipient()]
+                .into_iter()
+                .map(|identity| (identity.id(), Some(identity)))
+                .collect();
+            assert_eq!(
+                private_contact_request_identities(&scan),
+                identities.keys().copied().collect(),
+                "the read checks the sender and the recipient"
+            );
+            let read = private_contact_requests_from_scan(
                 &contract,
-                expected_scan,
-                &seed_keys,
-                &sender_identities,
+                scan,
+                &identities,
                 PlatformVersion::latest(),
             )
-            .expect("the resident wallet reads the requests");
-            assert_eq!(read, expected_read);
+            .expect("the requests read");
+            assert!(read.rejected.is_empty(), "rejected: {:?}", read.rejected);
             assert_eq!(read.received.len(), 1);
             assert_eq!(read.received[0].sender_id, sender().id());
             assert_eq!(read.received[0].sender_key_id, SENDER_KEY_ID);
             assert_eq!(read.received[0].recipient_key_id, RECIPIENT_KEY_ID);
             assert_eq!(read.received[0].request, request());
             assert_eq!(read.sent.len(), 1);
+            assert_eq!(read.sent[0].sender_key_id, SENDER_KEY_ID);
             assert_eq!(read.sent[0].recipient_id, recipient().id());
-            assert!(read.rejected.is_empty());
 
             unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
         }
 
-        /// Every key a scan or a read needs comes from one Keychain read, not
-        /// one per key.
-        #[test]
-        fn should_resolve_the_mnemonic_once_per_scan_and_once_per_read() {
+        /// Every key a scan needs comes from one Keychain read, not one per
+        /// key, and a seal reads the Keychain once.
+        #[tokio::test]
+        async fn should_resolve_the_mnemonic_once_per_scan_and_once_per_seal() {
             let contract = dashpay();
-            let page = page(vec![sent_to_recipient(&contract, 3)]);
+            let page = page(vec![sent_to_recipient(&contract, 3).await]);
+            let signature = signature(
+                &contract,
+                &sender(),
+                &recipient(),
+                &sender_signing_secret_key(),
+            )
+            .await;
             let resolves = AtomicUsize::new(0);
             let resolver = unsafe {
                 dash_sdk_mnemonic_resolver_create(
@@ -1765,7 +1872,7 @@ mod tests {
                 ],
             )];
 
-            let scan = signer
+            signer
                 .scan_private_document_page(
                     &recipients,
                     &sender_paths(),
@@ -1777,16 +1884,20 @@ mod tests {
                 .expect("the signer scans the page");
             assert_eq!(resolves.load(Ordering::SeqCst), 1);
 
-            let sender_identities = BTreeMap::from([(Identifier::from(SENDER_ID), Some(sender()))]);
             signer
-                .read_private_contact_requests(
-                    &recipients,
+                .seal_private_contact_request(
+                    &sender_key_path(),
                     &contract,
-                    scan,
-                    &sender_identities,
-                    PlatformVersion::latest(),
+                    &sender(),
+                    SENDER_KEY_ID,
+                    SIGNING_KEY_ID,
+                    &signature,
+                    &recipient(),
+                    RECIPIENT_KEY_ID,
+                    &request(),
+                    &[4; 32],
                 )
-                .expect("the signer reads the requests");
+                .expect("the signer seals the request");
             assert_eq!(resolves.load(Ordering::SeqCst), 2);
 
             unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
@@ -1794,9 +1905,16 @@ mod tests {
 
         /// A path that is not the sender's encryption key derives a key the
         /// SDK refuses to seal with, and the refusal reaches the caller typed.
-        #[test]
-        fn should_refuse_to_seal_with_a_key_the_sender_does_not_hold() {
+        #[tokio::test]
+        async fn should_refuse_to_seal_with_a_key_the_sender_does_not_hold() {
             let contract = dashpay();
+            let signature = signature(
+                &contract,
+                &sender(),
+                &recipient(),
+                &sender_signing_secret_key(),
+            )
+            .await;
             let resolver = make_resolver(english_resolve);
             let signer =
                 unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
@@ -1807,6 +1925,8 @@ mod tests {
                     &contract,
                     &sender(),
                     SENDER_KEY_ID,
+                    SIGNING_KEY_ID,
+                    &signature,
                     &recipient(),
                     RECIPIENT_KEY_ID,
                     &request(),
@@ -1816,6 +1936,53 @@ mod tests {
             assert!(
                 matches!(err, MnemonicResolverSignerError::PrivateContactRequest(_)),
                 "expected the SDK's refusal, got: {err:?}"
+            );
+            assert!(
+                err.to_string().contains("secret key"),
+                "refused for the encryption key, got: {err}"
+            );
+
+            unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+        }
+
+        /// The signer seals only what the identity signer signed: a
+        /// signature by a key other than the signing key it names is the
+        /// SDK's refusal, not an entry.
+        #[tokio::test]
+        async fn should_refuse_to_seal_a_signature_by_another_key() {
+            let contract = dashpay();
+            let forged = signature(
+                &contract,
+                &sender(),
+                &recipient(),
+                &outsider_signing_secret_key(),
+            )
+            .await;
+            let resolver = make_resolver(english_resolve);
+            let signer =
+                unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
+
+            let err = signer
+                .seal_private_contact_request(
+                    &sender_key_path(),
+                    &contract,
+                    &sender(),
+                    SENDER_KEY_ID,
+                    SIGNING_KEY_ID,
+                    &forged,
+                    &recipient(),
+                    RECIPIENT_KEY_ID,
+                    &request(),
+                    &[7; 32],
+                )
+                .expect_err("the signature is not the signing key's");
+            assert!(
+                matches!(err, MnemonicResolverSignerError::PrivateContactRequest(_)),
+                "expected the SDK's refusal, got: {err:?}"
+            );
+            assert!(
+                err.to_string().contains("signature"),
+                "refused for the signature, got: {err}"
             );
 
             unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
