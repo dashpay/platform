@@ -164,6 +164,11 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
             }
         };
 
+        // Edited in place in a shipped generation: `document_signing_levels` returns what the
+        // code it replaced did for every requirement (MASTER alone for MASTER, otherwise
+        // CRITICAL through the requirement, strongest first), without its `unwrap`. Its tests
+        // and the batch tests pin each output, so no protocol version that signs or checks a
+        // batch through this method can see another result.
         Ok(highest_security_level.document_signing_levels())
     }
 
