@@ -60,7 +60,7 @@ use platform_encryption::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 /// The DashPay document type of private contact requests.
 pub const PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME: &str = "privateContactRequest";
@@ -376,8 +376,10 @@ pub fn seal_private_contact_request(
         )));
     }
 
-    let outgoing_viewing_key =
-        private_contact_request_outgoing_viewing_key(sender.encryption_secret_key);
+    // Wiped on every return.
+    let outgoing_viewing_key = Zeroizing::new(private_contact_request_outgoing_viewing_key(
+        sender.encryption_secret_key,
+    ));
     let entry = seal_private_document_entry(
         &inputs.target(),
         inputs.entry_size,
