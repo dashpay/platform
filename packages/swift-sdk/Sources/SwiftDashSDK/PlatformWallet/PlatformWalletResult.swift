@@ -633,9 +633,11 @@ public enum PlatformWalletError: LocalizedError {
     case protocolVersionNotActive(String)
     /// A private contact request to that identity is in flight (another
     /// private send or reply reserved it), or was paid for and is not yet
-    /// read back from the store. Nothing new was paid; a later
-    /// `ManagedPlatformWallet.syncPrivateContactRequests` settles it. Pending,
-    /// not failed: do not submit it again.
+    /// read back from the store; or this identity's private store could not
+    /// be read to its end before its first private send or accept since
+    /// launch. Nothing new was paid; a later
+    /// `ManagedPlatformWallet.syncPrivateContactRequests`, or a retry, settles
+    /// it. Pending, not failed: do not submit it again.
     case privateContactRequestPending(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition

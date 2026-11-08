@@ -1796,6 +1796,13 @@ mod tests {
                 ),
                 ..smallest_request(1)
             },
+            // The bound is in bytes: 32 two-byte characters are 64 bytes.
+            PrivateContactRequest {
+                account_label: Some(
+                    "é".repeat(PRIVATE_CONTACT_REQUEST_ACCOUNT_LABEL_MAX_BYTES.div_ceil(2)),
+                ),
+                ..smallest_request(1)
+            },
             PrivateContactRequest {
                 auto_accept_proof: Some(vec![
                     0;

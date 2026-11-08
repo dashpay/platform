@@ -159,14 +159,14 @@ struct AddContactView: View {
                 isPresented: $showCollisionAlert,
                 presenting: collisionRecipient
             ) { recipient in
-                Button("Accept") {
+                Button(CollisionAccept.of(sendPrivately: sendPrivately).buttonTitle) {
                     acceptIncoming(from: recipient)
                 }
                 Button("Continue anyway") {
                     send(to: recipient)
                 }
             } message: { _ in
-                Text("This person already sent you a request — accept it instead?")
+                Text(CollisionAccept.of(sendPrivately: sendPrivately).message)
             }
             .alert(
                 "Submitted",
@@ -550,6 +550,11 @@ struct AddContactView: View {
     /// `ContactRequest` and accept it — establishing the contact
     /// directly instead of sending a redundant request.
     private func acceptIncoming(from recipient: Identifier) {
+        // A private request to this contact is already pending in the wallet.
+        guard !recipientPending else { return }
+        // "Send privately" is the user's choice of a private request, so it
+        // holds for the accept too (`CollisionAccept`).
+        let accept = CollisionAccept.of(sendPrivately: sendPrivately)
         isSending = true
         errorMessage = nil
         Task { @MainActor in
@@ -564,14 +569,26 @@ struct AddContactView: View {
                     return
                 }
                 let signer = KeychainSigner(modelContainer: modelContext.container)
-                // The wallet replies the way the request came: privately
-                // (paid from the shielded balance) or with a document.
-                _ = try await walletManager.acceptContactRequestReplyingInKind(
-                    walletId: wallet.walletId,
-                    resolver: MnemonicResolver(),
-                    request: request,
-                    signer: signer
-                )
+                switch accept {
+                case .privateReply:
+                    // A private reply, paid from the shielded balance, even to
+                    // a request that came publicly.
+                    _ = try await walletManager.acceptPrivateContactRequest(
+                        walletId: wallet.walletId,
+                        resolver: MnemonicResolver(),
+                        request: request,
+                        signer: signer
+                    )
+                case .replyInKind:
+                    // The wallet replies the way the request came: privately
+                    // (paid from the shielded balance) or with a document.
+                    _ = try await walletManager.acceptContactRequestReplyingInKind(
+                        walletId: wallet.walletId,
+                        resolver: MnemonicResolver(),
+                        request: request,
+                        signer: signer
+                    )
+                }
                 kickDashPaySync(walletManager)
                 dismiss()
             } catch {

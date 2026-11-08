@@ -34,6 +34,25 @@ final class ContactRequestOutcomesTests: XCTestCase {
         XCTAssertNil(ContactRequestSubmissionOutcome.rowMessage(pending: false, error: nil))
     }
 
+    func testShouldAcceptACollisionPrivatelyWhenSendPrivatelyIsOn() {
+        let accept = CollisionAccept.of(sendPrivately: true)
+        XCTAssertEqual(accept, .privateReply)
+        XCTAssertEqual(accept.buttonTitle, "Accept privately")
+        XCTAssertEqual(
+            accept.message,
+            "This person already sent you a request. Accept it with a private reply instead? "
+                + "The reply is paid from this wallet's shielded balance, and no public request "
+                + "names you as its sender."
+        )
+    }
+
+    func testShouldAcceptACollisionInKindWhenSendPrivatelyIsOff() {
+        let accept = CollisionAccept.of(sendPrivately: false)
+        XCTAssertEqual(accept, .replyInKind)
+        XCTAssertEqual(accept.buttonTitle, "Accept")
+        XCTAssertEqual(accept.message, "This person already sent you a request. Accept it instead?")
+    }
+
     func testShouldOfferARetryForAnOrdinaryFailure() {
         let error = PlatformWalletError.shieldedBroadcastFailed("rejected by the relay")
         XCTAssertEqual(

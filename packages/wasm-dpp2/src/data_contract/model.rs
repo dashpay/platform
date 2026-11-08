@@ -323,6 +323,20 @@ impl DataContractWasm {
                 tokens_configuration_from_js_value(v)
             })?
             .unwrap_or_default();
+        // A contract of structure version 0 holds no tokens: refuse them rather than drop them.
+        if !tokens.is_empty()
+            && platform_version
+                .dpp
+                .contract_versions
+                .contract_structure_version
+                == 0
+        {
+            return Err(WasmDppError::invalid_argument(format!(
+                "protocol version {} builds data contracts of structure version 0, which hold no \
+                 tokens",
+                platform_version.protocol_version
+            )));
+        }
 
         // Extract primitive fields via serde last (consumes options)
         let opts: DataContractOptions = serde_wasm_bindgen::from_value(options.into())
@@ -379,9 +393,14 @@ impl DataContractWasm {
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
         // A document type's token costs are checked against the contract's tokens when the
-        // contract is validated, so the tokens are part of what is parsed.
+        // contract is validated, so the tokens are part of what is parsed. The contract format
+        // reads token positions as text keys.
         if !tokens.is_empty() {
-            let tokens_value = dpp::platform_value::to_value(&tokens)
+            let tokens_by_position: BTreeMap<String, &TokenConfiguration> = tokens
+                .iter()
+                .map(|(position, token)| (position.to_string(), token))
+                .collect();
+            let tokens_value = dpp::platform_value::to_value(&tokens_by_position)
                 .map_err(|e| WasmDppError::serialization(e.to_string()))?;
             contract_value
                 .set_value("tokens", tokens_value)
