@@ -652,10 +652,14 @@ pub enum PlatformWalletFFIResultCode {
 
     /// Maps `PlatformWalletError::PrivateContactRequestPending`: a private
     /// contact request to that identity is in flight (another send or reply
-    /// reserved it), or was paid for and is not yet read back from the store.
-    /// Nothing new was paid. Do not submit it again: a later private contact
-    /// request sync (`platform_wallet_sync_private_contact_requests`)
-    /// settles it.
+    /// reserved it), or was paid for and is not yet read back from the store;
+    /// or this identity's private store could not be read to its end before
+    /// its first private send or accept since load (the wallet reads it first,
+    /// so a reply paid for in an earlier process is adopted rather than paid
+    /// for again). Nothing new was paid. Do not submit it again: a later
+    /// private contact request sync
+    /// (`platform_wallet_sync_private_contact_requests`) or a retry settles
+    /// it.
     ErrorPrivateContactRequestPending = 71,
 
     /// The named thing does not exist.
