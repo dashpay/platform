@@ -28,6 +28,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
@@ -197,29 +198,53 @@ impl ScannedIdentity {
     }
 }
 
+/// Handed to a private request's `pay`, which marks it right before anything
+/// it does may reach the network. Until it is marked, a send dropped (a
+/// cancelled accept, a timeout) releases its reservation, as nothing was paid
+/// and no sync could settle it; once marked, the reservation stays for a
+/// sync to settle. A `pay` that awaits anything first, such as resolving its
+/// payment source, a spend key or a proof, marks it only after those.
+#[derive(Clone, Debug, Default)]
+pub struct PaymentStarted(Arc<AtomicBool>);
+
+impl PaymentStarted {
+    /// The payment may reach the network from now on.
+    pub fn mark(&self) {
+        self.0.store(true, Ordering::Release);
+    }
+
+    /// Whether [`Self::mark`] was called.
+    pub fn is_marked(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
+}
+
 /// The reservation one send attempt holds on the private request to a
-/// recipient that may be in flight. Dropped while armed, it releases the
-/// reservation: a send cancelled before it pays leaves nothing pending, which
-/// no sync could settle. It is disarmed once payment may have started.
+/// recipient that may be in flight. Dropped before its payment is marked
+/// started ([`PaymentStarted`]), it releases the reservation: a send
+/// cancelled before it pays leaves nothing pending. Once the payment may
+/// have started, or the send kept it, the reservation stays for the sync.
 struct PrivateReplyReservation {
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: WalletId,
     sender: Identifier,
     recipient: Identifier,
     attempt: u64,
-    armed: bool,
+    payment_started: PaymentStarted,
+    kept: bool,
 }
 
 impl PrivateReplyReservation {
     /// Leave the reservation for the private sync to settle.
     fn keep(&mut self) {
-        self.armed = false;
+        self.kept = true;
     }
 
     /// Release the reservation now, kept or not. Dropped while it waits for
     /// the wallet lock, the guard releases it.
     async fn release(mut self) {
-        self.armed = true;
+        self.kept = false;
+        self.payment_started = PaymentStarted::default();
         let mut wm = self.wallet_manager.write().await;
         release_reservation(
             &mut wm,
@@ -228,13 +253,13 @@ impl PrivateReplyReservation {
             &self.recipient,
             self.attempt,
         );
-        self.armed = false;
+        self.kept = true;
     }
 }
 
 impl Drop for PrivateReplyReservation {
     fn drop(&mut self) {
-        if !self.armed {
+        if self.kept || self.payment_started.is_marked() {
             return;
         }
         let (wallet_id, sender, recipient, attempt) =
@@ -424,7 +449,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// read back yet, the send returns `PrivateContactRequestPending` and the
     /// request stays pending until a later sync reads it. An unconfirmed
     /// payment stays pending the same way; one that definitely failed
-    /// releases it, and so does a send dropped before it pays. `pay` itself
+    /// releases it, and so does a send dropped before its payment started:
+    /// `pay` gets a [`PaymentStarted`] it marks right before anything it does
+    /// may reach the network, after any resolving it awaits first. `pay` itself
     /// may return `PrivateContactRequestPending` to keep the request pending
     /// unpaid. The pending request is kept in memory only; after a restart,
     /// [`Self::restore_pending_private_contact_requests`] restores those whose
@@ -450,7 +477,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
-        F: FnOnce(BinaryData) -> Fut + Send,
+        F: FnOnce(BinaryData, PaymentStarted) -> Fut + Send,
         Fut: Future<Output = Result<ResponseMetadata, PlatformWalletError>> + Send,
     {
         self.read_private_store_before_sending(sender_identity_id, recipient_identity_id, crypto)
@@ -469,7 +496,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             sender: *sender_identity_id,
             recipient: *recipient_identity_id,
             attempt,
-            armed: true,
+            payment_started: PaymentStarted::default(),
+            kept: false,
         };
         let sent = self
             .send_reserved_private_contact_request(
@@ -634,7 +662,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
-        F: FnOnce(BinaryData) -> Fut + Send,
+        F: FnOnce(BinaryData, PaymentStarted) -> Fut + Send,
         Fut: Future<Output = Result<ResponseMetadata, PlatformWalletError>> + Send,
     {
         let PreparedContactRequest {
@@ -758,10 +786,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             0,
         );
 
-        // Once payment may have started, the reservation is the sync's to
-        // settle, whatever happens to this send.
-        reservation.keep();
-        pay(entry).await?;
+        // `pay` marks the payment started right before it may reach the
+        // network: from then on the reservation is the sync's to settle,
+        // whatever happens to this send.
+        let paid = pay(entry, reservation.payment_started.clone()).await;
+        reservation.payment_started.mark();
+        paid?;
 
         // Recorded only as the store proves it: read it back.
         if let Err(error) = self
@@ -833,7 +863,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
-        F: FnOnce(BinaryData) -> Fut + Send,
+        F: FnOnce(BinaryData, PaymentStarted) -> Fut + Send,
         Fut: Future<Output = Result<ResponseMetadata, PlatformWalletError>> + Send,
     {
         self.read_private_store_before_sending(&request.recipient_id, &request.sender_id, crypto)
@@ -880,7 +910,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
-        F: FnOnce(BinaryData) -> Fut + Send,
+        F: FnOnce(BinaryData, PaymentStarted) -> Fut + Send,
         Fut: Future<Output = Result<ResponseMetadata, PlatformWalletError>> + Send,
     {
         if request.came_privately() || self.needs_private_reply(request).await {
@@ -1913,12 +1943,14 @@ mod tests {
         kept: &Arc<Mutex<Vec<BinaryData>>>,
     ) -> impl FnOnce(
         BinaryData,
+        PaymentStarted,
     ) -> std::pin::Pin<
         Box<dyn Future<Output = Result<ResponseMetadata, PlatformWalletError>> + Send>,
     > + Send {
         let wallet = Arc::clone(wallet);
         let kept = Arc::clone(kept);
-        move |entry| {
+        move |entry, started| {
+            started.mark();
             Box::pin(async move {
                 let mut entries = before;
                 entries.push(entry.to_vec());
@@ -1937,10 +1969,14 @@ mod tests {
     /// the store.
     fn keep_entry(
         kept: &Arc<Mutex<Vec<BinaryData>>>,
-    ) -> impl FnOnce(BinaryData) -> std::future::Ready<Result<ResponseMetadata, PlatformWalletError>>
+    ) -> impl FnOnce(
+        BinaryData,
+        PaymentStarted,
+    ) -> std::future::Ready<Result<ResponseMetadata, PlatformWalletError>>
            + Send {
         let kept = Arc::clone(kept);
-        move |entry| {
+        move |entry, started| {
+            started.mark();
             kept.lock().expect("kept entries").push(entry);
             std::future::ready(Ok(ResponseMetadata {
                 time_ms: BLOCK_TIME_MS,
@@ -2459,11 +2495,9 @@ mod tests {
         let pending = |result: &Result<ContactRequest, PlatformWalletError>| matches!(result, Err(PlatformWalletError::PrivateContactRequestPending(id)) if *id == bob.id());
 
         // A payment that definitely failed releases the recipient.
-        let failed = send!(
-            |_| std::future::ready(Err(PlatformWalletError::InvalidIdentityData(
-                "no notes".to_string()
-            )))
-        );
+        let failed = send!(|_, _| std::future::ready(Err(
+            PlatformWalletError::InvalidIdentityData("no notes".to_string())
+        )));
         assert!(!pending(&failed), "{failed:?}");
 
         // Paid for, but the entry is not in the store yet: pending.
@@ -2512,7 +2546,8 @@ mod tests {
                 None,
                 &alice_signer,
                 &alice_crypto,
-                |_| {
+                |_, started: PaymentStarted| {
+                    started.mark();
                     std::future::ready(Err(PlatformWalletError::ShieldedSpendUnconfirmed {
                         operation: "private document create",
                         reason: "the proof fetch timed out".to_string(),
@@ -2928,7 +2963,7 @@ mod tests {
                 None,
                 &alice_signer,
                 &alice_crypto,
-                |entry: BinaryData| {
+                |entry: BinaryData, started: PaymentStarted| {
                     let paid = Arc::clone(&paid);
                     let unconfirmed = &unconfirmed;
                     let crypto = &alice_crypto;
@@ -2944,6 +2979,7 @@ mod tests {
                         {
                             return Err(PlatformWalletError::PrivateContactRequestPending(bob_id));
                         }
+                        started.mark();
                         paid.lock().expect("paid").push(entry);
                         Ok(ResponseMetadata::default())
                     }
@@ -3000,7 +3036,8 @@ mod tests {
         let v0_entry = kept.lock().expect("kept").remove(0);
         let unconfirmed = {
             let kept = Arc::clone(&kept);
-            move |entry: BinaryData| {
+            move |entry: BinaryData, started: PaymentStarted| {
+                started.mark();
                 kept.lock().expect("kept").push(entry);
                 std::future::ready(Err::<ResponseMetadata, _>(
                     PlatformWalletError::ShieldedSpendUnconfirmed {
@@ -3099,7 +3136,7 @@ mod tests {
                 None,
                 &alice_signer,
                 &alice_crypto,
-                |entry: BinaryData| {
+                |entry: BinaryData, started: PaymentStarted| {
                     let paid = Arc::clone(&paid);
                     let unconfirmed_entries = &unconfirmed_entries;
                     let crypto = &alice_crypto;
@@ -3115,6 +3152,7 @@ mod tests {
                         {
                             return Err(PlatformWalletError::PrivateContactRequestPending(bob_id));
                         }
+                        started.mark();
                         paid.lock().expect("paid").push(entry);
                         Ok(ResponseMetadata::default())
                     }
@@ -4005,9 +4043,78 @@ mod tests {
         .await;
     }
 
+    /// A reply dropped while its payment source is still being resolved, as
+    /// a host's prompt left open and abandoned, keeps no reservation:
+    /// nothing was paid, and a retry goes on to pay.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_release_a_reply_dropped_while_its_payment_is_resolved() {
+        use crate::wallet::platform_wallet::PrivateReplyPayment;
+
+        struct NoProver;
+        impl dpp::shielded::builder::OrchardProver for NoProver {
+            fn proving_key(&self) -> &grovedb_commitment_tree::ProvingKey {
+                panic!("nothing is proved")
+            }
+        }
+
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let bob_signer = signer(BOB_PHRASE, &bob);
+        let (entry, received) = alice_to_bob([0x55; 43]).await;
+        let (_manager, bob_wallet) = wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![entry]).await;
+        bob_wallet
+            .identity()
+            .dashpay()
+            .sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("Bob reads the store");
+
+        let dropped = tokio::time::timeout(
+            Duration::from_millis(200),
+            bob_wallet.accept_contact_request_replying_in_kind(
+                &received,
+                None,
+                &bob_signer,
+                &bob_crypto,
+                || {
+                    std::future::pending::<
+                        Result<PrivateReplyPayment<NoProver, Vec<u8>>, PlatformWalletError>,
+                    >()
+                },
+            ),
+        )
+        .await;
+        assert!(dropped.is_err(), "the payment source never resolves");
+        assert!(!pending_to(&bob_wallet, BOB, &alice).await);
+
+        let reply = Arc::new(Mutex::new(Vec::new()));
+        let retried = bob_wallet
+            .identity()
+            .dashpay()
+            .accept_private_contact_request(
+                &received,
+                None,
+                &bob_signer,
+                &bob_crypto,
+                keep_entry(&reply),
+            )
+            .await;
+        assert!(
+            matches!(
+                retried,
+                Err(PlatformWalletError::PrivateContactRequestPending(_))
+            ),
+            "paid, not read back: {retried:?}"
+        );
+        assert_eq!(reply.lock().expect("reply").len(), 1, "the retry pays");
+    }
+
     /// A `pay` that must not run.
     fn no_payment(
         _: BinaryData,
+        _: PaymentStarted,
     ) -> std::future::Ready<Result<ResponseMetadata, PlatformWalletError>> {
         panic!("nothing is paid")
     }
@@ -4271,7 +4378,8 @@ mod tests {
             None,
             &alice_signer,
             &alice_crypto,
-            |_: BinaryData| {
+            |_: BinaryData, started: PaymentStarted| {
+                started.mark();
                 let read_when_paid = Arc::clone(&read_when_paid);
                 let wallet = &alice_wallet;
                 async move {
@@ -4364,7 +4472,7 @@ mod tests {
                 None,
                 &alice_signer,
                 &alice_crypto,
-                |_: BinaryData| -> std::future::Ready<Result<ResponseMetadata, PlatformWalletError>> {
+                |_: BinaryData, _: PaymentStarted| -> std::future::Ready<Result<ResponseMetadata, PlatformWalletError>> {
                     panic!("a request that repeats the tracked one is not paid for")
                 },
             )

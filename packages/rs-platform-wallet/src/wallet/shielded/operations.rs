@@ -32,6 +32,7 @@ use super::store::{PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId};
 use crate::broadcast_outcome::{broadcast_definitely_failed, carries_consensus_rejection};
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
 use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
+use crate::wallet::identity::network::PaymentStarted;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
 
@@ -1571,7 +1572,8 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
 /// builds them.
 ///
 /// Waits for the spent nullifiers to be proven before marking the notes
-/// spent, and returns the metadata of that proof.
+/// spent, and returns the metadata of that proof. `payment_started` is
+/// marked right before the transition is broadcast.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
     S: ShieldedStore,
@@ -1586,6 +1588,7 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
     data_contract_id: Identifier,
     document_type_name: &str,
     entries: Vec<BinaryData>,
+    payment_started: &PaymentStarted,
     prover: &P,
 ) -> Result<ResponseMetadata, PlatformWalletError> {
     let views = keys.viewing_keys();
@@ -1657,6 +1660,8 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
         arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await;
 
         trace!("PrivateDocumentCreateFromShieldedPool: state transition built, broadcasting...");
+        // From here the payment may reach the network.
+        payment_started.mark();
         // Type 29 proves its spent nullifiers as a snapshot, which a competing
         // spend of the same notes shares, as type 22's does: the affected-state
         // wait accepts it (see `identity_top_up_from_pool_with_metadata`).

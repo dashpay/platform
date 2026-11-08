@@ -48,7 +48,10 @@ use {
     super::shielded::operations::private_document_create_from_pool_with_metadata,
     super::shielded::store::PendingRedrive,
     super::shielded::{NetworkShieldedCoordinator, OrchardKeySet, ShieldedStore},
-    crate::{AutoAcceptProofSource, ContactCryptoProvider, ContactRequest, EstablishedContact},
+    crate::{
+        AutoAcceptProofSource, ContactCryptoProvider, ContactRequest, EstablishedContact,
+        PaymentStarted,
+    },
     dash_sdk::dapi_grpc::platform::v0::ResponseMetadata,
     dash_sdk::platform::dashpay::PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
     dpp::data_contract::accessors::v0::DataContractV0Getters,
@@ -1599,7 +1602,7 @@ impl PlatformWallet {
                 shielded_address,
                 signer,
                 crypto,
-                |entry| {
+                |entry, started| {
                     self.pay_private_contact_request(
                         coordinator,
                         keyset,
@@ -1608,6 +1611,7 @@ impl PlatformWallet {
                         recipient_identity_id,
                         crypto,
                         entry,
+                        started,
                         prover,
                     )
                 },
@@ -1642,18 +1646,25 @@ impl PlatformWallet {
         let keyset = self.derive_spend_keyset(seed, account).await?;
         self.identity
             .dashpay()
-            .accept_private_contact_request(request, shielded_address, signer, crypto, |entry| {
-                self.pay_private_contact_request(
-                    coordinator,
-                    keyset,
-                    account,
-                    &request.recipient_id,
-                    &request.sender_id,
-                    crypto,
-                    entry,
-                    prover,
-                )
-            })
+            .accept_private_contact_request(
+                request,
+                shielded_address,
+                signer,
+                crypto,
+                |entry, started| {
+                    self.pay_private_contact_request(
+                        coordinator,
+                        keyset,
+                        account,
+                        &request.recipient_id,
+                        &request.sender_id,
+                        crypto,
+                        entry,
+                        started,
+                        prover,
+                    )
+                },
+            )
             .await
     }
 
@@ -1690,7 +1701,10 @@ impl PlatformWallet {
                 shielded_address,
                 signer,
                 crypto,
-                |entry| async move {
+                |entry, started| async move {
+                    // Resolving the payment and deriving the spend key come
+                    // first, before `started` is marked: a reply dropped
+                    // meanwhile releases its reservation.
                     let PrivateReplyPayment {
                         coordinator,
                         seed,
@@ -1707,6 +1721,7 @@ impl PlatformWallet {
                         &request.sender_id,
                         crypto,
                         entry,
+                        started,
                         prover,
                     )
                     .await
@@ -1776,6 +1791,10 @@ impl PlatformWallet {
     /// re-created since this handle was taken is refused with
     /// [`PlatformWalletError::WalletRemovedBeforeSend`], with nothing
     /// restored, recorded or paid. A caller must not hold the gate.
+    ///
+    /// `started` is marked right before the transition may reach the
+    /// network, after the restore check and the proof: until then a send
+    /// dropped releases its reservation.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     async fn pay_private_contact_request<C, P>(
@@ -1787,6 +1806,7 @@ impl PlatformWallet {
         recipient_identity_id: &Identifier,
         crypto: &C,
         entry: BinaryData,
+        started: PaymentStarted,
         prover: P,
     ) -> Result<ResponseMetadata, PlatformWalletError>
     where
@@ -1833,6 +1853,7 @@ impl PlatformWallet {
             dashpay_id,
             PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
             vec![entry],
+            &started,
             &prover,
         )
         .await
@@ -2895,6 +2916,7 @@ mod private_contact_request_payment_tests {
                 &Identifier::from([0xB1; 32]),
                 &crypto,
                 BinaryData::new(vec![1; 589]),
+                PaymentStarted::default(),
                 UnreachableProver,
             )
             .await
