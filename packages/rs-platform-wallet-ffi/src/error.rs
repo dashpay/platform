@@ -628,8 +628,10 @@ pub enum PlatformWalletFFIResultCode {
     /// as a rotation, would publish the relationship. The public send and the
     /// public accept refuse it, and nothing was sent. Send it with
     /// `platform_wallet_manager_send_private_contact_request`, or accept it
-    /// with `platform_wallet_manager_accept_private_contact_request`,
-    /// instead. 61 to 67 are claimed by open branches, so this takes 68.
+    /// with `platform_wallet_manager_accept_contact_request_replying_in_kind`
+    /// (which replies privately itself) or
+    /// `platform_wallet_manager_accept_private_contact_request`, instead.
+    /// 61 to 67 are claimed by open branches, so this takes 68.
     ErrorPrivateContactRequestNeedsPrivateReply = 68,
 
     /// The named thing does not exist.
