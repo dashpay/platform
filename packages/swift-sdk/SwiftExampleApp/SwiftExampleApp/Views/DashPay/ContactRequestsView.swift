@@ -228,10 +228,12 @@ struct ContactRequestsView: View {
                     return
                 }
                 let signer = KeychainSigner(modelContainer: modelContext.container)
-                try await acceptIncomingContactRequest(
-                    request,
-                    wallet: wallet,
-                    walletManager: walletManager,
+                // The wallet replies the way the request came: privately
+                // (paid from the shielded balance) or with a document.
+                _ = try await walletManager.acceptContactRequestReplyingInKind(
+                    walletId: wallet.walletId,
+                    resolver: MnemonicResolver(),
+                    request: request,
                     signer: signer
                 )
                 // Optimistic removal — the persister will promote the
