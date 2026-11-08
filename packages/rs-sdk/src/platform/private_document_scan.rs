@@ -284,12 +284,23 @@ impl PrivateDocumentScanKeys {
                 &sender.outgoing_viewing_key,
             ) {
                 Ok(Some(recovered)) => {
+                    // Senders added with the same outgoing viewing key all recover the entry:
+                    // it belongs to the one it names, when there is one.
+                    let named = self
+                        .senders
+                        .iter()
+                        .filter(|other| other.outgoing_viewing_key == sender.outgoing_viewing_key)
+                        .find(|other| {
+                            other.identity_id.as_bytes() == recovered.sender_identity_id()
+                                && other.key_id == recovered.sender_key_id()
+                        })
+                        .unwrap_or(sender);
                     scan.sent.push(SentPrivateDocumentEntry {
                         position: entry.position,
                         block_height: entry.block_height,
                         block_time_ms: entry.block_time_ms,
-                        sender_identity_id: sender.identity_id,
-                        outgoing_key_id: sender.key_id,
+                        sender_identity_id: named.identity_id,
+                        outgoing_key_id: named.key_id,
                         entry: recovered,
                     });
                     break;
@@ -534,6 +545,30 @@ mod tests {
         twice
             .verify_sender(&scan.received[0], &public_key(0xC0))
             .expect("the second key set opened it and checks it");
+    }
+
+    /// Two senders added with the same outgoing viewing key: an entry recovers as the sender
+    /// it names, not the first added.
+    #[test]
+    fn should_recover_an_entry_as_the_sender_it_names_when_two_share_a_key() {
+        let alice = Identifier::from([0xA0; 32]);
+        let carol = Identifier::from([0xC0; 32]);
+        let keys = PrivateDocumentScanKeys::new()
+            .with_sender(alice, 4, ovk(0xC1))
+            .with_sender(carol, 4, ovk(0xC1));
+        let scan = keys.scan_page(
+            &target(),
+            0,
+            &page(0, vec![seal(0xC0, [0xD0; 32], 40, 0xC1, 1)], 1),
+        );
+        assert_eq!(scan.rejected, vec![]);
+        assert_eq!(
+            scan.sent
+                .iter()
+                .map(|sent| (sent.sender_identity_id, sent.outgoing_key_id))
+                .collect::<Vec<_>>(),
+            vec![(carol, 4)]
+        );
     }
 
     /// A page at the store's end is empty: the cursor stays where it is.

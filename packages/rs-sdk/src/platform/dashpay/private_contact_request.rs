@@ -37,6 +37,7 @@ use dpp::data_contract::document_type::{
 use dpp::data_contract::DataContract;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::{BinaryData, Value};
@@ -122,8 +123,12 @@ impl PrivateContactRequest {
     pub fn from_properties(mut properties: BTreeMap<String, Value>) -> Result<Self, Error> {
         let invalid =
             |message: String| Error::Generic(format!("private contact request: {message}"));
-        // An absent optional property may read back as null.
-        properties.retain(|_, value| !value.is_null());
+        // An absent optional property may read back as null. A null under any other name is
+        // left for the unknown property check below.
+        properties.retain(|name, value| {
+            !(value.is_null()
+                && [ACCOUNT_LABEL, AUTO_ACCEPT_PROOF, SHIELDED_ADDRESS].contains(&name.as_str()))
+        });
         let mut take_bytes = |name: &str| -> Result<Option<Vec<u8>>, Error> {
             properties
                 .remove(name)
@@ -354,6 +359,7 @@ pub fn seal_private_contact_request(
     if let Some(problem) = signing_key_problem(
         signing_key,
         &private_contact_request_signing_security_levels(dashpay_contract)?,
+        dashpay_contract.id(),
         None,
     ) {
         return Err(Error::Generic(problem));
@@ -447,7 +453,10 @@ impl SealInputs {
             },
             &sender.id().to_buffer(),
             encryption_key_id,
-            &recipient.id().to_buffer(),
+            &PrivateDocumentRecipient {
+                identity_id: recipient.id().to_buffer(),
+                public_key: &recipient_public_key,
+            },
             &payload,
         );
         Ok(Self {
@@ -526,12 +535,14 @@ fn disabled_problem(key: &IdentityPublicKey, role: &str, at_ms: Option<u64>) -> 
     }
 }
 
-/// Why `key` may not sign a private contact request at `at_ms` (now when `None`), if it may
-/// not: it must be an `AUTHENTICATION` key at one of `levels`, of a signing key type, and
-/// enabled then.
+/// Why `key` may not sign a private contact request of the DashPay contract `dashpay_id` at
+/// `at_ms` (now when `None`), if it may not: it must be an `AUTHENTICATION` key at one of
+/// `levels`, of a signing key type, bound to no other contract or document type, and enabled
+/// then.
 fn signing_key_problem(
     key: &IdentityPublicKey,
     levels: &[SecurityLevel],
+    dashpay_id: Identifier,
     at_ms: Option<u64>,
 ) -> Option<String> {
     if key.purpose() != Purpose::AUTHENTICATION {
@@ -555,7 +566,44 @@ fn signing_key_problem(
             key.key_type()
         ));
     }
+    // A bound key signs only inside its bounds, as a transition's does. A group bound depends
+    // on the group's members when the entry was appended, which a client cannot read, so it
+    // signs no private request.
+    match key.contract_bounds() {
+        None => {}
+        Some(ContractBounds::SingleContract { id }) if *id == dashpay_id => {}
+        Some(ContractBounds::SingleContractDocumentType {
+            id,
+            document_type_name,
+        }) if *id == dashpay_id
+            && document_type_name == PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME => {}
+        Some(bounds) => {
+            return Some(format!(
+                "the signing key {} is bound to the {} {}, not to DashPay's \
+                 {PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME}",
+                key.id(),
+                bounds.contract_bounds_type_string(),
+                bounds.identifier()
+            ))
+        }
+    }
     disabled_problem(key, "signing", at_ms)
+}
+
+/// The keys of `identity` that may sign a private contact request now, in key id order: its
+/// enabled `AUTHENTICATION` keys at a level the type's documents are signed at, of a signing
+/// key type, bound to no other contract or document type. A wallet signs with the first its
+/// signer holds.
+pub fn private_contact_request_signing_keys<'a>(
+    dashpay_contract: &DataContract,
+    identity: &'a Identity,
+) -> Result<Vec<&'a IdentityPublicKey>, Error> {
+    let levels = private_contact_request_signing_security_levels(dashpay_contract)?;
+    Ok(identity
+        .public_keys()
+        .values()
+        .filter(|key| signing_key_problem(key, &levels, dashpay_contract.id(), None).is_none())
+        .collect())
 }
 
 /// Whether the identity key `key` is the secp256k1 key `public_key`.
@@ -660,7 +708,8 @@ pub enum PrivateContactRequestRejection {
     /// position to read again.
     InvalidRequest(String),
     /// An earlier entry of the scan holds a request from the same sender to the same
-    /// recipient for the same account reference, which is kept.
+    /// recipient for the same account reference, which is kept. Received and sent requests are
+    /// counted apart, so a request the wallet both sent and received is kept on both sides.
     Duplicate,
 }
 
@@ -700,6 +749,12 @@ impl PrivateContactRequestScan {
 /// The identities whose keys [`private_contact_requests_from_scan`] checks the entries of
 /// `scan` against: the senders received entries name, the wallet's identities they are to, and
 /// the wallet's identities that sent the recovered ones.
+///
+/// Fetching a sender right after the page that holds its request tells the node that serves
+/// both which identity the wallet looked up, and so that someone it knows sent the wallet a
+/// request. A wallet that knows a sender already (a contact, or one fetched for other reasons)
+/// passes the identity it holds, and fetches the others from another node or later, as its
+/// privacy needs.
 pub fn private_contact_request_identities(scan: &PrivateDocumentScan) -> BTreeSet<Identifier> {
     scan.received
         .iter()
@@ -741,6 +796,7 @@ pub fn private_contact_requests_from_scan(
     let reader = EntryReader {
         identities,
         signing_levels: &signing_levels,
+        dashpay_id: dashpay_contract.id(),
         decode: &|payload: &[u8]| {
             let properties =
                 decode_private_document_payload(document_type, payload, platform_version).map_err(
@@ -800,24 +856,37 @@ pub fn private_contact_requests_from_scan(
         }
     }
 
+    let mut seen_sent = BTreeSet::new();
     for sent in scan.sent {
+        let reject = |reason| RejectedPrivateContactRequest {
+            position: sent.position,
+            block_height: sent.block_height,
+            reason,
+        };
         match reader.read_sent(&sent) {
-            Ok(request) => result.sent.push(SentPrivateContactRequest {
-                position: sent.position,
-                block_height: sent.block_height,
-                block_time_ms: sent.block_time_ms,
-                sender_id: sent.sender_identity_id,
-                sender_key_id: sent.entry.sender_key_id(),
-                recipient_id: Identifier::from(*sent.entry.recipient_identity_id()),
-                recipient_public_key: *sent.entry.recipient_public_key(),
-                commitment: *sent.entry.commitment(),
-                request,
-            }),
-            Err(reason) => rejected.push(RejectedPrivateContactRequest {
-                position: sent.position,
-                block_height: sent.block_height,
-                reason,
-            }),
+            Ok(request) => {
+                let recipient_id = Identifier::from(*sent.entry.recipient_identity_id());
+                if !seen_sent.insert((
+                    sent.sender_identity_id,
+                    recipient_id,
+                    request.account_reference,
+                )) {
+                    rejected.push(reject(PrivateContactRequestRejection::Duplicate));
+                    continue;
+                }
+                result.sent.push(SentPrivateContactRequest {
+                    position: sent.position,
+                    block_height: sent.block_height,
+                    block_time_ms: sent.block_time_ms,
+                    sender_id: sent.sender_identity_id,
+                    sender_key_id: sent.entry.sender_key_id(),
+                    recipient_id,
+                    recipient_public_key: *sent.entry.recipient_public_key(),
+                    commitment: *sent.entry.commitment(),
+                    request,
+                });
+            }
+            Err(reason) => rejected.push(reject(reason)),
         }
     }
 
@@ -833,6 +902,7 @@ type DecodeRequest<'a> =
 struct EntryReader<'a> {
     identities: &'a BTreeMap<Identifier, Option<Identity>>,
     signing_levels: &'a [SecurityLevel],
+    dashpay_id: Identifier,
     decode: &'a DecodeRequest<'a>,
 }
 
@@ -914,7 +984,12 @@ impl EntryReader<'_> {
             if !key_is(key, &signer) {
                 continue;
             }
-            match signing_key_problem(key, self.signing_levels, Some(block_time_ms)) {
+            match signing_key_problem(
+                key,
+                self.signing_levels,
+                self.dashpay_id,
+                Some(block_time_ms),
+            ) {
                 None => return Ok(()),
                 Some(key_problem) => {
                     problem.get_or_insert(key_problem);
@@ -949,17 +1024,13 @@ impl Sdk {
         S: Signer<IdentityPublicKey> + ?Sized,
     {
         let dashpay_contract = self.fetch_dashpay_contract().await?;
-        let levels = private_contact_request_signing_security_levels(&dashpay_contract)?;
-        let signing_key = sender
-            .public_keys()
-            .values()
-            .find(|key| {
-                signing_key_problem(key, &levels, None).is_none() && signer.can_sign_with(key)
-            })
+        let signing_key = private_contact_request_signing_keys(&dashpay_contract, sender)?
+            .into_iter()
+            .find(|key| signer.can_sign_with(key))
             .ok_or_else(|| {
                 Error::Generic(format!(
                     "the signer holds no key of {} that signs a private contact request: an \
-                     enabled AUTHENTICATION key at {levels:?}",
+                     enabled AUTHENTICATION key at HIGH or CRITICAL, bound to no other contract",
                     sender.id()
                 ))
             })?;
@@ -1004,6 +1075,11 @@ impl Sdk {
     /// stored what the page held, and scans again from it until
     /// [`PrivateContactRequestScan::is_complete`]. A failed fetch fails the scan, to be
     /// retried from the same cursor.
+    ///
+    /// The identities are fetched right after the page, which tells the serving node which
+    /// identities the wallet looked up (see [`private_contact_request_identities`]). A wallet
+    /// that cares calls [`Sdk::scan_private_document_page`] and
+    /// [`private_contact_requests_from_scan`] itself, with identities it already holds.
     pub async fn scan_private_contact_requests(
         &self,
         start_position: u64,
@@ -1471,6 +1547,7 @@ mod tests {
                 "an unknown property",
                 with("note", Value::Text("hi".to_string())),
             ),
+            ("an unknown property set to null", with("note", Value::Null)),
             ("no account reference", without(ACCOUNT_REFERENCE)),
             ("no extended public key", without(EXTENDED_PUBLIC_KEY)),
         ] {
@@ -1763,7 +1840,10 @@ mod tests {
                 },
                 &identity_id,
                 key_id,
-                &[0xD0; 32],
+                &PrivateDocumentRecipient {
+                    identity_id: [0xD0; 32],
+                    public_key: &PublicKey::from_secret_key(&secret_key(40)),
+                },
                 &payload(&contract, &request),
             );
             let signature = sign_private_document_signing_data(&signing_data, signing_secret);
@@ -2005,6 +2085,150 @@ mod tests {
         assert!(
             attempt(&medium, 1, 1, 0, 9, 2).is_err(),
             "a MEDIUM signing key"
+        );
+    }
+
+    /// A signing key bound to a contract signs only inside its bounds: DashPay, or DashPay's
+    /// private contact requests. A group bound, whose members a client cannot read as they
+    /// were, signs none. The seal and the reader apply the same rule.
+    #[test]
+    fn should_sign_only_with_a_key_bound_to_dashpay_or_unbound() {
+        let contract = dashpay();
+        let dashpay_id = contract.id();
+        let other_id = Identifier::from([0x77; 32]);
+        let bound = |bounds: Option<ContractBounds>| {
+            with_key(
+                sender_identity(None),
+                IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                    id: 0,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::HIGH,
+                    contract_bounds: bounds,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    read_only: false,
+                    data: BinaryData::new(
+                        PublicKey::from_secret_key(&secret_key(9))
+                            .serialize()
+                            .to_vec(),
+                    ),
+                    disabled_at: None,
+                }),
+            )
+        };
+        let document_type = |id, name: &str| {
+            Some(ContractBounds::SingleContractDocumentType {
+                id,
+                document_type_name: name.to_string(),
+            })
+        };
+        let entry = seal(&contract, &sender_identity(None), &smallest_request(1), 1);
+        for (case, bounds, allowed) in [
+            (
+                "bound to DashPay",
+                Some(ContractBounds::SingleContract { id: dashpay_id }),
+                true,
+            ),
+            (
+                "bound to DashPay's private contact requests",
+                document_type(dashpay_id, PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME),
+                true,
+            ),
+            (
+                "bound to another contract",
+                Some(ContractBounds::SingleContract { id: other_id }),
+                false,
+            ),
+            (
+                "bound to another DashPay type",
+                document_type(dashpay_id, "contactRequest"),
+                false,
+            ),
+            (
+                "bound to a contract group",
+                Some(ContractBounds::ContractGroup { id: other_id }),
+                false,
+            ),
+        ] {
+            let sender = bound(bounds);
+            let reasons = reasons(read(
+                &contract,
+                vec![entry.clone()],
+                &recipient_keys(),
+                &[sender.clone(), recipient_identity()],
+            ));
+            let request = smallest_request(1);
+            let sealed = seal_private_contact_request(
+                &contract,
+                &PrivateContactRequestSender {
+                    identity: &sender,
+                    encryption_key_id: 1,
+                    encryption_secret_key: &secret_key(1),
+                    signing_key_id: 0,
+                    signature: &signature(&contract, &sender, &request, &secret_key(9)),
+                },
+                &recipient_identity(),
+                2,
+                &request,
+                &[1; 32],
+            );
+            let signing_keys = private_contact_request_signing_keys(&contract, &sender)
+                .expect("DashPay v3")
+                .len();
+            if allowed {
+                assert_eq!(reasons, vec![], "{case}: read");
+                assert!(sealed.is_ok(), "{case}: seal");
+                assert_eq!(signing_keys, 1, "{case}: listed");
+            } else {
+                assert!(
+                    matches!(
+                        reasons.as_slice(),
+                        [PrivateContactRequestRejection::SenderKeyNotUsable(_)]
+                    ),
+                    "{case}: read {reasons:?}"
+                );
+                assert!(sealed.is_err(), "{case}: seal");
+                assert_eq!(signing_keys, 0, "{case}: not listed");
+            }
+        }
+    }
+
+    /// Two recovered sent requests to the same recipient for the same account reference are
+    /// one request: the first is kept. A request the wallet both sent and received is kept on
+    /// both sides.
+    #[test]
+    fn should_keep_the_first_of_two_sent_requests_for_one_account_reference() {
+        let contract = dashpay();
+        let sender = sender_identity(None);
+        let entries = vec![
+            seal(&contract, &sender, &smallest_request(1), 1),
+            seal(&contract, &sender, &smallest_request(1), 2),
+        ];
+        let scan = read(
+            &contract,
+            entries,
+            &scan_keys(),
+            &[sender, recipient_identity()],
+        );
+        assert_eq!(
+            scan.sent
+                .iter()
+                .map(|sent| sent.position)
+                .collect::<Vec<_>>(),
+            vec![0]
+        );
+        assert_eq!(
+            scan.received
+                .iter()
+                .map(|received| received.position)
+                .collect::<Vec<_>>(),
+            vec![0]
+        );
+        assert_eq!(
+            reasons(scan),
+            vec![
+                PrivateContactRequestRejection::Duplicate,
+                PrivateContactRequestRejection::Duplicate,
+            ]
         );
     }
 
