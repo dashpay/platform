@@ -992,6 +992,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                      their identity-sync rows are left for the next launch to reconcile"
                 );
             }
+            // The reconcile schedule is keyed by id too: forget it while this
+            // generation still holds the id, so a same-id wallet added later
+            // is reconciled at once rather than waiting out this one's
+            // cadence, and no successor's checkpoint or claim is touched. A
+            // run in flight is marked forgotten and records nothing; one
+            // claimed from here on finds the wallet gone at its gate.
+            self.forget_txo_reconcile(wallet_id);
             if let Err(e) = self.remove_from_wallet_manager(&mut wm, wallet_id) {
                 tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
@@ -1052,10 +1059,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 );
             }
         }
-
-        // A same-id wallet added later is reconciled at once rather than
-        // waiting out the removed one's cadence.
-        self.forget_txo_reconcile(wallet_id);
 
         // Still under the generation's teardown gate: any deferred state naming
         // this generation is dropped in the same critical section as the removal
@@ -2502,6 +2505,15 @@ mod remove_versus_recreate_tests {
                         .identity_sync_manager
                         .register_identity(Identifier::new(SHARED_IDENTITY_ID), [])
                         .await;
+                    // G2 starts a reconcile run that is still in flight when
+                    // the removal finishes.
+                    assert!(
+                        manager
+                            .txo_reconciler()
+                            .claim_without_gate(&id, 0)
+                            .is_some(),
+                        "the recreated wallet holds no run yet"
+                    );
                     *recreated_slot.lock().expect("recreated slot") = Some(wallet);
                 })
             }));
@@ -2587,5 +2599,27 @@ mod remove_versus_recreate_tests {
             "the removal's id-keyed unregister deleted the identity-sync row the recreated \
              generation registered mid-removal"
         );
+
+        // 7. So did G2's reconcile run: the removal forgot G1's schedule
+        //    while G1 still held the id, so G2's in-flight claim is not
+        //    marked forgotten and the page it applies moves its checkpoint.
+        let reconciler = manager.txo_reconciler();
+        let (_, held) = match reconciler.heal_page_held(&wallet_id, 0).await {
+            Some(crate::manager::txo_reconcile::TxoReconcileRead::Page(page, held)) => (page, held),
+            other => panic!("G2's claim must still read a heal page, got {other:?}"),
+        };
+        drop(held);
+        reconciler.heal_page_applied(&wallet_id);
+        reconciler.finish(&wallet_id, true);
+        let next = reconciler
+            .claim_without_gate(&wallet_id, 0)
+            .expect("the run finished");
+        assert_ne!(
+            next.start,
+            crate::manager::txo_reconcile::TxoReconcileStart::Heal { resumed: false },
+            "the removal forgot the recreated wallet's in-flight run, so its applied page was \
+             not kept"
+        );
+        reconciler.finish(&wallet_id, false);
     }
 }
