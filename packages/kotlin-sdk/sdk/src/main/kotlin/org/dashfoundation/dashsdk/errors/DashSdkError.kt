@@ -647,6 +647,21 @@ sealed class DashSdkError(
         }
 
         /**
+         * `ErrorPrivateContactRequestNeedsPrivateReply` (native code 68). The
+         * contact requests with that identity came or went privately
+         * (protocol version 15), so a public request to it, in reply or as a
+         * rotation, would publish the relationship. The public accept and
+         * send refuse it and nothing was sent. Accept it with
+         * `PlatformWalletManager.acceptPrivateContactRequest`, or send with
+         * `PlatformWalletManager.sendPrivateContactRequest`. Not retryable
+         * as-is: the same public call is refused again.
+         * ← Swift `PlatformWalletError.privateContactRequestNeedsPrivateReply`
+         * (`PlatformWalletResult.swift`).
+         */
+        class PrivateContactRequestNeedsPrivateReply(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -842,6 +857,9 @@ sealed class DashSdkError(
             56 -> PlatformWallet.ShieldedRecoveryCorrupted(message, cause)
             57 -> PlatformWallet.ShieldedRecoveryKeysRequired(message, cause)
             59 -> PlatformWallet.SpvProcessRestartRequired(message, cause) // ErrorSpvProcessRestartRequired
+            // ErrorPrivateContactRequestNeedsPrivateReply: the host routes the
+            // refused public accept (or send) to the private one.
+            68 -> PlatformWallet.PrivateContactRequestNeedsPrivateReply(message, cause)
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

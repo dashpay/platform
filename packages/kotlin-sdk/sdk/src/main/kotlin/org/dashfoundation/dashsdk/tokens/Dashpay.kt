@@ -276,6 +276,88 @@ class Dashpay internal constructor(private val walletHandle: Long,
         }
     }
 
+    // ── DashPay private contact requests (protocol version 15) ────────
+    //
+    // ← Swift `PrivateContactRequests.swift`
+    // (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift).
+    // A private request is sealed to one of the recipient's DashPay keys and
+    // paid for from the shielded pool, so nothing on chain names either
+    // side; it is signed by the same identity signer as a public request.
+    // The wallet records it as an ordinary contact request, so the Room rows
+    // and [contacts] read it. The send and the private-reply accept are
+    // shielded spends and live on `PlatformWalletManager`.
+
+    /** What one pass over DashPay's private contact request store did. */
+    data class PrivateContactSyncResult(
+        /** The requests the pass ingested, received and sent, including ones already held. */
+        val requestCount: Long,
+        /** The store pages read. */
+        val pagesRead: Long,
+        /** Entries that opened for one of the wallet's identities but were refused. */
+        val rejectedCount: Long,
+        /** The store position the pass stopped at. */
+        val nextPosition: Long,
+        /** Whether the pass read to the store's last entry. When false, sync again to read on. */
+        val complete: Boolean,
+        /** Identities whose ingest did not reach disk; the next pass reads their entries again. */
+        val unpersistedIdentityCount: Long,
+    )
+
+    /**
+     * Read DashPay's private contact request store for every identity of
+     * this wallet, at most [maxPages] pages (the default reads to the end),
+     * and ingest what it holds for them: requests to them, each sender's
+     * signature checked, and requests they sent, recovered from the store
+     * alone. The ingested requests reach Room through the persister.
+     *
+     * The store is opened with keys derived inside [coreSignerHandle], the
+     * manager's `MnemonicResolverHandle`. The store cursors live in memory
+     * only, so the first pass after launch reads the store from its start.
+     * Private requests reach the wallet only through this read.
+     * ← Swift `ManagedPlatformWallet.syncPrivateContactRequests(maxPages:)`.
+     */
+    suspend fun syncPrivateContactRequests(
+        coreSignerHandle: Long,
+        maxPages: Int = Int.MAX_VALUE,
+    ): PrivateContactSyncResult = gate.op {
+        val counters = mapNativeErrors {
+            DashpayNative.syncPrivateContactRequests(walletHandle, coreSignerHandle, maxPages)
+        }
+        checkNotNull(counters) { "native syncPrivateContactRequests returned no report" }
+        check(counters.size == 6) { "expected 6 sync counters, got ${counters.size}" }
+        PrivateContactSyncResult(
+            requestCount = counters[0],
+            pagesRead = counters[1],
+            rejectedCount = counters[2],
+            nextPosition = counters[4],
+            complete = counters[5] != 0L,
+            unpersistedIdentityCount = counters[3],
+        )
+    }
+
+    /**
+     * The incoming contact request from [senderId] to [ourIdentityId] in
+     * local state, or null when there is none (or the identity isn't
+     * managed by this wallet). Close the returned ref when done. This is
+     * the request `PlatformWalletManager.acceptPrivateContactRequest`
+     * takes when the public accept refuses a contact whose requests came
+     * privately ([DashSdkError.PlatformWallet.PrivateContactRequestNeedsPrivateReply]).
+     * Local read; no network I/O.
+     * ← Swift `ManagedIdentity.getIncomingContactRequest(senderId:)`.
+     */
+    suspend fun incomingContactRequest(
+        ourIdentityId: ByteArray,
+        senderId: ByteArray,
+    ): ContactRequestRef? = withContext(Dispatchers.IO) {
+        mapNativeErrors {
+            withManagedIdentity(ourIdentityId) { identityHandle ->
+                val requestHandle =
+                    TokensNative.getIncomingContactRequest(identityHandle, senderId)
+                if (requestHandle == 0L) null else ContactRequestRef(requestHandle)
+            }
+        }
+    }
+
     // ── DashPay read surface (upstream #3841 parity) ───────────────────
     //
     // JSON-string reads over the managed-identity snapshot, following the

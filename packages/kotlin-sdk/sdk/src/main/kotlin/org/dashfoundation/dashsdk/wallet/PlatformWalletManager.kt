@@ -41,6 +41,8 @@ import org.dashfoundation.dashsdk.security.IdentityKeyPrivateKeyDeriver
 import org.dashfoundation.dashsdk.security.KeystoreSigner
 import org.dashfoundation.dashsdk.security.MnemonicResolverAndPersister
 import org.dashfoundation.dashsdk.security.WalletStorage
+import org.dashfoundation.dashsdk.tokens.ContactRequestRef
+import org.dashfoundation.dashsdk.tokens.EstablishedContactRef
 import java.util.concurrent.atomic.AtomicLong
 
 /** Effective native persistence contract exposed for initialization diagnostics. */
@@ -2127,6 +2129,90 @@ class PlatformWalletManager(
                 amount,
             )
         }
+    }
+
+    /**
+     * Send a DashPay private contact request (protocol version 15) from
+     * [senderIdentityId] to [recipientIdentityId], paying for it from
+     * [account]'s shielded notes on [walletId], so nothing on chain names
+     * either identity. Port of Swift's
+     * `PlatformWalletManager.sendPrivateContactRequest`
+     * (`packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift`).
+     *
+     * The request is signed by this manager's identity signer
+     * ([signerHandle], the handle the public `Dashpay.sendContactRequest`
+     * is given) and sealed with DashPay keys derived through this manager's
+     * resolver, which also supplies the Orchard spend authority.
+     * [shieldedAddress] is the 43-byte raw Orchard address the contact may
+     * pay us at privately. Blocks for the Halo 2 proof.
+     *
+     * Throws [DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed] when
+     * the payment may already be on chain: do not send again.
+     *
+     * @return the created request; close it (or `use {}`) when done.
+     */
+    suspend fun sendPrivateContactRequest(
+        walletId: ByteArray,
+        senderIdentityId: ByteArray,
+        recipientIdentityId: ByteArray,
+        accountLabel: String? = null,
+        autoAcceptProof: ByteArray? = null,
+        shieldedAddress: ByteArray? = null,
+        account: Int = 0,
+    ): ContactRequestRef = teardownGate.op {
+        require(account >= 0) { "account must be non-negative, got $account" }
+        val handle = mapNativeErrors {
+            DashpayNative.sendPrivateContactRequest(
+                managerHandle,
+                walletId,
+                mnemonicResolver.nativeHandle,
+                account,
+                senderIdentityId,
+                recipientIdentityId,
+                accountLabel,
+                autoAcceptProof,
+                shieldedAddress,
+                signerHandle,
+            )
+        }
+        ContactRequestRef(handle)
+    }
+
+    /**
+     * Accept a DashPay contact request that came privately, replying
+     * privately and paying for the reply from [account]'s shielded notes on
+     * [walletId]. Port of Swift's
+     * `PlatformWalletManager.acceptPrivateContactRequest`
+     * (`packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift`).
+     *
+     * The public `Dashpay.acceptContactRequest` refuses such a request with
+     * [DashSdkError.PlatformWallet.PrivateContactRequestNeedsPrivateReply];
+     * read it with `Dashpay.incomingContactRequest` and accept it here. The
+     * reply is signed by this manager's identity signer ([signerHandle]).
+     * [shieldedAddress] is the 43-byte raw Orchard address the contact may
+     * pay us at privately. Blocks for the Halo 2 proof.
+     *
+     * @return the established contact; close it (or `use {}`) when done.
+     */
+    suspend fun acceptPrivateContactRequest(
+        walletId: ByteArray,
+        request: ContactRequestRef,
+        shieldedAddress: ByteArray? = null,
+        account: Int = 0,
+    ): EstablishedContactRef = teardownGate.op {
+        require(account >= 0) { "account must be non-negative, got $account" }
+        val handle = mapNativeErrors {
+            DashpayNative.acceptPrivateContactRequest(
+                managerHandle,
+                walletId,
+                mnemonicResolver.nativeHandle,
+                account,
+                request.value,
+                shieldedAddress,
+                signerHandle,
+            )
+        }
+        EstablishedContactRef(handle)
     }
 
     /**

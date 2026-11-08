@@ -4,6 +4,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.Dispatchers
 import org.dashfoundation.dashsdk.ffi.DashSDKException
+import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.SdkNative
 import org.dashfoundation.dashsdk.ffi.SignerNative
@@ -94,6 +95,35 @@ class FfiSmokeTest {
      * covered by the shared Rust tests in
      * `packages/rs-platform-wallet/src/changeset/core_bridge.rs`.
      */
+    /**
+     * DashPay private contact requests (protocol version 15): the three
+     * `DashpayNative` symbols bind with the descriptors Kotlin declares, and
+     * bad input surfaces as a mapped [DashSDKException] rather than a crash.
+     * A null resolver is refused before any wallet lookup, and a shielded
+     * address that is not 43 bytes never reaches the FFI (which reads
+     * exactly 43). The flows themselves need a protocol version 15 network
+     * with shielded funds; their Rust side is covered by the
+     * platform-wallet and platform-wallet-ffi tests.
+     */
+    @Test
+    fun privateContactRequestSymbolsBindAndRejectInvalidInput() {
+        NativeLoader.ensureLoaded()
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.syncPrivateContactRequests(0L, 0L, 1)
+        }
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.sendPrivateContactRequest(
+                0L, ByteArray(32), 0L, 0, ByteArray(32), ByteArray(32),
+                null, null, null, 0L,
+            )
+        }
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.acceptPrivateContactRequest(
+                0L, ByteArray(32), 0L, 0, 0L, ByteArray(42), 0L,
+            )
+        }
+    }
+
     @Test
     fun syncFaultDetectedSymbolBindsAndRejectsInvalidHandle() {
         NativeLoader.ensureLoaded()

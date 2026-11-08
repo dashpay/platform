@@ -260,6 +260,22 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun shouldRouteARequestThatNeedsAPrivateReplyByItsOwnCode() {
+        // PlatformWalletFFIResultCode::ErrorPrivateContactRequestNeedsPrivateReply = 68
+        // (rs-platform-wallet-ffi/src/error.rs); a host catches this type to
+        // accept privately, as the Swift app does on its typed error.
+        val detail = "the contact requests with 9fRYTJZW came or went privately; " +
+            "reply to or rotate with it privately"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 68, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.PrivateContactRequestNeedsPrivateReply)
+        assertEquals(detail, mapped.message)
+        assertEquals(detail, mapped.userMessage)
+        assertEquals(native, mapped.cause)
+        assertFalse("the same public call is refused again", mapped.isRetryable)
+    }
+
+    @Test
     fun platformShieldCapacityCode41MapsTyped() {
         val message =
             "Platform shield capacity exceeded: available 3623849220, required 3623849221"

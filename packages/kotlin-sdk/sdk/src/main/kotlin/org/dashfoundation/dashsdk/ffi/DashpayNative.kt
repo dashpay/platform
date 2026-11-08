@@ -263,4 +263,68 @@ internal object DashpayNative {
         signerHandle: Long,
         nowUnix: Long,
     ): IdentityRegistrationNativeResult
+
+    // ── DashPay private contact requests (protocol version 15) ────────
+    //
+    // ← Swift `PrivateContactRequests.swift`
+    // (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift).
+
+    /**
+     * Read DashPay's private contact request store for every identity of
+     * the wallet, at most [maxPages] pages, and ingest what it holds for
+     * them. The store is opened with keys derived inside
+     * [coreSignerHandle] (the manager's `MnemonicResolverHandle`). Ingested
+     * requests reach Room through the persister; no handles cross. Returns
+     * six longs: requests ingested, pages read, entries refused, identities
+     * whose ingest did not reach disk, the store position the pass stopped
+     * at, and 1 when it read to the store's last entry (else 0). Blocking.
+     * ← Swift `ManagedPlatformWallet.syncPrivateContactRequests(maxPages:)`.
+     */
+    external fun syncPrivateContactRequests(
+        walletHandle: Long,
+        coreSignerHandle: Long,
+        maxPages: Int,
+    ): LongArray?
+
+    /**
+     * Send a DashPay private contact request, paid from [account]'s
+     * shielded notes on [walletId]. [resolverHandle] supplies the Orchard
+     * spend authority and the DashPay keys; [signerHandle] is the identity
+     * signer [TokensNative.sendContactRequest] takes. [shieldedAddress]
+     * must be 43 raw Orchard bytes when set. Needs the `shielded` native
+     * feature. Returns the created `ContactRequest` handle (destroy via
+     * [TokensNative.contactRequestDestroy]).
+     * ← Swift `PlatformWalletManager.sendPrivateContactRequest`.
+     */
+    @Suppress("LongParameterList")
+    external fun sendPrivateContactRequest(
+        managerHandle: Long,
+        walletId: ByteArray,
+        resolverHandle: Long,
+        account: Int,
+        senderIdentityId: ByteArray,
+        recipientIdentityId: ByteArray,
+        accountLabel: String?,
+        autoAcceptProof: ByteArray?,
+        shieldedAddress: ByteArray?,
+        signerHandle: Long,
+    ): Long
+
+    /**
+     * Accept the incoming contact request [requestHandle] with a private
+     * reply, paid from [account]'s shielded notes. Handles as for
+     * [sendPrivateContactRequest]. Returns the `EstablishedContact` handle
+     * (destroy via [TokensNative.establishedContactDestroy]).
+     * ← Swift `PlatformWalletManager.acceptPrivateContactRequest`.
+     */
+    @Suppress("LongParameterList")
+    external fun acceptPrivateContactRequest(
+        managerHandle: Long,
+        walletId: ByteArray,
+        resolverHandle: Long,
+        account: Int,
+        requestHandle: Long,
+        shieldedAddress: ByteArray?,
+        signerHandle: Long,
+    ): Long
 }
