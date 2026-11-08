@@ -466,16 +466,18 @@ struct AddContactView: View {
             do {
                 let wallet = try requireWallet()
                 let label = accountLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+                // Both sends sign with the same identity signer.
+                let signer = KeychainSigner(modelContainer: modelContext.container)
                 if sendPrivately {
                     _ = try await walletManager.sendPrivateContactRequest(
                         walletId: wallet.walletId,
                         resolver: MnemonicResolver(),
                         senderIdentityId: identity.identityId,
                         recipientIdentityId: recipient,
-                        accountLabel: label.isEmpty ? nil : label
+                        accountLabel: label.isEmpty ? nil : label,
+                        signer: signer
                     )
                 } else {
-                    let signer = KeychainSigner(modelContainer: modelContext.container)
                     _ = try await wallet.sendContactRequest(
                         senderIdentityId: identity.identityId,
                         recipientIdentityId: recipient,
