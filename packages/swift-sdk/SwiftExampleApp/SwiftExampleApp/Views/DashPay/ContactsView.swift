@@ -226,6 +226,36 @@ func kickDashPaySync(_ walletManager: PlatformWalletManager) {
     Task { _ = try? await walletManager.dashPaySyncNow() }
 }
 
+/// Read DashPay's private contact request store (protocol version 15) for
+/// `wallet`. Best effort: a network before protocol version 15 has no such
+/// store. Which requests came privately is kept in memory only, so this runs
+/// with every pull-to-refresh of the request list.
+@MainActor
+func syncPrivateContactRequests(_ wallet: ManagedPlatformWallet) async {
+    _ = try? await wallet.syncPrivateContactRequests()
+}
+
+/// Accept `request`. Rust refuses a public reply to a request that came
+/// privately, as it would publish the relationship; that one is accepted with
+/// a private reply instead, paid from the wallet's shielded balance.
+@MainActor
+func acceptIncomingContactRequest(
+    _ request: ContactRequest,
+    wallet: ManagedPlatformWallet,
+    walletManager: PlatformWalletManager,
+    signer: KeychainSigner
+) async throws {
+    do {
+        _ = try await wallet.acceptContactRequest(request, signer: signer)
+    } catch PlatformWalletError.privateContactRequestNeedsPrivateReply {
+        _ = try await walletManager.acceptPrivateContactRequest(
+            walletId: wallet.walletId,
+            resolver: MnemonicResolver(),
+            request: request
+        )
+    }
+}
+
 // MARK: - Row model + view
 
 /// UI model for one established contact row, resolved from the

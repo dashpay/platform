@@ -165,6 +165,9 @@ struct ContactRequestsView: View {
         }
         .refreshable {
             await attachOrStartSync(walletManager)
+            if let wallet = try? requireWallet() {
+                await syncPrivateContactRequests(wallet)
+            }
         }
         .onChange(of: rowSignature) { _, _ in
             pruneOverlays()
@@ -225,7 +228,12 @@ struct ContactRequestsView: View {
                     return
                 }
                 let signer = KeychainSigner(modelContainer: modelContext.container)
-                _ = try await wallet.acceptContactRequest(request, signer: signer)
+                try await acceptIncomingContactRequest(
+                    request,
+                    wallet: wallet,
+                    walletManager: walletManager,
+                    signer: signer
+                )
                 // Optimistic removal — the persister will promote the
                 // pair to established shortly.
                 removedOverlayIds.insert(contactId)

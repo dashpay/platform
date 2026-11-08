@@ -50,6 +50,10 @@ struct AddContactView: View {
     /// as the contact's "Their account" hint.
     @State private var accountLabel = ""
 
+    /// Send a private contact request (protocol version 15): paid from the
+    /// wallet's shielded balance, so nothing on chain names either side.
+    @State private var sendPrivately = false
+
     @State private var isSending = false
     @State private var errorMessage: String?
 
@@ -114,6 +118,7 @@ struct AddContactView: View {
                     if let recipient = resolvedRecipient {
                         previewSection(recipient: recipient)
                         accountLabelSection
+                        sendPrivatelySection
                         sendSection
                     }
 
@@ -357,6 +362,15 @@ struct AddContactView: View {
         }
     }
 
+    private var sendPrivatelySection: some View {
+        Section {
+            Toggle("Send privately", isOn: $sendPrivately)
+                .accessibilityIdentifier("dashpay.addContact.sendPrivately")
+        } footer: {
+            Text("Paid from this wallet's shielded balance, so nothing on chain names either of you.")
+        }
+    }
+
     private var sendSection: some View {
         Section {
             Button {
@@ -451,14 +465,24 @@ struct AddContactView: View {
             defer { isSending = false }
             do {
                 let wallet = try requireWallet()
-                let signer = KeychainSigner(modelContainer: modelContext.container)
                 let label = accountLabel.trimmingCharacters(in: .whitespacesAndNewlines)
-                _ = try await wallet.sendContactRequest(
-                    senderIdentityId: identity.identityId,
-                    recipientIdentityId: recipient,
-                    accountLabel: label.isEmpty ? nil : label,
-                    signer: signer
-                )
+                if sendPrivately {
+                    _ = try await walletManager.sendPrivateContactRequest(
+                        walletId: wallet.walletId,
+                        resolver: MnemonicResolver(),
+                        senderIdentityId: identity.identityId,
+                        recipientIdentityId: recipient,
+                        accountLabel: label.isEmpty ? nil : label
+                    )
+                } else {
+                    let signer = KeychainSigner(modelContainer: modelContext.container)
+                    _ = try await wallet.sendContactRequest(
+                        senderIdentityId: identity.identityId,
+                        recipientIdentityId: recipient,
+                        accountLabel: label.isEmpty ? nil : label,
+                        signer: signer
+                    )
+                }
                 onSent(recipient, mode == .dpns ? selectedResult?.fullName : nil)
                 kickDashPaySync(walletManager)
                 dismiss()
@@ -486,7 +510,12 @@ struct AddContactView: View {
                     return
                 }
                 let signer = KeychainSigner(modelContainer: modelContext.container)
-                _ = try await wallet.acceptContactRequest(request, signer: signer)
+                try await acceptIncomingContactRequest(
+                    request,
+                    wallet: wallet,
+                    walletManager: walletManager,
+                    signer: signer
+                )
                 kickDashPaySync(walletManager)
                 dismiss()
             } catch {
