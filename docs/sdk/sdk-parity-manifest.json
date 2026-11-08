@@ -31,6 +31,7 @@
     "managed_identity_get_contested_dpns_names": "packages/rs-platform-wallet-ffi/src/dpns.rs",
     "managed_identity_get_dashpay_payments": "packages/rs-platform-wallet-ffi/src/dashpay_payment.rs",
     "managed_identity_get_private_contact": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
+    "managed_identity_get_private_reply_pending": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "on_load_shielded_viewing_keys_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "on_load_shielded_viewing_keys_free_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "on_persist_address_balances_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
@@ -777,14 +778,15 @@
     },
     {
       "id": "dashpay.private_contact_requests",
-      "title": "DashPay private contact requests: store sync, shielded send, accept replying in kind, private-reply accept, private contact read, code 68 routing",
+      "title": "DashPay private contact requests: store sync, shielded send, accept replying in kind, private-reply accept, private contact and pending reads, codes 68 to 71",
       "area": "correctness",
       "shared_apis": [
         "platform_wallet_sync_private_contact_requests",
         "platform_wallet_manager_send_private_contact_request",
         "platform_wallet_manager_accept_contact_request_replying_in_kind",
         "platform_wallet_manager_accept_private_contact_request",
-        "managed_identity_get_private_contact"
+        "managed_identity_get_private_contact",
+        "managed_identity_get_private_reply_pending"
       ],
       "required_persistence_capabilities": [
         "atomic_changesets",
@@ -795,13 +797,13 @@
           "sdk": "partial",
           "example_app": "partial",
           "restart": "required",
-          "reason": "PrivateContactRequests.swift wraps the store sync, the shielded send, the accept replying in kind (the wallet replies privately to a request that came privately, and with a document otherwise; a public or adopted reply needs no shielded support or payment mnemonic read, and a build without shielded support refuses only a private reply, with code 69), the explicit private-reply accept and PrivateContactInfo, all signed with the identity signer the public calls take and counted as native manager operations; codes 68 to 70 are typed and pinned in ErrorHandlingTests. The sync, send and accepts have no automated or recorded gate: a private reply needs a protocol version 15 network with shielded funds. The private marker (core height 0) round-trips through the persisted coreHeightCreatedAt, but no test covers a restart. The example app has the send-privately toggle, accepts with acceptContactRequestReplyingInKind, keeps an unconfirmed private send or reply pending, and reports private refresh failures (quiet before protocol version 15), with no recorded gate."
+          "reason": "PrivateContactRequests.swift wraps the store sync, the shielded send, the accept replying in kind (the wallet replies privately to a request that came privately, and with a document otherwise; a public or adopted reply needs no shielded support or payment mnemonic read, and a build without shielded support refuses only a private reply, with code 69), the explicit private-reply accept, PrivateContactInfo and the wallet's pending-reply read, all signed with the identity signer the public calls take and counted as native manager operations; codes 68 to 71 are typed and pinned in ErrorHandlingTests. The sync, send and accepts have no automated or recorded gate: a private reply needs a protocol version 15 network with shielded funds. The private marker (core height 0) round-trips through the persisted coreHeightCreatedAt, but no test covers a restart, and the wallet keeps a pending reply in memory only. The example app has the send-privately toggle, accepts with acceptContactRequestReplyingInKind, keeps a pending or unconfirmed private send or reply pending by reading the wallet's flag, and reports private refresh failures (quiet before protocol version 15), with no recorded gate."
         },
         "kotlin": {
           "sdk": "partial",
           "example_app": "partial",
           "restart": "required",
-          "reason": "Dashpay.syncPrivateContactRequests and PlatformWalletManager.sendPrivateContactRequest / acceptContactRequestReplyingInKind / acceptPrivateContactRequest bridge the same FFI (signed with the manager's identity signer, behind the manager's teardown gate); the in-kind accept is exported in every build, and codes 68 to 70 map to typed PlatformWallet errors (DashSdkErrorTest). managed_identity_get_private_contact is not bridged: the Swift example app has no caller for it. JNI descriptors are covered only by the FfiSmokeTest symbol test; the flows need a protocol version 15 network with shielded funds and have no recorded gate, and no test covers a restart. The example app accepts with acceptContactRequestReplyingInKind, keeps an unconfirmed reply pending, and reports private refresh failures (quiet before protocol version 15); it has no send-privately toggle."
+          "reason": "Dashpay.syncPrivateContactRequests, privateContact and privateRepliesPending (fresh managed-identity snapshots) and PlatformWalletManager.sendPrivateContactRequest / acceptContactRequestReplyingInKind / acceptPrivateContactRequest bridge the same FFI (signed with the manager's identity signer, behind the manager's teardown gate); the in-kind accept is exported in every build, and codes 68 to 71 map to typed PlatformWallet errors (DashSdkErrorTest). JNI descriptors are covered only by the FfiSmokeTest symbol test; the flows need a protocol version 15 network with shielded funds and have no recorded gate, no test covers a restart, and the wallet keeps a pending reply in memory only. The example app accepts with acceptContactRequestReplyingInKind, keeps a pending or unconfirmed reply pending by reading the wallet's flag on its Requests rows and Add Contact, and reports private refresh failures (quiet before protocol version 15); it has no send-privately toggle."
         }
       },
       "verification": [
@@ -827,6 +829,14 @@
           "file": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
           "id": "should_accept_publicly_without_shielded_support_or_a_mnemonic_read",
           "command": "cargo test -p platform-wallet-ffi --lib should_accept_publicly_without_shielded_support_or_a_mnemonic_read",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
+          "id": "should_read_whether_a_private_reply_is_pending",
+          "command": "cargo test -p platform-wallet-ffi --lib should_read_whether_a_private_reply_is_pending",
           "covers_restart": false
         },
         {
@@ -866,6 +876,14 @@
           "kind": "unit",
           "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/dashpay/ContactRequestOutcomesTest.kt",
           "id": "shouldKeepAnUnconfirmedPrivateSubmissionPending",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*ContactRequestOutcomesTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/dashpay/ContactRequestOutcomesTest.kt",
+          "id": "shouldKeepAPendingPrivateRequestPending",
           "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*ContactRequestOutcomesTest*'",
           "covers_restart": false
         },
