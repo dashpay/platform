@@ -431,23 +431,8 @@ impl SealInputs {
             encryption_key(sender, encryption_key_id, dashpay_contract.id(), None)
                 .map_err(Error::Generic)?;
 
-        let recipient_key = recipient
-            .get_public_key_by_id(recipient_key_id)
-            .ok_or_else(|| {
-                Error::Generic(format!(
-                    "the recipient identity {} has no key {recipient_key_id}",
-                    recipient.id()
-                ))
-            })?;
-        if !recipient_key_purpose_is_valid(recipient_key.purpose()) {
-            return Err(Error::Generic(format!(
-                "the recipient key {recipient_key_id} is a {} key, not a DECRYPTION or \
-                 ENCRYPTION key",
-                recipient_key.purpose()
-            )));
-        }
         let recipient_public_key =
-            ecdh_public_key(recipient_key, "recipient", dashpay_contract.id(), None)
+            recipient_key(recipient, recipient_key_id, dashpay_contract.id(), None)
                 .map_err(Error::Generic)?;
 
         let properties = request.to_properties();
@@ -504,6 +489,31 @@ fn encryption_key(
         ));
     }
     ecdh_public_key(key, "sender", dashpay_id, at_ms)
+}
+
+/// The public key of `recipient`'s key `key_id` that a private contact request may be
+/// encrypted to: an `ECDSA_SECP256K1` `DECRYPTION` or `ENCRYPTION` key, enabled at `at_ms` (now
+/// when `None`) and bound, if at all, to DashPay's contact requests. Sealing checks it now and
+/// reading at the entry's block time; the private format has no older keys to tolerate.
+fn recipient_key(
+    recipient: &Identity,
+    key_id: KeyID,
+    dashpay_id: Identifier,
+    at_ms: Option<u64>,
+) -> Result<PublicKey, String> {
+    let key = recipient.get_public_key_by_id(key_id).ok_or_else(|| {
+        format!(
+            "the recipient identity {} has no key {key_id}",
+            recipient.id()
+        )
+    })?;
+    if !recipient_key_purpose_is_valid(key.purpose()) {
+        return Err(format!(
+            "the recipient key {key_id} is a {} key, not a DECRYPTION or ENCRYPTION key",
+            key.purpose()
+        ));
+    }
+    ecdh_public_key(key, "recipient", dashpay_id, at_ms)
 }
 
 /// The public key of an `ECDSA_SECP256K1` identity key not disabled at `at_ms` (now when
@@ -1133,26 +1143,23 @@ impl EntryReader<'_> {
         received: &ReceivedPrivateDocumentEntry,
     ) -> Result<PrivateContactRequest, PrivateContactRequestRejection> {
         self.check_sender(&received.entry, received.block_time_ms)?;
+        // The key the entry opened with, checked as sealing checks it, at the entry's time.
         let recipient_key_problem = match self.identity(&received.recipient_identity_id) {
             None => Some("the recipient identity does not exist".to_string()),
-            Some(recipient) => match recipient.get_public_key_by_id(received.recipient_key_id) {
-                None => Some(format!(
-                    "the recipient has no key {}",
-                    received.recipient_key_id
-                )),
-                Some(key) if !key_is(key, received.entry.recipient_public_key()) => Some(format!(
-                    "the recipient key {} is not the key the entry is encrypted to",
-                    received.recipient_key_id
-                )),
-                Some(key) => disabled_problem(key, "recipient", Some(received.block_time_ms))
-                    .or_else(|| {
-                        bounds_problem(
-                            key,
-                            "recipient",
-                            self.dashpay_id,
-                            &PRIVATE_CONTACT_REQUEST_ENCRYPTION_KEY_DOCUMENT_TYPES,
-                        )
-                    }),
+            Some(recipient) => match recipient_key(
+                recipient,
+                received.recipient_key_id,
+                self.dashpay_id,
+                Some(received.block_time_ms),
+            ) {
+                Err(problem) => Some(problem),
+                Ok(public_key) if public_key != *received.entry.recipient_public_key() => {
+                    Some(format!(
+                        "the recipient key {} is not the key the entry is encrypted to",
+                        received.recipient_key_id
+                    ))
+                }
+                Ok(_) => None,
             },
         };
         if let Some(problem) = recipient_key_problem {
@@ -2204,6 +2211,69 @@ mod tests {
         assert_eq!(reasons_with(Some(disabled_at(BLOCK_TIME_MS + 1))), vec![]);
         assert!(matches!(
             reasons_with(None).as_slice(),
+            [PrivateContactRequestRejection::RecipientKeyNotUsable(_)]
+        ));
+    }
+
+    /// A request is read only through a recipient key sealing would have encrypted to: one
+    /// whose record is an AUTHENTICATION or TRANSFER key holding the point it opened with, or
+    /// an ECDSA_HASH160 record of that point, is refused.
+    #[test]
+    fn should_refuse_a_request_through_a_key_it_could_not_be_sealed_to() {
+        let contract = dashpay();
+        let entry = seal(&contract, &sender_identity(None), &smallest_request(1), 1);
+        let read_with = |recipient_key: IdentityPublicKey| {
+            reasons(read(
+                &contract,
+                vec![entry.clone()],
+                &recipient_keys(),
+                &[
+                    sender_identity(None),
+                    with_key(recipient_identity(), recipient_key),
+                ],
+            ))
+        };
+        assert_eq!(
+            read_with(key(
+                2,
+                Purpose::DECRYPTION,
+                KeyType::ECDSA_SECP256K1,
+                &secret_key(2),
+                None
+            )),
+            vec![],
+            "the key it was sealed to"
+        );
+        for purpose in [Purpose::AUTHENTICATION, Purpose::TRANSFER] {
+            assert!(
+                matches!(
+                    read_with(key(
+                        2,
+                        purpose,
+                        KeyType::ECDSA_SECP256K1,
+                        &secret_key(2),
+                        None
+                    ))
+                    .as_slice(),
+                    [PrivateContactRequestRejection::RecipientKeyNotUsable(_)]
+                ),
+                "{purpose}"
+            );
+        }
+        let hash160 = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 2,
+            purpose: Purpose::DECRYPTION,
+            security_level: SecurityLevel::MEDIUM,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_HASH160,
+            read_only: false,
+            data: BinaryData::new(
+                ripemd160_sha256(&PublicKey::from_secret_key(&secret_key(2)).serialize()).to_vec(),
+            ),
+            disabled_at: None,
+        });
+        assert!(matches!(
+            read_with(hash160).as_slice(),
             [PrivateContactRequestRejection::RecipientKeyNotUsable(_)]
         ));
     }
