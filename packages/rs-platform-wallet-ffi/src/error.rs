@@ -622,6 +622,14 @@ pub enum PlatformWalletFFIResultCode {
     /// coins lets either lock fit.
     ErrorAssetLockTooManyInputs = 60,
 
+    /// Maps `PlatformWalletError::PrivateContactRequestNeedsPrivateReply`:
+    /// the contact request came privately (protocol version 15), so a public
+    /// `contactRequest` reply would publish the relationship. Nothing was
+    /// sent. Accept it with
+    /// `platform_wallet_manager_accept_private_contact_request` instead.
+    /// 61 to 67 are claimed by open branches, so this takes 68.
+    ErrorPrivateContactRequestNeedsPrivateReply = 68,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1058,6 +1066,11 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::SpvProcessRestartRequired(..) => {
                 PlatformWalletFFIResultCode::ErrorSpvProcessRestartRequired
+            }
+            // The public accept refused a request that came privately; the
+            // host routes it to the private accept.
+            PlatformWalletError::PrivateContactRequestNeedsPrivateReply(..) => {
+                PlatformWalletFFIResultCode::ErrorPrivateContactRequestNeedsPrivateReply
             }
             // A signer failure can also reach this blanket impl wrapped as
             // `PlatformWalletError::Sdk(dash_sdk::Error::Protocol(..))` (any
@@ -2689,6 +2702,24 @@ mod identity_balance_error_tests {
             PlatformWalletFFIResultCode::ErrorIdentityBalanceUnavailable
         );
         assert_eq!(result.code as u32, 58);
+        assert!(!result.message.is_null());
+    }
+}
+
+#[cfg(test)]
+mod private_contact_request_error_tests {
+    use super::*;
+
+    #[test]
+    fn should_tell_a_private_request_from_other_accept_failures_by_code() {
+        let result = PlatformWalletFFIResult::from(
+            PlatformWalletError::PrivateContactRequestNeedsPrivateReply([7; 32].into()),
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorPrivateContactRequestNeedsPrivateReply
+        );
+        assert_eq!(result.code as u32, 68);
         assert!(!result.message.is_null());
     }
 }

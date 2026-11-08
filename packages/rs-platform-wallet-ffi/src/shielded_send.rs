@@ -563,7 +563,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
 /// prune backstop); the pass outcome is logged, not surfaced.
 ///
 /// [`ShieldedSyncManager::sync_now`]: platform_wallet::manager::shielded_sync::ShieldedSyncManager::sync_now
-fn poke_sync_on_unconfirmed<T>(result: &Result<T, PlatformWalletError>, handle: Handle) {
+pub(crate) fn poke_sync_on_unconfirmed<T>(result: &Result<T, PlatformWalletError>, handle: Handle) {
     let ambiguous = matches!(
         result,
         Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
@@ -596,7 +596,7 @@ fn poke_sync_on_unconfirmed<T>(result: &Result<T, PlatformWalletError>, handle: 
 /// withdraw) to a typed FFI result, mirroring the identity-create sibling's
 /// code split so hosts can tell "definitively failed, safe to retry" from
 /// "may have executed, do NOT retry".
-fn map_spend_result(
+pub(crate) fn map_spend_result(
     result: Result<(), PlatformWalletError>,
     operation: &str,
 ) -> PlatformWalletFFIResult {
@@ -743,7 +743,7 @@ const SPEND_PANIC_GUIDANCE: &str = "The spend may or may not have been broadcast
 /// transition was broadcast, so the outcome is genuinely ambiguous. That code's contract is
 /// exactly the conservative one this needs — the host must not auto-retry, the reservation stays
 /// in place, and the next nullifier sync (or an app restart) reconciles whether the spend landed.
-fn catch_spend_panic(
+pub(crate) fn catch_spend_panic(
     operation: &str,
     body: impl FnOnce() -> PlatformWalletFFIResult,
 ) -> PlatformWalletFFIResult {

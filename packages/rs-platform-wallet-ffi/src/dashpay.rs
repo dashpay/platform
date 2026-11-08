@@ -32,11 +32,22 @@
 //!   established contact via their `DashpayExternalAccount`. Runs
 //!   the Core transaction path internally.
 
+use std::collections::BTreeMap;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
-use platform_wallet::ContactRequest;
-use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
+use dash_sdk::platform::dashpay::{PrivateContactRequest, PrivateContactRequestScan};
+use dash_sdk::platform::private_document_entries::PrivateDocumentEntries;
+use dash_sdk::platform::private_document_scan::PrivateDocumentScan;
+use dpp::identity::{Identity, KeyID};
+use dpp::platform_value::BinaryData;
+use dpp::prelude::{DataContract, Identifier};
+use dpp::version::PlatformVersion;
+use platform_wallet::{ContactRequest, PlatformWalletError, PrivateDocumentKeyPaths};
+use rs_sdk_ffi::{
+    MnemonicResolverCoreSigner, MnemonicResolverHandle, MnemonicResolverSignerError, SignerHandle,
+    VTableSigner,
+};
 
 use crate::contact_request::CONTACT_REQUEST_STORAGE;
 use crate::core_wallet::classify_broadcast_result;
@@ -179,7 +190,7 @@ impl ContactRequestHandleArray {
     }
 
     /// Copy a slice of contact requests into the global handle storage.
-    fn from_requests(requests: Vec<ContactRequest>) -> Self {
+    pub(crate) fn from_requests(requests: Vec<ContactRequest>) -> Self {
         if requests.is_empty() {
             return Self::empty();
         }
@@ -314,22 +325,9 @@ pub unsafe extern "C" fn platform_wallet_send_contact_request_with_signer(
     } else {
         Some(unwrap_result_or_return!(CStr::from_ptr(account_label).to_str()).to_string())
     };
-    let proof: Option<Vec<u8>> = if auto_accept_proof.is_null() || auto_accept_proof_len == 0 {
-        None
-    } else {
-        // Defense-in-depth: bound the copy at the DIP-15 auto-accept proof
-        // ceiling (102 bytes) BEFORE allocating, so a malformed binding or a
-        // hostile (ptr, len) pair can't force an oversized allocation. The SDK
-        // re-validates the exact 38..=102 range after this.
-        if auto_accept_proof_len > 102 {
-            return crate::error::PlatformWalletFFIResult::err(
-                crate::error::PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                format!(
-                    "auto_accept_proof length {auto_accept_proof_len} exceeds the DIP-15 maximum of 102 bytes"
-                ),
-            );
-        }
-        Some(std::slice::from_raw_parts(auto_accept_proof, auto_accept_proof_len).to_vec())
+    let proof = match read_auto_accept_proof(auto_accept_proof, auto_accept_proof_len) {
+        Ok(proof) => proof,
+        Err(result) => return result,
     };
 
     let signer_addr = signer_handle as usize;
@@ -367,6 +365,31 @@ pub unsafe extern "C" fn platform_wallet_send_contact_request_with_signer(
     let request = unwrap_result_or_return!(result);
     *out_request_handle = CONTACT_REQUEST_STORAGE.insert(request);
     PlatformWalletFFIResult::ok()
+}
+
+/// Copy an optional auto-accept proof from `(ptr, len)`; `(null, 0)` omits it.
+///
+/// Defense-in-depth: the copy is bounded at the DIP-15 auto-accept proof
+/// ceiling (102 bytes) BEFORE allocating, so a malformed binding or a hostile
+/// (ptr, len) pair can't force an oversized allocation. The SDK re-validates
+/// the exact 38..=102 range after this.
+///
+/// # Safety
+/// A non-null `ptr` must point to `len` readable bytes.
+pub(crate) unsafe fn read_auto_accept_proof(
+    ptr: *const u8,
+    len: usize,
+) -> Result<Option<Vec<u8>>, PlatformWalletFFIResult> {
+    if ptr.is_null() || len == 0 {
+        return Ok(None);
+    }
+    if len > 102 {
+        return Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!("auto_accept_proof length {len} exceeds the DIP-15 maximum of 102 bytes"),
+        ));
+    }
+    Ok(Some(std::slice::from_raw_parts(ptr, len).to_vec()))
 }
 
 /// Send a contact request from a scanned DIP-15 auto-accept QR
@@ -1221,6 +1244,82 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
             contact_id: opened.contact_id,
             private_data: opened.private_data,
         })
+    }
+
+    async fn scan_private_document_page(
+        &self,
+        keys: &PrivateDocumentKeyPaths,
+        data_contract_id: Identifier,
+        document_type_name: &str,
+        start_position: u64,
+        page: &PrivateDocumentEntries,
+    ) -> Result<PrivateDocumentScan, PlatformWalletError> {
+        self.signer
+            .scan_private_document_page(
+                &keys.recipients,
+                &keys.senders,
+                data_contract_id,
+                document_type_name,
+                start_position,
+                page,
+            )
+            .map_err(private_document_signer_error)
+    }
+
+    async fn read_private_contact_requests(
+        &self,
+        keys: &PrivateDocumentKeyPaths,
+        dashpay_contract: &DataContract,
+        scan: PrivateDocumentScan,
+        sender_identities: &BTreeMap<Identifier, Option<Identity>>,
+        platform_version: &PlatformVersion,
+    ) -> Result<PrivateContactRequestScan, PlatformWalletError> {
+        self.signer
+            .read_private_contact_requests(
+                &keys.recipients,
+                dashpay_contract,
+                scan,
+                sender_identities,
+                platform_version,
+            )
+            .map_err(private_document_signer_error)
+    }
+
+    async fn seal_private_contact_request(
+        &self,
+        sender_encryption_key_path: &key_wallet::bip32::DerivationPath,
+        dashpay_contract: &DataContract,
+        sender: &Identity,
+        sender_encryption_key_id: KeyID,
+        recipient: &Identity,
+        recipient_key_id: KeyID,
+        request: &PrivateContactRequest,
+        esk_seed: &[u8; 32],
+    ) -> Result<BinaryData, PlatformWalletError> {
+        self.signer
+            .seal_private_contact_request(
+                sender_encryption_key_path,
+                dashpay_contract,
+                sender,
+                sender_encryption_key_id,
+                recipient,
+                recipient_key_id,
+                request,
+                esk_seed,
+            )
+            .map_err(private_document_signer_error)
+    }
+}
+
+/// A signer failure of a private document operation as a wallet error: the
+/// SDK's refusal stays typed, the rest are reported as the other provider
+/// methods report theirs.
+fn private_document_signer_error(error: MnemonicResolverSignerError) -> PlatformWalletError {
+    match error {
+        MnemonicResolverSignerError::PrivateContactRequest(error) => {
+            PlatformWalletError::Sdk(error)
+        }
+        error => PlatformWalletError::InvalidIdentityData(error.to_string()),
     }
 }
 
