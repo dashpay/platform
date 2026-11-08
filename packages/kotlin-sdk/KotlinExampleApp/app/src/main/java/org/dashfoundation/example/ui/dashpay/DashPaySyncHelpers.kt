@@ -3,7 +3,6 @@ package org.dashfoundation.example.ui.dashpay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 
@@ -50,28 +49,21 @@ suspend fun syncPrivateContactRequests(
 }
 
 /**
- * Accept the incoming request from [senderId] to [ourIdentityId]. Rust refuses
- * a public reply to a contact whose requests came privately, as it would
- * publish the relationship; that one is accepted with a private reply
- * instead, paid from the wallet's shielded balance and signed by the same
- * identity signer. Rust decides which; the app only reacts to the refusal.
- * Returns false when the request is not in local state.
- * ← Swift `acceptIncomingContactRequest` (`ContactsView.swift`).
+ * Accept the incoming request from [senderId] to [ourIdentityId] with the
+ * wallet's one accept, which replies the way the request came: privately
+ * (paid from the wallet's shielded balance) or with a document, signed by the
+ * manager's identity signer either way. The wallet decides; the app makes one
+ * call. Returns false when the request is not in local state.
+ * ← Swift `PlatformWalletManager.acceptContactRequestReplyingInKind`, as
+ * `ContactRequestsView.swift` and `AddContactView.swift` call it.
  */
 suspend fun acceptIncomingContactRequest(
     wallet: ManagedPlatformWallet,
     manager: PlatformWalletManager,
     ourIdentityId: ByteArray,
     senderId: ByteArray,
-): Boolean = try {
-    wallet.dashpay.acceptIncomingRequest(
-        ourIdentityId = ourIdentityId,
-        senderId = senderId,
-        signerHandle = manager.signerHandle,
-        coreSignerHandle = manager.mnemonicResolverHandle,
-    )
-} catch (refused: DashSdkError.PlatformWallet.PrivateContactRequestNeedsPrivateReply) {
-    val request = wallet.dashpay.incomingContactRequest(ourIdentityId, senderId)
-    request?.use { manager.acceptPrivateContactRequest(wallet.walletId, it).close() }
-    request != null
+): Boolean {
+    val request = wallet.dashpay.incomingContactRequest(ourIdentityId, senderId) ?: return false
+    request.use { manager.acceptContactRequestReplyingInKind(wallet.walletId, it).close() }
+    return true
 }
