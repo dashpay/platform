@@ -123,8 +123,12 @@ impl PrivateContactRequest {
     }
 
     /// The request a private contact request's properties hold, refused when one is missing,
-    /// unknown, of the wrong type or of the wrong size for its field. The schema's other bounds
-    /// are checked with dpp's document validation, which reading does before this.
+    /// unknown or of the wrong type, or when the extended public key or the shielded address,
+    /// both fixed-size fields, is not its size. The schema's other bounds, such as the account
+    /// label's length and the auto-accept proof's size, are not checked here: dpp's document
+    /// validation of the type's schema checks them when a request is sealed and when one is
+    /// read, before this. A caller parsing properties itself validates them the same way first,
+    /// or gets a request holding what it passed.
     pub fn from_properties(mut properties: BTreeMap<String, Value>) -> Result<Self, Error> {
         let invalid =
             |message: String| Error::Generic(format!("private contact request: {message}"));
@@ -233,7 +237,11 @@ pub const PRIVATE_CONTACT_REQUEST_SIGNING_KEY_TYPES: [KeyType; 2] =
 /// The security levels an `AUTHENTICATION` key may sign a private contact request at: the ones
 /// Platform lets a document of the type be signed at
 /// ([`SecurityLevel::document_signing_levels`] of the type's requirement), from `CRITICAL` to
-/// the requirement (`HIGH` unless the contract sets another). `MASTER` keys sign no documents.
+/// the requirement. A private type cannot declare a requirement, so it has the default, `HIGH`,
+/// and this is `[CRITICAL, HIGH]`. A `privateContactRequest` type that is not private, in a
+/// contract parsed without full validation, may require `MASTER`: then this is `[MASTER]`, as
+/// Platform signs such a type's documents with master keys only. Sealing and reading refuse a
+/// type that is not private.
 pub fn private_contact_request_signing_security_levels(
     dashpay_contract: &DataContract,
 ) -> Result<Vec<SecurityLevel>, Error> {
