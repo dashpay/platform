@@ -58,6 +58,19 @@ use {
 /// Unique identifier for a wallet (32-byte hash).
 pub type WalletId = [u8; 32];
 
+/// What a private contact request reply is paid with, which
+/// [`PlatformWallet::accept_contact_request_replying_in_kind`] asks for only
+/// when the reply is private: the shielded coordinator, the seed the spend
+/// authority is derived from (dropped once it is), the shielded account and
+/// the prover.
+#[cfg(feature = "shielded")]
+pub struct PrivateReplyPayment<P, Seed> {
+    pub coordinator: Arc<NetworkShieldedCoordinator>,
+    pub seed: Seed,
+    pub account: u32,
+    pub prover: P,
+}
+
 /// Cached capacity snapshot for shielding a Platform Payment account.
 ///
 /// The figures are computed from the same lexicographic address ordering and
@@ -1623,28 +1636,30 @@ impl PlatformWallet {
     }
 
     /// Accept a DashPay contact request replying the way it came: privately,
-    /// paid from `account`'s shielded notes, when it came privately and no
-    /// reply exists yet, else with a `contactRequest` document signed by
-    /// `signer`. The spend authority is derived from `seed` only when the
-    /// reply is private. See
+    /// paid from a shielded account, when it came privately and no reply
+    /// exists yet, else with a `contactRequest` document signed by `signer`.
+    /// `payment` gives what a private reply is paid with (the shielded
+    /// coordinator, the seed for the spend authority, the account and the
+    /// prover) and is called only for a private reply, so a public reply or
+    /// an adopted one needs neither shielded support nor the seed. See
     /// [`DashPayView::accept_contact_request_replying_in_kind`](crate::DashPayView::accept_contact_request_replying_in_kind).
     #[cfg(feature = "shielded")]
-    #[allow(clippy::too_many_arguments)]
-    pub async fn accept_contact_request_replying_in_kind<S, C, P>(
+    pub async fn accept_contact_request_replying_in_kind<S, C, P, Seed, R, RFut>(
         &self,
-        coordinator: &Arc<NetworkShieldedCoordinator>,
-        seed: &[u8],
-        account: u32,
         request: &ContactRequest,
         shielded_address: Option<[u8; 43]>,
         signer: &S,
         crypto: &C,
-        prover: P,
+        payment: R,
     ) -> Result<EstablishedContact, PlatformWalletError>
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
         P: OrchardProver + Send + Sync,
+        Seed: AsRef<[u8]> + Send,
+        R: FnOnce() -> RFut + Send,
+        RFut: std::future::Future<Output = Result<PrivateReplyPayment<P, Seed>, PlatformWalletError>>
+            + Send,
     {
         self.identity
             .dashpay()
@@ -1654,8 +1669,15 @@ impl PlatformWallet {
                 signer,
                 crypto,
                 |entry| async move {
-                    let keyset = self.derive_spend_keyset(seed, account).await?;
-                    self.pay_private_contact_request(coordinator, keyset, account, entry, prover)
+                    let PrivateReplyPayment {
+                        coordinator,
+                        seed,
+                        account,
+                        prover,
+                    } = payment().await?;
+                    let keyset = self.derive_spend_keyset(seed.as_ref(), account).await?;
+                    drop(seed);
+                    self.pay_private_contact_request(&coordinator, keyset, account, entry, prover)
                         .await
                 },
             )
