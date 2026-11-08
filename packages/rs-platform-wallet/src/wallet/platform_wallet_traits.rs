@@ -359,17 +359,24 @@ impl WalletTransactionChecker for PlatformWalletInfo {
         update_balance: bool,
     ) -> TransactionCheckResult {
         // TODO: some logic must here - restore
-        let chain_locked = context.is_chain_locked();
         let result = self
             .core_wallet
             .check_core_transaction(tx, context, wallet, update_state, update_balance)
             .await;
         // A transaction first seen, or confirmed, in a ChainLocked block is
         // dropped on the spot: keep what it spent, as `apply_chain_lock`
-        // does for the records it promotes.
-        if DROPS_FINALIZED_RECORDS && chain_locked && update_state && result.is_relevant {
+        // does for the records it promotes. Gate on each record's own
+        // context, not this call's: a funding that arrives after its
+        // spender hands the spender back in `updated_records` with its own
+        // context unchanged, possibly mempool, and such a spender is not
+        // final.
+        if DROPS_FINALIZED_RECORDS && update_state && result.is_relevant {
             self.finalized_spends.extend(owned_spends(
-                result.new_records.iter().chain(&result.updated_records),
+                result
+                    .new_records
+                    .iter()
+                    .chain(&result.updated_records)
+                    .filter(|record| record.context.is_chain_locked()),
             ));
         }
         result
@@ -582,6 +589,74 @@ mod tests {
                 assert!(info.finalized_spends.is_empty());
             }
         }
+    }
+
+    /// A mempool spender seen before its funding is handed back in
+    /// `updated_records` when the funding arrives ChainLocked, with its own
+    /// context still Mempool. That spender is not final, so its input must
+    /// not be kept as a finalized spend: the coin is no verdict yet.
+    #[tokio::test]
+    async fn should_not_finalize_a_mempool_spender_attributed_by_a_chain_locked_funding() {
+        use crate::manager::accessors::classify_outpoints;
+        use crate::manager::accessors::txo_inventory_tests::{
+            bip44_account_0, funding, in_block, manager_with, query,
+        };
+
+        let ctx = TestWalletContext::new_random();
+        let script = ctx.receive_address.script_pubkey();
+        let funded = funding(script.clone(), 0x54, 6_000);
+        let coin = OutPoint::new(funded.txid(), 0);
+        let mut spender = spending(coin);
+        spender.output = vec![TxOut {
+            value: 5_000,
+            script_pubkey: script.clone(),
+        }];
+        let (mut wm, wallet_id) = manager_with(ctx);
+        {
+            let (wallet, info) = wm.get_wallet_mut_and_info_mut(&wallet_id).expect("wallet");
+            assert!(
+                info.check_core_transaction(
+                    &spender,
+                    TransactionContext::Mempool,
+                    wallet,
+                    true,
+                    true
+                )
+                .await
+                .is_relevant
+            );
+            let block = in_block(100).block_info().copied().expect("mined");
+            let result = info
+                .check_core_transaction(
+                    &funded,
+                    TransactionContext::InChainLockedBlock(block),
+                    wallet,
+                    true,
+                    true,
+                )
+                .await;
+            assert!(result.is_relevant);
+            assert!(
+                result
+                    .updated_records
+                    .iter()
+                    .any(|record| record.txid == spender.txid()
+                        && !record.context.is_chain_locked()),
+                "the funding attributes its input to the mempool spender"
+            );
+            assert!(
+                !info.finalized_spends.contains(&coin),
+                "a mempool spender's input is not a finalized spend"
+            );
+        }
+        assert_eq!(
+            classify_outpoints(
+                &wm,
+                &wallet_id,
+                &[query(bip44_account_0(), coin, &script)]
+            ),
+            vec![crate::manager::accessors::OutpointClass::Unknown]
+        );
     }
 
     /// A spend drawing on two funds accounts names each coin once: each
