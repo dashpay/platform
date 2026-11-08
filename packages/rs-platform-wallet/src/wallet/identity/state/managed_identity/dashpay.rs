@@ -114,6 +114,14 @@ pub struct DashPayState {
     /// [`ManagedIdentity::unignore_sender`]: super::ManagedIdentity::unignore_sender
     pub(super) private_contact_requests_position: u64,
 
+    /// Whether a private sync read DashPay's private contact request store
+    /// to its end for this identity since the wallet was loaded, with nothing
+    /// held back. Until then a private send or accept reads it first: a
+    /// request paid for in an earlier process may be in the store unread, and
+    /// the reservation that kept it from being paid twice did not survive.
+    /// In memory only; a cursor rewind leaves it set.
+    pub(super) private_contact_requests_read: bool,
+
     /// The shielded address each contact's tracked private request to this
     /// identity carries. In memory only, rebuilt by the scan a cold start
     /// runs. Whether a request came privately is the request's own
@@ -303,6 +311,12 @@ impl DashPayState {
     /// for and is not yet read back from the store; see the field doc.
     pub fn private_reply_pending(&self, contact: &Identifier) -> bool {
         self.pending_private_replies.contains_key(contact)
+    }
+
+    /// Whether a private sync read DashPay's private contact request store
+    /// to its end for this identity since load; see the field doc.
+    pub fn private_contact_requests_read(&self) -> bool {
+        self.private_contact_requests_read
     }
 
     /// How this identity and `contact` exchanged private requests, from the

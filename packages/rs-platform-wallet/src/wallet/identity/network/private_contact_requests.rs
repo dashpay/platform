@@ -126,6 +126,16 @@ pub struct PrivateContactSyncReport {
 /// A request not read back within them stays pending for a later sync.
 const POST_SEND_SYNC_PAGES: usize = 4;
 
+/// How many pages of the store each private sync reads that a private send
+/// runs, before it seals anything, when the store was not yet read to its end
+/// since load.
+const PRIVATE_STORE_READ_PAGES: usize = 16;
+
+/// How many such syncs a private send runs before it refuses with
+/// [`PlatformWalletError::PrivateContactRequestPending`]: a later send goes on
+/// from where they stopped.
+const PRIVATE_STORE_READ_PASSES: usize = 4;
+
 /// One of the wallet's identities, as a pass reads the store for it.
 struct ScannedIdentity {
     identity_id: Identifier,
@@ -337,6 +347,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// unpaid. The pending request is kept in memory only; after a restart,
     /// [`Self::restore_pending_private_contact_requests`] restores those whose
     /// payment is unconfirmed.
+    ///
+    /// A request paid for and confirmed but not read back leaves nothing
+    /// that survives a restart. So the first private send or accept from an
+    /// identity since load reads the store to its end first, which records
+    /// such a request; while that read cannot finish, the send is refused
+    /// with `PrivateContactRequestPending`, nothing sealed or paid.
     #[allow(clippy::too_many_arguments)]
     pub async fn send_private_contact_request<S, C, F, Fut>(
         &self,
@@ -355,6 +371,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         F: FnOnce(BinaryData) -> Fut + Send,
         Fut: Future<Output = Result<ResponseMetadata, PlatformWalletError>> + Send,
     {
+        self.read_private_store_before_sending(sender_identity_id, recipient_identity_id, crypto)
+            .await?;
         let attempt = self
             .with_managed(sender_identity_id, |managed| {
                 managed.reserve_private_reply(*recipient_identity_id)
@@ -396,6 +414,75 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             reservation.release().await;
         }
         sent
+    }
+
+    /// Make sure DashPay's private contact request store was read to its end
+    /// for `identity_id` since load, before a private request from it to
+    /// `recipient` is sealed or paid for: a request paid for in an earlier
+    /// process may be in the store unread, and the reservation that kept a
+    /// second one from being paid did not survive the restart. Until it was,
+    /// this runs private syncs of [`PRIVATE_STORE_READ_PAGES`] pages, at most
+    /// [`PRIVATE_STORE_READ_PASSES`] of them, and refuses with
+    /// [`PlatformWalletError::PrivateContactRequestPending`] when they stop
+    /// advancing or run out first. A sync error comes back as it is. Once
+    /// read, it reads nothing. An identity the private sync does not read,
+    /// with no HD index or no key an entry can be sealed to or from, sends no
+    /// private request, so it is not held.
+    async fn read_private_store_before_sending<C>(
+        &self,
+        identity_id: &Identifier,
+        recipient: &Identifier,
+        crypto: &C,
+    ) -> Result<(), PlatformWalletError>
+    where
+        C: ContactCryptoProvider + Sync,
+    {
+        if self.private_store_read(identity_id).await? {
+            return Ok(());
+        }
+        let (identities, _) = self.private_scan_identities().await?;
+        if !identities
+            .iter()
+            .any(|identity| identity.identity_id == *identity_id)
+        {
+            return Ok(());
+        }
+        let mut position = identities
+            .iter()
+            .map(|identity| identity.position)
+            .min()
+            .unwrap_or_default();
+        for _ in 0..PRIVATE_STORE_READ_PASSES {
+            let report = self
+                .sync_private_contact_requests(crypto, PRIVATE_STORE_READ_PAGES)
+                .await?;
+            if self.private_store_read(identity_id).await? {
+                return Ok(());
+            }
+            if report.next_position <= position {
+                break;
+            }
+            position = report.next_position;
+        }
+        Err(PlatformWalletError::PrivateContactRequestPending(
+            *recipient,
+        ))
+    }
+
+    /// Whether a private sync read DashPay's private contact request store
+    /// to its end for `identity_id` since load.
+    async fn private_store_read(
+        &self,
+        identity_id: &Identifier,
+    ) -> Result<bool, PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
+        let managed = wm
+            .get_wallet_info(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?
+            .identity_manager
+            .managed_identity(identity_id)
+            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+        Ok(managed.dashpay().private_contact_requests_read())
     }
 
     /// Run `f` on the managed identity `identity_id` under the wallet lock.
@@ -616,6 +703,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// sent by [`Self::send_private_contact_request`], signed by `signer`,
     /// `pay` paying for it and `shielded_address` the address the contact may
     /// pay us at privately.
+    ///
+    /// As for the send, the store is read to its end first when it was not
+    /// since load, so a reply paid for in an earlier process is adopted
+    /// rather than paid for again; while that read cannot finish, the accept
+    /// is refused with [`PlatformWalletError::PrivateContactRequestPending`].
     pub async fn accept_private_contact_request<S, C, F, Fut>(
         &self,
         request: &ContactRequest,
@@ -630,6 +722,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         F: FnOnce(BinaryData) -> Fut + Send,
         Fut: Future<Output = Result<ResponseMetadata, PlatformWalletError>> + Send,
     {
+        self.read_private_store_before_sending(&request.recipient_id, &request.sender_id, crypto)
+            .await?;
         self.accept_contact_request_replying_with(request, crypto, || async {
             self.send_private_contact_request(
                 &request.recipient_id,
@@ -654,6 +748,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// ([`Self::accept_contact_request_with_external_signer`]). The one accept
     /// a host calls: which reply a request takes is the wallet's decision.
     /// `pay` runs only for a private reply.
+    ///
+    /// When the request came privately, or a private reply would be chosen,
+    /// the store is read to its end first if it was not since load, before
+    /// the reply is chosen: a reply paid for in an earlier process is then
+    /// adopted, with no payment. While that read cannot finish, the accept is
+    /// refused with [`PlatformWalletError::PrivateContactRequestPending`]. A
+    /// public request with no private one tracked reads nothing.
     pub async fn accept_contact_request_replying_in_kind<S, C, F, Fut>(
         &self,
         request: &ContactRequest,
@@ -668,6 +769,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         F: FnOnce(BinaryData) -> Fut + Send,
         Fut: Future<Output = Result<ResponseMetadata, PlatformWalletError>> + Send,
     {
+        if request.came_privately() || self.needs_private_reply(request).await {
+            self.read_private_store_before_sending(
+                &request.recipient_id,
+                &request.sender_id,
+                crypto,
+            )
+            .await?;
+        }
         if self.needs_private_reply(request).await {
             self.accept_private_contact_request(request, shielded_address, signer, crypto, pay)
                 .await
@@ -1051,6 +1160,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     } else if !identity.failed {
                         identity.failed = true;
                         report.unpersisted_identities.push(identity_id);
+                    }
+                    // Read to the store's end with nothing held back this
+                    // pass: every entry was ingested for this identity.
+                    if read.is_complete() && !identity.failed {
+                        managed.note_private_contact_requests_read();
                     }
                     tear_down_stale_external_accounts(wallet, info, &identity_id, rotated);
                     candidates.push((
@@ -2566,6 +2680,314 @@ mod tests {
             .await
             .expect("the restarted wallet reads the store");
         assert!(!pending_to(&restarted, ALICE, &bob).await);
+    }
+
+    /// A `pay` that must not run.
+    fn no_payment(
+        _: BinaryData,
+    ) -> std::future::Ready<Result<ResponseMetadata, PlatformWalletError>> {
+        panic!("nothing is paid")
+    }
+
+    /// Whether `wallet`'s identity `identity_id` read the private store to its
+    /// end since load.
+    async fn store_read(wallet: &PlatformWallet, identity_id: [u8; 32]) -> bool {
+        managed(wallet, identity_id, |managed| {
+            managed.dashpay().private_contact_requests_read()
+        })
+        .await
+    }
+
+    /// A private reply paid for and confirmed but not read back leaves
+    /// nothing that survives a restart. After one, with Alice's request
+    /// already known (as a sync that stopped between the two leaves it), the
+    /// accept a host calls reads the store first, finds the reply, and adopts
+    /// it: nothing is paid twice.
+    #[tokio::test]
+    async fn should_adopt_a_private_reply_paid_for_before_a_restart() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let bob_signer = signer(BOB_PHRASE, &bob);
+        let (_alice_manager, alice_wallet) =
+            wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let kept = Arc::new(Mutex::new(Vec::new()));
+        alice_wallet
+            .identity()
+            .dashpay()
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                append_entry(&alice_wallet, 0, vec![], &kept),
+            )
+            .await
+            .expect("Alice sends the request");
+        let request_entry = kept.lock().expect("kept").remove(0);
+
+        let (_bob_manager, before) = wallet(
+            BOB_PHRASE,
+            &bob,
+            &[&alice, &bob],
+            vec![request_entry.to_vec()],
+        )
+        .await;
+        before
+            .identity()
+            .dashpay()
+            .sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("Bob reads the store");
+        let received = managed(&before, BOB, |managed| {
+            managed.dashpay().incoming_request(&alice.id()).cloned()
+        })
+        .await
+        .expect("Bob holds Alice's request");
+        let reply = Arc::new(Mutex::new(Vec::new()));
+        let paid = before
+            .identity()
+            .dashpay()
+            .accept_contact_request_replying_in_kind(
+                &received,
+                None,
+                &bob_signer,
+                &bob_crypto,
+                keep_entry(&reply),
+            )
+            .await;
+        assert!(
+            matches!(
+                paid,
+                Err(PlatformWalletError::PrivateContactRequestPending(_))
+            ),
+            "paid and confirmed, not read back: {paid:?}"
+        );
+        let reply_entry = reply.lock().expect("reply").remove(0);
+
+        // The restart: the reply is in the store, the reservation is gone.
+        let (_restarted_manager, restarted) = wallet(
+            BOB_PHRASE,
+            &bob,
+            &[&alice, &bob],
+            vec![request_entry.to_vec(), reply_entry.to_vec()],
+        )
+        .await;
+        {
+            let iw = restarted.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&restarted.wallet_id())
+                .expect("wallet info")
+                .identity_manager
+                .managed_identity_mut(&bob.id())
+                .expect("Bob")
+                .add_incoming_contact_request(received.clone(), &iw.persister)
+                .expect("Alice's request");
+        }
+        assert!(!store_read(&restarted, BOB).await);
+        let established = restarted
+            .identity()
+            .dashpay()
+            .accept_contact_request_replying_in_kind(
+                &received,
+                None,
+                &bob_signer,
+                &bob_crypto,
+                no_payment,
+            )
+            .await
+            .expect("the reply read back is adopted");
+        assert_eq!(established.contact_identity_id, alice.id());
+        assert_eq!(established.incoming_request, received);
+        assert!(established.outgoing_request.came_privately());
+        assert!(store_read(&restarted, BOB).await);
+        assert!(!pending_to(&restarted, BOB, &alice).await);
+    }
+
+    /// The first private send since load reads the store first. While that
+    /// read cannot finish, here because the recipient of a request the store
+    /// holds from Alice cannot be read, it is refused with nothing sealed or
+    /// paid; a sync error comes back as it is; once the store reads, the send
+    /// goes on.
+    #[tokio::test]
+    async fn should_refuse_a_private_send_until_the_store_reads_to_its_end() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (_manager, before) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let kept = Arc::new(Mutex::new(Vec::new()));
+        before
+            .identity()
+            .dashpay()
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                keep_entry(&kept),
+            )
+            .await
+            .expect_err("not read back");
+        let entry = kept.lock().expect("kept").remove(0);
+
+        let (_restarted_manager, restarted) =
+            wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![entry.to_vec()]).await;
+        let view = restarted.identity().dashpay();
+        macro_rules! send {
+            ($pay:expr) => {
+                view.send_private_contact_request(
+                    &alice.id(),
+                    &bob.id(),
+                    None,
+                    AutoAcceptProofSource::None,
+                    None,
+                    &alice_signer,
+                    &alice_crypto,
+                    $pay,
+                )
+                .await
+            };
+        }
+
+        set_identity_known(&restarted, &bob, false).await;
+        let held = send!(no_payment);
+        assert!(
+            matches!(held, Err(PlatformWalletError::PrivateContactRequestPending(recipient))
+                if recipient == bob.id()),
+            "{held:?}"
+        );
+        assert!(!store_read(&restarted, ALICE).await);
+        assert!(
+            !pending_to(&restarted, ALICE, &bob).await,
+            "nothing reserved"
+        );
+
+        let contract = dashpay_contract().expect("bundled DashPay");
+        let page = PrivateDocumentEntriesQuery::new(
+            contract.id(),
+            PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+            0,
+        );
+        {
+            let mut sdk = (*restarted.identity().sdk).clone();
+            sdk.mock()
+                .remove_fetch_expectation::<PrivateDocumentEntries, _>(page)
+                .await;
+        }
+        let failed = send!(no_payment);
+        assert!(
+            matches!(failed, Err(PlatformWalletError::Sdk(_))),
+            "{failed:?}"
+        );
+
+        publish(&restarted, 0, vec![entry.to_vec()]).await;
+        set_identity_known(&restarted, &bob, true).await;
+        let paid = Arc::new(Mutex::new(Vec::new()));
+        let sent = send!(keep_entry(&paid));
+        assert!(
+            matches!(
+                sent,
+                Err(PlatformWalletError::PrivateContactRequestPending(_))
+            ),
+            "paid, not read back: {sent:?}"
+        );
+        assert_eq!(paid.lock().expect("paid").len(), 1, "the send goes on");
+        assert!(store_read(&restarted, ALICE).await);
+        managed(&restarted, ALICE, |managed| {
+            assert!(
+                managed.dashpay().outgoing_request(&bob.id()).is_some(),
+                "the request paid for before the restart is recorded first"
+            );
+        })
+        .await;
+    }
+
+    /// Once the store was read to its end, a private send reads nothing more
+    /// before it pays: here a page read would fail, and the send still pays.
+    #[tokio::test]
+    async fn should_read_the_private_store_once_since_load() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let carol = identity(BOB_PHRASE, [0xC1; 32]);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (_manager, alice_wallet) =
+            wallet(ALICE_PHRASE, &alice, &[&alice, &bob, &carol], vec![]).await;
+        let view = alice_wallet.identity().dashpay();
+        macro_rules! send {
+            ($recipient:expr, $kept:expr) => {
+                view.send_private_contact_request(
+                    &alice.id(),
+                    &$recipient,
+                    None,
+                    AutoAcceptProofSource::None,
+                    None,
+                    &alice_signer,
+                    &alice_crypto,
+                    keep_entry($kept),
+                )
+                .await
+            };
+        }
+        assert!(!store_read(&alice_wallet, ALICE).await);
+        let read_when_paid = Arc::new(AtomicBool::new(false));
+        view.send_private_contact_request(
+            &alice.id(),
+            &bob.id(),
+            None,
+            AutoAcceptProofSource::None,
+            None,
+            &alice_signer,
+            &alice_crypto,
+            |_: BinaryData| {
+                let read_when_paid = Arc::clone(&read_when_paid);
+                let wallet = &alice_wallet;
+                async move {
+                    read_when_paid.store(store_read(wallet, ALICE).await, Ordering::SeqCst);
+                    Ok(ResponseMetadata {
+                        time_ms: BLOCK_TIME_MS,
+                        ..Default::default()
+                    })
+                }
+            },
+        )
+        .await
+        .expect_err("not read back");
+        assert!(
+            read_when_paid.load(Ordering::SeqCst),
+            "the store was read before the first payment"
+        );
+
+        let contract = dashpay_contract().expect("bundled DashPay");
+        {
+            let mut sdk = (*alice_wallet.identity().sdk).clone();
+            sdk.mock()
+                .remove_fetch_expectation::<PrivateDocumentEntries, _>(
+                    PrivateDocumentEntriesQuery::new(
+                        contract.id(),
+                        PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+                        0,
+                    ),
+                )
+                .await;
+        }
+        let second = Arc::new(Mutex::new(Vec::new()));
+        let sent = send!(carol.id(), &second);
+        assert!(
+            matches!(sent, Err(PlatformWalletError::PrivateContactRequestPending(recipient))
+                if recipient == carol.id()),
+            "paid, its read back failing: {sent:?}"
+        );
+        assert_eq!(second.lock().expect("second").len(), 1, "no read first");
     }
 
     /// Once the account reference's rotation version is at its last, a

@@ -799,6 +799,12 @@ impl ManagedIdentity {
             advance_if_unchanged(self.dashpay.high_water_received_ms, snapshot, max_fetched);
     }
 
+    /// Note that a private sync read DashPay's private contact request store
+    /// to its end for this identity, with nothing held back.
+    pub(crate) fn note_private_contact_requests_read(&mut self) {
+        self.dashpay.private_contact_requests_read = true;
+    }
+
     /// Advance the private contact request cursor to `next_position` once
     /// every entry before it was read and what it held for this identity
     /// ingested. Never moves it back, and leaves it where a concurrent
