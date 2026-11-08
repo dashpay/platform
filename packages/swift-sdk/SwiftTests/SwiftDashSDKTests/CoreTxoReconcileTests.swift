@@ -390,7 +390,8 @@ final class CoreTxoReconcileTests: XCTestCase {
         vout: UInt32 = 0,
         amount: UInt64 = 19_549,
         isSpent: Bool = false,
-        pendingSpender: Data? = nil
+        pendingSpender: Data? = nil,
+        legacyEmptyWalletId: Bool = false
     ) throws {
         let walletId = walletId ?? self.walletId
         let context = ModelContext(container)
@@ -415,7 +416,9 @@ final class CoreTxoReconcileTests: XCTestCase {
             height: 2_391_743
         )
         txo.account = account
-        txo.walletId = walletId
+        // A legacy row predates the column: its wallet is only its
+        // account's.
+        txo.walletId = legacyEmptyWalletId ? Data() : walletId
         txo.isConfirmed = true
         txo.isSpent = isSpent
         context.insert(txo)
@@ -1627,14 +1630,16 @@ final class CoreTxoReconcileTests: XCTestCase {
     }
 
     /// The classify pass reads every store page as a page of the run, an
-    /// empty one too: here the first page holds only another wallet's rows,
-    /// and the second, read because the first was full, holds none.
+    /// empty one too: here the first page holds only legacy rows (no
+    /// wallet id stamped) that resolve to another wallet — the read cannot
+    /// exclude them, only the post-filter can — and the second, read
+    /// because the first was full, holds none.
     func testAnEmptyStorePageIsStillClassifiedAndReported() throws {
         let (handler, container) = try makeHandler()
         try seedWallet(in: container)
         try seedWallet(in: container, walletId: otherWalletId)
-        try seedUnspentTxo(in: container, walletId: otherWalletId, txid: txid(0x70))
-        try seedUnspentTxo(in: container, walletId: otherWalletId, txid: txid(0x71))
+        try seedUnspentTxo(in: container, walletId: otherWalletId, txid: txid(0x70), legacyEmptyWalletId: true)
+        try seedUnspentTxo(in: container, walletId: otherWalletId, txid: txid(0x71), legacyEmptyWalletId: true)
         let engine = FakeCoreTxoEngine()
 
         let report = run(handler, engine: engine, pageSize: 2)
@@ -1648,6 +1653,41 @@ final class CoreTxoReconcileTests: XCTestCase {
             "classify", "release", "classifyApplied",
             "classify", "release", "classifyApplied",
         ])
+    }
+
+    /// Another wallet's unspent rows ahead of this wallet's in the store's
+    /// order cost this run nothing: the read is scoped to the wallet (and
+    /// legacy rows with no id), so a budget that could not page past three
+    /// full pages of the other wallet's rows still reaches and classifies
+    /// this wallet's rows in one run, and its legacy row too.
+    func testOtherWalletsRowsAheadDoNotSpendTheRunsBudget() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        try seedWallet(in: container, walletId: otherWalletId)
+        for i in 0..<6 {
+            try seedUnspentTxo(in: container, walletId: otherWalletId, txid: txid(0x60 + UInt8(i)))
+        }
+        try seedUnspentTxo(in: container, txid: txid(0x68))
+        try seedUnspentTxo(in: container, txid: txid(0x69), legacyEmptyWalletId: true)
+        let mine = PersistentTxo.makeOutpoint(txid: txid(0x68), vout: 0)
+        let mineLegacy = PersistentTxo.makeOutpoint(txid: txid(0x69), vout: 0)
+        // One heal page (the empty inventory) plus two classify pages — the
+        // full page of this wallet's rows and the empty one after it.
+        // Walking the other wallet's three pages first would need six.
+        let engine = FakeCoreTxoEngine(verdicts: [mine: .knownUncredited], budget: 3)
+
+        let report = run(handler, engine: engine, pageSize: 2)
+
+        XCTAssertTrue(report.completed)
+        XCTAssertFalse(report.stoppedOnBudget)
+        XCTAssertEqual(report.storeRows, 2)
+        XCTAssertEqual(report.flipped, 1)
+        XCTAssertEqual(Set(engine.classified.map(\.outpoint)), [mine, mineLegacy])
+        XCTAssertEqual(engine.classifyApplied, [cursor(1), nil], "the flipped row left the set")
+        XCTAssertTrue(try XCTUnwrap(txo(container, txid: txid(0x68))).isSpent)
+        for i in 0..<6 {
+            XCTAssertFalse(try XCTUnwrap(txo(container, txid: txid(0x60 + UInt8(i)))).isSpent)
+        }
     }
 
     /// A run that starts at the classify pass reads no heal page and walks

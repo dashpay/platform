@@ -11785,11 +11785,15 @@ extension PlatformWalletPersistenceHandler {
     /// `offset`, at most `limit`, each with the query the engine classifies
     /// it by. Rows without an account or a well-formed txid are counted in
     /// `unresolvedAccount` and not asked about: the engine could not check
-    /// a claim the row does not make. Rows of other wallets are read past
-    /// (`fetched` counts them) — the walk is an offset walk over every
-    /// unspent row, ordered by creation, because the outpoint key is not
-    /// comparable in a SwiftData predicate; rows flipped by the apply half
-    /// leave the predicate, and the caller advances by `fetched - flipped`.
+    /// a claim the row does not make. The read is scoped to rows stamped
+    /// with this wallet's id plus legacy rows stamped with none, so other
+    /// wallets' rows never spend this run's page budget; a legacy row that
+    /// resolves (through its account) to another wallet is read past
+    /// (`fetched` counts it). The walk is an offset walk over that set,
+    /// ordered by creation, because the outpoint key is not comparable in a
+    /// SwiftData predicate; rows flipped by the apply half are this
+    /// wallet's and leave the predicate, and nothing else here moves a row
+    /// out of the set, so the caller advances by `fetched - flipped`.
     func reconcileUnspentTxoPage(
         walletId: Data,
         offset: Int,
@@ -11799,8 +11803,15 @@ extension PlatformWalletPersistenceHandler {
         onQueue {
             guard !isCancelled() else { return .stopped }
             guard !inChangeset else { return .retryLater }
+            // The empty id is captured, like `walletId`, rather than built
+            // inside the predicate. It marks a row written before the
+            // column existed; the post-filter below resolves it through its
+            // account.
+            let empty = Data()
             var descriptor = FetchDescriptor<PersistentTxo>(
-                predicate: #Predicate { $0.isSpent == false },
+                predicate: #Predicate<PersistentTxo> {
+                    $0.isSpent == false && ($0.walletId == walletId || $0.walletId == empty)
+                },
                 sortBy: [SortDescriptor(\.createdAt)]
             )
             descriptor.fetchOffset = offset
