@@ -112,6 +112,13 @@ pub struct RejectedPrivateDocumentEntry {
 /// What one page of a private document type's store holds for the wallet.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PrivateDocumentScan {
+    /// The contract of the store the page was read from: the target
+    /// [`PrivateDocumentScanKeys::scan_page`] was given. A reader of one store refuses a scan
+    /// of another, whatever entries it holds, so another store's cursor is never taken for its
+    /// own.
+    pub contract_id: Identifier,
+    /// The private document type of that store.
+    pub document_type_name: String,
     /// The entries to the wallet's identities, in store order.
     pub received: Vec<ReceivedPrivateDocumentEntry>,
     /// The entries the wallet's identities sealed, in store order.
@@ -126,6 +133,11 @@ pub struct PrivateDocumentScan {
 }
 
 impl PrivateDocumentScan {
+    /// Whether the page was read from the store of `document_type_name` of `contract_id`.
+    pub fn is_of_store(&self, contract_id: &Identifier, document_type_name: &str) -> bool {
+        self.contract_id == *contract_id && self.document_type_name == document_type_name
+    }
+
     /// Whether the scan reached the store's last entry. A later scan from
     /// [`Self::next_position`] reads the entries appended since.
     pub fn is_complete(&self) -> bool {
@@ -229,6 +241,8 @@ impl PrivateDocumentScanKeys {
         page: &PrivateDocumentEntries,
     ) -> PrivateDocumentScan {
         let mut scan = PrivateDocumentScan {
+            contract_id: Identifier::from(target.contract_id),
+            document_type_name: target.document_type_name.to_string(),
             next_position: page
                 .entries
                 .last()
@@ -902,6 +916,8 @@ mod tests {
         assert_eq!(
             scan,
             PrivateDocumentScan {
+                contract_id: Identifier::from(target().contract_id),
+                document_type_name: target().document_type_name.to_string(),
                 next_position: 7,
                 total_count: 7,
                 ..Default::default()
@@ -1069,6 +1085,143 @@ mod tests {
         assert_eq!(starts, vec![0, 4, 8, 12, 16]);
         assert_eq!(pages.len(), 6, "the error, then nothing");
         assert!(pages[5].is_err());
+    }
+
+    /// A fetch of Drive's pages of a store of `total` entries in chunks of 4 where the pages
+    /// from 8, 12 and 16, fetched at once, complete in the reverse order: 16 first, which lets
+    /// 12 complete, which lets 8. The page from `failing` fails instead of reading. The
+    /// positions are noted as the fetches complete.
+    fn completing_backwards(
+        total: u64,
+        failing: Option<u64>,
+        completed: &std::sync::Arc<std::sync::Mutex<Vec<u64>>>,
+    ) -> impl Fn(u64) -> PageFuture + Clone + Send + Sync + 'static {
+        use std::sync::Arc;
+        use tokio::sync::Notify;
+
+        let releases = Arc::new([Notify::new(), Notify::new()]);
+        let completed = Arc::clone(completed);
+        move |start| {
+            let releases = Arc::clone(&releases);
+            let completed = Arc::clone(&completed);
+            Box::pin(async move {
+                match start {
+                    8 => releases[0].notified().await,
+                    12 => releases[1].notified().await,
+                    _ => {}
+                }
+                completed.lock().expect("completed").push(start);
+                match start {
+                    16 => releases[1].notify_one(),
+                    12 => releases[0].notify_one(),
+                    _ => {}
+                }
+                if failing == Some(start) {
+                    return Err(Error::Generic(format!("no page from {start}")));
+                }
+                Ok(drive_page(4, total, start))
+            })
+        }
+    }
+
+    /// Pages fetched at once that complete out of order are yielded in store order.
+    #[tokio::test]
+    async fn should_yield_pages_in_store_order_when_later_ones_complete_first() {
+        let completed = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let pages = walk(completing_backwards(24, None, &completed), 0, 3).await;
+        assert_eq!(
+            completed.lock().expect("completed")[..5],
+            [0, 4, 16, 12, 8],
+            "the later pages complete first"
+        );
+        assert_eq!(
+            pages
+                .into_iter()
+                .map(|page| page.expect("every page reads").start_position)
+                .collect::<Vec<_>>(),
+            vec![0, 4, 8, 12, 16, 20]
+        );
+    }
+
+    /// A later page's failure that completes before an earlier page's success is yielded
+    /// after it, and ends the stream.
+    #[tokio::test]
+    async fn should_yield_a_later_failure_after_the_earlier_success_that_completes_after_it() {
+        let completed = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let pages = walk(completing_backwards(24, Some(12), &completed), 0, 3).await;
+        let completed = completed.lock().expect("completed").clone();
+        let failed_at = completed.iter().position(|start| *start == 12);
+        let read_at = completed.iter().position(|start| *start == 8);
+        assert!(
+            failed_at < read_at,
+            "the failure completes first: {completed:?}"
+        );
+        let starts: Vec<u64> = pages
+            .iter()
+            .take_while(|page| page.is_ok())
+            .flatten()
+            .map(|page| page.start_position)
+            .collect();
+        assert_eq!(starts, vec![0, 4, 8]);
+        assert_eq!(pages.len(), 4, "the failure, then nothing: {pages:?}");
+        assert!(pages[3].is_err());
+    }
+
+    /// Entries appended during a walk, here a store of 30 entries in chunks of 4 that grows to
+    /// 35 once the first two pages are read, are read as far as the last chunk the first
+    /// page's count reaches, which now holds them to position 31: the positions come once
+    /// each, in order. A walk from the cursor the pages leave reads the rest.
+    #[tokio::test]
+    async fn should_leave_entries_appended_during_a_walk_to_a_walk_from_its_cursor() {
+        use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let total = Arc::new(AtomicU64::new(30));
+        let fetched = Arc::new(AtomicUsize::new(0));
+        let fetch = {
+            let total = Arc::clone(&total);
+            move |start: u64| -> PageFuture {
+                let total = Arc::clone(&total);
+                let fetched = Arc::clone(&fetched);
+                Box::pin(async move {
+                    let page = drive_page(4, total.load(Ordering::SeqCst), start);
+                    if fetched.fetch_add(1, Ordering::SeqCst) + 1 == 2 {
+                        total.store(35, Ordering::SeqCst);
+                    }
+                    Ok(page)
+                })
+            }
+        };
+        let positions = |pages: &[Result<PrivateDocumentPage, Error>]| -> Vec<u64> {
+            pages
+                .iter()
+                .flat_map(|page| {
+                    page.as_ref()
+                        .expect("every page reads")
+                        .entries
+                        .entries
+                        .iter()
+                        .map(|entry| entry.position)
+                })
+                .collect()
+        };
+
+        let first = walk(
+            fetch.clone(),
+            0,
+            MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
+        )
+        .await;
+        assert_eq!(positions(&first), (0..32).collect::<Vec<_>>());
+        let cursor = first
+            .last()
+            .and_then(|page| page.as_ref().ok())
+            .map(|page| page.start_position + page.entries.entries.len() as u64)
+            .expect("a last page");
+        assert_eq!(cursor, 32);
+
+        let rest = walk(fetch, cursor, MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES).await;
+        assert_eq!(positions(&rest), (32..35).collect::<Vec<_>>());
     }
 
     /// A page short of its chunk, before the store's end, is an error rather than a gap.

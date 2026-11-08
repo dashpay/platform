@@ -123,8 +123,12 @@ impl PrivateContactRequest {
     }
 
     /// The request a private contact request's properties hold, refused when one is missing,
-    /// unknown, of the wrong type or of the wrong size for its field. The schema's other bounds
-    /// are checked with dpp's document validation, which reading does before this.
+    /// unknown or of the wrong type, or when the extended public key or the shielded address,
+    /// both fixed-size fields, is not its size. The schema's other bounds, such as the account
+    /// label's length and the auto-accept proof's size, are not checked here: dpp's document
+    /// validation of the type's schema checks them when a request is sealed and when one is
+    /// read, before this. A caller parsing properties itself validates them the same way first,
+    /// or gets a request holding what it passed.
     pub fn from_properties(mut properties: BTreeMap<String, Value>) -> Result<Self, Error> {
         let invalid =
             |message: String| Error::Generic(format!("private contact request: {message}"));
@@ -233,7 +237,11 @@ pub const PRIVATE_CONTACT_REQUEST_SIGNING_KEY_TYPES: [KeyType; 2] =
 /// The security levels an `AUTHENTICATION` key may sign a private contact request at: the ones
 /// Platform lets a document of the type be signed at
 /// ([`SecurityLevel::document_signing_levels`] of the type's requirement), from `CRITICAL` to
-/// the requirement (`HIGH` unless the contract sets another). `MASTER` keys sign no documents.
+/// the requirement. A private type cannot declare a requirement, so it has the default, `HIGH`,
+/// and this is `[CRITICAL, HIGH]`. A `privateContactRequest` type that is not private, in a
+/// contract parsed without full validation, may require `MASTER`: then this is `[MASTER]`, as
+/// Platform signs such a type's documents with master keys only. Sealing and reading refuse a
+/// type that is not private.
 pub fn private_contact_request_signing_security_levels(
     dashpay_contract: &DataContract,
 ) -> Result<Vec<SecurityLevel>, Error> {
@@ -968,8 +976,20 @@ pub fn private_contact_requests_from_scan(
     identities: &BTreeMap<Identifier, ProvedIdentity>,
     platform_version: &PlatformVersion,
 ) -> Result<PrivateContactRequestScan, Error> {
-    // An entry opens only for the store it was sealed for, but a scan of another store's page
-    // would hold entries of that store: refused, not read as DashPay requests.
+    // A scan of another store's page is refused whatever it holds: even with no entry the
+    // wallet's keys open, its cursor is that store's, which must not be kept as DashPay's.
+    if !scan.is_of_store(
+        &dashpay_contract.id(),
+        PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+    ) {
+        return Err(Error::Generic(format!(
+            "the scan is of the store {} {}, not DashPay's \
+             {PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME}",
+            scan.contract_id, scan.document_type_name
+        )));
+    }
+    // An entry opens only for the store it was sealed for: one of another store in a DashPay
+    // scan is refused, not read as a DashPay request.
     let dashpay_id = dashpay_contract.id().to_buffer();
     if let Some(entry) = scan
         .received
@@ -2742,6 +2762,8 @@ mod tests {
 
     /// A scan of another store's page is refused, received and sent entries alike, rather
     /// than read as DashPay requests: here a store of another contract with DashPay's types.
+    /// So is one holding no entry the wallet's keys open, whose cursor is that store's, of
+    /// another contract or of another of DashPay's types; DashPay's own empty page reads.
     #[test]
     fn should_refuse_a_scan_of_another_store() {
         let dashpay_contract = dashpay();
@@ -2785,6 +2807,44 @@ mod tests {
             .to_string();
             assert!(error.contains("not DashPay's"), "{case}: {error}");
         }
+
+        let dashpay_id = dashpay_contract.id().to_buffer();
+        for (contract_id, document_type_name) in [
+            (
+                other.id().to_buffer(),
+                PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+            ),
+            (dashpay_id, "contactInfo"),
+        ] {
+            let target = PrivateDocumentTarget {
+                contract_id,
+                document_type_name,
+            };
+            let scan = recipient_keys().scan_page(&target, 0, &page(vec![]));
+            let error = private_contact_requests_from_scan(
+                &dashpay_contract,
+                scan,
+                &BTreeMap::new(),
+                PlatformVersion::latest(),
+            )
+            .expect_err("another store's cursor")
+            .to_string();
+            assert!(
+                error.contains("not DashPay's"),
+                "{document_type_name}: {error}"
+            );
+        }
+        let own = PrivateDocumentTarget {
+            contract_id: dashpay_id,
+            document_type_name: PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+        };
+        assert!(private_contact_requests_from_scan(
+            &dashpay_contract,
+            recipient_keys().scan_page(&own, 0, &page(vec![])),
+            &BTreeMap::new(),
+            PlatformVersion::latest(),
+        )
+        .is_ok());
     }
 
     /// Two recovered sent requests to the same recipient for the same account reference are
@@ -3012,8 +3072,9 @@ mod tests {
         );
     }
 
-    /// The recipient key an entry names must be the one it is encrypted to, and an identity
-    /// must be given under its own id.
+    /// The recipient key an entry names must be the one it is encrypted to, whether it is a
+    /// key sealing could not encrypt to or an eligible one holding another point, and an
+    /// identity must be given under its own id.
     #[test]
     fn should_refuse_a_recipient_key_or_identity_given_under_another_id() {
         let contract = dashpay();
@@ -3032,6 +3093,35 @@ mod tests {
             .as_slice(),
             [PrivateContactRequestRejection::RecipientKeyNotUsable(_)]
         ));
+
+        // Registered under an enabled ECDSA ENCRYPTION key, which sealing could encrypt to,
+        // holding another point than the one it opened with: refused by the comparison.
+        let recipient = with_key(
+            recipient_identity(),
+            key(
+                4,
+                Purpose::ENCRYPTION,
+                KeyType::ECDSA_SECP256K1,
+                &secret_key(6),
+                None,
+            ),
+        );
+        let misregistered = PrivateDocumentScanKeys::new()
+            .with_recipient(Identifier::from(RECIPIENT_ID), &[(4, secret_key(2))]);
+        let rejections = reasons(read(
+            &contract,
+            vec![entry.clone()],
+            &misregistered,
+            &[sender.clone(), recipient],
+        ));
+        assert!(
+            matches!(
+                rejections.as_slice(),
+                [PrivateContactRequestRejection::RecipientKeyNotUsable(problem)]
+                    if problem.contains("is not the key the entry is encrypted to")
+            ),
+            "{rejections:?}"
+        );
 
         let target = PrivateDocumentTarget {
             contract_id: contract.id().to_buffer(),
