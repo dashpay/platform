@@ -106,10 +106,12 @@ pub struct DashPayState {
 
     /// The position of DashPay's private contact request store (protocol
     /// version 15) to scan from next for this identity: every entry before it
-    /// was read and what it held for this identity ingested. In memory only,
-    /// like the high-water marks: a cold start scans the store again from 0,
-    /// and ingest is a fixpoint. [`ManagedIdentity::unignore_sender`] rewinds
-    /// it, as it does the received cursor.
+    /// was read and what it held for this identity ingested. Persisted, after
+    /// what the entries before it held, for a backend attesting
+    /// `PRIVATE_CONTACT_REQUEST_SCAN_STATE`, so a relaunch reads on from it;
+    /// otherwise a cold start scans the store again from 0, and ingest is a
+    /// fixpoint. [`ManagedIdentity::unignore_sender`] rewinds it, as it does
+    /// the received cursor.
     ///
     /// [`ManagedIdentity::unignore_sender`]: super::ManagedIdentity::unignore_sender
     pub(super) private_contact_requests_position: u64,
@@ -123,9 +125,10 @@ pub struct DashPayState {
     pub(super) private_contact_requests_read: bool,
 
     /// The shielded address each contact's tracked private request to this
-    /// identity carries. In memory only, rebuilt by the scan a cold start
-    /// runs. Whether a request came privately is the request's own
-    /// ([`ContactRequest::came_privately`]), so it holds across restarts.
+    /// identity carries. Persisted for a backend attesting
+    /// `PRIVATE_CONTACT_REQUEST_SCAN_STATE`; otherwise rebuilt by the scan a
+    /// cold start runs. Whether a request came privately is the request's
+    /// own ([`ContactRequest::came_privately`]), so it holds across restarts.
     pub(super) private_shielded_addresses: BTreeMap<Identifier, [u8; 43]>,
 
     /// The private requests to each recipient that are being paid for, or
@@ -311,6 +314,13 @@ impl DashPayState {
     /// for and is not yet read back from the store; see the field doc.
     pub fn private_reply_pending(&self, contact: &Identifier) -> bool {
         self.pending_private_replies.contains_key(contact)
+    }
+
+    /// The shielded address kept for `contact`, whichever way the tracked
+    /// requests went; [`Self::private_contact`] gives it only while the
+    /// contact's request to us came privately.
+    pub(crate) fn private_shielded_address(&self, contact: &Identifier) -> Option<[u8; 43]> {
+        self.private_shielded_addresses.get(contact).copied()
     }
 
     /// Whether a private sync read DashPay's private contact request store

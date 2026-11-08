@@ -68,10 +68,12 @@ use super::contact_requests::{
 use super::signing_key::first_available;
 use super::{dashpay_contract, DashPayView, IdentityWallet};
 use crate::broadcaster::TransactionBroadcaster;
+use crate::changeset::ContactChangeSet;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::dashpay::contact_request::ContactRequest;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
 use crate::wallet::identity::ManagedIdentity;
+use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
 /// The paths of the keys a wallet's identities read DashPay's private contact
@@ -258,6 +260,47 @@ fn release_reservation(
         .and_then(|info| info.identity_manager.managed_identity_mut(sender))
     {
         managed.release_private_reply(recipient, attempt);
+    }
+}
+
+/// The changeset recording, for each contact one of `addresses` came from, the
+/// shielded address `owner` keeps for it now, or its removal.
+fn shielded_address_changeset(
+    managed: &ManagedIdentity,
+    owner: Identifier,
+    addresses: &[(ContactRequest, Option<[u8; 43]>)],
+) -> ContactChangeSet {
+    let mut changeset = ContactChangeSet::default();
+    for (record, _) in addresses {
+        let key = (owner, record.sender_id);
+        match managed
+            .dashpay()
+            .private_shielded_address(&record.sender_id)
+        {
+            Some(address) => {
+                changeset.private_shielded_addresses.insert(key, address);
+            }
+            None => {
+                changeset.removed_private_shielded_addresses.insert(key);
+            }
+        }
+    }
+    changeset
+}
+
+/// Store `owner`'s private read position. A failed store leaves the cursor
+/// advanced in memory: the next launch reads from the last position stored,
+/// and ingest is a fixpoint.
+fn store_private_position(persister: &WalletPersister, owner: Identifier, position: u64) {
+    let mut changeset = ContactChangeSet::default();
+    changeset
+        .private_contact_requests_positions
+        .insert(owner, position);
+    if let Err(error) = persister.store(changeset.into()) {
+        tracing::warn!(
+            owner = %owner, position, %error,
+            "private read position not stored; the next launch reads from the last one stored"
+        );
     }
 }
 
@@ -903,6 +946,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // was appended or later.
         let mut recipients: BTreeMap<Identifier, ProvedIdentity> = BTreeMap::new();
         report.next_position = start;
+        let persists_scan_state = self.persister.persists_private_contact_scan_state();
 
         // The pages are fetched many at once while earlier ones are processed,
         // and scanned in batches of those ready, one key derivation a batch.
@@ -1170,7 +1214,22 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         for (record, shielded_address) in &addresses {
                             managed.note_private_shielded_address(record, *shielded_address);
                         }
-                        if received_ok && sent_ok {
+                        // The addresses are stored before the read position
+                        // that covers the entries they came from.
+                        let mut stored = received_ok && sent_ok;
+                        if stored && persists_scan_state && !addresses.is_empty() {
+                            let addresses_changeset =
+                                shielded_address_changeset(managed, identity_id, &addresses);
+                            if let Err(error) = self.persister.store(addresses_changeset.into()) {
+                                tracing::error!(
+                                    owner = %identity_id, %error,
+                                    "private contacts' shielded addresses not stored; leaving \
+                                     the private cursor for retry"
+                                );
+                                stored = false;
+                            }
+                        }
+                        if stored {
                             // A pending private request is settled once its
                             // entry's record is reconciled: the request tracked
                             // to the recipient is that record, carries its
@@ -1192,7 +1251,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                                     managed.settle_private_reply(&record.recipient_id, commitment);
                                 }
                             }
+                            let before = managed.dashpay().private_contact_requests_position();
                             identity.advance(managed, read.next_position);
+                            let after = managed.dashpay().private_contact_requests_position();
+                            if persists_scan_state && after != before {
+                                store_private_position(&self.persister, identity_id, after);
+                            }
                         } else if !identity.failed {
                             identity.failed = true;
                             report.unpersisted_identities.push(identity_id);
@@ -1410,7 +1474,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 mod tests {
     use super::*;
     use crate::changeset::{
-        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+        ClientStartState, IdentityManagerStartState, PersistenceCapabilities, PersistenceError,
+        PlatformWalletChangeSet, PlatformWalletPersistence,
     };
     use crate::events::{EventHandler, PlatformEventHandler};
     use crate::wallet::identity::network::identity_auth_derivation_path_for_type;
@@ -1598,6 +1663,55 @@ mod tests {
         signer
     }
 
+    /// A backend recording every changeset stored, attesting `capabilities`.
+    #[derive(Default)]
+    struct RecordingPersistence {
+        capabilities: PersistenceCapabilities,
+        stored: Mutex<Vec<PlatformWalletChangeSet>>,
+    }
+
+    impl RecordingPersistence {
+        fn attesting(capabilities: PersistenceCapabilities) -> Arc<Self> {
+            Arc::new(Self {
+                capabilities,
+                stored: Mutex::new(Vec::new()),
+            })
+        }
+
+        /// The contact changesets stored, in order.
+        fn contacts(&self) -> Vec<ContactChangeSet> {
+            self.stored
+                .lock()
+                .expect("stored")
+                .iter()
+                .filter_map(|changeset| changeset.contacts.clone())
+                .collect()
+        }
+    }
+
+    impl PlatformWalletPersistence for RecordingPersistence {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            self.stored.lock().expect("stored").push(changeset);
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+
+        fn persistence_capabilities(&self) -> PersistenceCapabilities {
+            self.capabilities
+        }
+    }
+
     /// A wallet of `phrase` holding `own` at identity index 0, on a mock SDK that
     /// answers identity fetches with `known` and page 0 of DashPay's private
     /// contact request store with `entries`.
@@ -1607,6 +1721,17 @@ mod tests {
         known: &[&Identity],
         entries: Vec<Vec<u8>>,
     ) -> (PlatformWalletManager<NoPersistence>, Arc<PlatformWallet>) {
+        wallet_on(Arc::new(NoPersistence), phrase, own, known, entries).await
+    }
+
+    /// [`wallet`] on the backend `persistence`.
+    async fn wallet_on<P: PlatformWalletPersistence + 'static>(
+        persistence: Arc<P>,
+        phrase: &str,
+        own: &Identity,
+        known: &[&Identity],
+        entries: Vec<Vec<u8>>,
+    ) -> (PlatformWalletManager<P>, Arc<PlatformWallet>) {
         let contract = dashpay_contract().expect("bundled DashPay");
         let mut sdk = dash_sdk::SdkBuilder::new_mock()
             .with_network(Network::Testnet)
@@ -1648,11 +1773,8 @@ mod tests {
             .await
             .expect("page expectation");
 
-        let manager = PlatformWalletManager::new(
-            Arc::new(sdk),
-            Arc::new(NoPersistence),
-            Arc::new(NoopEventHandler),
-        );
+        let manager =
+            PlatformWalletManager::new(Arc::new(sdk), persistence, Arc::new(NoopEventHandler));
         let wallet = manager
             .create_wallet_from_seed_bytes(
                 Network::Testnet,
@@ -3116,6 +3238,265 @@ mod tests {
             (1..many.pages_read).contains(&derivations),
             "{derivations} derivations for {} pages",
             many.pages_read
+        );
+    }
+
+    /// Alice's private request to Bob, carrying `shielded_address`, read back
+    /// from the store: its entry and Bob's record of it.
+    async fn alice_to_bob(shielded_address: [u8; 43]) -> (Vec<u8>, ContactRequest) {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let (_alice_manager, alice_wallet) =
+            wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let kept = Arc::new(Mutex::new(Vec::new()));
+        alice_wallet
+            .identity()
+            .dashpay()
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                Some(shielded_address),
+                &signer(ALICE_PHRASE, &alice),
+                &alice_crypto,
+                append_entry(&alice_wallet, 0, vec![], &kept),
+            )
+            .await
+            .expect("Alice sends");
+        let entry = kept.lock().expect("kept").remove(0).to_vec();
+        let (_bob_manager, bob_wallet) =
+            wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![entry.clone()]).await;
+        bob_wallet
+            .identity()
+            .dashpay()
+            .sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("Bob reads the store");
+        let received = managed(&bob_wallet, BOB, |managed| {
+            managed.dashpay().incoming_request(&alice.id()).cloned()
+        })
+        .await
+        .expect("Bob holds Alice's request");
+        (entry, received)
+    }
+
+    /// For a backend attesting the scan state, a sync stores the private
+    /// contact's shielded address and then the read position, after the
+    /// request the entry held.
+    #[tokio::test]
+    async fn should_store_the_read_position_after_what_the_entries_held() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let address = [0x55; 43];
+        let (entry, _) = alice_to_bob(address).await;
+        let persistence = RecordingPersistence::attesting(
+            PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE,
+        );
+        let (_manager, bob_wallet) = wallet_on(
+            Arc::clone(&persistence),
+            BOB_PHRASE,
+            &bob,
+            &[&alice, &bob],
+            vec![entry],
+        )
+        .await;
+        bob_wallet
+            .identity()
+            .dashpay()
+            .sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("Bob reads the store");
+
+        let contacts = persistence.contacts();
+        let index_of = |found: &dyn Fn(&ContactChangeSet) -> bool| {
+            contacts
+                .iter()
+                .position(found)
+                .expect("the changeset is stored")
+        };
+        let request = index_of(&|changeset| !changeset.incoming_requests.is_empty());
+        let addresses = index_of(&|changeset| {
+            changeset
+                .private_shielded_addresses
+                .get(&(bob.id(), alice.id()))
+                == Some(&address)
+        });
+        let position = index_of(&|changeset| {
+            changeset.private_contact_requests_positions.get(&bob.id()) == Some(&1)
+        });
+        assert!(
+            request < addresses && addresses < position,
+            "request {request}, addresses {addresses}, position {position}"
+        );
+    }
+
+    /// A wallet loaded with a stored read position and shielded address, as a
+    /// backend attesting them restores them, reads the store on from there:
+    /// no page before it is fetched, which the mock, answering none, would
+    /// fail. The contact's shielded address is kept.
+    #[tokio::test]
+    async fn should_resume_a_private_sync_from_a_restored_position() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let address = [0x55; 43];
+        let (entry, received) = alice_to_bob(address).await;
+        let persistence = RecordingPersistence::attesting(
+            PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE,
+        );
+        let (_manager, restored) =
+            wallet_on(persistence, BOB_PHRASE, &bob, &[&alice, &bob], vec![entry]).await;
+        {
+            let iw = restored.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            let managed = wm
+                .get_wallet_info_mut(&restored.wallet_id())
+                .expect("wallet info")
+                .identity_manager
+                .managed_identity_mut(&bob.id())
+                .expect("Bob");
+            managed.apply_incoming_contact_request(received.clone());
+            managed.apply_private_contact_requests_position(1);
+            managed.apply_private_shielded_address(alice.id(), address);
+        }
+        let contract = dashpay_contract().expect("bundled DashPay");
+        {
+            let mut sdk = (*restored.identity().sdk).clone();
+            sdk.mock()
+                .remove_fetch_expectation::<PrivateDocumentEntries, _>(
+                    PrivateDocumentEntriesQuery::new(
+                        contract.id(),
+                        PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+                        0,
+                    ),
+                )
+                .await;
+        }
+        publish(&restored, 1, vec![]).await;
+
+        let report = restored
+            .identity()
+            .dashpay()
+            .sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("the store reads on from position 1");
+        assert_eq!(report.pages_read, 1);
+        assert!(report.complete);
+        assert_eq!(report.next_position, 1);
+        managed(&restored, BOB, |managed| {
+            assert_eq!(
+                managed
+                    .dashpay()
+                    .private_contact(&alice.id())
+                    .expect("a private contact")
+                    .shielded_address,
+                Some(address)
+            );
+            assert_eq!(
+                managed.dashpay().incoming_request(&alice.id()),
+                Some(&received)
+            );
+        })
+        .await;
+    }
+
+    /// Un-ignoring a sender rewinds the private read position, and a backend
+    /// attesting the scan state stores the rewind.
+    #[tokio::test]
+    async fn should_store_a_rewound_position_when_a_sender_is_unignored() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let persistence = RecordingPersistence::attesting(
+            PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE,
+        );
+        let (_manager, bob_wallet) = wallet_on(
+            Arc::clone(&persistence),
+            BOB_PHRASE,
+            &bob,
+            &[&alice, &bob],
+            vec![],
+        )
+        .await;
+        let view = bob_wallet.identity().dashpay();
+        {
+            let iw = bob_wallet.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&bob_wallet.wallet_id())
+                .expect("wallet info")
+                .identity_manager
+                .managed_identity_mut(&bob.id())
+                .expect("Bob")
+                .apply_private_contact_requests_position(7);
+        }
+        view.ignore_contact_sender(&bob.id(), &alice.id())
+            .await
+            .expect("ignored");
+        view.unignore_contact_sender(&bob.id(), &alice.id())
+            .await
+            .expect("un-ignored");
+        let unignore = persistence
+            .contacts()
+            .into_iter()
+            .find(|changeset| changeset.unignored.contains(&(bob.id(), alice.id())))
+            .expect("the un-ignore is stored");
+        assert_eq!(
+            unignore.private_contact_requests_positions,
+            BTreeMap::from([(bob.id(), 0)])
+        );
+    }
+
+    /// A backend that does not attest the scan state gets none of it, and a
+    /// load drops whatever it restored: the store is read from its start.
+    #[tokio::test]
+    async fn should_read_the_store_from_its_start_for_a_backend_without_the_capability() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let (entry, _) = alice_to_bob([0x55; 43]).await;
+        let persistence = RecordingPersistence::attesting(PersistenceCapabilities::NONE);
+        let (_manager, bob_wallet) = wallet_on(
+            Arc::clone(&persistence),
+            BOB_PHRASE,
+            &bob,
+            &[&alice, &bob],
+            vec![entry],
+        )
+        .await;
+        let view = bob_wallet.identity().dashpay();
+        view.sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("Bob reads the store");
+        view.ignore_contact_sender(&bob.id(), &alice.id())
+            .await
+            .expect("ignored");
+        view.unignore_contact_sender(&bob.id(), &alice.id())
+            .await
+            .expect("un-ignored");
+        assert!(persistence.contacts().iter().all(|changeset| {
+            changeset.private_contact_requests_positions.is_empty()
+                && changeset.private_shielded_addresses.is_empty()
+                && changeset.removed_private_shielded_addresses.is_empty()
+        }));
+
+        let mut loaded = ManagedIdentity::new(bob.clone(), 0);
+        loaded.apply_private_contact_requests_position(5);
+        loaded.apply_private_shielded_address(alice.id(), [0x55; 43]);
+        let mut start_state = IdentityManagerStartState::default();
+        start_state
+            .wallet_identities
+            .entry(bob_wallet.wallet_id())
+            .or_default()
+            .insert(0, loaded);
+        start_state.forget_private_contact_scan_state();
+        let forgotten = &start_state.wallet_identities[&bob_wallet.wallet_id()][&0];
+        assert_eq!(forgotten.dashpay().private_contact_requests_position(), 0);
+        assert_eq!(
+            forgotten.dashpay().private_shielded_address(&alice.id()),
+            None
         );
     }
 

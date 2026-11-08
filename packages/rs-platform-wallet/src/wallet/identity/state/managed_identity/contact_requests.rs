@@ -820,6 +820,39 @@ impl ManagedIdentity {
         }
     }
 
+    /// Restore the position of DashPay's private contact request store this
+    /// identity reads from next, as a backend persisted it
+    /// (`ContactChangeSet::private_contact_requests_positions`): the loader's
+    /// replay, for a backend attesting
+    /// [`PRIVATE_CONTACT_REQUEST_SCAN_STATE`](crate::changeset::PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE).
+    pub fn apply_private_contact_requests_position(&mut self, position: u64) {
+        self.dashpay.private_contact_requests_position = position;
+    }
+
+    /// Restore the shielded address `contact`'s tracked private request to
+    /// this identity carries, as a backend persisted it
+    /// (`ContactChangeSet::private_shielded_addresses`): the loader's replay.
+    pub fn apply_private_shielded_address(&mut self, contact: Identifier, address: [u8; 43]) {
+        self.dashpay
+            .private_shielded_addresses
+            .insert(contact, address);
+    }
+
+    /// Replay a persisted removal of `contact`'s shielded address
+    /// (`ContactChangeSet::removed_private_shielded_addresses`).
+    pub fn apply_removed_private_shielded_address(&mut self, contact: &Identifier) {
+        self.dashpay.private_shielded_addresses.remove(contact);
+    }
+
+    /// Drop the private contact request scan state a load restored, for a
+    /// backend that does not attest it persists it: the store is read from
+    /// its start, and the addresses come back with the requests that carry
+    /// them.
+    pub(crate) fn forget_private_contact_scan_state(&mut self) {
+        self.dashpay.private_contact_requests_position = 0;
+        self.dashpay.private_shielded_addresses.clear();
+    }
+
     /// Record the shielded address `request`, a private request from
     /// `request.sender_id`, carries, when it is the request tracked from that
     /// contact: an older request ingest passed over does not replace the

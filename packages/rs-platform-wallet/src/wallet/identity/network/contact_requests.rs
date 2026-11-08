@@ -4462,10 +4462,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // `unignore_sender` removes the sender + rewinds the cursor and
         // returns the removal changeset (empty if the sender wasn't
         // ignored). Persist it so the ignored-sender row is deleted.
-        let cs = managed.unignore_sender(contact_identity_id);
+        let mut cs = managed.unignore_sender(contact_identity_id);
         if <crate::changeset::ContactChangeSet as crate::changeset::Merge>::is_empty(&cs) {
             // Not ignored — nothing to persist, but not an error.
             return Ok(());
+        }
+        // The private read position was rewound with the received cursor: a
+        // backend that keeps it stores the rewind, so a relaunch reads the
+        // un-ignored sender's private requests again too.
+        if self.persister.persists_private_contact_scan_state() {
+            cs.private_contact_requests_positions.insert(
+                *identity_id,
+                managed.dashpay().private_contact_requests_position(),
+            );
         }
         self.persister.store(cs.into()).map_err(|e| {
             PlatformWalletError::Persistence(format!("un-ignore not persisted: {e}"))

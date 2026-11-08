@@ -111,13 +111,26 @@ impl PersistenceCapabilities {
     /// empty result. Required before a wallet drain can treat absence as not sent.
     pub const ASSET_LOCK_OPERATION_IDS: Self = Self(1 << 13);
 
+    /// The private contact request sync's scan state round-trips: each
+    /// identity's read position in DashPay's private contact request store
+    /// (`ContactChangeSet::private_contact_requests_positions`) and each
+    /// private contact's shielded address
+    /// (`ContactChangeSet::private_shielded_addresses`, with its removals)
+    /// are stored, and loading restores them onto each `ManagedIdentity`
+    /// (`ManagedIdentity::apply_private_contact_requests_position`,
+    /// `ManagedIdentity::apply_private_shielded_address`), so a relaunch
+    /// reads the store from where it stopped. Without this bit nothing of
+    /// it is written, a restored value is dropped, and each launch reads the
+    /// store from its start.
+    pub const PRIVATE_CONTACT_REQUEST_SCAN_STATE: Self = Self(1 << 14);
+
     /// Index of the highest bit declared above. It lives here, beside the
     /// constants, so adding a bit and bumping this is one edit in one place
     /// — and `every_declared_bit_has_a_stable_name` walks up to it, so a new
     /// bit that never reaches `KNOWN` fails a test instead of gating
     /// behaviour invisibly. The same test asserts nothing above it is named,
     /// which is what catches a bit added without bumping this.
-    const HIGHEST_DECLARED_BIT: u32 = 13;
+    const HIGHEST_DECLARED_BIT: u32 = 14;
 
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(
@@ -221,6 +234,10 @@ impl PersistenceCapabilities {
                 PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS,
                 "asset_lock_operation_ids",
             ),
+            (
+                PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE,
+                "private_contact_request_scan_state",
+            ),
         ];
 
         KNOWN
@@ -238,7 +255,7 @@ impl PersistenceCapabilities {
 /// failure the test exists to catch. Written as a module-level `const _` so
 /// it is evaluated in every build, test or not.
 const _: () = assert!(
-    PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS.bits()
+    PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE.bits()
         == 1u64 << PersistenceCapabilities::HIGHEST_DECLARED_BIT,
     "HIGHEST_DECLARED_BIT must name the highest declared capability bit"
 );
@@ -269,6 +286,10 @@ mod tests {
         assert_eq!(
             PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS.bits(),
             0x2000
+        );
+        assert_eq!(
+            PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE.bits(),
+            0x4000
         );
         assert_eq!(PersistenceCapabilities::WALLET_DRAIN.bits(), 0x2285);
         assert_eq!(

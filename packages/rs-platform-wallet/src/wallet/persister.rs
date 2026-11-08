@@ -136,6 +136,14 @@ impl WalletPersister {
         self.inner.persistence_capabilities()
     }
 
+    /// Whether the backend stores and restores the private contact request
+    /// sync's scan state
+    /// ([`PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE`]).
+    pub(crate) fn persists_private_contact_scan_state(&self) -> bool {
+        self.persistence_capabilities()
+            .contains(PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE)
+    }
+
     pub(crate) fn load(&self) -> Result<ClientStartState, PersistenceError> {
         self.inner.load()
     }

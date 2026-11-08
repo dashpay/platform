@@ -3,7 +3,9 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::changeset::{ClientStartState, ClientWalletStartState, PlatformWalletPersistence};
+use crate::changeset::{
+    ClientStartState, ClientWalletStartState, PersistenceCapabilities, PlatformWalletPersistence,
+};
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
@@ -143,7 +145,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             let ClientWalletStartState {
                 mut wallet,
                 mut wallet_info,
-                identity_manager,
+                mut identity_manager,
                 unused_asset_locks,
                 unconfirmed_outgoing_txs,
                 dashpay_backfill,
@@ -244,7 +246,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 observed_input_conflicts: Default::default(),
                 core_wallet: wallet_info,
                 generation: Arc::clone(&generation),
-                identity_manager: IdentityManager::from(identity_manager),
+                identity_manager: {
+                    // A backend that does not attest the private contact
+                    // request scan state keeps no current copy of it: the
+                    // store is read from its start.
+                    if !self
+                        .persister
+                        .persistence_capabilities()
+                        .contains(PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE)
+                    {
+                        identity_manager.forget_private_contact_scan_state();
+                    }
+                    IdentityManager::from(identity_manager)
+                },
                 tracked_asset_locks,
                 dpns_name_states: std::collections::BTreeMap::new(),
                 dashpay_backfill,
