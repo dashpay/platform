@@ -539,12 +539,13 @@ impl TxoReconcileSchedule {
     /// Feed one progress observation (every poll, not only a changed one:
     /// this is the schedule's only clock, and a quiet steady-state client's
     /// progress does not change for the whole cadence). Returns the wallets
-    /// to run now — all of `wallets` on the rising edge into steady state,
-    /// and afterwards each wallet whose last run is at least
-    /// [`TXO_RECONCILE_CADENCE`] old or that never ran — never one already
-    /// in flight. Reporting a wallet consumes nothing: its cadence restarts
-    /// only when a run claims it ([`Self::try_begin`]), so a wallet the host
-    /// cannot run yet is reported again on the next poll.
+    /// to run now: each wallet that has not run in this steady state, or
+    /// whose last run is at least [`TXO_RECONCILE_CADENCE`] old — never one
+    /// already in flight. The rising edge into steady state forgets every
+    /// wallet's last run, so all of `wallets` are due from then on.
+    /// Reporting a wallet consumes nothing: its cadence restarts only when a
+    /// run claims it ([`Self::try_begin`]), so a wallet the host cannot run
+    /// yet is reported again on the next poll, on the edge or not.
     pub fn due_wallets(
         &mut self,
         steady: bool,
@@ -556,16 +557,21 @@ impl TxoReconcileSchedule {
             self.steady_session = None;
             return Vec::new();
         }
-        let rising = self.steady_session != Some(spv_session);
-        self.steady_session = Some(spv_session);
+        if self.steady_session != Some(spv_session) {
+            // A new steady state: every wallet is due until a claim stamps
+            // it, so one the host skips on this poll is reported again on
+            // the next. A run in flight across the edge stamps its own
+            // finish if it went ahead.
+            self.last_run.clear();
+            self.steady_session = Some(spv_session);
+        }
         wallets
             .into_iter()
             .filter(|wallet_id| !self.in_flight.contains_key(wallet_id))
             .filter(|wallet_id| {
-                rising
-                    || self.last_run.get(wallet_id).is_none_or(|last| {
-                        now.saturating_duration_since(*last) >= TXO_RECONCILE_CADENCE
-                    })
+                self.last_run.get(wallet_id).is_none_or(|last| {
+                    now.saturating_duration_since(*last) >= TXO_RECONCILE_CADENCE
+                })
             })
             .collect()
     }
@@ -1444,6 +1450,54 @@ mod tests {
         assert!(schedule
             .due_wallets(true, 1, [A, B], t0 + 3 * second)
             .is_empty());
+    }
+
+    #[test]
+    fn a_wallet_the_host_skips_on_a_new_steady_state_is_due_until_claimed() {
+        // A wallet ran recently, then SPV restarts into steady state. The
+        // host skips it on the new session's first poll: it must not wait
+        // out the old run's cadence.
+        let mut schedule = TxoReconcileSchedule::default();
+        let t0 = Instant::now();
+        let second = Duration::from_secs(1);
+        assert_eq!(schedule.due_wallets(true, 1, [A], t0), vec![A]);
+        run(&mut schedule, &[A], t0);
+        assert_eq!(
+            schedule.due_wallets(true, 2, [A], t0 + second),
+            vec![A],
+            "a new steady state makes it due"
+        );
+        assert_eq!(
+            schedule.due_wallets(true, 2, [A], t0 + 2 * second),
+            vec![A],
+            "and the skip consumed nothing"
+        );
+        run(&mut schedule, &[A], t0 + 2 * second);
+        assert!(schedule
+            .due_wallets(true, 2, [A], t0 + 3 * second)
+            .is_empty());
+    }
+
+    #[test]
+    fn a_run_in_flight_across_a_new_steady_state_stamps_its_own_finish() {
+        let mut schedule = TxoReconcileSchedule::default();
+        let t0 = Instant::now();
+        let second = Duration::from_secs(1);
+        assert_eq!(schedule.due_wallets(true, 1, [A, B], t0), vec![A, B]);
+        assert!(schedule.try_begin(A, t0));
+        assert!(schedule.try_begin(B, t0));
+        assert!(
+            schedule.due_wallets(true, 2, [A, B], t0 + second).is_empty(),
+            "runs in flight are not reported"
+        );
+        // A went ahead and restarts its cadence; B's gate refused it in the
+        // old session, so it never ran in the new one.
+        schedule.finish(&A, Some(t0 + 2 * second));
+        schedule.finish(&B, None);
+        assert_eq!(
+            schedule.due_wallets(true, 2, [A, B], t0 + 3 * second),
+            vec![B]
+        );
     }
 
     #[test]
