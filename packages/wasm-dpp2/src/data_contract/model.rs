@@ -323,6 +323,20 @@ impl DataContractWasm {
                 tokens_configuration_from_js_value(v)
             })?
             .unwrap_or_default();
+        // A contract of structure version 0 holds no tokens: refuse them rather than drop them.
+        if !tokens.is_empty()
+            && platform_version
+                .dpp
+                .contract_versions
+                .contract_structure_version
+                == 0
+        {
+            return Err(WasmDppError::invalid_argument(format!(
+                "protocol version {} builds data contracts of structure version 0, which hold no \
+                 tokens",
+                platform_version.protocol_version
+            )));
+        }
 
         // Extract primitive fields via serde last (consumes options)
         let opts: DataContractOptions = serde_wasm_bindgen::from_value(options.into())
