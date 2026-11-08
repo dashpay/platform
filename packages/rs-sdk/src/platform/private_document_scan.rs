@@ -112,6 +112,13 @@ pub struct RejectedPrivateDocumentEntry {
 /// What one page of a private document type's store holds for the wallet.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PrivateDocumentScan {
+    /// The contract of the store the page was read from: the target
+    /// [`PrivateDocumentScanKeys::scan_page`] was given. A reader of one store refuses a scan
+    /// of another, whatever entries it holds, so another store's cursor is never taken for its
+    /// own.
+    pub contract_id: Identifier,
+    /// The private document type of that store.
+    pub document_type_name: String,
     /// The entries to the wallet's identities, in store order.
     pub received: Vec<ReceivedPrivateDocumentEntry>,
     /// The entries the wallet's identities sealed, in store order.
@@ -126,6 +133,11 @@ pub struct PrivateDocumentScan {
 }
 
 impl PrivateDocumentScan {
+    /// Whether the page was read from the store of `document_type_name` of `contract_id`.
+    pub fn is_of_store(&self, contract_id: &Identifier, document_type_name: &str) -> bool {
+        self.contract_id == *contract_id && self.document_type_name == document_type_name
+    }
+
     /// Whether the scan reached the store's last entry. A later scan from
     /// [`Self::next_position`] reads the entries appended since.
     pub fn is_complete(&self) -> bool {
@@ -229,6 +241,8 @@ impl PrivateDocumentScanKeys {
         page: &PrivateDocumentEntries,
     ) -> PrivateDocumentScan {
         let mut scan = PrivateDocumentScan {
+            contract_id: Identifier::from(target.contract_id),
+            document_type_name: target.document_type_name.to_string(),
             next_position: page
                 .entries
                 .last()
@@ -902,6 +916,8 @@ mod tests {
         assert_eq!(
             scan,
             PrivateDocumentScan {
+                contract_id: Identifier::from(target().contract_id),
+                document_type_name: target().document_type_name.to_string(),
                 next_position: 7,
                 total_count: 7,
                 ..Default::default()

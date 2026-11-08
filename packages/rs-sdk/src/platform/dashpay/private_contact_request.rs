@@ -976,8 +976,20 @@ pub fn private_contact_requests_from_scan(
     identities: &BTreeMap<Identifier, ProvedIdentity>,
     platform_version: &PlatformVersion,
 ) -> Result<PrivateContactRequestScan, Error> {
-    // An entry opens only for the store it was sealed for, but a scan of another store's page
-    // would hold entries of that store: refused, not read as DashPay requests.
+    // A scan of another store's page is refused whatever it holds: even with no entry the
+    // wallet's keys open, its cursor is that store's, which must not be kept as DashPay's.
+    if !scan.is_of_store(
+        &dashpay_contract.id(),
+        PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+    ) {
+        return Err(Error::Generic(format!(
+            "the scan is of the store {} {}, not DashPay's \
+             {PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME}",
+            scan.contract_id, scan.document_type_name
+        )));
+    }
+    // An entry opens only for the store it was sealed for: one of another store in a DashPay
+    // scan is refused, not read as a DashPay request.
     let dashpay_id = dashpay_contract.id().to_buffer();
     if let Some(entry) = scan
         .received
@@ -2750,6 +2762,8 @@ mod tests {
 
     /// A scan of another store's page is refused, received and sent entries alike, rather
     /// than read as DashPay requests: here a store of another contract with DashPay's types.
+    /// So is one holding no entry the wallet's keys open, whose cursor is that store's, of
+    /// another contract or of another of DashPay's types; DashPay's own empty page reads.
     #[test]
     fn should_refuse_a_scan_of_another_store() {
         let dashpay_contract = dashpay();
@@ -2793,6 +2807,44 @@ mod tests {
             .to_string();
             assert!(error.contains("not DashPay's"), "{case}: {error}");
         }
+
+        let dashpay_id = dashpay_contract.id().to_buffer();
+        for (contract_id, document_type_name) in [
+            (
+                other.id().to_buffer(),
+                PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+            ),
+            (dashpay_id, "contactInfo"),
+        ] {
+            let target = PrivateDocumentTarget {
+                contract_id,
+                document_type_name,
+            };
+            let scan = recipient_keys().scan_page(&target, 0, &page(vec![]));
+            let error = private_contact_requests_from_scan(
+                &dashpay_contract,
+                scan,
+                &BTreeMap::new(),
+                PlatformVersion::latest(),
+            )
+            .expect_err("another store's cursor")
+            .to_string();
+            assert!(
+                error.contains("not DashPay's"),
+                "{document_type_name}: {error}"
+            );
+        }
+        let own = PrivateDocumentTarget {
+            contract_id: dashpay_id,
+            document_type_name: PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+        };
+        assert!(private_contact_requests_from_scan(
+            &dashpay_contract,
+            recipient_keys().scan_page(&own, 0, &page(vec![])),
+            &BTreeMap::new(),
+            PlatformVersion::latest(),
+        )
+        .is_ok());
     }
 
     /// Two recovered sent requests to the same recipient for the same account reference are
