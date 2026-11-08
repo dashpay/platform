@@ -22,7 +22,6 @@ use crate::manager_diagnostics::{
 };
 use crate::runtime::block_on_worker;
 use crate::types::IdentifierArray;
-use crate::unwrap_option_or_return;
 
 /// What a host should know after a reconcile export panicked: nothing was
 /// written to its store by this call.
@@ -150,9 +149,11 @@ pub unsafe extern "C" fn platform_wallet_manager_txo_reconcile_due_wallets(
         *out_wallet_ids = IdentifierArray::empty();
         // Looked up under the registry guard, waited on outside it — see
         // `platform_wallet_manager_sync_progress`.
-        let option =
-            PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| m.txo_reconciler());
-        let reconciler = unwrap_option_or_return!(option);
+        let Some(reconciler) =
+            PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| m.txo_reconciler())
+        else {
+            return invalid_manager_handle();
+        };
         let due = block_on_worker(async move { reconciler.due_wallets().await });
         *out_wallet_ids = IdentifierArray::from_hashes(due);
         PlatformWalletFFIResult::ok()
@@ -198,9 +199,11 @@ pub unsafe extern "C" fn platform_wallet_manager_txo_reconcile_begin(
         *out_start = TXO_RECONCILE_START_HEAL;
         *out_store_after_len = 0;
         let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
-        let option =
-            PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| m.txo_reconciler());
-        let reconciler = unwrap_option_or_return!(option);
+        let Some(reconciler) =
+            PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| m.txo_reconciler())
+        else {
+            return invalid_manager_handle();
+        };
         match block_on_worker(async move { reconciler.begin(&wid).await }) {
             Ok(run) => {
                 *out_gate = TXO_RECONCILE_GATE_RUN;
@@ -241,9 +244,11 @@ pub unsafe extern "C" fn platform_wallet_manager_txo_reconcile_finish(
     catch_reconcile_panic("platform_wallet_manager_txo_reconcile_finish", || {
         check_ptr!(wallet_id);
         let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
-        let option = PLATFORM_WALLET_MANAGER_STORAGE
-            .with_item(manager_handle, |m| m.txo_reconciler().finish(&wid, ran));
-        unwrap_option_or_return!(option);
+        let Some(()) = PLATFORM_WALLET_MANAGER_STORAGE
+            .with_item(manager_handle, |m| m.txo_reconciler().finish(&wid, ran))
+        else {
+            return invalid_manager_handle();
+        };
         PlatformWalletFFIResult::ok()
     })
 }
@@ -509,10 +514,12 @@ pub unsafe extern "C" fn platform_wallet_txo_reconcile_heal_page_applied(
         check_ptr!(out_may_continue);
         *out_may_continue = false;
         let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
-        let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| {
+        let Some(may_continue) = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| {
             m.txo_reconciler().heal_page_applied(&wid)
-        });
-        *out_may_continue = unwrap_option_or_return!(option);
+        }) else {
+            return invalid_manager_handle();
+        };
+        *out_may_continue = may_continue;
         PlatformWalletFFIResult::ok()
     })
 }
@@ -556,11 +563,15 @@ pub unsafe extern "C" fn platform_wallet_txo_reconcile_classify_page_applied(
                 check_ptr!(next_after);
                 Some(std::slice::from_raw_parts(next_after, next_after_len).to_vec())
             };
-            let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| {
-                m.txo_reconciler()
-                    .classify_page_applied(&wid, after.as_deref())
-            });
-            *out_may_continue = unwrap_option_or_return!(option);
+            let Some(may_continue) =
+                PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| {
+                    m.txo_reconciler()
+                        .classify_page_applied(&wid, after.as_deref())
+                })
+            else {
+                return invalid_manager_handle();
+            };
+            *out_may_continue = may_continue;
             PlatformWalletFFIResult::ok()
         },
     )
@@ -645,7 +656,7 @@ mod tests {
                 &mut store_after_len,
             )
         };
-        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
         assert_eq!(gate, TXO_RECONCILE_SKIP_WALLET_UNKNOWN);
         assert_eq!(start, TXO_RECONCILE_START_HEAL);
         assert_eq!(store_after_len, 0);
@@ -658,7 +669,7 @@ mod tests {
                 &mut may_continue,
             )
         };
-        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
         assert!(!may_continue);
         let mut may_continue = true;
         let result = unsafe {
@@ -671,13 +682,18 @@ mod tests {
                 &mut may_continue,
             )
         };
-        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
         assert!(!may_continue);
+
+        let result = unsafe {
+            platform_wallet_manager_txo_reconcile_finish(Handle::MAX, wallet_id.as_ptr(), true)
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
 
         let mut ids = IdentifierArray::empty();
         let result =
             unsafe { platform_wallet_manager_txo_reconcile_due_wallets(Handle::MAX, &mut ids) };
-        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
         assert!(ids.items.is_null());
         assert_eq!(ids.count, 0);
 
