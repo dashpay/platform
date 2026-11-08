@@ -35,7 +35,8 @@ export class PrivateDocumentsFacade {
 
   /**
    * Seals a DashPay private contact request from the sender's encryption key to one of the
-   * recipient's DashPay keys.
+   * recipient's DashPay keys, signed by `options.signer` with one of the sender's signing keys,
+   * as its transitions are.
    *
    * @returns The entry, of the type's entry size, to append.
    */
@@ -46,8 +47,8 @@ export class PrivateDocumentsFacade {
 
   /**
    * Reads one page of DashPay's private contact request store for the wallet's identities: the
-   * requests to them, each sender checked against the identity key the entry names, and the
-   * requests they sent. Keep `nextPosition` as the cursor once the page is stored, and scan
+   * requests to them, each checked against its sender's signing keys, and the requests they
+   * sent. Keep `nextPosition` as the cursor once the page is stored, and scan
    * again from it until `isComplete`.
    */
   async scanContactRequests(
