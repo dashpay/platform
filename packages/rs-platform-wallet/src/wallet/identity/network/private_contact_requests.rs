@@ -99,7 +99,10 @@ impl PrivateDocumentKeyPaths {
 pub struct PrivateContactSyncReport {
     /// The store pages read.
     pub pages_read: usize,
-    /// The requests ingested, received and sent, as the wallet records them.
+    /// The requests this pass recorded, received and sent, as the wallet
+    /// records them: new ones and rotations. Not one already tracked, an
+    /// ignored sender's, a replay older than the tracked one, or one whose
+    /// store failed.
     pub requests: Vec<ContactRequest>,
     /// Entries that opened for one of the wallet's identities but were
     /// refused.
@@ -885,9 +888,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             sent.push(record.clone());
                         }
                     }
-                    report.requests.extend(received.iter().cloned());
-                    report.requests.extend(sent.iter().cloned());
-
                     let mut rotated = Vec::new();
                     let mut ingested = Vec::new();
                     let received_ok = ingest_received_requests(
@@ -903,7 +903,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         &self.persister,
                         identity_id,
                         newest_sent_per_recipient(sent),
+                        &mut ingested,
                     );
+                    report.requests.extend(ingested);
                     // The address of the request tracked from each contact,
                     // once ingest decided which that is.
                     for (record, shielded_address) in &addresses {
@@ -1689,6 +1691,86 @@ mod tests {
         .await;
     }
 
+    /// A sync reports the requests it recorded: an ignored sender's request is
+    /// opened but not recorded, so not reported; once the sender is no longer
+    /// ignored, the store is read again and the request is.
+    #[tokio::test]
+    async fn should_report_only_the_requests_a_sync_recorded() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (_manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let kept = Arc::new(Mutex::new(Vec::new()));
+        alice_wallet
+            .identity()
+            .dashpay()
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                append_entry(&alice_wallet, 0, vec![], &kept),
+            )
+            .await
+            .expect("Alice sends the request");
+        let entry = kept.lock().expect("kept entries").remove(0);
+
+        let (_bob_manager, bob_wallet) =
+            wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![entry.to_vec()]).await;
+        let set_ignored = |ignored: bool| {
+            let bob_wallet = Arc::clone(&bob_wallet);
+            let alice_id = alice.id();
+            let bob_id = bob.id();
+            async move {
+                let iw = bob_wallet.identity();
+                let mut wm = iw.wallet_manager.write().await;
+                let managed = wm
+                    .get_wallet_info_mut(&bob_wallet.wallet_id())
+                    .expect("wallet info")
+                    .identity_manager
+                    .managed_identity_mut(&bob_id)
+                    .expect("Bob");
+                if ignored {
+                    managed.ignore_sender(&alice_id);
+                } else {
+                    managed.unignore_sender(&alice_id);
+                }
+            }
+        };
+
+        set_ignored(true).await;
+        let report = bob_wallet
+            .identity()
+            .dashpay()
+            .sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("Bob reads the store");
+        assert_eq!(report.requests, vec![], "an ignored sender's request");
+        assert_eq!(report.rejected, vec![]);
+
+        set_ignored(false).await;
+        let report = bob_wallet
+            .identity()
+            .dashpay()
+            .sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("Bob reads the store again");
+        assert_eq!(report.requests.len(), 1, "{:?}", report.requests);
+        assert_eq!(report.requests[0].sender_id, alice.id());
+        managed(&bob_wallet, BOB, |managed| {
+            assert_eq!(
+                managed.dashpay().incoming_request(&alice.id()),
+                Some(&report.requests[0])
+            );
+        })
+        .await;
+    }
+
     /// One private request to a recipient is in flight at a time: one paid
     /// for but not read back, or whose payment is unconfirmed, keeps the next
     /// from being sent, until a sync reads it back; one whose payment failed
@@ -1788,6 +1870,24 @@ mod tests {
             assert!(managed.dashpay().private_reply_pending(&bob.id()));
         })
         .await;
+        // A public request now would publish the pair, whose private one may
+        // already be on chain.
+        assert!(matches!(
+            alice_wallet
+                .identity()
+                .dashpay()
+                .send_contact_request_with_external_signer(
+                    &alice.id(),
+                    &bob.id(),
+                    None,
+                    AutoAcceptProofSource::None,
+                    &alice_signer,
+                    &alice_crypto,
+                )
+                .await,
+            Err(PlatformWalletError::PrivateContactRequestPending(recipient))
+                if recipient == bob.id()
+        ));
     }
 
     /// A cursor rewound under a pass is not advanced again that pass, so the
