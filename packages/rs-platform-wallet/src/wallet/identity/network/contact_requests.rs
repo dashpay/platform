@@ -23,7 +23,7 @@ use crate::wallet::identity::types::dashpay::established_contact::EstablishedCon
 use crate::wallet::identity::ManagedIdentity;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
-use dash_sdk::platform::dashpay::{PrivateContactRequest, PrivateContactRequestScan};
+use dash_sdk::platform::dashpay::PrivateContactRequest;
 use dash_sdk::platform::private_document_entries::PrivateDocumentEntries;
 use dash_sdk::platform::private_document_scan::PrivateDocumentScan;
 use dpp::identity::KeyID;
@@ -170,27 +170,13 @@ pub trait ContactCryptoProvider {
         Err(private_documents_unsupported())
     }
 
-    /// Reads the private contact requests of `scan`, a scan of DashPay's store made with the
-    /// same `keys`: decodes each, checks each received request's sender against the key
-    /// `sender_identities` holds under the id it names, with the key at `keys` that opened it
-    /// ([`dash_sdk::platform::dashpay::private_contact_requests_from_scan`]).
-    ///
-    /// Defaulted to an "unsupported" error, as [`Self::scan_private_document_page`].
-    async fn read_private_contact_requests(
-        &self,
-        _keys: &PrivateDocumentKeyPaths,
-        _dashpay_contract: &dpp::prelude::DataContract,
-        _scan: PrivateDocumentScan,
-        _sender_identities: &BTreeMap<Identifier, Option<Identity>>,
-        _platform_version: &dpp::version::PlatformVersion,
-    ) -> Result<PrivateContactRequestScan, PlatformWalletError> {
-        Err(private_documents_unsupported())
-    }
-
     /// Seals `request` from `sender`, whose encryption key is the one at
-    /// `sender_encryption_key_path`, to the key `recipient_key_id` of `recipient`
-    /// ([`dash_sdk::platform::dashpay::seal_private_contact_request`]). `esk_seed` is 32 fresh
-    /// random bytes, never reused.
+    /// `sender_encryption_key_path`, to the key `recipient_key_id` of `recipient`, with
+    /// `signature`, the signature of the request by the sender's key `signing_key_id`
+    /// ([`dash_sdk::platform::dashpay::seal_private_contact_request`]). The encryption key's
+    /// secret key, which the outgoing viewing key is derived from, stays in the signer; the
+    /// signature comes from the identity signer, as a transition's does. `esk_seed` is 32
+    /// fresh random bytes, never reused.
     ///
     /// Defaulted to an "unsupported" error, as [`Self::scan_private_document_page`].
     #[allow(clippy::too_many_arguments)]
@@ -200,6 +186,8 @@ pub trait ContactCryptoProvider {
         _dashpay_contract: &dpp::prelude::DataContract,
         _sender: &Identity,
         _sender_encryption_key_id: KeyID,
+        _signing_key_id: KeyID,
+        _signature: &[u8; 65],
         _recipient: &Identity,
         _recipient_key_id: KeyID,
         _request: &PrivateContactRequest,
@@ -401,50 +389,36 @@ impl ContactCryptoProvider for SeedCryptoProvider {
         ))
     }
 
-    async fn read_private_contact_requests(
-        &self,
-        keys: &PrivateDocumentKeyPaths,
-        dashpay_contract: &dpp::prelude::DataContract,
-        scan: PrivateDocumentScan,
-        sender_identities: &BTreeMap<Identifier, Option<Identity>>,
-        platform_version: &dpp::version::PlatformVersion,
-    ) -> Result<PrivateContactRequestScan, PlatformWalletError> {
-        let keys = keys.scan_keys(|path| self.secret_key_at(path))?;
-        Ok(
-            dash_sdk::platform::dashpay::private_contact_requests_from_scan(
-                dashpay_contract,
-                scan,
-                &keys,
-                sender_identities,
-                platform_version,
-            )?,
-        )
-    }
-
     async fn seal_private_contact_request(
         &self,
         sender_encryption_key_path: &key_wallet::bip32::DerivationPath,
         dashpay_contract: &dpp::prelude::DataContract,
         sender: &Identity,
         sender_encryption_key_id: KeyID,
+        signing_key_id: KeyID,
+        signature: &[u8; 65],
         recipient: &Identity,
         recipient_key_id: KeyID,
         request: &PrivateContactRequest,
         esk_seed: &[u8; 32],
     ) -> Result<BinaryData, PlatformWalletError> {
-        let encryption_secret_key = self.secret_key_at(sender_encryption_key_path)?;
-        Ok(dash_sdk::platform::dashpay::seal_private_contact_request(
+        let mut encryption_secret_key = self.secret_key_at(sender_encryption_key_path)?;
+        let sealed = dash_sdk::platform::dashpay::seal_private_contact_request(
             dashpay_contract,
             &dash_sdk::platform::dashpay::PrivateContactRequestSender {
                 identity: sender,
                 encryption_key_id: sender_encryption_key_id,
                 encryption_secret_key: &encryption_secret_key,
+                signing_key_id,
+                signature,
             },
             recipient,
             recipient_key_id,
             request,
             esk_seed,
-        )?)
+        );
+        encryption_secret_key.non_secure_erase();
+        Ok(sealed?)
     }
 }
 
@@ -600,6 +574,22 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
     {
+        // A contact whose requests came or went privately is kept off chain: a
+        // `contactRequest` document would publish the relationship. Replies
+        // and rotations go privately instead.
+        let private = {
+            let wm = self.wallet_manager.read().await;
+            wm.get_wallet_info(&self.wallet_id)
+                .and_then(|info| info.identity_manager.managed_identity(sender_identity_id))
+                .and_then(|managed| managed.dashpay().private_contact(recipient_identity_id))
+                .is_some()
+        };
+        if private {
+            return Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(
+                *recipient_identity_id,
+            ));
+        }
+
         // 1-4c. The keys, the receiving xpub, the masked account reference and
         //       the auto-accept proof, as a private request is built from them too.
         let PreparedContactRequest {
@@ -1189,6 +1179,20 @@ fn record_and_collapse_sent_requests(
     newest_sent_per_recipient(requests)
 }
 
+/// Whether `candidate` is older than `tracked`, a request between the same
+/// pair: by its account reference's version, which a rotation bumps, then by
+/// its creation time. A replay of an older request appended again later has a
+/// newer time but an older version.
+fn predates(candidate: &ContactRequest, tracked: &ContactRequest) -> bool {
+    (
+        platform_encryption::account_reference_version(candidate.account_reference),
+        candidate.created_at,
+    ) < (
+        platform_encryption::account_reference_version(tracked.account_reference),
+        tracked.created_at,
+    )
+}
+
 /// Ingest one identity's collapsed **received** contact requests into local
 /// state, returning whether every write reached disk.
 ///
@@ -1234,19 +1238,16 @@ pub(super) fn ingest_received_requests(
         // tracked incoming/established state is a re-ingest of a known doc; a
         // DIFFERENT reference from a known sender is a rotation request
         // (receive side) and must get through.
-        let tracked_reference = managed
-            .dashpay()
-            .incoming_contact_requests()
-            .get(&sender_id)
-            .map(|r| r.account_reference)
-            .or_else(|| {
-                managed
-                    .dashpay()
-                    .established_contacts()
-                    .get(&sender_id)
-                    .map(|c| c.incoming_request.account_reference)
-            });
+        let tracked = managed.dashpay().incoming_request(&sender_id);
+        let tracked_reference = tracked.map(|r| r.account_reference);
         if tracked_reference == Some(contact_request.account_reference) {
+            continue;
+        }
+        // An older request than the tracked one is no rotation: one channel's
+        // sweep can replay a request the other channel already superseded (a
+        // cold start scans the private store from its start), and taking it
+        // would roll the contact back to a retired xpub.
+        if tracked.is_some_and(|tracked| predates(&contact_request, tracked)) {
             continue;
         }
 
@@ -1294,7 +1295,17 @@ pub(super) fn ingest_sent_requests(
     identity_id: Identifier,
     newest_by_recipient: std::collections::BTreeMap<Identifier, ContactRequest>,
 ) -> bool {
-    for (_recipient_id, contact_request) in newest_by_recipient {
+    for (recipient_id, contact_request) in newest_by_recipient {
+        // An older request than the tracked one is a replay, as on the
+        // received side: superseding with it would re-derive the next rotation
+        // from a retired reference.
+        if managed
+            .dashpay()
+            .outgoing_request(&recipient_id)
+            .is_some_and(|tracked| predates(&contact_request, tracked))
+        {
+            continue;
+        }
         if let Err(e) = managed.add_sent_contact_request(contact_request, persister) {
             tracing::error!(
                 owner = %identity_id, error = %e,
@@ -3735,17 +3746,25 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
     {
-        let received_privately = {
+        // A reply already sent, either way, is adopted without a broadcast, so
+        // only a reply still to send would publish anything.
+        let needs_private_reply = {
             let wm = self.wallet_manager.read().await;
             wm.get_wallet_info(&self.wallet_id)
                 .and_then(|info| {
                     info.identity_manager
                         .managed_identity(&request.recipient_id)
                 })
-                .and_then(|managed| managed.dashpay().private_contact(&request.sender_id))
-                .is_some_and(|private| private.received_privately && !private.sent_privately)
+                .is_some_and(|managed| {
+                    let dashpay = managed.dashpay();
+                    (request.came_privately()
+                        || dashpay
+                            .incoming_request(&request.sender_id)
+                            .is_some_and(ContactRequest::came_privately))
+                        && dashpay.outgoing_request(&request.sender_id).is_none()
+                })
         };
-        if received_privately {
+        if needs_private_reply {
             return Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(
                 request.sender_id,
             ));
@@ -4674,6 +4693,103 @@ mod sweep_tests {
         );
         assert_eq!(all_requests.len(), 1);
         assert_eq!(managed.dashpay().incoming_contact_requests().len(), 1);
+    }
+
+    /// A request older than the tracked one, by its reference's version and
+    /// then its time, is passed over on both sides: one channel's sweep can
+    /// replay a request the other already superseded, and a replay appended
+    /// again later has a newer time but an older version.
+    #[test]
+    fn an_older_request_than_the_tracked_one_is_no_rotation() {
+        let our = 1u8;
+        let contact = 2u8;
+        let our_id = Identifier::from([our; 32]);
+        let contact_id = Identifier::from([contact; 32]);
+        let mut info = info_with_bare_identity(our);
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(&our_id)
+            .expect("managed identity");
+        let at = |sender: u8, recipient: u8, version: u32, account: u32, created_at: u64| {
+            let mut request = test_request(
+                sender,
+                recipient,
+                (version << ACCOUNT_REFERENCE_VERSION_SHIFT) | account,
+            );
+            request.created_at = created_at;
+            request
+        };
+        let tracked_incoming = |managed: &ManagedIdentity| {
+            managed
+                .dashpay()
+                .incoming_request(&contact_id)
+                .map(|request| request.account_reference)
+        };
+
+        let rotated = at(contact, our, 1, 5, 100);
+        for (case, candidate, expected) in [
+            (
+                "the rotated request",
+                rotated.clone(),
+                rotated.account_reference,
+            ),
+            (
+                "a replay of the request it rotated past, appended later",
+                at(contact, our, 0, 4, 200),
+                rotated.account_reference,
+            ),
+            (
+                "an earlier request of the same version",
+                at(contact, our, 1, 6, 50),
+                rotated.account_reference,
+            ),
+        ] {
+            assert!(ingest_received_requests(
+                managed,
+                &noop_persister(),
+                our_id,
+                newest_received_per_sender([candidate]),
+                &mut Vec::new(),
+                &mut Vec::new(),
+            ));
+            assert_eq!(tracked_incoming(managed), Some(expected), "{case}");
+        }
+        let newer = at(contact, our, 2, 7, 300);
+        assert!(ingest_received_requests(
+            managed,
+            &noop_persister(),
+            our_id,
+            newest_received_per_sender([newer.clone()]),
+            &mut Vec::new(),
+            &mut Vec::new(),
+        ));
+        assert_eq!(
+            tracked_incoming(managed),
+            Some(newer.account_reference),
+            "a newer rotation is still taken"
+        );
+
+        let sent = at(our, contact, 1, 5, 100);
+        assert!(ingest_sent_requests(
+            managed,
+            &noop_persister(),
+            our_id,
+            newest_sent_per_recipient([sent.clone()]),
+        ));
+        assert!(ingest_sent_requests(
+            managed,
+            &noop_persister(),
+            our_id,
+            newest_sent_per_recipient([at(our, contact, 0, 4, 200)]),
+        ));
+        assert_eq!(
+            managed
+                .dashpay()
+                .outgoing_request(&contact_id)
+                .map(|request| request.account_reference),
+            Some(sent.account_reference),
+            "a replay of an older sent request does not supersede the tracked one"
+        );
     }
 
     /// The first-ingest persist failure (`add_incoming_contact_request`).

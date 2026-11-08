@@ -807,24 +807,37 @@ impl ManagedIdentity {
         }
     }
 
-    /// Record what a private contact request with `contact` carries beyond the
-    /// [`ContactRequest`]: `received` when it came from the contact, else it
-    /// went to the contact. A request without a shielded address keeps the one
-    /// already known.
-    pub(crate) fn note_private_contact(
+    /// Record the shielded address `request`, a private request from
+    /// `request.sender_id`, carries, when it is the request tracked from that
+    /// contact: an older request ingest passed over does not replace the
+    /// address of the newer one.
+    pub(crate) fn note_private_shielded_address(
         &mut self,
-        contact: Identifier,
-        received: bool,
+        request: &ContactRequest,
         shielded_address: Option<[u8; 43]>,
     ) {
-        let entry = self.dashpay.private_contacts.entry(contact).or_default();
-        if received {
-            entry.received_privately = true;
-            if shielded_address.is_some() {
-                entry.shielded_address = shielded_address;
+        let tracked = self
+            .dashpay
+            .incoming_request(&request.sender_id)
+            .is_some_and(|tracked| {
+                tracked.came_privately()
+                    && tracked.account_reference == request.account_reference
+                    && tracked.encrypted_public_key == request.encrypted_public_key
+            });
+        if !tracked {
+            return;
+        }
+        match shielded_address {
+            Some(address) => {
+                self.dashpay
+                    .private_shielded_addresses
+                    .insert(request.sender_id, address);
             }
-        } else {
-            entry.sent_privately = true;
+            None => {
+                self.dashpay
+                    .private_shielded_addresses
+                    .remove(&request.sender_id);
+            }
         }
     }
 
