@@ -34,9 +34,9 @@ use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
 use dash_sdk::platform::dashpay::{
     private_contact_request_identities, private_contact_request_outgoing_viewing_key,
     private_contact_request_signature, private_contact_request_signing_data,
-    private_contact_request_signing_security_levels, private_contact_requests_from_scan,
+    private_contact_request_signing_keys, private_contact_requests_from_scan,
     recipient_key_purpose_is_valid, PrivateContactRequest, RejectedPrivateContactRequest,
-    PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME, PRIVATE_CONTACT_REQUEST_SIGNING_KEY_TYPES,
+    PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
 };
 use dash_sdk::platform::private_document_entries::{
     PrivateDocumentEntries, PrivateDocumentEntriesQuery,
@@ -63,7 +63,7 @@ use super::contact_requests::{
     newest_sent_per_recipient, tear_down_stale_external_accounts, AutoAcceptProofSource,
     ContactCryptoProvider, PreparedContactRequest,
 };
-use super::signing_key::AvailableSigningKey;
+use super::signing_key::first_available;
 use super::{dashpay_contract, DashPayView, IdentityWallet};
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
@@ -273,26 +273,22 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             shielded_address,
         };
 
-        // The request is signed as a public request's transition is: by a
-        // signing key of the sender the signer holds, at a level the type's
-        // documents are signed at.
+        // The request is signed as a public request's transition is: by the
+        // first signing key of the sender the signer holds, of those the SDK
+        // lets sign it (level, type, contract bounds).
         let contract = dashpay_contract()?;
-        let signing_levels = private_contact_request_signing_security_levels(&contract)?;
-        let signing_key = sender_identity
-            .available_signing_key(
-                signer,
-                Purpose::AUTHENTICATION,
-                &signing_levels,
-                &PRIVATE_CONTACT_REQUEST_SIGNING_KEY_TYPES,
-                false,
-            )?
-            .cloned()
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "the sender identity has no enabled AUTHENTICATION key at {signing_levels:?} \
-                     to sign a private contact request with"
-                ))
-            })?;
+        let signing_key = first_available(
+            private_contact_request_signing_keys(&contract, &sender_identity)?.into_iter(),
+            signer,
+        )?
+        .cloned()
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(
+                "the sender identity has no enabled AUTHENTICATION key at HIGH or CRITICAL, \
+                 bound to no other contract, to sign a private contact request with"
+                    .to_string(),
+            )
+        })?;
         let signing_data = private_contact_request_signing_data(
             &contract,
             &sender_identity,
