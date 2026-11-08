@@ -623,11 +623,13 @@ pub enum PlatformWalletFFIResultCode {
     ErrorAssetLockTooManyInputs = 60,
 
     /// Maps `PlatformWalletError::PrivateContactRequestNeedsPrivateReply`:
-    /// the contact request came privately (protocol version 15), so a public
-    /// `contactRequest` reply would publish the relationship. Nothing was
-    /// sent. Accept it with
-    /// `platform_wallet_manager_accept_private_contact_request` instead.
-    /// 61 to 67 are claimed by open branches, so this takes 68.
+    /// the contact requests with that identity came or went privately
+    /// (protocol version 15), so a public `contactRequest` to it, in reply or
+    /// as a rotation, would publish the relationship. The public send and the
+    /// public accept refuse it, and nothing was sent. Send it with
+    /// `platform_wallet_manager_send_private_contact_request`, or accept it
+    /// with `platform_wallet_manager_accept_private_contact_request`,
+    /// instead. 61 to 67 are claimed by open branches, so this takes 68.
     ErrorPrivateContactRequestNeedsPrivateReply = 68,
 
     /// The named thing does not exist.
@@ -1067,8 +1069,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::SpvProcessRestartRequired(..) => {
                 PlatformWalletFFIResultCode::ErrorSpvProcessRestartRequired
             }
-            // The public accept refused a request that came privately; the
-            // host routes it to the private accept.
+            // The public send or accept refused a contact whose requests came
+            // or went privately; the host routes it to the private send or
+            // accept.
             PlatformWalletError::PrivateContactRequestNeedsPrivateReply(..) => {
                 PlatformWalletFFIResultCode::ErrorPrivateContactRequestNeedsPrivateReply
             }

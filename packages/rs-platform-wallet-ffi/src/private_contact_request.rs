@@ -8,22 +8,27 @@
 //! contact-request rows and accessors read it.
 //!
 //! - [`platform_wallet_sync_private_contact_requests`]: read the store for the
-//!   wallet's identities and ingest what it holds for them. Every key stays in
-//!   the resolver-backed signer.
+//!   wallet's identities and ingest what it holds for them. The store is
+//!   opened with keys that stay in the resolver-backed signer; each request's
+//!   signature is checked against its sender's keys, which needs no secret.
 //! - [`platform_wallet_manager_send_private_contact_request`] /
 //!   [`platform_wallet_manager_accept_private_contact_request`]: send, or
 //!   accept with a private reply, paying from an account's shielded notes.
-//!   Built with the `shielded` feature only.
+//!   The request is signed by the identity signer the public send and accept
+//!   take, and sealed in the resolver-backed signer. Built with the
+//!   `shielded` feature only.
 //! - [`managed_identity_get_private_contact`]: what a contact's private
 //!   requests carry beyond the `ContactRequest`: whether they came or went
 //!   privately, and the contact's shielded address.
 //!
-//! A request that came privately is refused by the public accept with
-//! `ErrorPrivateContactRequestNeedsPrivateReply`; the host routes it to the
-//! private accept.
+//! The public send and accept refuse a contact whose requests came or went
+//! privately with `ErrorPrivateContactRequestNeedsPrivateReply`; the host
+//! routes the request to the private send or accept.
 
 use platform_wallet::PrivateContact;
 use rs_sdk_ffi::MnemonicResolverHandle;
+#[cfg(feature = "shielded")]
+use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use crate::dashpay::{resolver_contact_crypto_provider, ContactRequestHandleArray};
 use crate::error::*;
@@ -90,9 +95,9 @@ fn saturating_count(count: usize) -> u32 {
 /// their DashPay accounts are queued as the document sync does.
 ///
 /// `core_signer_handle` is the wallet-HD resolver signer: the store is opened
-/// and senders are checked with keys derived inside it. The cursors live in
-/// memory only, so the first pass of a process reads the store from its
-/// start.
+/// with keys derived inside it. Each request's signature is checked against
+/// its sender's keys, which needs no secret. The cursors live in memory only,
+/// so the first pass of a process reads the store from its start.
 ///
 /// Writes the requests the pass ingested, received and sent (including ones
 /// already held), to `out_requests` (release with
@@ -184,8 +189,8 @@ impl PrivateContactFFI {
     }
 }
 
-impl From<&PrivateContact> for PrivateContactFFI {
-    fn from(contact: &PrivateContact) -> Self {
+impl From<PrivateContact> for PrivateContactFFI {
+    fn from(contact: PrivateContact) -> Self {
         Self {
             received_privately: contact.received_privately,
             sent_privately: contact.sent_privately,
@@ -198,9 +203,12 @@ impl From<&PrivateContact> for PrivateContactFFI {
 }
 
 /// Read what this identity's private contact requests with `contact_id`
-/// carry into `out_contact`. Returns `NotFound` when no request between them
-/// went privately, as far as this process has seen: the record is in memory
-/// only and rebuilt by `platform_wallet_sync_private_contact_requests`.
+/// carry into `out_contact`. Returns `NotFound` when neither tracked request
+/// between them came or went privately. Whether one did is the stored
+/// request's own, so it holds across restarts; the contact's shielded address
+/// is kept in memory only and rebuilt by
+/// `platform_wallet_sync_private_contact_requests`, so until a pass has run
+/// it is absent.
 ///
 /// # Safety
 /// - `contact_id` must point to 32 readable bytes.
@@ -250,9 +258,11 @@ unsafe fn read_shielded_address(ptr: *const u8) -> Option<[u8; SHIELDED_ADDRESS_
 /// key inside the resolver-backed signer.
 ///
 /// `mnemonic_resolver_handle` supplies both the transient Orchard spend
-/// authority and the DashPay keys. Writes a handle into
-/// `CONTACT_REQUEST_STORAGE` to `out_request_handle` (release with
-/// `contact_request_destroy`).
+/// authority and the DashPay keys. `signer_handle` is the identity signer
+/// the public send takes (`platform_wallet_send_contact_request_with_signer`):
+/// it signs the request with one of the sender's authentication keys, as it
+/// signs a transition. Writes a handle into `CONTACT_REQUEST_STORAGE` to
+/// `out_request_handle` (release with `contact_request_destroy`).
 ///
 /// Errors follow the shielded spend contract: `ErrorShieldedSpendUnconfirmed`
 /// means the payment may already be on chain; do not send again.
@@ -268,6 +278,9 @@ unsafe fn read_shielded_address(ptr: *const u8) -> Option<[u8; SHIELDED_ADDRESS_
 ///   `auto_accept_proof_len` readable bytes; `(null, 0)` omits it.
 /// - `shielded_address`, when non-null, must point to 43 readable bytes;
 ///   null omits it.
+/// - `signer_handle` must be a valid, non-destroyed `*mut SignerHandle`
+///   produced by `dash_sdk_signer_create_with_ctx`; the caller retains
+///   ownership and pins it for the call.
 /// - `out_request_handle` must be a valid, writable pointer.
 #[cfg(feature = "shielded")]
 #[no_mangle]
@@ -283,6 +296,7 @@ pub unsafe extern "C" fn platform_wallet_manager_send_private_contact_request(
     auto_accept_proof: *const u8,
     auto_accept_proof_len: usize,
     shielded_address: *const u8,
+    signer_handle: *mut SignerHandle,
     out_request_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
     // A panic in the proving task must not reach this `extern "C"` frame; the
@@ -300,6 +314,7 @@ pub unsafe extern "C" fn platform_wallet_manager_send_private_contact_request(
             auto_accept_proof,
             auto_accept_proof_len,
             shielded_address,
+            signer_handle,
             out_request_handle,
         )
     })
@@ -323,10 +338,12 @@ unsafe fn send_private_contact_request_inner(
     auto_accept_proof: *const u8,
     auto_accept_proof_len: usize,
     shielded_address: *const u8,
+    signer_handle: *mut SignerHandle,
     out_request_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(mnemonic_resolver_handle);
+    check_ptr!(signer_handle);
     check_ptr!(out_request_handle);
     unsafe { *out_request_handle = NULL_HANDLE };
 
@@ -358,10 +375,16 @@ unsafe fn send_private_contact_request_inner(
     let crypto = unsafe {
         resolver_contact_crypto_provider(mnemonic_resolver_handle, wallet_id, wallet.network())
     };
+    // The signer pointer crosses into the worker as a plain address and is
+    // re-materialized there, as the public send does.
+    let signer_addr = signer_handle as usize;
 
     // The proof runs on a worker thread: Halo 2 synthesis recurses past the
     // iOS dispatch-thread stack.
     let result = block_on_worker(async move {
+        // SAFETY: the caller pins the signer for the duration of this call,
+        // and `block_on_worker` blocks this frame until the task completes.
+        let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
         let prover = CachedOrchardProver::new();
         let result = wallet
             .send_private_contact_request(
@@ -373,6 +396,7 @@ unsafe fn send_private_contact_request_inner(
                 label,
                 AutoAcceptProofSource::from_option(proof),
                 shielded_address,
+                signer,
                 &crypto,
                 &prover,
             )
@@ -396,7 +420,9 @@ unsafe fn send_private_contact_request_inner(
 /// privately; null omits it.
 ///
 /// `request_handle` is a live `CONTACT_REQUEST_STORAGE` handle of the
-/// incoming request. Writes a handle into `ESTABLISHED_CONTACT_STORAGE` to
+/// incoming request. `signer_handle` is the identity signer the public accept
+/// takes (`platform_wallet_accept_contact_request_with_signer`); it signs the
+/// reply. Writes a handle into `ESTABLISHED_CONTACT_STORAGE` to
 /// `out_established_handle` (release with `established_contact_destroy`).
 ///
 /// # Safety
@@ -404,9 +430,13 @@ unsafe fn send_private_contact_request_inner(
 /// - `mnemonic_resolver_handle` must be a valid, non-destroyed handle; the
 ///   caller retains ownership and pins it for the call.
 /// - `shielded_address`, when non-null, must point to 43 readable bytes.
+/// - `signer_handle` must be a valid, non-destroyed `*mut SignerHandle`
+///   produced by `dash_sdk_signer_create_with_ctx`; the caller retains
+///   ownership and pins it for the call.
 /// - `out_established_handle` must be a valid, writable pointer.
 #[cfg(feature = "shielded")]
 #[no_mangle]
+#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_manager_accept_private_contact_request(
     handle: Handle,
     wallet_id_bytes: *const u8,
@@ -414,6 +444,7 @@ pub unsafe extern "C" fn platform_wallet_manager_accept_private_contact_request(
     account: u32,
     request_handle: Handle,
     shielded_address: *const u8,
+    signer_handle: *mut SignerHandle,
     out_established_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
     // Same panic contract as the send: the reply's notes may be spent.
@@ -425,6 +456,7 @@ pub unsafe extern "C" fn platform_wallet_manager_accept_private_contact_request(
             account,
             request_handle,
             shielded_address,
+            signer_handle,
             out_established_handle,
         )
     })
@@ -436,6 +468,7 @@ pub unsafe extern "C" fn platform_wallet_manager_accept_private_contact_request(
 /// # Safety
 /// Identical contract to the export that calls it.
 #[cfg(feature = "shielded")]
+#[allow(clippy::too_many_arguments)]
 unsafe fn accept_private_contact_request_inner(
     handle: Handle,
     wallet_id_bytes: *const u8,
@@ -443,10 +476,12 @@ unsafe fn accept_private_contact_request_inner(
     account: u32,
     request_handle: Handle,
     shielded_address: *const u8,
+    signer_handle: *mut SignerHandle,
     out_established_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(mnemonic_resolver_handle);
+    check_ptr!(signer_handle);
     check_ptr!(out_established_handle);
     unsafe { *out_established_handle = NULL_HANDLE };
 
@@ -469,8 +504,11 @@ unsafe fn accept_private_contact_request_inner(
     let crypto = unsafe {
         resolver_contact_crypto_provider(mnemonic_resolver_handle, wallet_id, wallet.network())
     };
+    let signer_addr = signer_handle as usize;
 
     let result = block_on_worker(async move {
+        // SAFETY: as in the send, the caller pins the signer for the call.
+        let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
         let prover = CachedOrchardProver::new();
         let result = wallet
             .accept_private_contact_request(
@@ -479,6 +517,7 @@ unsafe fn accept_private_contact_request_inner(
                 account,
                 &request,
                 shielded_address,
+                signer,
                 &crypto,
                 &prover,
             )
@@ -546,10 +585,61 @@ mod tests {
         assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
     }
 
+    /// The request is signed by the identity signer, so the private send
+    /// refuses to run without one, before it touches the wallet.
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_reject_a_null_identity_signer_on_the_private_send() {
+        let wallet_id = [1u8; 32];
+        let sender = [2u8; 32];
+        let recipient = [3u8; 32];
+        let resolver = std::ptr::NonNull::<MnemonicResolverHandle>::dangling().as_ptr();
+        let mut out = 0xDEAD_BEEF;
+        let result = unsafe {
+            platform_wallet_manager_send_private_contact_request(
+                0xDEAD_BEEF,
+                wallet_id.as_ptr(),
+                resolver,
+                0,
+                sender.as_ptr(),
+                recipient.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                &mut out,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
+
+    /// As the private send: the reply is signed by the identity signer.
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_reject_a_null_identity_signer_on_the_private_accept() {
+        let wallet_id = [1u8; 32];
+        let resolver = std::ptr::NonNull::<MnemonicResolverHandle>::dangling().as_ptr();
+        let mut out = 0xDEAD_BEEF;
+        let result = unsafe {
+            platform_wallet_manager_accept_private_contact_request(
+                0xDEAD_BEEF,
+                wallet_id.as_ptr(),
+                resolver,
+                0,
+                0xDEAD_BEEF,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                &mut out,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
+
     #[test]
     fn should_carry_every_field_of_a_private_contact() {
         let address = [0x55; SHIELDED_ADDRESS_LEN];
-        let with_address = PrivateContactFFI::from(&PrivateContact {
+        let with_address = PrivateContactFFI::from(PrivateContact {
             received_privately: true,
             sent_privately: false,
             shielded_address: Some(address),
@@ -559,7 +649,7 @@ mod tests {
         assert!(with_address.has_shielded_address);
         assert_eq!(with_address.shielded_address, address);
 
-        let without_address = PrivateContactFFI::from(&PrivateContact {
+        let without_address = PrivateContactFFI::from(PrivateContact {
             received_privately: false,
             sent_privately: true,
             shielded_address: None,

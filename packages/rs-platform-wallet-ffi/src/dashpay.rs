@@ -32,17 +32,15 @@
 //!   established contact via their `DashpayExternalAccount`. Runs
 //!   the Core transaction path internally.
 
-use std::collections::BTreeMap;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
-use dash_sdk::platform::dashpay::{PrivateContactRequest, PrivateContactRequestScan};
+use dash_sdk::platform::dashpay::PrivateContactRequest;
 use dash_sdk::platform::private_document_entries::PrivateDocumentEntries;
 use dash_sdk::platform::private_document_scan::PrivateDocumentScan;
 use dpp::identity::{Identity, KeyID};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::{DataContract, Identifier};
-use dpp::version::PlatformVersion;
 use platform_wallet::{ContactRequest, PlatformWalletError, PrivateDocumentKeyPaths};
 use rs_sdk_ffi::{
     MnemonicResolverCoreSigner, MnemonicResolverHandle, MnemonicResolverSignerError, SignerHandle,
@@ -1266,31 +1264,14 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
             .map_err(private_document_signer_error)
     }
 
-    async fn read_private_contact_requests(
-        &self,
-        keys: &PrivateDocumentKeyPaths,
-        dashpay_contract: &DataContract,
-        scan: PrivateDocumentScan,
-        sender_identities: &BTreeMap<Identifier, Option<Identity>>,
-        platform_version: &PlatformVersion,
-    ) -> Result<PrivateContactRequestScan, PlatformWalletError> {
-        self.signer
-            .read_private_contact_requests(
-                &keys.recipients,
-                dashpay_contract,
-                scan,
-                sender_identities,
-                platform_version,
-            )
-            .map_err(private_document_signer_error)
-    }
-
     async fn seal_private_contact_request(
         &self,
         sender_encryption_key_path: &key_wallet::bip32::DerivationPath,
         dashpay_contract: &DataContract,
         sender: &Identity,
         sender_encryption_key_id: KeyID,
+        signing_key_id: KeyID,
+        signature: &[u8; 65],
         recipient: &Identity,
         recipient_key_id: KeyID,
         request: &PrivateContactRequest,
@@ -1302,6 +1283,8 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
                 dashpay_contract,
                 sender,
                 sender_encryption_key_id,
+                signing_key_id,
+                signature,
                 recipient,
                 recipient_key_id,
                 request,
