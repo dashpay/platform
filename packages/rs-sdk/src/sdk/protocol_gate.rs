@@ -254,6 +254,25 @@ impl Sdk {
         self
     }
 
+    /// The refusal [`Self::ensure_network_serves`] gives a request that needs `required`,
+    /// for a caller that finds what `required` introduced missing from the network's data
+    /// while this SDK runs below it: the network does not serve it yet.
+    pub(crate) fn protocol_version_not_active(
+        &self,
+        required: u32,
+        method: &'static str,
+        feature: Option<&'static str>,
+    ) -> Error {
+        Error::ProtocolVersionNotActive {
+            method,
+            required,
+            feature,
+            network: self.query_settings().network_protocol_basis(),
+            pinned: pinned_below(required, &self.gate_state()),
+            cause: None,
+        }
+    }
+
     /// Refuse a request that needs `requirement` (see [`Query::protocol_requirement`]),
     /// unless a verified answer shows the network runs its protocol version and this SDK
     /// speaks it. When the network may have reached it since, ask it first with one proved
