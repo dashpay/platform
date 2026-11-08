@@ -3020,8 +3020,9 @@ mod tests {
         );
     }
 
-    /// The recipient key an entry names must be the one it is encrypted to, and an identity
-    /// must be given under its own id.
+    /// The recipient key an entry names must be the one it is encrypted to, whether it is a
+    /// key sealing could not encrypt to or an eligible one holding another point, and an
+    /// identity must be given under its own id.
     #[test]
     fn should_refuse_a_recipient_key_or_identity_given_under_another_id() {
         let contract = dashpay();
@@ -3040,6 +3041,35 @@ mod tests {
             .as_slice(),
             [PrivateContactRequestRejection::RecipientKeyNotUsable(_)]
         ));
+
+        // Registered under an enabled ECDSA ENCRYPTION key, which sealing could encrypt to,
+        // holding another point than the one it opened with: refused by the comparison.
+        let recipient = with_key(
+            recipient_identity(),
+            key(
+                4,
+                Purpose::ENCRYPTION,
+                KeyType::ECDSA_SECP256K1,
+                &secret_key(6),
+                None,
+            ),
+        );
+        let misregistered = PrivateDocumentScanKeys::new()
+            .with_recipient(Identifier::from(RECIPIENT_ID), &[(4, secret_key(2))]);
+        let rejections = reasons(read(
+            &contract,
+            vec![entry.clone()],
+            &misregistered,
+            &[sender.clone(), recipient],
+        ));
+        assert!(
+            matches!(
+                rejections.as_slice(),
+                [PrivateContactRequestRejection::RecipientKeyNotUsable(problem)]
+                    if problem.contains("is not the key the entry is encrypted to")
+            ),
+            "{rejections:?}"
+        );
 
         let target = PrivateDocumentTarget {
             contract_id: contract.id().to_buffer(),
