@@ -227,12 +227,21 @@ func kickDashPaySync(_ walletManager: PlatformWalletManager) {
 }
 
 /// Read DashPay's private contact request store (protocol version 15) for
-/// `wallet`. Best effort: a network before protocol version 15 has no such
-/// store. Private requests reach the wallet only through this read, so it
-/// runs with every pull-to-refresh of the request list.
+/// `wallet`, returning what the refresh should tell the user, or nil.
+/// Private requests reach the wallet only through this read, so it runs with
+/// every pull-to-refresh of the request list. A network before protocol
+/// version 15 does not serve the store yet, which is expected and quiet; any
+/// other failure, or requests read but not saved, is reported.
 @MainActor
-func syncPrivateContactRequests(_ wallet: ManagedPlatformWallet) async {
-    _ = try? await wallet.syncPrivateContactRequests()
+func syncPrivateContactRequests(_ wallet: ManagedPlatformWallet) async -> String? {
+    do {
+        let result = try await wallet.syncPrivateContactRequests()
+        return PrivateContactRefreshNotice.notice(
+            unpersistedIdentityCount: result.unpersistedIdentityCount
+        )
+    } catch {
+        return PrivateContactRefreshNotice.notice(for: error)
+    }
 }
 
 // MARK: - Row model + view
