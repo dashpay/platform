@@ -706,6 +706,11 @@ fn key_is(key: &IdentityPublicKey, public_key: &PublicKey) -> bool {
     }
 }
 
+/// Whether `contract`, the DashPay a context provider holds, declares private contact requests.
+fn holds_private_contact_requests(contract: Option<&DataContract>) -> bool {
+    contract.is_some_and(|contract| private_contact_request_type(contract).is_ok())
+}
+
 fn private_contact_request_type(
     dashpay_contract: &DataContract,
 ) -> Result<DocumentTypeRef<'_>, Error> {
@@ -1289,37 +1294,39 @@ impl Sdk {
         sealed
     }
 
-    /// The DashPay contract, with its `privateContactRequest` type: the network's protocol
-    /// version is established as 15 or later first, as an unpinned SDK starts below it and would
-    /// otherwise resolve a DashPay without the type.
+    /// The DashPay contract, with its `privateContactRequest` type, as the context provider
+    /// holds it: a page's proof is verified against the contract the provider gives. The
+    /// network's protocol version is established as 15 or later first, as an unpinned SDK starts
+    /// below it and would otherwise resolve a DashPay without the type.
     async fn fetch_private_contact_request_contract(&self) -> Result<Arc<DataContract>, Error> {
         self.require_protocol_version(
             PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
             "DashPay private contact requests",
         )
         .await?;
-        let contract = self.fetch_dashpay_contract().await?;
-        if private_contact_request_type(&contract).is_ok() {
-            return Ok(contract);
-        }
-        // The context provider may hold a DashPay from before the type, kept from an older
-        // version: the network's is current. The provider gets it too, as the page's proof is
-        // verified against the contract the provider gives.
+        let mut contract = self.fetch_dashpay_contract().await?;
         let contract_id = contract.id();
-        let contract = DataContract::fetch(self, contract_id)
-            .await?
-            .map(Arc::new)
-            .ok_or_else(|| Error::Generic(format!("the DashPay contract {contract_id} is gone")))?;
-        private_contact_request_type(&contract)?;
+        if private_contact_request_type(&contract).is_err() {
+            // The context provider may hold a DashPay from before the type, kept from an older
+            // version: the network's is current.
+            contract = DataContract::fetch(self, contract_id)
+                .await?
+                .map(Arc::new)
+                .ok_or_else(|| {
+                    Error::Generic(format!("the DashPay contract {contract_id} is gone"))
+                })?;
+            private_contact_request_type(&contract)?;
+        }
         if let Some(provider) = self.context_provider() {
-            provider.register_data_contract(Arc::clone(&contract));
-            // A provider that keeps its older DashPay, or holds none, would fail every page:
-            // that is refused here, once.
+            // A DashPay fetched from the network, first or again, is given to the provider. One
+            // that still gives none with the type would fail every page: that is refused here,
+            // once.
             let held = provider.get_data_contract(&contract_id, self.version())?;
-            if !held
-                .as_deref()
-                .is_some_and(|held| private_contact_request_type(held).is_ok())
-            {
+            if !holds_private_contact_requests(held.as_deref()) {
+                provider.register_data_contract(Arc::clone(&contract));
+            }
+            let held = provider.get_data_contract(&contract_id, self.version())?;
+            if !holds_private_contact_requests(held.as_deref()) {
                 return Err(Error::Generic(format!(
                     "the context provider does not hold the DashPay {contract_id} with \
                      {PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME} once given it, so private \
@@ -3121,27 +3128,27 @@ mod tests {
         assert_eq!(scan.received[0].request, request);
     }
 
-    /// A context provider holding `held` whatever version it is asked for, as a provider's
-    /// known contracts do. A `writable` one puts a registered contract in its place; a
-    /// read-only one keeps what it holds. Its clones share what it holds.
+    /// A context provider holding `held`, or nothing, whatever version it is asked for, as a
+    /// provider's known contracts do. A `writable` one puts a registered contract in its place;
+    /// a read-only one keeps what it holds. Its clones share what it holds.
     #[cfg(feature = "mocks")]
     #[derive(Clone)]
     struct HeldContractProvider {
-        held: Arc<std::sync::Mutex<Arc<DataContract>>>,
+        held: Arc<std::sync::Mutex<Option<Arc<DataContract>>>>,
         writable: bool,
     }
 
     #[cfg(feature = "mocks")]
     impl HeldContractProvider {
-        fn new(held: DataContract, writable: bool) -> Self {
+        fn new(held: Option<DataContract>, writable: bool) -> Self {
             Self {
-                held: Arc::new(std::sync::Mutex::new(Arc::new(held))),
+                held: Arc::new(std::sync::Mutex::new(held.map(Arc::new))),
                 writable,
             }
         }
 
-        fn held(&self) -> Arc<DataContract> {
-            Arc::clone(&self.held.lock().expect("the lock"))
+        fn held(&self) -> Option<Arc<DataContract>> {
+            self.held.lock().expect("the lock").clone()
         }
     }
 
@@ -3153,7 +3160,7 @@ mod tests {
             _platform_version: &PlatformVersion,
         ) -> Result<Option<Arc<DataContract>>, dash_context_provider::ContextProviderError>
         {
-            Ok(Some(self.held()))
+            Ok(self.held())
         }
 
         fn get_token_configuration(
@@ -3186,7 +3193,7 @@ mod tests {
 
         fn register_data_contract(&self, contract: Arc<DataContract>) {
             if self.writable {
-                *self.held.lock().expect("the lock") = contract;
+                *self.held.lock().expect("the lock") = Some(contract);
             }
         }
     }
@@ -3220,7 +3227,7 @@ mod tests {
     #[cfg(feature = "mocks")]
     #[tokio::test]
     async fn should_learn_the_version_and_refresh_a_dashpay_without_private_requests() {
-        let provider = HeldContractProvider::new(dashpay_without_private_requests(), true);
+        let provider = HeldContractProvider::new(Some(dashpay_without_private_requests()), true);
         let mut sdk: Sdk = crate::SdkBuilder::new_mock()
             .with_initial_version(PlatformVersion::get(14).expect("protocol version 14"))
             .with_context_provider(provider.clone())
@@ -3243,7 +3250,32 @@ mod tests {
             PlatformVersion::latest().protocol_version
         );
         assert!(private_contact_request_type(&contract).is_ok());
-        assert!(private_contact_request_type(&provider.held()).is_ok());
+        assert!(holds_private_contact_requests(provider.held().as_deref()));
+    }
+
+    /// A DashPay the provider does not hold yet is fetched from the network and given to it,
+    /// which the pages are then verified against.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_give_an_empty_provider_the_dashpay_it_fetches() {
+        let provider = HeldContractProvider::new(None, true);
+        let mut sdk = sdk_with(provider.clone());
+        let current = dashpay();
+        sdk.mock()
+            .expect_fetch(current.id(), Some(current.clone()))
+            .await
+            .expect("the DashPay fetch is expected");
+
+        let contract = sdk
+            .fetch_private_contact_request_contract()
+            .await
+            .expect("the current DashPay");
+
+        assert!(private_contact_request_type(&contract).is_ok());
+        let verified_against = provider
+            .get_data_contract(&current.id(), PlatformVersion::latest())
+            .expect("the provider answers");
+        assert!(holds_private_contact_requests(verified_against.as_deref()));
     }
 
     /// A DashPay the provider holds with the private type is used as it is: nothing is fetched,
@@ -3251,7 +3283,7 @@ mod tests {
     #[cfg(feature = "mocks")]
     #[tokio::test]
     async fn should_use_a_dashpay_the_provider_holds_with_private_requests() {
-        let provider = HeldContractProvider::new(dashpay(), false);
+        let provider = HeldContractProvider::new(Some(dashpay()), false);
         let sdk = sdk_with(provider.clone());
 
         let contract = sdk
@@ -3259,7 +3291,10 @@ mod tests {
             .await
             .expect("the held DashPay");
 
-        assert!(Arc::ptr_eq(&contract, &provider.held()));
+        assert!(Arc::ptr_eq(
+            &contract,
+            &provider.held().expect("the provider holds DashPay")
+        ));
     }
 
     /// A refresh that leaves the provider without the private type fails, rather than every
@@ -3270,7 +3305,7 @@ mod tests {
         let current = dashpay();
 
         let mut sdk = sdk_with(HeldContractProvider::new(
-            dashpay_without_private_requests(),
+            Some(dashpay_without_private_requests()),
             false,
         ));
         sdk.mock()
@@ -3284,8 +3319,20 @@ mod tests {
             .to_string();
         assert!(error.contains("does not hold"), "{error}");
 
+        let mut sdk = sdk_with(HeldContractProvider::new(None, false));
+        sdk.mock()
+            .expect_fetch(current.id(), Some(current.clone()))
+            .await
+            .expect("the DashPay fetch is expected");
+        let error = sdk
+            .fetch_private_contact_request_contract()
+            .await
+            .expect_err("the provider takes no contract")
+            .to_string();
+        assert!(error.contains("does not hold"), "{error}");
+
         let mut sdk = sdk_with(HeldContractProvider::new(
-            dashpay_without_private_requests(),
+            Some(dashpay_without_private_requests()),
             true,
         ));
         sdk.mock()
