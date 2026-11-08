@@ -278,6 +278,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// before protocol version 15), so the SDK did not send it. Expected on
     /// such a network; it lifts when the network upgrades.
     case errorProtocolVersionNotActive = 70
+    /// A private contact request to that identity is in flight, or paid for
+    /// and not yet read back from the store. Nothing new was paid; a later
+    /// private contact request sync settles it. Do not submit it again.
+    case errorPrivateContactRequestPending = 71
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -415,6 +419,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShieldedBuildRequired
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PROTOCOL_VERSION_NOT_ACTIVE:
             self = .errorProtocolVersionNotActive
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_REQUEST_PENDING:
+            self = .errorPrivateContactRequestPending
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -625,6 +631,12 @@ public enum PlatformWalletError: LocalizedError {
     /// on such a network (for example the private contact request store before
     /// protocol version 15); a host may stay quiet about it.
     case protocolVersionNotActive(String)
+    /// A private contact request to that identity is in flight (another
+    /// private send or reply reserved it), or was paid for and is not yet
+    /// read back from the store. Nothing new was paid; a later
+    /// `ManagedPlatformWallet.syncPrivateContactRequests` settles it. Pending,
+    /// not failed: do not submit it again.
+    case privateContactRequestPending(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition
     /// (identity-create or a spend — unshield / transfer / withdrawal) was
@@ -852,6 +864,7 @@ public enum PlatformWalletError: LocalizedError {
              .assetLockTooManyInputs(let m),
              .privateContactRequestNeedsPrivateReply(let m),
              .shieldedBuildRequired(let m), .protocolVersionNotActive(let m),
+             .privateContactRequestPending(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
@@ -976,6 +989,8 @@ public enum PlatformWalletError: LocalizedError {
             self = .shieldedBuildRequired(detail)
         case .errorProtocolVersionNotActive:
             self = .protocolVersionNotActive(detail)
+        case .errorPrivateContactRequestPending:
+            self = .privateContactRequestPending(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)

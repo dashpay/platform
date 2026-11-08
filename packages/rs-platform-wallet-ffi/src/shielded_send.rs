@@ -620,6 +620,10 @@ pub(crate) fn map_spend_result(
         Err(e @ PlatformWalletError::ShieldedIdentityDebitPending { .. })
         | Err(e @ PlatformWalletError::ShieldedRecoveryCorrupted { .. })
         | Err(e @ PlatformWalletError::ShieldedRecoveryKeysRequired { .. }) => e.into(),
+        // A private contact request in flight, or paid and not yet read back
+        // from the store: nothing new was paid, and a later private sync
+        // settles it, so it keeps its own pending code.
+        Err(e @ PlatformWalletError::PrivateContactRequestPending(..)) => e.into(),
         // Retryable: the wallet couldn't build the spend against any
         // Platform-recorded anchor yet (its commitment tree is mid-block after
         // an index-chunk sync). Nothing was broadcast and the notes were

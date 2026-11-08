@@ -506,6 +506,21 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    func testShouldReportAPendingPrivateRequestByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_REQUEST_PENDING
+        )
+        XCTAssertEqual(code, .errorPrivateContactRequestPending)
+        XCTAssertEqual(code.rawValue, 71)
+        let detail = "a private contact request to 9fRYTJZW is in flight or not yet read "
+            + "back from the store; sync private contact requests to settle it"
+        let error = PlatformWalletError(code: code, message: detail)
+        guard case .privateContactRequestPending(let message) = error else {
+            return XCTFail("lost typed pending error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     func testShouldReadEveryFieldOfAPrivateContact() {
         var ffi = PrivateContactFFI()
         ffi.received_privately = true

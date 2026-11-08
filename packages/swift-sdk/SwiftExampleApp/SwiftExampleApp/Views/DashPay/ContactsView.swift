@@ -226,6 +226,25 @@ func kickDashPaySync(_ walletManager: PlatformWalletManager) {
     Task { _ = try? await walletManager.dashPaySyncNow() }
 }
 
+/// The contacts among `contactIds` that `identityId` has a private request
+/// to in flight, or paid and not yet read back, as the wallet records it
+/// (`ManagedIdentity.privateReplyPending`, one snapshot). While one is, Rust
+/// refuses another private send or reply to it, so the views show it as
+/// pending and offer neither; a private sync settles it. Empty when the
+/// identity is not managed.
+@MainActor
+func privateRepliesPending(
+    wallet: ManagedPlatformWallet,
+    identityId: Data,
+    contactIds: [Data]
+) -> Set<Data> {
+    guard !contactIds.isEmpty,
+          let managed = try? wallet.managedIdentity(identityId: identityId) else {
+        return []
+    }
+    return Set(contactIds.filter { (try? managed.privateReplyPending(contactId: $0)) == true })
+}
+
 /// Read DashPay's private contact request store (protocol version 15) for
 /// `wallet`, returning what the refresh should tell the user, or nil.
 /// Private requests reach the wallet only through this read, so it runs with

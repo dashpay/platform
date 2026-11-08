@@ -5,7 +5,10 @@ import SwiftDashSDK
 /// views. Follows `SendViewModel`: a shielded spend whose result could not be
 /// confirmed may already be on chain (Rust keeps its notes reserved), so the
 /// view keeps it pending and never offers a fresh submission; the next sync
-/// settles it. Every other error is an ordinary failure the user may retry.
+/// settles it. A private request Rust reports as pending (one to the same
+/// contact in flight, or paid and not yet read back) is the same outcome:
+/// nothing new was paid, and the next private sync settles it. Every other
+/// error is an ordinary failure the user may retry.
 enum ContactRequestSubmissionOutcome: Equatable {
     /// The private send or reply may have gone through: do not submit again.
     case mayHaveGoneThrough
@@ -15,10 +18,21 @@ enum ContactRequestSubmissionOutcome: Equatable {
     static let mayHaveGoneThroughMessage = "This may have gone through. It shows up "
         + "after the next sync confirms it; do not submit it again."
 
+    /// The message a request row shows: the pending notice while the wallet
+    /// has a private reply to the contact pending, whatever error an earlier
+    /// attempt left, and that error otherwise.
+    static func rowMessage(pending: Bool, error: String?) -> String? {
+        pending ? mayHaveGoneThroughMessage : error
+    }
+
     static func of(_ error: Error) -> ContactRequestSubmissionOutcome {
-        if let walletError = error as? PlatformWalletError,
-           case .shieldedSpendUnconfirmed = walletError {
-            return .mayHaveGoneThrough
+        if let walletError = error as? PlatformWalletError {
+            switch walletError {
+            case .shieldedSpendUnconfirmed, .privateContactRequestPending:
+                return .mayHaveGoneThrough
+            default:
+                break
+            }
         }
         return .failed(error.localizedDescription)
     }

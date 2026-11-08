@@ -10,6 +10,7 @@ use dpp::state_transition::private_document_create_from_shielded_pool_transition
 use dpp::state_transition::private_document_create_from_shielded_pool_transition::PrivateDocumentCreateFromShieldedPoolTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
+use dpp::version::feature_initial_protocol_versions::PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION;
 
 /// Append sealed entries to the store of a private document type (type 29), paying the fee
 /// from shielded notes. The transition names no identity: the bundle's spends pay, and its
@@ -92,6 +93,13 @@ impl PrivateDocumentCreateFromShieldedPool for Sdk {
         bundle: OrchardBundleParams,
         settings: Option<PutSettings>,
     ) -> Result<StateTransitionProofResult, Error> {
+        // An unpinned SDK starts below protocol version 15, whose limits admit no entries: the
+        // network's version is established before the transition is built against it.
+        self.require_protocol_version(
+            PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+            "private documents",
+        )
+        .await?;
         let state_transition = self.private_document_create_from_shielded_pool_transition(
             data_contract_id,
             document_type_name,
@@ -109,6 +117,7 @@ impl PrivateDocumentCreateFromShieldedPool for Sdk {
 #[cfg(all(test, feature = "mocks"))]
 mod tests {
     use super::*;
+    use crate::sdk::test::expect_epoch_refresh;
     use crate::SdkBuilder;
     use dpp::shielded::SerializedAction;
     use dpp::version::PlatformVersion;
@@ -155,5 +164,76 @@ mod tests {
             let error = result.expect_err("the entries are refused").to_string();
             assert!(error.contains(refusal), "{refusal}: {error}");
         }
+    }
+
+    /// Below protocol version 15 the send is refused before the transition is built, rather
+    /// than built against limits that admit no entries.
+    #[tokio::test]
+    async fn should_refuse_to_send_below_protocol_version_15() {
+        let sdk: Sdk = SdkBuilder::new_mock()
+            .with_version(PlatformVersion::get(14).expect("protocol version 14"))
+            .build()
+            .expect("expected a mock sdk");
+        let error = sdk
+            .private_document_create_from_shielded_pool(
+                Identifier::new([4; 32]),
+                "privateContactRequest".to_string(),
+                vec![BinaryData::new(vec![1; 589])],
+                114_140_000,
+                bundle(),
+                None,
+            )
+            .await
+            .expect_err("protocol version 14")
+            .to_string();
+        assert!(error.contains("exists from protocol version 15"), "{error}");
+    }
+
+    /// An unpinned SDK seeded below protocol version 15 learns the network's version before it
+    /// builds the send, and builds it against that version.
+    #[tokio::test]
+    async fn should_learn_the_network_version_before_building_a_send() {
+        let mut sdk: Sdk = SdkBuilder::new_mock()
+            .with_initial_version(PlatformVersion::get(14).expect("protocol version 14"))
+            .build()
+            .expect("expected a mock sdk");
+        // The mock network runs the latest version
+        expect_epoch_refresh(&mut sdk).await;
+        let entries = vec![BinaryData::new(vec![1; 589])];
+
+        let error = sdk
+            .private_document_create_from_shielded_pool(
+                Identifier::new([4; 32]),
+                "privateContactRequest".to_string(),
+                entries.clone(),
+                114_140_000,
+                bundle(),
+                None,
+            )
+            .await
+            .expect_err("the mock takes no broadcast")
+            .to_string();
+
+        assert_eq!(
+            sdk.protocol_version_number(),
+            PlatformVersion::latest().protocol_version
+        );
+        assert!(!error.contains("exists from protocol version"), "{error}");
+        let built = sdk
+            .private_document_create_from_shielded_pool_transition(
+                Identifier::new([4; 32]),
+                "privateContactRequest".to_string(),
+                entries,
+                114_140_000,
+                bundle(),
+            )
+            .expect("the send builds at the learned version");
+        assert!(
+            matches!(
+                built,
+                StateTransition::PrivateDocumentCreateFromShieldedPool(_)
+            ),
+            "{built:?}"
+        );
     }
 }

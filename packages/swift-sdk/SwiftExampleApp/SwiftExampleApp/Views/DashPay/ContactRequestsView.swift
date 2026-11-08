@@ -41,10 +41,12 @@ struct ContactRequestsView: View {
     /// with an inline error on the row).
     @State private var rowErrors: [Data: String] = [:]
 
-    /// Contact ids whose accept may have gone through (a private reply whose
-    /// result could not be confirmed): the row stays pending, without its
-    /// buttons, until the next sync settles it. Never offered again here.
-    @State private var unconfirmedIds: Set<Data> = []
+    /// Contact ids with a private reply in flight, or paid and not yet read
+    /// back, as the wallet records it (`privateRepliesPending`): the row stays
+    /// pending, without its buttons, until a private sync settles it. Read
+    /// from the wallet on appear, after an accept and after each sync pass,
+    /// so leaving and reopening the screen keeps it.
+    @State private var walletPendingIds: Set<Data> = []
 
     /// What the last private-store refresh has to tell the user, if anything.
     @State private var privateRefreshNotice: String?
@@ -137,10 +139,11 @@ struct ContactRequestsView: View {
                                     avatarUrl: nil,
                                     createdAtMillis: row.createdAtMillis,
                                     isInFlight: inFlightIds.contains(row.contactIdentityId)
-                                        || unconfirmedIds.contains(row.contactIdentityId),
-                                    errorMessage: unconfirmedIds.contains(row.contactIdentityId)
-                                        ? ContactRequestSubmissionOutcome.mayHaveGoneThroughMessage
-                                        : rowErrors[row.contactIdentityId],
+                                        || walletPendingIds.contains(row.contactIdentityId),
+                                    errorMessage: ContactRequestSubmissionOutcome.rowMessage(
+                                        pending: walletPendingIds.contains(row.contactIdentityId),
+                                        error: rowErrors[row.contactIdentityId]
+                                    ),
                                     onAccept: { accept(contactId: row.contactIdentityId) },
                                     onIgnore: { ignore(contactId: row.contactIdentityId) }
                                 )
@@ -181,9 +184,12 @@ struct ContactRequestsView: View {
             if let wallet = try? requireWallet() {
                 privateRefreshNotice = await syncPrivateContactRequests(wallet)
             }
+            reloadPendingReplies()
         }
+        .task { reloadPendingReplies() }
         .onChange(of: rowSignature) { _, _ in
             pruneOverlays()
+            reloadPendingReplies()
         }
         .onChange(of: walletManager.dashPaySyncIsSyncing) { _, syncing in
             // Fallback clearing rule: after the next completed
@@ -193,6 +199,7 @@ struct ContactRequestsView: View {
             if !syncing {
                 removedOverlayIds.removeAll()
                 optimisticSentIds.removeAll()
+                reloadPendingReplies()
             }
         }
     }
@@ -208,6 +215,17 @@ struct ContactRequestsView: View {
                     .accessibilityIdentifier("dashpay.requests.privateRefreshNotice")
             }
         }
+    }
+
+    /// Re-read which incoming rows have a private reply pending, from the
+    /// wallet.
+    private func reloadPendingReplies() {
+        guard let wallet = try? requireWallet() else { return }
+        walletPendingIds = privateRepliesPending(
+            wallet: wallet,
+            identityId: identity.identityId,
+            contactIds: incomingPending.map(\.contactIdentityId)
+        )
     }
 
     // MARK: - Overlay maintenance
@@ -270,13 +288,14 @@ struct ContactRequestsView: View {
                 switch ContactRequestSubmissionOutcome.of(error) {
                 case .mayHaveGoneThrough:
                     // As `SendViewModel` treats an unconfirmed spend: not a
-                    // failure to retry. The next sync settles it.
-                    unconfirmedIds.insert(contactId)
+                    // failure to retry. The wallet keeps the reply pending,
+                    // and the row reads that; the next sync settles it.
                     kickDashPaySync(walletManager)
                 case .failed(let message):
                     rowErrors[contactId] = "Accept failed: \(message)"
                 }
             }
+            reloadPendingReplies()
         }
     }
 

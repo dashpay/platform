@@ -77,6 +77,22 @@ extension ManagedIdentity {
         try result.throwIfError()
         return PrivateContactInfo(ffi: ffi)
     }
+
+    /// Whether a private contact request from this identity to `contactId`
+    /// is being paid for, or was paid for and is not yet read back from the
+    /// store. While it is, Rust refuses another private send or reply to the
+    /// contact (`PlatformWalletError.privateContactRequestPending`), so show
+    /// the contact as pending and offer neither; a private sync settles it.
+    /// Read from this snapshot: take a fresh `ManagedIdentity` to see a
+    /// change. Rust keeps it in memory only, so it is false after a relaunch.
+    public func privateReplyPending(contactId: Identifier) throws -> Bool {
+        var pending = false
+        let result = contactId.withFFIBytes { idPtr in
+            PlatformWalletResult(managed_identity_get_private_reply_pending(handle, idPtr, &pending))
+        }
+        try result.throwIfError()
+        return pending
+    }
 }
 
 extension ManagedPlatformWallet {
@@ -143,7 +159,9 @@ extension PlatformWalletManager {
     /// signs the request with one of the sender's authentication keys, as it
     /// signs a public request's transition. Throws
     /// `PlatformWalletError.shieldedSpendUnconfirmed` when the payment may
-    /// already be on chain: do not send again.
+    /// already be on chain, and `.privateContactRequestPending` when a
+    /// private request to the recipient is in flight or paid and not yet read
+    /// back: either way do not send again; a later private sync settles it.
     public func sendPrivateContactRequest(
         walletId: Data,
         resolver: MnemonicResolver,
@@ -209,7 +227,8 @@ extension PlatformWalletManager {
     /// privately and paying for the reply from `account`'s shielded notes.
     /// `shieldedAddress` is the 43-byte Orchard address the contact may pay
     /// us at privately. `signer` is the identity signer
-    /// `acceptContactRequest` takes; it signs the reply.
+    /// `acceptContactRequest` takes; it signs the reply. An unconfirmed or
+    /// pending reply throws as `sendPrivateContactRequest` does.
     public func acceptPrivateContactRequest(
         walletId: Data,
         resolver: MnemonicResolver,
@@ -263,7 +282,9 @@ extension PlatformWalletManager {
     /// us at privately; a public reply ignores it. A public or adopted reply
     /// needs neither shielded support nor a mnemonic read for the payment.
     /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when a private
-    /// reply may already be on chain: do not accept again; and
+    /// reply may already be on chain, or `.privateContactRequestPending` when
+    /// one is in flight or paid and not yet read back: do not accept again;
+    /// and
     /// `PlatformWalletError.shieldedBuildRequired` when the request needs a
     /// private reply and the native library has no shielded support.
     public func acceptContactRequestReplyingInKind(

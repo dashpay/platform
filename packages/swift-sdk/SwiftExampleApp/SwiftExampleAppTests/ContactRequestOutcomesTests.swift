@@ -15,6 +15,25 @@ final class ContactRequestOutcomesTests: XCTestCase {
         XCTAssertEqual(outcome, .mayHaveGoneThrough)
     }
 
+    func testShouldKeepAPendingPrivateRequestPending() {
+        let outcome = ContactRequestSubmissionOutcome.of(
+            PlatformWalletError.privateContactRequestPending("not yet read back from the store")
+        )
+        XCTAssertEqual(outcome, .mayHaveGoneThrough)
+    }
+
+    func testShouldShowAWalletPendingReplyOverAnEarlierError() {
+        XCTAssertEqual(
+            ContactRequestSubmissionOutcome.rowMessage(pending: true, error: "Accept failed: boom"),
+            ContactRequestSubmissionOutcome.mayHaveGoneThroughMessage
+        )
+        XCTAssertEqual(
+            ContactRequestSubmissionOutcome.rowMessage(pending: false, error: "Accept failed: boom"),
+            "Accept failed: boom"
+        )
+        XCTAssertNil(ContactRequestSubmissionOutcome.rowMessage(pending: false, error: nil))
+    }
+
     func testShouldOfferARetryForAnOrdinaryFailure() {
         let error = PlatformWalletError.shieldedBroadcastFailed("rejected by the relay")
         XCTAssertEqual(
