@@ -378,6 +378,16 @@ impl DataContractWasm {
             .set_value("documentSchemas", schema)
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
+        // A document type's token costs are checked against the contract's tokens when the
+        // contract is validated, so the tokens are part of what is parsed.
+        if !tokens.is_empty() {
+            let tokens_value = dpp::platform_value::to_value(&tokens)
+                .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+            contract_value
+                .set_value("tokens", tokens_value)
+                .map_err(|err| WasmDppError::serialization(err.to_string()))?;
+        }
+
         let data_contract =
             DataContract::from_value(contract_value, opts.full_validation, &platform_version)?;
 

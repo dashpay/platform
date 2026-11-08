@@ -566,9 +566,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// A recipient whose requests with this identity came or went privately is
     /// refused ([`PlatformWalletError::PrivateContactRequestNeedsPrivateReply`]).
-    /// The refusal reads the requests the wallet tracks, so on a restored or
-    /// second device it holds once the private sync
-    /// (`sync_private_contact_requests`) has read the store.
+    /// So is one a private request is pending to
+    /// ([`PlatformWalletError::PrivateContactRequestPending`]), until its
+    /// payment fails for good or a private sync reads it back: it may already
+    /// be on chain. The refusal reads what the wallet tracks, so on a restored
+    /// or second device it holds once the private sync
+    /// (`sync_private_contact_requests`) has read the store. A pending request
+    /// is tracked in memory only: after a restart it holds once the host
+    /// restores it (`PlatformWallet::restore_pending_private_contact_requests`)
+    /// or that read reads it back.
     #[allow(clippy::type_complexity)]
     pub async fn send_contact_request_with_external_signer<S, C>(
         &self,
@@ -585,16 +591,27 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     {
         // A contact whose requests came or went privately is kept off chain: a
         // `contactRequest` document would publish the relationship. Replies
-        // and rotations go privately instead. This reads the requests the
+        // and rotations go privately instead. A private request still pending
+        // counts too, as it may already be on chain. This reads what the
         // wallet tracks, so on a restored or second device it holds only once
         // the private sync has read the store.
-        let private = {
+        let (private, private_pending) = {
             let wm = self.wallet_manager.read().await;
             wm.get_wallet_info(&self.wallet_id)
                 .and_then(|info| info.identity_manager.managed_identity(sender_identity_id))
-                .and_then(|managed| managed.dashpay().private_contact(recipient_identity_id))
-                .is_some()
+                .map_or((false, false), |managed| {
+                    let dashpay = managed.dashpay();
+                    (
+                        dashpay.private_contact(recipient_identity_id).is_some(),
+                        dashpay.private_reply_pending(recipient_identity_id),
+                    )
+                })
         };
+        if private_pending {
+            return Err(PlatformWalletError::PrivateContactRequestPending(
+                *recipient_identity_id,
+            ));
+        }
         if private {
             return Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(
                 *recipient_identity_id,
@@ -764,6 +781,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// the pair, the DIP-15 masked account reference (its version bumped past
     /// the previous request to the recipient, public or private) and the
     /// auto-accept proof over it.
+    ///
+    /// Once the version is at its last, 15, a request with the same xpub and
+    /// key would repeat the previous one: it is refused with
+    /// [`PlatformWalletError::InvalidParameter`], before anything is signed,
+    /// sealed or paid.
     pub(super) async fn prepare_contact_request<C>(
         &self,
         sender_identity_id: &Identifier,
@@ -903,17 +925,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         //     identical resend, so the bump is what makes a superseding
         //     (rotation) request broadcastable. The HMAC+mask runs in the
         //     signer (keyed by the raw scalar at `sender_enc_path`).
+        let prior_reference = {
+            let wm = self.wallet_manager.read().await;
+            wm.get_wallet_info(&self.wallet_id)
+                .and_then(|info| info.identity_manager.managed_identity(sender_identity_id))
+                // Checks both the pending sent map AND the established
+                // contact's outgoing request: see the method doc for
+                // why consulting only the pending map breaks rotation
+                // on established contacts.
+                .and_then(|managed| managed.prior_sent_account_reference(recipient_identity_id))
+        };
         let account_reference = {
-            let prior_reference = {
-                let wm = self.wallet_manager.read().await;
-                wm.get_wallet_info(&self.wallet_id)
-                    .and_then(|info| info.identity_manager.managed_identity(sender_identity_id))
-                    // Checks both the pending sent map AND the established
-                    // contact's outgoing request — see the method doc for
-                    // why consulting only the pending map breaks rotation
-                    // on established contacts.
-                    .and_then(|managed| managed.prior_sent_account_reference(recipient_identity_id))
-            };
             let previous_version = match prior_reference {
                 Some(prior) => Some(
                     crypto
@@ -925,8 +947,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             };
             let version = match previous_version {
                 // 4-bit field; saturate rather than wrap so a 16th
-                // rotation fails loudly at the unique index instead of
-                // silently colliding with version 0.
+                // rotation is refused below instead of silently colliding
+                // with version 0.
                 Some(v) if v >= 15 => {
                     tracing::warn!(
                         recipient = %recipient_identity_id,
@@ -941,6 +963,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .account_reference(&sender_enc_path, &xpub_bytes, account_index, version)
                 .await?
         };
+        // Saturated, with the same xpub and key: the request would repeat the
+        // tracked one. A document send would fail at the unique index; a
+        // private one would be paid for and then ignored as already tracked.
+        if prior_reference == Some(account_reference) {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "no account reference version is left for another contact request to \
+                 {recipient_identity_id}: version 15 is used, and this request would repeat the \
+                 one already sent"
+            )));
+        }
 
         // 4c. Resolve the auto-accept proof now that `account_reference` is
         //     known. The QR-scanner variant signs `(sender, recipient,
@@ -1153,7 +1185,13 @@ pub(super) fn ingest_sent_sweep(
     fetch_ok: bool,
 ) -> bool {
     let newest_by_recipient = record_and_collapse_sent_requests(managed, requests);
-    let persisted = ingest_sent_requests(managed, persister, identity_id, newest_by_recipient);
+    let persisted = ingest_sent_requests(
+        managed,
+        persister,
+        identity_id,
+        newest_by_recipient,
+        &mut Vec::new(),
+    );
     if fetch_ok && persisted {
         managed.mark_sent_sweep_completed();
     }
@@ -1191,7 +1229,7 @@ fn record_and_collapse_sent_requests(
 /// pair: by its account reference's version, which a rotation bumps, then by
 /// its creation time. A replay of an older request appended again later has a
 /// newer time but an older version.
-fn predates(candidate: &ContactRequest, tracked: &ContactRequest) -> bool {
+pub(super) fn predates(candidate: &ContactRequest, tracked: &ContactRequest) -> bool {
     freshness(candidate) < freshness(tracked)
 }
 
@@ -1304,29 +1342,42 @@ pub(super) fn ingest_received_requests(
 ///
 /// `add_sent_contact_request` carries its own duplicate / metadata-loss guard,
 /// so re-ingesting the same range on the next sweep is safe.
+///
+/// `recorded` gets each request this recorded: not one already tracked with
+/// the same account reference, a replay, or one whose store failed.
 pub(super) fn ingest_sent_requests(
     managed: &mut ManagedIdentity,
     persister: &WalletPersister,
     identity_id: Identifier,
     newest_by_recipient: std::collections::BTreeMap<Identifier, ContactRequest>,
+    recorded: &mut Vec<ContactRequest>,
 ) -> bool {
     for (recipient_id, contact_request) in newest_by_recipient {
         // An older request than the tracked one is a replay, as on the
         // received side: superseding with it would re-derive the next rotation
         // from a retired reference.
-        if managed
-            .dashpay()
-            .outgoing_request(&recipient_id)
-            .is_some_and(|tracked| predates(&contact_request, tracked))
-        {
+        let (replay, tracked) =
+            managed
+                .dashpay()
+                .outgoing_request(&recipient_id)
+                .map_or((false, false), |tracked| {
+                    (
+                        predates(&contact_request, tracked),
+                        tracked.account_reference == contact_request.account_reference,
+                    )
+                });
+        if replay {
             continue;
         }
-        if let Err(e) = managed.add_sent_contact_request(contact_request, persister) {
+        if let Err(e) = managed.add_sent_contact_request(contact_request.clone(), persister) {
             tracing::error!(
                 owner = %identity_id, error = %e,
                 "sent-request ingest persist failed; leaving sent cursor for retry"
             );
             return false;
+        }
+        if !tracked {
+            recorded.push(contact_request);
         }
     }
     true
@@ -4793,12 +4844,14 @@ mod sweep_tests {
             &noop_persister(),
             our_id,
             newest_sent_per_recipient([sent.clone()]),
+            &mut Vec::new(),
         ));
         assert!(ingest_sent_requests(
             managed,
             &noop_persister(),
             our_id,
             newest_sent_per_recipient([at(our, contact, 0, 4, 200)]),
+            &mut Vec::new(),
         ));
         assert_eq!(
             managed
@@ -4934,7 +4987,8 @@ mod sweep_tests {
             managed,
             &failing_persister(),
             our_id,
-            newest
+            newest,
+            &mut Vec::new()
         ));
 
         // Control on the same fixture: the write succeeds, so the ingest
@@ -4944,7 +4998,8 @@ mod sweep_tests {
             managed,
             &noop_persister(),
             our_id,
-            newest
+            newest,
+            &mut Vec::new()
         ));
     }
 
@@ -5038,6 +5093,11 @@ mod sweep_tests {
                 &mut all_requests,
             ),
             "precondition: the failed write must report the pass incomplete"
+        );
+        assert_eq!(
+            all_requests,
+            vec![],
+            "a request whose store failed is not reported"
         );
         assert!(
             managed.dashpay().incoming_contact_requests().is_empty(),
@@ -5153,6 +5213,49 @@ mod sweep_tests {
         );
     }
 
+    /// The sent ingest reports what it recorded: a new request, not one whose
+    /// store failed nor one already tracked.
+    #[test]
+    fn should_report_only_what_a_sent_ingest_recorded() {
+        let our = 1u8;
+        let our_id = Identifier::from([our; 32]);
+        let mut info = info_with_bare_identity(our);
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(&our_id)
+            .expect("managed identity");
+        let request = test_request(our, 2, 0);
+
+        let mut recorded = Vec::new();
+        assert!(!ingest_sent_requests(
+            managed,
+            &failing_persister(),
+            our_id,
+            newest_sent_per_recipient([request.clone()]),
+            &mut recorded,
+        ));
+        assert_eq!(recorded, vec![], "a request whose store failed");
+
+        assert!(ingest_sent_requests(
+            managed,
+            &noop_persister(),
+            our_id,
+            newest_sent_per_recipient([request.clone()]),
+            &mut recorded,
+        ));
+        assert_eq!(recorded, vec![request.clone()], "a new request");
+
+        let mut again = Vec::new();
+        assert!(ingest_sent_requests(
+            managed,
+            &noop_persister(),
+            our_id,
+            newest_sent_per_recipient([request]),
+            &mut again,
+        ));
+        assert_eq!(again, vec![], "a request already tracked");
+    }
+
     /// Branch 3, the fresh sent request (`add_sent_contact_request`). Its
     /// same-reference no-op guard returns `Ok(())`, so a memory-committed
     /// failed write makes the retry report success without storing anything.
@@ -5169,7 +5272,13 @@ mod sweep_tests {
         // Sweep 1: the write fails.
         let newest = newest_sent_per_recipient([test_request(our, 2, 0)]);
         assert!(
-            !ingest_sent_requests(managed, &failing_persister(), our_id, newest),
+            !ingest_sent_requests(
+                managed,
+                &failing_persister(),
+                our_id,
+                newest,
+                &mut Vec::new()
+            ),
             "precondition: the failed write must report the pass incomplete"
         );
         assert!(
@@ -5182,7 +5291,7 @@ mod sweep_tests {
         let (persister, backend) = counting_persister();
         let newest = newest_sent_per_recipient([test_request(our, 2, 0)]);
         assert!(
-            ingest_sent_requests(managed, &persister, our_id, newest),
+            ingest_sent_requests(managed, &persister, our_id, newest, &mut Vec::new()),
             "the retry must complete the pass"
         );
 

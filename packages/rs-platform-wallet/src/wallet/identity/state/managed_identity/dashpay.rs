@@ -28,6 +28,16 @@ pub struct PrivateContact {
     pub shielded_address: Option<[u8; 43]>,
 }
 
+/// The private request to one recipient that may be in flight: the attempt
+/// that reserved it and, once sealed, the commitment of its entry. Only that
+/// attempt notes the commitment or releases it; the private sync settles it
+/// by the commitment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PendingPrivateReply {
+    pub(crate) attempt: u64,
+    pub(crate) commitment: Option<[u8; 32]>,
+}
+
 /// DashPay social state carried by one [`ManagedIdentity`](super::ManagedIdentity).
 #[derive(Debug, Clone, Default)]
 pub struct DashPayState {
@@ -111,12 +121,18 @@ pub struct DashPayState {
     pub(super) private_shielded_addresses: BTreeMap<Identifier, [u8; 43]>,
 
     /// The private requests to each recipient that are being paid for, or
-    /// were paid for and are not yet read back from the store: the
-    /// commitment of the entry once it is sealed. While one is pending no
-    /// other private request to the recipient is sent, as the store keeps
-    /// every entry appended and a second payment could execute too. The
-    /// private sync settles one when it reads the entry back. In memory only.
-    pub(super) pending_private_replies: BTreeMap<Identifier, Option<[u8; 32]>>,
+    /// were paid for and are not yet read back from the store, each owned by
+    /// the attempt that reserved it. While one is pending no other request to
+    /// the recipient is sent, private or public, as the store keeps every
+    /// entry appended and a second payment could execute too. The private
+    /// sync settles one when it reads the entry back and records it. In
+    /// memory only: after a restart, those whose payment is unconfirmed are
+    /// restored from the shielded store's unconfirmed spends.
+    pub(super) pending_private_replies: BTreeMap<Identifier, PendingPrivateReply>,
+
+    /// The attempt id the next reservation in `pending_private_replies`
+    /// takes. In memory only.
+    pub(super) next_private_reply_attempt: u64,
 
     /// Lowest Platform-assigned `$createdAtCoreBlockHeight` among OUR sent
     /// `contactRequest` docs to each recipient seen by a sweep this process.
