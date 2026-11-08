@@ -2185,10 +2185,10 @@ class PlatformWalletManager(
      * `PlatformWalletManager.acceptPrivateContactRequest`
      * (`packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift`).
      *
-     * The public `Dashpay.acceptContactRequest` refuses such a request with
-     * [DashSdkError.PlatformWallet.PrivateContactRequestNeedsPrivateReply];
-     * read it with `Dashpay.incomingContactRequest` and accept it here. The
-     * reply is signed by this manager's identity signer ([signerHandle]).
+     * A host accepts with [acceptContactRequestReplyingInKind], which
+     * picks this reply itself; this explicit accept stays for a host that
+     * wants a private reply. The reply is signed by this manager's identity
+     * signer ([signerHandle]).
      * [shieldedAddress] is the 43-byte raw Orchard address the contact may
      * pay us at privately. Blocks for the Halo 2 proof.
      *
@@ -2203,6 +2203,48 @@ class PlatformWalletManager(
         require(account >= 0) { "account must be non-negative, got $account" }
         val handle = mapNativeErrors {
             DashpayNative.acceptPrivateContactRequest(
+                managerHandle,
+                walletId,
+                mnemonicResolver.nativeHandle,
+                account,
+                request.value,
+                shieldedAddress,
+                signerHandle,
+            )
+        }
+        EstablishedContactRef(handle)
+    }
+
+    /**
+     * Accept a DashPay contact request replying the way it came: privately,
+     * paid from [account]'s shielded notes on [walletId], when it came
+     * privately and no reply exists yet; otherwise with a `contactRequest`
+     * document, or by adopting the reply already sent. Which reply a request
+     * takes is the wallet's decision, so this is the accept a host calls.
+     * Port of Swift's `PlatformWalletManager.acceptContactRequestReplyingInKind`
+     * (`packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift`).
+     *
+     * [request] is the incoming request (`Dashpay.incomingContactRequest`).
+     * The reply is signed by this manager's identity signer ([signerHandle]);
+     * the Orchard spend authority comes from this manager's resolver and is
+     * derived only for a private reply. [shieldedAddress] is the 43-byte raw
+     * Orchard address the contact may pay us at privately; a public reply
+     * ignores it.
+     *
+     * Throws [DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed] when a
+     * private reply may already be on chain: do not accept again.
+     *
+     * @return the established contact; close it (or `use {}`) when done.
+     */
+    suspend fun acceptContactRequestReplyingInKind(
+        walletId: ByteArray,
+        request: ContactRequestRef,
+        shieldedAddress: ByteArray? = null,
+        account: Int = 0,
+    ): EstablishedContactRef = teardownGate.op {
+        require(account >= 0) { "account must be non-negative, got $account" }
+        val handle = mapNativeErrors {
+            DashpayNative.acceptContactRequestReplyingInKind(
                 managerHandle,
                 walletId,
                 mnemonicResolver.nativeHandle,

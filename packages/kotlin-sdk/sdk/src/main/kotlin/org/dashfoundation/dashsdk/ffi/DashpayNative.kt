@@ -327,4 +327,23 @@ internal object DashpayNative {
         shieldedAddress: ByteArray?,
         signerHandle: Long,
     ): Long
+
+    /**
+     * Accept the incoming contact request [requestHandle] replying the way
+     * it came: privately, paid from [account]'s shielded notes, when it came
+     * privately and no reply exists yet; otherwise with a document, or by
+     * adopting the reply already sent. The wallet decides. Arguments and
+     * result as for [acceptPrivateContactRequest].
+     * ← Swift `PlatformWalletManager.acceptContactRequestReplyingInKind`.
+     */
+    @Suppress("LongParameterList")
+    external fun acceptContactRequestReplyingInKind(
+        managerHandle: Long,
+        walletId: ByteArray,
+        resolverHandle: Long,
+        account: Int,
+        requestHandle: Long,
+        shieldedAddress: ByteArray?,
+        signerHandle: Long,
+    ): Long
 }

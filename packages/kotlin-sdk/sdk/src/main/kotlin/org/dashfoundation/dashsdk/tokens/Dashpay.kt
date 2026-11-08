@@ -339,10 +339,9 @@ class Dashpay internal constructor(private val walletHandle: Long,
      * The incoming contact request from [senderId] to [ourIdentityId] in
      * local state, or null when there is none (or the identity isn't
      * managed by this wallet). Close the returned ref when done. This is
-     * the request `PlatformWalletManager.acceptPrivateContactRequest`
-     * takes when the public accept refuses a contact whose requests came
-     * privately ([DashSdkError.PlatformWallet.PrivateContactRequestNeedsPrivateReply]).
-     * Local read; no network I/O.
+     * the request `PlatformWalletManager.acceptContactRequestReplyingInKind`
+     * takes: the accept that replies privately to a request that came
+     * privately, and with a document otherwise. Local read; no network I/O.
      * ← Swift `ManagedIdentity.getIncomingContactRequest(senderId:)`.
      */
     suspend fun incomingContactRequest(

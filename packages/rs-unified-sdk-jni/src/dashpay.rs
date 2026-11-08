@@ -1218,9 +1218,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_claimIn
 //
 // Mirrors Swift's `PrivateContactRequests.swift`: the store sync is a
 // wallet-handle call (`ManagedPlatformWallet.syncPrivateContactRequests`);
-// the send and the private-reply accept are manager-handle shielded spends
+// the send, the private-reply accept and the accept that replies the way a
+// request came are manager-handle shielded spends
 // (`PlatformWalletManager.sendPrivateContactRequest` /
-// `acceptPrivateContactRequest`), gated like the other shielded spends.
+// `acceptPrivateContactRequest` / `acceptContactRequestReplyingInKind`),
+// gated like the other shielded spends.
 
 /// The bytes of an Orchard payment address the FFI reads from a
 /// `shielded_address` pointer: an 11-byte diversifier and a 32-byte
@@ -1465,6 +1467,61 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_acceptP
         let mut out_handle: Handle = 0;
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_manager_accept_private_contact_request(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                resolver_handle as *mut MnemonicResolverHandle,
+                account as u32,
+                request_handle as Handle,
+                address
+                    .as_ref()
+                    .map_or(ptr::null(), |address| address.as_ptr()),
+                signer_handle as *mut SignerHandle,
+                &mut out_handle,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return 0;
+        }
+        out_handle as jlong
+    })
+}
+
+/// Accept the incoming contact request `requestHandle` replying the way it
+/// came (bridges
+/// `platform_wallet_manager_accept_contact_request_replying_in_kind`):
+/// privately, paid from `account`'s shielded notes, when it came privately
+/// and no reply exists yet; otherwise with a `contactRequest` document, or by
+/// adopting the reply already sent. The wallet decides; this is the accept a
+/// host calls. Arguments and result are as for
+/// [`Java_org_dashfoundation_dashsdk_ffi_DashpayNative_acceptPrivateContactRequest`].
+#[cfg(feature = "shielded")]
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_acceptContactRequestReplyingInKind(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    resolver_handle: jlong,
+    account: jint,
+    request_handle: jlong,
+    shielded_address: JByteArray,
+    signer_handle: jlong,
+) -> jlong {
+    guard(&mut env, 0, |env| {
+        if account < 0 {
+            throw_sdk_exception(env, 1, "account must be non-negative");
+            return 0;
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return 0;
+        };
+        let Ok(address) = read_opt_shielded_address(env, &shielded_address) else {
+            return 0;
+        };
+        let mut out_handle: Handle = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_accept_contact_request_replying_in_kind(
                 manager_handle as Handle,
                 wid.as_ptr(),
                 resolver_handle as *mut MnemonicResolverHandle,

@@ -96,7 +96,7 @@ class FfiSmokeTest {
      * `packages/rs-platform-wallet/src/changeset/core_bridge.rs`.
      */
     /**
-     * DashPay private contact requests (protocol version 15): the three
+     * DashPay private contact requests (protocol version 15): the four
      * `DashpayNative` symbols bind with the descriptors Kotlin declares, and
      * bad input surfaces as a mapped [DashSDKException] rather than a crash.
      * A null resolver is refused before any wallet lookup, and a shielded
@@ -119,6 +119,11 @@ class FfiSmokeTest {
         }
         assertThrows(DashSDKException::class.java) {
             DashpayNative.acceptPrivateContactRequest(
+                0L, ByteArray(32), 0L, 0, 0L, ByteArray(42), 0L,
+            )
+        }
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.acceptContactRequestReplyingInKind(
                 0L, ByteArray(32), 0L, 0, 0L, ByteArray(42), 0L,
             )
         }
