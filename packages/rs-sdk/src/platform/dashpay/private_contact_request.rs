@@ -29,7 +29,6 @@ use crate::platform::private_document_scan::{
 };
 use crate::platform::{Fetch, Identifier};
 use crate::{Error, Sdk};
-use dash_context_provider::ContextProvider;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
@@ -60,7 +59,7 @@ use platform_encryption::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 /// The DashPay document type of private contact requests.
 pub const PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME: &str = "privateContactRequest";
@@ -232,20 +231,15 @@ pub const PRIVATE_CONTACT_REQUEST_SIGNING_KEY_TYPES: [KeyType; 2] =
     [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160];
 
 /// The security levels an `AUTHENTICATION` key may sign a private contact request at: the ones
-/// Platform lets a document of the type be signed at, from `CRITICAL` to the type's requirement
-/// (`HIGH` unless the contract sets another). `MASTER` keys sign no documents.
+/// Platform lets a document of the type be signed at
+/// ([`SecurityLevel::document_signing_levels`] of the type's requirement), from `CRITICAL` to
+/// the requirement (`HIGH` unless the contract sets another). `MASTER` keys sign no documents.
 pub fn private_contact_request_signing_security_levels(
     dashpay_contract: &DataContract,
 ) -> Result<Vec<SecurityLevel>, Error> {
-    let requirement = private_contact_request_type(dashpay_contract)?.security_level_requirement();
-    Ok(if requirement == SecurityLevel::MASTER {
-        vec![SecurityLevel::MASTER]
-    } else {
-        SecurityLevel::full_range()
-            .into_iter()
-            .filter(|level| *level != SecurityLevel::MASTER && *level as u8 <= requirement as u8)
-            .collect()
-    })
+    Ok(private_contact_request_type(dashpay_contract)?
+        .security_level_requirement()
+        .document_signing_levels())
 }
 
 /// What a private contact request's sender signs, before sealing it: the entry's signing data
@@ -381,8 +375,10 @@ pub fn seal_private_contact_request(
         )));
     }
 
-    let outgoing_viewing_key =
-        private_contact_request_outgoing_viewing_key(sender.encryption_secret_key);
+    // Wiped on every return.
+    let outgoing_viewing_key = Zeroizing::new(private_contact_request_outgoing_viewing_key(
+        sender.encryption_secret_key,
+    ));
     let entry = seal_private_document_entry(
         &inputs.target(),
         inputs.entry_size,
@@ -436,23 +432,8 @@ impl SealInputs {
             encryption_key(sender, encryption_key_id, dashpay_contract.id(), None)
                 .map_err(Error::Generic)?;
 
-        let recipient_key = recipient
-            .get_public_key_by_id(recipient_key_id)
-            .ok_or_else(|| {
-                Error::Generic(format!(
-                    "the recipient identity {} has no key {recipient_key_id}",
-                    recipient.id()
-                ))
-            })?;
-        if !recipient_key_purpose_is_valid(recipient_key.purpose()) {
-            return Err(Error::Generic(format!(
-                "the recipient key {recipient_key_id} is a {} key, not a DECRYPTION or \
-                 ENCRYPTION key",
-                recipient_key.purpose()
-            )));
-        }
         let recipient_public_key =
-            ecdh_public_key(recipient_key, "recipient", dashpay_contract.id(), None)
+            recipient_key(recipient, recipient_key_id, dashpay_contract.id(), None)
                 .map_err(Error::Generic)?;
 
         let properties = request.to_properties();
@@ -509,6 +490,31 @@ fn encryption_key(
         ));
     }
     ecdh_public_key(key, "sender", dashpay_id, at_ms)
+}
+
+/// The public key of `recipient`'s key `key_id` that a private contact request may be
+/// encrypted to: an `ECDSA_SECP256K1` `DECRYPTION` or `ENCRYPTION` key, enabled at `at_ms` (now
+/// when `None`) and bound, if at all, to DashPay's contact requests. Sealing checks it now and
+/// reading at the entry's block time; the private format has no older keys to tolerate.
+fn recipient_key(
+    recipient: &Identity,
+    key_id: KeyID,
+    dashpay_id: Identifier,
+    at_ms: Option<u64>,
+) -> Result<PublicKey, String> {
+    let key = recipient.get_public_key_by_id(key_id).ok_or_else(|| {
+        format!(
+            "the recipient identity {} has no key {key_id}",
+            recipient.id()
+        )
+    })?;
+    if !recipient_key_purpose_is_valid(key.purpose()) {
+        return Err(format!(
+            "the recipient key {key_id} is a {} key, not a DECRYPTION or ENCRYPTION key",
+            key.purpose()
+        ));
+    }
+    ecdh_public_key(key, "recipient", dashpay_id, at_ms)
 }
 
 /// The public key of an `ECDSA_SECP256K1` identity key not disabled at `at_ms` (now when
@@ -707,6 +713,7 @@ fn key_is(key: &IdentityPublicKey, public_key: &PublicKey) -> bool {
 }
 
 /// Whether `contract`, the DashPay a context provider holds, declares private contact requests.
+#[cfg(test)]
 fn holds_private_contact_requests(contract: Option<&DataContract>) -> bool {
     contract.is_some_and(|contract| private_contact_request_type(contract).is_ok())
 }
@@ -1138,26 +1145,23 @@ impl EntryReader<'_> {
         received: &ReceivedPrivateDocumentEntry,
     ) -> Result<PrivateContactRequest, PrivateContactRequestRejection> {
         self.check_sender(&received.entry, received.block_time_ms)?;
+        // The key the entry opened with, checked as sealing checks it, at the entry's time.
         let recipient_key_problem = match self.identity(&received.recipient_identity_id) {
             None => Some("the recipient identity does not exist".to_string()),
-            Some(recipient) => match recipient.get_public_key_by_id(received.recipient_key_id) {
-                None => Some(format!(
-                    "the recipient has no key {}",
-                    received.recipient_key_id
-                )),
-                Some(key) if !key_is(key, received.entry.recipient_public_key()) => Some(format!(
-                    "the recipient key {} is not the key the entry is encrypted to",
-                    received.recipient_key_id
-                )),
-                Some(key) => disabled_problem(key, "recipient", Some(received.block_time_ms))
-                    .or_else(|| {
-                        bounds_problem(
-                            key,
-                            "recipient",
-                            self.dashpay_id,
-                            &PRIVATE_CONTACT_REQUEST_ENCRYPTION_KEY_DOCUMENT_TYPES,
-                        )
-                    }),
+            Some(recipient) => match recipient_key(
+                recipient,
+                received.recipient_key_id,
+                self.dashpay_id,
+                Some(received.block_time_ms),
+            ) {
+                Err(problem) => Some(problem),
+                Ok(public_key) if public_key != *received.entry.recipient_public_key() => {
+                    Some(format!(
+                        "the recipient key {} is not the key the entry is encrypted to",
+                        received.recipient_key_id
+                    ))
+                }
+                Ok(_) => None,
             },
         };
         if let Some(problem) = recipient_key_problem {
@@ -1315,46 +1319,19 @@ impl Sdk {
     }
 
     /// The DashPay contract, with its `privateContactRequest` type, as the context provider
-    /// holds it: a page's proof is verified against the contract the provider gives. The
-    /// network's protocol version is established as 15 or later first, as an unpinned SDK starts
-    /// below it and would otherwise resolve a DashPay without the type.
+    /// holds it ([`Sdk::fetch_private_document_contract`]): a page's proof is verified against
+    /// the contract the provider gives. The network's protocol version is established as 15 or
+    /// later first, as an unpinned SDK starts below it and would otherwise resolve a DashPay
+    /// without the type.
     async fn fetch_private_contact_request_contract(&self) -> Result<Arc<DataContract>, Error> {
         self.require_protocol_version(
             PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
             "DashPay private contact requests",
         )
         .await?;
-        let mut contract = self.fetch_dashpay_contract().await?;
-        let contract_id = contract.id();
-        if private_contact_request_type(&contract).is_err() {
-            // The context provider may hold a DashPay from before the type, kept from an older
-            // version: the network's is current.
-            contract = DataContract::fetch(self, contract_id)
-                .await?
-                .map(Arc::new)
-                .ok_or_else(|| {
-                    Error::Generic(format!("the DashPay contract {contract_id} is gone"))
-                })?;
-            private_contact_request_type(&contract)?;
-        }
-        if let Some(provider) = self.context_provider() {
-            // A DashPay fetched from the network, first or again, is given to the provider. One
-            // that still gives none with the type would fail every page: that is refused here,
-            // once.
-            let held = provider.get_data_contract(&contract_id, self.version())?;
-            if !holds_private_contact_requests(held.as_deref()) {
-                provider.register_data_contract(Arc::clone(&contract));
-            }
-            let held = provider.get_data_contract(&contract_id, self.version())?;
-            if !holds_private_contact_requests(held.as_deref()) {
-                return Err(Error::Generic(format!(
-                    "the context provider does not hold the DashPay {contract_id} with \
-                     {PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME} once given it, so private \
-                     pages cannot be verified"
-                )));
-            }
-        }
-        Ok(contract)
+        let dashpay_id = self.get_dashpay_contract_id()?;
+        self.fetch_private_document_contract(dashpay_id, PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME)
+            .await
     }
 
     /// Fetches the identities `needed` lists ([`private_contact_request_identities`]), a few at
@@ -2209,6 +2186,69 @@ mod tests {
         assert_eq!(reasons_with(Some(disabled_at(BLOCK_TIME_MS + 1))), vec![]);
         assert!(matches!(
             reasons_with(None).as_slice(),
+            [PrivateContactRequestRejection::RecipientKeyNotUsable(_)]
+        ));
+    }
+
+    /// A request is read only through a recipient key sealing would have encrypted to: one
+    /// whose record is an AUTHENTICATION or TRANSFER key holding the point it opened with, or
+    /// an ECDSA_HASH160 record of that point, is refused.
+    #[test]
+    fn should_refuse_a_request_through_a_key_it_could_not_be_sealed_to() {
+        let contract = dashpay();
+        let entry = seal(&contract, &sender_identity(None), &smallest_request(1), 1);
+        let read_with = |recipient_key: IdentityPublicKey| {
+            reasons(read(
+                &contract,
+                vec![entry.clone()],
+                &recipient_keys(),
+                &[
+                    sender_identity(None),
+                    with_key(recipient_identity(), recipient_key),
+                ],
+            ))
+        };
+        assert_eq!(
+            read_with(key(
+                2,
+                Purpose::DECRYPTION,
+                KeyType::ECDSA_SECP256K1,
+                &secret_key(2),
+                None
+            )),
+            vec![],
+            "the key it was sealed to"
+        );
+        for purpose in [Purpose::AUTHENTICATION, Purpose::TRANSFER] {
+            assert!(
+                matches!(
+                    read_with(key(
+                        2,
+                        purpose,
+                        KeyType::ECDSA_SECP256K1,
+                        &secret_key(2),
+                        None
+                    ))
+                    .as_slice(),
+                    [PrivateContactRequestRejection::RecipientKeyNotUsable(_)]
+                ),
+                "{purpose}"
+            );
+        }
+        let hash160 = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 2,
+            purpose: Purpose::DECRYPTION,
+            security_level: SecurityLevel::MEDIUM,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_HASH160,
+            read_only: false,
+            data: BinaryData::new(
+                ripemd160_sha256(&PublicKey::from_secret_key(&secret_key(2)).serialize()).to_vec(),
+            ),
+            disabled_at: None,
+        });
+        assert!(matches!(
+            read_with(hash160).as_slice(),
             [PrivateContactRequestRejection::RecipientKeyNotUsable(_)]
         ));
     }
@@ -3203,75 +3243,12 @@ mod tests {
         assert_eq!(scan.received[0].request, request);
     }
 
-    /// A context provider holding `held`, or nothing, whatever version it is asked for, as a
-    /// provider's known contracts do. A `writable` one puts a registered contract in its place;
-    /// a read-only one keeps what it holds. Its clones share what it holds.
     #[cfg(feature = "mocks")]
-    #[derive(Clone)]
-    struct HeldContractProvider {
-        held: Arc<std::sync::Mutex<Option<Arc<DataContract>>>>,
-        writable: bool,
-    }
-
+    use crate::platform::private_document_entries::held_contract_provider::HeldContractProvider;
     #[cfg(feature = "mocks")]
-    impl HeldContractProvider {
-        fn new(held: Option<DataContract>, writable: bool) -> Self {
-            Self {
-                held: Arc::new(std::sync::Mutex::new(held.map(Arc::new))),
-                writable,
-            }
-        }
-
-        fn held(&self) -> Option<Arc<DataContract>> {
-            self.held.lock().expect("the lock").clone()
-        }
-    }
-
+    use crate::platform::private_document_entries::PrivateDocumentEntriesQuery;
     #[cfg(feature = "mocks")]
-    impl ContextProvider for HeldContractProvider {
-        fn get_data_contract(
-            &self,
-            _id: &Identifier,
-            _platform_version: &PlatformVersion,
-        ) -> Result<Option<Arc<DataContract>>, dash_context_provider::ContextProviderError>
-        {
-            Ok(self.held())
-        }
-
-        fn get_token_configuration(
-            &self,
-            _token_id: &Identifier,
-        ) -> Result<
-            Option<dpp::data_contract::TokenConfiguration>,
-            dash_context_provider::ContextProviderError,
-        > {
-            Ok(None)
-        }
-
-        fn get_quorum_public_key(
-            &self,
-            _quorum_type: u32,
-            _quorum_hash: [u8; 32],
-            _core_chain_locked_height: u32,
-        ) -> Result<[u8; 48], dash_context_provider::ContextProviderError> {
-            Err(dash_context_provider::ContextProviderError::InvalidQuorum(
-                "no quorum in this test".to_string(),
-            ))
-        }
-
-        fn get_platform_activation_height(
-            &self,
-        ) -> Result<dpp::prelude::CoreBlockHeight, dash_context_provider::ContextProviderError>
-        {
-            Ok(1)
-        }
-
-        fn register_data_contract(&self, contract: Arc<DataContract>) {
-            if self.writable {
-                *self.held.lock().expect("the lock") = Some(contract);
-            }
-        }
-    }
+    use dash_context_provider::ContextProvider;
 
     /// DashPay before its private type: as protocol version 14 has it.
     #[cfg(feature = "mocks")]
@@ -3326,6 +3303,59 @@ mod tests {
         );
         assert!(private_contact_request_type(&contract).is_ok());
         assert!(holds_private_contact_requests(provider.held().as_deref()));
+    }
+
+    /// A direct page read, as a generic reader makes one, by a client whose provider holds
+    /// DashPay from before the private type: the current DashPay is fetched and given to the
+    /// provider before the page, which is then verified against it.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_give_a_page_reader_s_provider_the_contract_with_the_private_type() {
+        let provider = HeldContractProvider::new(Some(dashpay_without_private_requests()), true);
+        let mut sdk = sdk_with(provider.clone());
+        let current = dashpay();
+        sdk.mock()
+            .expect_fetch(current.id(), Some(current.clone()))
+            .await
+            .expect("the DashPay fetch is expected");
+        sdk.mock()
+            .expect_fetch(
+                PrivateDocumentEntriesQuery::new(
+                    current.id(),
+                    PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+                    0,
+                ),
+                Some(PrivateDocumentEntries {
+                    entries: vec![],
+                    total_count: 0,
+                }),
+            )
+            .await
+            .expect("the page fetch is expected");
+
+        let scan = sdk
+            .scan_private_document_page(
+                current.id(),
+                PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+                0,
+                &PrivateDocumentScanKeys::new(),
+            )
+            .await
+            .expect("the page is read");
+        assert!(scan.is_complete());
+        assert!(holds_private_contact_requests(provider.held().as_deref()));
+
+        // A provider holding a contract with the type keeps it: the very contract it holds
+        // comes back, where a refetch would have given it another.
+        let held = provider.held().expect("the provider holds DashPay");
+        let resolved = sdk
+            .fetch_private_document_contract(
+                current.id(),
+                PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+            )
+            .await
+            .expect("the held contract");
+        assert!(Arc::ptr_eq(&resolved, &held));
     }
 
     /// A DashPay the provider does not hold yet is fetched from the network and given to it,
