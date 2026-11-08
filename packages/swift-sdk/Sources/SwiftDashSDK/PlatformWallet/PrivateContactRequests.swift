@@ -5,17 +5,20 @@ import DashSDKFFI
 //
 // A private contact request is sealed to one of the recipient's DashPay keys
 // and paid for from the shielded pool, so nothing on chain names either side.
-// The wallet records it as an ordinary `ContactRequest`; what that type has no
-// field for (that it came privately, and the contact's shielded address) is
-// read with `ManagedIdentity.privateContact(contactId:)`.
+// It is signed by the same identity signer as a public request. The wallet
+// records it as an ordinary `ContactRequest`; whether it came or went
+// privately, and the contact's shielded address, are read with
+// `ManagedIdentity.privateContact(contactId:)`.
 //
-// Routing an accept: the public `acceptContactRequest` throws
-// `PlatformWalletError.privateContactRequestNeedsPrivateReply` for a request
-// that came privately; accept it with
-// `PlatformWalletManager.acceptPrivateContactRequest` instead.
+// Routing: the public `acceptContactRequest` and `sendContactRequest` throw
+// `PlatformWalletError.privateContactRequestNeedsPrivateReply` for a contact
+// whose requests came or went privately; accept it with
+// `PlatformWalletManager.acceptPrivateContactRequest`, or send with
+// `PlatformWalletManager.sendPrivateContactRequest`, instead.
 
-/// What an identity's private contact requests with one contact carry beyond
-/// the `ContactRequest`. Rust keeps it in memory only and rebuilds it with
+/// How an identity and one contact exchanged private contact requests. Rust
+/// reads it from the stored requests, so it holds across launches; only the
+/// contact's shielded address is kept in memory, rebuilt by
 /// `ManagedPlatformWallet.syncPrivateContactRequests`.
 public struct PrivateContactInfo: Sendable, Equatable {
     /// The contact's request came privately, so accepting it replies
@@ -23,7 +26,9 @@ public struct PrivateContactInfo: Sendable, Equatable {
     public let receivedPrivately: Bool
     /// This identity's request to the contact went privately.
     public let sentPrivately: Bool
-    /// The 43-byte Orchard address the contact asked to be paid at privately.
+    /// The 43-byte Orchard address the contact asked to be paid at
+    /// privately; only when `receivedPrivately`, and only once a sync this
+    /// launch has read it.
     public let shieldedAddress: Data?
 
     init(ffi: PrivateContactFFI) {
@@ -56,9 +61,9 @@ public struct PrivateContactSyncResult: Sendable {
 }
 
 extension ManagedIdentity {
-    /// What this identity's private contact requests with `contactId` carry,
-    /// or `nil` when none between them went privately as far as this process
-    /// has seen.
+    /// How this identity and `contactId` exchanged private contact requests,
+    /// or `nil` when neither tracked request between them came or went
+    /// privately.
     public func privateContact(contactId: Identifier) throws -> PrivateContactInfo? {
         var ffi = PrivateContactFFI()
         let result = contactId.withFFIBytes { idPtr in
@@ -78,10 +83,12 @@ extension ManagedPlatformWallet {
     /// and ingest what it holds for them: requests to them, each sender
     /// checked, and requests they sent, recovered from the store alone.
     ///
-    /// The keys stay in the Keychain mnemonic resolver Rust-side. The store
-    /// cursors live in memory only, so the first pass after launch reads the
-    /// store from its start, and until it has run the public accept cannot
-    /// tell that a request came privately.
+    /// The store is opened with keys that stay in the Keychain mnemonic
+    /// resolver Rust-side; each request's signature is checked against its
+    /// sender's keys. The store cursors live in memory only, so the first
+    /// pass after launch reads the store from its start. A request it
+    /// ingests is stored as having come privately, which holds across
+    /// launches.
     public func syncPrivateContactRequests(
         maxPages: UInt32 = .max
     ) async throws -> PrivateContactSyncResult {
@@ -130,8 +137,11 @@ extension PlatformWalletManager {
     /// 43-byte Orchard address the contact may pay us at privately.
     ///
     /// `resolver` supplies both the Orchard spend authority and the DashPay
-    /// keys. Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
-    /// payment may already be on chain: do not send again.
+    /// keys. `signer` is the identity signer `sendContactRequest` takes: it
+    /// signs the request with one of the sender's authentication keys, as it
+    /// signs a public request's transition. Throws
+    /// `PlatformWalletError.shieldedSpendUnconfirmed` when the payment may
+    /// already be on chain: do not send again.
     public func sendPrivateContactRequest(
         walletId: Data,
         resolver: MnemonicResolver,
@@ -140,20 +150,23 @@ extension PlatformWalletManager {
         recipientIdentityId: Identifier,
         accountLabel: String? = nil,
         autoAcceptProof: Data? = nil,
-        shieldedAddress: Data? = nil
+        shieldedAddress: Data? = nil,
+        signer: KeychainSigner
     ) async throws -> ContactRequest {
         let handle = try privateContactRequestManagerHandle(
             walletId: walletId,
             resolver: resolver,
             shieldedAddress: shieldedAddress
         )
+        let signerHandle = signer.handle
         let requestHandle: Handle = try await Task.detached(priority: .userInitiated) {
             () -> Handle in
             var outHandle: Handle = NULL_HANDLE
             let resolverHandle = resolver.handle
-            // Guaranteed resolver keepalive across the FFI call: same
-            // rationale as `shieldedTransfer`.
-            try withExtendedLifetime(resolver) {
+            // Guaranteed keepalive of the resolver and the signer across the
+            // FFI call, whose vtable callbacks fire during it: same rationale
+            // as `shieldedTransfer`.
+            try withExtendedLifetime((resolver, signer)) {
                 try walletId.withFFIBytes { widPtr in
                     try senderIdentityId.withFFIBytes { senderPtr in
                         try recipientIdentityId.withFFIBytes { recipientPtr in
@@ -171,6 +184,7 @@ extension PlatformWalletManager {
                                             proofPtr,
                                             proofLen,
                                             addressPtr,
+                                            signerHandle,
                                             &outHandle
                                         ).check()
                                     }
@@ -188,13 +202,15 @@ extension PlatformWalletManager {
     /// Accept a DashPay contact request that came privately, replying
     /// privately and paying for the reply from `account`'s shielded notes.
     /// `shieldedAddress` is the 43-byte Orchard address the contact may pay
-    /// us at privately.
+    /// us at privately. `signer` is the identity signer
+    /// `acceptContactRequest` takes; it signs the reply.
     public func acceptPrivateContactRequest(
         walletId: Data,
         resolver: MnemonicResolver,
         account: UInt32 = 0,
         request: ContactRequest,
-        shieldedAddress: Data? = nil
+        shieldedAddress: Data? = nil,
+        signer: KeychainSigner
     ) async throws -> EstablishedContact {
         let handle = try privateContactRequestManagerHandle(
             walletId: walletId,
@@ -202,11 +218,12 @@ extension PlatformWalletManager {
             shieldedAddress: shieldedAddress
         )
         let requestHandle = request.handle
+        let signerHandle = signer.handle
         let establishedHandle: Handle = try await Task.detached(priority: .userInitiated) {
             () -> Handle in
             var outHandle: Handle = NULL_HANDLE
             let resolverHandle = resolver.handle
-            try withExtendedLifetime((resolver, request)) {
+            try withExtendedLifetime((resolver, signer, request)) {
                 try walletId.withFFIBytes { widPtr in
                     try withOptionalBytes(shieldedAddress) { addressPtr, _ in
                         try platform_wallet_manager_accept_private_contact_request(
@@ -216,6 +233,7 @@ extension PlatformWalletManager {
                             account,
                             requestHandle,
                             addressPtr,
+                            signerHandle,
                             &outHandle
                         ).check()
                     }

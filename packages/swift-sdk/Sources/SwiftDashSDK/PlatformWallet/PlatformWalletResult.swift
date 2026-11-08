@@ -265,8 +265,9 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// An asset lock (a drain, or a fixed amount in many small coins) exceeds
     /// the input cap; nothing was broadcast.
     case errorAssetLockTooManyInputs = 60
-    /// The contact request came privately, so a public reply would publish
-    /// the relationship. Nothing was sent; accept it privately.
+    /// The contact requests with that identity came or went privately, so a
+    /// public request to it, in reply or as a rotation, would publish the
+    /// relationship. Nothing was sent; accept or send it privately.
     case errorPrivateContactRequestNeedsPrivateReply = 68
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
@@ -592,9 +593,12 @@ public enum PlatformWalletError: LocalizedError {
     /// tracked lock over the cap: it is not re-sent (an earlier attempt may
     /// have reached the network), it stays tracked, and nothing is released.
     case assetLockTooManyInputs(String)
-    /// The contact request came privately (protocol version 15): a public
-    /// reply would publish the relationship, so nothing was sent. Accept it
-    /// with `PlatformWalletManager.acceptPrivateContactRequest`.
+    /// The contact requests with that identity came or went privately
+    /// (protocol version 15): a public request to it, in reply or as a
+    /// rotation, would publish the relationship, so the public accept and
+    /// send refuse it and nothing was sent. Accept it with
+    /// `PlatformWalletManager.acceptPrivateContactRequest`, or send with
+    /// `PlatformWalletManager.sendPrivateContactRequest`.
     case privateContactRequestNeedsPrivateReply(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition

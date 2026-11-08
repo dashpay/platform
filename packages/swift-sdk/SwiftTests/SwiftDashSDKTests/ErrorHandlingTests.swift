@@ -465,8 +465,8 @@ final class ErrorHandlingTests: XCTestCase {
         )
         XCTAssertEqual(code, .errorPrivateContactRequestNeedsPrivateReply)
         XCTAssertEqual(code.rawValue, 68)
-        let detail = "the contact request from 9fRYTJZW came privately; "
-            + "accept it with a private reply"
+        let detail = "the contact requests with 9fRYTJZW came or went privately; "
+            + "reply to or rotate with it privately"
         let error = PlatformWalletError(code: code, message: detail)
         guard case .privateContactRequestNeedsPrivateReply(let message) = error else {
             return XCTFail("lost typed private-reply error")
