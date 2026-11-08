@@ -147,7 +147,10 @@ fn should_carry_the_largest_payload_in_an_entry_of_the_minimum_size() {
         .expect("well formed")
         .expect("for the recipient");
     opened
-        .verify_sender(&PublicKey::from_secret_key(&sender_key), &recipient_key)
+        .verify_sender(
+            &PublicKey::from_secret_key(&sender_key),
+            Some(&recipient_key),
+        )
         .expect("from the sender");
     let decoded = decode_private_document_payload(request, opened.payload(), platform_version)
         .expect("decodes");

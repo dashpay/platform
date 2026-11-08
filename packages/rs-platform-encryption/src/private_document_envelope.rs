@@ -88,6 +88,9 @@ pub enum PrivateDocumentEnvelopeError {
 
     #[error("the private document entry's sender authentication does not verify")]
     SenderNotAuthenticated,
+
+    #[error("a deniable MAC is checked with the recipient's secret key, and none was given")]
+    RecipientSecretKeyRequired,
 }
 
 /// The envelope version this module builds and opens.
@@ -251,17 +254,21 @@ impl OpenedPrivateDocumentEntry {
     /// Checks that the key the entry names wrote it: `sender_public_key` is the key the sender
     /// identity holds under `sender_key_id`, as it was when the entry was written (keys are
     /// disabled, never removed). A deniable MAC is checked with the recipient's own secret key,
-    /// the one that opened the entry; a signature needs only the sender's key.
+    /// the one that opened the entry, and is refused with `RecipientSecretKeyRequired` without
+    /// it; a signature needs only the sender's key, so a sender checks its own recovered entry
+    /// with `None`.
     pub fn verify_sender(
         &self,
         sender_public_key: &PublicKey,
-        recipient_secret_key: &SecretKey,
+        recipient_secret_key: Option<&SecretKey>,
     ) -> Result<(), PrivateDocumentEnvelopeError> {
         match self.auth_mode {
             PrivateDocumentAuthMode::Anonymous => {
                 Err(PrivateDocumentEnvelopeError::AnonymousSender)
             }
             PrivateDocumentAuthMode::DeniableMac => {
+                let recipient_secret_key = recipient_secret_key
+                    .ok_or(PrivateDocumentEnvelopeError::RecipientSecretKeyRequired)?;
                 let mac_key = mac_key(&shared_point(recipient_secret_key, sender_public_key));
                 let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(&mac_key)
                     .expect("HMAC takes a key of any length");
@@ -405,48 +412,85 @@ pub fn seal_private_document_entry(
     Ok(entry)
 }
 
-/// Opens `entry` of the private document type `target` with the first of
-/// `recipient_secret_keys` it is encrypted to, for the identity `recipient_identity_id`.
-///
-/// `Ok(None)` when it is for none of the keys, the case of nearly every entry a wallet scans:
-/// a key whose decryption fails, or whose commitment does not match, is passed over for the
-/// next. An entry that opens but is malformed, or names another recipient identity, is refused
-/// with an error. The sender is not yet checked: see
-/// [`OpenedPrivateDocumentEntry::verify_sender`].
+/// A wallet's decryption keys, prepared to open many entries: each key's public key is derived
+/// and serialized once, rather than for every entry a scan tries, which for nearly every entry
+/// opens none. The keys keep their order, which [`OpenedPrivateDocumentEntry::recipient_key_index`]
+/// reports.
+pub struct PrivateDocumentRecipientKeys {
+    keys: Vec<(SecretKey, PublicKey, [u8; 33])>,
+}
+
+impl PrivateDocumentRecipientKeys {
+    pub fn new(secret_keys: &[SecretKey]) -> Self {
+        Self {
+            keys: secret_keys
+                .iter()
+                .map(|secret_key| {
+                    let public_key = PublicKey::from_secret_key(secret_key);
+                    (*secret_key, public_key, public_key.serialize())
+                })
+                .collect(),
+        }
+    }
+
+    /// Opens `entry` of the private document type `target` with the first of these keys it is
+    /// encrypted to, for the identity `recipient_identity_id`.
+    ///
+    /// `Ok(None)` when it is for none of the keys, the case of nearly every entry a wallet scans:
+    /// a key whose decryption fails, or whose commitment does not match, is passed over for the
+    /// next. An entry that opens but is malformed, or names another recipient identity, is
+    /// refused with an error. The sender is not yet checked: see
+    /// [`OpenedPrivateDocumentEntry::verify_sender`].
+    pub fn open(
+        &self,
+        entry: &[u8],
+        target: &PrivateDocumentTarget,
+        recipient_identity_id: &[u8; 32],
+    ) -> Result<Option<OpenedPrivateDocumentEntry>, PrivateDocumentEnvelopeError> {
+        let parts = EntryParts::split(entry)?;
+        let Ok(epk) = PublicKey::from_slice(parts.epk) else {
+            // No key opens an entry whose ephemeral key is not a point.
+            return Ok(None);
+        };
+        for (index, (secret_key, recipient_public_key, recipient_key)) in
+            self.keys.iter().enumerate()
+        {
+            let key = entry_key(&shared_point(secret_key, &epk), parts.epk, recipient_key);
+            let Ok(body) = decrypt(&key, parts.commitment, parts.body_ct) else {
+                continue;
+            };
+            if commitment(&key, target, recipient_key, &body) != *parts.commitment {
+                continue;
+            }
+            let opened = parse_body(
+                &body,
+                target,
+                *parts.commitment,
+                *recipient_public_key,
+                Some(index),
+            )?;
+            if opened.recipient_identity_id != *recipient_identity_id {
+                return Err(PrivateDocumentEnvelopeError::WrongRecipient);
+            }
+            return Ok(Some(opened));
+        }
+        Ok(None)
+    }
+}
+
+/// [`PrivateDocumentRecipientKeys::open`] with keys prepared for this one entry; a scan of many
+/// entries prepares them once instead.
 pub fn open_private_document_entry(
     entry: &[u8],
     target: &PrivateDocumentTarget,
     recipient_identity_id: &[u8; 32],
     recipient_secret_keys: &[SecretKey],
 ) -> Result<Option<OpenedPrivateDocumentEntry>, PrivateDocumentEnvelopeError> {
-    let parts = EntryParts::split(entry)?;
-    let Ok(epk) = PublicKey::from_slice(parts.epk) else {
-        // No key opens an entry whose ephemeral key is not a point.
-        return Ok(None);
-    };
-    for (index, secret_key) in recipient_secret_keys.iter().enumerate() {
-        let recipient_public_key = PublicKey::from_secret_key(secret_key);
-        let recipient_key = recipient_public_key.serialize();
-        let key = entry_key(&shared_point(secret_key, &epk), parts.epk, &recipient_key);
-        let Ok(body) = decrypt(&key, parts.commitment, parts.body_ct) else {
-            continue;
-        };
-        if commitment(&key, target, &recipient_key, &body) != *parts.commitment {
-            continue;
-        }
-        let opened = parse_body(
-            &body,
-            target,
-            *parts.commitment,
-            recipient_public_key,
-            Some(index),
-        )?;
-        if opened.recipient_identity_id != *recipient_identity_id {
-            return Err(PrivateDocumentEnvelopeError::WrongRecipient);
-        }
-        return Ok(Some(opened));
-    }
-    Ok(None)
+    PrivateDocumentRecipientKeys::new(recipient_secret_keys).open(
+        entry,
+        target,
+        recipient_identity_id,
+    )
 }
 
 /// Recovers `entry` of the private document type `target` that the holder of
@@ -773,16 +817,20 @@ mod tests {
         assert_eq!(opened.payload(), payload().as_slice());
 
         opened
-            .verify_sender(&public_key(1), &secret_key(2))
+            .verify_sender(&public_key(1), Some(&secret_key(2)))
             .expect("the sender's key wrote the MAC");
         assert!(matches!(
-            opened.verify_sender(&public_key(5), &secret_key(2)),
+            opened.verify_sender(&public_key(5), Some(&secret_key(2))),
             Err(PrivateDocumentEnvelopeError::SenderNotAuthenticated)
         ));
         assert!(matches!(
-            opened.verify_sender(&public_key(1), &secret_key(3)),
+            opened.verify_sender(&public_key(1), Some(&secret_key(3))),
             Err(PrivateDocumentEnvelopeError::SenderNotAuthenticated)
         ));
+        assert_eq!(
+            opened.verify_sender(&public_key(1), None),
+            Err(PrivateDocumentEnvelopeError::RecipientSecretKeyRequired)
+        );
     }
 
     /// A signed entry is checked against the sender's key alone.
@@ -800,12 +848,22 @@ mod tests {
         let opened = open(&entry, &[secret_key(2)]).expect("it opens");
         assert_eq!(opened.auth_mode(), PrivateDocumentAuthMode::Signature);
         opened
-            .verify_sender(&public_key(1), &secret_key(2))
+            .verify_sender(&public_key(1), Some(&secret_key(2)))
             .expect("the sender's key signed it");
         assert!(matches!(
-            opened.verify_sender(&public_key(5), &secret_key(2)),
+            opened.verify_sender(&public_key(5), Some(&secret_key(2))),
             Err(PrivateDocumentEnvelopeError::SenderNotAuthenticated)
         ));
+        // A signature needs no recipient key: the sender checks its own recovered entry with
+        // `None`, and the recipient may too.
+        opened
+            .verify_sender(&public_key(1), None)
+            .expect("the signature needs only the sender's key");
+        recover_sent_private_document_entry(&entry, &target(), &outgoing_viewing_key())
+            .expect("well formed")
+            .expect("the sender built it")
+            .verify_sender(&public_key(1), None)
+            .expect("the sender checks its recovered entry with its own key alone");
     }
 
     /// An anonymous entry names no sender, and there is nothing to check.
@@ -818,9 +876,41 @@ mod tests {
         assert_eq!(opened.sender_key_id(), 0);
         assert_eq!(opened.payload(), payload().as_slice());
         assert!(matches!(
-            opened.verify_sender(&public_key(1), &secret_key(2)),
+            opened.verify_sender(&public_key(1), Some(&secret_key(2))),
             Err(PrivateDocumentEnvelopeError::AnonymousSender)
         ));
+    }
+
+    /// Keys prepared once open every entry of a scan as the single-entry function does, and keep
+    /// their order in the index they report.
+    #[test]
+    fn should_open_entries_with_keys_prepared_once() {
+        let sender_key = secret_key(1);
+        let keys = [secret_key(3), secret_key(2)];
+        let prepared = PrivateDocumentRecipientKeys::new(&keys);
+        let entries = [
+            seal(&deniable_mac_sender(&sender_key), 9),
+            seal(&PrivateDocumentSender::Anonymous, 10),
+        ];
+        for entry in &entries {
+            let opened = prepared
+                .open(entry, &target(), &RECIPIENT_IDENTITY)
+                .expect("well formed")
+                .expect("for the second key");
+            assert_eq!(opened.recipient_key_index(), Some(1));
+            assert_eq!(
+                Some(opened),
+                open(entry, &keys),
+                "prepared keys open the entry as the function does"
+            );
+        }
+        let others = PrivateDocumentRecipientKeys::new(&[secret_key(4)]);
+        assert_eq!(
+            others
+                .open(&entries[0], &target(), &RECIPIENT_IDENTITY)
+                .expect("well formed"),
+            None
+        );
     }
 
     /// Nearly every entry a wallet scans is for someone else: it is passed over, not refused.

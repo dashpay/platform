@@ -44,7 +44,7 @@ pub use private_document_envelope::{
     open_private_document_entry, private_document_outgoing_viewing_key,
     recover_sent_private_document_entry, seal_private_document_entry, OpenedPrivateDocumentEntry,
     PrivateDocumentAuthMode, PrivateDocumentEnvelopeError, PrivateDocumentRecipient,
-    PrivateDocumentSender, PrivateDocumentTarget, PRIVATE_DOCUMENT_ENVELOPE_BODY_HEADER_LEN,
-    PRIVATE_DOCUMENT_ENVELOPE_OVERHEAD_LEN, PRIVATE_DOCUMENT_ENVELOPE_VERSION,
-    PRIVATE_DOCUMENT_ENVELOPE_WRAPPER_LEN,
+    PrivateDocumentRecipientKeys, PrivateDocumentSender, PrivateDocumentTarget,
+    PRIVATE_DOCUMENT_ENVELOPE_BODY_HEADER_LEN, PRIVATE_DOCUMENT_ENVELOPE_OVERHEAD_LEN,
+    PRIVATE_DOCUMENT_ENVELOPE_VERSION, PRIVATE_DOCUMENT_ENVELOPE_WRAPPER_LEN,
 };
