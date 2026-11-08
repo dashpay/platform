@@ -60,9 +60,11 @@ use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::{Identifier, IdentityNonce};
 use dpp::shielded::builder::{
     build_identity_create_from_shielded_pool_transition,
-    build_identity_top_up_from_shielded_pool_transition, build_shield_from_identity_transition,
-    build_shield_transition, build_shielded_transfer_transition,
-    build_shielded_withdrawal_transition, build_unshield_transition, OrchardProver, SpendableNote,
+    build_identity_top_up_from_shielded_pool_transition,
+    build_private_document_create_from_shielded_pool_transition,
+    build_shield_from_identity_transition, build_shield_transition,
+    build_shielded_transfer_transition, build_shielded_withdrawal_transition,
+    build_unshield_transition, OrchardProver, SpendableNote,
 };
 use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -278,6 +280,7 @@ fn shielded_actions(st: &StateTransition) -> &[dpp::shielded::SerializedAction] 
     use dpp::state_transition::identity_top_up_from_shielded_pool_transition::accessors::IdentityTopUpFromShieldedPoolTransitionAccessorsV0;
     use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
     use dpp::state_transition::unshield_transition::accessors::UnshieldTransitionAccessorsV0;
+    use dpp::state_transition::private_document_create_from_shielded_pool_transition::accessors::PrivateDocumentCreateFromShieldedPoolTransitionAccessorsV0;
 
     match st {
         StateTransition::Shield(ShieldTransition::V0(v0)) => &v0.actions,
@@ -288,6 +291,7 @@ fn shielded_actions(st: &StateTransition) -> &[dpp::shielded::SerializedAction] 
         StateTransition::IdentityCreateFromShieldedPool(t) => t.actions(),
         StateTransition::ShieldFromIdentity(t) => t.actions(),
         StateTransition::IdentityTopUpFromShieldedPool(t) => t.actions(),
+        StateTransition::PrivateDocumentCreateFromShieldedPool(t) => t.actions(),
         _ => &[],
     }
 }
@@ -1554,6 +1558,169 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
 }
 
 // -------------------------------------------------------------------------
+// PrivateDocumentCreateFromShieldedPool: shielded pool -> entries of a
+// private document type's store (Type 29)
+// -------------------------------------------------------------------------
+
+/// Append `entries` to the store of the private document type
+/// `document_type_name` of `data_contract_id` (`PrivateDocumentCreateFromShieldedPool`,
+/// type 29), paying the fee from `account`'s notes, the change going back to
+/// the account. Nothing but the fee leaves the pool. Every entry must take the
+/// type's `entrySize`, as `platform_encryption::seal_private_document_entry`
+/// builds them.
+///
+/// Waits for the spent nullifiers to be proven before marking the notes
+/// spent, and returns the metadata of that proof.
+#[allow(clippy::too_many_arguments)]
+pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
+    S: ShieldedStore,
+    P: OrchardProver,
+>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    data_contract_id: Identifier,
+    document_type_name: &str,
+    entries: Vec<dpp::platform_value::BinaryData>,
+    prover: &P,
+) -> Result<ResponseMetadata, PlatformWalletError> {
+    let views = keys.viewing_keys();
+    let change_addr = default_orchard_address(&views)?;
+    let id = SubwalletId::new(wallet_id, account);
+    let fee_kind = ShieldedFeeKind::PrivateDocumentCreate {
+        entry_count: entries.len(),
+        entry_size: entries.first().map_or(0, |entry| entry.len() as u32),
+    };
+
+    let (selected_notes, total_input, exact_fee) =
+        reserve_notes_covering(sdk, store, id, 0, 2, fee_kind).await?;
+
+    info!(
+        account,
+        fee = exact_fee,
+        entries = entries.len(),
+        inputs = selected_notes.len(),
+        total_input,
+        data_contract = %data_contract_id,
+        document_type = document_type_name,
+        "PrivateDocumentCreateFromShieldedPool"
+    );
+
+    let mut pending_entry = None;
+    let result = async {
+        let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
+        let anchor_bytes = anchor.to_bytes();
+
+        let (state_transition, fee_used) =
+            build_private_document_create_from_shielded_pool_transition(
+                spends,
+                data_contract_id,
+                document_type_name.to_string(),
+                entries,
+                &change_addr,
+                &keys.full_viewing_key,
+                &keys.spend_auth_key,
+                anchor,
+                prover,
+                sdk.version(),
+            )
+            .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+        debug_assert_eq!(
+            fee_used, exact_fee,
+            "builder fee must match the reserved private document create fee"
+        );
+
+        // The spend's only outputs are change, so it records as an own spend
+        // with its fee and no counterparty.
+        pending_entry = record_pending_activity(
+            store,
+            persister,
+            wallet_id,
+            id,
+            &views,
+            LiveEntryParams {
+                kind: ShieldedActivityKind::ShieldedSpend,
+                direction: ShieldedDirection::Out,
+                amount: 0,
+                fee: Some(fee_used),
+                counterparty: None,
+                memo: None,
+                actions: shielded_actions(&state_transition),
+                spent_notes: &selected_notes,
+            },
+        )
+        .await;
+        arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await;
+
+        trace!("PrivateDocumentCreateFromShieldedPool: state transition built, broadcasting...");
+        // Type 29 proves its spent nullifiers as a snapshot, which a competing
+        // spend of the same notes shares, as type 22's does: the affected-state
+        // wait accepts it (see `identity_top_up_from_pool_with_metadata`).
+        broadcast_shielded_spend_with_redrive_with_metadata(
+            sdk,
+            store,
+            id,
+            &pending_entry,
+            anchor_bytes,
+            &selected_notes,
+            &state_transition,
+            "private document create from shielded pool",
+            SpendResultWait::AffectedState,
+        )
+        .await
+    }
+    .await;
+
+    match result {
+        Ok((_proof, metadata)) => {
+            record_activity_status(
+                store,
+                persister,
+                wallet_id,
+                id,
+                &pending_entry,
+                ShieldedActivityStatus::Confirmed,
+                None,
+            )
+            .await;
+            if let Err(e) = finalize_pending(store, persister, wallet_id, id, &selected_notes).await
+            {
+                warn!(
+                    account,
+                    error = %e,
+                    "PrivateDocumentCreateFromShieldedPool broadcast succeeded but local \
+                     spent-state update failed; will heal on next sync"
+                );
+            }
+            info!(
+                account,
+                document_type = document_type_name,
+                "PrivateDocumentCreateFromShieldedPool broadcast succeeded"
+            );
+            Ok(metadata)
+        }
+        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => Err(e),
+        Err(e) => {
+            record_activity_status(
+                store,
+                persister,
+                wallet_id,
+                id,
+                &pending_entry,
+                ShieldedActivityStatus::Failed,
+                None,
+            )
+            .await;
+            cancel_pending(store, id, &selected_notes).await;
+            Err(e)
+        }
+    }
+}
+
+// -------------------------------------------------------------------------
 // ShieldFromAssetLock: Core L1 asset lock -> shielded pool (Type 18)
 // (orchestrated entry point lives in `wallet/shielded/fund_from_asset_lock.rs`)
 // -------------------------------------------------------------------------
@@ -2796,7 +2963,22 @@ async fn reserve_unspent_notes<S: ShieldedStore>(
 ) -> Result<(Vec<ShieldedNote>, u64, u64), PlatformWalletError> {
     // All amount-based spends reject zero before waiting on a concurrent sync's store lock.
     ensure_positive_amount(amount)?;
+    reserve_notes_covering(sdk, store, id, amount, outputs, fee_kind).await
+}
 
+/// Select and reserve, in one write-locked critical section, notes covering
+/// `amount` plus the fee of `fee_kind`, which [`reserve_unspent_notes`] does
+/// for a positive amount. A spend paying only its fee (an
+/// `PrivateDocumentCreateFromShieldedPool`) reserves with an `amount` of 0.
+/// Callers must pair this with [`finalize_pending`] / [`cancel_pending`].
+async fn reserve_notes_covering<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    amount: u64,
+    outputs: usize,
+    fee_kind: ShieldedFeeKind,
+) -> Result<(Vec<ShieldedNote>, u64, u64), PlatformWalletError> {
     let mut store = store.write().await;
     let unspent = store
         .get_unspent_notes(id)

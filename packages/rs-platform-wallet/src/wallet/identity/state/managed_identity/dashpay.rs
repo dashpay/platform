@@ -13,6 +13,20 @@ use crate::wallet::identity::{
 use dpp::prelude::Identifier;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// What the private contact requests between an identity and a contact
+/// (protocol version 15) carry beyond what a [`ContactRequest`] holds.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PrivateContact {
+    /// The contact's request to this identity came privately, so accepting it
+    /// replies privately too.
+    pub received_privately: bool,
+    /// This identity's request to the contact went privately.
+    pub sent_privately: bool,
+    /// The Orchard address the contact asked to be paid at privately: an
+    /// 11-byte diversifier and a 32-byte transmission key.
+    pub shielded_address: Option<[u8; 43]>,
+}
+
 /// DashPay social state carried by one [`ManagedIdentity`](super::ManagedIdentity).
 #[derive(Debug, Clone, Default)]
 pub struct DashPayState {
@@ -78,6 +92,22 @@ pub struct DashPayState {
     pub(super) high_water_received_ms: Option<u64>,
     /// High-water mark for the sent direction (`$ownerId == me`).
     pub(super) high_water_sent_ms: Option<u64>,
+
+    /// The position of DashPay's private contact request store (protocol
+    /// version 15) to scan from next for this identity: every entry before it
+    /// was read and what it held for this identity ingested. In memory only,
+    /// like the high-water marks: a cold start scans the store again from 0,
+    /// and ingest is a fixpoint. [`ManagedIdentity::unignore_sender`] rewinds
+    /// it, as it does the received cursor.
+    ///
+    /// [`ManagedIdentity::unignore_sender`]: super::ManagedIdentity::unignore_sender
+    pub(super) private_contact_requests_position: u64,
+
+    /// What this identity's private contact requests carry beyond what a
+    /// [`ContactRequest`] holds, keyed by the contact: whether the requests
+    /// came or went privately, and the contact's shielded address. In memory
+    /// only, rebuilt by the scan a cold start runs.
+    pub(super) private_contacts: BTreeMap<Identifier, PrivateContact>,
 
     /// Lowest Platform-assigned `$createdAtCoreBlockHeight` among OUR sent
     /// `contactRequest` docs to each recipient seen by a sweep this process.
@@ -231,6 +261,18 @@ impl DashPayState {
             .get(contact)
             .map(|established| &established.outgoing_request)
             .or_else(|| self.sent_contact_requests.get(contact))
+    }
+
+    /// The position of DashPay's private contact request store to scan from
+    /// next for this identity; see the field doc.
+    pub fn private_contact_requests_position(&self) -> u64 {
+        self.private_contact_requests_position
+    }
+
+    /// What this identity's private contact requests with `contact` carry; see
+    /// the field doc.
+    pub fn private_contact(&self, contact: &Identifier) -> Option<&PrivateContact> {
+        self.private_contacts.get(contact)
     }
 
     /// Whether a sent-request sweep completed this process; see the field doc.

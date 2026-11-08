@@ -655,6 +655,12 @@ pub enum PlatformWalletError {
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
 
+    /// The contact request from this sender came privately (protocol
+    /// version 15): a `contactRequest` document in reply would publish the
+    /// relationship, so it is accepted with a private reply.
+    #[error("the contact request from {0} came privately; accept it with a private reply")]
+    PrivateContactRequestNeedsPrivateReply(Identifier),
+
     /// No DPNS `domain` document exists for the requested name (exact
     /// normalized-label lookup came back empty). Distinct from
     /// [`Self::InvalidParameter`]: the input was well-formed, the name

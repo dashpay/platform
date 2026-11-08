@@ -376,6 +376,7 @@ impl ManagedIdentity {
         // Rewind the receive cursor so the next sweep re-fetches the
         // now-un-ignored sender's on-chain requests.
         self.dashpay.high_water_received_ms = None;
+        self.dashpay.private_contact_requests_position = 0;
 
         let mut cs = ContactChangeSet::default();
         cs.unignored.insert((owner_id, *sender_id));
@@ -789,6 +790,42 @@ impl ManagedIdentity {
     pub fn advance_high_water_received(&mut self, snapshot: Option<u64>, max_fetched: Option<u64>) {
         self.dashpay.high_water_received_ms =
             advance_if_unchanged(self.dashpay.high_water_received_ms, snapshot, max_fetched);
+    }
+
+    /// Advance the private contact request cursor to `next_position` once
+    /// every entry before it was read and what it held for this identity
+    /// ingested. Never moves it back, and leaves it where a concurrent
+    /// [`Self::unignore_sender`] rewound it from `snapshot`.
+    pub(crate) fn advance_private_contact_requests_position(
+        &mut self,
+        snapshot: u64,
+        next_position: u64,
+    ) {
+        let position = &mut self.dashpay.private_contact_requests_position;
+        if *position == snapshot && next_position > snapshot {
+            *position = next_position;
+        }
+    }
+
+    /// Record what a private contact request with `contact` carries beyond the
+    /// [`ContactRequest`]: `received` when it came from the contact, else it
+    /// went to the contact. A request without a shielded address keeps the one
+    /// already known.
+    pub(crate) fn note_private_contact(
+        &mut self,
+        contact: Identifier,
+        received: bool,
+        shielded_address: Option<[u8; 43]>,
+    ) {
+        let entry = self.dashpay.private_contacts.entry(contact).or_default();
+        if received {
+            entry.received_privately = true;
+            if shielded_address.is_some() {
+                entry.shielded_address = shielded_address;
+            }
+        } else {
+            entry.sent_privately = true;
+        }
     }
 
     /// Sent-direction counterpart of [`Self::advance_high_water_received`];
