@@ -29,6 +29,7 @@ use crate::platform::private_document_scan::{
 };
 use crate::platform::{Fetch, Identifier};
 use crate::{Error, Sdk};
+use dash_context_provider::ContextProvider;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
@@ -39,6 +40,7 @@ use dpp::data_contract::validate_document::DataContractDocumentValidationMethods
 use dpp::data_contract::DataContract;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
 use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
@@ -546,9 +548,11 @@ fn disabled_problem(key: &IdentityPublicKey, role: &str, at_ms: Option<u64>) -> 
 }
 
 /// Why `key` may not sign a private contact request of the DashPay contract `dashpay_id` at
-/// `at_ms` (now when `None`), if it may not: it must be an `AUTHENTICATION` key at one of
-/// `levels`, of a signing key type, bound to no other contract or document type, and enabled
-/// then.
+/// `at_ms` (now, by this device's clock, when `None`), if it may not: it must be an
+/// `AUTHENTICATION` key at one of `levels`, of a signing key type, bound to no other contract or
+/// document type, enabled then and not expired then (the expiry instant itself is expired, as
+/// dpp's `is_expired_at` says). The reader checks it at the entry's block time, which decides;
+/// the seal and the key list check it now, so a key about to be refused is not offered.
 fn signing_key_problem(
     key: &IdentityPublicKey,
     levels: &[SecurityLevel],
@@ -597,13 +601,37 @@ fn signing_key_problem(
             ))
         }
     }
+    let expiry_checked_at = at_ms.unwrap_or_else(now_ms);
+    if key.is_expired_at(expiry_checked_at) {
+        return Some(format!(
+            "the signing key {} expired at {}, by {expiry_checked_at}",
+            key.id(),
+            key.expires_at().unwrap_or_default()
+        ));
+    }
     disabled_problem(key, "signing", at_ms)
 }
 
+/// This device's clock, in milliseconds since the Unix epoch: block times are measured the same
+/// way. A clock before the epoch reads as 0.
+fn now_ms() -> u64 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        js_sys::Date::now() as u64
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_millis() as u64)
+            .unwrap_or_default()
+    }
+}
+
 /// The keys of `identity` that may sign a private contact request now, in key id order: its
-/// enabled `AUTHENTICATION` keys at a level the type's documents are signed at, of a signing
-/// key type, bound to no other contract or document type. A wallet signs with the first its
-/// signer holds.
+/// enabled, unexpired `AUTHENTICATION` keys at a level the type's documents are signed at, of a
+/// signing key type, bound to no other contract or document type. A wallet signs with the first
+/// its signer holds.
 pub fn private_contact_request_signing_keys<'a>(
     dashpay_contract: &DataContract,
     identity: &'a Identity,
@@ -770,6 +798,44 @@ pub struct ProvedIdentity {
 /// How many identities [`Sdk::fetch_private_contact_request_identities`] fetches at once.
 const PRIVATE_CONTACT_REQUEST_IDENTITY_FETCHES: usize = 4;
 
+/// [`Sdk::fetch_private_contact_request_identities`] with `fetch` proving one identity: each
+/// identity `needed` lists is fetched, a few at a time, until proved at or after its height,
+/// twice at most. A stale second proof or a failed fetch fails the whole fetch.
+async fn fetch_proved_identities<F, Fut>(
+    needed: &BTreeMap<Identifier, u64>,
+    fetch: F,
+) -> Result<BTreeMap<Identifier, ProvedIdentity>, Error>
+where
+    F: Fn(Identifier) -> Fut + Sync,
+    Fut: std::future::Future<Output = Result<ProvedIdentity, Error>> + Send,
+{
+    let fetch = &fetch;
+    // Owned pairs: a future borrowing the map's entries through the stream's closure is not
+    // `Send` (rust-lang/rust#100013), and hosts spawn this one.
+    let needed: Vec<(Identifier, u64)> = needed
+        .iter()
+        .map(|(identity_id, height)| (*identity_id, *height))
+        .collect();
+    futures::stream::iter(needed)
+        .map(|(identity_id, height)| async move {
+            let mut proved = fetch(identity_id).await?;
+            if proved.proved_at_height < height {
+                proved = fetch(identity_id).await?;
+            }
+            if proved.proved_at_height < height {
+                return Err(Error::Generic(format!(
+                    "the identity {identity_id} was proved at block {}, before the block \
+                     {height} of an entry it checks",
+                    proved.proved_at_height
+                )));
+            }
+            Ok((identity_id, proved))
+        })
+        .buffer_unordered(PRIVATE_CONTACT_REQUEST_IDENTITY_FETCHES)
+        .try_collect()
+        .await
+}
+
 /// The identities whose keys [`private_contact_requests_from_scan`] checks the entries of
 /// `scan` against, each with the height of the latest block whose entry it checks: a snapshot
 /// of it must be proved at or after that block. They are the senders signed received entries
@@ -839,6 +905,15 @@ pub fn private_contact_requests_from_scan(
                 return Err(Error::Generic(format!(
                     "the identity {identity_id}, which an entry of the scan is checked against, \
                      was not given"
+                )))
+            }
+            Some(ProvedIdentity {
+                identity: Some(identity),
+                ..
+            }) if identity.id() != identity_id => {
+                return Err(Error::Generic(format!(
+                    "the identity given for {identity_id} is {}",
+                    identity.id()
                 )))
             }
             Some(proved) if proved.proved_at_height < height => {
@@ -988,6 +1063,10 @@ impl EntryReader<'_> {
                     "the recipient has no key {}",
                     received.recipient_key_id
                 )),
+                Some(key) if !key_is(key, received.entry.recipient_public_key()) => Some(format!(
+                    "the recipient key {} is not the key the entry is encrypted to",
+                    received.recipient_key_id
+                )),
                 Some(key) => disabled_problem(key, "recipient", Some(received.block_time_ms)),
             },
         };
@@ -1112,7 +1191,13 @@ impl Sdk {
         // A seed whose hash is no secret key, a chance of about 2^-128, fails the seal, and a
         // retry draws another.
         let mut esk_seed = [0u8; 32];
-        StdRng::from_os_rng().fill_bytes(&mut esk_seed);
+        StdRng::try_from_os_rng()
+            .map_err(|error| {
+                Error::Generic(format!(
+                    "private contact request: the OS RNG failed: {error}"
+                ))
+            })?
+            .fill_bytes(&mut esk_seed);
         let sealed = seal_private_contact_request(
             &dashpay_contract,
             &PrivateContactRequestSender {
@@ -1141,7 +1226,22 @@ impl Sdk {
             "DashPay private contact requests",
         )
         .await?;
-        self.fetch_dashpay_contract().await
+        let contract = self.fetch_dashpay_contract().await?;
+        if private_contact_request_type(&contract).is_ok() {
+            return Ok(contract);
+        }
+        // The context provider may hold a DashPay from before the type, kept from an older
+        // version: the network's is current. The provider gets it too, as the page's proof is
+        // verified against the contract the provider gives.
+        let contract_id = contract.id();
+        let contract = DataContract::fetch(self, contract_id)
+            .await?
+            .map(Arc::new)
+            .ok_or_else(|| Error::Generic(format!("the DashPay contract {contract_id} is gone")))?;
+        if let Some(provider) = self.context_provider() {
+            provider.register_data_contract(Arc::clone(&contract));
+        }
+        Ok(contract)
     }
 
     /// Fetches the identities `needed` lists ([`private_contact_request_identities`]), a few at
@@ -1152,34 +1252,15 @@ impl Sdk {
         &self,
         needed: &BTreeMap<Identifier, u64>,
     ) -> Result<BTreeMap<Identifier, ProvedIdentity>, Error> {
-        futures::stream::iter(needed.iter())
-            .map(|(identity_id, height)| async move {
-                let mut attempt = 0;
-                loop {
-                    let (identity, metadata) =
-                        Identity::fetch_with_metadata(self, *identity_id, None).await?;
-                    if metadata.height >= *height {
-                        return Ok((
-                            *identity_id,
-                            ProvedIdentity {
-                                identity,
-                                proved_at_height: metadata.height,
-                            },
-                        ));
-                    }
-                    attempt += 1;
-                    if attempt == 2 {
-                        return Err(Error::Generic(format!(
-                            "the identity {identity_id} was proved at block {}, before the \
-                             block {height} of an entry it checks",
-                            metadata.height
-                        )));
-                    }
-                }
+        fetch_proved_identities(needed, |identity_id| async move {
+            let (identity, metadata) =
+                Identity::fetch_with_metadata(self, identity_id, None).await?;
+            Ok(ProvedIdentity {
+                identity,
+                proved_at_height: metadata.height,
             })
-            .buffer_unordered(PRIVATE_CONTACT_REQUEST_IDENTITY_FETCHES)
-            .try_collect()
-            .await
+        })
+        .await
     }
 
     /// Reads the page of DashPay's `privateContactRequest` store from `start_position` and
@@ -2531,6 +2612,202 @@ mod tests {
                 .contains("exists from protocol version 15"),
             "{error}"
         );
+    }
+
+    /// A signing key with an expiry signs entries appended before it, not at or after it, and
+    /// is not offered once expired.
+    #[test]
+    fn should_refuse_a_signing_key_expired_when_the_entry_was_appended() {
+        let contract = dashpay();
+        let entry = seal(&contract, &sender_identity(None), &smallest_request(1), 1);
+        let expiring = |expires_at| {
+            with_key(
+                sender_identity(None),
+                IdentityPublicKey::V1(
+                    dpp::identity::identity_public_key::v1::IdentityPublicKeyV1 {
+                        id: 0,
+                        purpose: Purpose::AUTHENTICATION,
+                        security_level: SecurityLevel::HIGH,
+                        contract_bounds: None,
+                        key_type: KeyType::ECDSA_SECP256K1,
+                        read_only: false,
+                        data: BinaryData::new(
+                            PublicKey::from_secret_key(&secret_key(9))
+                                .serialize()
+                                .to_vec(),
+                        ),
+                        disabled_at: None,
+                        total_budget: None,
+                        expires_at: Some(expires_at),
+                    },
+                ),
+            )
+        };
+        for (case, expires_at, accepted) in [
+            ("after the entry", BLOCK_TIME_MS + 1, true),
+            ("at the entry", BLOCK_TIME_MS, false),
+            ("before the entry", BLOCK_TIME_MS - 1, false),
+        ] {
+            let reasons = reasons(read(
+                &contract,
+                vec![entry.clone()],
+                &recipient_keys(),
+                &[expiring(expires_at), recipient_identity()],
+            ));
+            if accepted {
+                assert_eq!(reasons, vec![], "{case}");
+            } else {
+                assert!(
+                    matches!(
+                        reasons.as_slice(),
+                        [PrivateContactRequestRejection::SenderKeyNotUsable(_)]
+                    ),
+                    "{case}: {reasons:?}"
+                );
+            }
+        }
+        assert!(
+            private_contact_request_signing_keys(&contract, &expiring(1))
+                .expect("DashPay v3")
+                .is_empty(),
+            "an expired key is not offered"
+        );
+    }
+
+    /// The recipient key an entry names must be the one it is encrypted to, and an identity
+    /// must be given under its own id.
+    #[test]
+    fn should_refuse_a_recipient_key_or_identity_given_under_another_id() {
+        let contract = dashpay();
+        let sender = sender_identity(None);
+        let entry = seal(&contract, &sender, &smallest_request(1), 1);
+        // The recipient's decryption key is registered under its authentication key's id.
+        let misregistered = PrivateDocumentScanKeys::new()
+            .with_recipient(Identifier::from(RECIPIENT_ID), &[(0, secret_key(2))]);
+        assert!(matches!(
+            reasons(read(
+                &contract,
+                vec![entry.clone()],
+                &misregistered,
+                &[sender.clone(), recipient_identity()],
+            ))
+            .as_slice(),
+            [PrivateContactRequestRejection::RecipientKeyNotUsable(_)]
+        ));
+
+        let target = PrivateDocumentTarget {
+            contract_id: contract.id().to_buffer(),
+            document_type_name: PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+        };
+        let scan = recipient_keys().scan_page(&target, 0, &page(vec![entry]));
+        let swapped = BTreeMap::from([
+            (
+                Identifier::from(SENDER_ID),
+                ProvedIdentity {
+                    identity: Some(recipient_identity()),
+                    proved_at_height: PROVED_AT_HEIGHT,
+                },
+            ),
+            (
+                Identifier::from(RECIPIENT_ID),
+                ProvedIdentity {
+                    identity: Some(recipient_identity()),
+                    proved_at_height: PROVED_AT_HEIGHT,
+                },
+            ),
+        ]);
+        assert!(private_contact_requests_from_scan(
+            &contract,
+            scan,
+            &swapped,
+            PlatformVersion::latest()
+        )
+        .is_err());
+    }
+
+    /// The fetch of a scan's identities refetches a stale proof once, keeps the second, fails
+    /// on two stale proofs or a failed fetch, and keeps a proof that the identity does not
+    /// exist.
+    #[tokio::test]
+    async fn should_fetch_identities_proved_after_their_entries() {
+        let id = Identifier::from(SENDER_ID);
+        let needed = BTreeMap::from([(id, 10)]);
+        let scripted = |answers: Vec<Result<ProvedIdentity, Error>>| {
+            let answers = std::sync::Mutex::new(answers.into_iter());
+            move |_| {
+                let answer = answers
+                    .lock()
+                    .expect("answers")
+                    .next()
+                    .expect("no more fetches than answers");
+                async move { answer }
+            }
+        };
+        let proved = |identity: Option<Identity>, height| {
+            Ok(ProvedIdentity {
+                identity,
+                proved_at_height: height,
+            })
+        };
+
+        let fetched = fetch_proved_identities(
+            &needed,
+            scripted(vec![
+                proved(None, 9),
+                proved(Some(sender_identity(None)), 10),
+            ]),
+        )
+        .await
+        .expect("the second proof is recent enough");
+        assert_eq!(
+            fetched.get(&id),
+            Some(&ProvedIdentity {
+                identity: Some(sender_identity(None)),
+                proved_at_height: 10,
+            })
+        );
+        assert!(fetch_proved_identities(
+            &needed,
+            scripted(vec![
+                proved(Some(sender_identity(None)), 9),
+                proved(Some(sender_identity(None)), 9),
+            ]),
+        )
+        .await
+        .is_err());
+        assert!(fetch_proved_identities(
+            &needed,
+            scripted(vec![Err(Error::Generic("unreachable".to_string()))]),
+        )
+        .await
+        .is_err());
+        assert_eq!(
+            fetch_proved_identities(&needed, scripted(vec![proved(None, 11)]))
+                .await
+                .expect("a recent proof of absence"),
+            BTreeMap::from([(
+                id,
+                ProvedIdentity {
+                    identity: None,
+                    proved_at_height: 11,
+                },
+            )])
+        );
+    }
+
+    /// The scan's futures are `Send`, so a host can spawn them.
+    #[cfg(feature = "mocks")]
+    #[test]
+    fn should_give_futures_a_host_can_spawn() {
+        fn spawnable<T: Send>(_: T) {}
+        let sdk: Sdk = crate::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .expect("a mock sdk");
+        let keys = PrivateDocumentScanKeys::new();
+        let needed = BTreeMap::new();
+        spawnable(sdk.scan_private_contact_requests(0, &keys));
+        spawnable(sdk.fetch_private_contact_request_identities(&needed));
     }
 
     /// DashPay's documents are signed at HIGH or CRITICAL.

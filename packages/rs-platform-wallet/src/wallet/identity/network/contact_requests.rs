@@ -563,6 +563,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// for seedless / external-signable wallets: the raw ECDH scalar stays in
     /// the signer and only the (public) xpub, the shared secret, and the masked
     /// reference cross back.
+    ///
+    /// A recipient whose requests with this identity came or went privately is
+    /// refused ([`PlatformWalletError::PrivateContactRequestNeedsPrivateReply`]).
+    /// The refusal reads the requests the wallet tracks, so on a restored or
+    /// second device it holds once the private sync
+    /// (`sync_private_contact_requests`) has read the store.
     #[allow(clippy::type_complexity)]
     pub async fn send_contact_request_with_external_signer<S, C>(
         &self,
@@ -579,7 +585,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     {
         // A contact whose requests came or went privately is kept off chain: a
         // `contactRequest` document would publish the relationship. Replies
-        // and rotations go privately instead.
+        // and rotations go privately instead. This reads the requests the
+        // wallet tracks, so on a restored or second device it holds only once
+        // the private sync has read the store.
         let private = {
             let wm = self.wallet_manager.read().await;
             wm.get_wallet_info(&self.wallet_id)
@@ -1045,10 +1053,11 @@ fn query_lower_bound(high_water: Option<u64>) -> Option<u64> {
 /// Collapse a stream of parsed received contact requests to the single
 /// newest request per sender, keyed by `sender_id`.
 ///
-/// "Newest" is the lexicographic max of `(created_at, account_reference)`
-/// — created_at is the primary signal (a rotation request is broadcast
-/// later), with account_reference as a deterministic tiebreak for the
-/// degenerate same-timestamp case.
+/// "Newest" is the lexicographic max of the account reference's version,
+/// `created_at`, then `account_reference` ([`freshness`]): a rotation bumps
+/// the version and is broadcast later, and a replay of an older request
+/// appended again later keeps its older version. The reference is a
+/// deterministic tiebreak for the degenerate same-timestamp case.
 ///
 /// This is the idempotency keystone of the recurring sync: on-chain
 /// `contactRequest` docs are immutable and never deleted, so a sender who
@@ -1089,9 +1098,7 @@ pub(super) fn newest_received_per_sender(
         let sender = req.sender_id;
         let replace = newest
             .get(&sender)
-            .map(|cur| {
-                (req.created_at, req.account_reference) > (cur.created_at, cur.account_reference)
-            })
+            .map(|cur| freshness(&req) > freshness(cur))
             .unwrap_or(true);
         if replace {
             newest.insert(sender, req);
@@ -1122,9 +1129,7 @@ pub(super) fn newest_sent_per_recipient(
         let recipient = req.recipient_id;
         let replace = newest
             .get(&recipient)
-            .map(|cur| {
-                (req.created_at, req.account_reference) > (cur.created_at, cur.account_reference)
-            })
+            .map(|cur| freshness(&req) > freshness(cur))
             .unwrap_or(true);
         if replace {
             newest.insert(recipient, req);
@@ -1187,12 +1192,19 @@ fn record_and_collapse_sent_requests(
 /// its creation time. A replay of an older request appended again later has a
 /// newer time but an older version.
 fn predates(candidate: &ContactRequest, tracked: &ContactRequest) -> bool {
+    freshness(candidate) < freshness(tracked)
+}
+
+/// How fresh a request between one pair is, for collapsing a sweep's requests
+/// and for passing over older ones alike: by its account reference's version,
+/// which a rotation bumps, then by its creation time, then by the reference
+/// itself so that equal times order deterministically. A replay of an older
+/// request appended again later has a newer time but an older version.
+fn freshness(request: &ContactRequest) -> (u32, u64, u32) {
     (
-        platform_encryption::account_reference_version(candidate.account_reference),
-        candidate.created_at,
-    ) < (
-        platform_encryption::account_reference_version(tracked.account_reference),
-        tracked.created_at,
+        platform_encryption::account_reference_version(request.account_reference),
+        request.created_at,
+        request.account_reference,
     )
 }
 
@@ -4798,45 +4810,35 @@ mod sweep_tests {
         );
     }
 
-    /// A paid sent request whose store fails is held in memory: the contact
-    /// it answers establishes, so a retry adopts it instead of paying again,
-    /// and the next add of the same request stores it, once.
+    /// Collapsing a sweep's requests orders them by version first, as ingest
+    /// passes over older ones: a rotation and a replay of the request it
+    /// rotated past, appended later, collapse to the rotation, both ways.
     #[test]
-    fn a_paid_sent_request_whose_store_fails_is_kept_and_stored_by_its_next_add() {
-        let our = 1u8;
-        let contact = 2u8;
-        let our_id = Identifier::from([our; 32]);
-        let contact_id = Identifier::from([contact; 32]);
-        let mut info = info_with_bare_identity(our);
-        let managed = info
-            .identity_manager
-            .managed_identity_mut(&our_id)
-            .expect("managed identity");
-        managed
-            .add_incoming_contact_request(test_request(contact, our, 0), &noop_persister())
-            .expect("incoming request");
-
-        managed.add_paid_sent_contact_request(test_request(our, contact, 5), &failing_persister());
-        assert!(
-            managed
-                .dashpay()
-                .established_contacts()
-                .contains_key(&contact_id),
-            "the reply establishes the contact in memory"
-        );
-
-        let (persister, backend) = counting_persister();
-        managed
-            .add_sent_contact_request(test_request(our, contact, 5), &persister)
-            .expect("the next add");
-        assert_eq!(store_count(&backend), 1, "the next add stores it");
-        managed
-            .add_sent_contact_request(test_request(our, contact, 5), &persister)
-            .expect("a re-add");
+    fn a_sweep_collapses_to_the_highest_version_before_the_latest_time() {
+        let at = |sender: u8, recipient: u8, version: u32, account: u32, created_at: u64| {
+            let mut request = test_request(
+                sender,
+                recipient,
+                (version << ACCOUNT_REFERENCE_VERSION_SHIFT) | account,
+            );
+            request.created_at = created_at;
+            request
+        };
+        let rotation = at(2, 1, 1, 5, 200);
+        let replay = at(2, 1, 0, 4, 300);
         assert_eq!(
-            store_count(&backend),
-            1,
-            "once stored, a re-add is a no-op again"
+            newest_received_per_sender([rotation.clone(), replay.clone()])
+                .get(&Identifier::from([2u8; 32]))
+                .map(|request| request.account_reference),
+            Some(rotation.account_reference)
+        );
+        let sent_rotation = at(1, 2, 1, 5, 200);
+        let sent_replay = at(1, 2, 0, 4, 300);
+        assert_eq!(
+            newest_sent_per_recipient([sent_replay, sent_rotation.clone()])
+                .get(&Identifier::from([2u8; 32]))
+                .map(|request| request.account_reference),
+            Some(sent_rotation.account_reference)
         );
     }
 

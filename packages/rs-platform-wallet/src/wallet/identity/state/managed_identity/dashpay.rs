@@ -110,11 +110,13 @@ pub struct DashPayState {
     /// ([`ContactRequest::came_privately`]), so it holds across restarts.
     pub(super) private_shielded_addresses: BTreeMap<Identifier, [u8; 43]>,
 
-    /// Recipients whose tracked outgoing request is in memory but did not reach disk: a
-    /// private reply paid for before its store failed. The next add of the same request (the
-    /// private sync recovers it from the store) stores it. In memory only: after a restart the
-    /// scan from the store's start recovers the request anyway.
-    pub(super) unstored_sent: BTreeSet<Identifier>,
+    /// The private requests to each recipient that are being paid for, or
+    /// were paid for and are not yet read back from the store: the
+    /// commitment of the entry once it is sealed. While one is pending no
+    /// other private request to the recipient is sent, as the store keeps
+    /// every entry appended and a second payment could execute too. The
+    /// private sync settles one when it reads the entry back. In memory only.
+    pub(super) pending_private_replies: BTreeMap<Identifier, Option<[u8; 32]>>,
 
     /// Lowest Platform-assigned `$createdAtCoreBlockHeight` among OUR sent
     /// `contactRequest` docs to each recipient seen by a sweep this process.
@@ -283,6 +285,12 @@ impl DashPayState {
     /// next for this identity; see the field doc.
     pub fn private_contact_requests_position(&self) -> u64 {
         self.private_contact_requests_position
+    }
+
+    /// Whether a private request to `contact` is being paid for, or was paid
+    /// for and is not yet read back from the store; see the field doc.
+    pub fn private_reply_pending(&self, contact: &Identifier) -> bool {
+        self.pending_private_replies.contains_key(contact)
     }
 
     /// How this identity and `contact` exchanged private requests, from the
