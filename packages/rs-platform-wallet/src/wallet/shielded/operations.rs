@@ -1662,16 +1662,26 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
         trace!("PrivateDocumentCreateFromShieldedPool: state transition built, broadcasting...");
         // From here the payment may reach the network.
         payment_started.mark();
+        // Saved before the broadcast, not after an unconfirmed wait: a
+        // process that exits once the node admitted the transition, before
+        // the wait returns, still leaves the record a restart restores the
+        // request's reservation from, and the redrive resolves. The record
+        // is dropped with the notes' reservation on either outcome.
+        arm_redrive_before_broadcast(
+            store,
+            id,
+            pending_entry.as_ref().map(|entry| entry.id),
+            anchor_bytes,
+            selected_notes.iter().map(|note| note.nullifier).collect(),
+            &state_transition,
+            "private document create from shielded pool",
+        )
+        .await?;
         // Type 29 proves its spent nullifiers as a snapshot, which a competing
         // spend of the same notes shares, as type 22's does: the affected-state
         // wait accepts it (see `identity_top_up_from_pool_with_metadata`).
-        broadcast_shielded_spend_with_redrive_with_metadata(
+        broadcast_shielded_spend(
             sdk,
-            store,
-            id,
-            &pending_entry,
-            anchor_bytes,
-            &selected_notes,
             &state_transition,
             "private document create from shielded pool",
             SpendResultWait::AffectedState,
@@ -3176,6 +3186,52 @@ async fn broadcast_shielded_spend_with_redrive_with_metadata<S: ShieldedStore>(
     result
 }
 
+/// Save the re-drivable record of a spend durably before it is broadcast,
+/// as identity-funded shields arm theirs: an exit after the node admitted
+/// the transition, before its result returns, leaves the record. The record
+/// is keyed by the spend's `activity_id` and carries its `nullifiers`. A
+/// spend whose record cannot be saved is refused before anything is
+/// broadcast, as the unknown outcome could then not be recovered.
+pub(crate) async fn arm_redrive_before_broadcast<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    activity_id: Option<[u8; 32]>,
+    anchor: [u8; 32],
+    nullifiers: Vec<[u8; 32]>,
+    state_transition: &StateTransition,
+    operation: &'static str,
+) -> Result<(), PlatformWalletError> {
+    use dpp::serialization::PlatformSerializable;
+
+    let activity_id = activity_id.ok_or_else(|| {
+        PlatformWalletError::ShieldedBuildError(format!(
+            "{operation}: no activity entry keys the record of this spend, so it is not \
+             broadcast"
+        ))
+    })?;
+    let st_bytes = state_transition.serialize_to_bytes().map_err(|e| {
+        PlatformWalletError::ShieldedBuildError(format!(
+            "{operation}: the transition does not serialize for its record, so it is not \
+             broadcast: {e}"
+        ))
+    })?;
+    let redrive = PendingRedrive {
+        activity_id,
+        anchor,
+        nullifiers,
+        st_bytes,
+        attempts: 0,
+        identity_nonce_finalized: false,
+        identity_user_abandoned: false,
+    };
+    store.write().await.arm_redrive(id, redrive).map_err(|e| {
+        PlatformWalletError::ShieldedStoreError(format!(
+            "{operation}: the record of this spend could not be saved, so it is not broadcast: \
+             {e}"
+        ))
+    })
+}
+
 /// Persist the re-drivable record for an ambiguous spend. Best-effort:
 /// a failure here only demotes the resolution path to the anchor-prune
 /// backstop (plus restart-loss of the reservation), never fails the
@@ -4167,6 +4223,53 @@ mod redrive_tests {
             MAX_REDRIVE_ATTEMPTS + 1,
             "identity retries stay live beyond the note-spend attempt budget"
         );
+    }
+
+    /// A spend's record is saved before its broadcast, keyed by its
+    /// activity entry; one with no entry to key it by is refused, nothing
+    /// saved.
+    #[tokio::test]
+    async fn should_save_a_spends_record_before_its_broadcast() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = SubwalletId::new([0x61; 32], 0);
+        let transition = identity_shield_transition([0xBA; 32], 3);
+
+        let refused = arm_redrive_before_broadcast(
+            &store,
+            id,
+            None,
+            [7; 32],
+            vec![[1; 32]],
+            &transition,
+            "test spend",
+        )
+        .await;
+        assert!(
+            matches!(refused, Err(PlatformWalletError::ShieldedBuildError(_))),
+            "{refused:?}"
+        );
+        assert!(store
+            .read()
+            .await
+            .pending_redrives(id)
+            .expect("redrives")
+            .is_empty());
+
+        arm_redrive_before_broadcast(
+            &store,
+            id,
+            Some([0x77; 32]),
+            [7; 32],
+            vec![[1; 32]],
+            &transition,
+            "test spend",
+        )
+        .await
+        .expect("saved");
+        let saved = store.read().await.pending_redrives(id).expect("redrives");
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].activity_id, [0x77; 32]);
+        assert_eq!(saved[0].nullifiers, vec![[1; 32]]);
     }
 
     #[tokio::test]

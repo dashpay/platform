@@ -4153,9 +4153,6 @@ mod tests {
     #[tokio::test]
     async fn should_free_a_pair_once_its_unconfirmed_payment_is_rejected_for_good() {
         use crate::wallet::shielded::operations::note_rejected_private_documents;
-        use dpp::shielded::SerializedAction;
-        use dpp::state_transition::private_document_create_from_shielded_pool_transition::methods::PrivateDocumentCreateFromShieldedPoolTransitionMethodsV0;
-        use dpp::state_transition::private_document_create_from_shielded_pool_transition::PrivateDocumentCreateFromShieldedPoolTransition;
 
         let alice = identity(ALICE_PHRASE, ALICE);
         let bob = identity(BOB_PHRASE, BOB);
@@ -4200,27 +4197,10 @@ mod tests {
         let entry = kept.lock().expect("kept").remove(0);
 
         // The redrive pass's definitive rejection of the saved transition.
-        let action = SerializedAction {
-            nullifier: [1; 32],
-            rk: [2; 32],
-            cmx: [3; 32],
-            encrypted_note: vec![4; 216],
-            cv_net: [5; 32],
-            spend_auth_sig: [6; 64],
-        };
-        let rejected = PrivateDocumentCreateFromShieldedPoolTransition::try_from_bundle(
-            dashpay_contract().expect("bundled DashPay").id(),
-            PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME.to_string(),
-            vec![entry],
-            vec![action.clone(), action],
-            0,
-            [7; 32],
-            vec![8; 64],
-            [9; 64],
-            PlatformVersion::latest(),
-        )
-        .expect("the saved transition");
-        note_rejected_private_documents(&rejected, Some(&alice_wallet.identity().persister));
+        note_rejected_private_documents(
+            &private_contact_request_payment(entry),
+            Some(&alice_wallet.identity().persister),
+        );
 
         let retry = Arc::new(Mutex::new(Vec::new()));
         let retried = view
@@ -4243,6 +4223,143 @@ mod tests {
             "paid, not read back: {retried:?}"
         );
         assert_eq!(retry.lock().expect("retry").len(), 1, "the retry pays");
+    }
+
+    /// The type 29 transition paying for `entry`, with placeholder actions:
+    /// as the shielded store keeps a payment's signed transition.
+    #[cfg(feature = "shielded")]
+    fn private_contact_request_payment(
+        entry: BinaryData,
+    ) -> dpp::state_transition::StateTransition {
+        use dpp::shielded::SerializedAction;
+        use dpp::state_transition::private_document_create_from_shielded_pool_transition::methods::PrivateDocumentCreateFromShieldedPoolTransitionMethodsV0;
+        use dpp::state_transition::private_document_create_from_shielded_pool_transition::PrivateDocumentCreateFromShieldedPoolTransition;
+
+        let action = SerializedAction {
+            nullifier: [1; 32],
+            rk: [2; 32],
+            cmx: [3; 32],
+            encrypted_note: vec![4; 216],
+            cv_net: [5; 32],
+            spend_auth_sig: [6; 64],
+        };
+        PrivateDocumentCreateFromShieldedPoolTransition::try_from_bundle(
+            dashpay_contract().expect("bundled DashPay").id(),
+            PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME.to_string(),
+            vec![entry],
+            vec![action.clone(), action],
+            0,
+            [7; 32],
+            vec![8; 64],
+            [9; 64],
+            PlatformVersion::latest(),
+        )
+        .expect("a type 29 transition")
+    }
+
+    /// A process that exits after its private payment was admitted, during
+    /// the wait for its result, still leaves the payment's record, saved
+    /// before the broadcast: a restarted wallet restores the request's
+    /// reservation from it, so neither a second private request nor a
+    /// public one goes to the recipient.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_restore_a_request_whose_process_exited_during_its_result_wait() {
+        use crate::wallet::shielded::operations::arm_redrive_before_broadcast;
+        use crate::wallet::shielded::{
+            FileBackedShieldedStore, NetworkShieldedCoordinator, SubwalletId,
+        };
+
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let db_path = dir.path().join("tree.sqlite");
+        let coordinator_at = |db_path: std::path::PathBuf| {
+            let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open the store");
+            Arc::new(NetworkShieldedCoordinator::new(
+                Arc::new(dash_sdk::Sdk::new_mock()),
+                Network::Testnet,
+                db_path,
+                store,
+            ))
+        };
+
+        let before = coordinator_at(db_path.clone());
+        let (_manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let subwallet = SubwalletId::new(alice_wallet.wallet_id(), 0);
+        let pay = {
+            let store = Arc::clone(before.store());
+            move |entry: BinaryData, started: PaymentStarted| async move {
+                // As the shielded payment does: marked, the record saved,
+                // broadcast and admitted; then the result never comes.
+                let transition = private_contact_request_payment(entry);
+                started.mark();
+                arm_redrive_before_broadcast(
+                    &store,
+                    subwallet,
+                    Some([0x77; 32]),
+                    [7; 32],
+                    vec![[1; 32]],
+                    &transition,
+                    "private document create from shielded pool",
+                )
+                .await?;
+                std::future::pending::<()>().await;
+                Ok(ResponseMetadata::default())
+            }
+        };
+        let exited = tokio::time::timeout(
+            Duration::from_millis(200),
+            alice_wallet
+                .identity()
+                .dashpay()
+                .send_private_contact_request(
+                    &alice.id(),
+                    &bob.id(),
+                    None,
+                    AutoAcceptProofSource::None,
+                    None,
+                    &alice_signer,
+                    &alice_crypto,
+                    pay,
+                ),
+        )
+        .await;
+        assert!(exited.is_err(), "the process exits during the wait");
+        drop(before);
+
+        let after = coordinator_at(db_path);
+        let (_restarted_manager, restarted) =
+            wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        assert_eq!(restarted.wallet_id(), alice_wallet.wallet_id());
+        assert!(!pending_to(&restarted, ALICE, &bob).await);
+        let restored = restarted
+            .restore_pending_private_contact_requests(&after, &alice_crypto)
+            .await
+            .expect("restored from the saved record");
+        assert_eq!(restored, vec![(alice.id(), bob.id())]);
+        assert!(pending_to(&restarted, ALICE, &bob).await);
+        let public = restarted
+            .identity()
+            .dashpay()
+            .send_contact_request_with_external_signer(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &alice_signer,
+                &alice_crypto,
+            )
+            .await;
+        assert!(
+            matches!(
+                public,
+                Err(PlatformWalletError::PrivateContactRequestPending(_))
+            ),
+            "{public:?}"
+        );
     }
 
     /// A `pay` that must not run.
