@@ -1233,6 +1233,17 @@ pub(super) fn predates(candidate: &ContactRequest, tracked: &ContactRequest) -> 
     freshness(candidate) < freshness(tracked)
 }
 
+/// Whether `tracked`, a request between one pair, is an unconfirmed request
+/// carrying `account_reference` or supersedes it in the order [`predates`]
+/// reads: the same reference, or a later version. The unconfirmed request is
+/// not in the store yet, so it has no creation time; appended, it would be
+/// the newest of its version.
+pub(super) fn records_or_supersedes(tracked: &ContactRequest, account_reference: u32) -> bool {
+    tracked.account_reference == account_reference
+        || platform_encryption::account_reference_version(account_reference)
+            < platform_encryption::account_reference_version(tracked.account_reference)
+}
+
 /// How fresh a request between one pair is, for collapsing a sweep's requests
 /// and for passing over older ones alike: by its account reference's version,
 /// which a rotation bumps, then by its creation time, then by the reference

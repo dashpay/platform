@@ -43,6 +43,7 @@ use dash_sdk::platform::private_document_entries::{
 use dash_sdk::platform::private_document_scan::PrivateDocumentScanKeys;
 use dash_sdk::platform::Fetch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::decode_private_document_payload;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::Purpose;
@@ -61,8 +62,8 @@ use zeroize::Zeroize;
 
 use super::contact_requests::{
     ingest_received_requests, ingest_sent_requests, newest_received_per_sender,
-    newest_sent_per_recipient, predates, tear_down_stale_external_accounts, AutoAcceptProofSource,
-    ContactCryptoProvider, PreparedContactRequest,
+    newest_sent_per_recipient, predates, records_or_supersedes, tear_down_stale_external_accounts,
+    AutoAcceptProofSource, ContactCryptoProvider, PreparedContactRequest,
 };
 use super::signing_key::first_available;
 use super::{dashpay_contract, DashPayView, IdentityWallet};
@@ -1204,12 +1205,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// entry's commitment only when it has none yet. Returns the (sender,
     /// recipient) pairs restored.
     ///
+    /// An entry is discharged once its own request or a superseding one is
+    /// recorded: it is left alone when the request the sender tracks to its
+    /// recipient has the entry's account reference, or a later version. So an
+    /// unconfirmed rotation is restored over the request it rotates, and an
+    /// entry read back while its spend still waits for confirmation is not.
+    ///
     /// What it does not cover:
-    /// - An entry to a recipient the sender already tracks a request to is
-    ///   left alone: it was recorded, or it is a rotation still in flight,
-    ///   which is not restored.
     /// - A reservation whose payment then fails for good stays until the
     ///   next restart, as one kept in this process does.
+    /// - An entry whose request does not decode is left alone: no sync could
+    ///   record it, so its reservation would never settle.
     pub async fn restore_pending_private_contact_requests<C>(
         &self,
         entries: &[BinaryData],
@@ -1223,10 +1229,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     }
 
     /// Whether a request from `sender` to `recipient` among `entries`, paid
-    /// for before a restart and unconfirmed, may still execute: then the
-    /// recipient stays reserved for that entry instead of the one about to
-    /// be paid, which must not be. The other entries are restored as
-    /// [`Self::restore_pending_private_contact_requests`] restores them.
+    /// for before a restart and unconfirmed, may still execute, neither it nor
+    /// a later request being recorded (a rotation over the tracked request
+    /// counts): then the recipient stays reserved for that entry instead of
+    /// the one about to be paid, which must not be. The other entries are
+    /// restored as [`Self::restore_pending_private_contact_requests`] restores
+    /// them.
     #[cfg(any(feature = "shielded", test))]
     pub(crate) async fn hold_for_restored_private_contact_request<C>(
         &self,
@@ -1246,8 +1254,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     }
 
     /// Open `entries` as one page of the store and reserve the recipient of
-    /// each the wallet's identities sent and do not track yet; the pair
-    /// `paying` is retargeted to its restored entry instead.
+    /// each the wallet's identities sent whose request is neither recorded
+    /// nor superseded yet; the pair `paying` is retargeted to its restored
+    /// entry instead.
     async fn restore_private_reservations<C>(
         &self,
         entries: &[BinaryData],
@@ -1265,6 +1274,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             return Ok(Vec::new());
         }
         let contract = dashpay_contract()?;
+        let document_type = contract
+            .document_type_for_name(PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME)
+            .map_err(|error| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "the bundled DashPay has no {PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME} type: \
+                     {error}"
+                ))
+            })?;
         let page = PrivateDocumentEntries {
             entries: entries
                 .iter()
@@ -1300,10 +1317,37 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 continue;
             }
             let recipient = Identifier::from(*sent.entry.recipient_identity_id());
+            let request = decode_private_document_payload(
+                document_type,
+                sent.entry.payload(),
+                self.sdk.version(),
+            )
+            .map_err(|error| error.to_string())
+            .and_then(|properties| {
+                PrivateContactRequest::from_properties(properties)
+                    .map_err(|error| error.to_string())
+            });
+            let request = match request {
+                Ok(request) => request,
+                Err(error) => {
+                    tracing::warn!(
+                        sender = %sender,
+                        recipient = %recipient,
+                        %error,
+                        "an unconfirmed private contact request does not decode; not restored"
+                    );
+                    continue;
+                }
+            };
             let Some(managed) = info.identity_manager.managed_identity_mut(&sender) else {
                 continue;
             };
-            if managed.dashpay().outgoing_request(&recipient).is_some() {
+            // Recorded, or superseded by a later request: discharged.
+            if managed
+                .dashpay()
+                .outgoing_request(&recipient)
+                .is_some_and(|tracked| records_or_supersedes(tracked, request.account_reference))
+            {
                 continue;
             }
             let commitment = *sent.entry.commitment();
@@ -2680,6 +2724,197 @@ mod tests {
             .await
             .expect("the restarted wallet reads the store");
         assert!(!pending_to(&restarted, ALICE, &bob).await);
+    }
+
+    /// A rotation whose payment is unconfirmed at a restart, over a request
+    /// that was recorded, is restored: the recorded request is older, so it
+    /// does not discharge the rotation. Until the rotation is read back, a
+    /// retried rotation is refused unpaid, whether the host restored at
+    /// startup or the payment finds it; once it is recorded, its entry, and
+    /// the older one, restore nothing.
+    #[tokio::test]
+    async fn should_restore_a_rotation_paid_for_before_a_restart() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let (alice_id, bob_id) = (alice.id(), bob.id());
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (_manager, before) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let kept = Arc::new(Mutex::new(Vec::new()));
+        let v0 = before
+            .identity()
+            .dashpay()
+            .send_private_contact_request(
+                &alice_id,
+                &bob_id,
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                append_entry(&before, 0, vec![], &kept),
+            )
+            .await
+            .expect("v0 is recorded");
+        assert_eq!(account_reference_version(v0.account_reference), 0);
+        let v0_entry = kept.lock().expect("kept").remove(0);
+        let unconfirmed = {
+            let kept = Arc::clone(&kept);
+            move |entry: BinaryData| {
+                kept.lock().expect("kept").push(entry);
+                std::future::ready(Err::<ResponseMetadata, _>(
+                    PlatformWalletError::ShieldedSpendUnconfirmed {
+                        operation: "private document create",
+                        reason: "the proof fetch timed out".to_string(),
+                    },
+                ))
+            }
+        };
+        let rotation = before
+            .identity()
+            .dashpay()
+            .send_private_contact_request(
+                &alice_id,
+                &bob_id,
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                unconfirmed,
+            )
+            .await;
+        assert!(
+            matches!(
+                rotation,
+                Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+            ),
+            "{rotation:?}"
+        );
+        let v1_entry = kept.lock().expect("kept").remove(0);
+
+        // A restart: the store holds v0 only, which the restarted wallet
+        // records. The host restores the unconfirmed rotation.
+        let (_restarted_manager, restarted) = wallet(
+            ALICE_PHRASE,
+            &alice,
+            &[&alice, &bob],
+            vec![v0_entry.to_vec()],
+        )
+        .await;
+        let view = restarted.identity().dashpay();
+        view.sync_private_contact_requests(&alice_crypto, 4)
+            .await
+            .expect("the restarted wallet reads the store");
+        managed(&restarted, ALICE, |managed| {
+            assert_eq!(managed.dashpay().outgoing_request(&bob_id), Some(&v0));
+        })
+        .await;
+        assert_eq!(
+            view.restore_pending_private_contact_requests(
+                std::slice::from_ref(&v1_entry),
+                &alice_crypto
+            )
+            .await
+            .expect("restored"),
+            vec![(alice_id, bob_id)],
+            "a recorded v0 does not discharge the v1 rotation"
+        );
+        let retried = view
+            .send_private_contact_request(
+                &alice_id,
+                &bob_id,
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                no_payment,
+            )
+            .await;
+        assert!(
+            matches!(retried, Err(PlatformWalletError::PrivateContactRequestPending(recipient))
+                if recipient == bob_id),
+            "{retried:?}"
+        );
+
+        // Another restart, the host restoring nothing: the payment of the
+        // retried rotation finds the unconfirmed one and pays nothing.
+        let (_held_manager, held_wallet) = wallet(
+            ALICE_PHRASE,
+            &alice,
+            &[&alice, &bob],
+            vec![v0_entry.to_vec()],
+        )
+        .await;
+        let held_view = held_wallet.identity().dashpay();
+        let paid = Arc::new(Mutex::new(Vec::new()));
+        let unconfirmed_entries = vec![v1_entry.clone()];
+        let held = held_view
+            .send_private_contact_request(
+                &alice_id,
+                &bob_id,
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                |entry: BinaryData| {
+                    let paid = Arc::clone(&paid);
+                    let unconfirmed_entries = &unconfirmed_entries;
+                    let crypto = &alice_crypto;
+                    async move {
+                        if held_view
+                            .hold_for_restored_private_contact_request(
+                                unconfirmed_entries,
+                                crypto,
+                                &alice_id,
+                                &bob_id,
+                            )
+                            .await?
+                        {
+                            return Err(PlatformWalletError::PrivateContactRequestPending(bob_id));
+                        }
+                        paid.lock().expect("paid").push(entry);
+                        Ok(ResponseMetadata::default())
+                    }
+                },
+            )
+            .await;
+        assert!(
+            matches!(held, Err(PlatformWalletError::PrivateContactRequestPending(recipient))
+                if recipient == bob_id),
+            "{held:?}"
+        );
+        assert!(paid.lock().expect("paid").is_empty(), "nothing is paid");
+
+        // v1 lands and is read back, after v0 where each wallet's cursor is:
+        // settled, and discharged.
+        for wallet in [&restarted, &held_wallet] {
+            publish(wallet, 1, vec![v1_entry.to_vec()]).await;
+            wallet
+                .identity()
+                .dashpay()
+                .sync_private_contact_requests(&alice_crypto, 4)
+                .await
+                .expect("the store is read");
+            managed(wallet, ALICE, |managed| {
+                assert!(!managed.dashpay().private_reply_pending(&bob_id));
+                let tracked = managed
+                    .dashpay()
+                    .outgoing_request(&bob_id)
+                    .expect("tracked");
+                assert_eq!(account_reference_version(tracked.account_reference), 1);
+            })
+            .await;
+        }
+        assert_eq!(
+            view.restore_pending_private_contact_requests(&[v1_entry, v0_entry], &alice_crypto)
+                .await
+                .expect("restored"),
+            vec![],
+            "a recorded rotation, and the request it rotated, restore nothing"
+        );
     }
 
     /// A `pay` that must not run.
