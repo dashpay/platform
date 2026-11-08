@@ -316,6 +316,19 @@ describe('TokenConfiguration', () => {
       expect(Object.keys(contract.tokens as Record<number, unknown>)).to.deep.equal(['0']);
     });
 
+    it('should refuse tokens on a platform version whose contracts hold none', () => {
+      // Protocol version 8 builds data contracts of structure version 0, which have no tokens.
+      expect(() => new wasm.DataContract({
+        ownerId,
+        identityNonce: BigInt(5),
+        schemas: object.documentSchemas,
+        definitions: null,
+        fullValidation: false,
+        tokens: { 0: createConfiguration() },
+        platformVersion: new wasm.PlatformVersion(8),
+      })).to.throw(/structure version 0/);
+    });
+
     it('should refuse a cost in a token the contract does not declare', () => {
       expect(() => new wasm.DataContract({
         ownerId,
