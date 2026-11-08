@@ -232,20 +232,15 @@ pub const PRIVATE_CONTACT_REQUEST_SIGNING_KEY_TYPES: [KeyType; 2] =
     [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160];
 
 /// The security levels an `AUTHENTICATION` key may sign a private contact request at: the ones
-/// Platform lets a document of the type be signed at, from `CRITICAL` to the type's requirement
-/// (`HIGH` unless the contract sets another). `MASTER` keys sign no documents.
+/// Platform lets a document of the type be signed at
+/// ([`SecurityLevel::document_signing_levels`] of the type's requirement), from `CRITICAL` to
+/// the requirement (`HIGH` unless the contract sets another). `MASTER` keys sign no documents.
 pub fn private_contact_request_signing_security_levels(
     dashpay_contract: &DataContract,
 ) -> Result<Vec<SecurityLevel>, Error> {
-    let requirement = private_contact_request_type(dashpay_contract)?.security_level_requirement();
-    Ok(if requirement == SecurityLevel::MASTER {
-        vec![SecurityLevel::MASTER]
-    } else {
-        SecurityLevel::full_range()
-            .into_iter()
-            .filter(|level| *level != SecurityLevel::MASTER && *level as u8 <= requirement as u8)
-            .collect()
-    })
+    Ok(private_contact_request_type(dashpay_contract)?
+        .security_level_requirement()
+        .document_signing_levels())
 }
 
 /// What a private contact request's sender signs, before sealing it: the entry's signing data
