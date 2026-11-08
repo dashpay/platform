@@ -97,7 +97,7 @@ pub use wallet::mnemonic::{
 };
 pub use wallet::platform_wallet::PlatformWalletInfo;
 #[cfg(feature = "shielded")]
-pub use wallet::platform_wallet::ShieldedShieldPreflight;
+pub use wallet::platform_wallet::{PrivateReplyPayment, ShieldedShieldPreflight};
 pub use wallet::provider_key_at_index::{ProviderDerivedKey, ProviderKeyKind};
 #[cfg(feature = "shielded")]
 pub use wallet::shielded::operations::shield_fee_reserve_credits;

@@ -57,6 +57,11 @@ struct AddContactView: View {
     @State private var isSending = false
     @State private var errorMessage: String?
 
+    /// Set when a private send or reply may have gone through (its result
+    /// could not be confirmed): the view only offers to close, never to
+    /// submit again, as `SendTransactionView` does for an unconfirmed spend.
+    @State private var unconfirmedNotice: String?
+
     /// Send-collision flow.
     @State private var showCollisionAlert = false
     @State private var collisionRecipient: Identifier?
@@ -94,6 +99,7 @@ struct AddContactView: View {
         resolvedRecipient != nil
             && resolvedRecipient != identity.identityId
             && !isSending
+            && unconfirmedNotice == nil
     }
 
     var body: some View {
@@ -153,6 +159,16 @@ struct AddContactView: View {
                 }
             } message: { _ in
                 Text("This person already sent you a request — accept it instead?")
+            }
+            .alert(
+                "Submitted",
+                isPresented: .constant(unconfirmedNotice != nil)
+            ) {
+                Button("Done") { dismiss() }
+            } message: {
+                if let unconfirmedNotice {
+                    Text(unconfirmedNotice)
+                }
             }
         }
     }
@@ -489,7 +505,15 @@ struct AddContactView: View {
                 kickDashPaySync(walletManager)
                 dismiss()
             } catch {
-                errorMessage = error.localizedDescription
+                switch ContactRequestSubmissionOutcome.of(error) {
+                case .mayHaveGoneThrough:
+                    // Pending, not failed: the next sync settles it.
+                    onSent(recipient, mode == .dpns ? selectedResult?.fullName : nil)
+                    kickDashPaySync(walletManager)
+                    unconfirmedNotice = ContactRequestSubmissionOutcome.mayHaveGoneThroughMessage
+                case .failed(let message):
+                    errorMessage = message
+                }
             }
         }
     }
@@ -523,7 +547,13 @@ struct AddContactView: View {
                 kickDashPaySync(walletManager)
                 dismiss()
             } catch {
-                errorMessage = "Accept failed: \(error.localizedDescription)"
+                switch ContactRequestSubmissionOutcome.of(error) {
+                case .mayHaveGoneThrough:
+                    kickDashPaySync(walletManager)
+                    unconfirmedNotice = ContactRequestSubmissionOutcome.mayHaveGoneThroughMessage
+                case .failed(let message):
+                    errorMessage = "Accept failed: \(message)"
+                }
             }
         }
     }

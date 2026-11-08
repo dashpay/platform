@@ -269,6 +269,15 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// public request to it, in reply or as a rotation, would publish the
     /// relationship. Nothing was sent; accept or send it privately.
     case errorPrivateContactRequestNeedsPrivateReply = 68
+    /// The operation needs the shielded pool, and the native library was
+    /// built without shielded support. Nothing was sent; not retryable on
+    /// this build.
+    case errorShieldedBuildRequired = 69
+    /// The network is proven at a protocol version below the one that
+    /// serves the request (for example the private contact request store
+    /// before protocol version 15), so the SDK did not send it. Expected on
+    /// such a network; it lifts when the network upgrades.
+    case errorProtocolVersionNotActive = 70
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -402,6 +411,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorAssetLockTooManyInputs
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_REQUEST_NEEDS_PRIVATE_REPLY:
             self = .errorPrivateContactRequestNeedsPrivateReply
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_BUILD_REQUIRED:
+            self = .errorShieldedBuildRequired
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PROTOCOL_VERSION_NOT_ACTIVE:
+            self = .errorProtocolVersionNotActive
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -601,6 +614,17 @@ public enum PlatformWalletError: LocalizedError {
     /// the reply itself) or `acceptPrivateContactRequest`, or send with
     /// `PlatformWalletManager.sendPrivateContactRequest`.
     case privateContactRequestNeedsPrivateReply(String)
+    /// The operation needs the shielded pool, and the native library was
+    /// built without shielded support: today, accepting a contact request
+    /// that came privately with
+    /// `PlatformWalletManager.acceptContactRequestReplyingInKind`. Nothing
+    /// was sent; a public or adopted reply works on such a build.
+    case shieldedBuildRequired(String)
+    /// The network does not serve the request yet: it is proven at a protocol
+    /// version below the one that does, so the SDK did not send it. Expected
+    /// on such a network (for example the private contact request store before
+    /// protocol version 15); a host may stay quiet about it.
+    case protocolVersionNotActive(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition
     /// (identity-create or a spend — unshield / transfer / withdrawal) was
@@ -827,6 +851,7 @@ public enum PlatformWalletError: LocalizedError {
              .assetLockFundingMismatch(let m), .assetLockInsufficientFunds(let m),
              .assetLockTooManyInputs(let m),
              .privateContactRequestNeedsPrivateReply(let m),
+             .shieldedBuildRequired(let m), .protocolVersionNotActive(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
@@ -947,6 +972,10 @@ public enum PlatformWalletError: LocalizedError {
         case .errorAssetLockTooManyInputs: self = .assetLockTooManyInputs(detail)
         case .errorPrivateContactRequestNeedsPrivateReply:
             self = .privateContactRequestNeedsPrivateReply(detail)
+        case .errorShieldedBuildRequired:
+            self = .shieldedBuildRequired(detail)
+        case .errorProtocolVersionNotActive:
+            self = .protocolVersionNotActive(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)

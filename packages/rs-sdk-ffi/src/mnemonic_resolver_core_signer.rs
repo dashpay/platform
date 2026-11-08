@@ -65,9 +65,9 @@ use dash_sdk::dpp::identity::{Identity, KeyID};
 use dash_sdk::dpp::platform_value::BinaryData;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::dpp::secp256k1;
+use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::platform::dashpay::{
-    private_contact_request_outgoing_viewing_key, seal_private_contact_request,
-    PrivateContactRequest, PrivateContactRequestSender,
+    seal_private_contact_request, PrivateContactRequest, PrivateContactRequestSender,
 };
 use dash_sdk::platform::private_document_entries::PrivateDocumentEntries;
 use dash_sdk::platform::private_document_scan::{PrivateDocumentScan, PrivateDocumentScanKeys};
@@ -622,8 +622,10 @@ impl MnemonicResolverCoreSigner {
     /// are the identities entries may be sealed to, each with the paths of
     /// its keys by key id; `senders` the identities that may have sealed
     /// entries, each with the id and path of an encryption key whose
-    /// outgoing viewing key recovers what it sent. Every key comes from one
-    /// resolve and is dropped here; only the sorted entries return.
+    /// outgoing viewing key recovers what it sent. The mnemonic is resolved
+    /// once and every key is derived from it here; the SDK builds the scan
+    /// keys from them ([`PrivateDocumentScanKeys::derive`]) and wipes them.
+    /// Only the sorted entries return.
     pub fn scan_private_document_page(
         &self,
         recipients: &[(Identifier, Vec<(KeyID, DerivationPath)>)],
@@ -638,7 +640,11 @@ impl MnemonicResolverCoreSigner {
             document_type_name,
         };
         self.resolve_master(|master| {
-            let keys = private_document_scan_keys(master, recipients, senders)?;
+            // `secret_key_at` hands back a wiping guard; the copy it yields
+            // is wiped by `derive` once used.
+            let keys = PrivateDocumentScanKeys::derive(recipients, senders, |path| {
+                secret_key_at(master, path).map(|secret| secret.0)
+            })?;
             Ok(keys.scan_page(&target, start_position, page))
         })
     }
@@ -665,6 +671,7 @@ impl MnemonicResolverCoreSigner {
         recipient_key_id: KeyID,
         request: &PrivateContactRequest,
         esk_seed: &[u8; 32],
+        platform_version: &PlatformVersion,
     ) -> Result<BinaryData, MnemonicResolverSignerError> {
         let secret =
             self.resolve_master(|master| secret_key_at(master, sender_encryption_key_path))?;
@@ -681,6 +688,7 @@ impl MnemonicResolverCoreSigner {
             recipient_key_id,
             request,
             esk_seed,
+            platform_version,
         )
         .map_err(MnemonicResolverSignerError::PrivateContactRequest)
     }
@@ -698,34 +706,6 @@ fn secret_key_at(
     let secret = secp256k1::SecretKey::from_secret_bytes(*derived.private_key.to_bytes())
         .map_err(|e| MnemonicResolverSignerError::InvalidScalar(e.to_string()))?;
     Ok(WipingSecretKey(secret))
-}
-
-/// The scan keys of `recipients` and `senders`, derived below `master`: each
-/// recipient's secret keys, and the outgoing viewing key of each sender
-/// encryption key ([`private_contact_request_outgoing_viewing_key`]). The
-/// copies made here are wiped before this returns.
-fn private_document_scan_keys(
-    master: &ExtendedPrivKey,
-    recipients: &[(Identifier, Vec<(KeyID, DerivationPath)>)],
-    senders: &[(Identifier, KeyID, DerivationPath)],
-) -> Result<PrivateDocumentScanKeys, MnemonicResolverSignerError> {
-    let mut keys = PrivateDocumentScanKeys::new();
-    for (identity_id, paths) in recipients {
-        let mut secret_keys = WipingSecretKeys(Vec::with_capacity(paths.len()));
-        for (key_id, path) in paths {
-            secret_keys
-                .0
-                .push((*key_id, secret_key_at(master, path)?.0));
-        }
-        keys = keys.with_recipient(*identity_id, &secret_keys.0);
-    }
-    for (identity_id, key_id, path) in senders {
-        let secret = secret_key_at(master, path)?;
-        let outgoing_viewing_key =
-            Zeroizing::new(private_contact_request_outgoing_viewing_key(&secret.0));
-        keys = keys.with_sender(*identity_id, *key_id, *outgoing_viewing_key);
-    }
-    Ok(keys)
 }
 
 /// Result of [`MnemonicResolverCoreSigner::contact_info_seal`].
@@ -750,17 +730,6 @@ struct WipingSecretKey(secp256k1::SecretKey);
 impl Drop for WipingSecretKey {
     fn drop(&mut self) {
         self.0.non_secure_erase();
-    }
-}
-
-/// Scrubs the secret keys of one scan recipient on every exit path.
-struct WipingSecretKeys(Vec<(KeyID, secp256k1::SecretKey)>);
-
-impl Drop for WipingSecretKeys {
-    fn drop(&mut self) {
-        for (_, secret_key) in &mut self.0 {
-            secret_key.non_secure_erase();
-        }
     }
 }
 
@@ -1393,8 +1362,9 @@ mod tests {
         use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use dash_sdk::dpp::version::PlatformVersion;
         use dash_sdk::platform::dashpay::{
-            private_contact_request_identities, private_contact_request_signature,
-            private_contact_request_signing_data, private_contact_requests_from_scan,
+            private_contact_request_identities, private_contact_request_outgoing_viewing_key,
+            private_contact_request_signature, private_contact_request_signing_data,
+            private_contact_requests_from_scan, ProvedIdentity,
             PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
         };
         use dash_sdk::platform::private_document_entries::PrivateDocumentEntry;
@@ -1605,6 +1575,7 @@ mod tests {
                 recipient,
                 RECIPIENT_KEY_ID,
                 &request(),
+                PlatformVersion::latest(),
             )
             .expect("the keys check");
             private_contact_request_signature(&signer, &signing_key, &signing_data)
@@ -1636,6 +1607,7 @@ mod tests {
                 RECIPIENT_KEY_ID,
                 &request(),
                 &[esk_seed; 32],
+                PlatformVersion::latest(),
             )
             .expect("the request seals")
         }
@@ -1768,6 +1740,7 @@ mod tests {
                     RECIPIENT_KEY_ID,
                     &request(),
                     &[7; 32],
+                    PlatformVersion::latest(),
                 )
                 .expect("the signer seals the request");
             assert_eq!(sealed, sent_to_recipient(&contract, 7).await);
@@ -1808,15 +1781,26 @@ mod tests {
             assert!(scan.rejected.is_empty());
             assert!(scan.is_complete());
 
-            let identities: BTreeMap<_, _> = [sender(), recipient()]
-                .into_iter()
-                .map(|identity| (identity.id(), Some(identity)))
-                .collect();
+            let needed = private_contact_request_identities(&scan);
             assert_eq!(
-                private_contact_request_identities(&scan),
-                identities.keys().copied().collect(),
+                needed.keys().copied().collect::<Vec<_>>(),
+                vec![sender().id(), recipient().id()],
                 "the read checks the sender and the recipient"
             );
+            // Each identity as a proof at the height the read needs shows it.
+            let identities: BTreeMap<_, _> = [sender(), recipient()]
+                .into_iter()
+                .map(|identity| {
+                    let proved_at_height = needed[&identity.id()];
+                    (
+                        identity.id(),
+                        ProvedIdentity {
+                            identity: Some(identity),
+                            proved_at_height,
+                        },
+                    )
+                })
+                .collect();
             let read = private_contact_requests_from_scan(
                 &contract,
                 scan,
@@ -1896,6 +1880,7 @@ mod tests {
                     RECIPIENT_KEY_ID,
                     &request(),
                     &[4; 32],
+                    PlatformVersion::latest(),
                 )
                 .expect("the signer seals the request");
             assert_eq!(resolves.load(Ordering::SeqCst), 2);
@@ -1931,6 +1916,7 @@ mod tests {
                     RECIPIENT_KEY_ID,
                     &request(),
                     &[7; 32],
+                    PlatformVersion::latest(),
                 )
                 .expect_err("the key at that path is not the sender's");
             assert!(
@@ -1974,6 +1960,7 @@ mod tests {
                     RECIPIENT_KEY_ID,
                     &request(),
                     &[7; 32],
+                    PlatformVersion::latest(),
                 )
                 .expect_err("the signature is not the signing key's");
             assert!(

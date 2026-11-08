@@ -110,6 +110,12 @@ pub struct DashPayState {
     /// ([`ContactRequest::came_privately`]), so it holds across restarts.
     pub(super) private_shielded_addresses: BTreeMap<Identifier, [u8; 43]>,
 
+    /// Recipients whose tracked outgoing request is in memory but did not reach disk: a
+    /// private reply paid for before its store failed. The next add of the same request (the
+    /// private sync recovers it from the store) stores it. In memory only: after a restart the
+    /// scan from the store's start recovers the request anyway.
+    pub(super) unstored_sent: BTreeSet<Identifier>,
+
     /// Lowest Platform-assigned `$createdAtCoreBlockHeight` among OUR sent
     /// `contactRequest` docs to each recipient seen by a sweep this process.
     ///

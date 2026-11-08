@@ -77,15 +77,83 @@ impl ManagedIdentity {
         request: ContactRequest,
         persister: &WalletPersister,
     ) -> Result<(), crate::changeset::PersistenceError> {
+        self.add_sent_contact_request_with(request, persister, false)
+    }
+
+    /// [`Self::add_sent_contact_request`] for a request already paid for, which must be held
+    /// whatever the store does: a store failure is logged and the request kept in memory, so
+    /// the contact establishes and a retry adopts it instead of paying again. The next add of
+    /// the same request stores it.
+    pub(crate) fn add_paid_sent_contact_request(
+        &mut self,
+        request: ContactRequest,
+        persister: &WalletPersister,
+    ) {
+        if let Err(error) = self.add_sent_contact_request_with(request, persister, true) {
+            // `keep_unstored` turns every store failure into a kept request.
+            tracing::error!(%error, "a paid sent contact request was refused");
+        }
+    }
+
+    /// Store `cs` for the request to `recipient_id`. With `keep_unstored`, a failure is kept
+    /// for the next add of the request instead of returned.
+    fn store_sent(
+        &mut self,
+        persister: &WalletPersister,
+        cs: ContactChangeSet,
+        recipient_id: Identifier,
+        keep_unstored: bool,
+    ) -> Result<(), crate::changeset::PersistenceError> {
+        match persister.store(cs.into()) {
+            Ok(()) => {
+                self.dashpay.unstored_sent.remove(&recipient_id);
+                Ok(())
+            }
+            Err(error) if keep_unstored => {
+                tracing::warn!(
+                    owner = %self.id(),
+                    recipient = %recipient_id,
+                    %error,
+                    "paid sent contact request kept in memory; the next sync stores it"
+                );
+                self.dashpay.unstored_sent.insert(recipient_id);
+                Ok(())
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    fn add_sent_contact_request_with(
+        &mut self,
+        request: ContactRequest,
+        persister: &WalletPersister,
+        keep_unstored: bool,
+    ) -> Result<(), crate::changeset::PersistenceError> {
         let owner_id = self.id();
         let recipient_id = request.recipient_id;
 
         // Sent-side guard / rotation supersede: already established.
-        if let Some(existing) = self.dashpay.established_contacts.get(&recipient_id) {
+        if let Some(existing) = self
+            .dashpay
+            .established_contacts
+            .get(&recipient_id)
+            .cloned()
+        {
             // Same outgoing reference → a re-ingest of a doc we already
             // track carries no new information; re-establishing would wipe
-            // user metadata, so it's a no-op.
+            // user metadata, so it's a no-op, unless it is still to store.
             if existing.outgoing_request.account_reference == request.account_reference {
+                if self.dashpay.unstored_sent.contains(&recipient_id) {
+                    let mut cs = ContactChangeSet::default();
+                    cs.established.insert(
+                        SentContactRequestKey {
+                            owner_id,
+                            recipient_id,
+                        },
+                        existing,
+                    );
+                    self.store_sent(persister, cs, recipient_id, keep_unstored)?;
+                }
                 return Ok(());
             }
             // Different outgoing reference → a rotation re-send. Advance
@@ -106,7 +174,7 @@ impl ManagedIdentity {
                 },
                 updated.clone(),
             );
-            persister.store(cs.into())?;
+            self.store_sent(persister, cs, recipient_id, keep_unstored)?;
             self.dashpay
                 .established_contacts
                 .insert(recipient_id, updated);
@@ -129,8 +197,24 @@ impl ManagedIdentity {
         // by the contract's `($ownerId, toUserId, accountReference)`
         // unique index. Persist BEFORE committing to memory, same as
         // the established branch and for the same retry reason.
-        if let Some(existing) = self.dashpay.sent_contact_requests.get(&recipient_id) {
+        if let Some(existing) = self
+            .dashpay
+            .sent_contact_requests
+            .get(&recipient_id)
+            .cloned()
+        {
             if existing.account_reference == request.account_reference {
+                if self.dashpay.unstored_sent.contains(&recipient_id) {
+                    let mut cs = ContactChangeSet::default();
+                    cs.sent_requests.insert(
+                        SentContactRequestKey {
+                            owner_id,
+                            recipient_id,
+                        },
+                        ContactRequestEntry { request: existing },
+                    );
+                    self.store_sent(persister, cs, recipient_id, keep_unstored)?;
+                }
                 return Ok(());
             }
             let mut cs = ContactChangeSet::default();
@@ -143,7 +227,7 @@ impl ManagedIdentity {
                     request: request.clone(),
                 },
             );
-            persister.store(cs.into())?;
+            self.store_sent(persister, cs, recipient_id, keep_unstored)?;
             self.dashpay
                 .sent_contact_requests
                 .insert(recipient_id, request);
@@ -191,7 +275,7 @@ impl ManagedIdentity {
                 },
                 contact.clone(),
             );
-            persister.store(cs.into())?;
+            self.store_sent(persister, cs, recipient_id, keep_unstored)?;
             self.dashpay.incoming_contact_requests.remove(&recipient_id);
             self.dashpay
                 .established_contacts
@@ -208,7 +292,7 @@ impl ManagedIdentity {
                     request: request.clone(),
                 },
             );
-            persister.store(cs.into())?;
+            self.store_sent(persister, cs, recipient_id, keep_unstored)?;
             self.dashpay
                 .sent_contact_requests
                 .insert(recipient_id, request);

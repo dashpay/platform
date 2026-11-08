@@ -31,9 +31,11 @@ use crate::platform::{Fetch, Identifier};
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
 use dpp::data_contract::document_type::{
     decode_private_document_payload, encode_private_document_payload, DocumentTypeRef,
 };
+use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
 use dpp::data_contract::DataContract;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -45,7 +47,9 @@ use dpp::secp256k1::rand::rngs::StdRng;
 use dpp::secp256k1::rand::{RngCore, SeedableRng};
 use dpp::secp256k1::{PublicKey, SecretKey};
 use dpp::util::hash::ripemd160_sha256;
+use dpp::version::feature_initial_protocol_versions::PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION;
 use dpp::version::PlatformVersion;
+use futures::{StreamExt, TryStreamExt};
 use platform_encryption::{
     private_document_outgoing_viewing_key, private_document_signing_data,
     recover_private_document_signer, seal_private_document_entry, OpenedPrivateDocumentEntry,
@@ -53,6 +57,7 @@ use platform_encryption::{
     PrivateDocumentSender, PrivateDocumentTarget, COMPACT_XPUB_LEN,
 };
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 use zeroize::Zeroize;
 
 /// The DashPay document type of private contact requests.
@@ -91,11 +96,9 @@ pub struct PrivateContactRequest {
 }
 
 impl PrivateContactRequest {
-    /// The request as the type's properties, refused when a value is out of the schema's
-    /// bounds. dpp's schema validation is not part of the SDK's features, so the bounds the
-    /// fields' types do not hold are checked here.
-    pub fn to_properties(&self) -> Result<BTreeMap<String, Value>, Error> {
-        self.check_bounds()?;
+    /// The request as the type's properties. Their bounds are the schema's, which sealing
+    /// checks with dpp's document validation.
+    pub fn to_properties(&self) -> BTreeMap<String, Value> {
         let mut properties = BTreeMap::from([
             (
                 ACCOUNT_REFERENCE.to_string(),
@@ -115,11 +118,12 @@ impl PrivateContactRequest {
         if let Some(address) = &self.shielded_address {
             properties.insert(SHIELDED_ADDRESS.to_string(), Value::Bytes(address.to_vec()));
         }
-        Ok(properties)
+        properties
     }
 
     /// The request a private contact request's properties hold, refused when one is missing,
-    /// unknown, of the wrong type or out of the schema's bounds.
+    /// unknown, of the wrong type or of the wrong size for its field. The schema's other bounds
+    /// are checked with dpp's document validation, which reading does before this.
     pub fn from_properties(mut properties: BTreeMap<String, Value>) -> Result<Self, Error> {
         let invalid =
             |message: String| Error::Generic(format!("private contact request: {message}"));
@@ -182,34 +186,30 @@ impl PrivateContactRequest {
                 })
                 .transpose()?,
         };
-        request.check_bounds()?;
         Ok(request)
     }
+}
 
-    fn check_bounds(&self) -> Result<(), Error> {
-        if let Some(label) = &self.account_label {
-            if label.len() > PRIVATE_CONTACT_REQUEST_ACCOUNT_LABEL_MAX_BYTES {
-                return Err(Error::Generic(format!(
-                    "private contact request: {ACCOUNT_LABEL} is {} bytes, more than \
-                     {PRIVATE_CONTACT_REQUEST_ACCOUNT_LABEL_MAX_BYTES}",
-                    label.len()
-                )));
-            }
-        }
-        if let Some(proof) = &self.auto_accept_proof {
-            if !(PRIVATE_CONTACT_REQUEST_AUTO_ACCEPT_PROOF_MIN_LEN
-                ..=PRIVATE_CONTACT_REQUEST_AUTO_ACCEPT_PROOF_MAX_LEN)
-                .contains(&proof.len())
-            {
-                return Err(Error::Generic(format!(
-                    "private contact request: {AUTO_ACCEPT_PROOF} is {} bytes, not \
-                     {PRIVATE_CONTACT_REQUEST_AUTO_ACCEPT_PROOF_MIN_LEN} to \
-                     {PRIVATE_CONTACT_REQUEST_AUTO_ACCEPT_PROOF_MAX_LEN}",
-                    proof.len()
-                )));
-            }
-        }
-        Ok(())
+/// Checks `properties` against the `privateContactRequest` schema of `dashpay_contract` as dpp
+/// checks a document's properties: the schema's bounds and types, its required properties, and
+/// the rest it says. The payload codec leaves this to the sender before encoding and to the
+/// recipient after decoding.
+fn validate_request_properties(
+    dashpay_contract: &DataContract,
+    properties: &BTreeMap<String, Value>,
+    platform_version: &PlatformVersion,
+) -> Result<(), String> {
+    let result = dashpay_contract
+        .validate_document_properties(
+            PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+            Value::from(properties.clone()),
+            &DocumentSystemValues::default(),
+            platform_version,
+        )
+        .map_err(|error| error.to_string())?;
+    match result.errors.first() {
+        None => Ok(()),
+        Some(error) => Err(error.to_string()),
     }
 }
 
@@ -259,6 +259,7 @@ pub fn private_contact_request_signing_data(
     recipient: &Identity,
     recipient_key_id: KeyID,
     request: &PrivateContactRequest,
+    platform_version: &PlatformVersion,
 ) -> Result<[u8; 32], Error> {
     Ok(SealInputs::new(
         dashpay_contract,
@@ -267,6 +268,7 @@ pub fn private_contact_request_signing_data(
         recipient,
         recipient_key_id,
         request,
+        platform_version,
     )?
     .signing_data)
 }
@@ -322,6 +324,8 @@ pub struct PrivateContactRequestSender<'a> {
 ///   that may sign the type's documents.
 /// - The recipient key must be an enabled `ECDSA_SECP256K1` `DECRYPTION` or `ENCRYPTION` key.
 ///
+/// - The request must satisfy the type's schema (dpp's document validation).
+///
 /// `esk_seed` must be 32 fresh random bytes for every entry, never reused, not even on a retry
 /// ([`Sdk::seal_private_contact_request`] draws one).
 pub fn seal_private_contact_request(
@@ -331,6 +335,7 @@ pub fn seal_private_contact_request(
     recipient_key_id: KeyID,
     request: &PrivateContactRequest,
     esk_seed: &[u8; 32],
+    platform_version: &PlatformVersion,
 ) -> Result<BinaryData, Error> {
     let inputs = SealInputs::new(
         dashpay_contract,
@@ -339,6 +344,7 @@ pub fn seal_private_contact_request(
         recipient,
         recipient_key_id,
         request,
+        platform_version,
     )?;
     if inputs.encryption_public_key != PublicKey::from_secret_key(sender.encryption_secret_key) {
         return Err(Error::Generic(format!(
@@ -413,6 +419,7 @@ impl SealInputs {
         recipient: &Identity,
         recipient_key_id: KeyID,
         request: &PrivateContactRequest,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         let document_type = private_contact_request_type(dashpay_contract)?;
         let entry_size = document_type
@@ -444,7 +451,10 @@ impl SealInputs {
         let recipient_public_key =
             ecdh_public_key(recipient_key, "recipient", None).map_err(Error::Generic)?;
 
-        let payload = encode_private_document_payload(document_type, request.to_properties()?)?;
+        let properties = request.to_properties();
+        validate_request_properties(dashpay_contract, &properties, platform_version)
+            .map_err(|error| Error::Generic(format!("private contact request: {error}")))?;
+        let payload = encode_private_document_payload(document_type, properties)?;
         let contract_id = dashpay_contract.id().to_buffer();
         let signing_data = private_document_signing_data(
             &PrivateDocumentTarget {
@@ -746,41 +756,73 @@ impl PrivateContactRequestScan {
     }
 }
 
+/// An identity a scan's entries are checked against, as fetched: `None` when it does not exist,
+/// and the height of the block its proof is of. An entry is checked against a snapshot proved
+/// at or after the block that appended it, so a key disabled in that block shows as disabled.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProvedIdentity {
+    /// The identity, `None` when the proof shows it does not exist.
+    pub identity: Option<Identity>,
+    /// The height of the block the proof is of.
+    pub proved_at_height: u64,
+}
+
+/// How many identities [`Sdk::fetch_private_contact_request_identities`] fetches at once.
+const PRIVATE_CONTACT_REQUEST_IDENTITY_FETCHES: usize = 4;
+
 /// The identities whose keys [`private_contact_requests_from_scan`] checks the entries of
-/// `scan` against: the senders received entries name, the wallet's identities they are to, and
-/// the wallet's identities that sent the recovered ones.
+/// `scan` against, each with the height of the latest block whose entry it checks: a snapshot
+/// of it must be proved at or after that block. They are the senders signed received entries
+/// name, the wallet's identities those are to, and the wallet's identities that sent the
+/// signed recovered ones. Anonymous entries and entries with a deniable MAC are refused without
+/// reading an identity, so they add none.
 ///
 /// Fetching a sender right after the page that holds its request tells the node that serves
 /// both which identity the wallet looked up, and so that someone it knows sent the wallet a
 /// request. A wallet that knows a sender already (a contact, or one fetched for other reasons)
 /// passes the identity it holds, and fetches the others from another node or later, as its
 /// privacy needs.
-pub fn private_contact_request_identities(scan: &PrivateDocumentScan) -> BTreeSet<Identifier> {
-    scan.received
+pub fn private_contact_request_identities(scan: &PrivateDocumentScan) -> BTreeMap<Identifier, u64> {
+    let signed = |entry: &OpenedPrivateDocumentEntry| {
+        entry.auth_mode() == PrivateDocumentAuthMode::Signature
+    };
+    let mut needed: BTreeMap<Identifier, u64> = BTreeMap::new();
+    let mut need = |identity_id: Identifier, block_height: u64| {
+        if identity_id != Identifier::default() {
+            let height = needed.entry(identity_id).or_default();
+            *height = (*height).max(block_height);
+        }
+    };
+    for received in scan
+        .received
         .iter()
-        .flat_map(|received| {
-            [
-                Identifier::from(*received.entry.sender_identity_id()),
-                received.recipient_identity_id,
-            ]
-        })
-        .chain(scan.sent.iter().map(|sent| sent.sender_identity_id))
-        .filter(|identity_id| *identity_id != Identifier::default())
-        .collect()
+        .filter(|received| signed(&received.entry))
+    {
+        need(
+            Identifier::from(*received.entry.sender_identity_id()),
+            received.block_height,
+        );
+        need(received.recipient_identity_id, received.block_height);
+    }
+    for sent in scan.sent.iter().filter(|sent| signed(&sent.entry)) {
+        need(sent.sender_identity_id, sent.block_height);
+    }
+    needed
 }
 
 /// Reads the private contact requests of a scan of DashPay's `privateContactRequest` store.
 ///
-/// `identities` holds the identities [`private_contact_request_identities`] lists, as fetched
-/// (`None` for one that does not exist). Each entry, received or sent, is checked before its
-/// payload is read:
+/// `identities` holds the identities [`private_contact_request_identities`] lists, each proved
+/// at or after the height it lists: a missing one, or one proved earlier, fails the read, to be
+/// fetched again. Each entry, received or sent, is checked before its payload is read:
 /// - it must be signed, and its sender identity must exist;
 /// - the encryption key it names must be the sender's `ECDSA_SECP256K1` `ENCRYPTION` key,
 ///   enabled when the entry was appended;
 /// - its signature must be by a key of the sender that may sign the type's documents, enabled
 ///   then;
 /// - a received entry's recipient key must have been enabled then too;
-/// - a sent entry must name the identity and key its outgoing viewing key is derived from.
+/// - a sent entry must name the identity and key its outgoing viewing key is derived from;
+/// - its payload must satisfy the type's schema (dpp's document validation).
 ///
 /// The first request from a sender to a recipient for an account reference is kept. A wallet
 /// keeps the requests it already holds from earlier scans, and drops a later one from the same
@@ -788,9 +830,27 @@ pub fn private_contact_request_identities(scan: &PrivateDocumentScan) -> BTreeSe
 pub fn private_contact_requests_from_scan(
     dashpay_contract: &DataContract,
     scan: PrivateDocumentScan,
-    identities: &BTreeMap<Identifier, Option<Identity>>,
+    identities: &BTreeMap<Identifier, ProvedIdentity>,
     platform_version: &PlatformVersion,
 ) -> Result<PrivateContactRequestScan, Error> {
+    for (identity_id, height) in private_contact_request_identities(&scan) {
+        match identities.get(&identity_id) {
+            None => {
+                return Err(Error::Generic(format!(
+                    "the identity {identity_id}, which an entry of the scan is checked against, \
+                     was not given"
+                )))
+            }
+            Some(proved) if proved.proved_at_height < height => {
+                return Err(Error::Generic(format!(
+                    "the identity {identity_id} was proved at block {}, before the block {height} \
+                     of an entry it checks: fetch it again",
+                    proved.proved_at_height
+                )))
+            }
+            Some(_) => {}
+        }
+    }
     let document_type = private_contact_request_type(dashpay_contract)?;
     let signing_levels = private_contact_request_signing_security_levels(dashpay_contract)?;
     let reader = EntryReader {
@@ -802,6 +862,8 @@ pub fn private_contact_requests_from_scan(
                 decode_private_document_payload(document_type, payload, platform_version).map_err(
                     |error| PrivateContactRequestRejection::InvalidRequest(error.to_string()),
                 )?;
+            validate_request_properties(dashpay_contract, &properties, platform_version)
+                .map_err(PrivateContactRequestRejection::InvalidRequest)?;
             PrivateContactRequest::from_properties(properties)
                 .map_err(|error| PrivateContactRequestRejection::InvalidRequest(error.to_string()))
         },
@@ -900,7 +962,7 @@ type DecodeRequest<'a> =
 
 /// Reads the entries of one scan against the identities fetched for it.
 struct EntryReader<'a> {
-    identities: &'a BTreeMap<Identifier, Option<Identity>>,
+    identities: &'a BTreeMap<Identifier, ProvedIdentity>,
     signing_levels: &'a [SecurityLevel],
     dashpay_id: Identifier,
     decode: &'a DecodeRequest<'a>,
@@ -908,7 +970,9 @@ struct EntryReader<'a> {
 
 impl EntryReader<'_> {
     fn identity(&self, identity_id: &Identifier) -> Option<&Identity> {
-        self.identities.get(identity_id).and_then(Option::as_ref)
+        self.identities
+            .get(identity_id)
+            .and_then(|proved| proved.identity.as_ref())
     }
 
     /// The request a received entry holds, once its sender and recipient key are checked.
@@ -918,7 +982,7 @@ impl EntryReader<'_> {
     ) -> Result<PrivateContactRequest, PrivateContactRequestRejection> {
         self.check_sender(&received.entry, received.block_time_ms)?;
         let recipient_key_problem = match self.identity(&received.recipient_identity_id) {
-            None => Some("the recipient identity was not given".to_string()),
+            None => Some("the recipient identity does not exist".to_string()),
             Some(recipient) => match recipient.get_public_key_by_id(received.recipient_key_id) {
                 None => Some(format!(
                     "the recipient has no key {}",
@@ -1023,7 +1087,7 @@ impl Sdk {
     where
         S: Signer<IdentityPublicKey> + ?Sized,
     {
-        let dashpay_contract = self.fetch_dashpay_contract().await?;
+        let dashpay_contract = self.fetch_private_contact_request_contract().await?;
         let signing_key = private_contact_request_signing_keys(&dashpay_contract, sender)?
             .into_iter()
             .find(|key| signer.can_sign_with(key))
@@ -1041,6 +1105,7 @@ impl Sdk {
             recipient,
             recipient_key_id,
             request,
+            self.version(),
         )?;
         let signature =
             private_contact_request_signature(signer, signing_key, &signing_data).await?;
@@ -1061,15 +1126,67 @@ impl Sdk {
             recipient_key_id,
             request,
             &esk_seed,
+            self.version(),
         );
         esk_seed.zeroize();
         sealed
     }
 
+    /// The DashPay contract, with its `privateContactRequest` type: the network's protocol
+    /// version is established as 15 or later first, as an unpinned SDK starts below it and would
+    /// otherwise resolve a DashPay without the type.
+    async fn fetch_private_contact_request_contract(&self) -> Result<Arc<DataContract>, Error> {
+        self.require_protocol_version(
+            PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+            "DashPay private contact requests",
+        )
+        .await?;
+        self.fetch_dashpay_contract().await
+    }
+
+    /// Fetches the identities `needed` lists ([`private_contact_request_identities`]), a few at
+    /// a time, each proved at or after the height listed: one proved earlier, which a node may
+    /// serve within the SDK's height tolerance, is fetched once more, and fails the fetch if it
+    /// still is.
+    pub async fn fetch_private_contact_request_identities(
+        &self,
+        needed: &BTreeMap<Identifier, u64>,
+    ) -> Result<BTreeMap<Identifier, ProvedIdentity>, Error> {
+        futures::stream::iter(needed.iter())
+            .map(|(identity_id, height)| async move {
+                let mut attempt = 0;
+                loop {
+                    let (identity, metadata) =
+                        Identity::fetch_with_metadata(self, *identity_id, None).await?;
+                    if metadata.height >= *height {
+                        return Ok((
+                            *identity_id,
+                            ProvedIdentity {
+                                identity,
+                                proved_at_height: metadata.height,
+                            },
+                        ));
+                    }
+                    attempt += 1;
+                    if attempt == 2 {
+                        return Err(Error::Generic(format!(
+                            "the identity {identity_id} was proved at block {}, before the \
+                             block {height} of an entry it checks",
+                            metadata.height
+                        )));
+                    }
+                }
+            })
+            .buffer_unordered(PRIVATE_CONTACT_REQUEST_IDENTITY_FETCHES)
+            .try_collect()
+            .await
+    }
+
     /// Reads the page of DashPay's `privateContactRequest` store from `start_position` and
     /// returns the requests it holds for the wallet whose `keys` are given: those to its
     /// identities and those its identities sent, each checked against the identities' keys as
-    /// [`private_contact_requests_from_scan`] says. The identities are fetched once each.
+    /// [`private_contact_requests_from_scan`] says. The identities are fetched once each, a few
+    /// at a time, each proved at or after the entries it checks.
     ///
     /// A wallet keeps [`PrivateContactRequestScan::next_position`] as its cursor once it has
     /// stored what the page held, and scans again from it until
@@ -1085,7 +1202,7 @@ impl Sdk {
         start_position: u64,
         keys: &PrivateDocumentScanKeys,
     ) -> Result<PrivateContactRequestScan, Error> {
-        let dashpay_contract = self.fetch_dashpay_contract().await?;
+        let dashpay_contract = self.fetch_private_contact_request_contract().await?;
         let scan = self
             .scan_private_document_page(
                 dashpay_contract.id(),
@@ -1094,10 +1211,9 @@ impl Sdk {
                 keys,
             )
             .await?;
-        let mut identities = BTreeMap::new();
-        for identity_id in private_contact_request_identities(&scan) {
-            identities.insert(identity_id, Identity::fetch(self, identity_id).await?);
-        }
+        let identities = self
+            .fetch_private_contact_request_identities(&private_contact_request_identities(&scan))
+            .await?;
         private_contact_requests_from_scan(&dashpay_contract, scan, &identities, self.version())
     }
 }
@@ -1119,6 +1235,8 @@ mod tests {
     const RECIPIENT_ID: [u8; 32] = [0xB0; 32];
     /// The time of the block the test entries are appended in.
     const BLOCK_TIME_MS: u64 = 1_700_000_000_000;
+    /// The height the test identities are proved at, after every test entry's block.
+    const PROVED_AT_HEIGHT: u64 = 1_000;
 
     fn dashpay() -> DataContract {
         load_system_data_contract(SystemDataContract::Dashpay, PlatformVersion::latest())
@@ -1270,6 +1388,7 @@ mod tests {
                 &recipient_identity(),
                 2,
                 request,
+                PlatformVersion::latest(),
             )
             .expect("the keys check"),
             signing_secret,
@@ -1297,6 +1416,7 @@ mod tests {
             2,
             request,
             &[seed; 32],
+            PlatformVersion::latest(),
         )
         .expect("the request seals")
         .to_vec()
@@ -1332,7 +1452,7 @@ mod tests {
     fn payload(contract: &DataContract, request: &PrivateContactRequest) -> Vec<u8> {
         encode_private_document_payload(
             private_contact_request_type(contract).expect("DashPay v3"),
-            request.to_properties().expect("in bounds"),
+            request.to_properties(),
         )
         .expect("the payload encodes")
     }
@@ -1382,13 +1502,19 @@ mod tests {
         };
         let scan = keys.scan_page(&target, 0, &page(entries));
         let fetched = private_contact_request_identities(&scan)
-            .into_iter()
+            .into_keys()
             .map(|identity_id| {
                 let identity = identities
                     .iter()
                     .find(|identity| identity.id() == identity_id)
                     .cloned();
-                (identity_id, identity)
+                (
+                    identity_id,
+                    ProvedIdentity {
+                        identity,
+                        proved_at_height: PROVED_AT_HEIGHT,
+                    },
+                )
             })
             .collect();
         private_contact_requests_from_scan(contract, scan, &fetched, PlatformVersion::latest())
@@ -1459,11 +1585,8 @@ mod tests {
         let contract = dashpay();
         let document_type = private_contact_request_type(&contract).expect("DashPay v3");
         for request in [largest_request(), smallest_request(7)] {
-            let payload = encode_private_document_payload(
-                document_type,
-                request.to_properties().expect("in bounds"),
-            )
-            .expect("the payload encodes");
+            let payload = encode_private_document_payload(document_type, request.to_properties())
+                .expect("the payload encodes");
             let properties =
                 decode_private_document_payload(document_type, &payload, PlatformVersion::latest())
                     .expect("the payload decodes");
@@ -1500,11 +1623,65 @@ mod tests {
                 ..smallest_request(1)
             },
         ];
+        // dpp's document validation refuses them, when sealing and when reading.
+        let contract = dashpay();
+        let sender = sender_identity(None);
         for request in &out_of_bounds {
-            assert!(request.to_properties().is_err(), "{request:?}");
+            assert!(
+                private_contact_request_signing_data(
+                    &contract,
+                    &sender,
+                    1,
+                    &recipient_identity(),
+                    2,
+                    request,
+                    PlatformVersion::latest(),
+                )
+                .is_err(),
+                "{request:?} is refused when sealing"
+            );
+            let payload = payload(&contract, request);
+            let signing_data = private_document_signing_data(
+                &PrivateDocumentTarget {
+                    contract_id: contract.id().to_buffer(),
+                    document_type_name: PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+                },
+                &SENDER_ID,
+                1,
+                &PrivateDocumentRecipient {
+                    identity_id: RECIPIENT_ID,
+                    public_key: &PublicKey::from_secret_key(&secret_key(2)),
+                },
+                &payload,
+            );
+            let signature = sign_private_document_signing_data(&signing_data, &secret_key(9));
+            let entry = seal_raw(
+                &contract,
+                RECIPIENT_ID,
+                &secret_key(2),
+                &PrivateDocumentSender::Signature {
+                    identity_id: SENDER_ID,
+                    key_id: 1,
+                    signature: &signature,
+                },
+                &payload,
+            );
+            assert!(
+                matches!(
+                    reasons(read(
+                        &contract,
+                        vec![entry],
+                        &recipient_keys(),
+                        &[sender.clone(), recipient_identity()],
+                    ))
+                    .as_slice(),
+                    [PrivateContactRequestRejection::InvalidRequest(_)]
+                ),
+                "{request:?} is refused when reading"
+            );
         }
 
-        let properties = || smallest_request(1).to_properties().expect("in bounds");
+        let properties = || smallest_request(1).to_properties();
         let with = |name: &str, value: Value| {
             let mut properties = properties();
             properties.insert(name.to_string(), value);
@@ -1534,10 +1711,6 @@ mod tests {
             (
                 "a shielded address of 44 bytes",
                 with(SHIELDED_ADDRESS, Value::Bytes(vec![0; 44])),
-            ),
-            (
-                "a label too long",
-                with(ACCOUNT_LABEL, Value::Text("l".repeat(64))),
             ),
             (
                 "a label of the wrong type",
@@ -1991,6 +2164,7 @@ mod tests {
                 &recipient_identity(),
                 recipient_key_id,
                 &request,
+                PlatformVersion::latest(),
             )?;
             seal_private_contact_request(
                 &contract,
@@ -2008,6 +2182,7 @@ mod tests {
                 recipient_key_id,
                 &request,
                 &[1; 32],
+                PlatformVersion::latest(),
             )
         };
         let sender = sender_identity(None);
@@ -2170,6 +2345,7 @@ mod tests {
                 2,
                 &request,
                 &[1; 32],
+                PlatformVersion::latest(),
             );
             let signing_keys = private_contact_request_signing_keys(&contract, &sender)
                 .expect("DashPay v3")
@@ -2232,6 +2408,131 @@ mod tests {
         );
     }
 
+    /// The identities a scan needs are those its signed entries name, each with the latest
+    /// block it checks; a reading against one proved before that block, or without one, fails
+    /// rather than judging the entry.
+    #[test]
+    fn should_read_only_against_identities_proved_after_the_entries() {
+        let contract = dashpay();
+        let sender = sender_identity(None);
+        let request = smallest_request(1);
+        let mac = seal_raw(
+            &contract,
+            RECIPIENT_ID,
+            &secret_key(2),
+            &PrivateDocumentSender::DeniableMac {
+                identity_id: [0xC0; 32],
+                key_id: 1,
+                secret_key: &secret_key(1),
+            },
+            &payload(&contract, &request),
+        );
+        let target = PrivateDocumentTarget {
+            contract_id: contract.id().to_buffer(),
+            document_type_name: PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+        };
+        let scan = scan_keys().scan_page(
+            &target,
+            0,
+            &page(vec![seal(&contract, &sender, &request, 1), mac]),
+        );
+        // Entry 0 is in block 10; the MAC entry, naming 0xC0, needs no identity.
+        assert_eq!(
+            private_contact_request_identities(&scan),
+            BTreeMap::from([
+                (Identifier::from(SENDER_ID), 10),
+                (Identifier::from(RECIPIENT_ID), 10),
+            ])
+        );
+        let proved = |height| {
+            BTreeMap::from([
+                (
+                    Identifier::from(SENDER_ID),
+                    ProvedIdentity {
+                        identity: Some(sender.clone()),
+                        proved_at_height: height,
+                    },
+                ),
+                (
+                    Identifier::from(RECIPIENT_ID),
+                    ProvedIdentity {
+                        identity: Some(recipient_identity()),
+                        proved_at_height: 10,
+                    },
+                ),
+            ])
+        };
+        assert!(private_contact_requests_from_scan(
+            &contract,
+            scan.clone(),
+            &proved(10),
+            PlatformVersion::latest()
+        )
+        .is_ok());
+        assert!(
+            private_contact_requests_from_scan(
+                &contract,
+                scan.clone(),
+                &proved(9),
+                PlatformVersion::latest()
+            )
+            .is_err(),
+            "a sender proved a block before its entry"
+        );
+        let mut without_recipient = proved(10);
+        without_recipient.remove(&Identifier::from(RECIPIENT_ID));
+        assert!(
+            private_contact_requests_from_scan(
+                &contract,
+                scan,
+                &without_recipient,
+                PlatformVersion::latest()
+            )
+            .is_err(),
+            "an identity not given"
+        );
+    }
+
+    /// Below protocol version 15 the SDK refuses private contact requests before resolving
+    /// DashPay, whose older versions have no private type.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_refuse_private_contact_requests_below_protocol_version_15() {
+        let sdk: Sdk = crate::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::get(14).expect("protocol version 14"))
+            .build()
+            .expect("a mock sdk");
+        let error = sdk
+            .scan_private_contact_requests(0, &PrivateDocumentScanKeys::new())
+            .await
+            .expect_err("protocol version 14");
+        assert!(
+            error
+                .to_string()
+                .contains("exists from protocol version 15"),
+            "{error}"
+        );
+        let signer = TransitionSigner(BTreeMap::new());
+        let error = sdk
+            .seal_private_contact_request(
+                &sender_identity(None),
+                1,
+                &secret_key(1),
+                &signer,
+                &recipient_identity(),
+                2,
+                &smallest_request(1),
+            )
+            .await
+            .expect_err("protocol version 14");
+        assert!(
+            error
+                .to_string()
+                .contains("exists from protocol version 15"),
+            "{error}"
+        );
+    }
+
     /// DashPay's documents are signed at HIGH or CRITICAL.
     #[test]
     fn should_sign_at_the_levels_dashpay_documents_are_signed_at() {
@@ -2291,6 +2592,7 @@ mod tests {
             &recipient_identity(),
             2,
             &request,
+            PlatformVersion::latest(),
         )
         .expect("the keys check");
         let signature = private_contact_request_signature(&signer, &signing_key, &signing_data)
@@ -2313,6 +2615,7 @@ mod tests {
             2,
             &request,
             &[3; 32],
+            PlatformVersion::latest(),
         )
         .expect("the request seals");
         let scan = read(

@@ -2327,6 +2327,30 @@ pub(crate) fn resolve_wallet_and_coordinator(
     Ok((wallet, coordinator))
 }
 
+/// The coordinator half of [`resolve_wallet_and_coordinator`], with the same
+/// errors. It blocks on the runtime, so it must not run on one of its async
+/// workers: call it from the export's thread or from `spawn_blocking`.
+pub(crate) fn resolve_shielded_coordinator(
+    handle: Handle,
+) -> Result<
+    std::sync::Arc<platform_wallet::wallet::shielded::NetworkShieldedCoordinator>,
+    PlatformWalletFFIResult,
+> {
+    match PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(manager.shielded_coordinator())
+    }) {
+        None => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            format!("invalid manager handle: {handle}"),
+        )),
+        Some(None) => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            "shielded support not configured: call platform_wallet_manager_configure_shielded first",
+        )),
+        Some(Some(coordinator)) => Ok(coordinator),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

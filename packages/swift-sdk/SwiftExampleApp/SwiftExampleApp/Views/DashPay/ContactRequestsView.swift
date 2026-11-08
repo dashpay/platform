@@ -41,6 +41,14 @@ struct ContactRequestsView: View {
     /// with an inline error on the row).
     @State private var rowErrors: [Data: String] = [:]
 
+    /// Contact ids whose accept may have gone through (a private reply whose
+    /// result could not be confirmed): the row stays pending, without its
+    /// buttons, until the next sync settles it. Never offered again here.
+    @State private var unconfirmedIds: Set<Data> = []
+
+    /// What the last private-store refresh has to tell the user, if anything.
+    @State private var privateRefreshNotice: String?
+
     init(identity: PersistentIdentity, optimisticSentIds: Binding<Set<Data>>) {
         self.identity = identity
         _optimisticSentIds = optimisticSentIds
@@ -105,6 +113,7 @@ struct ContactRequestsView: View {
             if incomingPending.isEmpty && outgoingPending.isEmpty
                 && optimisticOutgoing.isEmpty {
                 List {
+                    privateRefreshNoticeSection
                     DashPayListEmptyRow(
                         icon: "tray",
                         title: "No pending requests",
@@ -114,6 +123,7 @@ struct ContactRequestsView: View {
                 .listStyle(.insetGrouped)
             } else {
                 List {
+                    privateRefreshNoticeSection
                     if !incomingPending.isEmpty {
                         Section {
                             ForEach(incomingPending, id: \.contactIdentityId) { row in
@@ -126,8 +136,11 @@ struct ContactRequestsView: View {
                                     // contact is accepted (established rows load it normally).
                                     avatarUrl: nil,
                                     createdAtMillis: row.createdAtMillis,
-                                    isInFlight: inFlightIds.contains(row.contactIdentityId),
-                                    errorMessage: rowErrors[row.contactIdentityId],
+                                    isInFlight: inFlightIds.contains(row.contactIdentityId)
+                                        || unconfirmedIds.contains(row.contactIdentityId),
+                                    errorMessage: unconfirmedIds.contains(row.contactIdentityId)
+                                        ? ContactRequestSubmissionOutcome.mayHaveGoneThroughMessage
+                                        : rowErrors[row.contactIdentityId],
                                     onAccept: { accept(contactId: row.contactIdentityId) },
                                     onIgnore: { ignore(contactId: row.contactIdentityId) }
                                 )
@@ -166,7 +179,7 @@ struct ContactRequestsView: View {
         .refreshable {
             await attachOrStartSync(walletManager)
             if let wallet = try? requireWallet() {
-                await syncPrivateContactRequests(wallet)
+                privateRefreshNotice = await syncPrivateContactRequests(wallet)
             }
         }
         .onChange(of: rowSignature) { _, _ in
@@ -180,6 +193,19 @@ struct ContactRequestsView: View {
             if !syncing {
                 removedOverlayIds.removeAll()
                 optimisticSentIds.removeAll()
+            }
+        }
+    }
+
+    /// The last private-store refresh's notice, when it has one.
+    @ViewBuilder
+    private var privateRefreshNoticeSection: some View {
+        if let privateRefreshNotice {
+            Section {
+                Text(privateRefreshNotice)
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                    .accessibilityIdentifier("dashpay.requests.privateRefreshNotice")
             }
         }
     }
@@ -241,7 +267,15 @@ struct ContactRequestsView: View {
                 removedOverlayIds.insert(contactId)
                 kickDashPaySync(walletManager)
             } catch {
-                rowErrors[contactId] = "Accept failed: \(error.localizedDescription)"
+                switch ContactRequestSubmissionOutcome.of(error) {
+                case .mayHaveGoneThrough:
+                    // As `SendViewModel` treats an unconfirmed spend: not a
+                    // failure to retry. The next sync settles it.
+                    unconfirmedIds.insert(contactId)
+                    kickDashPaySync(walletManager)
+                case .failed(let message):
+                    rowErrors[contactId] = "Accept failed: \(message)"
+                }
             }
         }
     }
