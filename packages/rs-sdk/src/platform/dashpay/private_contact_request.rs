@@ -387,6 +387,8 @@ pub struct SentPrivateContactRequest {
     pub block_time_ms: u64,
     /// The wallet's identity that sent it.
     pub sender_id: Identifier,
+    /// The sender's encryption key it names.
+    pub sender_key_id: KeyID,
     /// The identity it is to.
     pub recipient_id: Identifier,
     /// The recipient key it is encrypted to.
@@ -541,6 +543,7 @@ pub fn private_contact_requests_from_scan(
                 block_height: sent.block_height,
                 block_time_ms: sent.block_time_ms,
                 sender_id: sent.sender_identity_id,
+                sender_key_id: sent.entry.sender_key_id(),
                 recipient_id: Identifier::from(*sent.entry.recipient_identity_id()),
                 recipient_public_key: *sent.entry.recipient_public_key(),
                 commitment: *sent.entry.commitment(),
@@ -1073,6 +1076,7 @@ mod tests {
         assert_eq!(scan.sent.len(), 1);
         let sent = &scan.sent[0];
         assert_eq!(sent.sender_id, Identifier::from(SENDER_ID));
+        assert_eq!(sent.sender_key_id, 1);
         assert_eq!(sent.recipient_id, Identifier::from(RECIPIENT_ID));
         assert_eq!(
             sent.recipient_public_key,
