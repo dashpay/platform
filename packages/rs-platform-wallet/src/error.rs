@@ -663,6 +663,16 @@ pub enum PlatformWalletError {
     )]
     PrivateContactRequestNeedsPrivateReply(Identifier),
 
+    /// A private contact request to this identity is being paid for, or was
+    /// paid for and is not yet read back from DashPay's store: no other one is
+    /// sent until the private sync reads it back or its payment definitely
+    /// fails, as the store keeps every entry appended.
+    #[error(
+        "a private contact request to {0} is in flight or not yet read back from the store; sync \
+         private contact requests to settle it"
+    )]
+    PrivateContactRequestPending(Identifier),
+
     /// No DPNS `domain` document exists for the requested name (exact
     /// normalized-label lookup came back empty). Distinct from
     /// [`Self::InvalidParameter`]: the input was well-formed, the name

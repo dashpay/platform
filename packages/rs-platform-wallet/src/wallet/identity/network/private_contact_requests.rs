@@ -26,8 +26,7 @@
 //!
 //! [`PrivateContact`]: crate::wallet::identity::PrivateContact
 
-use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 
 use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
@@ -68,6 +67,7 @@ use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::dashpay::contact_request::ContactRequest;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
+use crate::wallet::identity::ManagedIdentity;
 
 /// The paths of the keys a wallet's identities read DashPay's private contact
 /// request store with, for a [`ContactCryptoProvider`] to derive inside the
@@ -108,10 +108,16 @@ pub struct PrivateContactSyncReport {
     pub next_position: u64,
     /// Whether the pass read to the store's last entry.
     pub complete: bool,
-    /// Identities whose ingest did not reach disk: their cursor stays where
-    /// it was, so the next pass reads their entries again.
+    /// Identities whose ingest did not reach disk, or one of whose sent
+    /// requests could not be rebuilt for want of its recipient: their cursor
+    /// stays where it was, so the next pass reads their entries again.
     pub unpersisted_identities: Vec<Identifier>,
 }
+
+/// How many pages of the store a send reads back after paying: enough for an
+/// identity that synced recently, whose new entry is in the last page or two.
+/// A request not read back within them stays pending for a later sync.
+const POST_SEND_SYNC_PAGES: usize = 4;
 
 /// One of the wallet's identities, as a pass reads the store for it.
 struct ScannedIdentity {
@@ -122,6 +128,27 @@ struct ScannedIdentity {
     position: u64,
     /// Its ingest failed this pass: it is not advanced again until the next.
     failed: bool,
+    /// Its cursor was rewound under the pass (unignoring a sender): it is not
+    /// advanced again this pass, so the next reads from the rewound position.
+    rewound: bool,
+}
+
+impl ScannedIdentity {
+    /// Advance `managed`'s cursor to `next_position` once a page's ingest for
+    /// it reached disk: unless it was rewound under the pass, which stops it
+    /// advancing for the rest of the pass, as a later page's advance would
+    /// otherwise overwrite the rewind.
+    fn advance(&mut self, managed: &mut ManagedIdentity, next_position: u64) {
+        if self.failed || self.rewound {
+            return;
+        }
+        if managed.dashpay().private_contact_requests_position() != self.position {
+            self.rewound = true;
+            return;
+        }
+        managed.advance_private_contact_requests_position(self.position, next_position);
+        self.position = managed.dashpay().private_contact_requests_position();
+    }
 }
 
 /// The local record of a private request: a [`ContactRequest`] carrying the
@@ -197,13 +224,96 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// The keys and the account reference are chosen as for a document send,
     /// so a later request to the same recipient, either way, rotates past this
-    /// one. Once `pay` succeeds the request is recorded as sent and our
-    /// receiving account for the contact is registered. Nothing after `pay`
-    /// fails the send, as the payment cannot be taken back: a record that does
-    /// not reach disk is logged, and the next private sync recovers it from
-    /// the store with the outgoing viewing key.
+    /// one.
+    ///
+    /// One private request to a recipient is in flight at a time: it is
+    /// reserved before sealing, and while it is pending another is refused
+    /// with [`PlatformWalletError::PrivateContactRequestPending`], as the store
+    /// keeps every entry appended and a second payment could execute too.
+    ///
+    /// The proof `pay` waits for shows the notes spent, not the entry
+    /// appended, so a paid request is recorded only once read back: a private
+    /// sync of a few pages follows the payment, and records the request from
+    /// the store as it records any request the identity sent. If it is not
+    /// read back yet, the send returns `PrivateContactRequestPending` and the
+    /// request stays pending until a later sync reads it. An unconfirmed
+    /// payment stays pending the same way; one that definitely failed
+    /// releases it. The pending request is kept in memory only.
     #[allow(clippy::too_many_arguments)]
     pub async fn send_private_contact_request<S, C, F, Fut>(
+        &self,
+        sender_identity_id: &Identifier,
+        recipient_identity_id: &Identifier,
+        account_label: Option<String>,
+        auto_accept_proof: AutoAcceptProofSource,
+        shielded_address: Option<[u8; 43]>,
+        signer: &S,
+        crypto: &C,
+        pay: F,
+    ) -> Result<ContactRequest, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+        C: ContactCryptoProvider + Sync,
+        F: FnOnce(BinaryData) -> Fut + Send,
+        Fut: Future<Output = Result<ResponseMetadata, PlatformWalletError>> + Send,
+    {
+        let reserved = self
+            .with_managed(sender_identity_id, |managed| {
+                managed.reserve_private_reply(*recipient_identity_id)
+            })
+            .await?;
+        if !reserved {
+            return Err(PlatformWalletError::PrivateContactRequestPending(
+                *recipient_identity_id,
+            ));
+        }
+        let sent = self
+            .send_reserved_private_contact_request(
+                sender_identity_id,
+                recipient_identity_id,
+                account_label,
+                auto_accept_proof,
+                shielded_address,
+                signer,
+                crypto,
+                pay,
+            )
+            .await;
+        // A payment that may have executed keeps the request pending.
+        let keep_pending = matches!(
+            &sent,
+            Err(PlatformWalletError::PrivateContactRequestPending(_)
+                | PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+        );
+        if !keep_pending {
+            self.with_managed(sender_identity_id, |managed| {
+                managed.release_private_reply(recipient_identity_id)
+            })
+            .await?;
+        }
+        sent
+    }
+
+    /// Run `f` on the managed identity `identity_id` under the wallet lock.
+    async fn with_managed<R>(
+        &self,
+        identity_id: &Identifier,
+        f: impl FnOnce(&mut ManagedIdentity) -> R,
+    ) -> Result<R, PlatformWalletError> {
+        let mut wm = self.wallet_manager.write().await;
+        let managed = wm
+            .get_wallet_info_mut(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?
+            .identity_manager
+            .managed_identity_mut(identity_id)
+            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+        Ok(f(managed))
+    }
+
+    /// The body of [`Self::send_private_contact_request`], once the request
+    /// to the recipient is reserved.
+    #[allow(clippy::too_many_arguments)]
+    async fn send_reserved_private_contact_request<S, C, F, Fut>(
         &self,
         sender_identity_id: &Identifier,
         recipient_identity_id: &Identifier,
@@ -284,7 +394,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             private_contact_request_signature(signer, &signing_key, &signing_data).await?;
 
         let mut esk_seed = [0u8; 32];
-        StdRng::from_os_rng().fill_bytes(&mut esk_seed);
+        StdRng::try_from_os_rng()
+            .map_err(|error| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "the OS RNG failed while sealing a private contact request: {error}"
+                ))
+            })?
+            .fill_bytes(&mut esk_seed);
         let sealed = crypto
             .seal_private_contact_request(
                 &sender_enc_path,
@@ -312,14 +428,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     "the provider sealed an entry shorter than its commitment".to_string(),
                 )
             })?;
-        // Everything the record needs is computed before paying.
+        self.with_managed(sender_identity_id, |managed| {
+            managed.note_private_reply_commitment(*recipient_identity_id, commitment)
+        })
+        .await?;
+        // What the record read back must carry, computed before paying.
         let shared_secret = crypto
             .ecdh_shared_secret(&sender_enc_path, &recipient_enc_pubkey)
             .await?;
-
-        let metadata = pay(entry).await?;
-
-        let contact_request = private_request_record(
+        let expected = private_request_record(
             *sender_identity_id,
             *recipient_identity_id,
             sender_key_index,
@@ -327,52 +444,56 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             &request,
             &commitment,
             &shared_secret,
-            metadata.time_ms,
+            0,
         );
-        let recorded = {
-            let mut wm = self.wallet_manager.write().await;
-            match wm.get_wallet_info_mut(&self.wallet_id).and_then(|info| {
-                info.identity_manager
-                    .managed_identity_mut(sender_identity_id)
-            }) {
-                None => Err("the sender identity is no longer in the wallet".to_string()),
-                Some(managed) => {
-                    managed.note_sent_request_core_height(*recipient_identity_id, 0);
-                    // Paid for: held in memory even when its store fails, so the
-                    // contact establishes and a retry adopts it rather than paying
-                    // again. The next private sync stores it.
-                    managed.add_paid_sent_contact_request(contact_request.clone(), &self.persister);
-                    Ok(())
-                }
-            }
+
+        pay(entry).await?;
+
+        // Recorded only as the store proves it: read it back.
+        if let Err(error) = self
+            .sync_private_contact_requests(crypto, POST_SEND_SYNC_PAGES)
+            .await
+        {
+            tracing::warn!(
+                sender = %sender_identity_id,
+                recipient = %recipient_identity_id,
+                %error,
+                "private contact request paid for; reading it back failed, a later sync reads it"
+            );
+        }
+        let recorded = self
+            .with_managed(sender_identity_id, |managed| {
+                managed
+                    .dashpay()
+                    .outgoing_request(recipient_identity_id)
+                    .filter(|tracked| {
+                        tracked.account_reference == expected.account_reference
+                            && tracked.encrypted_public_key == expected.encrypted_public_key
+                    })
+                    .cloned()
+            })
+            .await?;
+        let Some(contact_request) = recorded else {
+            return Err(PlatformWalletError::PrivateContactRequestPending(
+                *recipient_identity_id,
+            ));
         };
-        match recorded {
-            Ok(()) => {
-                if let Err(e) = self
-                    .register_contact_account(
-                        sender_identity_id,
-                        recipient_identity_id,
-                        account_index,
-                        contact_xpub_ext,
-                    )
-                    .await
-                {
-                    tracing::warn!(
-                        sender = %sender_identity_id,
-                        recipient = %recipient_identity_id,
-                        error = %e,
-                        "private contact request sent; its receiving account is not registered \
-                         yet, the next sync registers it"
-                    );
-                }
-            }
-            Err(e) => tracing::warn!(
+        if let Err(e) = self
+            .register_contact_account(
+                sender_identity_id,
+                recipient_identity_id,
+                account_index,
+                contact_xpub_ext,
+            )
+            .await
+        {
+            tracing::warn!(
                 sender = %sender_identity_id,
                 recipient = %recipient_identity_id,
                 error = %e,
-                "private contact request sent but not recorded; the next private sync \
-                 recovers it from the store"
-            ),
+                "private contact request sent; its receiving account is not registered yet, the \
+                 next sync registers it"
+            );
         }
         Ok(contact_request)
     }
@@ -494,6 +615,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 identity_index,
                 position: managed.dashpay().private_contact_requests_position(),
                 failed: false,
+                rewound: false,
             });
         }
         Ok((identities, paths))
@@ -548,8 +670,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // keys a request is checked against as they were when it was appended.
         let mut proved_identities: BTreeMap<Identifier, ProvedIdentity> = BTreeMap::new();
         // The recipients of the requests the wallet's identities sent, read for
-        // the key id of the key a request is sealed to.
-        let mut recipients: BTreeMap<Identifier, Option<Identity>> = BTreeMap::new();
+        // the key id of the key a request is sealed to, as they were when it
+        // was appended or later.
+        let mut recipients: BTreeMap<Identifier, ProvedIdentity> = BTreeMap::new();
         let mut position = start;
         report.next_position = start;
 
@@ -596,11 +719,46 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 &proved_identities,
                 self.sdk.version(),
             )?;
+            // Each recipient is fetched on its own, so one that cannot be read
+            // holds back only the identities whose sent requests it is for.
+            let mut stale_recipients: BTreeMap<Identifier, u64> = BTreeMap::new();
             for sent in &read.sent {
-                if let Entry::Vacant(entry) = recipients.entry(sent.recipient_id) {
-                    entry.insert(Identity::fetch(&self.sdk, sent.recipient_id).await?);
+                let height = stale_recipients.entry(sent.recipient_id).or_default();
+                *height = (*height).max(sent.block_height);
+            }
+            stale_recipients.retain(|recipient_id, height| {
+                recipients
+                    .get(recipient_id)
+                    .is_none_or(|proved| proved.proved_at_height < *height)
+            });
+            let mut unreadable_recipients = BTreeSet::new();
+            for (recipient_id, height) in stale_recipients {
+                match self
+                    .sdk
+                    .fetch_private_contact_request_identities(&BTreeMap::from([(
+                        recipient_id,
+                        height,
+                    )]))
+                    .await
+                {
+                    Ok(fetched) => recipients.extend(fetched),
+                    Err(error) => {
+                        tracing::warn!(
+                            recipient = %recipient_id,
+                            %error,
+                            "the recipient of a sent private contact request could not be read; \
+                             its sender's cursor is held"
+                        );
+                        unreadable_recipients.insert(recipient_id);
+                    }
                 }
             }
+            let held: BTreeSet<Identifier> = read
+                .sent
+                .iter()
+                .filter(|sent| unreadable_recipients.contains(&sent.recipient_id))
+                .map(|sent| sent.sender_id)
+                .collect();
 
             // The wallet's records of the page's requests, under the shared
             // keys the signer computes.
@@ -639,10 +797,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 ));
             }
             for sent in &read.sent {
+                if unreadable_recipients.contains(&sent.recipient_id) {
+                    continue;
+                }
                 let recipient_key = sent.recipient_public_key.serialize();
                 let recipient_key_id = recipients
                     .get(&sent.recipient_id)
-                    .and_then(Option::as_ref)
+                    .and_then(|proved| proved.identity.as_ref())
                     .and_then(|recipient| {
                         recipient
                             .public_keys()
@@ -703,6 +864,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     else {
                         continue;
                     };
+                    if held.contains(&identity_id) && !identity.failed {
+                        identity.failed = true;
+                        report.unpersisted_identities.push(identity_id);
+                    }
                     let mut received = Vec::new();
                     let mut addresses = Vec::new();
                     let mut sent = Vec::new();
@@ -744,12 +909,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     for (record, shielded_address) in &addresses {
                         managed.note_private_shielded_address(record, *shielded_address);
                     }
-                    if received_ok && sent_ok && !identity.failed {
-                        managed.advance_private_contact_requests_position(
-                            identity.position,
-                            read.next_position,
-                        );
-                        identity.position = managed.dashpay().private_contact_requests_position();
+                    if received_ok && sent_ok {
+                        // A pending private request read back and recorded is
+                        // settled.
+                        for sent in read
+                            .sent
+                            .iter()
+                            .filter(|sent| sent.sender_id == identity_id)
+                        {
+                            managed.settle_private_reply(&sent.recipient_id, &sent.commitment);
+                        }
+                        identity.advance(managed, read.next_position);
                     } else if !identity.failed {
                         identity.failed = true;
                         report.unpersisted_identities.push(identity_id);
@@ -1038,8 +1208,73 @@ mod tests {
         (manager, wallet)
     }
 
+    /// The page of DashPay's private store from `start`, holding `entries`.
+    fn store_page(start: u64, entries: Vec<Vec<u8>>) -> PrivateDocumentEntries {
+        let total_count = start + entries.len() as u64;
+        PrivateDocumentEntries {
+            entries: entries
+                .into_iter()
+                .zip(start..)
+                .map(|(data, position)| PrivateDocumentEntry {
+                    position,
+                    block_height: 0,
+                    block_time_ms: BLOCK_TIME_MS,
+                    data,
+                })
+                .collect(),
+            total_count,
+        }
+    }
+
+    /// From now on, `wallet`'s mock SDK answers the page from `start` with
+    /// `entries`: the store as it is once they are appended.
+    async fn publish(wallet: &PlatformWallet, start: u64, entries: Vec<Vec<u8>>) {
+        let contract = dashpay_contract().expect("bundled DashPay");
+        let query = PrivateDocumentEntriesQuery::new(
+            contract.id(),
+            PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+            start,
+        );
+        let mut sdk = (*wallet.identity().sdk).clone();
+        let mut mock = sdk.mock();
+        mock.remove_fetch_expectation::<PrivateDocumentEntries, _>(query.clone())
+            .await;
+        mock.expect_fetch(query, Some(store_page(start, entries)))
+            .await
+            .expect("page expectation");
+    }
+
+    /// A `pay` that appends the entry to the store `wallet` reads, after
+    /// `before` from `start`, and keeps it.
+    fn append_entry(
+        wallet: &Arc<PlatformWallet>,
+        start: u64,
+        before: Vec<Vec<u8>>,
+        kept: &Arc<Mutex<Vec<BinaryData>>>,
+    ) -> impl FnOnce(
+        BinaryData,
+    ) -> std::pin::Pin<
+        Box<dyn Future<Output = Result<ResponseMetadata, PlatformWalletError>> + Send>,
+    > + Send {
+        let wallet = Arc::clone(wallet);
+        let kept = Arc::clone(kept);
+        move |entry| {
+            Box::pin(async move {
+                let mut entries = before;
+                entries.push(entry.to_vec());
+                publish(&wallet, start, entries).await;
+                kept.lock().expect("kept entries").push(entry);
+                Ok(ResponseMetadata {
+                    time_ms: BLOCK_TIME_MS,
+                    ..Default::default()
+                })
+            })
+        }
+    }
+
     /// A `pay` that keeps the entry instead of paying for it, and answers as
-    /// the proof of a block at `BLOCK_TIME_MS` would.
+    /// the proof of a block at `BLOCK_TIME_MS` would: the entry never reaches
+    /// the store.
     fn keep_entry(
         kept: &Arc<Mutex<Vec<BinaryData>>>,
     ) -> impl FnOnce(BinaryData) -> std::future::Ready<Result<ResponseMetadata, PlatformWalletError>>
@@ -1085,7 +1320,8 @@ mod tests {
         let bob_signer = signer(BOB_PHRASE, &bob);
         let shielded_address = [0x55; 43];
 
-        let (_alice_manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[&bob], vec![]).await;
+        let (_alice_manager, alice_wallet) =
+            wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
         let kept = Arc::new(Mutex::new(Vec::new()));
         let sent = alice_wallet
             .identity()
@@ -1098,10 +1334,10 @@ mod tests {
                 Some(shielded_address),
                 &alice_signer,
                 &alice_crypto,
-                keep_entry(&kept),
+                append_entry(&alice_wallet, 0, vec![], &kept),
             )
             .await
-            .expect("Alice sends the request");
+            .expect("Alice sends the request, read back from the store");
         let entry = kept.lock().expect("kept entries").remove(0);
         assert_eq!(entry.len(), 589, "the entry takes DashPay's entry size");
         assert_eq!(sent.sender_key_index, ENCRYPTION_KEY_ID);
@@ -1228,7 +1464,7 @@ mod tests {
                 None,
                 &bob_signer,
                 &bob_crypto,
-                keep_entry(&reply),
+                append_entry(&bob_wallet, 1, vec![], &reply),
             )
             .await
             .expect("Bob accepts privately");
@@ -1277,7 +1513,8 @@ mod tests {
                 .managed_identity_mut(&bob.id())
                 .expect("Bob");
             managed.ignore_sender(&alice.id());
-            assert_eq!(managed.dashpay().private_contact_requests_position(), 1);
+            // Past Alice's request and Bob's reply, which the accept read back.
+            assert_eq!(managed.dashpay().private_contact_requests_position(), 2);
             managed.unignore_sender(&alice.id());
             assert_eq!(managed.dashpay().private_contact_requests_position(), 0);
         }
@@ -1414,7 +1651,7 @@ mod tests {
         let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
         let alice_signer = signer(ALICE_PHRASE, &alice);
 
-        let (_manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[&bob], vec![]).await;
+        let (_manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
         let kept = Arc::new(Mutex::new(Vec::new()));
         let sent = alice_wallet
             .identity()
@@ -1427,7 +1664,7 @@ mod tests {
                 None,
                 &alice_signer,
                 &alice_crypto,
-                keep_entry(&kept),
+                append_entry(&alice_wallet, 0, vec![], &kept),
             )
             .await
             .expect("Alice sends the request");
@@ -1450,6 +1687,145 @@ mod tests {
             );
         })
         .await;
+    }
+
+    /// One private request to a recipient is in flight at a time: one paid
+    /// for but not read back, or whose payment is unconfirmed, keeps the next
+    /// from being sent, until a sync reads it back; one whose payment failed
+    /// does not.
+    #[tokio::test]
+    async fn should_send_one_private_request_to_a_recipient_at_a_time() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (_manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let view = alice_wallet.identity().dashpay();
+        macro_rules! send {
+            ($pay:expr) => {
+                view.send_private_contact_request(
+                    &alice.id(),
+                    &bob.id(),
+                    None,
+                    AutoAcceptProofSource::None,
+                    None,
+                    &alice_signer,
+                    &alice_crypto,
+                    $pay,
+                )
+                .await
+            };
+        }
+        let pending = |result: &Result<ContactRequest, PlatformWalletError>| matches!(result, Err(PlatformWalletError::PrivateContactRequestPending(id)) if *id == bob.id());
+
+        // A payment that definitely failed releases the recipient.
+        let failed = send!(
+            |_| std::future::ready(Err(PlatformWalletError::InvalidIdentityData(
+                "no notes".to_string()
+            )))
+        );
+        assert!(!pending(&failed), "{failed:?}");
+
+        // Paid for, but the entry is not in the store yet: pending.
+        let kept = Arc::new(Mutex::new(Vec::new()));
+        let first = send!(keep_entry(&kept));
+        assert!(pending(&first), "{first:?}");
+        let entry = kept.lock().expect("kept").remove(0);
+
+        // A second request is refused before anything is paid.
+        let paid_again = Arc::new(Mutex::new(Vec::new()));
+        let second = send!(keep_entry(&paid_again));
+        assert!(pending(&second), "{second:?}");
+        assert!(
+            paid_again.lock().expect("paid").is_empty(),
+            "nothing is paid twice"
+        );
+
+        // The store reads the entry back: settled and recorded.
+        publish(&alice_wallet, 0, vec![entry.to_vec()]).await;
+        view.sync_private_contact_requests(&alice_crypto, 4)
+            .await
+            .expect("Alice reads the store");
+        managed(&alice_wallet, ALICE, |managed| {
+            assert!(!managed.dashpay().private_reply_pending(&bob.id()));
+            assert!(managed.dashpay().outgoing_request(&bob.id()).is_some());
+        })
+        .await;
+    }
+
+    /// A payment whose execution is unconfirmed keeps the request pending.
+    #[tokio::test]
+    async fn should_keep_an_unconfirmed_private_request_pending() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (_manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let result = alice_wallet
+            .identity()
+            .dashpay()
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                |_| {
+                    std::future::ready(Err(PlatformWalletError::ShieldedSpendUnconfirmed {
+                        operation: "private document create",
+                        reason: "the proof fetch timed out".to_string(),
+                    }))
+                },
+            )
+            .await;
+        assert!(matches!(
+            result,
+            Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+        ));
+        managed(&alice_wallet, ALICE, |managed| {
+            assert!(managed.dashpay().private_reply_pending(&bob.id()));
+        })
+        .await;
+    }
+
+    /// A cursor rewound under a pass is not advanced again that pass, so the
+    /// next reads from the rewind.
+    #[tokio::test]
+    async fn should_keep_a_cursor_rewound_under_a_pass() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let (_manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[], vec![]).await;
+        let iw = alice_wallet.identity();
+        let mut wm = iw.wallet_manager.write().await;
+        let managed = wm
+            .get_wallet_info_mut(&alice_wallet.wallet_id())
+            .expect("wallet info")
+            .identity_manager
+            .managed_identity_mut(&alice.id())
+            .expect("Alice");
+        let mut scanned = ScannedIdentity {
+            identity_id: alice.id(),
+            identity_index: 0,
+            position: 0,
+            failed: false,
+            rewound: false,
+        };
+        scanned.advance(managed, 100);
+        assert_eq!(managed.dashpay().private_contact_requests_position(), 100);
+        // Unignoring a sender rewinds the cursor while a page is read.
+        let carol = Identifier::from([0xC1; 32]);
+        managed.ignore_sender(&carol);
+        managed.unignore_sender(&carol);
+        assert_eq!(managed.dashpay().private_contact_requests_position(), 0);
+        scanned.advance(managed, 200);
+        scanned.advance(managed, 300);
+        assert_eq!(
+            managed.dashpay().private_contact_requests_position(),
+            0,
+            "the rewind stands for the rest of the pass"
+        );
+        assert!(scanned.rewound);
     }
 
     /// The record of a private request rebuilds byte for byte from the same
