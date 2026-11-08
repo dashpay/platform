@@ -900,7 +900,7 @@ class ManagedPlatformWallet internal constructor(
      *   remainder, an address of this wallet) plus the explicit-amount
      *   payees; P2PKH (`addressType = 0`) only. `platform-wallet` owns these
      *   rules and rejects a violating list before any lock is built; its
-     *   error surfaces as a [org.dashfoundation.dashsdk.ffi.DashSDKException].
+     *   error surfaces as a [org.dashfoundation.dashsdk.errors.DashSdkError].
      * @param signerHandle the platform-address per-input `SignerHandle`.
      * @param coreSignerHandle the manager's `MnemonicResolverHandle` for the
      *   asset-lock's outer state-transition signature.
