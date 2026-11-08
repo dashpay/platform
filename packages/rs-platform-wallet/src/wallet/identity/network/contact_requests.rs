@@ -564,6 +564,16 @@ pub enum AutoAcceptProofSource {
     },
 }
 
+/// What sending a reply to a contact request came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ReplyOutcome {
+    /// The reply was sent.
+    Sent,
+    /// A reply to the request's sender was already tracked by the time the
+    /// pair was claimed or reserved: nothing was sent, and it is adopted.
+    AlreadyReplied,
+}
+
 /// The claim a public request holds on its pair from before its channel is
 /// decided until it is submitted and recorded
 /// (`DashPayView::claim_public_pair`): while it is held no private request to
@@ -703,10 +713,49 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // the request is submitted and recorded, so a private request cannot
         // be reserved and paid for in between; the claim is released when
         // the send ends, however it ends.
+        self.send_public_contact_request(
+            sender_identity_id,
+            recipient_identity_id,
+            account_label,
+            auto_accept_proof,
+            signer,
+            crypto,
+            false,
+        )
+        .await?
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidParameter(
+                "no contact request was sent: only a reply adopts one already sent".to_string(),
+            )
+        })
+    }
+
+    /// [`Self::send_contact_request_with_external_signer`], for a reply when
+    /// `adopt_reply`: then a request to the recipient tracked by the time
+    /// the pair is claimed (another accept's reply) is adopted rather than
+    /// rotated past, and `None` comes back with nothing sent.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) async fn send_public_contact_request<S, C>(
+        &self,
+        sender_identity_id: &Identifier,
+        recipient_identity_id: &Identifier,
+        account_label: Option<String>,
+        auto_accept_proof: AutoAcceptProofSource,
+        signer: &S,
+        crypto: &C,
+        adopt_reply: bool,
+    ) -> Result<Option<ContactRequest>, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+        C: ContactCryptoProvider + Sync,
+    {
         self.release_rejected_private_requests().await?;
-        let claim = self
-            .claim_public_pair(sender_identity_id, recipient_identity_id)
-            .await?;
+        let Some(claim) = self
+            .claim_public_pair(sender_identity_id, recipient_identity_id, adopt_reply)
+            .await?
+        else {
+            return Ok(None);
+        };
         let sent = self
             .send_claimed_contact_request(
                 sender_identity_id,
@@ -718,7 +767,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             )
             .await;
         claim.release().await;
-        sent
+        sent.map(Some)
     }
 
     /// Claim the pair `sender`, `recipient` for a public request: refused,
@@ -732,7 +781,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         &self,
         sender: &Identifier,
         recipient: &Identifier,
-    ) -> Result<PublicContactClaim, PlatformWalletError> {
+        adopt_reply: bool,
+    ) -> Result<Option<PublicContactClaim>, PlatformWalletError> {
         let mut wm = self.wallet_manager.write().await;
         let managed = wm
             .get_wallet_info_mut(&self.wallet_id)
@@ -740,6 +790,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .identity_manager
             .managed_identity_mut(sender)
             .ok_or(PlatformWalletError::IdentityNotFound(*sender))?;
+        // A reply finds the one another accept recorded, in the same lock.
+        if adopt_reply && managed.dashpay().outgoing_request(recipient).is_some() {
+            return Ok(None);
+        }
         if managed.dashpay().private_reply_pending(recipient) {
             return Err(PlatformWalletError::PrivateContactRequestPending(
                 *recipient,
@@ -751,13 +805,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             ));
         }
         managed.claim_public_contact_request(*recipient);
-        Ok(PublicContactClaim {
+        Ok(Some(PublicContactClaim {
             wallet_manager: Arc::clone(&self.wallet_manager),
             wallet_id: self.wallet_id,
             sender: *sender,
             recipient: *recipient,
             held: true,
-        })
+        }))
     }
 
     /// The body of [`Self::send_contact_request_with_external_signer`], once
@@ -3986,16 +4040,23 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             ));
         }
         self.accept_contact_request_replying_with(request, crypto, || async {
-            self.send_contact_request_with_external_signer(
-                &request.recipient_id,
-                &request.sender_id,
-                None,
-                AutoAcceptProofSource::None,
-                signer,
-                crypto,
+            Ok(
+                match self
+                    .send_public_contact_request(
+                        &request.recipient_id,
+                        &request.sender_id,
+                        None,
+                        AutoAcceptProofSource::None,
+                        signer,
+                        crypto,
+                        true,
+                    )
+                    .await?
+                {
+                    Some(_) => ReplyOutcome::Sent,
+                    None => ReplyOutcome::AlreadyReplied,
+                },
             )
-            .await
-            .map(|_| ())
         })
         .await
     }
@@ -4024,7 +4085,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Accept `request`, with `send_reply` sending our reciprocal request to
     /// its sender unless one already exists: the body of
     /// [`Self::accept_contact_request_with_external_signer`], shared with the
-    /// private accept, which replies privately.
+    /// private accept, which replies privately. `send_reply` reports a reply
+    /// tracked by the time it claimed or reserved the pair (another accept's,
+    /// recorded in between) as [`ReplyOutcome::AlreadyReplied`], and that
+    /// reply is adopted as one found here first is: nothing is sent or paid.
     pub(super) async fn accept_contact_request_replying_with<C, R, Fut>(
         &self,
         request: &ContactRequest,
@@ -4034,14 +4098,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     where
         C: ContactCryptoProvider + Sync,
         R: FnOnce() -> Fut,
-        Fut: std::future::Future<Output = Result<(), PlatformWalletError>>,
+        Fut: std::future::Future<Output = Result<ReplyOutcome, PlatformWalletError>>,
     {
         let our_identity_id = request.recipient_id;
         let sender_id = request.sender_id;
 
         // 1. Verify the incoming request is known, and detect whether an
         //    on-platform reciprocal already exists for this pair.
-        let (already_established, already_reciprocated) = {
+        let (_, already_reciprocated) = {
             let wm = self.wallet_manager.read().await;
             let info = wm
                 .get_wallet_info(&self.wallet_id)
@@ -4089,7 +4153,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         //    fresh-send local registrations below (receiving account +
         //    validate→decrypt→register external), so the contact becomes
         //    payable without a duplicate broadcast.
-        if already_reciprocated {
+        let adopt =
+            already_reciprocated || matches!(send_reply().await?, ReplyOutcome::AlreadyReplied);
+        if adopt {
             tracing::info!(
                 our_identity = %our_identity_id,
                 contact = %sender_id,
@@ -4109,19 +4175,27 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // path the normal flow and the sync sweep use), so the final lookup
             // is guaranteed non-`None`. Idempotent: `add_incoming_contact_request`
             // preserves metadata on an already-established pair.
-            if !already_established {
+            {
                 let mut wm = self.wallet_manager.write().await;
                 let managed = wm
                     .get_wallet_info_mut(&self.wallet_id)
                     .and_then(|info| info.identity_manager.managed_identity_mut(&our_identity_id))
                     .ok_or(PlatformWalletError::IdentityNotFound(our_identity_id))?;
-                managed
-                    .add_incoming_contact_request(request.clone(), &self.persister)
-                    .map_err(|e| {
-                        PlatformWalletError::Persistence(format!(
-                            "accept-adopt: incoming request not persisted: {e}"
-                        ))
-                    })?;
+                // Read now: a reply adopted after `send_reply` may have
+                // established the pair since step 1.
+                if !managed
+                    .dashpay()
+                    .established_contacts()
+                    .contains_key(&sender_id)
+                {
+                    managed
+                        .add_incoming_contact_request(request.clone(), &self.persister)
+                        .map_err(|e| {
+                            PlatformWalletError::Persistence(format!(
+                                "accept-adopt: incoming request not persisted: {e}"
+                            ))
+                        })?;
+                }
             }
             // Adopt: register the receiving (friendship) account, derived via
             // the signer (no resident seed), matching the fresh-send path.
@@ -4149,8 +4223,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     "Accept-adopt: failed to derive receiving xpub via signer; will retry on next sweep"
                 ),
             }
-        } else {
-            send_reply().await?;
         }
 
         // 4. Validate key indices (same gate as the sync sweep and the

@@ -64,7 +64,7 @@ use zeroize::Zeroize;
 use super::contact_requests::{
     ingest_received_requests, ingest_sent_requests, newest_received_per_sender,
     newest_sent_per_recipient, predates, records_or_supersedes, tear_down_stale_external_accounts,
-    AutoAcceptProofSource, ContactCryptoProvider, PreparedContactRequest,
+    AutoAcceptProofSource, ContactCryptoProvider, PreparedContactRequest, ReplyOutcome,
 };
 use super::signing_key::first_available;
 use super::{dashpay_contract, DashPayView, IdentityWallet};
@@ -480,17 +480,110 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         F: FnOnce(BinaryData, PaymentStarted) -> Fut + Send,
         Fut: Future<Output = Result<ResponseMetadata, PlatformWalletError>> + Send,
     {
+        self.send_private_request(
+            sender_identity_id,
+            recipient_identity_id,
+            account_label,
+            auto_accept_proof,
+            shielded_address,
+            signer,
+            crypto,
+            false,
+            pay,
+        )
+        .await?
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidParameter(
+                "no private contact request was sent: only a reply adopts one already sent"
+                    .to_string(),
+            )
+        })
+    }
+
+    /// Reply privately to `request`, paid by `pay`: `AlreadyReplied`, with
+    /// nothing sealed or paid, when a request to its sender is tracked by the
+    /// time the pair is reserved (another accept's reply, recorded in
+    /// between), which the accept then adopts.
+    pub(super) async fn send_private_reply<S, C, F, Fut>(
+        &self,
+        request: &ContactRequest,
+        shielded_address: Option<[u8; 43]>,
+        signer: &S,
+        crypto: &C,
+        pay: F,
+    ) -> Result<ReplyOutcome, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+        C: ContactCryptoProvider + Sync,
+        F: FnOnce(BinaryData, PaymentStarted) -> Fut + Send,
+        Fut: Future<Output = Result<ResponseMetadata, PlatformWalletError>> + Send,
+    {
+        Ok(
+            match self
+                .send_private_request(
+                    &request.recipient_id,
+                    &request.sender_id,
+                    None,
+                    AutoAcceptProofSource::None,
+                    shielded_address,
+                    signer,
+                    crypto,
+                    true,
+                    pay,
+                )
+                .await?
+            {
+                Some(_) => ReplyOutcome::Sent,
+                None => ReplyOutcome::AlreadyReplied,
+            },
+        )
+    }
+
+    /// [`Self::send_private_contact_request`], for a reply when
+    /// `adopt_reply`: then a request to the recipient tracked once the store
+    /// was read and the pair is reserved, in the same lock, is adopted
+    /// rather than rotated past, and `None` comes back with nothing paid.
+    #[allow(clippy::too_many_arguments)]
+    async fn send_private_request<S, C, F, Fut>(
+        &self,
+        sender_identity_id: &Identifier,
+        recipient_identity_id: &Identifier,
+        account_label: Option<String>,
+        auto_accept_proof: AutoAcceptProofSource,
+        shielded_address: Option<[u8; 43]>,
+        signer: &S,
+        crypto: &C,
+        adopt_reply: bool,
+        pay: F,
+    ) -> Result<Option<ContactRequest>, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+        C: ContactCryptoProvider + Sync,
+        F: FnOnce(BinaryData, PaymentStarted) -> Fut + Send,
+        Fut: Future<Output = Result<ResponseMetadata, PlatformWalletError>> + Send,
+    {
         self.read_private_store_before_sending(sender_identity_id, recipient_identity_id, crypto)
             .await?;
         self.release_rejected_private_requests().await?;
-        let attempt = self
+        let reserved = self
             .with_managed(sender_identity_id, |managed| {
-                managed.reserve_private_reply(*recipient_identity_id)
+                if adopt_reply
+                    && managed
+                        .dashpay()
+                        .outgoing_request(recipient_identity_id)
+                        .is_some()
+                {
+                    return None;
+                }
+                Some(managed.reserve_private_reply(*recipient_identity_id))
             })
-            .await?
-            .ok_or(PlatformWalletError::PrivateContactRequestPending(
-                *recipient_identity_id,
-            ))?;
+            .await?;
+        let Some(reserved) = reserved else {
+            return Ok(None);
+        };
+        let attempt = reserved.ok_or(PlatformWalletError::PrivateContactRequestPending(
+            *recipient_identity_id,
+        ))?;
         let mut reservation = PrivateReplyReservation {
             wallet_manager: Arc::clone(&self.wallet_manager),
             wallet_id: self.wallet_id,
@@ -524,7 +617,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         } else {
             reservation.release().await;
         }
-        sent
+        sent.map(Some)
     }
 
     /// Make sure DashPay's private contact request store was read to its end
@@ -902,19 +995,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     {
         self.read_private_store_before_sending(&request.recipient_id, &request.sender_id, crypto)
             .await?;
-        self.accept_contact_request_replying_with(request, crypto, || async {
-            self.send_private_contact_request(
-                &request.recipient_id,
-                &request.sender_id,
-                None,
-                AutoAcceptProofSource::None,
-                shielded_address,
-                signer,
-                crypto,
-                pay,
-            )
-            .await
-            .map(|_| ())
+        self.accept_contact_request_replying_with(request, crypto, || {
+            self.send_private_reply(request, shielded_address, signer, crypto, pay)
         })
         .await
     }
@@ -4360,6 +4442,55 @@ mod tests {
             ),
             "{public:?}"
         );
+    }
+
+    /// Two accepts of one private request straddling the first reply's
+    /// settlement: the second read that no reply was sent before the first
+    /// ran, and reaches its reply after the first's was recorded and its
+    /// reservation settled. It adopts that reply, and its payment never runs.
+    #[tokio::test]
+    async fn should_adopt_a_reply_another_accept_recorded_in_between() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let bob_signer = signer(BOB_PHRASE, &bob);
+        let (entry, received) = alice_to_bob([0x55; 43]).await;
+        let (_manager, bob_wallet) = wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![entry]).await;
+        let view = bob_wallet.identity().dashpay();
+        view.sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("Bob reads the store");
+        let first_done = Arc::new(tokio::sync::Notify::new());
+        let reply = Arc::new(Mutex::new(Vec::new()));
+
+        let second = view.accept_contact_request_replying_with(&received, &bob_crypto, || {
+            let first_done = Arc::clone(&first_done);
+            let (received, bob_signer, bob_crypto) = (&received, &bob_signer, &bob_crypto);
+            async move {
+                first_done.notified().await;
+                view.send_private_reply(received, None, bob_signer, bob_crypto, no_payment)
+                    .await
+            }
+        });
+        let first = async {
+            let accepted = view
+                .accept_private_contact_request(
+                    &received,
+                    None,
+                    &bob_signer,
+                    &bob_crypto,
+                    append_entry(&bob_wallet, 1, vec![], &reply),
+                )
+                .await;
+            first_done.notify_one();
+            accepted
+        };
+        let (second, first) = tokio::join!(second, first);
+        let first = first.expect("the first reply is paid and recorded");
+        let second = second.expect("the second accept adopts it");
+        assert_eq!(second.outgoing_request, first.outgoing_request);
+        assert_eq!(reply.lock().expect("reply").len(), 1, "one reply is paid");
+        assert!(!pending_to(&bob_wallet, BOB, &alice).await);
     }
 
     /// A `pay` that must not run.
