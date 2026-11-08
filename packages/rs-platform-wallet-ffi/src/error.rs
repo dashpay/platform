@@ -634,6 +634,22 @@ pub enum PlatformWalletFFIResultCode {
     /// 61 to 67 are claimed by open branches, so this takes 68.
     ErrorPrivateContactRequestNeedsPrivateReply = 68,
 
+    /// The operation needs the shielded pool, and this library was built
+    /// without the `shielded` feature: today, accepting a contact request
+    /// that came privately with
+    /// `platform_wallet_manager_accept_contact_request_replying_in_kind`,
+    /// whose private reply is paid from the pool. Nothing was sent. Not
+    /// retryable on this build; a build with shielded support accepts it.
+    ErrorShieldedBuildRequired = 69,
+
+    /// The SDK refused the request without sending it: the network is proven
+    /// at a protocol version below the one that serves it (for example
+    /// DashPay's private contact request store before protocol version 15),
+    /// or the SDK is pinned below it. Expected on such a network; it lifts
+    /// when the network upgrades. A refusal that may lift sooner, because the
+    /// network's version could not be confirmed, keeps the catch-all code.
+    ErrorProtocolVersionNotActive = 70,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1186,6 +1202,15 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // `MessageSigningKeyUnavailable` mapped above. By the time a
             // `MessageSigningFailed` reason exists, any marker in it sits
             // mid-string and is deliberately not matched.
+            // The network does not serve the request yet, as its proven
+            // protocol version shows. A refusal that may lift soon (the query
+            // for the version failed for a reason that can pass) stays on the
+            // catch-all: that is the network failing, which a host surfaces.
+            PlatformWalletError::Sdk(
+                sdk_error @ dash_sdk::Error::ProtocolVersionNotActive { .. },
+            ) if !sdk_error.is_transient_protocol_version_refusal() => {
+                PlatformWalletFFIResultCode::ErrorProtocolVersionNotActive
+            }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
         let result = PlatformWalletFFIResult::err(code, error.to_string());
@@ -2714,6 +2739,37 @@ mod identity_balance_error_tests {
 #[cfg(test)]
 mod private_contact_request_error_tests {
     use super::*;
+
+    /// A store the network does not serve yet (DashPay's private contact
+    /// requests before protocol version 15) is told apart from a failure, so
+    /// a host can stay quiet about it; a refusal that may lift soon, because
+    /// the version could not be confirmed, is still the network failing.
+    #[test]
+    fn should_tell_a_store_the_network_does_not_serve_yet_by_its_own_code() {
+        let refused = |cause: Option<Box<dash_sdk::Error>>| {
+            PlatformWalletFFIResult::from(PlatformWalletError::Sdk(
+                dash_sdk::Error::ProtocolVersionNotActive {
+                    method: "get_private_document_entries",
+                    required: 15,
+                    feature: None,
+                    network: 14,
+                    pinned: false,
+                    cause,
+                },
+            ))
+        };
+        let lasting = refused(None);
+        assert_eq!(
+            lasting.code,
+            PlatformWalletFFIResultCode::ErrorProtocolVersionNotActive
+        );
+        assert_eq!(lasting.code as u32, 70);
+
+        let transient = refused(Some(Box::new(dash_sdk::Error::Generic(
+            "no node answered".to_string(),
+        ))));
+        assert_eq!(transient.code, PlatformWalletFFIResultCode::ErrorUnknown);
+    }
 
     #[test]
     fn should_tell_a_private_request_from_other_accept_failures_by_code() {

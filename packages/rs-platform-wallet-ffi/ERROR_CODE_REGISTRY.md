@@ -114,7 +114,7 @@ These are shipped ABI. Do not renumber.
 | 98 | `NotFound` | Sentinel — `Option` returned as an error |
 | 99 | `ErrorUnknown` | Sentinel — unmapped/flattened errors |
 
-**Next allocatable integer: 69**: 27–68 are all claimed (27, 29, 31, 34–42
+**Next allocatable integer: 71**: 27–70 are all claimed (27, 29, 31, 34–42
 and 46 merged; 43–45 proposed by active #4313 at head `0302b188ab`; 47 and
 48 proposed by active #4356 (47 renumbered from 42, 48 from 43 — see their
 rows below); 49–54 proposed by active #4586 (the persister
@@ -127,7 +127,7 @@ renumbered from 59 when #5322 took that number on `v5.1-dev`); 61–67 held
 by open branches with no row here yet (61 `ErrorAssetLockRecipientMismatch`,
 62 both `ErrorShieldedClaimBindingMismatch` and `ErrorIdentityRevisionMismatch`,
 63–66 the invitation-claim preflight, 67 `ErrorShieldedTreeInconsistent`); 68
-proposed for DashPay private contact requests; 28, 30,
+to 70 proposed for DashPay private contact requests; 28, 30,
 32 and 33 reserved). **28, 30,
 32 and 33 are RESERVED, not free**: 28 and 30 were vacated when the
 reservation trio moved to 34–36; 32 and 33 lapsed when their in-repo owners
@@ -182,6 +182,8 @@ Fork-era numbers remain in the collision history, which is immutable record.
 | 59 | `ErrorSpvProcessRestartRequired` | #5322 | Proposed — SPV startup or teardown panicked; restart the host process. Not retryable, unlike 27, which SPV start, stop and storage clear now return while an SPV teardown is still running. Typed in Rust, Swift and Kotlin (the PR also types 27 on Kotlin) |
 | 60 | `ErrorAssetLockTooManyInputs` | Core-to-shielded pooled Max | Proposed — an asset lock needs more inputs than one may carry (100 on Dash Core relay policy and Platform consensus): the full drain, or since #5712 a fixed amount held only in many small coins (identity registration, top-up, invitation, platform-address funding). Two meanings. On a build: nothing was broadcast, the reservation is released, no partial drain, and a rebuild after consolidating is safe. On the resume of a tracked `Built` / `Broadcast` lock over the cap (since #5714): it is not re-sent, but an earlier attempt may have reached peers; the row stays tracked and nothing is released. Rust, Swift and Kotlin retain the typed refusal. Renumbered from 59 after #5322 claimed it |
 | 68 | `ErrorPrivateContactRequestNeedsPrivateReply` | DashPay private contact requests (FFI and Swift) | Proposed. The contact requests with that identity came or went privately (protocol version 15), so a `contactRequest` document to it, in reply or as a rotation, would publish the relationship: the public accept refuses a reply, and the public send refuses a request or a rotation. Nothing was sent; the host accepts with `platform_wallet_manager_accept_contact_request_replying_in_kind` (which picks the reply itself, so a host calling it does not route on 68) or `platform_wallet_manager_accept_private_contact_request`, or sends with `platform_wallet_manager_send_private_contact_request`. Taken above 61–67, which open branches already hold. Rust and Swift (raw case, `init(ffi:)` arm, typed `PlatformWalletError.privateContactRequestNeedsPrivateReply` and an `ErrorHandlingTests` pin) carry it; Kotlin falls through to `PlatformWallet.Generic`, which keeps the integer |
+| 69 | `ErrorShieldedBuildRequired` | DashPay private contact requests (FFI, Swift and Kotlin) | Proposed. The operation needs the shielded pool and the library was built without the `shielded` feature. Today only `platform_wallet_manager_accept_contact_request_replying_in_kind`, exported in every build, returns it, for a request that came privately: its private reply is paid from the pool. Nothing was sent; a public or adopted reply works on such a build. Not retryable on the same build. No existing code meant "shielded unsupported" (`ErrorWalletOperation` with a not-configured message is a runtime state of a shielded build), so it takes the next free number. Swift (raw case, `init(ffi:)` arm, typed `PlatformWalletError.shieldedBuildRequired`, `ErrorHandlingTests` pin) and Kotlin (`DashSdkError.PlatformWallet.ShieldedBuildRequired`, `DashSdkErrorTest` pin) type it |
+| 70 | `ErrorProtocolVersionNotActive` | DashPay private contact requests (FFI, Swift and Kotlin) | Proposed. The SDK refused a request without sending it (`dash_sdk::Error::ProtocolVersionNotActive`), because the network is proven at a protocol version below the one that serves it or the SDK is pinned below it: for example the private contact request sync on a network before protocol version 15. Expected on such a network, so a host may stay quiet about it; it lifts when the network upgrades. Mapped by the blanket conversion for every operation that propagates the SDK error. A refusal that may lift sooner (`is_transient_protocol_version_refusal`: the network's version could not be confirmed) keeps the catch-all `ErrorUnknown`, as before. Previously both fell to `ErrorUnknown`. Swift (`PlatformWalletError.protocolVersionNotActive`) and Kotlin (`DashSdkError.PlatformWallet.ProtocolVersionNotActive`) type it |
 
 **Code 31 left this table on 2026-08-04.** `ErrorSigningKeyUnavailable` sat here
 as #4183's proposal until #4183 merged (`189a3abb1c`); it is now in the merged

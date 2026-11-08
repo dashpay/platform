@@ -41,6 +41,8 @@ use dash_sdk::platform::private_document_scan::PrivateDocumentScan;
 use dpp::identity::{Identity, KeyID};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::{DataContract, Identifier};
+use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use platform_wallet::{ContactRequest, PlatformWalletError, PrivateDocumentKeyPaths};
 use rs_sdk_ffi::{
     MnemonicResolverCoreSigner, MnemonicResolverHandle, MnemonicResolverSignerError, SignerHandle,
@@ -1276,6 +1278,7 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
         recipient_key_id: KeyID,
         request: &PrivateContactRequest,
         esk_seed: &[u8; 32],
+        platform_version: &PlatformVersion,
     ) -> Result<BinaryData, PlatformWalletError> {
         self.signer
             .seal_private_contact_request(
@@ -1289,19 +1292,26 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
                 recipient_key_id,
                 request,
                 esk_seed,
+                platform_version,
             )
             .map_err(private_document_signer_error)
     }
 }
 
 /// A signer failure of a private document operation as a wallet error: the
-/// SDK's refusal stays typed, the rest are reported as the other provider
-/// methods report theirs.
+/// SDK's refusal stays typed; a missing mnemonic is the key-unavailable
+/// outcome (FFI code 31), carried as the signer's typed completion is, with
+/// the reserved marker at position 0 of a `ProtocolError::Generic` payload
+/// (`NotFound` renders it there), so the structural discriminator restores
+/// it; the rest are reported as the other provider methods report theirs.
 fn private_document_signer_error(error: MnemonicResolverSignerError) -> PlatformWalletError {
     match error {
         MnemonicResolverSignerError::PrivateContactRequest(error) => {
             PlatformWalletError::Sdk(error)
         }
+        error @ MnemonicResolverSignerError::NotFound => PlatformWalletError::Sdk(
+            dash_sdk::Error::Protocol(ProtocolError::Generic(error.to_string())),
+        ),
         error => PlatformWalletError::InvalidIdentityData(error.to_string()),
     }
 }
@@ -1734,6 +1744,83 @@ pub unsafe extern "C" fn platform_wallet_drainable_contact_crypto_count(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod private_store_scan_errors {
+        use super::*;
+        use platform_wallet::ContactCryptoProvider;
+        use rs_sdk_ffi::{
+            dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy,
+            mnemonic_resolver_result,
+        };
+        use std::ffi::c_void;
+        use std::str::FromStr;
+
+        unsafe extern "C" fn no_mnemonic(
+            _ctx: *const c_void,
+            _wallet_id_bytes: *const u8,
+            _out_buf: *mut c_char,
+            _out_capacity: usize,
+            _out_len: *mut usize,
+        ) -> i32 {
+            mnemonic_resolver_result::NOT_FOUND
+        }
+
+        unsafe extern "C" fn noop_destroy(_ctx: *mut c_void) {}
+
+        /// A scan of the private store whose resolver holds no mnemonic for the
+        /// wallet reaches the host as the key-unavailable outcome (code 31), as
+        /// a signer's missing key does, so the host routes it to key repair
+        /// instead of reading a generic failure.
+        #[test]
+        fn should_report_a_missing_mnemonic_while_scanning_as_key_unavailable() {
+            let resolver = unsafe {
+                dash_sdk_mnemonic_resolver_create(std::ptr::null_mut(), no_mnemonic, noop_destroy)
+            };
+            let provider = unsafe {
+                resolver_contact_crypto_provider(resolver, [0u8; 32], key_wallet::Network::Testnet)
+            };
+            let keys = PrivateDocumentKeyPaths {
+                recipients: vec![(
+                    Identifier::from([0xB0; 32]),
+                    vec![(
+                        2,
+                        key_wallet::bip32::DerivationPath::from_str("m/9'/1'/5'/0'/0'/1'/2'")
+                            .expect("valid path"),
+                    )],
+                )],
+                senders: Vec::new(),
+            };
+            let page = PrivateDocumentEntries {
+                entries: Vec::new(),
+                total_count: 0,
+            };
+            let error = runtime()
+                .block_on(provider.scan_private_document_page(
+                    &keys,
+                    Identifier::from([0xD0; 32]),
+                    "privateContactRequest",
+                    0,
+                    &page,
+                ))
+                .expect_err("no mnemonic, no keys");
+            let result = PlatformWalletFFIResult::from(error);
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
+            );
+
+            // Another resolver failure keeps the code it had.
+            let other = PlatformWalletFFIResult::from(private_document_signer_error(
+                MnemonicResolverSignerError::BufferTooSmall,
+            ));
+            assert_ne!(
+                other.code,
+                PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
+            );
+
+            unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+        }
+    }
 
     // Marshalling-boundary coverage for the verify entry point, replacing what
     // the removed attach FFI's input-validation tests upheld. The crypto
