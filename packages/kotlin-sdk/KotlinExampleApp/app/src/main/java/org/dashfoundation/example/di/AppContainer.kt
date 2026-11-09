@@ -154,6 +154,22 @@ class AppContainer(private val context: Context) {
             loadWallets = {
                 val activatedManager = walletManagerStore.activate(sdk.network, sdk)
                 activatedManager.loadPersistedWallets()
+                // Open the shielded store right after the load: Rust then
+                // restores, with no keys, the unconfirmed private contact
+                // request payments of every wallet that bound a shielded
+                // account in an earlier process. Until it does, their public
+                // contact requests are refused (code 71), and a later bind
+                // may never come (no mnemonic, declined biometric). The same
+                // path the bind opens, so the bind's call is a no-op.
+                if (shieldedService.isAvailable) {
+                    try {
+                        activatedManager.configureShielded(shieldedDbPath(activatedManager.network))
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        android.util.Log.w(TAG, "Failed to configure the shielded store after the load", e)
+                    }
+                }
                 org.dashfoundation.example.ui.dashpay.DashPayWalletLoad(
                     value = activatedManager,
                     loadedWalletIdsHex = activatedManager.wallets.value.keys,
@@ -207,6 +223,10 @@ class AppContainer(private val context: Context) {
      * `bindShielded` and the start-if-not-running guards make repeated calls
      * (on every wallet-set change) safe.
      */
+    /** The per-network commitment-tree store, as iOS `ShieldedService.dbPath(for:)` names it. */
+    private fun shieldedDbPath(network: org.dashfoundation.dashsdk.Network): String =
+        java.io.File(context.filesDir, "shielded_tree_${network.networkName}.sqlite").absolutePath
+
     private suspend fun rebindWalletScopedServices(
         manager: org.dashfoundation.dashsdk.wallet.PlatformWalletManager,
     ) {
@@ -243,10 +263,7 @@ class AppContainer(private val context: Context) {
                 // and doesn't throw. dbPath mirrors iOS's
                 // `ShieldedService.dbPath(for:)` naming
                 // (`shielded_tree_<networkName>.sqlite`), rooted in filesDir.
-                val shieldedDbPath = java.io.File(
-                    context.filesDir,
-                    "shielded_tree_${manager.network.networkName}.sqlite",
-                ).absolutePath
+                val shieldedDbPath = shieldedDbPath(manager.network)
                 shieldedService.bind(
                     manager = manager,
                     walletId = wallet.walletId,
