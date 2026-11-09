@@ -41,52 +41,56 @@ fn inner_hash(left: &[u8], right: &[u8]) -> Vec<u8> {
         .to_vec()
 }
 
-/// Tenderdash's Merkle tree (RFC 6962), with the path of every leaf.
+/// Tenderdash's Merkle tree (RFC 6962), with the paths of the selected leaves.
 #[derive(Debug)]
 struct MerkleTree {
     root: Vec<u8>,
-    /// For each leaf, the hashes from its sibling up to a child of the root.
+    /// For each selected leaf, the hashes from its sibling up to a child of the root.
     paths: Vec<Vec<Vec<u8>>>,
 }
 
 impl MerkleTree {
-    fn new<T: AsRef<[u8]>>(leaves: &[T]) -> Self {
-        match leaves {
-            [] => Self {
-                root: Sha256::digest([]).to_vec(),
-                paths: Vec::new(),
-            },
-            [leaf] => Self {
-                root: leaf_hash(leaf.as_ref()),
-                paths: vec![Vec::new()],
-            },
-            _ => {
-                let (left, right) = leaves.split_at(split_point(leaves.len()));
-                let left = Self::new(left);
-                let right = Self::new(right);
-                let root = inner_hash(&left.root, &right.root);
-                let paths = left
-                    .paths
-                    .into_iter()
-                    .map(|mut path| {
-                        path.push(right.root.clone());
-                        path
-                    })
-                    .chain(right.paths.into_iter().map(|mut path| {
-                        path.push(left.root.clone());
-                        path
-                    }))
-                    .collect();
-                Self { root, paths }
-            }
-        }
+    /// Build the tree over `leaves`, keeping paths only for the positions in `selected`,
+    /// which must be ascending and within `leaves`.
+    fn new<T: AsRef<[u8]>>(leaves: &[T], selected: &[usize]) -> Self {
+        Self::build(leaves, 0, selected)
     }
 
-    fn path(&self, index: usize) -> DAPIResult<Vec<Vec<u8>>> {
-        self.paths
-            .get(index)
-            .cloned()
-            .ok_or_else(|| DapiError::Internal(format!("no Merkle path for transaction {index}")))
+    fn build<T: AsRef<[u8]>>(leaves: &[T], first: usize, selected: &[usize]) -> Self {
+        if selected.is_empty() {
+            return Self {
+                root: merkle_root(leaves),
+                paths: Vec::new(),
+            };
+        }
+        if leaves.len() < 2 {
+            return Self {
+                root: merkle_root(leaves),
+                paths: vec![Vec::new(); selected.len()],
+            };
+        }
+
+        let split = split_point(leaves.len());
+        let (left_leaves, right_leaves) = leaves.split_at(split);
+        let (left_selected, right_selected) =
+            selected.split_at(selected.partition_point(|&position| position < first + split));
+        let left = Self::build(left_leaves, first, left_selected);
+        let right = Self::build(right_leaves, first + split, right_selected);
+
+        let root = inner_hash(&left.root, &right.root);
+        let paths = left
+            .paths
+            .into_iter()
+            .map(|mut path| {
+                path.push(right.root.clone());
+                path
+            })
+            .chain(right.paths.into_iter().map(|mut path| {
+                path.push(left.root.clone());
+                path
+            }))
+            .collect();
+        Self { root, paths }
     }
 }
 
@@ -187,23 +191,25 @@ pub(super) fn transaction_proofs(
         check_root("transactions", &merkle_root(&hashes), &header.data_hash)?;
         return Ok(Vec::new());
     }
-    let transactions = MerkleTree::new(&hashes);
+    let transactions = MerkleTree::new(&hashes, indexes);
     check_root("transactions", &transactions.root, &header.data_hash)?;
-    let results = MerkleTree::new(&encode_results(results)?);
+    let results = MerkleTree::new(&encode_results(results)?, indexes);
     check_root("results", &results.root, &header.results_hash)?;
     let total = u32::try_from(block_txs.len())
         .map_err(|_| DapiError::Internal("the block holds too many transactions".to_string()))?;
 
     indexes
         .iter()
-        .map(|&index| {
+        .zip(transactions.paths)
+        .zip(results.paths)
+        .map(|((&index, transaction_path), result_path)| {
             Ok(TenderdashTransactionProof {
                 index: u32::try_from(index).map_err(|_| {
                     DapiError::Internal("the block holds too many transactions".to_string())
                 })?,
                 total,
-                transaction_path: transactions.path(index)?,
-                result_path: results.path(index)?,
+                transaction_path,
+                result_path,
             })
         })
         .collect()
@@ -295,7 +301,7 @@ pub(super) fn tenderdash_commit(
     transaction_hashes: &[Vec<u8>],
     results: &[BlockTxResult],
 ) -> ResultCommit {
-    let results_root = MerkleTree::new(&encode_results(results).unwrap()).root;
+    let results_root = merkle_root(&encode_results(results).unwrap());
     serde_json::from_value(serde_json::json!({
         "signed_header": {
             "header": {
@@ -310,7 +316,7 @@ pub(super) fn tenderdash_commit(
                     "state_id": "CC",
                 },
                 "last_commit_hash": "01",
-                "data_hash": hex::encode_upper(MerkleTree::new(transaction_hashes).root),
+                "data_hash": hex::encode_upper(merkle_root(transaction_hashes)),
                 "validators_hash": "03",
                 "next_validators_hash": "04",
                 "consensus_hash": "05",
@@ -446,7 +452,7 @@ mod tests {
             .map(|index| format!("leaf-{index}").into_bytes())
             .collect::<Vec<_>>();
 
-        let tree = MerkleTree::new(&leaves);
+        let tree = MerkleTree::new(&leaves, &(0..leaves.len()).collect::<Vec<_>>());
 
         assert_eq!(hex_of(&tree.root), TENDERDASH_ROOT);
         for (path, expected) in tree.paths.iter().zip(TENDERDASH_PATHS) {
@@ -457,15 +463,15 @@ mod tests {
     #[test]
     fn should_hash_edge_trees_like_rfc_6962() {
         assert_eq!(
-            hex_of(&MerkleTree::new::<Vec<u8>>(&[]).root),
+            hex_of(&merkle_root::<Vec<u8>>(&[])),
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         );
         assert_eq!(
-            hex_of(&MerkleTree::new(&[Vec::new()]).root),
+            hex_of(&merkle_root(&[Vec::new()])),
             "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"
         );
         assert_eq!(
-            hex_of(&MerkleTree::new(&[b"L123456".to_vec()]).root),
+            hex_of(&merkle_root(&[b"L123456".to_vec()])),
             "395aa064aa4c29f7010acfe3f25db9485bbd4b91897b6ad7ad547639252b4d56"
         );
         assert_eq!(
@@ -480,8 +486,29 @@ mod tests {
             let leaves = (0..total)
                 .map(|index| index.to_be_bytes().to_vec())
                 .collect::<Vec<_>>();
+            let all = (0..total).collect::<Vec<_>>();
 
-            assert_eq!(merkle_root(&leaves), MerkleTree::new(&leaves).root);
+            assert_eq!(merkle_root(&leaves), MerkleTree::new(&leaves, &all).root);
+        }
+    }
+
+    #[test]
+    fn should_build_only_the_selected_paths() {
+        let leaves = (0..7)
+            .map(|index| format!("leaf-{index}").into_bytes())
+            .collect::<Vec<_>>();
+
+        for selected in [vec![], vec![0], vec![6], vec![1, 4], vec![2, 3, 5]] {
+            let tree = MerkleTree::new(&leaves, &selected);
+
+            assert_eq!(hex_of(&tree.root), TENDERDASH_ROOT);
+            assert_eq!(tree.paths.len(), selected.len());
+            for (path, position) in tree.paths.iter().zip(&selected) {
+                assert_eq!(
+                    path.iter().map(|h| hex_of(h)).collect::<Vec<_>>(),
+                    TENDERDASH_PATHS[*position]
+                );
+            }
         }
     }
 
@@ -491,11 +518,10 @@ mod tests {
             let leaves = (0..total)
                 .map(|index| index.to_be_bytes().to_vec())
                 .collect::<Vec<_>>();
-            let tree = MerkleTree::new(&leaves);
+            let tree = MerkleTree::new(&leaves, &(0..total).collect::<Vec<_>>());
 
             for (index, leaf) in leaves.iter().enumerate() {
-                let computed =
-                    root_from_path(index, total, leaf_hash(leaf), &tree.path(index).unwrap());
+                let computed = root_from_path(index, total, leaf_hash(leaf), &tree.paths[index]);
                 assert_eq!(computed, tree.root, "leaf {index} of {total}");
             }
         }
