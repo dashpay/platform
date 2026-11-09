@@ -27,6 +27,7 @@ use crate::platform::data_contracts_latest_versions::{
 use crate::platform::documents::document_query::RankingDirection;
 use crate::platform::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
 use crate::platform::private_document_entries::PrivateDocumentEntries;
+use crate::platform::transition::private_document_create_from_shielded_pool::PrivateDocumentCreateFromShieldedPool;
 use crate::platform::types::epoch::current_epoch_probe_query;
 use crate::platform::types::identity::{
     IdentityRequest, IdentityResponse, NonUniquePublicKeyHashQuery,
@@ -77,8 +78,10 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::TokenConfiguration;
 use dpp::document::Document;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::platform_value::BinaryData;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier, Identity};
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
+use dpp::shielded::OrchardBundleParams;
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::version::v13::PROTOCOL_VERSION_13;
 use dpp::version::v14::PROTOCOL_VERSION_14;
@@ -2382,5 +2385,77 @@ async fn should_ask_the_network_before_sending_or_refusing_yes_no_queries_given_
     }
     for request in &votes {
         assert_eq!(sent(&sdk, request).await, 1, "{request:?}");
+    }
+}
+
+/// A refusal does not tell a network below a version from this SDK's own limit, such as a pin
+/// below it: `network_proven_below` does. With no verified answer, or one below the version
+/// that no probe hold covers, it asks the network, pinned or not, and takes the answer; a
+/// version verified at or above is taken without asking; a probe that fails fails the call.
+#[tokio::test]
+async fn should_tell_a_network_proven_below_a_version_from_a_pin_below_it() {
+    for (verified, signed, below) in [
+        (0, "pv13", true),
+        (0, "pv14", false),
+        // Verified below, but no hold shows the network still there: asked again.
+        (V13, "pv14", false),
+    ] {
+        let sdk = mock_sdk(V13, true, verified);
+        answer_probe(&sdk, signed).await;
+        let context = format!("verified {verified}, network {signed}");
+        assert_eq!(
+            sdk.network_proven_below(V14).await.expect(&context),
+            below,
+            "{context}"
+        );
+        assert_eq!(probes(&sdk).await, 1, "{context}");
+    }
+
+    let sdk = mock_sdk(V13, true, V14);
+    assert!(!sdk.network_proven_below(V14).await.expect("verified at 14"));
+    assert_eq!(probes(&sdk).await, 0);
+
+    let sdk = mock_sdk(V13, true, 0);
+    assert!(
+        sdk.network_proven_below(V14).await.is_err(),
+        "the probe has no answer"
+    );
+}
+
+/// A private document send from an SDK at protocol version 15, seeded or pinned, on a network
+/// a verified answer shows at 14 is refused before it is built, rather than broadcast to be
+/// rejected.
+#[tokio::test]
+async fn should_refuse_a_private_document_send_until_the_network_is_verified_at_15() {
+    for pinned in [false, true] {
+        let sdk = mock_sdk(PROTOCOL_VERSION_15, pinned, V14);
+        answer_probe(&sdk, "pv14").await;
+        let result = sdk
+            .private_document_create_from_shielded_pool(
+                Identifier::new([4; 32]),
+                "privateContactRequest".to_string(),
+                vec![BinaryData::new(vec![1; 589])],
+                114_140_000,
+                OrchardBundleParams {
+                    actions: vec![],
+                    anchor: [7; 32],
+                    proof: vec![],
+                    binding_signature: [9; 64],
+                },
+                None,
+            )
+            .await;
+        match result {
+            Err(Error::ProtocolVersionNotActive {
+                method: "broadcast_state_transition",
+                required: PROTOCOL_VERSION_15,
+                network: V14,
+                pinned: false,
+                cause: None,
+                ..
+            }) => {}
+            other => panic!("pinned {pinned}: expected a local refusal, got {other:?}"),
+        }
+        assert_eq!(probes(&sdk).await, 1, "pinned {pinned}");
     }
 }

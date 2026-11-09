@@ -30,7 +30,7 @@ use platform_encryption::{
     OpenedPrivateDocumentEntry, PrivateDocumentEnvelopeError, PrivateDocumentRecipientKeys,
     PrivateDocumentTarget,
 };
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 /// One identity of the wallet and the keys entries to it may be encrypted to.
 struct ScanRecipient {
@@ -39,22 +39,23 @@ struct ScanRecipient {
     keys: PrivateDocumentRecipientKeys,
 }
 
-/// One identity of the wallet and an outgoing viewing key it seals entries with.
+/// One identity of the wallet and an outgoing viewing key it seals entries with. The key lives
+/// in an allocation of its own, wiped when dropped: as senders are added, their vector moves
+/// the pointer to it, never its bytes, so no copy of the key is left in a freed buffer.
 struct ScanSender {
     identity_id: Identifier,
     key_id: KeyID,
-    outgoing_viewing_key: [u8; 32],
-}
-
-impl Drop for ScanSender {
-    fn drop(&mut self) {
-        self.outgoing_viewing_key.zeroize();
-    }
+    outgoing_viewing_key: Box<Zeroizing<[u8; 32]>>,
 }
 
 /// The keys a wallet scans a private document type's store with: for each of its identities,
 /// the secret keys entries to it may be encrypted to, and the outgoing viewing key it sealed its
 /// own entries with.
+///
+/// No secret moves as identities are added. A recipient's secret keys are in one allocation
+/// sized once ([`PrivateDocumentRecipientKeys::new`] collects them from a slice), which the
+/// recipients' vector moves by pointer and wipes when dropped; a sender's outgoing viewing key
+/// is boxed ([`ScanSender`]).
 #[derive(Default)]
 pub struct PrivateDocumentScanKeys {
     recipients: Vec<ScanRecipient>,
@@ -176,13 +177,14 @@ impl PrivateDocumentScanKeys {
         mut self,
         identity_id: Identifier,
         key_id: KeyID,
-        outgoing_viewing_key: [u8; 32],
+        mut outgoing_viewing_key: [u8; 32],
     ) -> Self {
         self.senders.push(ScanSender {
             identity_id,
             key_id,
-            outgoing_viewing_key,
+            outgoing_viewing_key: Box::new(Zeroizing::new(outgoing_viewing_key)),
         });
+        outgoing_viewing_key.zeroize();
         self
     }
 
@@ -839,6 +841,24 @@ mod tests {
         twice
             .verify_sender(&scan.received[0], &public_key(0xC0))
             .expect("the second key set opened it and checks it");
+    }
+
+    /// Adding senders, which grows their vector, moves no outgoing viewing key: each stays at
+    /// the address it was given, so growth leaves no copy behind in a freed buffer.
+    #[test]
+    fn should_keep_each_outgoing_viewing_key_in_place_as_senders_are_added() {
+        let mut keys =
+            PrivateDocumentScanKeys::new().with_sender(Identifier::from([0xA0; 32]), 1, [0x11; 32]);
+        let first: *const [u8; 32] = &**keys.senders[0].outgoing_viewing_key;
+        for index in 0..64u8 {
+            keys = keys.with_sender(Identifier::from([index; 32]), 1, [index; 32]);
+        }
+        assert!(keys.senders.capacity() > 1, "the vector grew");
+        assert_eq!(
+            first,
+            &**keys.senders[0].outgoing_viewing_key as *const [u8; 32]
+        );
+        assert_eq!(**keys.senders[0].outgoing_viewing_key, [0x11; 32]);
     }
 
     /// Two senders added with the same outgoing viewing key: an entry recovers as the sender
