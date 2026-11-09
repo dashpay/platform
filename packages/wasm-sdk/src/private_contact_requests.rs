@@ -477,7 +477,9 @@ impl WasmSdk {
     /// SDK's context provider must hold it to verify the type's pages
     /// ([`dash_sdk::Sdk::fetch_private_document_contract`]): one retained from before the type
     /// was declared is replaced by the current one, which is also stored for the next page
-    /// load, as the contract cache stores every contract it fetches.
+    /// load, as the contract cache stores every contract it fetches. Stored once a version
+    /// ([`WasmSdk::mark_contract_version_persisted`]): a store walk reads the contract for
+    /// every page, and a page whose contract is unchanged neither copies nor stores it.
     pub(crate) async fn private_document_contract(
         &self,
         data_contract_id: Identifier,
@@ -487,7 +489,9 @@ impl WasmSdk {
             .as_ref()
             .fetch_private_document_contract(data_contract_id, document_type_name)
             .await?;
-        self.cache_contract((*contract).clone());
+        if self.mark_contract_version_persisted(&contract) {
+            self.cache_contract((*contract).clone());
+        }
         Ok(contract)
     }
 
@@ -634,6 +638,8 @@ impl WasmSdk {
 mod tests {
     use super::*;
     use crate::context_provider::WasmTrustedContext;
+    use crate::contract_store::{self, Slot};
+    use dash_sdk::dpp::dashcore::Network;
     use dash_sdk::dpp::data_contract::accessors::v0::{
         DataContractV0Getters, DataContractV0Setters,
     };
@@ -649,6 +655,73 @@ mod tests {
             .expect("DashPay loads");
         contract.set_id(Identifier::new([0x5D; 32]));
         contract
+    }
+
+    /// The version of `contract_id` stored for the next page load on testnet, if any.
+    fn stored_version(contract_id: Identifier) -> Option<u32> {
+        contract_store::load_all(Slot::trusted(Network::Testnet), PlatformVersion::latest())
+            .into_iter()
+            .find(|contract| contract.id() == contract_id)
+            .map(|contract| contract.version())
+    }
+
+    /// A store walk reads the contract for every page, and stores it once a version: the
+    /// first page and the one after an upgrade store it, and unchanged pages neither copy
+    /// nor store it, which a stored entry removed behind the SDK's back shows by staying
+    /// absent. A removal through the SDK stores the same version again on the next page.
+    #[tokio::test]
+    async fn should_store_a_private_type_contract_once_a_version() {
+        let current = dashpay_at(PlatformVersion::latest());
+        let contract_id = current.id();
+        let slot = Slot::trusted(Network::Testnet);
+        let context = WasmTrustedContext::for_testing(vec![]);
+        let mut inner: Sdk = SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_version(PlatformVersion::latest())
+            .build()
+            .expect("a mock SDK");
+        inner
+            .set_context_provider(context.clone())
+            .expect("the context provider is set");
+        inner
+            .mock()
+            .expect_fetch(contract_id, Some(current.clone()))
+            .await
+            .expect("the contract fetch is expected");
+        let sdk = WasmSdk::new_for_testing(inner, Some(context.clone()));
+        let read = || {
+            sdk.private_document_contract(contract_id, PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME)
+        };
+
+        read().await.expect("the first page's contract");
+        assert_eq!(stored_version(contract_id), Some(current.version()));
+
+        contract_store::remove(slot, &contract_id);
+        read().await.expect("an unchanged page's contract");
+        read().await.expect("another unchanged page's contract");
+        assert_eq!(
+            stored_version(contract_id),
+            None,
+            "unchanged pages store nothing"
+        );
+
+        assert!(sdk.remove_cached_contract(&contract_id));
+        read().await.expect("the same version, fetched again");
+        assert_eq!(
+            stored_version(contract_id),
+            Some(current.version()),
+            "stored again once removed through the SDK"
+        );
+
+        let mut upgraded = current.clone();
+        upgraded.set_version(current.version() + 1);
+        context.add_known_contract(upgraded.clone());
+        read().await.expect("the upgraded contract");
+        assert_eq!(stored_version(contract_id), Some(upgraded.version()));
+
+        contract_store::remove(slot, &contract_id);
+        read().await.expect("an unchanged page's contract");
+        assert_eq!(stored_version(contract_id), None);
     }
 
     /// A context provider that retains a contract from before its private type was declared,
