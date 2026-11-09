@@ -44,9 +44,13 @@ use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::Identifier;
 #[cfg(feature = "shielded")]
 use {
-    super::identity::network::dashpay_contract,
-    super::shielded::operations::private_document_create_from_pool_with_metadata,
-    super::shielded::store::{PendingRedrive, PrivateContactPayment},
+    super::identity::network::{
+        dashpay_contract, restore_journaled_private_payments, JournaledPrivatePayment,
+    },
+    super::shielded::operations::{
+        discharge_read_back_private_payments, private_document_create_from_pool_with_metadata,
+    },
+    super::shielded::store::{PendingRedrive, PrivateContactPayment, PrivatePaymentRecord},
     super::shielded::{NetworkShieldedCoordinator, OrchardKeySet, ShieldedStore},
     crate::{
         AutoAcceptProofSource, ContactCryptoProvider, ContactRequest, EstablishedContact,
@@ -1037,15 +1041,38 @@ impl PlatformWallet {
         )
         .await?;
         // After the install transaction: the restore takes the store and
-        // wallet locks on its own.
-        if let Err(error) = self.restore_private_contact_payments(coordinator).await {
-            tracing::warn!(
-                wallet_id = %hex::encode(self.wallet_id),
-                %error,
-                "private contact request reservations not restored at bind; a private send \
-                 still checks its own pair before it pays, a public one holds once the host \
-                 restores them or a private sync reads them back"
-            );
+        // wallet locks on its own. It never waits for the store, which a
+        // running scan may hold for minutes while a host binds on its UI
+        // thread: a busy store defers it to a task, the wallet's contact
+        // requests held until it succeeds.
+        let restore = self.private_payment_restore(coordinator);
+        match restore.restore_and_release(false).await {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                tracing::debug!(
+                    wallet_id = %hex::encode(self.wallet_id),
+                    "the shielded store is busy; private contact request payments are \
+                     restored once it frees"
+                );
+                tokio::spawn(async move {
+                    if let Err(error) = restore.restore_and_release(true).await {
+                        tracing::warn!(
+                            wallet_id = %hex::encode(restore.wallet_id),
+                            %error,
+                            "private contact request payments not restored; the wallet's \
+                             contact requests stay held"
+                        );
+                    }
+                });
+            }
+            Err(error) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(self.wallet_id),
+                    %error,
+                    "private contact request payments not restored at bind; the wallet's \
+                     contact requests stay held until a restoration succeeds"
+                );
+            }
         }
         Ok(())
     }
@@ -1645,7 +1672,6 @@ impl PlatformWallet {
                         account,
                         sender_identity_id,
                         recipient_identity_id,
-                        crypto,
                         entry,
                         started,
                         prover,
@@ -1694,7 +1720,6 @@ impl PlatformWallet {
                         account,
                         &request.recipient_id,
                         &request.sender_id,
-                        crypto,
                         entry,
                         started,
                         prover,
@@ -1755,7 +1780,6 @@ impl PlatformWallet {
                         account,
                         &request.recipient_id,
                         &request.sender_id,
-                        crypto,
                         entry,
                         started,
                         prover,
@@ -1798,29 +1822,34 @@ impl PlatformWallet {
             .await
     }
 
-    /// Restore the reservations of the private contact requests whose payment
-    /// from this wallet's notes `coordinator`'s store holds as unconfirmed,
-    /// from the request each record was saved with (sender, recipient,
-    /// account reference) and the commitments its transition carries: no
-    /// keys open anything. Run when the wallet binds to the coordinator, so
-    /// restored reservations hold every public and private send from then
-    /// on. Returns the (sender, recipient) pairs restored. A record saved
-    /// without its request (before it was kept with it) is restored by
-    /// [`Self::restore_pending_private_contact_requests`] or the payment's
-    /// own check. An identity added to the wallet after the bind is not
-    /// covered until the next bind or that call. A saved payment that does
-    /// not read back, its transition or the entries it appends, fails the
-    /// restoration with [`PlatformWalletError::ShieldedRecoveryCorrupted`],
-    /// and every hold stays.
+    /// Restore the reservations of this wallet's private contact request
+    /// payments that may still execute, from the shielded store's private
+    /// payment journal (sender, recipient, account reference and entry
+    /// commitment of each, saved durably before it could reach the network),
+    /// and release the holds a load set: no keys open anything. Run when the
+    /// wallet binds to the coordinator, so restored reservations hold every
+    /// public and private send from then on. Returns the (sender, recipient)
+    /// pairs restored.
+    ///
+    /// Fails closed, every hold staying and the wallet's raised if it was
+    /// not: for a coordinator of another network, a wallet removed or
+    /// re-created since this handle was taken, a journal record that does
+    /// not read back, a saved spend whose transition does not decode and
+    /// that no journal record accounts for, a private contact request
+    /// payment saved before the journal kept it with no request to restore
+    /// its pair from, and an identity loaded marking a private payment that
+    /// may be unresolved when the journal is new
+    /// ([`PlatformWalletError::ShieldedRecoveryCorrupted`]). A payment saved
+    /// before the journal kept it, with its request, is added to the
+    /// journal.
     ///
     /// Run also by [`PlatformWalletManager::configure_shielded`] for every
     /// wallet the manager holds, and by its load for the wallets it loads once
     /// the store is configured: no keys are needed. Once it succeeds, the
-    /// wallet's public contact requests, which a load holds for a wallet that
-    /// bound a shielded account before, and for an identity whose position
-    /// record marks a private payment that may be unresolved
-    /// ([`PlatformWalletError::PrivateContactPaymentsNotRestored`]), go
-    /// ahead.
+    /// wallet's contact requests, which a load holds for a wallet that bound
+    /// a shielded account before, and for an identity whose position record
+    /// marks a private payment that may be unresolved
+    /// ([`PlatformWalletError::PrivateContactPaymentsNotRestored`]), go ahead.
     ///
     /// [`PlatformWalletManager::configure_shielded`]: crate::PlatformWalletManager::configure_shielded
     #[cfg(feature = "shielded")]
@@ -1828,40 +1857,27 @@ impl PlatformWallet {
         &self,
         coordinator: &Arc<NetworkShieldedCoordinator>,
     ) -> Result<Vec<(Identifier, Identifier)>, PlatformWalletError> {
-        let dashpay_id = dashpay_contract()?.id();
-        let saved = {
-            let store = coordinator.store().read().await;
-            store
-                .private_contact_redrives_for_wallet(self.wallet_id)
-                .map_err(PlatformWalletError::from)?
-        };
-        // All or nothing: a saved payment that does not read back fails the
-        // restoration, and every hold stays.
-        let mut payments: Vec<(Identifier, Identifier, u32, [u8; 32])> = Vec::new();
-        for (redrive, payment) in &saved {
-            for commitment in associated_payment_commitments(redrive, dashpay_id)? {
-                payments.push((
-                    Identifier::from(payment.sender),
-                    Identifier::from(payment.recipient),
-                    payment.account_reference,
-                    commitment,
-                ));
-            }
+        self.private_payment_restore(coordinator)
+            .restore_and_release(true)
+            .await
+            .map(Option::unwrap_or_default)
+    }
+
+    /// The handles a restoration of this wallet's private contact request
+    /// payments runs on ([`Self::restore_private_contact_payments`]).
+    #[cfg(feature = "shielded")]
+    fn private_payment_restore(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+    ) -> PrivatePaymentRestore {
+        PrivatePaymentRestore {
+            coordinator: Arc::clone(coordinator),
+            wallet_manager: Arc::clone(&self.wallet_manager),
+            persister: self.persister.clone(),
+            generation: Arc::clone(&self.generation),
+            wallet_id: self.wallet_id,
+            network: self.sdk.network,
         }
-        let restored = self
-            .identity
-            .dashpay()
-            .restore_private_payments(&payments)
-            .await?;
-        // After the restored reservations are in place: a public send that
-        // sees the holds gone sees them. The identities' holds first, which
-        // their position records stored, then the wallet's.
-        self.identity
-            .dashpay()
-            .note_private_payments_restored()
-            .await?;
-        self.persister.private_payments_restored();
-        Ok(restored)
     }
 
     /// Whether this wallet's public contact requests wait for its private
@@ -1917,20 +1933,18 @@ impl PlatformWallet {
     /// dropped releases its reservation.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
-    async fn pay_private_contact_request<C, P>(
+    async fn pay_private_contact_request<P>(
         &self,
         coordinator: &Arc<NetworkShieldedCoordinator>,
         keyset: OrchardKeySet,
         account: u32,
         sender_identity_id: &Identifier,
         recipient_identity_id: &Identifier,
-        crypto: &C,
         entry: BinaryData,
         started: PaymentStarted,
         prover: P,
     ) -> Result<ResponseMetadata, PlatformWalletError>
     where
-        C: ContactCryptoProvider + Sync,
         P: OrchardProver,
     {
         // The generation's lifecycle gate, held across the liveness check,
@@ -1944,21 +1958,30 @@ impl PlatformWallet {
                 self.wallet_id,
             )));
         }
-        self.identity
-            .dashpay()
-            .release_rejected_private_requests()
-            .await?;
-        let unconfirmed = self
-            .unconfirmed_private_contact_requests(coordinator)
-            .await?;
+        // An earlier payment of the pair the journal keeps may still execute,
+        // whether or not its redrive record reads: then nothing is paid. The
+        // journal is read strictly: a record that does not read refuses.
+        let journaled: Vec<(u32, [u8; 32])> = {
+            let mut store = coordinator.store().write().await;
+            discharge_read_back_private_payments(&mut *store, &self.persister, self.wallet_id);
+            store
+                .private_payment_journal(self.wallet_id)
+                .map_err(PlatformWalletError::from)?
+                .into_iter()
+                .filter(|record| {
+                    Identifier::from(record.payment.sender) == *sender_identity_id
+                        && Identifier::from(record.payment.recipient) == *recipient_identity_id
+                })
+                .map(|record| (record.payment.account_reference, record.commitment))
+                .collect()
+        };
         if self
             .identity
             .dashpay()
-            .hold_for_restored_private_contact_request(
-                &unconfirmed,
-                crypto,
+            .hold_for_journaled_private_payment(
                 sender_identity_id,
                 recipient_identity_id,
+                &journaled,
             )
             .await?
         {
@@ -2881,6 +2904,224 @@ fn associated_payment_commitments(
         .collect()
 }
 
+/// The handles a restoration of a wallet's private contact request payments
+/// from the shielded store's journal runs on, owned, so one the store is
+/// busy for runs on a task ([`PlatformWallet::restore_private_contact_payments`]).
+#[cfg(feature = "shielded")]
+struct PrivatePaymentRestore {
+    coordinator: Arc<NetworkShieldedCoordinator>,
+    wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    persister: WalletPersister,
+    generation: Arc<WalletGeneration>,
+    wallet_id: WalletId,
+    network: dashcore::Network,
+}
+
+#[cfg(feature = "shielded")]
+impl PrivatePaymentRestore {
+    /// Restore, and raise or release the wallet's hold as it went: released
+    /// once a restoration succeeds, raised when it fails or cannot run yet.
+    /// `Ok(None)` when the store is busy and `wait` is false.
+    async fn restore_and_release(
+        &self,
+        wait: bool,
+    ) -> Result<Option<Vec<(Identifier, Identifier)>>, PlatformWalletError> {
+        let restored = self.restore(wait).await;
+        match &restored {
+            Ok(Some(_)) => self.persister.private_payments_restored(),
+            Ok(None) | Err(_) => self.persister.hold_until_private_payments_restored(),
+        }
+        restored
+    }
+
+    /// The restoration [`PlatformWallet::restore_private_contact_payments`]
+    /// documents, fenced against the wallet's replacement: the generation's
+    /// lifecycle gate is held from the liveness check until the reservations
+    /// are restored, so a removal cannot complete in between.
+    async fn restore(
+        &self,
+        wait: bool,
+    ) -> Result<Option<Vec<(Identifier, Identifier)>>, PlatformWalletError> {
+        if self.coordinator.network() != self.network {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "the shielded coordinator is for {:?}, this wallet for {:?}",
+                self.coordinator.network(),
+                self.network
+            )));
+        }
+        let _lifecycle = self.generation.payment_guard().await;
+        let current = {
+            let wm = self.wallet_manager.read().await;
+            wm.get_wallet_info(&self.wallet_id)
+                .is_some_and(|info| Arc::ptr_eq(&info.generation, &self.generation))
+        };
+        if !current {
+            return Err(PlatformWalletError::WalletNotFound(hex::encode(
+                self.wallet_id,
+            )));
+        }
+        let dashpay_id = dashpay_contract()?.id();
+        let (payments, journal_authoritative) = {
+            let mut store = if wait {
+                self.coordinator.store().write().await
+            } else {
+                match self.coordinator.store().try_write() {
+                    Ok(store) => store,
+                    Err(_) => return Ok(None),
+                }
+            };
+            read_private_payment_journal(&mut *store, &self.persister, self.wallet_id, dashpay_id)?
+        };
+        let restored = restore_journaled_private_payments(
+            &self.wallet_manager,
+            &self.persister,
+            self.wallet_id,
+            &payments,
+            journal_authoritative,
+        )
+        .await?;
+        // Opened only once a restoration succeeded: a restoration that failed
+        // closed over a deleted or replaced store fails the same way until a
+        // known-good store is back. One left closed here is opened by the
+        // next restoration, which no unresolved marker holds back now.
+        if !journal_authoritative {
+            let opened = if wait {
+                Some(self.coordinator.store().write().await)
+            } else {
+                self.coordinator.store().try_write().ok()
+            }
+            .map(|mut store| store.open_private_payment_journal(self.wallet_id));
+            if let Some(Err(error)) = opened {
+                tracing::warn!(
+                    wallet_id = %hex::encode(self.wallet_id),
+                    %error,
+                    "the private payment journal was not opened; the next restoration opens it"
+                );
+            }
+        }
+        Ok(Some(restored))
+    }
+}
+
+/// Read `wallet_id`'s private payment journal for a restoration, as
+/// (sender, recipient, account reference, entry commitment), with whether it
+/// is authoritative (open: a restoration from it succeeded before). The
+/// read-back notices are discharged first. While the journal is new, a spend
+/// saved before it kept the wallet's payments is accounted for: one paying
+/// for a private contact request with its request saved is added to the
+/// journal, one with no request, or whose transition does not decode and
+/// that no record accounts for, fails the read
+/// ([`PlatformWalletError::ShieldedRecoveryCorrupted`]).
+#[cfg(feature = "shielded")]
+fn read_private_payment_journal<S: ShieldedStore>(
+    store: &mut S,
+    persister: &WalletPersister,
+    wallet_id: WalletId,
+    dashpay_id: Identifier,
+) -> Result<(Vec<JournaledPrivatePayment>, bool), PlatformWalletError>
+where
+    PlatformWalletError: From<S::Error>,
+{
+    discharge_read_back_private_payments(store, persister, wallet_id);
+    let journal_authoritative = store.private_payment_journal_open(wallet_id)?;
+    let mut records = store.private_payment_journal(wallet_id)?;
+    let journaled: std::collections::BTreeSet<[u8; 32]> =
+        records.iter().map(|record| record.commitment).collect();
+    let accounted: std::collections::BTreeSet<[u8; 32]> =
+        records.iter().map(|record| record.activity_id).collect();
+    let corrupted =
+        |account_index: u32, reason: &str| PlatformWalletError::ShieldedRecoveryCorrupted {
+            account_index: Some(account_index),
+            reason: reason.to_string(),
+        };
+    // The private contact request payments saved before the journal kept
+    // them: type 29 spends to DashPay's store no record accounts for.
+    // While the journal is new only: once a restoration from it succeeded,
+    // every payment is journaled with its redrive record in one write, so a
+    // record no journal record accounts for paid for nothing, or was
+    // discharged.
+    let mut unjournaled = Vec::new();
+    let saved_before_the_journal = if journal_authoritative {
+        Vec::new()
+    } else {
+        store.pending_redrives_for_wallet(wallet_id)?
+    };
+    for (id, redrive) in saved_before_the_journal {
+        // Identity debits are never private document payments.
+        if redrive.nullifiers.is_empty() || accounted.contains(&redrive.activity_id) {
+            continue;
+        }
+        let transition = match StateTransition::deserialize_from_bytes_trusted(&redrive.st_bytes) {
+            Ok(StateTransition::PrivateDocumentCreateFromShieldedPool(transition)) => transition,
+            Ok(_) => continue,
+            Err(_) => {
+                return Err(corrupted(
+                    id.account_index,
+                    "a saved spend's transition does not decode, and no private payment journal \
+                     record shows it pays for no private contact request",
+                ))
+            }
+        };
+        if transition.data_contract_id() == dashpay_id
+            && transition.document_type_name() == PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME
+        {
+            unjournaled.push((id, redrive));
+        }
+    }
+    // Read only when needed, so a damaged association of a payment the
+    // journal keeps holds nothing up: for an unjournaled payment, and for a
+    // new journal, which accounts for nothing saved before it, damaged
+    // records retained without being loaded included.
+    let associations: BTreeMap<[u8; 32], PrivateContactPayment> = if journal_authoritative {
+        BTreeMap::new()
+    } else {
+        store
+            .private_contact_redrives_for_wallet(wallet_id)?
+            .into_iter()
+            .map(|(redrive, payment)| (redrive.activity_id, payment))
+            .collect()
+    };
+    let mut migrated = Vec::new();
+    for (id, redrive) in unjournaled {
+        let Some(payment) = associations.get(&redrive.activity_id) else {
+            return Err(corrupted(
+                id.account_index,
+                "a private contact request payment saved before the journal kept them carries \
+                 no request, so its pair cannot be restored",
+            ));
+        };
+        for commitment in associated_payment_commitments(&redrive, dashpay_id)? {
+            if !journaled.contains(&commitment) {
+                migrated.push(PrivatePaymentRecord {
+                    account_index: id.account_index,
+                    activity_id: redrive.activity_id,
+                    commitment,
+                    payment: *payment,
+                    nullifiers: redrive.nullifiers.clone(),
+                });
+            }
+        }
+    }
+    if !migrated.is_empty() {
+        store.journal_private_payments(wallet_id, &migrated)?;
+        records.extend(migrated);
+    }
+    Ok((
+        records
+            .into_iter()
+            .map(|record| {
+                (
+                    Identifier::from(record.payment.sender),
+                    Identifier::from(record.payment.recipient),
+                    record.payment.account_reference,
+                    record.commitment,
+                )
+            })
+            .collect(),
+        journal_authoritative,
+    ))
+}
+
 /// The entries of every private document create (type 29) among `redrives`
 /// that appends to DashPay's `privateContactRequest` store, `dashpay_id`
 /// being DashPay's contract id. A record whose transition does not decode
@@ -3040,7 +3281,6 @@ mod private_contact_request_redrive_tests {
 mod private_contact_request_payment_tests {
     use super::*;
     use crate::events::{EventHandler, PlatformEventHandler};
-    use crate::wallet::identity::network::SeedCryptoProvider;
     use crate::wallet::persister::NoPlatformPersistence;
     use crate::wallet::shielded::FileBackedShieldedStore;
     use crate::PlatformWalletManager;
@@ -3107,7 +3347,6 @@ mod private_contact_request_payment_tests {
     ) -> Result<ResponseMetadata, PlatformWalletError> {
         let keyset =
             OrchardKeySet::from_seed(&SEED, dashcore::Network::Testnet, 0).expect("keyset");
-        let crypto = SeedCryptoProvider::from_seed(SEED, dashcore::Network::Testnet);
         wallet
             .pay_private_contact_request(
                 coordinator,
@@ -3115,7 +3354,6 @@ mod private_contact_request_payment_tests {
                 0,
                 &Identifier::from([0xA1; 32]),
                 &Identifier::from([0xB1; 32]),
-                &crypto,
                 BinaryData::new(vec![1; 589]),
                 PaymentStarted::default(),
                 UnreachableProver,

@@ -342,6 +342,13 @@ impl DashPayState {
         self.pending_private_replies.contains_key(contact)
     }
 
+    /// Whether any private request this identity sent is reserved as
+    /// pending ([`Self::private_reply_pending`]).
+    #[cfg(feature = "shielded")]
+    pub(crate) fn private_replies_pending(&self) -> bool {
+        !self.pending_private_replies.is_empty()
+    }
+
     /// Whether this identity was loaded with a private contact request payment
     /// that may be unresolved, and no restoration from the shielded store has
     /// restored its reservations since: its public contact requests are held.

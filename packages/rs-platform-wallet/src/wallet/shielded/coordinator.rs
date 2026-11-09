@@ -1329,6 +1329,31 @@ impl NetworkShieldedCoordinator {
     /// [`sync_notes_across`]: super::sync::sync_notes_across
     /// [`PlatformEventManager::on_shielded_sync_completed`]:
     ///     crate::events::PlatformEventManager::on_shielded_sync_completed
+    /// Discharge the private payment journal records of the private contact
+    /// requests each registered wallet's private sync read back and recorded
+    /// durably (`WalletPersister::note_read_back_private_entries`).
+    async fn discharge_read_back_private_payments(&self) {
+        let noted: Vec<(WalletId, WalletPersister)> = self
+            .persisters
+            .read()
+            .await
+            .iter()
+            .filter(|(_, persister)| persister.has_read_back_private_entries())
+            .map(|(wallet_id, persister)| (*wallet_id, persister.clone()))
+            .collect();
+        if noted.is_empty() {
+            return;
+        }
+        let mut store = self.store.write().await;
+        for (wallet_id, persister) in &noted {
+            super::operations::discharge_read_back_private_payments(
+                &mut *store,
+                persister,
+                *wallet_id,
+            );
+        }
+    }
+
     pub async fn sync(&self, force: bool, cancel: &CancellationToken) -> ShieldedSyncPassSummary {
         // A stop that landed before any work: nothing to finalize, so
         // return the empty summary without touching Platform or the
@@ -1339,6 +1364,10 @@ impl NetworkShieldedCoordinator {
             tracing::debug!("Coordinator sync cancelled before it started");
             return ShieldedSyncPassSummary::default();
         }
+
+        // Every pass, cooldown or not: the private requests a private sync read
+        // back discharge their journal records.
+        self.discharge_read_back_private_payments().await;
 
         // Network-wide cooldown gate. Snapshot the remaining
         // window into a local before any await — `std::sync::Mutex`
@@ -1473,19 +1502,7 @@ impl NetworkShieldedCoordinator {
         // this pass's balances. Skipped on a cancelled pass: the re-drive
         // broadcasts, and a skipped release simply waits for the next pass.
         if let Some((snapshot, recorded)) = stranded_release.filter(|_| !cancelled) {
-            // Snapshot the per-wallet persisters BEFORE the loop and drop
-            // the read guard: `redrive_pending_spends` performs network
-            // broadcasts, and holding the persisters lock across those
-            // awaits would block wallet register/unregister for the
-            // duration of the round trips.
-            let subwallet_persisters: Vec<(SubwalletId, Option<WalletPersister>)> = {
-                let persisters = self.persisters.read().await;
-                subwallets
-                    .iter()
-                    .map(|(id, _)| (*id, persisters.get(&id.wallet_id).cloned()))
-                    .collect()
-            };
-            for (id, persister) in &subwallet_persisters {
+            for (id, _) in &subwallets {
                 // Network broadcasts: a stop that lands after the scan's
                 // snapshot above stops the loop here, and the helper
                 // checks the token before each request it starts.
@@ -1495,8 +1512,6 @@ impl NetworkShieldedCoordinator {
                 super::operations::redrive_pending_spends(
                     &self.sdk,
                     &self.store,
-                    persister.as_ref(),
-                    id.wallet_id,
                     *id,
                     &recorded,
                     cancel,
@@ -1796,25 +1811,6 @@ impl NetworkShieldedCoordinator {
                         "shielded reservation release: reservation resolved or re-armed; skipping"
                     );
                     continue;
-                }
-                // A private document the stranded spend paid for can never be
-                // appended: the wallet releases what it holds for it.
-                if let Some(entry_id) = activity_id {
-                    let rejected = store
-                        .pending_redrives(id)
-                        .ok()
-                        .into_iter()
-                        .flatten()
-                        .filter(|redrive| redrive.activity_id == entry_id)
-                        .filter_map(|redrive| {
-                            StateTransition::deserialize_from_bytes_trusted(&redrive.st_bytes).ok()
-                        });
-                    for transition in rejected {
-                        super::operations::note_rejected_private_documents(
-                            &transition,
-                            persisters.get(&id.wallet_id),
-                        );
-                    }
                 }
                 match store.clear_pending(id, &nullifier) {
                     // `still_same` held under this same guard, so the clear

@@ -71,7 +71,8 @@ pub use prover::CachedOrchardProver;
 pub use seed_pool::{SeedPoolOutcome, SeedPoolProgress, DEFAULT_SEED_POOL_TARGET_NOTES};
 pub use store::{
     IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, InMemoryShieldedStore,
-    PrivateContactPayment, ShieldedNote, ShieldedOutgoingNote, ShieldedStore, SubwalletId,
+    PrivateContactPayment, PrivatePaymentRecord, ShieldedNote, ShieldedOutgoingNote, ShieldedStore,
+    SubwalletId,
 };
 pub use sync::{ShieldedSyncSummary, SyncNotesResult};
 

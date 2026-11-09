@@ -764,7 +764,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     {
         self.read_private_store_before_deciding(sender_identity_id, recipient_identity_id, crypto)
             .await?;
-        self.release_rejected_private_requests().await?;
         let Some(claim) = self
             .claim_public_pair(sender_identity_id, recipient_identity_id, adopt_reply)
             .await?
@@ -809,7 +808,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         if adopt_reply && managed.dashpay().outgoing_request(recipient).is_some() {
             return Ok(None);
         }
-        if managed.dashpay().private_reply_pending(recipient) {
+        if managed.dashpay().private_reply_pending(recipient)
+            || self
+                .persister
+                .absent_sender_private_pair_held(sender, recipient)
+        {
             return Err(PlatformWalletError::PrivateContactRequestPending(
                 *recipient,
             ));

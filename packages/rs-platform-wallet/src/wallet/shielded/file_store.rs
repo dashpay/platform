@@ -23,11 +23,19 @@ use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retentio
 
 use super::balance::{ShieldedBalanceSource, ShieldedLocalAccountBalance};
 use super::store::{
-    PendingRedrive, PrivateContactPayment, ShieldedNote, ShieldedOutgoingNote, ShieldedStore,
-    StalePendingSpend, SubwalletId, SubwalletState,
+    PendingRedrive, PrivateContactPayment, PrivatePaymentRecord, ShieldedNote,
+    ShieldedOutgoingNote, ShieldedStore, StalePendingSpend, SubwalletId, SubwalletState,
 };
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::WalletId;
+
+/// The note-spend kind of a private document create from the shielded pool
+/// (type 29), the transition a private contact request payment is.
+const PRIVATE_DOCUMENT_CREATE_KIND: &str = "private document create from shielded pool";
+
+/// A private payment journal row: the entry's commitment, which keys it, and
+/// the record's bytes ([`PrivatePaymentRecord::to_bytes`]).
+type JournalRow = ([u8; 32], Vec<u8>);
 
 /// Error type for [`FileBackedShieldedStore`].
 #[derive(Debug)]
@@ -102,12 +110,14 @@ pub struct FileBackedShieldedStore {
     /// Per-subwallet notes + sync state, keyed by `(wallet_id,
     /// account_index)`. Lazily populated on first use of an id.
     subwallets: BTreeMap<SubwalletId, SubwalletState>,
-    /// Second connection on the same SQLite file, owning the
-    /// `shielded_pending_spends` table (armed [`PendingRedrive`]
-    /// records). Separate from `tree` because the commitment-tree
-    /// wrapper takes its `Connection` by value; WAL mode makes the
-    /// two-connection setup safe. `Mutex` for the same `Sync`-shim
-    /// reason as `tree`.
+    /// Second connection on the same SQLite file, owning the recovery
+    /// tables: `shielded_pending_spends` (armed [`PendingRedrive`] records)
+    /// and the private payment journal. Separate from `tree` because the
+    /// commitment-tree wrapper takes its `Connection` by value; WAL mode
+    /// makes the two-connection setup safe. It commits at
+    /// `synchronous=FULL` ([`Self::open_recovery_connection`]): a recovery
+    /// record saved before a broadcast must survive a power loss, unlike the
+    /// rebuildable tree. `Mutex` for the same `Sync`-shim reason as `tree`.
     pending_conn: Mutex<rusqlite::Connection>,
     /// The private contact request each armed record pays for, by subwallet
     /// and activity id, as the `private_contact_payment` column keeps it.
@@ -121,6 +131,16 @@ pub struct FileBackedShieldedStore {
     /// restoring a covered wallet's reservations fails
     /// ([`ShieldedStore::private_contact_redrives_for_wallet`]).
     unloaded_private_contact_payments: BTreeSet<Option<WalletId>>,
+    /// The private payment journal's records, by wallet and commitment, as
+    /// the `shielded_private_payment_journal` table keeps them.
+    private_payment_journal: BTreeMap<(WalletId, [u8; 32]), PrivatePaymentRecord>,
+    /// The wallets whose private payment journal is open, as the
+    /// `shielded_private_payment_journal_wallets` table keeps them.
+    private_payment_journals: BTreeSet<WalletId>,
+    /// The wallets of journal records that do not read back, `None` for one
+    /// whose wallet does not read either. The row stays, and reading a
+    /// covered wallet's journal fails, so its holds stay.
+    unreadable_private_payment_journal: BTreeSet<Option<WalletId>>,
 }
 
 /// The private contact request association a saved record carries.
@@ -147,17 +167,26 @@ impl FileBackedShieldedStore {
     }
 
     /// Persist `redrive`, with the private contact request it pays for when
-    /// it does, in one row write.
+    /// it does, and the journal `records` of the entries it appends, in one
+    /// transaction committed at `synchronous=FULL`.
     fn arm_redrive_paying_for(
         &mut self,
         id: SubwalletId,
         redrive: PendingRedrive,
         payment: Option<PrivateContactPayment>,
+        records: &[PrivatePaymentRecord],
     ) -> Result<(), FileShieldedStoreError> {
+        let journal_rows = Self::journal_rows(records)?;
         {
-            let conn = self.pending_conn.lock().expect("pending_conn mutex");
+            let mut conn = self
+                .pending_conn
+                .lock()
+                .map_err(|e| FileShieldedStoreError::Storage(format!("pending_conn mutex: {e}")))?;
+            let tx = conn
+                .transaction()
+                .map_err(|e| FileShieldedStoreError::Storage(format!("begin redrive: {e}")))?;
             let nullifier_blob: Vec<u8> = redrive.nullifiers.iter().flatten().copied().collect();
-            conn.execute(
+            tx.execute(
                 "INSERT OR REPLACE INTO shielded_pending_spends \
                  (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts, identity_nonce_finalized, identity_user_abandoned, private_contact_payment) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
@@ -175,6 +204,16 @@ impl FileBackedShieldedStore {
                 ],
             )
             .map_err(|e| FileShieldedStoreError::Storage(format!("persist redrive: {e}")))?;
+            Self::insert_journal_rows(&tx, id.wallet_id, &journal_rows)?;
+            tx.commit()
+                .map_err(|e| FileShieldedStoreError::Storage(format!("commit redrive: {e}")))?;
+        }
+        if !records.is_empty() {
+            self.private_payment_journals.insert(id.wallet_id);
+        }
+        for record in records {
+            self.private_payment_journal
+                .insert((id.wallet_id, record.commitment), record.clone());
         }
         match payment {
             Some(payment) => {
@@ -189,6 +228,116 @@ impl FileBackedShieldedStore {
             }
         }
         self.subwallets.entry(id).or_default().arm_redrive(redrive);
+        Ok(())
+    }
+
+    /// The rows `records` are kept as: commitment and record bytes. Fails
+    /// for a record [`PrivatePaymentRecord::to_bytes`] refuses.
+    fn journal_rows(
+        records: &[PrivatePaymentRecord],
+    ) -> Result<Vec<JournalRow>, FileShieldedStoreError> {
+        records
+            .iter()
+            .map(|record| {
+                record
+                    .to_bytes()
+                    .map(|bytes| (record.commitment, bytes))
+                    .ok_or_else(|| {
+                        FileShieldedStoreError::Storage(
+                            "a private payment's journal record spends no note, or too many"
+                                .to_string(),
+                        )
+                    })
+            })
+            .collect()
+    }
+
+    /// Insert `rows` into `wallet_id`'s journal within `tx`, opening the
+    /// journal too.
+    fn insert_journal_rows(
+        tx: &rusqlite::Transaction<'_>,
+        wallet_id: WalletId,
+        rows: &[JournalRow],
+    ) -> Result<(), FileShieldedStoreError> {
+        if rows.is_empty() {
+            return Ok(());
+        }
+        tx.execute(
+            "INSERT OR IGNORE INTO shielded_private_payment_journal_wallets (wallet_id) \
+             VALUES (?1)",
+            rusqlite::params![wallet_id.as_slice()],
+        )
+        .map_err(|e| FileShieldedStoreError::Storage(format!("open payment journal: {e}")))?;
+        for (commitment, bytes) in rows {
+            tx.execute(
+                "INSERT OR REPLACE INTO shielded_private_payment_journal \
+                 (wallet_id, commitment, record) VALUES (?1, ?2, ?3)",
+                rusqlite::params![wallet_id.as_slice(), commitment.as_slice(), bytes],
+            )
+            .map_err(|e| FileShieldedStoreError::Storage(format!("journal payment: {e}")))?;
+        }
+        Ok(())
+    }
+
+    /// Load the private payment journal into memory. A row that does not
+    /// read back stays, and flags its wallet
+    /// (`unreadable_private_payment_journal`); the open does not fail.
+    fn load_private_payment_journal(&mut self) -> Result<(), FileShieldedStoreError> {
+        let conn = self
+            .pending_conn
+            .lock()
+            .map_err(|e| FileShieldedStoreError::Storage(format!("pending_conn mutex: {e}")))?;
+        let mut journals = conn
+            .prepare("SELECT wallet_id FROM shielded_private_payment_journal_wallets")
+            .map_err(|e| FileShieldedStoreError::Storage(format!("prepare journals: {e}")))?;
+        let wallets = journals
+            .query_map([], |row| row.get::<_, Vec<u8>>(0))
+            .map_err(|e| FileShieldedStoreError::Storage(format!("query journals: {e}")))?;
+        for wallet in wallets {
+            // A journal whose wallet does not read is not open for any wallet.
+            if let Some(wallet_id) = wallet
+                .ok()
+                .and_then(|bytes| <[u8; 32]>::try_from(bytes.as_slice()).ok())
+            {
+                self.private_payment_journals.insert(wallet_id);
+            }
+        }
+        drop(journals);
+        let mut statement = conn
+            .prepare("SELECT wallet_id, commitment, record FROM shielded_private_payment_journal")
+            .map_err(|e| FileShieldedStoreError::Storage(format!("prepare journal: {e}")))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, Vec<u8>>(0).ok(),
+                    row.get::<_, Vec<u8>>(1).ok(),
+                    row.get::<_, Vec<u8>>(2).ok(),
+                ))
+            })
+            .map_err(|e| FileShieldedStoreError::Storage(format!("query journal: {e}")))?;
+        for row in rows {
+            let (wallet_id, commitment, record) =
+                row.map_err(|e| FileShieldedStoreError::Storage(format!("read journal: {e}")))?;
+            let wallet_id = wallet_id.and_then(|bytes| <[u8; 32]>::try_from(bytes.as_slice()).ok());
+            let read = wallet_id.and_then(|wallet_id| {
+                let commitment = <[u8; 32]>::try_from(commitment?.as_slice()).ok()?;
+                let record = PrivatePaymentRecord::from_bytes(&record?)?;
+                (record.commitment == commitment).then_some((wallet_id, record))
+            });
+            match read {
+                Some((wallet_id, record)) => {
+                    self.private_payment_journal
+                        .insert((wallet_id, record.commitment), record);
+                }
+                None => {
+                    tracing::warn!(
+                        "retaining a private payment journal record that does not read back; \
+                         its wallet's private contact request holds stay"
+                    );
+                    self.unreadable_private_payment_journal.insert(wallet_id);
+                }
+            }
+        }
         Ok(())
     }
 
@@ -254,7 +403,7 @@ impl FileBackedShieldedStore {
         let conn = Self::open_tuned_connection(&path)?;
         let tree = ClientPersistentCommitmentTree::open(conn, max_checkpoints)
             .map_err(|e| FileShieldedStoreError::Storage(format!("open commitment tree: {e}")))?;
-        let pending_conn = Self::open_tuned_connection(&path)?;
+        let pending_conn = Self::open_recovery_connection(&path)?;
         pending_conn
             .execute(
                 "CREATE TABLE IF NOT EXISTS shielded_pending_spends (
@@ -309,6 +458,24 @@ impl FileBackedShieldedStore {
                     FileShieldedStoreError::Storage(format!("upgrade pending schema: {e}"))
                 })?;
         }
+        // The private payment journal: one record per private contact request
+        // payment that may have reached the network, by wallet and entry
+        // commitment, and the wallets whose journal is open. Never purged.
+        pending_conn
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS shielded_private_payment_journal (
+                    wallet_id  BLOB NOT NULL,
+                    commitment BLOB NOT NULL,
+                    record     BLOB NOT NULL,
+                    PRIMARY KEY (wallet_id, commitment)
+                );
+                CREATE TABLE IF NOT EXISTS shielded_private_payment_journal_wallets (
+                    wallet_id BLOB NOT NULL PRIMARY KEY
+                );",
+            )
+            .map_err(|e| {
+                FileShieldedStoreError::Storage(format!("create private payment journal: {e}"))
+            })?;
         let mut store = Self {
             tree: Mutex::new(tree),
             path,
@@ -317,8 +484,12 @@ impl FileBackedShieldedStore {
             pending_conn: Mutex::new(pending_conn),
             private_contact_payments: BTreeMap::new(),
             unloaded_private_contact_payments: BTreeSet::new(),
+            private_payment_journal: BTreeMap::new(),
+            private_payment_journals: BTreeSet::new(),
+            unreadable_private_payment_journal: BTreeSet::new(),
         };
         store.rehydrate_pending_spends()?;
+        store.load_private_payment_journal()?;
         Ok(store)
     }
 
@@ -414,7 +585,8 @@ impl FileBackedShieldedStore {
                             error = %error,
                             "retaining but skipping a damaged shielded note-spend recovery row"
                         );
-                        if private_contact_payment.is_some() {
+                        if private_contact_payment.is_some() || kind == PRIVATE_DOCUMENT_CREATE_KIND
+                        {
                             self.unloaded_private_contact_payments
                                 .insert(readable_wallet_id);
                         }
@@ -491,7 +663,8 @@ impl FileBackedShieldedStore {
                             reason = %error,
                             "retaining but skipping a damaged shielded note-spend recovery row"
                         );
-                        if private_contact_payment.is_some() {
+                        if private_contact_payment.is_some() || kind == PRIVATE_DOCUMENT_CREATE_KIND
+                        {
                             self.unloaded_private_contact_payments
                                 .insert(readable_wallet_id);
                         }
@@ -532,6 +705,9 @@ impl FileBackedShieldedStore {
             StateTransition::IdentityTopUpFromShieldedPool(_) => {
                 Some("identity top up from shielded pool")
             }
+            StateTransition::PrivateDocumentCreateFromShieldedPool(_) => {
+                Some(PRIVATE_DOCUMENT_CREATE_KIND)
+            }
             _ => None,
         }
     }
@@ -546,6 +722,21 @@ impl FileBackedShieldedStore {
     ///
     /// [`open_path`]: Self::open_path
     /// [`reset_commitment_tree`]: ShieldedStore::reset_commitment_tree
+    /// [`Self::open_tuned_connection`] committing at `synchronous=FULL`, for
+    /// the recovery tables: in WAL mode that syncs the WAL on every commit,
+    /// so a recovery record saved before a broadcast survives a crash or
+    /// power loss. The commitment tree's connection keeps `NORMAL`.
+    fn open_recovery_connection(
+        path: &Path,
+    ) -> Result<rusqlite::Connection, FileShieldedStoreError> {
+        let conn = Self::open_tuned_connection(path)?;
+        conn.pragma_update(None, "synchronous", "FULL")
+            .map_err(|e| {
+                FileShieldedStoreError::Storage(format!("PRAGMA synchronous=FULL: {e}"))
+            })?;
+        Ok(conn)
+    }
+
     fn open_tuned_connection(path: &Path) -> Result<rusqlite::Connection, FileShieldedStoreError> {
         let conn = rusqlite::Connection::open(path)
             .map_err(|e| FileShieldedStoreError::Storage(format!("open sqlite: {e}")))?;
@@ -756,16 +947,128 @@ impl ShieldedStore for FileBackedShieldedStore {
     }
 
     fn arm_redrive(&mut self, id: SubwalletId, redrive: PendingRedrive) -> Result<(), Self::Error> {
-        self.arm_redrive_paying_for(id, redrive, None)
+        self.arm_redrive_paying_for(id, redrive, None, &[])
     }
 
-    fn arm_private_contact_redrive(
+    fn arm_private_contact_payment(
         &mut self,
         id: SubwalletId,
         redrive: PendingRedrive,
         payment: PrivateContactPayment,
+        commitments: &[[u8; 32]],
     ) -> Result<(), Self::Error> {
-        self.arm_redrive_paying_for(id, redrive, Some(payment))
+        let records: Vec<PrivatePaymentRecord> = commitments
+            .iter()
+            .map(|commitment| PrivatePaymentRecord {
+                account_index: id.account_index,
+                activity_id: redrive.activity_id,
+                commitment: *commitment,
+                payment,
+                nullifiers: redrive.nullifiers.clone(),
+            })
+            .collect();
+        self.arm_redrive_paying_for(id, redrive, Some(payment), &records)
+    }
+
+    fn private_payment_journal_open(&self, wallet_id: WalletId) -> Result<bool, Self::Error> {
+        Ok(self.private_payment_journals.contains(&wallet_id))
+    }
+
+    fn open_private_payment_journal(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
+        if self.private_payment_journals.contains(&wallet_id) {
+            return Ok(());
+        }
+        {
+            let conn = self
+                .pending_conn
+                .lock()
+                .map_err(|e| FileShieldedStoreError::Storage(format!("pending_conn mutex: {e}")))?;
+            conn.execute(
+                "INSERT OR IGNORE INTO shielded_private_payment_journal_wallets (wallet_id) \
+                 VALUES (?1)",
+                rusqlite::params![wallet_id.as_slice()],
+            )
+            .map_err(|e| FileShieldedStoreError::Storage(format!("open payment journal: {e}")))?;
+        }
+        self.private_payment_journals.insert(wallet_id);
+        Ok(())
+    }
+
+    /// Fails with [`FileShieldedStoreError::RecoveryCorrupted`] when a
+    /// journal record of the wallet, or one whose wallet does not read, does
+    /// not read back: the pair it holds could not be restored.
+    fn private_payment_journal(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Vec<PrivatePaymentRecord>, Self::Error> {
+        if self
+            .unreadable_private_payment_journal
+            .contains(&Some(wallet_id))
+            || self.unreadable_private_payment_journal.contains(&None)
+        {
+            return Err(FileShieldedStoreError::RecoveryCorrupted {
+                account_index: None,
+                reason: "a private payment journal record of the wallet does not read back"
+                    .to_string(),
+            });
+        }
+        Ok(self
+            .private_payment_journal
+            .range((wallet_id, [0u8; 32])..=(wallet_id, [u8::MAX; 32]))
+            .map(|(_, record)| record.clone())
+            .collect())
+    }
+
+    fn journal_private_payments(
+        &mut self,
+        wallet_id: WalletId,
+        records: &[PrivatePaymentRecord],
+    ) -> Result<(), Self::Error> {
+        let rows = Self::journal_rows(records)?;
+        {
+            let mut conn = self
+                .pending_conn
+                .lock()
+                .map_err(|e| FileShieldedStoreError::Storage(format!("pending_conn mutex: {e}")))?;
+            let tx = conn
+                .transaction()
+                .map_err(|e| FileShieldedStoreError::Storage(format!("begin journal: {e}")))?;
+            Self::insert_journal_rows(&tx, wallet_id, &rows)?;
+            tx.commit()
+                .map_err(|e| FileShieldedStoreError::Storage(format!("commit journal: {e}")))?;
+        }
+        if !records.is_empty() {
+            self.private_payment_journals.insert(wallet_id);
+        }
+        for record in records {
+            self.private_payment_journal
+                .insert((wallet_id, record.commitment), record.clone());
+        }
+        Ok(())
+    }
+
+    fn discharge_private_payment(
+        &mut self,
+        wallet_id: WalletId,
+        commitment: &[u8; 32],
+    ) -> Result<bool, Self::Error> {
+        // Durable first: a failure leaves the record, which over-holds.
+        {
+            let conn = self
+                .pending_conn
+                .lock()
+                .map_err(|e| FileShieldedStoreError::Storage(format!("pending_conn mutex: {e}")))?;
+            conn.execute(
+                "DELETE FROM shielded_private_payment_journal \
+                 WHERE wallet_id = ?1 AND commitment = ?2",
+                rusqlite::params![wallet_id.as_slice(), commitment.as_slice()],
+            )
+            .map_err(|e| FileShieldedStoreError::Storage(format!("discharge payment: {e}")))?;
+        }
+        Ok(self
+            .private_payment_journal
+            .remove(&(wallet_id, *commitment))
+            .is_some())
     }
 
     /// Fails with [`FileShieldedStoreError::RecoveryCorrupted`] when a live
@@ -1284,7 +1587,7 @@ mod tests {
         {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
             store
-                .arm_private_contact_redrive(id, record(1, 3), payment)
+                .arm_private_contact_payment(id, record(1, 3), payment, &[[0xC1; 32]])
                 .expect("arm the payment");
             store.arm_redrive(id, record(4, 6)).expect("arm a spend");
             store.bump_redrive_attempts(id, &[1u8; 32]).expect("bump");
@@ -1349,7 +1652,12 @@ mod tests {
         let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
         let arm = |store: &mut FileBackedShieldedStore, id, activity, nullifier| {
             store
-                .arm_private_contact_redrive(id, record(activity, nullifier), payment)
+                .arm_private_contact_payment(
+                    id,
+                    record(activity, nullifier),
+                    payment,
+                    &[[activity; 32]],
+                )
                 .expect("armed");
         };
 
@@ -1574,7 +1882,7 @@ mod tests {
         let arm = || {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
             store
-                .arm_private_contact_redrive(id, record.clone(), payment)
+                .arm_private_contact_payment(id, record.clone(), payment, &[[0xC2; 32]])
                 .unwrap();
         };
         let set = |assignment: &str| {
@@ -2388,5 +2696,260 @@ mod tests {
             "the two block-boundary anchors differ (the tree grew), so drive's \
              recorded set is exactly these two and the mid-block anchor is outside it"
         );
+    }
+
+    /// A type 29 transition paying for one entry whose commitment is
+    /// `[commitment; 32]`, with placeholder actions, serialized.
+    fn private_document_create_bytes(commitment: u8) -> Vec<u8> {
+        use dpp::platform_value::BinaryData;
+        use dpp::shielded::SerializedAction;
+        use dpp::state_transition::private_document_create_from_shielded_pool_transition::methods::PrivateDocumentCreateFromShieldedPoolTransitionMethodsV0;
+        use dpp::state_transition::private_document_create_from_shielded_pool_transition::PrivateDocumentCreateFromShieldedPoolTransition;
+        use dpp::version::PlatformVersion;
+
+        let action = SerializedAction {
+            nullifier: [1; 32],
+            rk: [2; 32],
+            cmx: [3; 32],
+            encrypted_note: vec![4; 216],
+            cv_net: [5; 32],
+            spend_auth_sig: [6; 64],
+        };
+        let mut entry = vec![commitment; 32];
+        entry.extend_from_slice(&[0; 557]);
+        PrivateDocumentCreateFromShieldedPoolTransition::try_from_bundle(
+            dpp::prelude::Identifier::from([0x44; 32]),
+            "privateContactRequest".to_string(),
+            vec![BinaryData::new(entry)],
+            vec![action.clone(), action],
+            0,
+            [7; 32],
+            vec![8; 64],
+            [9; 64],
+            PlatformVersion::latest(),
+        )
+        .expect("a type 29 transition")
+        .serialize_to_bytes()
+        .expect("serializes")
+    }
+
+    /// The recovery tables commit at `synchronous=FULL`, so a record saved
+    /// before a broadcast survives a power loss; the commitment tree's
+    /// connection keeps `NORMAL`.
+    #[test]
+    fn should_commit_recovery_records_at_full_sync() {
+        let path = temp_tree_path("recovery_full_sync");
+        let store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+        let synchronous = |conn: &rusqlite::Connection| {
+            conn.pragma_query_value(None, "synchronous", |row| row.get::<_, i64>(0))
+                .expect("synchronous")
+        };
+        let recovery = store.pending_conn.lock().expect("pending_conn mutex");
+        assert_eq!(synchronous(&recovery), 2, "FULL");
+        drop(recovery);
+        let tree = FileBackedShieldedStore::open_tuned_connection(&path).expect("tree conn");
+        assert_eq!(synchronous(&tree), 1, "NORMAL");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A journal record is saved with its payment's redrive record, and
+    /// outlives it: no note release, purge or reopen removes it, only a
+    /// discharge does. The journal it was saved in reads as open.
+    #[test]
+    fn should_keep_a_journal_record_until_it_is_discharged() {
+        let path = temp_tree_path("journal_lifecycle");
+        let wallet_id = [0x5A; 32];
+        let id = SubwalletId::new(wallet_id, 1);
+        let payment = PrivateContactPayment {
+            sender: [0xB1; 32],
+            recipient: [0xA1; 32],
+            account_reference: 7,
+        };
+        let redrive = PendingRedrive {
+            activity_id: [0x21; 32],
+            anchor: [0x22; 32],
+            nullifiers: vec![[0x23; 32], [0x24; 32]],
+            st_bytes: private_document_create_bytes(0xC3),
+            attempts: 0,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
+        };
+        let expected = PrivatePaymentRecord {
+            account_index: 1,
+            activity_id: redrive.activity_id,
+            commitment: [0xC3; 32],
+            payment,
+            nullifiers: redrive.nullifiers.clone(),
+        };
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+        assert!(!store
+            .private_payment_journal_open(wallet_id)
+            .expect("open?"));
+        for nullifier in &redrive.nullifiers {
+            store.mark_pending(id, nullifier).expect("reserved");
+        }
+        store
+            .arm_private_contact_payment(id, redrive.clone(), payment, &[[0xC3; 32]])
+            .expect("armed");
+        assert!(store
+            .private_payment_journal_open(wallet_id)
+            .expect("open?"));
+        assert_eq!(
+            store.private_payment_journal(wallet_id).expect("journal"),
+            vec![expected.clone()]
+        );
+        // A note release drops the redrive record, not the journal record.
+        assert!(store.clear_pending(id, &[0x23; 32]).expect("released"));
+        assert!(store.pending_redrives(id).expect("records").is_empty());
+        store.purge_subwallet(id).expect("account purge");
+        store.purge_wallet(wallet_id).expect("wallet purge");
+        store.purge_all_subwallets().expect("purge all");
+        drop(store);
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("reopened");
+        assert!(store
+            .private_payment_journal_open(wallet_id)
+            .expect("open?"));
+        assert_eq!(
+            store.private_payment_journal(wallet_id).expect("journal"),
+            vec![expected]
+        );
+        assert!(store
+            .private_payment_journal([0x5B; 32])
+            .expect("another wallet's")
+            .is_empty());
+        assert!(store
+            .discharge_private_payment(wallet_id, &[0xC3; 32])
+            .expect("discharged"));
+        drop(store);
+        let store = FileBackedShieldedStore::open_path(&path, 100).expect("reopened");
+        assert!(store
+            .private_payment_journal(wallet_id)
+            .expect("journal")
+            .is_empty());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A journal record that does not read back stays, and fails reading
+    /// its wallet's journal, or every wallet's when its wallet does not read
+    /// either; the store still opens.
+    #[test]
+    fn should_fail_reading_a_journal_whose_record_does_not_read() {
+        for (damage, other_wallet_reads) in [
+            (
+                "UPDATE shielded_private_payment_journal SET record = x'01'",
+                true,
+            ),
+            (
+                "UPDATE shielded_private_payment_journal SET commitment = x'02'",
+                true,
+            ),
+            (
+                "UPDATE shielded_private_payment_journal SET wallet_id = x'03'",
+                false,
+            ),
+        ] {
+            let path = temp_tree_path("journal_damage");
+            let wallet_id = [0x6A; 32];
+            let id = SubwalletId::new(wallet_id, 0);
+            let payment = PrivateContactPayment {
+                sender: [0xB2; 32],
+                recipient: [0xA2; 32],
+                account_reference: 1,
+            };
+            {
+                let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+                store
+                    .arm_private_contact_payment(
+                        id,
+                        PendingRedrive {
+                            activity_id: [0x31; 32],
+                            anchor: [0x32; 32],
+                            nullifiers: vec![[0x33; 32]],
+                            st_bytes: private_document_create_bytes(0xD4),
+                            attempts: 0,
+                            identity_nonce_finalized: false,
+                            identity_user_abandoned: false,
+                        },
+                        payment,
+                        &[[0xD4; 32]],
+                    )
+                    .expect("armed");
+                store
+                    .pending_conn
+                    .lock()
+                    .expect("pending_conn mutex")
+                    .execute(damage, [])
+                    .expect("damaged");
+            }
+            let store = FileBackedShieldedStore::open_path(&path, 100).expect("still opens");
+            assert!(
+                matches!(
+                    store.private_payment_journal(wallet_id),
+                    Err(FileShieldedStoreError::RecoveryCorrupted { .. })
+                ),
+                "{damage}"
+            );
+            assert_eq!(
+                store.private_payment_journal([0x6B; 32]).is_ok(),
+                other_wallet_reads,
+                "{damage}"
+            );
+            let rows: i64 = store
+                .pending_conn
+                .lock()
+                .expect("pending_conn mutex")
+                .query_row(
+                    "SELECT count(*) FROM shielded_private_payment_journal",
+                    [],
+                    |row| row.get(0),
+                )
+                .expect("count");
+            assert_eq!(rows, 1, "{damage}: the record stays");
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
+    /// A private document create (type 29) is a note spend: a recovery row
+    /// for one with damaged metadata is retained and skipped, its wallet
+    /// flagged so its legacy payments do not restore, and the shared store
+    /// still opens for every wallet.
+    #[test]
+    fn should_retain_and_skip_a_damaged_private_document_payment_row() {
+        let path = temp_tree_path("damaged_private_document_row");
+        let wallet_id = [0x7A; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: [0x41; 32],
+                        anchor: [0x42; 32],
+                        nullifiers: vec![[0x43; 32]],
+                        st_bytes: private_document_create_bytes(0xE5),
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                    },
+                )
+                .expect("armed");
+            store
+                .pending_conn
+                .lock()
+                .expect("pending_conn mutex")
+                .execute("UPDATE shielded_pending_spends SET anchor = x'01'", [])
+                .expect("damaged");
+        }
+        let store = FileBackedShieldedStore::open_path(&path, 100).expect("still opens");
+        assert!(store.pending_redrives(id).expect("records").is_empty());
+        assert!(matches!(
+            store.private_contact_redrives_for_wallet(wallet_id),
+            Err(FileShieldedStoreError::RecoveryCorrupted { .. })
+        ));
+        assert!(store
+            .private_contact_redrives_for_wallet([0x7B; 32])
+            .is_ok());
+        let _ = std::fs::remove_file(&path);
     }
 }

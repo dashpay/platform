@@ -59,12 +59,20 @@ pub struct WalletPersister {
     wallet_id: WalletId,
     inner: Arc<dyn PlatformWalletPersistence>,
     contact_payment_gate: Arc<tokio::sync::Mutex<()>>,
-    /// Commitments of private document entries whose payment can never
-    /// execute: the shielded coordinator notes them when it settles an
-    /// unconfirmed spend as failed for good, and the wallet releases the
-    /// private contact request reservations held for them. Shared by the
-    /// clones the wallet and the coordinator hold. In memory only.
-    rejected_private_entries: Arc<std::sync::Mutex<RejectedPrivateEntries>>,
+    /// Commitments of private contact request entries a private sync read
+    /// back and recorded durably, whose records in the shielded store's
+    /// private payment journal are to be discharged: the wallet's view
+    /// notes them, and whoever holds the store discharges them (the shielded
+    /// coordinator's sync pass, a restoration, a private payment). Shared by
+    /// the clones the wallet and the coordinator hold. In memory only: a
+    /// record left undischarged by a restart holds nothing, as the request
+    /// it pays for is recorded.
+    read_back_private_entries: Arc<std::sync::Mutex<BTreeSet<[u8; 32]>>>,
+    /// The (sender, recipient) pairs of journaled private payments whose
+    /// sender the wallet did not manage when they were last restored: an
+    /// identity added since holds them until the next restoration reserves
+    /// them. Replaced by every restoration. In memory only.
+    absent_sender_private_pairs: Arc<std::sync::Mutex<BTreeSet<(Identifier, Identifier)>>>,
     /// Whether the reservations of this wallet's unconfirmed private contact
     /// request payments from an earlier process may still be unrestored:
     /// raised at load for a wallet that bound a shielded account before, and
@@ -74,67 +82,68 @@ pub struct WalletPersister {
     private_payments_unrestored: Arc<AtomicBool>,
 }
 
-/// The commitments [`WalletPersister::note_rejected_private_entries`] noted,
-/// both sets updated under one lock.
-#[derive(Default)]
-struct RejectedPrivateEntries {
-    /// Noted since the last take, for the wallet to release what it holds for
-    /// them ([`WalletPersister::take_rejected_private_entries`]).
-    unapplied: BTreeSet<[u8; 32]>,
-    /// Every one noted in this session, kept after the take: a restoration that
-    /// read an entry before its rejection and reserves its pair after the
-    /// release ran checks it here first
-    /// ([`WalletPersister::private_entry_rejected`]). One commitment per
-    /// payment settled as failed for good, gone with the process, as are the
-    /// reservations it guards.
-    session: BTreeSet<[u8; 32]>,
-}
-
 impl WalletPersister {
     pub fn new(wallet_id: WalletId, inner: Arc<dyn PlatformWalletPersistence>) -> Self {
         Self {
             wallet_id,
             inner,
             contact_payment_gate: Arc::new(tokio::sync::Mutex::new(())),
-            rejected_private_entries: Arc::default(),
+            read_back_private_entries: Arc::default(),
+            absent_sender_private_pairs: Arc::default(),
             private_payments_unrestored: Arc::default(),
         }
     }
 
-    /// Note the commitments of private document entries whose payment was
-    /// settled as never executing, for the wallet to release what it holds
-    /// for them ([`Self::take_rejected_private_entries`]).
-    #[cfg(feature = "shielded")]
-    pub(crate) fn note_rejected_private_entries(
+    /// Note the commitments of private contact request entries a private sync
+    /// read back and recorded durably, for their journal records to be
+    /// discharged ([`Self::take_read_back_private_entries`]).
+    pub(crate) fn note_read_back_private_entries(
         &self,
         commitments: impl IntoIterator<Item = [u8; 32]>,
     ) {
-        let mut rejected = self.rejected_entries();
-        for commitment in commitments {
-            rejected.unapplied.insert(commitment);
-            rejected.session.insert(commitment);
-        }
+        self.read_back_entries().extend(commitments);
     }
 
-    /// Whether [`Self::note_rejected_private_entries`] noted any commitment
-    /// since the last take.
-    pub(crate) fn has_rejected_private_entries(&self) -> bool {
-        !self.rejected_entries().unapplied.is_empty()
+    /// Take the commitments [`Self::note_read_back_private_entries`] noted:
+    /// a caller that fails to discharge one notes it again.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn take_read_back_private_entries(&self) -> BTreeSet<[u8; 32]> {
+        std::mem::take(&mut *self.read_back_entries())
     }
 
-    /// Take the commitments [`Self::note_rejected_private_entries`] noted
-    /// since the last take. Take them only where they are applied with
-    /// nothing awaited in between, as nothing keeps a set taken and dropped.
-    pub(crate) fn take_rejected_private_entries(&self) -> BTreeSet<[u8; 32]> {
-        std::mem::take(&mut self.rejected_entries().unapplied)
+    /// Hold `pairs`, the (sender, recipient) pairs of journaled private
+    /// payments whose sender the wallet does not manage now, replacing the
+    /// ones an earlier restoration held.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn hold_absent_sender_private_pairs(
+        &self,
+        pairs: BTreeSet<(Identifier, Identifier)>,
+    ) {
+        *self
+            .absent_sender_private_pairs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = pairs;
     }
 
-    /// Whether [`Self::note_rejected_private_entries`] noted `commitment` in
-    /// this session, taken or not: a restoration checks it under the wallet
-    /// lock before it reserves a pair for that entry, so a rejection noted and
-    /// applied while the restoration read its entries still holds.
-    pub(crate) fn private_entry_rejected(&self, commitment: &[u8; 32]) -> bool {
-        self.rejected_entries().session.contains(commitment)
+    /// Whether a journaled private payment from `sender` to `recipient` holds
+    /// the pair though the wallet did not manage `sender` when it was last
+    /// restored ([`Self::hold_absent_sender_private_pairs`]).
+    pub(crate) fn absent_sender_private_pair_held(
+        &self,
+        sender: &Identifier,
+        recipient: &Identifier,
+    ) -> bool {
+        self.absent_sender_private_pairs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains(&(*sender, *recipient))
+    }
+
+    /// Whether [`Self::note_read_back_private_entries`] noted any commitment
+    /// not taken yet.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn has_read_back_private_entries(&self) -> bool {
+        !self.read_back_entries().is_empty()
     }
 
     /// Hold this wallet's public contact requests, sent or accepted, until
@@ -163,8 +172,8 @@ impl WalletPersister {
         self.private_payments_unrestored.load(Ordering::Acquire)
     }
 
-    fn rejected_entries(&self) -> std::sync::MutexGuard<'_, RejectedPrivateEntries> {
-        self.rejected_private_entries
+    fn read_back_entries(&self) -> std::sync::MutexGuard<'_, BTreeSet<[u8; 32]>> {
+        self.read_back_private_entries
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }

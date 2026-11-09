@@ -212,6 +212,94 @@ impl PrivateContactPayment {
     }
 }
 
+/// One private contact request payment the wallet may have broadcast, as the
+/// shielded store's private payment journal keeps it: the request it pays
+/// for, the commitment of the entry it appends and the nullifiers its spend
+/// consumes. Saved durably before the payment can reach the network
+/// ([`ShieldedStore::arm_private_contact_payment`]) and kept until the
+/// payment provably resolved ([`ShieldedStore::discharge_private_payment`]),
+/// whatever happens to the spend's notes and redrive record: the pair it
+/// holds is restored from it after a restart.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrivatePaymentRecord {
+    /// The account whose notes pay for it.
+    pub account_index: u32,
+    /// The spend's activity id, which keys its redrive record.
+    pub activity_id: [u8; 32],
+    /// The commitment of the entry it appends, which keys the record.
+    pub commitment: [u8; 32],
+    /// The request it pays for.
+    pub payment: PrivateContactPayment,
+    /// The nullifiers of the notes its spend consumes; never empty.
+    pub nullifiers: Vec<[u8; 32]>,
+}
+
+impl PrivatePaymentRecord {
+    /// The format version [`Self::to_bytes`] writes.
+    const FORMAT_VERSION: u8 = 1;
+    /// The bytes before the nullifiers: version, account index, activity id,
+    /// commitment, sender, recipient, account reference and nullifier count.
+    const HEADER_LEN: usize = 1 + 4 + 32 + 32 + 32 + 32 + 4 + 2;
+
+    /// The bytes the file store keeps it as: [`Self::FORMAT_VERSION`], the
+    /// account index little-endian, the activity id, the commitment, the
+    /// sender, the recipient, the account reference little-endian, the
+    /// nullifier count as a little-endian `u16`, then the nullifiers. `None`
+    /// when it has no nullifier or more than a `u16` counts.
+    pub(super) fn to_bytes(&self) -> Option<Vec<u8>> {
+        let count = u16::try_from(self.nullifiers.len()).ok()?;
+        if count == 0 {
+            return None;
+        }
+        let mut bytes = Vec::with_capacity(Self::HEADER_LEN + 32 * self.nullifiers.len());
+        bytes.push(Self::FORMAT_VERSION);
+        bytes.extend_from_slice(&self.account_index.to_le_bytes());
+        bytes.extend_from_slice(&self.activity_id);
+        bytes.extend_from_slice(&self.commitment);
+        bytes.extend_from_slice(&self.payment.sender);
+        bytes.extend_from_slice(&self.payment.recipient);
+        bytes.extend_from_slice(&self.payment.account_reference.to_le_bytes());
+        bytes.extend_from_slice(&count.to_le_bytes());
+        for nullifier in &self.nullifiers {
+            bytes.extend_from_slice(nullifier);
+        }
+        Some(bytes)
+    }
+
+    /// The record [`Self::to_bytes`] wrote, or `None` for any other bytes: a
+    /// different version, a length that does not match the count, or no
+    /// nullifier.
+    pub(super) fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        let (&version, rest) = bytes.split_first()?;
+        if version != Self::FORMAT_VERSION {
+            return None;
+        }
+        let (account_index, rest) = rest.split_first_chunk::<4>()?;
+        let (activity_id, rest) = rest.split_first_chunk::<32>()?;
+        let (commitment, rest) = rest.split_first_chunk::<32>()?;
+        let (sender, rest) = rest.split_first_chunk::<32>()?;
+        let (recipient, rest) = rest.split_first_chunk::<32>()?;
+        let (account_reference, rest) = rest.split_first_chunk::<4>()?;
+        let (count, rest) = rest.split_first_chunk::<2>()?;
+        let count = usize::from(u16::from_le_bytes(*count));
+        let (nullifiers, remainder) = rest.as_chunks::<32>();
+        if count == 0 || nullifiers.len() != count || !remainder.is_empty() {
+            return None;
+        }
+        Some(Self {
+            account_index: u32::from_le_bytes(*account_index),
+            activity_id: *activity_id,
+            commitment: *commitment,
+            payment: PrivateContactPayment {
+                sender: *sender,
+                recipient: *recipient,
+                account_reference: u32::from_le_bytes(*account_reference),
+            },
+            nullifiers: nullifiers.to_vec(),
+        })
+    }
+}
+
 /// What the wallet knows about an identity debit's local recovery state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdentityDebitRecoveryStatus {
@@ -347,25 +435,69 @@ pub trait ShieldedStore: Send + Sync + 'static {
     fn arm_redrive(&mut self, id: SubwalletId, redrive: PendingRedrive) -> Result<(), Self::Error>;
 
     /// [`Self::arm_redrive`] for a spend paying for the DashPay private
-    /// contact request `payment`, kept with the record and dropped with it.
-    /// A store that keeps nothing across restarts keeps no association.
-    fn arm_private_contact_redrive(
+    /// contact request `payment`, which is kept with the record and dropped
+    /// with it, and the private payment journal's record of each entry the
+    /// spend appends (`commitments`), which outlives it
+    /// ([`PrivatePaymentRecord`]). All of it is saved in one write that is
+    /// durable once this returns, across a crash or power loss too: the
+    /// spend is broadcast only after it. A store that cannot keep all of it
+    /// durably fails, and the payment is refused.
+    fn arm_private_contact_payment(
         &mut self,
         id: SubwalletId,
         redrive: PendingRedrive,
-        _payment: PrivateContactPayment,
-    ) -> Result<(), Self::Error> {
-        self.arm_redrive(id, redrive)
-    }
+        payment: PrivateContactPayment,
+        commitments: &[[u8; 32]],
+    ) -> Result<(), Self::Error>;
 
     /// The armed records of `wallet_id` that pay for a private contact
-    /// request, each with the request ([`Self::arm_private_contact_redrive`]).
+    /// request, each with the request ([`Self::arm_private_contact_payment`]).
+    /// Fails when one of them carries an association that does not read.
     fn private_contact_redrives_for_wallet(
         &self,
-        _wallet_id: WalletId,
-    ) -> Result<Vec<(PendingRedrive, PrivateContactPayment)>, Self::Error> {
-        Ok(Vec::new())
-    }
+        wallet_id: WalletId,
+    ) -> Result<Vec<(PendingRedrive, PrivateContactPayment)>, Self::Error>;
+
+    // ── Private payment journal (per-wallet) ───────────────────────────
+
+    /// Whether `wallet_id`'s private payment journal is open
+    /// ([`Self::open_private_payment_journal`]): then it is authoritative for
+    /// the wallet's private payments, so one marked unresolved with no record
+    /// in it has resolved or was never broadcast. A journal not open yet, as
+    /// in a store that was deleted or replaced, cannot tell.
+    fn private_payment_journal_open(&self, wallet_id: WalletId) -> Result<bool, Self::Error>;
+
+    /// Open `wallet_id`'s private payment journal, durably: called once a
+    /// restoration of the wallet's private payments from it succeeded, before
+    /// the wallet can pay. Saving a journal record opens it too.
+    fn open_private_payment_journal(&mut self, wallet_id: WalletId) -> Result<(), Self::Error>;
+
+    /// Every journal record of `wallet_id`'s private payments. Fails when one
+    /// of the wallet's records, or one whose wallet does not read, does not
+    /// read back.
+    fn private_payment_journal(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Vec<PrivatePaymentRecord>, Self::Error>;
+
+    /// Add `records` to `wallet_id`'s journal durably, for payments whose
+    /// redrive record was saved before the journal kept them.
+    fn journal_private_payments(
+        &mut self,
+        wallet_id: WalletId,
+        records: &[PrivatePaymentRecord],
+    ) -> Result<(), Self::Error>;
+
+    /// Remove `wallet_id`'s journal record of the entry `commitment`, once
+    /// its payment provably resolved: the entry was read back, or the
+    /// transition never left the wallet. Returns whether there was one. No
+    /// other call removes a journal record: not a note release, a redrive's
+    /// removal or a purge.
+    fn discharge_private_payment(
+        &mut self,
+        wallet_id: WalletId,
+        commitment: &[u8; 32],
+    ) -> Result<bool, Self::Error>;
 
     /// Every armed redrive record for `id`.
     fn pending_redrives(&self, id: SubwalletId) -> Result<Vec<PendingRedrive>, Self::Error>;
@@ -919,6 +1051,13 @@ pub struct InMemoryShieldedStore {
     checkpoints: Vec<u32>,
     /// Placeholder anchor; production stores compute the real Sinsemilla root.
     anchor: [u8; 32],
+    /// The private contact request each armed record pays for, by subwallet
+    /// and activity id, read joined with the live records.
+    private_contact_payments: BTreeMap<(SubwalletId, [u8; 32]), PrivateContactPayment>,
+    /// The private payment journal's records, by wallet and commitment.
+    private_payment_journal: BTreeMap<(WalletId, [u8; 32]), PrivatePaymentRecord>,
+    /// The wallets whose private payment journal is open.
+    private_payment_journals: BTreeSet<WalletId>,
 }
 
 impl InMemoryShieldedStore {
@@ -1012,8 +1151,109 @@ impl ShieldedStore for InMemoryShieldedStore {
     }
 
     fn arm_redrive(&mut self, id: SubwalletId, redrive: PendingRedrive) -> Result<(), Self::Error> {
+        self.private_contact_payments
+            .remove(&(id, redrive.activity_id));
         self.subwallets.entry(id).or_default().arm_redrive(redrive);
         Ok(())
+    }
+
+    fn arm_private_contact_payment(
+        &mut self,
+        id: SubwalletId,
+        redrive: PendingRedrive,
+        payment: PrivateContactPayment,
+        commitments: &[[u8; 32]],
+    ) -> Result<(), Self::Error> {
+        if redrive.nullifiers.is_empty() {
+            return Err(InMemoryStoreError(
+                "a private payment's record spends no note".to_string(),
+            ));
+        }
+        if !commitments.is_empty() {
+            self.private_payment_journals.insert(id.wallet_id);
+        }
+        for commitment in commitments {
+            self.private_payment_journal.insert(
+                (id.wallet_id, *commitment),
+                PrivatePaymentRecord {
+                    account_index: id.account_index,
+                    activity_id: redrive.activity_id,
+                    commitment: *commitment,
+                    payment,
+                    nullifiers: redrive.nullifiers.clone(),
+                },
+            );
+        }
+        self.private_contact_payments
+            .insert((id, redrive.activity_id), payment);
+        self.subwallets.entry(id).or_default().arm_redrive(redrive);
+        Ok(())
+    }
+
+    fn private_contact_redrives_for_wallet(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Vec<(PendingRedrive, PrivateContactPayment)>, Self::Error> {
+        Ok(self
+            .pending_redrives_for_wallet(wallet_id)?
+            .into_iter()
+            .filter_map(|(id, redrive)| {
+                self.private_contact_payments
+                    .get(&(id, redrive.activity_id))
+                    .map(|payment| (redrive, *payment))
+            })
+            .collect())
+    }
+
+    fn private_payment_journal_open(&self, wallet_id: WalletId) -> Result<bool, Self::Error> {
+        Ok(self.private_payment_journals.contains(&wallet_id))
+    }
+
+    fn open_private_payment_journal(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
+        self.private_payment_journals.insert(wallet_id);
+        Ok(())
+    }
+
+    fn private_payment_journal(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Vec<PrivatePaymentRecord>, Self::Error> {
+        Ok(self
+            .private_payment_journal
+            .range((wallet_id, [0u8; 32])..=(wallet_id, [u8::MAX; 32]))
+            .map(|(_, record)| record.clone())
+            .collect())
+    }
+
+    fn journal_private_payments(
+        &mut self,
+        wallet_id: WalletId,
+        records: &[PrivatePaymentRecord],
+    ) -> Result<(), Self::Error> {
+        if records.iter().any(|record| record.nullifiers.is_empty()) {
+            return Err(InMemoryStoreError(
+                "a private payment's record spends no note".to_string(),
+            ));
+        }
+        if !records.is_empty() {
+            self.private_payment_journals.insert(wallet_id);
+        }
+        for record in records {
+            self.private_payment_journal
+                .insert((wallet_id, record.commitment), record.clone());
+        }
+        Ok(())
+    }
+
+    fn discharge_private_payment(
+        &mut self,
+        wallet_id: WalletId,
+        commitment: &[u8; 32],
+    ) -> Result<bool, Self::Error> {
+        Ok(self
+            .private_payment_journal
+            .remove(&(wallet_id, *commitment))
+            .is_some())
     }
 
     fn pending_redrives(&self, id: SubwalletId) -> Result<Vec<PendingRedrive>, Self::Error> {
@@ -1178,7 +1418,11 @@ impl ShieldedStore for InMemoryShieldedStore {
     }
 
     fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
+        // The private payment journal outlives the purge: the payments it
+        // keeps may still execute.
         self.subwallets.retain(|id, _| id.wallet_id != wallet_id);
+        self.private_contact_payments
+            .retain(|(id, _), _| id.wallet_id != wallet_id);
         Ok(())
     }
 
@@ -1200,6 +1444,7 @@ impl ShieldedStore for InMemoryShieldedStore {
 
     fn purge_all_subwallets(&mut self) -> Result<(), Self::Error> {
         self.subwallets.clear();
+        self.private_contact_payments.clear();
         Ok(())
     }
 
