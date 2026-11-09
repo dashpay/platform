@@ -523,6 +523,16 @@ mod tests {
     /// reservation, and the history document holding the range's minimum when `with_history`.
     /// The identity contract nonce update is left out, as these tests keep no identities.
     fn reserve(drive: &Drive, request: &RandomTokenRequest, with_history: bool) {
+        reserve_in(drive, request, with_history, None)
+    }
+
+    /// [`reserve`], inside `transaction`.
+    fn reserve_in(
+        drive: &Drive,
+        request: &RandomTokenRequest,
+        with_history: bool,
+        transaction: TransactionArg,
+    ) {
         let operations = random_operations(request, with_history)
             .into_iter()
             .filter(|operation| matches!(operation, DriveOperation::TokenOperation(_)))
@@ -532,43 +542,80 @@ mod tests {
                 operations,
                 true,
                 &BlockInfo::default(),
-                None,
+                transaction,
                 PlatformVersion::latest(),
             )
             .expect("expected the reservation to apply");
     }
 
     fn settle(drive: &Drive, requests: &[RandomTokenRequest]) -> u32 {
+        settle_in(drive, requests, None)
+    }
+
+    /// [`settle`], inside `transaction`.
+    fn settle_in(
+        drive: &Drive,
+        requests: &[RandomTokenRequest],
+        transaction: TransactionArg,
+    ) -> u32 {
         drive
             .settle_random_token_amounts(
                 &BEACON,
                 requests,
                 &BlockInfo::default(),
-                None,
+                transaction,
                 PlatformVersion::latest(),
             )
             .expect("expected the settlement to run")
     }
 
     fn balance(drive: &Drive, identity_id: [u8; 32]) -> Option<TokenAmount> {
+        balance_in(drive, identity_id, None)
+    }
+
+    /// [`balance`], inside `transaction`.
+    fn balance_in(
+        drive: &Drive,
+        identity_id: [u8; 32],
+        transaction: TransactionArg,
+    ) -> Option<TokenAmount> {
         drive
-            .fetch_identity_token_balance(TOKEN, identity_id, None, PlatformVersion::latest())
+            .fetch_identity_token_balance(
+                TOKEN,
+                identity_id,
+                transaction,
+                PlatformVersion::latest(),
+            )
             .expect("expected to fetch a token balance")
     }
 
     fn supply(drive: &Drive) -> Option<TokenAmount> {
+        supply_in(drive, None)
+    }
+
+    /// [`supply`], inside `transaction`.
+    fn supply_in(drive: &Drive, transaction: TransactionArg) -> Option<TokenAmount> {
         drive
-            .fetch_token_total_supply(TOKEN, None, PlatformVersion::latest())
+            .fetch_token_total_supply(TOKEN, transaction, PlatformVersion::latest())
             .expect("expected to fetch the total supply")
     }
 
     /// What the token marketplace escrow holds under `request`'s reservation.
     fn reserved(drive: &Drive, request: &RandomTokenRequest) -> Option<TokenAmount> {
+        reserved_in(drive, request, None)
+    }
+
+    /// [`reserved`], inside `transaction`.
+    fn reserved_in(
+        drive: &Drive,
+        request: &RandomTokenRequest,
+        transaction: TransactionArg,
+    ) -> Option<TokenAmount> {
         drive
             .fetch_token_order_escrow(
                 TOKEN,
                 request.reservation_id(),
-                None,
+                transaction,
                 &mut vec![],
                 PlatformVersion::latest(),
             )
@@ -577,8 +624,13 @@ mod tests {
 
     /// The identity balances, the shielded pools and the escrow add up to the total supplies.
     fn assert_tokens_balanced(drive: &Drive) {
+        assert_tokens_balanced_in(drive, None)
+    }
+
+    /// [`assert_tokens_balanced`], inside `transaction`.
+    fn assert_tokens_balanced_in(drive: &Drive, transaction: TransactionArg) {
         let total = drive
-            .calculate_total_tokens_balance(None, PlatformVersion::latest())
+            .calculate_total_tokens_balance(transaction, PlatformVersion::latest())
             .expect("expected to sum the token balances");
         assert!(
             total.ok().expect("expected the sums to compare"),
@@ -591,6 +643,16 @@ mod tests {
         drive: &Drive,
         request: &RandomTokenRequest,
         document_type_name: &str,
+    ) -> Option<TokenAmount> {
+        history_amount_in(drive, request, document_type_name, None)
+    }
+
+    /// [`history_amount`], inside `transaction`.
+    fn history_amount_in(
+        drive: &Drive,
+        request: &RandomTokenRequest,
+        document_type_name: &str,
+        transaction: TransactionArg,
     ) -> Option<TokenAmount> {
         let platform_version = PlatformVersion::latest();
         let contract = drive
@@ -615,7 +677,7 @@ mod tests {
                 (&path).into(),
                 document_id.as_slice(),
                 DirectQueryType::StatefulDirectQuery,
-                None,
+                transaction,
                 &mut vec![],
                 &platform_version.drive,
             )
@@ -975,6 +1037,105 @@ mod tests {
             Some(second_drawn)
         );
         assert_tokens_balanced(&drive);
+    }
+
+    #[test]
+    fn should_reserve_and_settle_overlapping_requests_inside_one_uncommitted_transaction() {
+        let drive = setup();
+        let first = transfer();
+        let second = RandomTokenRequest {
+            identity_contract_nonce: NONCE + 1,
+            ..transfer()
+        };
+        let third = RandomTokenRequest {
+            identity_contract_nonce: NONCE + 2,
+            ..mint()
+        };
+        let requests = [first.clone(), second.clone(), third.clone()];
+        let first_drawn = draw_token_amount_v0(&BEACON, &first).expect("draws");
+        let second_drawn = draw_token_amount_v0(&BEACON, &second).expect("draws");
+        let third_drawn = draw_token_amount_v0(&BEACON, &third).expect("draws");
+
+        let assert_nothing_committed = || {
+            assert_eq!(balance(&drive, SENDER), Some(BASE_SUPPLY));
+            assert_eq!(balance(&drive, RECIPIENT), None);
+            assert_eq!(supply(&drive), Some(BASE_SUPPLY));
+            for request in &requests {
+                assert_eq!(reserved(&drive, request), None);
+            }
+            assert_eq!(history_amount(&drive, &first, "transfer"), None);
+            assert_eq!(history_amount(&drive, &second, "transfer"), None);
+            assert_eq!(history_amount(&drive, &third, "mint"), None);
+            assert_tokens_balanced(&drive);
+        };
+
+        let transaction = drive.grove.start_transaction();
+        let block = Some(&transaction);
+
+        for request in &requests {
+            reserve_in(&drive, request, true, block);
+        }
+        for request in &requests {
+            assert_eq!(reserved_in(&drive, request, block), Some(MAXIMUM));
+        }
+        assert_eq!(
+            balance_in(&drive, SENDER, block),
+            Some(BASE_SUPPLY - 2 * MAXIMUM)
+        );
+        assert_eq!(balance_in(&drive, RECIPIENT, block), Some(0));
+        assert_eq!(supply_in(&drive, block), Some(BASE_SUPPLY + MAXIMUM));
+        assert_eq!(
+            history_amount_in(&drive, &first, "transfer", block),
+            Some(MINIMUM)
+        );
+        assert_eq!(
+            history_amount_in(&drive, &second, "transfer", block),
+            Some(MINIMUM)
+        );
+        assert_eq!(
+            history_amount_in(&drive, &third, "mint", block),
+            Some(MINIMUM)
+        );
+        assert_tokens_balanced_in(&drive, block);
+        assert_nothing_committed();
+
+        // Each settlement reads what the one before it left in the transaction
+        assert_eq!(settle_in(&drive, &requests, block), 3);
+        for request in &requests {
+            assert_eq!(reserved_in(&drive, request, block), None);
+        }
+        assert_eq!(
+            balance_in(&drive, SENDER, block),
+            Some(BASE_SUPPLY - first_drawn - second_drawn)
+        );
+        assert_eq!(
+            balance_in(&drive, RECIPIENT, block),
+            Some(first_drawn + second_drawn + third_drawn)
+        );
+        assert_eq!(supply_in(&drive, block), Some(BASE_SUPPLY + third_drawn));
+        assert_eq!(
+            history_amount_in(&drive, &first, "transfer", block),
+            Some(first_drawn)
+        );
+        assert_eq!(
+            history_amount_in(&drive, &second, "transfer", block),
+            Some(second_drawn)
+        );
+        assert_eq!(
+            history_amount_in(&drive, &third, "mint", block),
+            Some(third_drawn)
+        );
+        assert_tokens_balanced_in(&drive, block);
+        assert_nothing_committed();
+
+        drive
+            .grove
+            .rollback_transaction(&transaction)
+            .expect("expected to roll the block back");
+        assert_nothing_committed();
+        assert_eq!(balance_in(&drive, SENDER, block), Some(BASE_SUPPLY));
+        assert_eq!(balance_in(&drive, RECIPIENT, block), None);
+        assert_eq!(supply_in(&drive, block), Some(BASE_SUPPLY));
     }
 
     #[test]
