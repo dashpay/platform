@@ -112,14 +112,25 @@ impl PrivateDocumentCreateFromShieldedPool for Sdk {
         bundle: OrchardBundleParams,
         settings: Option<PutSettings>,
     ) -> Result<StateTransitionProofResult, Error> {
-        // An unpinned SDK starts below protocol version 15, whose limits admit no entries: the
-        // network's version is established before the transition is built against it. One
-        // still below it after that refuses with the structured activation error, caused by
-        // the refresh's failure when it failed, so a caller can tell a refusal that may lift
-        // at once from one the network's version explains.
+        // The network's version is established before the transition is built against it, as
+        // limits below protocol version 15 admit no entries, and under the caller's request
+        // settings. The gate asks the network with one proved query, whatever this SDK's proof
+        // setting, which raises an unpinned SDK's version, and sends only once a verified answer
+        // shows the network serves the transition and this SDK speaks it, as a read of the store
+        // is (the broadcast checks again, for a transition built elsewhere). Otherwise it refuses
+        // with the structured activation error, the probe's failure as its cause when it failed,
+        // so a caller can tell a refusal that may lift at once from one the network's version
+        // or a pin explains.
         let requirement = private_document_create_requirement();
+        let request_settings = settings.map(|settings| settings.request_settings);
+        self.ensure_network_serves(Some(requirement), request_settings)
+            .await?;
+        // A mock SDK enforces no gate: its own version decides, refreshed first when it starts
+        // below, the refresh's failure as the refusal's cause.
         if self.protocol_version_number() < requirement.protocol_version {
-            let (version, failure) = self.refresh_protocol_version_or_failure().await;
+            let (version, failure) = self
+                .refresh_protocol_version_or_failure(request_settings)
+                .await;
             if version < requirement.protocol_version {
                 return Err(self.protocol_version_not_active(
                     requirement.protocol_version,
@@ -129,15 +140,6 @@ impl PrivateDocumentCreateFromShieldedPool for Sdk {
                 ));
             }
         }
-        // The SDK's own version does not show the network's: one seeded or pinned at 15 passes
-        // the check above on a network still at 14. The transition is sent only once a verified
-        // answer shows the network serves it, as a read of the store is (the broadcast checks
-        // again, for a transition built elsewhere).
-        self.ensure_network_serves(
-            Some(requirement),
-            settings.map(|settings| settings.request_settings),
-        )
-        .await?;
         let state_transition = self.private_document_create_from_shielded_pool_transition(
             data_contract_id,
             document_type_name,
