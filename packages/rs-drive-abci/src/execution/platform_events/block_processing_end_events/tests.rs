@@ -1569,7 +1569,9 @@ mod storage_refund_clawback_tests {
 }
 
 /// Storage refunds across a fee-generation boundary, driven through the real
-/// block loop (`process_raw_state_transitions` with the state's fee history).
+/// block loop (`process_raw_state_transitions`). From protocol version 15 a
+/// refund is priced at the rate of the protocol version the storing epoch
+/// recorded in its tree.
 ///
 /// The doubled-storage test generation (`TEST_PLATFORM_V4`) differs from the
 /// latest schedule only in its storage disk usage rate, so every
@@ -1579,7 +1581,8 @@ mod storage_refund_clawback_tests {
 ///
 /// The assertions are on transition-level pricing (each fee result and the
 /// stored documents' storage flags), which reads the block's epoch and the
-/// fee history. Block-end processing runs through the shared helper with its
+/// storing epoch's recorded protocol version. Block-end processing runs
+/// through the shared helper with its
 /// genesis-epoch context, because the blocks follow a fast-forward that never
 /// built the later epochs' pool trees; here it only proves that credits
 /// balance. Block-end behaviour in the epochs on either side of a boundary
@@ -1636,6 +1639,7 @@ mod fee_generation_boundary {
     use rand::prelude::StdRng;
     use rand::SeedableRng;
     use simple_signer::signer::SimpleSigner;
+    use std::sync::Arc;
 
     const CONTRACT_PATH: &str =
         "tests/supporting_files/contract/dashpay/dashpay-contract-no-indexes.json";
@@ -1842,7 +1846,8 @@ mod fee_generation_boundary {
 
     /// The block state the hook would leave behind after the doubled-storage
     /// generation activated at `activation_epoch`: the mock protocol version
-    /// is current, and the fee history carries the activation entry.
+    /// is current, and the fee history carries the activation entry the hook
+    /// records.
     fn state_after_upgrade_to_doubled_storage(
         platform: &TempPlatform<MockCoreRPCLike>,
         activation_epoch: EpochIndex,
@@ -2016,6 +2021,17 @@ mod fee_generation_boundary {
         );
         let identity_balance_before = dash_to_credits!(1);
 
+        if let Some(activation_epoch) = activation {
+            // The activation block leaves the mock current, so the first block
+            // of the activation epoch records it in the epoch's tree, and a
+            // refund of bytes stored in that epoch reads its rate from there.
+            platform
+                .state
+                .store(Arc::new(state_after_upgrade_to_doubled_storage(
+                    &platform,
+                    activation_epoch,
+                )));
+        }
         fast_forward_to_block(&platform, 1_200_000_000, 900, 42, STORAGE_EPOCH, false);
         let block_state = |platform: &TempPlatform<MockCoreRPCLike>| match activation {
             Some(activation_epoch) => {
@@ -2106,8 +2122,9 @@ mod fee_generation_boundary {
     }
 
     /// Bytes stored in the genesis epoch of a chain started at
-    /// `protocol_version` and removed in epoch 1, with the fee history the
-    /// initial state records.
+    /// `protocol_version` and removed in epoch 1. The genesis epoch records the
+    /// protocol version the chain started at, and the initial state records its
+    /// fee generation in the fee history.
     async fn store_at_genesis_delete_in_epoch_one(protocol_version: ProtocolVersion) -> Workload {
         const REMOVAL_EPOCH: EpochIndex = 1;
 
@@ -2246,9 +2263,9 @@ mod fee_generation_boundary {
 
     #[tokio::test]
     async fn should_refund_genesis_epoch_bytes_at_the_genesis_fee_generation_rate() {
-        // Without the genesis entry in the fee history the lookup would fall
-        // back to the first registered generation and refund at half the rate
-        // the bytes were paid for.
+        // The genesis epoch's bytes were paid at the rate of the protocol
+        // version the chain started at, which the genesis epoch records; a
+        // refund priced at any other schedule is off by a factor of two.
         let control =
             store_at_genesis_delete_in_epoch_one(PlatformVersion::latest().protocol_version).await;
         let doubled = store_at_genesis_delete_in_epoch_one(TEST_PROTOCOL_VERSION_4).await;

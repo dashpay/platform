@@ -378,8 +378,9 @@ version's tables with one substitution: its fee schedule is
 (`version/mocks/fee_doubled_storage_test.rs`), the latest schedule with a new
 `fee_version_number` and a doubled storage disk usage rate. No shipped schedule
 carries a number other than 1, so this is the only fee generation that
-exercises the registry lookup, the epoch-change hook, the saved-state round
-trip and the history-driven refund path. Its number sits in the same shifted
+exercises the registry lookup, the epoch-change hook and the saved-state round
+trip of the fee history, and a refund of bytes stored in an epoch that ran the
+mock is priced at its doubled rate. Its number sits in the same shifted
 range as the mock protocol versions (`(1 << TEST_PROTOCOL_VERSION_SHIFT_BYTES)
 + 1`), and `FeeVersion::get` resolves that range through the test registry only
 under `mock-versions`: a production node that finds such a number in its saved

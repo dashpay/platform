@@ -582,8 +582,9 @@ Fee versions are stored in the `FEE_VERSIONS` array and looked up by number. The
 
 The platform state keeps a fee history keyed by epoch: the genesis generation
 is recorded when the chain is initialised, and each later generation at the
-epoch change that activates it, so refunds can find the schedule that priced
-the bytes being removed.
+epoch change that activates it. The history is saved with the state, and a
+saved state naming a number the build does not know fails to load. Refunds do
+not read it: they take the storing epoch's rate as described above.
 
 ## Key Source Files
 

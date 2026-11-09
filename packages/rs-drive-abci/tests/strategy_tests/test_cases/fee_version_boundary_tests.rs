@@ -464,9 +464,9 @@ mod tests {
     }
 
     /// At least one document written at or before `created_by` was deleted at
-    /// or after `deleted_from`, so the history-driven refund path priced bytes
-    /// that were persisted before that point (the restart, or the activation
-    /// of a new fee generation).
+    /// or after `deleted_from`, so a refund priced at the storing epoch's rate
+    /// covered bytes that were persisted before that point (the restart, or
+    /// the activation of a new fee generation).
     fn assert_deleted_earlier_document(
         activity: &DocumentActivity,
         created_by: u64,

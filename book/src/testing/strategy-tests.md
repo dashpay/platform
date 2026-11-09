@@ -319,7 +319,7 @@ twice, continuously and reopened from the persisted state at the same block
 validated as a non-proposer. The two runs must agree on the root hash, the
 per-block transition results, the identity balances and the fee history, and
 at least one document written before the boundary must be deleted after it so
-the history-driven refund path runs against persisted bytes.
+a refund priced at the storing epoch's rate runs against persisted bytes.
 
 ## How Strategy Tests Differ from Unit Tests
 
