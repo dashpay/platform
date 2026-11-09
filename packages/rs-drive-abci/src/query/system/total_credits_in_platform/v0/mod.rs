@@ -140,13 +140,23 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::setup_platform;
+    use crate::query::tests::{assert_drive_part_of_proof_verified, setup_platform};
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
+    use dapi_grpc::platform::v0::{
+        get_total_credits_in_platform_request, get_total_credits_in_platform_response,
+        GetTotalCreditsInPlatformRequest, GetTotalCreditsInPlatformResponse,
+    };
     use dpp::block::epoch::EpochIndex;
     use dpp::dashcore::Network;
+    use dpp::data_contract::{DataContract, TokenConfiguration};
     use dpp::fee::Credits;
+    use dpp::identifier::Identifier;
     use dpp::prelude::CoreBlockHeight;
     use drive::drive::Drive;
+    use drive_proof_verifier::types::TotalCreditsInPlatform;
+    use drive_proof_verifier::{ContextProvider, ContextProviderError, FromProof};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
 
     fn test_query_total_system_credits(
         epoch_index: EpochIndex,
@@ -215,12 +225,17 @@ mod tests {
         credits
     }
 
-    fn test_proved_query_total_system_credits(
+    /// The proved answer to a total credits query on a platform whose unpaid epoch is
+    /// `epoch_index`, and the platform version it was answered at.
+    fn proved_total_credits_response(
         epoch_index: EpochIndex,
         activation_core_height: CoreBlockHeight,
         epoch_core_start_height: CoreBlockHeight,
         current_core_height: CoreBlockHeight,
-    ) -> Credits {
+    ) -> (
+        GetTotalCreditsInPlatformResponseV0,
+        &'static PlatformVersion,
+    ) {
         let (platform, _state, platform_version) =
             setup_platform(Some((1, activation_core_height)), Network::Regtest, None);
 
@@ -257,7 +272,24 @@ mod tests {
             .query_total_credits_in_platform_v0(request, &state, platform_version)
             .expect("expected query to succeed");
 
-        let response_data = response.into_data().expect("expected data");
+        (
+            response.into_data().expect("expected data"),
+            platform_version,
+        )
+    }
+
+    fn test_proved_query_total_system_credits(
+        epoch_index: EpochIndex,
+        activation_core_height: CoreBlockHeight,
+        epoch_core_start_height: CoreBlockHeight,
+        current_core_height: CoreBlockHeight,
+    ) -> Credits {
+        let (response_data, platform_version) = proved_total_credits_response(
+            epoch_index,
+            activation_core_height,
+            epoch_core_start_height,
+            current_core_height,
+        );
 
         let get_total_credits_in_platform_response_v0::Result::Proof(proof) =
             response_data.result.expect("expected a result")
@@ -333,5 +365,110 @@ mod tests {
         let non_proved = test_query_total_system_credits(1, 1500, 2000, 2500);
         let proved = test_proved_query_total_system_credits(1, 1500, 2000, 2500);
         assert_eq!(non_proved, proved);
+    }
+
+    /// Not configured to give the platform activation height, and records whether it was
+    /// asked for it. Serves no quorum key, so verification stops at the signature check.
+    #[derive(Default)]
+    struct NoActivationHeightProvider {
+        asked: AtomicBool,
+    }
+
+    impl ContextProvider for NoActivationHeightProvider {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Err(ContextProviderError::InvalidQuorum(
+                "no quorum keys in this test".to_string(),
+            ))
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            self.asked.store(true, Ordering::SeqCst);
+            Err(ContextProviderError::Config(
+                "activation height is not configured".to_string(),
+            ))
+        }
+    }
+
+    /// Verifies the proved answer for a platform whose unpaid epoch is `epoch_index` with
+    /// [`NoActivationHeightProvider`]: the verifier's error, and whether the provider was
+    /// asked for the activation height.
+    fn verify_without_activation_height(
+        epoch_index: EpochIndex,
+        activation_core_height: CoreBlockHeight,
+        epoch_core_start_height: CoreBlockHeight,
+        current_core_height: CoreBlockHeight,
+    ) -> (drive_proof_verifier::Error, bool) {
+        let (response, platform_version) = proved_total_credits_response(
+            epoch_index,
+            activation_core_height,
+            epoch_core_start_height,
+            current_core_height,
+        );
+        let provider = NoActivationHeightProvider::default();
+        let error = TotalCreditsInPlatform::maybe_from_proof_with_metadata(
+            GetTotalCreditsInPlatformRequest {
+                version: Some(get_total_credits_in_platform_request::Version::V0(
+                    GetTotalCreditsInPlatformRequestV0 { prove: true },
+                )),
+            },
+            GetTotalCreditsInPlatformResponse {
+                version: Some(get_total_credits_in_platform_response::Version::V0(
+                    response,
+                )),
+            },
+            Network::Regtest,
+            platform_version,
+            &provider,
+        )
+        .expect_err("no answer verifies without the activation height or a quorum key");
+        (error, provider.asked.load(Ordering::SeqCst))
+    }
+
+    /// The first epoch's rewards start at the platform's activation height, which only the
+    /// context provider gives. A provider not configured to give it fails every node's answer
+    /// alike, so the verifier reports the provider's configuration error, for which the SDK
+    /// asks no other node and bans none.
+    #[test]
+    fn should_report_an_unconfigured_activation_height_as_the_provider_error() {
+        let (error, asked) = verify_without_activation_height(0, 1500, 1500, 1500);
+        assert!(asked, "the first epoch needs the activation height");
+        assert!(
+            matches!(
+                &error,
+                drive_proof_verifier::Error::ContextProviderError(ContextProviderError::Config(
+                    reason
+                )) if reason == "activation height is not configured"
+            ),
+            "{error:?}"
+        );
+    }
+
+    /// A later epoch's rewards start at a height the proof holds, so the activation height is
+    /// not asked for, and the Drive part of the proof verifies without it.
+    #[test]
+    fn should_not_ask_for_the_activation_height_after_the_first_epoch() {
+        let (error, asked) = verify_without_activation_height(1, 1500, 2000, 2500);
+        assert!(!asked, "a later epoch's start is in the proof");
+        assert_drive_part_of_proof_verified(error);
     }
 }

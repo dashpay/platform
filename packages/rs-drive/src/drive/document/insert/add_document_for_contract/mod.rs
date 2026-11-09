@@ -1,5 +1,4 @@
 mod v0;
-mod v1;
 
 use crate::drive::Drive;
 use crate::util::object_size_info::DocumentAndContractInfo;
@@ -10,7 +9,6 @@ use crate::error::Error;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
@@ -37,7 +35,6 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         match platform_version
             .drive
@@ -53,20 +50,10 @@ impl Drive {
                 apply,
                 transaction,
                 platform_version,
-                previous_fee_versions,
-            ),
-            1 => self.add_document_for_contract_v1(
-                document_and_contract_info,
-                override_document,
-                block_info,
-                apply,
-                transaction,
-                platform_version,
-                previous_fee_versions,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_document_for_contract".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0],
                 received: version,
             })),
         }

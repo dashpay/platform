@@ -1,7 +1,6 @@
 mod v0;
 mod v1;
 mod v2;
-mod v3;
 
 use crate::util::batch::DriveOperation;
 
@@ -10,7 +9,6 @@ use crate::error::{drive::DriveError, Error};
 
 use dpp::block::block_info::BlockInfo;
 
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 use grovedb::TransactionArg;
 
@@ -42,7 +40,6 @@ impl Drive {
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         match platform_version
             .drive
@@ -56,7 +53,6 @@ impl Drive {
                 block_info,
                 transaction,
                 platform_version,
-                previous_fee_versions,
             ),
             1 => self.apply_drive_operations_v1(
                 operations,
@@ -64,7 +60,6 @@ impl Drive {
                 block_info,
                 transaction,
                 platform_version,
-                previous_fee_versions,
             ),
             2 => self.apply_drive_operations_v2(
                 operations,
@@ -72,19 +67,10 @@ impl Drive {
                 block_info,
                 transaction,
                 platform_version,
-                previous_fee_versions,
-            ),
-            3 => self.apply_drive_operations_v3(
-                operations,
-                apply,
-                block_info,
-                transaction,
-                platform_version,
-                previous_fee_versions,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "apply_drive_operations".to_string(),
-                known_versions: vec![0, 1, 2, 3],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
@@ -155,7 +141,6 @@ mod tests {
             &BlockInfo::default(),
             None,
             platform_version,
-            None,
         )
     }
 

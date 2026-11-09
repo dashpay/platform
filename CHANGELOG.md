@@ -22,6 +22,18 @@
 
 ### Changed
 
+- **drive, dpp (Rust API):** `Drive::calculate_fee` is now a method and no longer takes
+  `epochs_per_era` or `previous_fee_versions`:
+  `drive.calculate_fee(base_operations, drive_operations, &epoch, platform_version)`.
+  `apply_drive_operations`, `update_contract` and the document, identity and token balance
+  methods that forwarded `previous_fee_versions` no longer take it.
+  `FeeRefunds::from_storage_removal` takes a closure giving the storage rate of a storing
+  epoch instead of the map. `dpp::fee::default_costs::{KnownCostItem, EpochCosts}` are
+  removed; read the rate from `FeeVersion`'s `storage.storage_disk_usage_credit_per_byte`.
+  Platform state still saves `previous_fee_versions` in the same format. From protocol
+  version 15 a refund is priced at the storing epoch's rate, and reading that epoch's record
+  adds to the processing fee (protocol v15 note 27).
+
 - **drive (Rust API):** Drive's cost estimators write their layer descriptions into
   `drive::util::estimated_layers::EstimatedLayers` instead of
   `HashMap<KeyInfoPath, EstimatedLayerInformation>`, in `DriveLowLevelOperationConverter`
@@ -116,23 +128,15 @@
   gains `DataContractCompiledMaxSizeExceededError` and `ProtocolValidationOperation`
   gains `ContractCompiledSizeValidation`, so struct literals and exhaustive matches
   need them. See [#5579](https://github.com/dashpay/platform/pull/5579).
-- **drive (breaking, protocol version 15):** from protocol version 15 a storage refund
-  for owner-attributed bytes is priced only with the fee history of the block that
-  removes the bytes, on every fee version number. A missing history is an internal
-  error instead of a silent fallback to the first generation's storage rates; a
-  removal of only system bytes needs none. Every shipped fee schedule shares fee
-  version number 1 and the same storage rates, so refund credits are unchanged for
-  shipped inputs. Drive's fee-returning entry points that open their own transaction
-  when the caller passes none (`apply_drive_operations` and the document, contract,
-  moderation and group writers) now price a batch before committing it, so a pricing
-  error leaves nothing written. Rust API:
-  `Drive::credit_storage_refunds_to_owners_operations` credits each recorded owner of
-  a refund without consulting keys or permissions, clearing an owner's debt first, and
-  returns a `StorageRefundCreditOutcome` whose `processing_pool_share()` is the
-  refunds without an owner balance plus the repaid debt, for the caller's processing
-  pool write; settling refunds on block lifecycle paths comes in a follow-up.
-  `DriveIdentityUpdateMethodVersions` gains `credit_storage_refunds_to_owners`, so
-  struct literals need it. See [#4706](https://github.com/dashpay/platform/pull/4706).
+- **drive (breaking):** `Drive::credit_storage_refunds_to_owners_operations` credits each
+  recorded owner of a storage refund without consulting keys or permissions, clearing an
+  owner's debt first, and returns a `StorageRefundCreditOutcome` whose
+  `processing_pool_share()` is the refunds without an owner balance plus the repaid debt,
+  for the caller's processing pool write. It is active from protocol version 15
+  (`DRIVE_IDENTITY_METHOD_VERSIONS_V3`); nothing calls it yet, and settling refunds on
+  block lifecycle paths comes in a follow-up. `DriveIdentityUpdateMethodVersions` gains
+  `credit_storage_refunds_to_owners`, so struct literals need it. See
+  [#4706](https://github.com/dashpay/platform/pull/4706).
 
 ### [5.0.3](https://github.com/dashpay/platform/compare/v5.0.2...v5.0.3) (2026-11-03)
 

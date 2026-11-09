@@ -549,7 +549,6 @@ pub(in crate::execution) mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to add token balance to identity");
         platform

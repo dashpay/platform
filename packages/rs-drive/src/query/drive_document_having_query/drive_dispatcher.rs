@@ -5,11 +5,13 @@
 use super::super::drive_document_ranked_query::{RankedEntry, RankedPaginationInputs};
 use super::mode_detection::detect_having_mode;
 use crate::drive::Drive;
-use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::having::HavingClause;
 use crate::query::projection::SelectProjection;
-use crate::query::{key_array_element_clauses, OrderClause, ResolvedTimeRange, WhereClause};
+use crate::query::{
+    key_array_element_clauses, refuse_several_window_selections, OrderClause, ResolvedTimeRange,
+    WhereClause,
+};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -117,22 +119,14 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentHavingResponse, Error> {
-        // A transform's source must be its index's first property, so no
-        // single index can serve two resolved buckets; rejected before
-        // routing, mirroring the ranked dispatcher. A single resolution is
-        // consumed by index selection (the picker's admissibility rule
+        // No single index can serve two resolved buckets; rejected before
+        // routing, as the ranked dispatcher rejects them. A single resolution
+        // is consumed by index selection (the picker's admissibility rule
         // routes it to exactly the grid it was resolved against, and keeps
         // raw requests off bucketed indexes) — the resolved bucket-start
         // equality pins the bucketed first level like any other leading
         // property.
-        if request.resolved_time_ranges.len() > 1 {
-            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                "at most one window selection (IN_TIME_RANGE or IN_INTEGER_RANGE) is \
-                 supported per having-range query; this one resolves {:?}, and no single \
-                 index can bucket more than one field",
-                request.resolved_time_ranges
-            ))));
-        }
+        refuse_several_window_selections(request.resolved_time_ranges, "having-range query")?;
         // A typed array's elements are keyed first: one pinned element
         // (`contains`) at most, since rankings under several are not merged
         // per document (see [`key_array_element_clauses`]).

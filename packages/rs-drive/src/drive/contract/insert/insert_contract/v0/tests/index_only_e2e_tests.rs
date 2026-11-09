@@ -175,7 +175,6 @@ pub(super) fn insert_like(
         apply,
         None,
         pv,
-        None,
     )
 }
 
@@ -197,7 +196,6 @@ pub(super) fn delete_like(
         apply,
         None,
         pv,
-        None,
     )
 }
 
@@ -1909,17 +1907,12 @@ fn should_refuse_cursor_queries() {
 #[test]
 fn deletion_refunds_flow_from_terminal_item_flags() {
     use dpp::block::epoch::Epoch;
-    use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-    use dpp::version::fee::FeeVersion;
     use std::borrow::Cow;
-    use std::collections::BTreeMap;
 
     let (drive, contract) = setup_likes();
     let document_type = contract
         .document_type_for_name(DOCTYPE)
         .expect("like doctype exists");
-    let previous_fee_versions: CachedEpochIndexFeeVersions =
-        BTreeMap::from([(0, FeeVersion::first())]);
 
     let like = build_like(&contract, "dash", POST_A, OWNER_1, 1);
 
@@ -1944,7 +1937,6 @@ fn deletion_refunds_flow_from_terminal_item_flags() {
             true,
             None,
             pv,
-            None,
         )
         .expect("insert like with owned flags");
 
@@ -1963,7 +1955,6 @@ fn deletion_refunds_flow_from_terminal_item_flags() {
             true,
             None,
             pv,
-            Some(&previous_fee_versions),
         )
         .expect("delete like in a later epoch");
 
@@ -2024,7 +2015,6 @@ fn should_refuse_a_delete_spliced_across_two_rows() {
                 true,
                 None,
                 platform_version(),
-                None,
             )
             .expect("insert mark");
     };
@@ -2046,7 +2036,6 @@ fn should_refuse_a_delete_spliced_across_two_rows() {
             true,
             None,
             platform_version(),
-            None,
         )
         .expect_err("a spliced tuple must be refused");
     assert!(
@@ -2069,7 +2058,6 @@ fn should_refuse_a_delete_spliced_across_two_rows() {
             true,
             None,
             platform_version(),
-            None,
         )
         .expect("the real row must still delete");
     drive
@@ -2081,7 +2069,6 @@ fn should_refuse_a_delete_spliced_across_two_rows() {
             true,
             None,
             platform_version(),
-            None,
         )
         .expect("the other real row must still delete");
 
@@ -2157,7 +2144,6 @@ pub(super) fn insert_tip(
         apply,
         None,
         pv,
-        None,
     )
 }
 
@@ -2179,7 +2165,6 @@ pub(super) fn delete_tip(
         apply,
         None,
         pv,
-        None,
     )
 }
 
@@ -2683,7 +2668,6 @@ fn insert_beat(
         apply,
         None,
         pv,
-        None,
     )
 }
 
@@ -2705,7 +2689,6 @@ fn delete_beat(
         apply,
         None,
         pv,
-        None,
     )
 }
 
@@ -3216,7 +3199,6 @@ fn insert_mark(
         apply,
         None,
         platform_version(),
-        None,
     )
 }
 
@@ -3234,7 +3216,6 @@ fn delete_mark(
         apply,
         None,
         platform_version(),
-        None,
     )
 }
 
@@ -3533,7 +3514,6 @@ fn insert_pin(
         apply,
         None,
         platform_version(),
-        None,
     )
 }
 
@@ -3551,7 +3531,6 @@ fn delete_pin(
         apply,
         None,
         platform_version(),
-        None,
     )
 }
 
@@ -3866,152 +3845,4 @@ fn untagged_like_skips_the_hashtag_index_and_prices_lower() {
     assert!(read_grove_element(&drive, &by_liker, &POST_A).is_none());
 
     assert_grovedb_is_consistent(&drive);
-}
-
-/// Deleting an owner-flagged like frees the owner's bytes, so pricing it without the fee
-/// history is rejected from protocol version 15. The wrapper owns its transaction when the
-/// caller passes none, so the rejected delete leaves every index entry and the root hash as
-/// they were; with the history it refunds the owner and commits, and protocol version 14
-/// still deletes without one.
-#[test]
-fn should_leave_an_index_only_document_in_place_when_the_wrapper_cannot_price_its_removal() {
-    use crate::error::drive::DriveError;
-    use crate::error::Error;
-    use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-    use dpp::version::fee::FeeVersion;
-    use std::borrow::Cow;
-    use std::collections::BTreeMap;
-
-    let insert_flagged_like = |drive: &Drive, contract: &DataContract, like: &Document, pv| {
-        let document_type = contract
-            .document_type_for_name(DOCTYPE)
-            .expect("like doctype exists");
-        drive
-            .add_document_for_contract(
-                DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefInfo((
-                            like,
-                            Some(Cow::Owned(StorageFlags::SingleEpochOwned(0, OWNER_1))),
-                        )),
-                        owner_id: None,
-                    },
-                    contract,
-                    document_type,
-                },
-                false,
-                BlockInfo::default(),
-                true,
-                None,
-                pv,
-                None,
-            )
-            .expect("insert like with owned flags");
-    };
-    let root_hash = |drive: &Drive, pv: &PlatformVersion| {
-        drive
-            .grove
-            .root_hash(None, &pv.drive.grove_version)
-            .unwrap()
-            .expect("expected a root hash")
-    };
-
-    let pv = platform_version();
-    let (drive, contract) = setup_likes();
-    let document_type = contract
-        .document_type_for_name(DOCTYPE)
-        .expect("like doctype exists");
-    let like = build_like(&contract, "dash", POST_A, OWNER_1, 1);
-    insert_flagged_like(&drive, &contract, &like, pv);
-    let before = root_hash(&drive, pv);
-    let mut by_post_level = doctype_path(&contract);
-    by_post_level.push(b"postId".to_vec());
-
-    let result = drive.delete_index_only_document_for_contract(
-        like.clone(),
-        &contract,
-        document_type,
-        BlockInfo::default(),
-        true,
-        None,
-        pv,
-        None,
-    );
-    assert!(
-        matches!(
-            result,
-            Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
-        ),
-        "deleting owner-flagged entries without a fee history must be rejected, got {:?}",
-        result
-    );
-    assert_eq!(
-        root_hash(&drive, pv),
-        before,
-        "a rejected delete must not persist"
-    );
-    assert!(
-        read_grove_element(&drive, &by_post_level, &POST_A).is_some(),
-        "the like's group is still there"
-    );
-
-    let history: CachedEpochIndexFeeVersions = BTreeMap::from([(0, FeeVersion::first())]);
-    let fee_result = drive
-        .delete_index_only_document_for_contract(
-            like,
-            &contract,
-            document_type,
-            BlockInfo::default(),
-            true,
-            None,
-            pv,
-            Some(&history),
-        )
-        .expect("expected to delete the like with the fee history");
-    assert!(fee_result
-        .fee_refunds
-        .calculate_refunds_amount_for_identity(Identifier::from(OWNER_1))
-        .is_some());
-    assert!(
-        read_grove_element(&drive, &by_post_level, &POST_A).is_none(),
-        "the delete was committed"
-    );
-    assert_grovedb_is_consistent(&drive);
-
-    // Protocol version 14 prices the shipped shortcut without a history and commits.
-    let frozen = PlatformVersion::get(14).expect("protocol version 14");
-    let drive = setup_drive_with_initial_state_structure(Some(frozen));
-    let contract = json_document_to_contract(
-        "tests/supporting_files/contract/yappr-likes/yappr-likes-contract.json",
-        false,
-        frozen,
-    )
-    .expect("expected to parse the yappr-likes contract");
-    drive
-        .apply_contract(
-            &contract,
-            BlockInfo::default(),
-            true,
-            StorageFlags::optional_default_as_cow(),
-            None,
-            frozen,
-        )
-        .expect("expected to apply the yappr-likes contract");
-    let document_type = contract
-        .document_type_for_name(DOCTYPE)
-        .expect("like doctype exists");
-    let like = build_like(&contract, "dash", POST_A, OWNER_1, 1);
-    insert_flagged_like(&drive, &contract, &like, frozen);
-    drive
-        .delete_index_only_document_for_contract(
-            like,
-            &contract,
-            document_type,
-            BlockInfo::default(),
-            true,
-            None,
-            frozen,
-            None,
-        )
-        .expect("protocol version 14 prices the shipped shortcut without a history");
 }

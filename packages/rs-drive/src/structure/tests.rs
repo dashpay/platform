@@ -287,7 +287,7 @@ mod fixtures {
     use crate::structure::shape::shape_at;
     use crate::structure::{KeySpec, NodeId};
     use crate::util::batch::drive_op_batch::{
-        AddressFundsOperationType, ContractFeePotOperationType, GroupOperationType,
+        AddressFundsOperationType, ContractFeePotOperationType,
     };
     use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
     use crate::util::batch::ContractModerationOperationType;
@@ -306,8 +306,6 @@ mod fixtures {
     use crate::drive::credit_pools::epochs::paths::EpochProposers;
     use dpp::block::epoch::Epoch;
     use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
-    use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-    use dpp::version::fee::FeeVersion;
     use dpp::contract_group::{
         generate_contract_group_id, ContractGroupMember, ContractGroupMembership,
         ContractGroupRegistration,
@@ -744,7 +742,6 @@ mod fixtures {
                 &BlockInfo::default(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to record a document removal");
         conformance_of(&drive, "contract_with_document_removals", run);
@@ -829,7 +826,6 @@ mod fixtures {
                 &BlockInfo::default(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to fill and claim the fee pots");
         conformance_of(&drive, "moderated_contract", run);
@@ -883,7 +879,6 @@ mod fixtures {
                 &BlockInfo::default(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to count a moderation action");
         conformance_of(&drive, "elected_contract", run);
@@ -995,7 +990,6 @@ mod fixtures {
                 &BlockInfo::default(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to record the proposals of two team actions");
         drive
@@ -1011,7 +1005,6 @@ mod fixtures {
                 &BlockInfo::default(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to record an approval of a team action");
         conformance_of(&drive, "contract_with_team_actions", run);
@@ -1186,30 +1179,19 @@ mod fixtures {
                 )
                 .expect("expected to propose the action");
             if close {
-                // Closing moves signer-flagged items, so pricing the removal
-                // needs the fee history of the removing block; production
-                // closes actions through `apply_drive_operations`, which
-                // forwards it.
-                let fee_history: CachedEpochIndexFeeVersions =
-                    BTreeMap::from([(0, FeeVersion::first())]);
                 drive
-                    .apply_drive_operations(
-                        vec![DriveOperation::GroupOperation(
-                            GroupOperationType::AddGroupAction {
-                                contract_id: contract.id(),
-                                group_contract_position: 0,
-                                initialize_with_insert_action_info: None,
-                                action_id,
-                                signer_identity_id: member_2,
-                                signer_power: 2,
-                                closes_group_action: true,
-                            },
-                        )],
+                    .add_group_action(
+                        contract.id(),
+                        0,
+                        None,
                         true,
+                        action_id,
+                        member_2,
+                        2,
                         &BlockInfo::default(),
+                        true,
                         None,
                         platform_version,
-                        Some(&fee_history),
                     )
                     .expect("expected to close the action");
             }
@@ -1239,7 +1221,6 @@ mod fixtures {
                 &BlockInfo::default(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to set address balances");
         conformance_of(&drive, "address_balances", run);
@@ -1907,7 +1888,6 @@ mod fixtures {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("expected to add the document");
         }

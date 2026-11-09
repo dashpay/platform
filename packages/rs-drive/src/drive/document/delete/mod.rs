@@ -55,14 +55,11 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use rand::Rng;
 
-    use once_cell::sync::Lazy;
     use std::borrow::Cow;
-    use std::collections::BTreeMap;
     use std::option::Option::None;
 
     use crate::config::DriveConfig;
     use crate::drive::document::tests::setup_dashpay;
-    use crate::drive::Drive;
     use crate::error::drive::DriveError;
     use crate::error::Error;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
@@ -75,18 +72,13 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::DataContract;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-    use dpp::document::{Document, DocumentV0Getters};
-    use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
-    use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
+    use dpp::document::Document;
     use dpp::identifier::Identifier;
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
 
     use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
     use dpp::version::fee::FeeVersion;
     use dpp::version::PlatformVersion;
-
-    static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
-        Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
 
     #[test]
     fn test_add_and_remove_family_one_document_no_transaction() {
@@ -139,7 +131,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -180,7 +171,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -208,7 +198,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect_err("expected deleting a nonexistent document to fail");
 
@@ -273,7 +262,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -322,7 +310,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -421,7 +408,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -456,7 +442,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -500,7 +485,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -544,7 +528,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -620,7 +603,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -651,7 +633,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -695,7 +676,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -726,7 +706,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -749,7 +728,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -769,7 +747,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -832,7 +809,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to insert a document successfully");
 
@@ -852,175 +828,8 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
-    }
-
-    /// Deleting an owner-flagged document without the fee history is rejected from
-    /// protocol version 15, and the public wrapper, owning its transaction when the caller
-    /// passes none, rejects it before anything is written: the document is still there and
-    /// the root hash is unchanged. Protocol version 14 still deletes it.
-    #[test]
-    fn should_leave_a_document_in_place_when_the_wrapper_cannot_price_its_removal() {
-        let platform_version = PlatformVersion::latest();
-        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-
-        let contract = setup_contract(
-            &drive,
-            "tests/supporting_files/contract/family/family-contract-reduced.json",
-            None,
-            None,
-            None::<fn(&mut DataContract)>,
-            None,
-            Some(platform_version),
-        );
-        let document_type = contract
-            .document_type_for_name("person")
-            .expect("expected to get document type");
-        let owner_id = [0x44; 32];
-        let person_document = json_document_to_document(
-            "tests/supporting_files/contract/family/person0.json",
-            Some(owner_id.into()),
-            document_type,
-            platform_version,
-        )
-        .expect("expected to get document");
-        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(0, owner_id)));
-        drive
-            .add_document_for_contract(
-                DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefInfo((&person_document, storage_flags)),
-                        owner_id: Some(owner_id),
-                    },
-                    contract: &contract,
-                    document_type,
-                },
-                false,
-                BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-                None,
-            )
-            .expect("expected to insert a document successfully");
-        let root_hash = |drive: &Drive| {
-            drive
-                .grove
-                .root_hash(None, &platform_version.drive.grove_version)
-                .unwrap()
-                .expect("expected a root hash")
-        };
-        let before = root_hash(&drive);
-
-        let result = drive.delete_document_for_contract(
-            person_document.id(),
-            &contract,
-            "person",
-            BlockInfo::default(),
-            true,
-            None,
-            platform_version,
-            None,
-        );
-        assert!(
-            matches!(
-                result,
-                Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
-            ),
-            "deleting owner-flagged bytes without a fee history must be rejected, got {:?}",
-            result
-        );
-        assert_eq!(
-            root_hash(&drive),
-            before,
-            "a rejected delete must not persist"
-        );
-        let query = DriveDocumentQuery::from_sql_expr(
-            "select * from person where firstName = 'Samuel' order by firstName asc limit 100",
-            &contract,
-            Some(&DriveConfig::default()),
-            platform_version,
-        )
-        .expect("should build query");
-        let (results, _, _) = query
-            .execute_raw_results_no_proof(&drive, None, None, platform_version)
-            .expect("expected to execute query");
-        assert_eq!(results.len(), 1, "the document is still there");
-
-        // The same delete with the block's history is priced, refunds the owner and commits.
-        let fee_result = drive
-            .delete_document_for_contract(
-                person_document.id(),
-                &contract,
-                "person",
-                BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
-            )
-            .expect("expected to delete the document with the fee history");
-        assert!(fee_result.fee_refunds.get(&owner_id).is_some());
-        let (results, _, _) = query
-            .execute_raw_results_no_proof(&drive, None, None, platform_version)
-            .expect("expected to execute query");
-        assert!(results.is_empty(), "the delete was committed");
-
-        // Protocol version 14 prices the shipped shortcut without a history and commits.
-        let frozen_platform_version = PlatformVersion::get(14).expect("protocol version 14");
-        let drive = setup_drive_with_initial_state_structure(Some(frozen_platform_version));
-        let contract = setup_contract(
-            &drive,
-            "tests/supporting_files/contract/family/family-contract-reduced.json",
-            None,
-            None,
-            None::<fn(&mut DataContract)>,
-            None,
-            Some(frozen_platform_version),
-        );
-        let document_type = contract
-            .document_type_for_name("person")
-            .expect("expected to get document type");
-        let person_document = json_document_to_document(
-            "tests/supporting_files/contract/family/person0.json",
-            Some(owner_id.into()),
-            document_type,
-            frozen_platform_version,
-        )
-        .expect("expected to get document");
-        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(0, owner_id)));
-        drive
-            .add_document_for_contract(
-                DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefInfo((&person_document, storage_flags)),
-                        owner_id: Some(owner_id),
-                    },
-                    contract: &contract,
-                    document_type,
-                },
-                false,
-                BlockInfo::default(),
-                true,
-                None,
-                frozen_platform_version,
-                None,
-            )
-            .expect("expected to insert a document successfully");
-        drive
-            .delete_document_for_contract(
-                person_document.id(),
-                &contract,
-                "person",
-                BlockInfo::default(),
-                true,
-                None,
-                frozen_platform_version,
-                None,
-            )
-            .expect("protocol version 14 prices the shipped shortcut without a history");
     }
 
     #[test]
@@ -1075,15 +884,13 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
         let added_bytes = fee_result.storage_fee
-            / Epoch::new(0).unwrap().cost_for_known_cost_item(
-                &EPOCH_CHANGE_FEE_VERSION_TEST,
-                StorageDiskUsageCreditPerByte,
-            );
+            / FeeVersion::first()
+                .storage
+                .storage_disk_usage_credit_per_byte;
         // We added 1559 bytes
         assert_eq!(added_bytes, 1559);
 
@@ -1104,7 +911,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -1117,10 +923,9 @@ mod tests {
 
         assert_eq!(*removed_credits, 41881536);
         let refund_equivalent_bytes = removed_credits.to_unsigned()
-            / Epoch::new(0).unwrap().cost_for_known_cost_item(
-                &EPOCH_CHANGE_FEE_VERSION_TEST,
-                StorageDiskUsageCreditPerByte,
-            );
+            / FeeVersion::first()
+                .storage
+                .storage_disk_usage_credit_per_byte;
 
         assert!(added_bytes > refund_equivalent_bytes);
         assert_eq!(refund_equivalent_bytes, 1551); // we refunded 1551 instead of 1559
@@ -1178,15 +983,13 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
         let added_bytes = fee_result.storage_fee
-            / Epoch::new(0).unwrap().cost_for_known_cost_item(
-                &EPOCH_CHANGE_FEE_VERSION_TEST,
-                StorageDiskUsageCreditPerByte,
-            );
+            / FeeVersion::first()
+                .storage
+                .storage_disk_usage_credit_per_byte;
         // We added 1558 bytes
         assert_eq!(added_bytes, 1559);
 
@@ -1207,7 +1010,6 @@ mod tests {
                 false,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -1269,7 +1071,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -1312,7 +1113,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document by contract id");
 
@@ -1372,7 +1172,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -1399,7 +1198,6 @@ mod tests {
                 false,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to estimate delete costs");
 
@@ -1478,7 +1276,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -1505,7 +1302,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect_err("expected deleting a history-keeping document to fail");
 
@@ -1539,7 +1335,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect_err("expected delete_document_for_contract_id with bad contract id to fail");
 
@@ -1568,7 +1363,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect_err("expected delete_document_for_contract with bad type to fail");
 
@@ -1642,7 +1436,6 @@ mod tests {
             false,
             None,
             platform_version,
-            Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
         );
 
         // The estimation-costs branch (apply=false) uses fake cost estimates

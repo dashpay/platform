@@ -288,7 +288,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to record the pending refunds");
 
@@ -609,7 +608,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to record the pending refunds");
 

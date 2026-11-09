@@ -718,7 +718,6 @@ mod tests {
                 apply,
                 None,
                 PlatformVersion::latest(),
-                None,
             )
             .expect("add document");
     }
@@ -769,7 +768,6 @@ mod tests {
                 apply,
                 None,
                 PlatformVersion::latest(),
-                None,
             )
             .expect("delete document");
     }
@@ -865,7 +863,6 @@ mod tests {
                 StorageFlags::optional_default_as_cow(),
                 None,
                 PlatformVersion::latest(),
-                None,
             )
             .expect("update document");
         let with_status = |status: u8| {

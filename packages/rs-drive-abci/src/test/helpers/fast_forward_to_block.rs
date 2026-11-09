@@ -13,7 +13,10 @@ use crate::test::helpers::setup::TempPlatform;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
+use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
 use drive::drive::credit_pools::operations::update_unpaid_epoch_index_operation;
+use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use drive::util::batch::GroveDbOpBatch;
 use platform_version::version::PlatformVersion;
 use std::sync::Arc;
 
@@ -31,30 +34,6 @@ pub(crate) fn fast_forward_to_block(
 
     let protocol_version = platform_state.current_protocol_version_in_consensus();
     let platform_version = PlatformVersion::get(protocol_version).unwrap();
-
-    // On a chain the epoch change hook records the fee version at every epoch change
-    // after genesis: the first entry at the first one (epoch 1), when the history is
-    // still empty, and later a fee version whose number differs from the last one
-    // recorded, at the epoch being entered. Fast-forwarding past genesis skips the
-    // hook, so record what it would have: from protocol version 15 an empty history
-    // after the genesis epoch is an error.
-    if epoch_index > 0 {
-        let fee_version = &platform_version.fee_version;
-        let record_at = match platform_state.previous_fee_versions().iter().last() {
-            None => Some(1),
-            Some((_, last_fee_version))
-                if last_fee_version.fee_version_number != fee_version.fee_version_number =>
-            {
-                Some(epoch_index)
-            }
-            Some(_) => None,
-        };
-        if let Some(record_at) = record_at {
-            platform_state
-                .previous_fee_versions_mut()
-                .insert(record_at, fee_version);
-        }
-    }
 
     let block_info = BlockInfo {
         time_ms, //less than 2 weeks
@@ -92,6 +71,19 @@ pub(crate) fn fast_forward_to_block(
             core_block_height,
             epoch_index,
         )
+    } else {
+        // Bytes stored in this epoch are refunded at the rate of the protocol version it
+        // recorded, which the epoch's first block writes and this jump skips.
+        let mut batch = GroveDbOpBatch::new();
+        batch.push(
+            block_info
+                .epoch
+                .update_protocol_version_operation(protocol_version),
+        );
+        platform
+            .drive
+            .grove_apply_batch(batch, false, None, &platform_version.drive)
+            .expect("expected to record the epoch's protocol version");
     }
 }
 
@@ -167,7 +159,6 @@ pub(crate) fn process_epoch_change(
             },
             None,
             platform_version,
-            None,
         )
         .expect("expected to apply drive operations");
 }

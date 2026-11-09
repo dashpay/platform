@@ -483,40 +483,37 @@ have elapsed since the data was stored — the longer the data has been stored, 
 smaller the refund, because more of the distributed fees have already been paid
 out to proposers.
 
+From protocol version 15 a refund is priced at the storage rate the bytes were
+paid at. The storage flags say which epoch stored them, the first block of every
+epoch records the epoch's protocol version in its epoch tree, and that version's
+fee schedule has the rate, so `Drive::calculate_fee` reads it from there and adds
+the read to the processing fee, once per earlier storing epoch in a calculation.
+Bytes stored in the current epoch use the current block's rate, which is the same
+schedule. Earlier protocol versions price every refund at the current block's
+rate. Every schedule so far has the same storage rate, so the two agree.
+
 There is a **dust limit**: refunds below 32 bytes worth of storage credits are
 discarded to prevent micro-refund spam.
 
-### Fee history and refund ownership (protocol version 15 onward)
-
-A refund is priced with the fee history of the block that removes the bytes:
-the `previous_fee_versions` map platform state carries, which the epoch change
-hook extends whenever the fee version number changes. `Drive::calculate_fee`
-v1 (`DRIVE_VERSION_V10`) consults that history for every owner-attributed
-storage removal, on every fee version number, and returns an internal error
-when a caller passes none. Earlier generations priced fee version number 1
-against an empty history, so a caller that forgot the history silently
-refunded at the first generation's storage rates; from protocol version 15
-that omission halts instead of mispricing. Every shipped schedule shares fee
-version number 1 and the same storage rates, so the credits themselves are
-unchanged for every shipped input.
+### Refund ownership (protocol version 15 onward)
 
 Refunds follow the recorded owner in the element's storage flags.
 `Drive::credit_storage_refunds_to_owners_operations` credits each owner that
 has a balance element without consulting any key or permission, so a frozen
 but existing owner still receives its bookkeeping refund. Two shares of a
-refund never reach a balance and are reported for the caller instead: the
-part that clears an owner's negative credit (identity debt, which lives
-outside the credit sum trees) and the part whose owner has no balance element
-(the native stand-in for a wiped owner). The caller moves both into the
-current epoch's processing pool with a single pool write and records every
-refund against its storage epoch in the pending epoch refunds, so the credit
-conservation check stays balanced. This primitive is the settlement step
-block lifecycle paths that remove owner-attributed bytes are meant to use in
-the block that removes them; at protocol version 15 the vote poll end cleanup
-does not yet price or settle its refunds, and wiring it up is a separate
-change. The protocol 12 schema migration, which shrank stored contracts
-without refunding the stripped bytes, ran once at that activation and is the
-recorded historical exception; it replays exactly as executed.
+refund never reach a balance and are reported for the caller instead: the part
+that clears an owner's negative credit (identity debt, which lives outside the
+credit sum trees) and the part whose owner has no balance element (the native
+stand-in for a wiped owner). The caller moves both into the current epoch's
+processing pool with a single pool write and records every refund against its
+storage epoch in the pending epoch refunds, so the credit conservation check
+stays balanced. This primitive is the settlement step block lifecycle paths
+that remove owner-attributed bytes are meant to use in the block that removes
+them; at protocol version 15 the vote poll end cleanup does not yet settle its
+refunds, and wiring it up is a separate change. The protocol 12 schema
+migration, which shrank stored contracts without refunding the stripped bytes,
+ran once at that activation and is the recorded historical exception; it
+replays exactly as executed.
 
 ## Epoch-Based Fee Distribution
 
@@ -603,15 +600,6 @@ billed before it compares them). Platform states store only
 Fee versions are stored in the `FEE_VERSIONS` array and looked up by number. The
 `uses_version_fee_multiplier_permille` field allows a global scaling factor
 (permille = divide by 1000; a value of 1000 means no change).
-
-`fee_version_number` keys the persisted fee history that refunds are priced
-against. A schedule that changes storage rates needs a new number, because the
-refund code resolves the schedule for an epoch through the history and (in
-generations before protocol version 15) shortcut number 1 to the first
-generation's rates. `FEE_VERSION1` and `FEE_VERSION2` share number 1 because
-only a non-storage group changed between them; a test in `rs-drive`'s fee
-operation module pins that every shipped schedule keeps the first generation's
-storage rates.
 
 ## Key Source Files
 

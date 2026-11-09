@@ -1,5 +1,4 @@
 mod v0;
-mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -71,20 +70,9 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
-            1 => self.add_contract_warning_v1(
-                contract_id,
-                identity_id,
-                warnings,
-                replaces_existing,
-                moderator_id,
-                block_info,
-                apply,
-                transaction,
-                platform_version,
-            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_contract_warning".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0],
                 received: version,
             })),
         }
@@ -140,20 +128,9 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
-            1 => self.add_contract_warning_operations_v1(
-                contract_id,
-                identity_id,
-                warnings,
-                replaces_existing,
-                moderator_id,
-                block_info,
-                estimated_costs_only_with_layer_info,
-                transaction,
-                platform_version,
-            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_contract_warning_operations".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0],
                 received: version,
             })),
         }

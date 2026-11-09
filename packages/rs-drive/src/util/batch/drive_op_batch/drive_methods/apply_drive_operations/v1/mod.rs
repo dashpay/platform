@@ -17,7 +17,6 @@ use grovedb_costs::storage_cost::removal::StorageRemovedBytes;
 use crate::util::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 
 impl Drive {
     /// Applies a list of high level DriveOperations to the drive, and calculates the fee for them.
@@ -85,7 +84,6 @@ impl Drive {
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         DriveOperation::refuse_repeated_token_balance_writes(&operations)?;
         self.refuse_repeated_counter_moves(&operations, block_info, transaction, platform_version)?;
@@ -241,13 +239,11 @@ impl Drive {
             }
         }
 
-        Drive::calculate_fee(
+        self.calculate_fee(
             None,
             Some(cost_operations),
             &block_info.epoch,
-            self.config.epochs_per_era,
             platform_version,
-            previous_fee_versions,
         )
     }
 }
@@ -258,7 +254,7 @@ impl Drive {
 /// operations free bytes: the document's, whoever paid for it, its owner or an earlier one, and
 /// those of any index subtree the deletion empties, whoever created it.
 ///
-/// `pub(super)` so that generations 2 and 3 (protocol version 15) reuse it; the body is generation 1's,
+/// `pub(super)` so that generation 2 (protocol version 15) reuses it; the body is generation 1's,
 /// unchanged, so protocol version 14 forfeits exactly as before.
 pub(super) fn forfeit_storage_refunds(cost_operations: &mut [LowLevelDriveOperation]) {
     for operation in cost_operations.iter_mut() {
@@ -384,7 +380,6 @@ mod tests {
                     &block_info,
                     Some(&transaction),
                     platform_version,
-                    None,
                 )
                 .unwrap();
             assert_eq!(
@@ -417,7 +412,6 @@ mod tests {
                     &block_info,
                     None,
                     platform_version,
-                    None,
                 )
                 .unwrap();
             assert_eq!(processing_pool(&drive, platform_version), 31);
@@ -444,7 +438,7 @@ mod tests {
                 DriveOperation::GroveDBOpBatch(GroveDbOpBatch::from_operations(vec![pool_write])),
             ];
             drive
-                .apply_drive_operations(batch, true, &block_info, None, platform_version, None)
+                .apply_drive_operations(batch, true, &block_info, None, platform_version)
                 .unwrap();
             assert_eq!(balance(&drive, recipient, platform_version), 13);
             assert_eq!(debt(&drive, recipient, platform_version), 0);
@@ -488,7 +482,6 @@ mod tests {
                     &block_info,
                     None,
                     platform_version,
-                    None,
                 )
                 .unwrap();
             let actual = drive
@@ -498,7 +491,6 @@ mod tests {
                     &block_info,
                     None,
                     platform_version,
-                    None,
                 )
                 .unwrap();
             assert_eq!(actual, expected);
@@ -509,8 +501,7 @@ mod tests {
                         false,
                         &block_info,
                         None,
-                        platform_version,
-                        None
+                        platform_version
                     )
                     .unwrap(),
                 FeeResult::default()
@@ -522,8 +513,7 @@ mod tests {
                         true,
                         &block_info,
                         None,
-                        platform_version,
-                        None
+                        platform_version
                     )
                     .unwrap(),
                 FeeResult::default()
@@ -567,7 +557,6 @@ mod tests {
                     &debt_test_block_info(),
                     None,
                     platform_version,
-                    None,
                 );
                 assert!(matches!(result, Err(Error::Fee(FeeError::Overflow(_)))));
                 assert_eq!(
@@ -627,7 +616,6 @@ mod tests {
                     &block_info,
                     None,
                     platform_version,
-                    None,
                 );
                 if corrupted {
                     assert!(matches!(
@@ -654,8 +642,7 @@ mod tests {
                         true,
                         &block_info,
                         Some(&transaction),
-                        platform_version,
-                        None
+                        platform_version
                     )
                     .is_err());
                 assert_eq!(
@@ -691,8 +678,7 @@ mod tests {
                         apply,
                         &block_info,
                         None,
-                        legacy,
-                        None
+                        legacy
                     ),
                     Err(Error::Drive(DriveError::NotSupported(_)))
                 ));

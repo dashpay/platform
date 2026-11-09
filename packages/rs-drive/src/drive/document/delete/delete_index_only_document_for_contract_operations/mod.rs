@@ -1,5 +1,4 @@
 mod v0;
-mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -11,7 +10,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 
 use dpp::version::PlatformVersion;
@@ -140,9 +138,6 @@ impl Drive {
     /// values and owner) and applies the operations, returning the fee.
     /// `apply: false` runs the worst-case estimation instead — the same
     /// dry-run contract every other document operation follows.
-    /// `previous_fee_versions` carries the historical fee-version context
-    /// deletion refunds are priced against, exactly as on
-    /// `delete_document_for_contract`.
     ///
     /// # Parameters
     ///
@@ -155,8 +150,6 @@ impl Drive {
     /// * `transaction`: The GroveDB transaction; without one, an applied deletion runs in a
     ///   transaction of its own that is committed at the end.
     /// * `platform_version`: The platform version.
-    /// * `previous_fee_versions`: The fee versions of earlier epochs the refunds are priced
-    ///   against.
     ///
     /// # Returns
     ///
@@ -174,7 +167,6 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         match platform_version
             .drive
@@ -191,21 +183,10 @@ impl Drive {
                 apply,
                 transaction,
                 platform_version,
-                previous_fee_versions,
-            ),
-            1 => self.delete_index_only_document_for_contract_v1(
-                document,
-                contract,
-                document_type,
-                block_info,
-                apply,
-                transaction,
-                platform_version,
-                previous_fee_versions,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "delete_index_only_document_for_contract".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0],
                 received: version,
             })),
         }

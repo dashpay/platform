@@ -1,7 +1,6 @@
 mod v0;
 mod v1;
 mod v2;
-mod v3;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -12,7 +11,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
 
@@ -49,7 +47,6 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         match platform_version
             .drive
@@ -58,41 +55,18 @@ impl Drive {
             .update
             .update_contract
         {
-            0 => self.update_contract_v0(
-                contract,
-                block_info,
-                apply,
-                transaction,
-                platform_version,
-                previous_fee_versions,
-            ),
-            1 => self.update_contract_v1(
-                contract,
-                block_info,
-                apply,
-                transaction,
-                platform_version,
-                previous_fee_versions,
-            ),
-            2 => self.update_contract_v2(
-                contract,
-                block_info,
-                apply,
-                transaction,
-                platform_version,
-                previous_fee_versions,
-            ),
-            3 => self.update_contract_v3(
-                contract,
-                block_info,
-                apply,
-                transaction,
-                platform_version,
-                previous_fee_versions,
-            ),
+            0 => {
+                self.update_contract_v0(contract, block_info, apply, transaction, platform_version)
+            }
+            1 => {
+                self.update_contract_v1(contract, block_info, apply, transaction, platform_version)
+            }
+            2 => {
+                self.update_contract_v2(contract, block_info, apply, transaction, platform_version)
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_contract".to_string(),
-                known_versions: vec![0, 1, 2, 3],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
@@ -161,9 +135,7 @@ impl Drive {
                 drive_operations,
                 platform_version,
             ),
-            // Generation 3 of the wrapper changes only when its owned transaction commits;
-            // the element writer is generation 2's.
-            2 | 3 => self.update_contract_element_v2(
+            2 => self.update_contract_element_v2(
                 contract_element,
                 contract,
                 original_contract,
@@ -174,7 +146,7 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_contract_element".to_string(),
-                known_versions: vec![0, 1, 2, 3],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
@@ -248,9 +220,7 @@ impl Drive {
                 drive_operations,
                 platform_version,
             ),
-            // Generation 3 of the wrapper changes only when its owned transaction commits;
-            // the batch builder is generation 2's.
-            2 | 3 => self.update_contract_add_operations_v2(
+            2 => self.update_contract_add_operations_v2(
                 contract_element,
                 contract,
                 original_contract,
@@ -262,7 +232,7 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_contract_add_operations".to_string(),
-                known_versions: vec![0, 1, 2, 3],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }

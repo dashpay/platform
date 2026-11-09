@@ -77,12 +77,10 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContractFactory;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::identifier::Identifier;
 use dpp::platform_value::{platform_value, Value};
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_contract;
-use dpp::version::fee::FeeVersion;
 use dpp::version::PlatformVersion;
 use grovedb::element::indexed::AVG_FIXED_POINT_SCALE;
 use grovedb::Element;
@@ -228,7 +226,6 @@ fn insert_doc(drive: &Drive, contract: &DataContract, document_type_name: &str, 
             true,
             None,
             pv,
-            None,
         )
         .unwrap_or_else(|e| panic!("expected to insert {document_type_name} document: {e}"));
 }
@@ -591,7 +588,6 @@ fn updating_a_grade_reorders_the_avg_ranking() {
             StorageFlags::optional_default_as_cow(),
             None,
             pv,
-            None,
         )
         .expect("expected to update the review document");
 
@@ -639,7 +635,6 @@ fn draining_a_group_removes_it_from_the_avg_axis() {
             true,
             None,
             pv,
-            None,
         )
         .expect("expected to delete the second beta review");
 
@@ -661,7 +656,6 @@ fn draining_a_group_removes_it_from_the_avg_axis() {
             true,
             None,
             pv,
-            None,
         )
         .expect("expected to delete the first beta review");
 
@@ -1273,7 +1267,6 @@ fn estimated_and_actual_insert_fees(
                 apply,
                 None,
                 pv,
-                None,
             )
             .unwrap_or_else(|e| {
                 panic!("expected the {document_type_name} insert (apply={apply}) to succeed: {e}")
@@ -1357,10 +1350,6 @@ fn estimated_and_actual_update_fees(
         .document_type_for_name(document_type_name)
         .unwrap_or_else(|_| panic!("{document_type_name} doctype exists"));
     let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
-    // The replaced element carries epoch flags, so pricing its removal needs
-    // the fee history of the removing block, as every production caller
-    // passes.
-    let fee_history: CachedEpochIndexFeeVersions = BTreeMap::from([(0, FeeVersion::first())]);
 
     let run = |apply: bool| {
         drive
@@ -1374,7 +1363,6 @@ fn estimated_and_actual_update_fees(
                 storage_flags.clone(),
                 None,
                 pv,
-                Some(&fee_history),
             )
             .unwrap_or_else(|e| {
                 panic!("expected the {document_type_name} update (apply={apply}) to succeed: {e}")
@@ -1987,7 +1975,6 @@ fn ranked_index_ranks_correctly_next_to_a_compound_index_sharing_its_property() 
             StorageFlags::optional_default_as_cow(),
             None,
             platform_version(),
-            None,
         )
         .expect("expected to update the dish document across the compound index");
 
@@ -2009,7 +1996,6 @@ fn ranked_index_ranks_correctly_next_to_a_compound_index_sharing_its_property() 
                 true,
                 None,
                 platform_version(),
-                None,
             )
             .expect("expected to delete an alpha dish");
     }

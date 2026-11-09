@@ -90,10 +90,7 @@ mod tests {
 
     use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec};
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-    use dpp::version::fee::FeeVersion;
     use dpp::version::PlatformVersion;
-    use std::collections::BTreeMap;
 
     #[allow(dead_code)]
     #[deprecated(note = "This function is marked as unused.")]
@@ -350,7 +347,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
     }
@@ -577,7 +573,6 @@ mod tests {
                 false,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to apply contract successfully");
     }
@@ -654,7 +649,6 @@ mod tests {
                 true,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("should update contract");
 
@@ -955,113 +949,6 @@ mod tests {
         );
     }
 
-    /// A contract update rewrites the owner-flagged contract item, so pricing it without the
-    /// fee history is rejected from protocol version 15. The wrapper owns its transaction when
-    /// the caller passes none, so the rejected update leaves the stored contract, the cached
-    /// copy and the root hash as they were; with the history it commits and the cache follows.
-    #[test]
-    fn should_leave_a_contract_in_place_when_the_wrapper_cannot_price_its_update() {
-        let platform_version = PlatformVersion::latest();
-        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        // `insert_contract` flags a mutable contract's item with its owner, so an update
-        // rewrites owner-attributed bytes.
-        let contract = json_document_to_contract(
-            "tests/supporting_files/contract/references/references.json",
-            false,
-            platform_version,
-        )
-        .expect("expected to get a contract");
-        drive
-            .insert_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-            )
-            .expect("expected to insert the contract");
-        let contract_id = contract.id().to_buffer();
-        let root_hash = |drive: &Drive| {
-            drive
-                .grove
-                .root_hash(None, &platform_version.drive.grove_version)
-                .unwrap()
-                .expect("expected a root hash")
-        };
-        let cached_version = |drive: &Drive| {
-            drive
-                .get_cached_contract_with_fetch_info(contract_id, None, &platform_version.drive)
-                .expect("expected the cache lookup")
-                .map(|fetch_info| fetch_info.contract.version())
-        };
-        // Warm the committed cache so a rejected update has a stale copy to leave alone.
-        drive
-            .get_contract_with_fetch_info_and_fee(contract_id, None, true, None, platform_version)
-            .expect("expected to fetch the contract");
-        assert_eq!(cached_version(&drive), Some(contract.version()));
-        let before = root_hash(&drive);
-
-        // The rewrite shrinks the contract item: a smaller `note` schema replaces the
-        // large one, so owner-flagged bytes are freed and must be priced with the history.
-        let mut updated = contract.clone();
-        updated.set_version(contract.version() + 1);
-        let note_schema = platform_value!({
-            "type": "object",
-            "properties": {
-                "abc0": {"type": "string", "maxLength": 63, "position": 0}
-            },
-            "additionalProperties": false,
-        });
-        updated
-            .set_document_schema("note", note_schema, true, &mut vec![], platform_version)
-            .expect("should set a document schema");
-
-        let result = drive.update_contract(
-            &updated,
-            BlockInfo::default(),
-            true,
-            None,
-            platform_version,
-            None,
-        );
-        assert!(
-            matches!(
-                result,
-                Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
-            ),
-            "rewriting owner-flagged bytes without a fee history must be rejected, got {:?}",
-            result
-        );
-        assert_eq!(
-            root_hash(&drive),
-            before,
-            "a rejected update must not persist"
-        );
-        assert_eq!(
-            cached_version(&drive),
-            Some(contract.version()),
-            "the cache must not learn of a rewrite that was not committed"
-        );
-
-        let history: CachedEpochIndexFeeVersions = BTreeMap::from([(0, FeeVersion::first())]);
-        drive
-            .update_contract(
-                &updated,
-                BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-                Some(&history),
-            )
-            .expect("expected to update the contract with the fee history");
-        assert_ne!(root_hash(&drive), before, "the update was committed");
-        assert_eq!(
-            cached_version(&drive),
-            Some(updated.version()),
-            "the committed rewrite replaced the cached copy"
-        );
-    }
-
     #[test]
     fn test_update_contract_errors_on_readonly() {
         let drive = setup_drive_with_initial_state_structure(None);
@@ -1089,7 +976,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -1140,7 +1026,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("should update contract with new document type");
 
@@ -1324,7 +1209,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("should update contract with history");
 
@@ -1923,8 +1807,7 @@ mod tests {
             .expect("should set document schema");
         contract.increment_version();
 
-        let result =
-            drive.update_contract(&contract, block_info, true, None, platform_version, None);
+        let result = drive.update_contract(&contract, block_info, true, None, platform_version);
 
         assert!(
             matches!(
@@ -2187,7 +2070,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2229,7 +2111,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2273,7 +2154,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2319,7 +2199,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2406,7 +2285,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2497,7 +2375,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2917,7 +2794,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2957,7 +2833,6 @@ mod tests {
                 false,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected update_contract(apply=false) to succeed via insert delegation");
 

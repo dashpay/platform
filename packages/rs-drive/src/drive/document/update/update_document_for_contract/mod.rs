@@ -1,5 +1,4 @@
 mod v0;
-mod v1;
 
 use crate::util::storage_flags::StorageFlags;
 
@@ -15,7 +14,6 @@ use dpp::fee::fee_result::FeeResult;
 
 use dpp::version::PlatformVersion;
 
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use grovedb::TransactionArg;
 use std::borrow::Cow;
 
@@ -48,7 +46,6 @@ impl Drive {
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         match platform_version
             .drive
@@ -67,23 +64,10 @@ impl Drive {
                 storage_flags,
                 transaction,
                 platform_version,
-                previous_fee_versions,
-            ),
-            1 => self.update_document_for_contract_v1(
-                document,
-                contract,
-                document_type,
-                owner_id,
-                block_info,
-                apply,
-                storage_flags,
-                transaction,
-                platform_version,
-                previous_fee_versions,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_document_for_contract".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0],
                 received: version,
             })),
         }

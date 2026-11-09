@@ -13,7 +13,6 @@ use dpp::address_funds::PlatformAddress;
 use dpp::balances::credits::CreditOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
@@ -56,7 +55,6 @@ where
         address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
         block_credit_mints: &mut Credits,
         platform_version: &PlatformVersion,
-        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
         match platform_version
             .drive_abci
@@ -72,7 +70,6 @@ where
                 address_balances_in_update,
                 block_credit_mints,
                 platform_version,
-                previous_fee_versions,
             ),
             1 => self.execute_event_v1(
                 event,
@@ -82,7 +79,6 @@ where
                 address_balances_in_update,
                 block_credit_mints,
                 platform_version,
-                previous_fee_versions,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "execute_event".to_string(),

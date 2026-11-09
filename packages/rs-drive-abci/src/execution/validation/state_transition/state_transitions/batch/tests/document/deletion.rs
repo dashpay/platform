@@ -19,7 +19,8 @@ mod deletion_tests {
             // genesis contracts tree, increasing the bytes billed when reading that tree
             // (protocol 14 only). The decision proposals and token market contracts add two more
             // at protocol 15, which reshape the tree so the contract read is billed fewer bytes (-47_280).
-            1770160,
+            // DashPay v3's privateContactRequest type makes its sibling node larger (+2_860).
+            1773020,
         )
         .await;
     }

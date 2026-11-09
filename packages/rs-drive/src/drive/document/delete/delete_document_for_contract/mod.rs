@@ -1,5 +1,4 @@
 mod v0;
-mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -11,7 +10,6 @@ use dpp::fee::fee_result::FeeResult;
 
 use dpp::version::PlatformVersion;
 
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::identifier::Identifier;
 use grovedb::TransactionArg;
 
@@ -41,7 +39,6 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         match platform_version
             .drive
@@ -58,21 +55,10 @@ impl Drive {
                 apply,
                 transaction,
                 platform_version,
-                previous_fee_versions,
-            ),
-            1 => self.delete_document_for_contract_v1(
-                document_id,
-                contract,
-                document_type_name,
-                block_info,
-                apply,
-                transaction,
-                platform_version,
-                previous_fee_versions,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "delete_document_for_contract".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0],
                 received: version,
             })),
         }
