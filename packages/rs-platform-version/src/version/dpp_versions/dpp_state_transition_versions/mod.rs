@@ -4,6 +4,7 @@ pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPStateTransitionVersions {
@@ -65,8 +66,19 @@ pub struct IdentityTransitionAssetLockVersions {
     pub required_asset_lock_duff_balance_for_processing_start_for_identity_create: u64,
     pub required_asset_lock_duff_balance_for_processing_start_for_identity_top_up: u64,
     pub required_asset_lock_duff_balance_for_processing_start_for_address_funding: u64,
+    /// Stateless checks of an asset lock transaction: payload, credit output, P2PKH. 0 also caps
+    /// its inputs at `max_asset_lock_transaction_inputs`, a chain proof's transaction fetched
+    /// from Core included; 1 (protocol 15) does not.
     pub validate_asset_lock_transaction_structure: FeatureVersion,
+    /// Stateless checks of an instant asset lock proof. 0 relies on
+    /// `validate_asset_lock_transaction_structure` 0 for the input cap, so a table selecting
+    /// instant 0 must also select transaction 0; 1 (protocol 15) checks the cap itself.
     pub validate_instant_asset_lock_proof_structure: FeatureVersion,
+    /// The most inputs an asset lock transaction may carry, so that an instant proof embedding
+    /// it fits a state transition. Read by `validate_asset_lock_transaction_structure` 0 and by
+    /// `validate_asset_lock_transaction_inputs`, which `validate_instant_asset_lock_proof_structure`
+    /// 1 calls; wallets also read it as Dash Core's relay bound. `u16::MAX`, effectively no cap,
+    /// before protocol version 11.
     pub max_asset_lock_transaction_inputs: u16,
 }
 

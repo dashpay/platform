@@ -1223,13 +1223,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // The same verdict covers the asset-lock input cap: Dash Core relays
         // at most `max_asset_lock_transaction_inputs` (100) inputs and drops a
         // larger lock silently (`assetlocktx-too-many-inputs`), and Platform
-        // consensus validates the same versioned bound — tighter than the
-        // standard-transaction limit key-wallet's builder applies. Any amount
-        // can cross it: a drain pools every eligible input, and a fixed amount
-        // held only in many small coins selects as many. An oversized lock is
-        // abandoned here rather than stranded on the wire; the caller can
-        // consolidate the coins and build again.
-        let abandon = input_cap_violation(&tx, 0, self.sdk.version()).or_else(|| match amount {
+        // consensus holds an instant proof to the same versioned bound —
+        // tighter than the standard-transaction limit key-wallet's builder
+        // applies. Any amount can cross it: a drain pools every eligible
+        // input, and a fixed amount held only in many small coins selects as
+        // many. An oversized lock is abandoned here rather than stranded on
+        // the wire; the caller can consolidate the coins and build again.
+        let abandon = input_cap_violation(&tx, self.sdk.version()).or_else(|| match amount {
             AssetLockBuildAmount::DrainAll {
                 minimum_lock_duffs: Some(minimum),
             } if locked_amount_duffs < minimum => {
