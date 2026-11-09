@@ -505,9 +505,13 @@ pub(crate) async fn restore_journaled_private_payments(
 /// Store `owner`'s private read position record again, for a backend that
 /// keeps it, as whether a private payment of `owner` may be unresolved
 /// (`PrivateContactRequestsPosition::private_payments_unresolved`) may have
-/// changed: a reservation was released or settled. Best effort: a failed
-/// store leaves the marker set, which holds the identity after a restart
-/// until a restoration clears it, never the other way round.
+/// changed: a reservation was released or settled. Flushed when the backend
+/// does not commit a store inline, so a cleared marker does not hold the
+/// identity after a restart. A store or flush that fails is logged and
+/// leaves the marker set, which holds the identity after a restart only
+/// until the next restoration: that one clears it, the shielded store's
+/// journal being open by then and showing the payment resolved. Never the
+/// other way round.
 fn store_private_payment_marker(
     persister: &WalletPersister,
     wm: &WalletManager<PlatformWalletInfo>,
@@ -526,6 +530,16 @@ fn store_private_payment_marker(
             *owner,
             managed.private_contact_requests_position_record(),
         );
+        if !persister.store_commits_inline() {
+            if let Err(error) = persister.flush() {
+                tracing::warn!(
+                    owner = %owner,
+                    %error,
+                    "a private payment marker change is not flushed; the next restoration \
+                     clears a stale one"
+                );
+            }
+        }
     }
 }
 

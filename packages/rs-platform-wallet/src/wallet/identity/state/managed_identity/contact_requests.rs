@@ -841,13 +841,18 @@ impl ManagedIdentity {
     /// (`ContactChangeSet::private_contact_requests_positions`): the loader's
     /// replay, for a backend attesting
     /// [`PRIVATE_CONTACT_REQUEST_SCAN_STATE`](crate::changeset::PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE).
+    /// The record replayed last decides the identity's load-time hold, so a
+    /// later record cleared lifts an earlier marked one; the live
+    /// per-recipient reservations are left alone, and a restoration from
+    /// the shielded store's journal holds every pair whose payment may still
+    /// execute whatever the marker says.
     pub fn apply_private_contact_requests_position(
         &mut self,
         position: PrivateContactRequestsPosition,
     ) {
         self.dashpay.private_contact_requests_position = position.position;
         self.dashpay.private_scan_keys = Some(position.key_fingerprint);
-        self.dashpay.private_payments_unrestored |= position.private_payments_unresolved;
+        self.dashpay.private_payments_unrestored = position.private_payments_unresolved;
     }
 
     /// The reservations of this identity's private payments from an earlier
@@ -1282,6 +1287,26 @@ mod tests {
             }
         }
         WalletPersister::new([0u8; 32], Arc::new(Failing))
+    }
+
+    /// The private scan state replayed last decides an identity's load-time
+    /// hold: a later record cleared lifts an earlier marked one.
+    #[test]
+    fn should_take_the_last_replayed_private_payment_marker() {
+        let mut managed = create_test_identity([0x31; 32]);
+        let marked = |unresolved: bool| PrivateContactRequestsPosition {
+            private_payments_unresolved: unresolved,
+            ..managed_position()
+        };
+        managed.apply_private_contact_requests_position(marked(true));
+        assert!(managed.dashpay().private_payments_unrestored());
+        managed.apply_private_contact_requests_position(marked(false));
+        assert!(!managed.dashpay().private_payments_unrestored());
+    }
+
+    /// A private scan state record with nothing marked.
+    fn managed_position() -> PrivateContactRequestsPosition {
+        create_test_identity([0x32; 32]).private_contact_requests_position_record()
     }
 
     fn create_test_identity(id_bytes: [u8; 32]) -> ManagedIdentity {
