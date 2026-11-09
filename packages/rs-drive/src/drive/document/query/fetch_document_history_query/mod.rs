@@ -15,6 +15,9 @@ impl Drive {
     /// Creates a path query for historical entries of a specified document of
     /// `document_type`. A private document type keeps no documents and no history: it is
     /// refused (`QuerySyntaxError::Unsupported`), for a fetch, a proof and its verification.
+    ///
+    /// `start_at_ms` is exclusive for method version 0's per-document timestamp-keyed
+    /// history and inclusive for method version 1's per-type composite-keyed history.
     #[allow(clippy::too_many_arguments)]
     pub fn fetch_document_history_query(
         contract_id: [u8; 32],

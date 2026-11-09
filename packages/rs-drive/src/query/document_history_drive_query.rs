@@ -90,7 +90,7 @@ pub struct DocumentHistoryEntry {
 pub struct DocumentHistoryDriveQueryExecutionResult {
     /// Ordered retained revisions in this page.
     pub entries: Vec<DocumentHistoryEntry>,
-    /// Optional metadata for the whole history, including empty pages.
+    /// Metadata for the whole history. Drive always returns it, including empty pages.
     pub lifecycle: Option<DocumentHistoryLifecycle>,
 }
 
@@ -362,7 +362,7 @@ impl DocumentHistoryDriveQuery {
             .collect()
     }
 
-    /// Fetches the page in the layout the protocol version stores.
+    /// Fetches the page from the per-type composite-keyed history tree.
     #[cfg(feature = "server")]
     pub fn execute_no_proof(
         &self,
@@ -374,7 +374,7 @@ impl DocumentHistoryDriveQuery {
         drive.fetch_document_history(self, document_type, transaction, platform_version)
     }
 
-    /// Proves the page in the layout the protocol version stores.
+    /// Proves the page from the per-type composite-keyed history tree.
     #[cfg(feature = "server")]
     pub fn execute_with_proof(
         &self,

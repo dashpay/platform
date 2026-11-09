@@ -401,6 +401,15 @@ fn should_reject_history_protocol_version_tampering(cursor: bool) {
                     ),
                     "{kind}: {error}"
                 );
+            } else if claimed == 14 {
+                assert!(
+                    matches!(
+                        &error,
+                        drive_proof_verifier::Error::DriveError { error }
+                            if error == "drive: drive unknown version on verify_document_history, received: 0"
+                    ),
+                    "{kind}: {error}"
+                );
             } else if claimed == version.protocol_version + 1 {
                 assert!(
                     matches!(error, drive_proof_verifier::Error::InvalidSignature { .. }),
