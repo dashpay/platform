@@ -5,7 +5,6 @@ use dpp::consensus::basic::identity::{
     IdentityAssetLockTransactionIsNotFoundError, IdentityAssetLockTransactionOutputNotFoundError,
     InvalidAssetLockProofTransactionHeightError,
 };
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::TxOut;
 use dpp::identity::state_transition::asset_lock_proof::validate_asset_lock_transaction_structure::validate_asset_lock_transaction_structure;
 use dpp::prelude::{AssetLockProof, ConsensusValidationResult};

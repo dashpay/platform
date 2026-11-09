@@ -52,7 +52,7 @@
 
 use crate::types::{FFINetwork, Network};
 use crate::FFIError;
-use dash_sdk::dpp::dashcore::hashes::{hash160, Hash};
+use dash_sdk::dpp::dashcore::hashes::hash160;
 use dash_sdk::dpp::dashcore::ProTxHash;
 use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::dpp::secp256k1::{PublicKey, SecretKey};

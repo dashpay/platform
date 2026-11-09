@@ -3,7 +3,6 @@ use crate::platform_types::validator_set::v0::ValidatorSetV0;
 use dashcore_crypto::dash_pkc::__deps::ff::{Field, PrimeField};
 use dashcore_crypto::dash_pkc::bls::Fr;
 use dpp::bls::{PublicKey as BlsPublicKey, SecretKey as BlsPrivateKey};
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use dpp::dashcore_rpc::dashcore_rpc_json::{QuorumInfoResult, QuorumMember, QuorumType};
 use rand::rngs::StdRng;

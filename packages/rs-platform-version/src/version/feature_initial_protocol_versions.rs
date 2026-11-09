@@ -45,3 +45,8 @@ pub const YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 15;
 /// exist and lookups must report it absent. Creating one of its proposals opens a yes/no vote
 /// poll.
 pub const DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 15;
+/// Private document entries activate with protocol version 15: a
+/// `PrivateDocumentCreateFromShieldedPool`, which appends entries to a private document type's
+/// store paying from the credit shielded pool, is not active before it, as software that
+/// predates it cannot decode one.
+pub const PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 15;
