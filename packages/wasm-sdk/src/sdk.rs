@@ -292,7 +292,7 @@ impl WasmSdk {
         };
         let contract: DataContract = contract.clone().into();
         contract_store::store(self.contract_slot(), &contract, self.sdk.version());
-        context.add_known_contract(contract);
+        context.replace_known_contract(contract);
         true
     }
 

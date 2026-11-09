@@ -655,6 +655,16 @@ pub enum StaleNodeError {
         /// Protocol version in the response metadata
         signed: u32,
     },
+    /// Server proved a private document type's store of `total_count` entries for a page from
+    /// `position`, which an earlier page showed the store already holds: its snapshot is older
+    /// than the one the read started from. A later read, or another server, can serve it.
+    #[error("received a private document store of {total_count} entries for a page from position {position}, which it already holds; try another server")]
+    PrivateDocumentStoreBehind {
+        /// The page's first position
+        position: u64,
+        /// How many entries the server's snapshot of the store holds
+        total_count: u64,
+    },
 }
 
 #[cfg(test)]

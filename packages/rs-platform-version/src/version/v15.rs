@@ -299,7 +299,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     of the primary-key tree (`insert_empty_private_document_store_operation` 0,
 ///     `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`, `None` before); each stored entry is the client's behind a 16-byte header.
 ///     The store's chunk power is the largest keeping a compacted chunk near
-///     `private_document_store_target_chunk_bytes` (512 KiB), bounded by
+///     `private_document_store_target_chunk_bytes` (1 MiB), bounded by
 ///     `private_document_store_min_chunk_power` and `private_document_store_max_chunk_power`
 ///     (4 and 11), all in `SYSTEM_LIMITS_V5`; it is committed into the store. Document
 ///     queries refuse a private type; `getPrivateDocumentEntries` reads and proves a page of
