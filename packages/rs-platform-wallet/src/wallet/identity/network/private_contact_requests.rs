@@ -1599,7 +1599,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     if unreadable_recipients.contains(&sent.recipient_id) {
                         continue;
                     }
-                    let recipient_key = sent.recipient_public_key.serialize();
+                    // The recipient's key the entry was sealed to, compared as
+                    // a curve point: a key may hold the point compressed or
+                    // uncompressed, and the sealer reads both. Only the keys an
+                    // entry can be sealed to are matched.
                     let recipient_key_id = recipients
                         .get(&sent.recipient_id)
                         .and_then(|proved| proved.identity.as_ref())
@@ -1607,7 +1610,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             recipient
                                 .public_keys()
                                 .iter()
-                                .find(|(_, key)| key.data().as_slice() == recipient_key.as_slice())
+                                .find(|(_, key)| {
+                                    key.key_type() == KeyType::ECDSA_SECP256K1
+                                        && recipient_key_purpose_is_valid(key.purpose())
+                                        && PublicKey::from_slice(key.data().as_slice())
+                                            .is_ok_and(|point| point == sent.recipient_public_key)
+                                })
                                 .map(|(key_id, _)| *key_id)
                         });
                     let Some(recipient_key_id) = recipient_key_id else {
@@ -2072,6 +2080,7 @@ mod tests {
     use dash_sdk::platform::ContextProvider;
     use dpp::address_funds::AddressWitness;
     use dpp::data_contract::{DataContract, TokenConfiguration};
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::{IdentityPublicKey, SecurityLevel};
@@ -2814,6 +2823,98 @@ mod tests {
             "marked before paying"
         );
         assert_eq!(marker(&persistence), Some(false), "unmarked once released");
+    }
+
+    /// `identity` with each of its `ECDSA_SECP256K1` keys holding its point
+    /// uncompressed, a 65-byte encoding DPP accepts and the sealer reads.
+    fn with_uncompressed_keys(identity: &Identity) -> Identity {
+        Identity::V0(IdentityV0 {
+            id: identity.id(),
+            public_keys: identity
+                .public_keys()
+                .iter()
+                .map(|(id, key)| {
+                    let mut key = key.clone();
+                    if key.key_type() == KeyType::ECDSA_SECP256K1 {
+                        let point =
+                            PublicKey::from_slice(key.data().as_slice()).expect("a valid point");
+                        key.set_data(BinaryData::new(point.serialize_uncompressed().to_vec()));
+                    }
+                    (*id, key)
+                })
+                .collect(),
+            balance: identity.balance(),
+            revision: identity.revision(),
+        })
+    }
+
+    /// A request sealed to a recipient key holding its point uncompressed is
+    /// recovered from the store by its sender restored from seed, as one sealed
+    /// to a compressed key is: the key is matched as a curve point. A public
+    /// send to that recipient is then refused, the requests having gone
+    /// privately.
+    #[tokio::test]
+    async fn should_recover_a_request_sealed_to_an_uncompressed_recipient_key() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = with_uncompressed_keys(&identity(BOB_PHRASE, BOB));
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (_manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let kept = Arc::new(Mutex::new(Vec::new()));
+        let sent = alice_wallet
+            .identity()
+            .dashpay()
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                keep_entry(&kept),
+            )
+            .await;
+        assert!(
+            matches!(
+                sent,
+                Err(PlatformWalletError::PrivateContactRequestPending(_))
+            ),
+            "paid, not read back: {sent:?}"
+        );
+        let entry = kept.lock().expect("kept").remove(0);
+
+        let (_restored_manager, restored) =
+            wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![entry.to_vec()]).await;
+        let view = restored.identity().dashpay();
+        view.sync_private_contact_requests(&alice_crypto, 4)
+            .await
+            .expect("the store is read");
+        managed(&restored, ALICE, |managed| {
+            assert!(
+                managed.dashpay().outgoing_request(&bob.id()).is_some(),
+                "recovered"
+            );
+        })
+        .await;
+        let public = view
+            .send_contact_request_with_external_signer(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &alice_signer,
+                &alice_crypto,
+            )
+            .await;
+        assert!(
+            matches!(
+                public,
+                Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(recipient))
+                    if recipient == bob.id()
+            ),
+            "{public:?}"
+        );
     }
 
     /// A saved private payment whose transition reads back but whose
