@@ -2303,7 +2303,9 @@ mod tests {
     use crate::wallet::identity::network::SeedCryptoProvider;
     use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
     #[cfg(feature = "shielded")]
-    use crate::wallet::shielded::coordinator::private_payment_journal_snapshot;
+    use crate::wallet::shielded::coordinator::{
+        private_payment_journal_snapshot, PrunedAnchorEvidence,
+    };
     #[cfg(feature = "shielded")]
     use crate::wallet::shielded::operations::arm_redrive_before_broadcast;
     #[cfg(feature = "shielded")]
@@ -6858,9 +6860,11 @@ mod tests {
             self.coordinator
                 .discharge_expired_private_payments(
                     journal,
-                    recorded,
-                    Self::ANCHOR_SET_HEIGHT,
-                    scan_covered_height,
+                    PrunedAnchorEvidence {
+                        recorded,
+                        height: Self::ANCHOR_SET_HEIGHT,
+                        scan_covered_height,
+                    },
                 )
                 .await;
         }

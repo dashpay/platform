@@ -894,6 +894,7 @@ async fn arm_identity_shield_redrive<S: ShieldedStore>(
                 attempts: 0,
                 identity_nonce_finalized: false,
                 identity_user_abandoned: false,
+                anchor_height: None,
             },
         )
         .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
@@ -1427,7 +1428,8 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
 
     let mut pending_entry = None;
     let result = async {
-        let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
+        let (spends, anchor, anchor_height) =
+            extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
         let anchor_bytes = anchor.to_bytes();
 
         let (state_transition, fee_used) = build_identity_top_up_from_shielded_pool_transition(
@@ -1468,7 +1470,16 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
             },
         )
         .await;
-        if arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await? {
+        if arm_pending_release(
+            store,
+            id,
+            anchor_bytes,
+            anchor_height,
+            &pending_entry,
+            &selected_notes,
+        )
+        .await?
+        {
             // Each reservation carries its anchor: a pruned anchor releases it.
             reservation.hand_over();
         }
@@ -1486,6 +1497,7 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
             id,
             &pending_entry,
             anchor_bytes,
+            anchor_height,
             &selected_notes,
             &state_transition,
             "identity top up from shielded pool",
@@ -1789,8 +1801,15 @@ where
         payment_started,
     } = submission;
     let result = async {
-        let anchored =
-            arm_pending_release(store, id, anchor, &pending_entry, selected_notes).await?;
+        let anchored = arm_pending_release(
+            store,
+            id,
+            anchor,
+            anchor_height,
+            &pending_entry,
+            selected_notes,
+        )
+        .await?;
         arm_redrive_before_broadcast(
             store,
             id,
@@ -2026,7 +2045,8 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     // it. A build failure leaves it `None` and records nothing.
     let mut pending_entry = None;
     let result = async {
-        let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
+        let (spends, anchor, anchor_height) =
+            extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed spend can be auto-released once
         // this anchor is pruned from Platform's recorded set.
@@ -2075,7 +2095,16 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             },
         )
         .await;
-        if arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await? {
+        if arm_pending_release(
+            store,
+            id,
+            anchor_bytes,
+            anchor_height,
+            &pending_entry,
+            &selected_notes,
+        )
+        .await?
+        {
             // Each reservation carries its anchor: a pruned anchor releases it.
             reservation.hand_over();
         }
@@ -2087,6 +2116,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             id,
             &pending_entry,
             anchor_bytes,
+            anchor_height,
             &selected_notes,
             &state_transition,
             "unshield",
@@ -2217,7 +2247,8 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
 
     let mut pending_entry = None;
     let result = async {
-        let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
+        let (spends, anchor, anchor_height) =
+            extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed spend can be auto-released once
         // this anchor is pruned from Platform's recorded set.
@@ -2266,7 +2297,16 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
             },
         )
         .await;
-        if arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await? {
+        if arm_pending_release(
+            store,
+            id,
+            anchor_bytes,
+            anchor_height,
+            &pending_entry,
+            &selected_notes,
+        )
+        .await?
+        {
             // Each reservation carries its anchor: a pruned anchor releases it.
             reservation.hand_over();
         }
@@ -2278,6 +2318,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
             id,
             &pending_entry,
             anchor_bytes,
+            anchor_height,
             &selected_notes,
             &state_transition,
             "transfer",
@@ -2396,7 +2437,8 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
 
     let mut pending_entry = None;
     let result = async {
-        let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
+        let (spends, anchor, anchor_height) =
+            extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed spend can be auto-released once
         // this anchor is pruned from Platform's recorded set.
@@ -2447,7 +2489,16 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
             },
         )
         .await;
-        if arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await? {
+        if arm_pending_release(
+            store,
+            id,
+            anchor_bytes,
+            anchor_height,
+            &pending_entry,
+            &selected_notes,
+        )
+        .await?
+        {
             // Each reservation carries its anchor: a pruned anchor releases it.
             reservation.hand_over();
         }
@@ -2459,6 +2510,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
             id,
             &pending_entry,
             anchor_bytes,
+            anchor_height,
             &selected_notes,
             &state_transition,
             "withdraw",
@@ -2614,7 +2666,8 @@ where
     // outer match; it lives here so the flip can see it.
     let mut pending_entry = None;
     let result = async {
-        let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
+        let (spends, anchor, anchor_height) =
+            extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed create can be auto-released once
         // this anchor is pruned from Platform's recorded set.
@@ -2665,7 +2718,15 @@ where
             },
         )
         .await;
-        if arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await? {
+        if arm_pending_release(
+            store,
+            id,
+            anchor_bytes,
+            anchor_height,
+            &pending_entry,
+            &selected_notes,
+        )
+        .await? {
             // Each reservation carries its anchor: a pruned anchor releases it.
             reservation.hand_over();
         }
@@ -2769,6 +2830,7 @@ where
                             id,
                             &pending_entry,
                             anchor_bytes,
+                            anchor_height,
                             &selected_notes,
                             &st,
                             "identity_create",
@@ -3015,19 +3077,10 @@ const MAX_ANCHOR_PROBE_DEPTH: usize = 100;
 /// recorded root it returns the retryable
 /// [`PlatformWalletError::ShieldedNoRecordedAnchor`] rather than broadcasting a
 /// spend Platform is guaranteed to reject.
-async fn extract_spends_and_anchor<S: ShieldedStore>(
-    sdk: &Arc<dash_sdk::Sdk>,
-    store: &Arc<RwLock<S>>,
-    notes: &[ShieldedNote],
-) -> Result<(Vec<SpendableNote>, Anchor), PlatformWalletError> {
-    extract_spends_and_recorded_anchor(sdk, store, notes)
-        .await
-        .map(|(spends, anchor, _)| (spends, anchor))
-}
-
-/// [`extract_spends_and_anchor`], with the proved height of the recorded
-/// anchor set the anchor was chosen from: the anchor was recorded at that
-/// height.
+///
+/// Returns the proved height of the recorded anchor set the anchor was chosen
+/// from too: the anchor was in the set at that height, so a set proved at or
+/// above it that lacks the anchor shows it pruned rather than newer.
 async fn extract_spends_and_recorded_anchor<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
@@ -3513,8 +3566,9 @@ async fn finalize_pending<S: ShieldedStore>(
 /// (`NoteReservation::cancel`) removes the entry, so only an ambiguous
 /// unconfirmed outcome leaves it carrying the anchor.
 ///
-/// Returns whether every reservation now carries the anchor, so a pruned
-/// anchor releases each. A store write that fails stops the spend before it
+/// Returns whether every reservation now carries the anchor, with
+/// `anchor_height`, the proved height of the anchor set it was read from, so
+/// an anchor proven pruned releases each. A store write that fails stops the spend before it
 /// is broadcast ([`PlatformWalletError::ShieldedStoreError`]): the caller's
 /// reservation guard still owns the notes, so they are released, rather
 /// than a spend that may execute leaving reservations no pruned anchor
@@ -3523,6 +3577,7 @@ async fn arm_pending_release<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
     anchor: [u8; 32],
+    anchor_height: u64,
     pending_entry: &Option<super::activity::ShieldedActivityEntry>,
     notes: &[ShieldedNote],
 ) -> Result<bool, PlatformWalletError> {
@@ -3532,7 +3587,7 @@ async fn arm_pending_release<S: ShieldedStore>(
     let mut store = store.write().await;
     for note in notes {
         store
-            .set_pending_spend(id, &note.nullifier, anchor, entry.id)
+            .set_pending_spend(id, &note.nullifier, anchor, entry.id, Some(anchor_height))
             .map_err(|e| {
                 PlatformWalletError::ShieldedStoreError(format!(
                     "the spend's note reservation could not carry its anchor, so it is not \
@@ -3563,6 +3618,7 @@ async fn broadcast_shielded_spend_with_redrive<S: ShieldedStore>(
     id: SubwalletId,
     pending_entry: &Option<super::activity::ShieldedActivityEntry>,
     anchor: [u8; 32],
+    anchor_height: u64,
     notes: &[ShieldedNote],
     state_transition: &StateTransition,
     operation: &'static str,
@@ -3574,6 +3630,7 @@ async fn broadcast_shielded_spend_with_redrive<S: ShieldedStore>(
         id,
         pending_entry,
         anchor,
+        anchor_height,
         notes,
         state_transition,
         operation,
@@ -3590,6 +3647,7 @@ async fn broadcast_shielded_spend_with_redrive_with_metadata<S: ShieldedStore>(
     id: SubwalletId,
     pending_entry: &Option<super::activity::ShieldedActivityEntry>,
     anchor: [u8; 32],
+    anchor_height: u64,
     notes: &[ShieldedNote],
     state_transition: &StateTransition,
     operation: &'static str,
@@ -3605,6 +3663,7 @@ async fn broadcast_shielded_spend_with_redrive_with_metadata<S: ShieldedStore>(
             id,
             pending_entry,
             anchor,
+            anchor_height,
             notes,
             state_transition,
             operation,
@@ -3677,6 +3736,7 @@ pub(crate) async fn arm_redrive_before_broadcast<S: ShieldedStore>(
         attempts: 0,
         identity_nonce_finalized: false,
         identity_user_abandoned: false,
+        anchor_height: Some(anchor_recorded_at),
     };
     let mut store = store.write().await;
     match journal {
@@ -3763,11 +3823,13 @@ pub(crate) fn private_document_commitments(
 /// a failure here only demotes the resolution path to the anchor-prune
 /// backstop (plus restart-loss of the reservation), never fails the
 /// spend call itself — the ambiguity already happened.
+#[allow(clippy::too_many_arguments)]
 async fn arm_redrive_record<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
     pending_entry: &Option<super::activity::ShieldedActivityEntry>,
     anchor: [u8; 32],
+    anchor_height: u64,
     notes: &[ShieldedNote],
     state_transition: &StateTransition,
     operation: &'static str,
@@ -3797,6 +3859,7 @@ async fn arm_redrive_record<S: ShieldedStore>(
         attempts: 0,
         identity_nonce_finalized: false,
         identity_user_abandoned: false,
+        anchor_height: Some(anchor_height),
     };
     if let Err(e) = store.write().await.arm_redrive(id, redrive) {
         warn!(
@@ -4513,6 +4576,7 @@ mod redrive_tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: true,
+            anchor_height: None,
         };
         store.arm_redrive(id, archived.clone()).unwrap();
         assert!(!has_unresolved_identity_shield(&store, wallet_id, identity_id).unwrap());
@@ -4563,6 +4627,7 @@ mod redrive_tests {
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
+                    anchor_height: None,
                 },
             )
             .unwrap();
@@ -4635,6 +4700,7 @@ mod redrive_tests {
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
+                    anchor_height: None,
                 },
             )
             .expect("redrive should arm");
@@ -4663,6 +4729,7 @@ mod redrive_tests {
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
+                    anchor_height: None,
                 },
             )
             .expect("redrive should arm");
@@ -4774,6 +4841,7 @@ mod redrive_tests {
                     attempts: MAX_REDRIVE_ATTEMPTS,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
+                    anchor_height: None,
                 },
             )
             .expect("arm identity guard");
@@ -5148,6 +5216,7 @@ mod redrive_tests {
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
+                    anchor_height: None,
                 },
                 payment,
                 &[[0xC4; 32]],
@@ -5810,6 +5879,7 @@ mod redrive_tests {
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
+                    anchor_height: None,
                 },
             )
             .expect("arm identity guard");
@@ -5846,6 +5916,7 @@ mod redrive_tests {
             attempts,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            anchor_height: None,
         };
         {
             let mut guard = store.write().await;
@@ -5905,6 +5976,7 @@ mod redrive_tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            anchor_height: None,
         };
         {
             let mut guard = store.write().await;

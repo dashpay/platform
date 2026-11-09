@@ -2447,6 +2447,7 @@ mod tests {
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: true,
+                    anchor_height: None,
                 },
             )
             .expect("seed malformed durable metadata");

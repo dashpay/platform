@@ -127,11 +127,12 @@ pub struct ShieldedOutgoingNote {
 }
 
 /// A pending reservation that carries a recorded anchor:
-/// `(nullifier, anchor, activity_id)`. Yielded by
-/// [`ShieldedStore::stale_pending_spends`] for the sync reconcile,
-/// which releases the reservation once `anchor` is no longer in
-/// Platform's recorded set (the spend can then never execute).
-pub type StalePendingSpend = ([u8; 32], [u8; 32], Option<[u8; 32]>);
+/// `(nullifier, anchor, activity_id, anchor_height)`, `anchor_height` being a
+/// proved height at which `anchor` was in Platform's recorded set, when known.
+/// Yielded by [`ShieldedStore::stale_pending_spends`] for the sync
+/// reconcile, which releases the reservation once `anchor` is proven pruned
+/// (the spend can then never execute).
+pub type StalePendingSpend = ([u8; 32], [u8; 32], Option<[u8; 32]>, Option<u64>);
 
 /// An unresolved signed transition and its durable retry guard: the signed
 /// transition bytes plus everything the sync-time re-drive needs to
@@ -162,6 +163,14 @@ pub struct PendingRedrive {
     pub st_bytes: Vec<u8>,
     /// Re-broadcast attempts made so far.
     pub attempts: u32,
+    /// A proved height at which [`Self::anchor`] was in Platform's recorded
+    /// anchor set: the height of the set the spend's anchor was read from, or
+    /// of a later set seen holding it
+    /// ([`ShieldedStore::note_anchor_recorded`]). A set proved at or above it
+    /// that lacks the anchor shows it pruned rather than newer. `None` for a
+    /// record saved without it, whose anchor is not proven pruned until a set
+    /// is seen holding it.
+    pub anchor_height: Option<u64>,
     /// A proven identity nonce has made this exact debit impossible to execute
     /// again. Stop broadcasting, but keep its unresolved-payment guard until
     /// the scan confirms the outputs. Always false for note-spend redrives.
@@ -444,23 +453,37 @@ pub trait ShieldedStore: Send + Sync + 'static {
         reservation: u64,
     ) -> Result<bool, Self::Error>;
 
-    /// Attach the recorded `anchor` the spend was built against, and
-    /// the linked `activity_id`, to `id`'s pending reservation for
-    /// `nullifier` (taken earlier by [`Self::mark_pending`]). No-op
-    /// if the nullifier is no longer pending. The sync reconcile uses
-    /// the stored anchor to detect a stranded spend whose anchor
-    /// Platform has pruned (see [`Self::stale_pending_spends`]).
+    /// Attach the recorded `anchor` the spend was built against, the proved
+    /// height of the anchor set it was read from (`anchor_height`), and the
+    /// linked `activity_id`, to `id`'s pending reservation for `nullifier`
+    /// (taken earlier by [`Self::mark_pending`]). No-op if the nullifier is
+    /// no longer pending. The sync reconcile uses the stored anchor and its
+    /// height to detect a stranded spend whose anchor Platform has pruned
+    /// (see [`Self::stale_pending_spends`]).
     fn set_pending_spend(
         &mut self,
         id: SubwalletId,
         nullifier: &[u8; 32],
         anchor: [u8; 32],
         activity_id: [u8; 32],
+        anchor_height: Option<u64>,
+    ) -> Result<(), Self::Error>;
+
+    /// Note that `anchor` was in Platform's recorded set proved at `height`:
+    /// each of `id`'s reservations built on it and each of its records that
+    /// carry no anchor height get `height`, a record's durably. A set proved
+    /// at or above it that lacks the anchor then shows it pruned. One that
+    /// already carries a height keeps it.
+    fn note_anchor_recorded(
+        &mut self,
+        id: SubwalletId,
+        anchor: &[u8; 32],
+        height: u64,
     ) -> Result<(), Self::Error>;
 
     /// Pending reservations for `id` that carry a recorded anchor —
-    /// `(nullifier, anchor, activity_id)` per built-but-unconfirmed
-    /// spend. Empty when `id` has no anchored reservations (the common
+    /// `(nullifier, anchor, activity_id, anchor_height)` per
+    /// built-but-unconfirmed spend. Empty when `id` has no anchored reservations (the common
     /// case, which lets the sync reconcile skip its network round-trip).
     /// The reconcile checks each anchor against Platform's recorded set
     /// and releases the reservation via [`Self::clear_pending`] when the
@@ -818,6 +841,9 @@ pub(super) struct PendingSpend {
     /// while it still holds it. `None` for a reservation restored from a
     /// redrive record, which only a resolution of its spend clears.
     pub reservation: Option<u64>,
+    /// A proved height at which `anchor` was in Platform's recorded set
+    /// ([`PendingRedrive::anchor_height`]), when known.
+    pub anchor_height: Option<u64>,
 }
 
 /// Per-subwallet note + sync state used by both the in-memory and
@@ -1007,11 +1033,43 @@ impl SubwalletState {
         nullifier: &[u8; 32],
         anchor: [u8; 32],
         activity_id: [u8; 32],
+        anchor_height: Option<u64>,
     ) {
         if let Some(pending) = self.pending_nullifiers.get_mut(nullifier) {
             pending.anchor = Some(anchor);
             pending.activity_id = Some(activity_id);
+            pending.anchor_height = anchor_height;
         }
+    }
+
+    /// Give `height` to each reservation built on `anchor`, and each record
+    /// on it, that carries no anchor height
+    /// ([`ShieldedStore::note_anchor_recorded`]). Returns the activity ids of
+    /// the records given it.
+    pub(super) fn note_anchor_recorded(&mut self, anchor: &[u8; 32], height: u64) -> Vec<[u8; 32]> {
+        for pending in self.pending_nullifiers.values_mut() {
+            if pending.anchor == Some(*anchor) && pending.anchor_height.is_none() {
+                pending.anchor_height = Some(height);
+            }
+        }
+        let mut noted = Vec::new();
+        for redrive in self.redrives.values_mut() {
+            if redrive.anchor == *anchor && redrive.anchor_height.is_none() {
+                redrive.anchor_height = Some(height);
+                noted.push(redrive.activity_id);
+            }
+        }
+        noted
+    }
+
+    /// The activity ids of the records built on `anchor` that carry no anchor
+    /// height.
+    pub(super) fn redrives_without_anchor_height(&self, anchor: &[u8; 32]) -> Vec<[u8; 32]> {
+        self.redrives
+            .values()
+            .filter(|redrive| redrive.anchor == *anchor && redrive.anchor_height.is_none())
+            .map(|redrive| redrive.activity_id)
+            .collect()
     }
 
     /// Reservations that carry a recorded anchor — i.e. built,
@@ -1026,7 +1084,7 @@ impl SubwalletState {
             .filter_map(|(nullifier, spend)| {
                 spend
                     .anchor
-                    .map(|anchor| (*nullifier, anchor, spend.activity_id))
+                    .map(|anchor| (*nullifier, anchor, spend.activity_id, spend.anchor_height))
             })
             .collect()
     }
@@ -1270,9 +1328,22 @@ impl ShieldedStore for InMemoryShieldedStore {
         nullifier: &[u8; 32],
         anchor: [u8; 32],
         activity_id: [u8; 32],
+        anchor_height: Option<u64>,
     ) -> Result<(), Self::Error> {
         if let Some(sw) = self.subwallets.get_mut(&id) {
-            sw.set_pending_spend(nullifier, anchor, activity_id);
+            sw.set_pending_spend(nullifier, anchor, activity_id, anchor_height);
+        }
+        Ok(())
+    }
+
+    fn note_anchor_recorded(
+        &mut self,
+        id: SubwalletId,
+        anchor: &[u8; 32],
+        height: u64,
+    ) -> Result<(), Self::Error> {
+        if let Some(sw) = self.subwallets.get_mut(&id) {
+            sw.note_anchor_recorded(anchor, height);
         }
         Ok(())
     }
@@ -1840,6 +1911,7 @@ mod tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            anchor_height: None,
         };
 
         // Landing path: mark_spent on one nullifier drops the record.
@@ -2021,18 +2093,18 @@ mod tests {
             "newly reserved"
         );
         store
-            .set_pending_spend(id, &nullifier, anchor, activity_id)
+            .set_pending_spend(id, &nullifier, anchor, activity_id, Some(10))
             .unwrap();
 
         assert_eq!(
             store.stale_pending_spends(id).unwrap(),
-            vec![(nullifier, anchor, Some(activity_id))],
+            vec![(nullifier, anchor, Some(activity_id), Some(10))],
             "an armed reservation surfaces as an anchored (stale-checkable) spend"
         );
 
         // Anchor IS still recorded → retain.
         let recorded: HashSet<[u8; 32]> = [anchor].into_iter().collect();
-        for (n, a, _) in store.stale_pending_spends(id).unwrap() {
+        for (n, a, _, _) in store.stale_pending_spends(id).unwrap() {
             if !recorded.contains(&a) {
                 store.clear_pending(id, &n).unwrap();
             }
@@ -2066,13 +2138,13 @@ mod tests {
             .unwrap();
         store.mark_pending(id, &nullifier).unwrap();
         store
-            .set_pending_spend(id, &nullifier, anchor, activity_id)
+            .set_pending_spend(id, &nullifier, anchor, activity_id, Some(10))
             .unwrap();
         assert!(store.get_unspent_notes(id).unwrap().is_empty());
 
         // Anchor is ABSENT from the recorded set (pruned) → release.
         let recorded: HashSet<[u8; 32]> = [[0xEE; 32]].into_iter().collect();
-        for (n, a, _) in store.stale_pending_spends(id).unwrap() {
+        for (n, a, _, _) in store.stale_pending_spends(id).unwrap() {
             if !recorded.contains(&a) {
                 assert!(store.clear_pending(id, &n).unwrap());
             }
@@ -2145,6 +2217,7 @@ mod tests {
             attempts: 7,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            anchor_height: None,
         };
         let note_spend = PendingRedrive {
             activity_id: [0x44; 32],
@@ -2154,6 +2227,7 @@ mod tests {
             attempts: 1,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            anchor_height: None,
         };
         store.arm_redrive(id, identity_guard.clone()).unwrap();
         store.arm_redrive(id, note_spend).unwrap();
