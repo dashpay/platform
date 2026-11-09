@@ -20,9 +20,11 @@ use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
+use dash_async::ShutdownReport;
 use dash_context_provider::routing::SpvSourceLease;
 use dash_sdk::Sdk;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+use platform_wallet::manager::WalletWorker;
 use platform_wallet::PlatformWalletManager;
 use platform_wallet::{PersistenceCapabilities, PERSISTENCE_CAPABILITIES_VERSION};
 use std::os::raw::c_void;
@@ -61,9 +63,9 @@ fn persistence_capabilities_declaration(
 /// a later `destroy` returns if a worker straggles — when the last
 /// reference drops. A borrowed (non-null context, null `release_fn`)
 /// vtable is rejected rather than accepted-and-hoped-for, because nothing
-/// but ownership can make a straggling worker safe: `destroy` returns
-/// `Success` without proving quiescence, so a borrowed context would be
-/// freeable by the host while a straggler can still call through it. A
+/// but ownership can make a straggling worker safe: `destroy` removes the
+/// handle even when a worker outlived its budget, so a borrowed context would
+/// be freeable by the host while a straggler can still call through it. A
 /// host whose context needs no cleanup passes a no-op `release_fn`.
 ///
 /// On a non-`Success` return Rust has NOT taken ownership of either
@@ -406,7 +408,7 @@ unsafe fn platform_wallet_manager_create_impl(
     check_ptr!(out_handle);
 
     // Ownership is mandatory for a context-carrying vtable: `destroy`
-    // returns `Success` without proving every worker joined, which is only
+    // removes the handle without proving every worker joined, which is only
     // sound because a straggler's `Arc` keeps the host context alive via
     // `release_fn`. A borrowed context (non-null, no destructor) would
     // reintroduce the freed-context callback exactly on the non-clean
@@ -805,17 +807,19 @@ pub unsafe extern "C" fn platform_wallet_manager_get_wallet(
 /// Runs the full lifecycle shutdown (quiesce + join every coordinator,
 /// SPV, the payment-hook tasks, and the event adapter) and removes the
 /// handle. Shutdown waits are bounded except for SPV's waits for a
-/// concurrent start/stop and in-flight client queries. Always returns
-/// `Success` for a live handle.
+/// concurrent start/stop and in-flight client queries. Returns `Success`
+/// when every worker stopped, and for a handle that is not live.
 ///
-/// A non-clean shutdown — a worker that outlived its join budget — is
-/// logged, **not** surfaced as an error, because it is no longer a
-/// safety problem the host could act on: a straggling worker holds a
-/// strong reference to the callback vtables, and creation guarantees
-/// every context-carrying vtable is owned (`release_fn` required), so
-/// the host objects stay alive until that worker exits, at which point
-/// Rust releases them. Nothing dangles, nothing needs a retry, nothing
-/// needs a deliberate leak on the host side.
+/// Returns `ErrorShutdownIncomplete`, with the shutdown report in the
+/// message, when the report is not clean: a worker outlived its budget,
+/// stayed detached, panicked or failed to stop. **The handle is removed either way**, so unlike every other
+/// `ErrorShutdownIncomplete` this one must not be retried: a second destroy
+/// finds no handle and returns `Success`. A straggling worker is memory-safe
+/// (it holds a strong reference to the callback vtables, and creation makes
+/// every context-carrying vtable owned, so Rust releases the host context
+/// when that worker exits), but until it exits it can still write this
+/// manager's persisted state through those callbacks. A host must not open
+/// that state from another manager until the process exits.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_destroy(
     handle: Handle,
@@ -832,22 +836,34 @@ pub unsafe extern "C" fn platform_wallet_manager_destroy(
         // safe even if the host already stopped some sync managers
         // before calling destroy.
         let report = runtime().block_on(manager.shutdown());
-        if !report.all_clean() {
-            // A worker panicked, exceeded its join budget, or stayed
-            // detached. Its persister/event-handler Arcs keep the host
-            // callback contexts alive until it actually exits, so this
-            // is diagnostic, not a UAF hazard.
-            tracing::warn!(
-                ?report,
-                "platform wallet manager shutdown did not join every worker \
-                 cleanly; stragglers keep their callback contexts alive and \
-                 release them on exit"
-            );
-        }
         // Host contexts release with their last reference, which may outlive
         // this manager through a wallet handle, worker or in-flight operation.
+        return destroy_result(&report);
     }
     PlatformWalletFFIResult::ok()
+}
+
+/// Destroy's result for the shutdown `report` of the manager it removed.
+fn destroy_result(report: &ShutdownReport<WalletWorker>) -> PlatformWalletFFIResult {
+    if report.all_clean() {
+        return PlatformWalletFFIResult::ok();
+    }
+    // A worker outlived its budget, stayed detached, panicked or failed to
+    // stop. A live one's persister/event-handler Arcs keep the host callback
+    // contexts alive until it exits, so nothing dangles, but it can still
+    // persist state.
+    tracing::warn!(
+        ?report,
+        "platform wallet manager shutdown did not join every worker cleanly; \
+         stragglers keep their callback contexts alive and release them on exit"
+    );
+    PlatformWalletFFIResult::err(
+        PlatformWalletFFIResultCode::ErrorShutdownIncomplete,
+        format!(
+            "manager destroyed, but not every worker stopped; a straggler may \
+             still write this manager's persisted state: {report:?}"
+        ),
+    )
 }
 
 /// Remove one wallet from the manager, tearing down its generation's deferred
@@ -1084,11 +1100,11 @@ mod tests {
     }
 
     /// A context-carrying vtable without a `release_fn` must be rejected
-    /// at creation. `destroy` returns `Success` without proving every
-    /// worker joined; that is only sound because a straggler's `Arc`
+    /// at creation. `destroy` removes the handle even when a worker
+    /// outlived its budget; that is only sound because a straggler's `Arc`
     /// keeps the host context alive via ownership. Accepting a borrowed
-    /// context would let a legacy caller free it after a "successful"
-    /// destroy while a straggler can still call through it — the exact
+    /// context would let a legacy caller free it once destroy returns
+    /// while a straggler can still call through it — the exact
     /// use-after-free this FFI exists to prevent.
     #[test]
     fn create_rejects_context_carrying_vtable_without_release_fn() {
@@ -2300,5 +2316,87 @@ mod remove_wallet_lifecycle_tests {
 
             drop(in_flight_a);
         });
+    }
+}
+
+#[cfg(test)]
+mod destroy_result_tests {
+    use super::*;
+    use dash_async::WorkerStatus;
+    use std::collections::BTreeMap;
+    use std::ffi::CStr;
+
+    fn report(per_worker: BTreeMap<WalletWorker, WorkerStatus>) -> ShutdownReport<WalletWorker> {
+        ShutdownReport {
+            per_worker,
+            detached: 0,
+            orphan_status: WorkerStatus::Ok,
+        }
+    }
+
+    /// Destroy's code and message for `report`, with the result freed.
+    fn code_and_message(
+        report: &ShutdownReport<WalletWorker>,
+    ) -> (PlatformWalletFFIResultCode, String) {
+        let mut result = destroy_result(report);
+        let message = if result.message.is_null() {
+            String::new()
+        } else {
+            unsafe { CStr::from_ptr(result.message) }
+                .to_string_lossy()
+                .into_owned()
+        };
+        let code = result.code;
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+        (code, message)
+    }
+
+    /// A worker still running when destroy's shutdown gives up on it can keep
+    /// writing the manager's persisted state through the host's callbacks.
+    /// Destroy must report that, so a host never opens the same state from a
+    /// successor manager while the straggler lives.
+    #[test]
+    fn should_report_shutdown_incomplete_when_a_worker_outlived_its_budget() {
+        let straggler = report(BTreeMap::from([
+            (WalletWorker::Spv, WorkerStatus::Ok),
+            (WalletWorker::PlatformAddressSync, WorkerStatus::Timeout),
+            (WalletWorker::EventAdapter, WorkerStatus::Ok),
+        ]));
+
+        let (code, message) = code_and_message(&straggler);
+
+        assert_eq!(
+            code,
+            PlatformWalletFFIResultCode::ErrorShutdownIncomplete,
+            "a straggling worker must not read as a clean destroy: {message}"
+        );
+        assert!(
+            message.contains("PlatformAddressSync"),
+            "the message must name the straggling worker: {message}"
+        );
+    }
+
+    /// An orphan still alive at the reap deadline is a straggler too.
+    #[test]
+    fn should_report_shutdown_incomplete_when_an_orphan_survived_the_reap() {
+        let mut orphaned = report(BTreeMap::from([(WalletWorker::Spv, WorkerStatus::Ok)]));
+        orphaned.detached = 1;
+
+        let (code, _) = code_and_message(&orphaned);
+
+        assert_eq!(code, PlatformWalletFFIResultCode::ErrorShutdownIncomplete);
+    }
+
+    #[test]
+    fn should_report_success_when_every_worker_stopped() {
+        let clean = report(BTreeMap::from([
+            (WalletWorker::Spv, WorkerStatus::Ok),
+            (WalletWorker::PlatformAddressSync, WorkerStatus::NotRunning),
+            (WalletWorker::EventAdapter, WorkerStatus::Ok),
+        ]));
+
+        let (code, message) = code_and_message(&clean);
+
+        assert_eq!(code, PlatformWalletFFIResultCode::Success, "{message}");
     }
 }

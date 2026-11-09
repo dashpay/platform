@@ -216,10 +216,11 @@ pub enum PlatformWalletFFIResultCode {
     /// (no state was wiped) and the host should retry once sync is idle.
     /// Also returned by SPV start, stop and storage clear while an SPV
     /// teardown is still running: call SPV stop again.
-    /// NOT returned by `platform_wallet_manager_destroy` — with owned
-    /// callback contexts (`release_fn`) a straggling worker keeps its
-    /// context alive and releases it on exit, so destroy logs a non-clean
-    /// join instead of erroring. Swift mirror:
+    /// Also returned by `platform_wallet_manager_destroy` when its shutdown
+    /// report is not clean. Destroy removes the handle anyway, so this
+    /// one must not be retried; the straggler may still write the manager's
+    /// persisted state, which no other manager may open until the process
+    /// exits. Swift mirror:
     /// `PlatformWalletResultCode.errorShutdownIncomplete`.
     ErrorShutdownIncomplete = 27,
     /// Asset-lock coin selection came up short over the *permitted* funding
@@ -610,8 +611,8 @@ pub enum PlatformWalletFFIResultCode {
     ErrorIdentityBalanceUnavailable = 58,
 
     /// Maps `PlatformWalletError::SpvProcessRestartRequired`: SPV startup or
-    /// teardown panicked. Not retryable, unlike
-    /// [`Self::ErrorShutdownIncomplete`]: restart the host process.
+    /// teardown panicked. Not retryable, unlike most
+    /// [`Self::ErrorShutdownIncomplete`] returns: restart the host process.
     ErrorSpvProcessRestartRequired = 59,
 
     /// An asset lock exceeds the asset-lock input cap (100: Dash Core relay

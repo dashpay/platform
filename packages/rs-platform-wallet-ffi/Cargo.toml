@@ -22,6 +22,8 @@ dash-sdk = { path = "../rs-sdk", features = ["wallet"] }
 # duplicating the vtable plumbing. See `signer.rs` in rs-sdk-ffi.
 rs-sdk-ffi = { path = "../rs-sdk-ffi" }
 dash-context-provider = { path = "../rs-context-provider" }
+# Names the `ShutdownReport` that `PlatformWalletManager::shutdown` returns.
+dash-async = { path = "../rs-dash-async" }
 
 # FFI utilities
 once_cell = "1.19"
