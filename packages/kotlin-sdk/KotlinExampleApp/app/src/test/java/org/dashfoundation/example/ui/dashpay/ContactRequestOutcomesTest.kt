@@ -2,7 +2,9 @@ package org.dashfoundation.example.ui.dashpay
 
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -21,11 +23,16 @@ class ContactRequestOutcomesTest {
         )
     }
 
+    /**
+     * A pending private request (code 71), which a public send or accept can
+     * meet too, sent nothing: it is shown as pending, with a private sync to
+     * settle it, rather than as a submission that may have gone through.
+     */
     @Test
     fun shouldKeepAPendingPrivateRequestPending() {
         val error = DashSdkError.PlatformWallet.PrivateContactRequestPending("not yet read back from the store")
         assertEquals(
-            ContactRequestSubmissionOutcome.MayHaveGoneThrough,
+            ContactRequestSubmissionOutcome.PrivateRequestPending,
             ContactRequestSubmissionOutcome.of(error),
         )
     }
@@ -33,14 +40,62 @@ class ContactRequestOutcomesTest {
     @Test
     fun shouldShowAWalletPendingReplyOverAnEarlierError() {
         assertEquals(
-            ContactRequestSubmissionOutcome.MAY_HAVE_GONE_THROUGH_MESSAGE,
+            ContactRequestSubmissionOutcome.PRIVATE_REQUEST_PENDING_MESSAGE,
             ContactRequestSubmissionOutcome.rowMessage(pending = true, error = "Accept failed: boom"),
         )
         assertEquals(
             "Accept failed: boom",
             ContactRequestSubmissionOutcome.rowMessage(pending = false, error = "Accept failed: boom"),
         )
+        assertEquals(
+            PrivateRepliesPendingSnapshot.UNAVAILABLE_MESSAGE,
+            ContactRequestSubmissionOutcome.rowMessage(
+                pending = false,
+                unavailable = true,
+                error = "Accept failed: boom",
+            ),
+        )
         assertNull(ContactRequestSubmissionOutcome.rowMessage(pending = false, error = null))
+    }
+
+    /**
+     * A read that found a private request pending, followed by a failed
+     * read: the contact stays pending and nothing is offered for any
+     * contact, until a read succeeds again.
+     */
+    @Test
+    fun shouldKeepThePendingSnapshotAndOfferNothingAfterAFailedRead() {
+        val contacts = listOf("01", "02")
+        var snapshot = PrivateRepliesPendingSnapshot().recorded(setOf("01"), contacts)
+        assertTrue(snapshot.isPending("01"))
+        assertFalse(snapshot.allowsSubmission("01"))
+        assertTrue(snapshot.allowsSubmission("02"))
+
+        snapshot = snapshot.recorded(null, contacts)
+        assertTrue(snapshot.isUnavailable)
+        assertTrue("the last snapshot stays", snapshot.isPending("01"))
+        assertFalse(snapshot.allowsSubmission("01"))
+        assertFalse(snapshot.allowsSubmission("02"))
+
+        snapshot = snapshot.recorded(emptySet(), contacts)
+        assertFalse(snapshot.isUnavailable)
+        assertTrue(snapshot.allowsSubmission("01"))
+    }
+
+    /**
+     * A successful read that found nothing pending offers every contact it
+     * covered, and nothing it did not.
+     */
+    @Test
+    fun shouldOfferEveryContactASuccessfulEmptyReadCovered() {
+        val snapshot = PrivateRepliesPendingSnapshot().recorded(emptySet(), listOf("01"))
+        assertFalse(snapshot.isUnavailable)
+        assertFalse(snapshot.isPending("01"))
+        assertTrue(snapshot.allowsSubmission("01"))
+        assertFalse(
+            "a contact the read did not cover is not offered yet",
+            snapshot.allowsSubmission("02"),
+        )
     }
 
     @Test

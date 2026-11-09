@@ -104,9 +104,11 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
     var unconfirmedNotice by remember { mutableStateOf<String?>(null) }
     // Whether the wallet has a private request to the resolved recipient in
     // flight, or paid and not yet read back (`privateRepliesPending`). While
-    // it does, Send and the collision accept are off; a private sync settles
-    // it. Read from the wallet, so reopening this screen keeps it.
-    var recipientPending by remember { mutableStateOf(false) }
+    // it does, Send and the collision accept are off and the screen offers a
+    // private sync, which settles it. Read from the wallet, so reopening this
+    // screen keeps it. A failed read keeps them off until a read succeeds.
+    var recipientPending by remember { mutableStateOf(PrivateRepliesPendingSnapshot()) }
+    var isSyncingPrivate by remember { mutableStateOf(false) }
     var pendingReadVersion by remember { mutableStateOf(0) }
     var collisionRecipient by remember { mutableStateOf<ByteArray?>(null) }
     var previewProfile by remember { mutableStateOf<DashPayProfile?>(null) }
@@ -118,7 +120,9 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
     }
     val recipientIsSelf = resolvedRecipient?.contentEquals(idBytes) == true
     val canSend = resolvedRecipient != null && !recipientIsSelf && !isSending &&
-        unconfirmedNotice == null && !recipientPending
+        unconfirmedNotice == null && recipientPending.allowsSubmission(resolvedRecipient.toHex())
+    val recipientBlocked = resolvedRecipient != null &&
+        (recipientPending.isPending(resolvedRecipient.toHex()) || recipientPending.isUnavailable)
 
     // Scan-to-send: consume the QR string handed back by the scanner screen
     // (the house pattern — observe the saved-state flow, then null it out).
@@ -180,10 +184,11 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
     // identities won't have one).
     val recipientHex = resolvedRecipient?.toHex()
     LaunchedEffect(recipientHex, wallet, pendingReadVersion) {
-        val recipient = resolvedRecipient
-        val w = wallet
-        recipientPending = recipient != null && w != null &&
-            recipient.toHex() in privateRepliesPending(w, idBytes, listOf(recipient))
+        val contactIds = listOfNotNull(resolvedRecipient)
+        recipientPending = recipientPending.recorded(
+            privateRepliesPending(wallet, idBytes, contactIds),
+            contactIds.map { it.toHex() },
+        )
     }
     LaunchedEffect(recipientHex) {
         val recipient = resolvedRecipient
@@ -221,9 +226,38 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                 kickDashPaySync(scope, m)
                 navController.popBackStack()
             } catch (e: Exception) {
-                errorMessage = e.message ?: "Send failed"
+                when (val outcome = ContactRequestSubmissionOutcome.of(e)) {
+                    // Nothing was sent: the screen shows the pending request
+                    // and offers the private sync that settles it.
+                    ContactRequestSubmissionOutcome.PrivateRequestPending -> Unit
+                    ContactRequestSubmissionOutcome.MayHaveGoneThrough -> {
+                        kickDashPaySync(scope, m)
+                        unconfirmedNotice = ContactRequestSubmissionOutcome.MAY_HAVE_GONE_THROUGH_MESSAGE
+                    }
+                    is ContactRequestSubmissionOutcome.Failed -> errorMessage = outcome.message
+                }
             } finally {
                 isSending = false
+                pendingReadVersion++
+            }
+        }
+    }
+
+    /**
+     * Read the private store, which settles a pending private request, then
+     * re-read the recipient's pending state: Send comes back once nothing is
+     * pending, for the user to try again.
+     */
+    fun syncPrivateRequests() {
+        val w = wallet ?: return
+        val m = manager ?: return
+        isSyncingPrivate = true
+        scope.launch {
+            try {
+                syncPrivateContactRequests(w, m)?.let { errorMessage = it }
+            } finally {
+                isSyncingPrivate = false
+                pendingReadVersion++
             }
         }
     }
@@ -231,8 +265,8 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
     fun acceptIncoming(recipient: ByteArray) {
         val w = wallet ?: return
         val m = manager ?: return
-        // A private reply to this contact is already pending in the wallet.
-        if (recipientPending) return
+        // A private reply to this contact may be pending in the wallet.
+        if (!recipientPending.allowsSubmission(recipient.toHex())) return
         isSending = true
         errorMessage = null
         scope.launch {
@@ -257,6 +291,8 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                         kickDashPaySync(scope, m)
                         unconfirmedNotice = ContactRequestSubmissionOutcome.MAY_HAVE_GONE_THROUGH_MESSAGE
                     }
+                    // Nothing was sent: the screen offers the private sync.
+                    ContactRequestSubmissionOutcome.PrivateRequestPending -> Unit
                     is ContactRequestSubmissionOutcome.Failed ->
                         errorMessage = "Accept failed: ${outcome.message}"
                 }
@@ -362,12 +398,21 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                     enabled = canSend,
                     modifier = Modifier.fillMaxWidth().testTag("dashpay.addContact.send"),
                 ) { attemptSend() }
-                if (recipientPending) {
+                if (recipientBlocked) {
                     Text(
-                        ContactRequestSubmissionOutcome.MAY_HAVE_GONE_THROUGH_MESSAGE,
+                        ContactRequestSubmissionOutcome.rowMessage(
+                            pending = recipientPending.isPending(recipient.toHex()),
+                            unavailable = recipientPending.isUnavailable,
+                            error = null,
+                        ).orEmpty(),
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.testTag("dashpay.addContact.pending"),
                     )
+                    TextButton(
+                        onClick = { syncPrivateRequests() },
+                        enabled = !isSyncingPrivate,
+                        modifier = Modifier.testTag("dashpay.addContact.syncPrivate"),
+                    ) { Text(if (isSyncingPrivate) "Syncing private requests…" else "Sync private requests") }
                 }
             }
 

@@ -97,8 +97,10 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
     // pending, without its buttons, until a private sync settles it. Read
     // from the wallet, not kept by this screen, so leaving and reopening it
     // keeps the state. Re-read on composition and row changes, after an
-    // accept, on refresh and after each sync pass.
-    var walletPendingIds by remember { mutableStateOf(emptySet<String>()) }
+    // accept, on refresh and after each sync pass. A failed read keeps the
+    // last snapshot and leaves every row without its buttons until a read
+    // succeeds.
+    var walletPending by remember { mutableStateOf(PrivateRepliesPendingSnapshot()) }
     var pendingReadVersion by remember { mutableStateOf(0) }
     // What the last private-store refresh has to tell the user, if anything.
     var privateRefreshNotice by remember { mutableStateOf<String?>(null) }
@@ -158,16 +160,13 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
     }
 
     LaunchedEffect(wallet, rows, pendingReadVersion) {
-        val w = wallet
-        walletPendingIds = if (w == null) {
-            emptySet()
-        } else {
-            privateRepliesPending(
-                wallet = w,
-                ourIdentityId = idBytes,
-                contactIds = rows.filter { !it.isOutgoing }.map { it.contactIdentityId },
-            )
-        }
+        val contactIds = rows.filter { !it.isOutgoing }.map { it.contactIdentityId }
+        val read = privateRepliesPending(
+            wallet = wallet,
+            ourIdentityId = idBytes,
+            contactIds = contactIds,
+        )
+        walletPending = walletPending.recorded(read, contactIds.map { it.toHex() })
     }
     LaunchedEffect(manager) {
         manager?.dashPaySyncIsSyncing?.collect { syncing -> if (!syncing) pendingReadVersion++ }
@@ -195,10 +194,13 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
                 }
             } catch (e: Exception) {
                 when (val outcome = ContactRequestSubmissionOutcome.of(e)) {
-                    ContactRequestSubmissionOutcome.MayHaveGoneThrough -> {
+                    ContactRequestSubmissionOutcome.MayHaveGoneThrough,
+                    ContactRequestSubmissionOutcome.PrivateRequestPending,
+                    -> {
                         // As the send screen treats an unconfirmed spend: not
                         // a failure to retry. The wallet keeps the reply
-                        // pending, and the row reads that.
+                        // pending, and the row reads that; a sync (pull to
+                        // refresh reads the private store) settles it.
                         kickDashPaySync(scope, m)
                     }
                     is ContactRequestSubmissionOutcome.Failed ->
@@ -285,9 +287,10 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
                             val hex = row.contactId.toHex()
                             IncomingRequestRow(
                                 item = row,
-                                isInFlight = inFlightIds.contains(hex) || walletPendingIds.contains(hex),
+                                isInFlight = inFlightIds.contains(hex) || !walletPending.allowsSubmission(hex),
                                 errorMessage = ContactRequestSubmissionOutcome.rowMessage(
-                                    pending = walletPendingIds.contains(hex),
+                                    pending = walletPending.isPending(hex),
+                                    unavailable = walletPending.isUnavailable,
                                     error = rowErrors[hex],
                                 ),
                                 onAccept = { accept(row.contactId) },

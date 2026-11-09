@@ -39,22 +39,28 @@ fun kickDashPaySync(scope: CoroutineScope, manager: PlatformWalletManager) {
 /**
  * The hex ids of the contacts among [contactIds] that [ourIdentityId] has a
  * private request to in flight, or paid and not yet read back, as the wallet
- * records it (one snapshot). While one is, Rust refuses another private send
- * or reply to it, so the screens show it as pending and offer neither; a
- * private sync settles it. Empty when the read fails or the identity is not
- * managed.
+ * records it (one snapshot). While one is, Rust refuses another send or reply
+ * to it, so the screens show it as pending and offer neither; a private sync
+ * settles it. Empty when the identity is not managed, as the wallet then
+ * holds nothing for it. Null when the wallet could not be read (no wallet,
+ * or a read failed), which the screens keep apart from "nothing pending"
+ * ([PrivateRepliesPendingSnapshot]).
  * ← Swift `privateRepliesPending` (`ContactsView.swift`).
  */
 suspend fun privateRepliesPending(
-    wallet: ManagedPlatformWallet,
+    wallet: ManagedPlatformWallet?,
     ourIdentityId: ByteArray,
     contactIds: List<ByteArray>,
-): Set<String> = try {
-    wallet.dashpay.privateRepliesPending(ourIdentityId, contactIds).map { it.toHex() }.toSet()
-} catch (e: CancellationException) {
-    throw e
-} catch (e: Exception) {
-    emptySet()
+): Set<String>? {
+    if (contactIds.isEmpty()) return emptySet()
+    if (wallet == null) return null
+    return try {
+        wallet.dashpay.privateRepliesPending(ourIdentityId, contactIds).map { it.toHex() }.toSet()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
 }
 
 /**
