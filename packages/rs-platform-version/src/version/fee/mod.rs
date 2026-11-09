@@ -8,6 +8,8 @@ use crate::version::fee::document_ttl::v1::FEE_DOCUMENT_TTL_VERSION1;
 use crate::version::fee::document_ttl::FeeDocumentTtlVersion;
 use crate::version::fee::hashing::v1::FEE_HASHING_VERSION1;
 use crate::version::fee::hashing::{FeeHashingVersion, FeeHashingVersionBeforeVersion11};
+use crate::version::fee::private_document::v1::FEE_PRIVATE_DOCUMENT_VERSION1;
+use crate::version::fee::private_document::FeePrivateDocumentVersion;
 use crate::version::fee::processing::{
     FeeProcessingVersion, FeeProcessingVersionFieldsBeforeVersion1Point4,
 };
@@ -27,6 +29,7 @@ mod data_contract_validation;
 pub mod document_reference;
 pub mod document_ttl;
 mod hashing;
+pub mod private_document;
 mod processing;
 pub mod signature;
 pub mod state_transition_min_fees;
@@ -74,6 +77,10 @@ pub struct FeeVersion {
     /// protocol version 14). Like `document_ttl`, this field touches no stored format;
     /// `FeeVersionFieldsBeforeVersion4` must not gain it.
     pub document_reference: FeeDocumentReferenceVersion,
+    /// The entries a `PrivateDocumentCreateFromShieldedPool` appends (protocol version 15).
+    /// Fee versions are stored by number only, so this group does not touch any stored
+    /// format; `FeeVersionFieldsBeforeVersion4` must not gain it.
+    pub private_document: FeePrivateDocumentVersion,
 }
 
 impl FeeVersion {
@@ -179,6 +186,8 @@ impl From<FeeVersionFieldsBeforeVersion4> for FeeVersion {
             document_ttl: FEE_DOCUMENT_TTL_VERSION1,
             // Nor do they parse `chooseFirst`; the group is unread there too.
             document_reference: FEE_DOCUMENT_REFERENCE_VERSION1,
+            // Nor do they admit a private document entry; the group is unread there too.
+            private_document: FEE_PRIVATE_DOCUMENT_VERSION1,
         }
     }
 }

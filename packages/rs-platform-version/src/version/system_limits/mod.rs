@@ -59,6 +59,11 @@ pub struct SystemLimits {
     /// At most 15: a page of a store reads up to a whole chunk, and a page reads at most
     /// u16::MAX entries (Drive's `should_keep_a_whole_chunk_within_one_page`).
     pub private_document_store_max_chunk_power: Option<u8>,
+    /// Most entries one `PrivateDocumentCreateFromShieldedPool` transition may append to a
+    /// private document type's store (protocol version 15): 16 from `SYSTEM_LIMITS_V5`, `None`
+    /// in the earlier tables, which refuse the transition before validating it. Read by the
+    /// transition's basic structure 0.
+    pub max_private_document_entries_per_transition: Option<u16>,
     /// Maximum number of references one document of a document type may carry, counted at
     /// contract registration or update from the type's `refersTo` declarations: one for each
     /// property that declares one (an identifier, or a key id carrying a key reference), one

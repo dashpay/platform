@@ -18,6 +18,14 @@ use serde_json::Value;
 //   hold the first byte of each DIP-33 payment address to the address type, the
 //   check the profile data trigger made up to protocol version 14. Their descriptions say
 //   so in place of v2's mention of the data trigger.
+//
+// And it adds one type:
+//
+// - `privateContactRequest`, a private type of 589-byte entries: a contact request
+//   encrypted to the recipient and appended by `PrivateDocumentCreateFromShieldedPool`
+//   without an identity. Its properties describe the plaintext the recipient decrypts.
+//   At their largest they take 290 bytes (`accountReference` is an i64, as DashPay
+//   stores every integer), which with the envelope's 299 bytes fill an entry.
 
 pub fn load_documents_schemas() -> Result<Value, Error> {
     serde_json::from_str(include_str!("../../schema/v3/dashpay.schema.json"))

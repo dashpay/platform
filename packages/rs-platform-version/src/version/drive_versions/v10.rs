@@ -18,6 +18,7 @@ use crate::version::drive_versions::{
     DrivePrefundedSpecializedMethodVersions, DriveSystemEstimationCostsMethodVersions,
     DriveVersion,
 };
+use grovedb_version::version::v5::GROVE_V5;
 
 /// Drive version 10, introduced in protocol v15:
 ///
@@ -65,6 +66,10 @@ use crate::version::drive_versions::{
 ///   `prove_private_document_entries` there, and `verify_private_document_entries` in
 ///   `DRIVE_VERIFY_METHOD_VERSIONS_V4`, are `Some(0)` (`None` before): a page of the store
 ///   is read, proved and verified.
+/// * **Private document entries** (protocol v15 note 25): `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`
+///   sets `append_private_document_entries_operations` to `Some(0)` (`None` before): a
+///   `PrivateDocumentCreateFromShieldedPool` appends its entries to the store, each behind
+///   Drive's 16-byte header.
 /// * **A batch's fee estimate is resolved** (protocol v15 note 14): `apply_drive_operations` 2
 ///   resolves an estimated batch's layer descriptions once the whole batch is lowered, the root
 ///   also kept at the level of the deepest root key the batch writes under, so the estimate no
@@ -76,9 +81,15 @@ use crate::version::drive_versions::{
 /// * **Core fork activations**: `platform_system.fetch_core_fork_activation_height` and
 ///   `store_core_fork_activation_height` are `Some(0)` (`None` before): Drive keeps, in `Misc`,
 ///   the chain locked Core height at which Platform first saw each tracked Core fork active.
-/// * **Refunds at the storing epoch's rate** (protocol v15 note 25): `fees.calculate_fee` 1
+/// * **Refunds at the storing epoch's rate** (protocol v15 note 27): `fees.calculate_fee` 1
 ///   prices the bytes a refund returns at the storage rate of the protocol version that ran the
 ///   epoch that stored them, which that epoch's tree records.
+///
+/// * **GroveDB V5** (protocol v15 note 26): `grove_version` is `GROVE_V5` (`GROVE_V4` before).
+///   GroveDB reads and proves a private document store's entries by position range only under
+///   V5 (`private_document_store.get_range` and `range_proof`), prices a store's creation as it
+///   applies it (`merk_insert_element` 1 in both estimators), and lets a batch carry the same
+///   keyless append more than once (`apply_batch.keyless_append_repeats`).
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
@@ -124,5 +135,10 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
         fees: DriveFeesMethodVersions { calculate_fee: 1 }, // changed in v10: refunds at the storing epoch's rate (note 25)
         ..DRIVE_VERSION_V9.methods
     },
+    // changed in v10: GROVE_V5 (protocol v15 note 26), whose gates protocol v15 needs: a private
+    // document store's entries are read and proved by position range, a store's creation is
+    // estimated as it is applied, and a batch may repeat a keyless append. GROVE_V4, which v9
+    // keeps, refuses all three.
+    grove_version: GROVE_V5,
     ..DRIVE_VERSION_V9
 };

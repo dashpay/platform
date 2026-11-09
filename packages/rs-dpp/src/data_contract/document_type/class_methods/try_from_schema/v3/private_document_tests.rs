@@ -944,6 +944,215 @@ fn should_refuse_an_update_changing_whether_a_type_is_private_or_its_entry_size(
     assert!(unchanged.is_valid(), "{:?}", unchanged.errors);
 }
 
+/// A private type of `properties`, in their map order.
+fn private_type_with(properties: Value) -> DocumentType {
+    parse(
+        private_schema(platform_value!({ "properties": properties })),
+        false,
+    )
+    .expect("parses")
+}
+
+fn account_reference() -> Value {
+    platform_value!({ "type": "integer", "minimum": 0, "maximum": 4_294_967_295u64, "position": 0 })
+}
+
+fn encrypted_public_key() -> Value {
+    platform_value!({ "type": "array", "byteArray": true, "minItems": 96, "maxItems": 96, "position": 1 })
+}
+
+/// An object property at `position` of `members`, in their map order.
+fn object(members: Value, position: u32) -> Value {
+    platform_value!({
+        "type": "object",
+        "properties": members,
+        "additionalProperties": false,
+        "position": position
+    })
+}
+
+fn boolean(position: u32) -> Value {
+    platform_value!({ "type": "boolean", "position": position })
+}
+
+/// An entry of a private type is immutable and is read with the type as it is now, in the order
+/// the type parses its properties (by `position`) and each object's members (in the schema's
+/// map order), so an update may only add properties after the existing ones, at the end of the
+/// type and of every object. One putting a property before them, or reordering them, is refused;
+/// appending is accepted, however the schema's map lists the type's own properties. These types
+/// are parsed without full validation, which would require top-level positions without a gap:
+/// the gap case is defensive, and the registrable case follows.
+#[test]
+fn should_refuse_an_update_that_does_not_keep_a_private_type_s_property_order() {
+    let platform_version = PlatformVersion::latest();
+    // `meta` at position 4 leaves positions 2 and 3 free for a property to sort before it.
+    let meta = |members: Value| object(members, 4);
+    let old = private_type_with(platform_value!({
+        "accountReference": account_reference(),
+        "encryptedPublicKey": encrypted_public_key(),
+        "meta": meta(platform_value!({ "y": boolean(0), "z": boolean(1) })),
+    }));
+    let update = |new: &DocumentType| {
+        old.as_ref()
+            .validate_update(new.as_ref(), 2, platform_version)
+            .expect("validate_update should not error")
+    };
+
+    for (case, new, list) in [
+        (
+            "a member put before the object's existing ones",
+            private_type_with(platform_value!({
+                "accountReference": account_reference(),
+                "encryptedPublicKey": encrypted_public_key(),
+                "meta": meta(platform_value!({ "x": boolean(2), "y": boolean(0), "z": boolean(1) })),
+            })),
+            "the object meta",
+        ),
+        (
+            "the object's members reordered",
+            private_type_with(platform_value!({
+                "accountReference": account_reference(),
+                "encryptedPublicKey": encrypted_public_key(),
+                "meta": meta(platform_value!({ "z": boolean(1), "y": boolean(0) })),
+            })),
+            "the object meta",
+        ),
+        (
+            "a property at a position before an existing one",
+            private_type_with(platform_value!({
+                "accountReference": account_reference(),
+                "encryptedPublicKey": encrypted_public_key(),
+                "meta": meta(platform_value!({ "y": boolean(0), "z": boolean(1) })),
+                "note": boolean(3),
+            })),
+            "the type",
+        ),
+    ] {
+        let result = update(&new);
+        assert!(
+            result.errors.iter().any(|error| matches!(
+                error,
+                ConsensusError::StateError(StateError::DocumentTypeUpdateError(error))
+                    if error.additional_message().contains("can only add properties after")
+                        && error.additional_message().contains(list)
+            )),
+            "{case}: expected the property order refusal naming {list}, got {:?}",
+            result.errors
+        );
+    }
+
+    for (case, new) in [
+        (
+            "a member added after the object's existing ones",
+            private_type_with(platform_value!({
+                "accountReference": account_reference(),
+                "encryptedPublicKey": encrypted_public_key(),
+                "meta": meta(platform_value!({ "y": boolean(0), "z": boolean(1), "x": boolean(2) })),
+            })),
+        ),
+        (
+            "a property at a position after the existing ones, listed first",
+            private_type_with(platform_value!({
+                "note": boolean(5),
+                "accountReference": account_reference(),
+                "encryptedPublicKey": encrypted_public_key(),
+                "meta": meta(platform_value!({ "y": boolean(0), "z": boolean(1) })),
+            })),
+        ),
+    ] {
+        let result = update(&new);
+        assert!(result.is_valid(), "{case}: {:?}", result.errors);
+    }
+}
+
+/// The same rule on a type that registers under full validation (top-level positions run on
+/// without a gap) and one level deeper: `meta` holds an unchanged object `side` before the object
+/// `inner` an update changes, so the check must look past an unchanged sibling and into a nested
+/// object. Prepending to `inner`, reordering it or removing one of its members is refused and
+/// names `the object meta.inner`; appending to it, or appending a property to the type at the
+/// next position, is accepted.
+#[test]
+fn should_keep_the_property_order_of_a_registrable_private_type_at_every_depth() {
+    let platform_version = PlatformVersion::latest();
+    let registrable = |inner: Value, extra: Option<(&str, Value)>| {
+        let mut properties = platform_value!({
+            "accountReference": account_reference(),
+            "encryptedPublicKey": encrypted_public_key(),
+            "meta": object(
+                platform_value!({
+                    "side": object(platform_value!({ "s": boolean(0) }), 0),
+                    "inner": object(inner, 1),
+                }),
+                2
+            ),
+        });
+        if let (Value::Map(map), Some((name, property))) = (&mut properties, extra) {
+            map.push((Value::Text(name.to_string()), property));
+        }
+        parse(
+            private_schema(platform_value!({ "properties": properties })),
+            true,
+        )
+        .expect("the type registers under full validation")
+    };
+    let old = registrable(platform_value!({ "p": boolean(0), "q": boolean(1) }), None);
+    let update = |new: &DocumentType| {
+        old.as_ref()
+            .validate_update(new.as_ref(), 2, platform_version)
+            .expect("validate_update should not error")
+    };
+
+    for (case, new) in [
+        (
+            "a member put before inner's existing ones",
+            registrable(
+                platform_value!({ "o": boolean(2), "p": boolean(0), "q": boolean(1) }),
+                None,
+            ),
+        ),
+        (
+            "inner's members reordered",
+            registrable(platform_value!({ "q": boolean(1), "p": boolean(0) }), None),
+        ),
+        (
+            "a member removed from inner",
+            registrable(platform_value!({ "p": boolean(0) }), None),
+        ),
+    ] {
+        let result = update(&new);
+        assert!(
+            result.errors.iter().any(|error| matches!(
+                error,
+                ConsensusError::StateError(StateError::DocumentTypeUpdateError(error))
+                    if error.additional_message().contains("can only add properties after")
+                        && error.additional_message().contains("the object meta.inner")
+            )),
+            "{case}: expected the property order refusal naming the object meta.inner, got {:?}",
+            result.errors
+        );
+    }
+
+    for (case, new) in [
+        (
+            "a member added after inner's existing ones",
+            registrable(
+                platform_value!({ "p": boolean(0), "q": boolean(1), "r": boolean(2) }),
+                None,
+            ),
+        ),
+        (
+            "a property appended to the type at the next position",
+            registrable(
+                platform_value!({ "p": boolean(0), "q": boolean(1) }),
+                Some(("note", boolean(3))),
+            ),
+        ),
+    ] {
+        let result = update(&new);
+        assert!(result.is_valid(), "{case}: {:?}", result.errors);
+    }
+}
+
 fn old_and_new_unchanged(
     document_type: &DocumentType,
     platform_version: &PlatformVersion,
