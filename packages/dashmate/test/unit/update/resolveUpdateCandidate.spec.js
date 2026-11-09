@@ -804,6 +804,21 @@ describe('resolveUpdateCandidate', () => {
       expect(candidate.message).to.have.string('4.2.0[2Jdrop');
     });
 
+    it('should reject a version field that is not text without coercing it', async () => {
+      // Coercing a value shaped like this to a string throws, and that throw would escape
+      // through the very diagnostic meant to explain the rejection
+      fetchJson.resolves({
+        status: FETCH_STATUS.OK,
+        body: { name: 'dashmate', version: { toString: 'not a function' } },
+      });
+
+      const candidate = await resolveNpm();
+
+      expect(candidate.state).to.equal(CANDIDATE_STATE.UNKNOWN);
+      expect(candidate.reason).to.equal(CANDIDATE_REASON.INVALID_VERSION);
+      expect(candidate.message).to.have.string('[unprintable]');
+    });
+
     it('should reject a version apt reports that is not a Debian version', async () => {
       aptOffers('git+https://evil.example.com/dashmate.git');
 

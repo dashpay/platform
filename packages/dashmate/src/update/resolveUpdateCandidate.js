@@ -4,6 +4,12 @@ import semver from 'semver';
 import { promisify } from 'util';
 
 import { DASHMATE_VERSION } from '../constants.js';
+import {
+  BODY_STATUS,
+  parseVersion,
+  readCappedBody,
+  sanitizeForLog,
+} from '../util/remoteInput.js';
 import detectInstallMethod, { INSTALL_METHODS } from './detectInstallMethod.js';
 
 /**
@@ -28,7 +34,9 @@ import detectInstallMethod, { INSTALL_METHODS } from './detectInstallMethod.js';
  * reach a package-manager argument. npm accepts `git+https://…`, `file:…`, `https://….tgz` and
  * `npm:` aliases wherever it accepts a version, so nothing but a strict version shape may reach
  * `npm install -g dashmate@<spec>`, whatever the registry returned. Passing arguments with
- * execFile and no shell does not change that: the specifier is one argument either way.
+ * execFile and no shell does not change that: the specifier is one argument either way. That
+ * validation, and the printing of anything a remote host chose, come from `util/remoteInput`,
+ * so there is one definition of what a version may look like.
  *
  * Never throws. A missing apt, an unreachable registry, a rate limit, malformed output — all
  * of them degrade to a labelled unknown carrying a machine-readable reason. Unknown is its own
@@ -117,28 +125,12 @@ const DPKG_TIMEOUT_MS = 5000;
 const COMMAND_MAX_BUFFER = 1024 * 1024;
 
 const REGISTRY_TIMEOUT_MS = 5000;
-const MAX_RESPONSE_SIZE = 1024 * 1024;
-
-const MAX_LOG_LENGTH = 200;
-
-/**
- * The only version shape accepted from a channel.
- *
- * Anchored, with character classes that leave no room for control or ANSI escape characters,
- * nor for anything a package manager would read as a location to install from.
- */
-const VERSION_REGEX = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
 
 /**
  * Characters Debian policy allows in a version, so anything else in apt's output is not a
  * version at all and is refused before it is stored or printed.
  */
 const DEB_VERSION_REGEX = /^[0-9][A-Za-z0-9.+~:-]*$/;
-
-// C0 and C1 controls, zero-width characters, line and paragraph separators, and the
-// bidirectional overrides that reorder what an operator reads. Matching them is the point.
-// eslint-disable-next-line no-control-regex
-const UNSAFE_LOG_CHARACTERS_REGEX = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u2029\u202a-\u202e\u2066-\u2069\ufeff]/g;
 
 /**
  * Environment handed to every subprocess.
@@ -200,41 +192,6 @@ export const FETCH_STATUS = {
   TOO_LARGE: 'too-large',
   MALFORMED: 'malformed',
 };
-
-/**
- * Make text received from a remote host or a subprocess safe to print.
- *
- * Diagnostics quote the payload that failed to parse, so foreign bytes reach the terminal
- * through messages even when the value itself is rejected.
- *
- * @param {*} text
- * @return {string}
- */
-function sanitize(text) {
-  return typeof text === 'string'
-    ? text.replace(UNSAFE_LOG_CHARACTERS_REGEX, '').slice(0, MAX_LOG_LENGTH)
-    : '[unprintable]';
-}
-
-/**
- * Accept a version string only if it is a version.
- *
- * The shape check runs first and the semver parse second: the regex refuses what semver would
- * accept in a package-manager context (a `git+https://` specifier is not a version but is a
- * perfectly good argument to `npm install`), and semver refuses what the shape allows but
- * cannot order, such as the leading zeroes in `01.2.3`. The normalised result drops build
- * metadata, which comparison ignores and a package manager would refuse to resolve.
- *
- * @param {*} version
- * @return {string|null}
- */
-function parseVersion(version) {
-  if (typeof version !== 'string' || !VERSION_REGEX.test(version)) {
-    return null;
-  }
-
-  return semver.valid(version);
-}
 
 /**
  * Translate a Debian version into the application version it packages.
@@ -364,49 +321,25 @@ export async function defaultFetchJson(url) {
     return { status: FETCH_STATUS.NETWORK_ERROR, message: e?.message };
   }
 
-  // Until the body is cancelled the connection stays checked out of the pool
-  const discard = () => response.body?.cancel().catch(() => {});
-
   if (!response.ok) {
-    discard();
+    // Until the body is cancelled the connection stays checked out of the pool
+    response.body?.cancel().catch(() => {});
 
     return { status: FETCH_STATUS.HTTP_ERROR, statusCode: response.status };
   }
 
-  const declaredSize = Number(response.headers.get('content-length'));
+  const body = await readCappedBody(response);
 
-  if (Number.isFinite(declaredSize) && declaredSize > MAX_RESPONSE_SIZE) {
-    discard();
-
+  if (body.status === BODY_STATUS.TOO_LARGE) {
     return { status: FETCH_STATUS.TOO_LARGE };
   }
 
-  if (!response.body) {
-    return { status: FETCH_STATUS.MALFORMED, message: 'response carried no body' };
-  }
-
-  const chunks = [];
-  let size = 0;
-
-  try {
-    // The declared size is only a hint, so the body is measured while it is read
-    for await (const chunk of response.body) {
-      size += chunk.length;
-
-      if (size > MAX_RESPONSE_SIZE) {
-        discard();
-
-        return { status: FETCH_STATUS.TOO_LARGE };
-      }
-
-      chunks.push(chunk);
-    }
-  } catch (e) {
-    return { status: FETCH_STATUS.MALFORMED, message: e?.message };
+  if (body.status !== BODY_STATUS.OK) {
+    return { status: FETCH_STATUS.MALFORMED, message: body.message };
   }
 
   try {
-    return { status: FETCH_STATUS.OK, body: JSON.parse(Buffer.concat(chunks).toString('utf8')) };
+    return { status: FETCH_STATUS.OK, body: JSON.parse(body.text) };
   } catch (e) {
     return { status: FETCH_STATUS.MALFORMED, message: e?.message };
   }
@@ -576,7 +509,7 @@ async function refreshAptLists({ runCommand, sourcesPath, isRoot }) {
   } catch (e) {
     return {
       refreshed: false,
-      skippedReason: `apt-get update failed: ${sanitize(e?.message)}`,
+      skippedReason: `apt-get update failed: ${sanitizeForLog(e?.message)}`,
     };
   }
 }
@@ -779,7 +712,7 @@ async function resolveFromApt(base, options) {
       base,
       CANDIDATE_STATE.UNKNOWN,
       CANDIDATE_REASON.APT_FAILED,
-      `Could not ask apt which version it would install: ${sanitize(e?.message)}`,
+      `Could not ask apt which version it would install: ${sanitizeForLog(e?.message)}`,
       { source: CANDIDATE_SOURCE.APT, details },
     );
   }
@@ -799,7 +732,7 @@ async function resolveFromApt(base, options) {
   if (installedField !== null && DEB_VERSION_REGEX.test(installedField)) {
     details.installedPackageVersion = installedField;
   } else if (installedField !== null && installedField !== '(none)') {
-    details.installedPackageVersionReported = sanitize(installedField);
+    details.installedPackageVersionReported = sanitizeForLog(installedField);
   }
 
   const candidateField = readPolicyField(stdout, 'Candidate');
@@ -831,7 +764,7 @@ async function resolveFromApt(base, options) {
       base,
       CANDIDATE_STATE.UNKNOWN,
       CANDIDATE_REASON.APT_OUTPUT_MALFORMED,
-      `apt-cache policy reported "${sanitize(candidateField)}" where a package version was expected`,
+      `apt-cache policy reported "${sanitizeForLog(candidateField)}" where a package version was expected`,
       { source: CANDIDATE_SOURCE.APT, details },
     );
   }
@@ -921,11 +854,11 @@ function resolveRegistryUrl(explicitUrl, env) {
   try {
     parsed = new URL(configured);
   } catch {
-    return { url: NPM_REGISTRY_URL, source: 'default', ignored: sanitize(configured) };
+    return { url: NPM_REGISTRY_URL, source: 'default', ignored: sanitizeForLog(configured) };
   }
 
   if (parsed.protocol !== 'https:' || parsed.username !== '' || parsed.password !== '') {
-    return { url: NPM_REGISTRY_URL, source: 'default', ignored: sanitize(configured) };
+    return { url: NPM_REGISTRY_URL, source: 'default', ignored: sanitizeForLog(configured) };
   }
 
   return {
@@ -989,7 +922,7 @@ async function resolveFromNpmRegistry(base, options) {
         base,
         CANDIDATE_STATE.UNKNOWN,
         CANDIDATE_REASON.REGISTRY_UNREACHABLE,
-        `Could not reach the npm registry: ${sanitize(response.message)}`,
+        `Could not reach the npm registry: ${sanitizeForLog(response.message)}`,
         { source: CANDIDATE_SOURCE.NPM_REGISTRY, details },
       );
     }
@@ -1040,7 +973,7 @@ async function resolveFromNpmRegistry(base, options) {
       base,
       CANDIDATE_STATE.UNKNOWN,
       CANDIDATE_REASON.REGISTRY_RESPONSE_MALFORMED,
-      `The npm registry did not answer with a usable document${response?.message ? `: ${sanitize(response.message)}` : ''}`,
+      `The npm registry did not answer with a usable document${response?.message ? `: ${sanitizeForLog(response.message)}` : ''}`,
       { source: CANDIDATE_SOURCE.NPM_REGISTRY, details },
     );
   }
@@ -1072,7 +1005,7 @@ async function resolveFromNpmRegistry(base, options) {
       base,
       CANDIDATE_STATE.UNKNOWN,
       CANDIDATE_REASON.INVALID_VERSION,
-      `The npm registry reported "${sanitize(rawVersion)}" where a version was expected`,
+      `The npm registry reported "${sanitizeForLog(rawVersion)}" where a version was expected`,
       { source: CANDIDATE_SOURCE.NPM_REGISTRY, details },
     );
   }
@@ -1161,7 +1094,7 @@ export default async function resolveUpdateCandidate(options = {}) {
         base,
         CANDIDATE_STATE.UNKNOWN,
         CANDIDATE_REASON.CURRENT_VERSION_INVALID,
-        `This dashmate reports version "${sanitize(currentVersion)}", which cannot be compared with a released version`,
+        `This dashmate reports version "${sanitizeForLog(currentVersion)}", which cannot be compared with a released version`,
         {},
       );
     }
@@ -1199,7 +1132,7 @@ export default async function resolveUpdateCandidate(options = {}) {
         base,
         CANDIDATE_STATE.UNKNOWN,
         CANDIDATE_REASON.AMBIGUOUS_INSTALL_METHOD,
-        `How this dashmate was installed could not be established: ${sanitize(installMethod.evidence?.reason)}`,
+        `How this dashmate was installed could not be established: ${sanitizeForLog(installMethod.evidence?.reason)}`,
         {},
       );
     }
@@ -1221,7 +1154,7 @@ export default async function resolveUpdateCandidate(options = {}) {
       base,
       CANDIDATE_STATE.UNKNOWN,
       CANDIDATE_REASON.RESOLUTION_FAILED,
-      `Could not resolve an update candidate: ${sanitize(e?.message)}`,
+      `Could not resolve an update candidate: ${sanitizeForLog(e?.message)}`,
       {},
     );
   }
