@@ -109,6 +109,14 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     public static let dashpayPayments: UInt64 = 1 << 12
     /// Durable operation UUIDs, including consumed asset-lock tombstones.
     public static let assetLockOperationIds: UInt64 = 1 << 13
+    /// The private contact request sync's scan state (each identity's read
+    /// position in DashPay's private contact request store, and its private
+    /// contacts' shielded addresses) is stored on its round and restored at
+    /// load, so a relaunch resumes the sync where it stopped. Mirrors
+    /// `PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE`; Rust
+    /// only honours the declaration when the extension carries the three
+    /// scan-state callbacks.
+    public static let privateContactRequestScanState: UInt64 = 1 << 14
 
     public let version: UInt32
     public let bits: UInt64

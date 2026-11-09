@@ -3257,6 +3257,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 | PlatformWalletPersistenceCapabilities.coreSweepRemoval
                 | PlatformWalletPersistenceCapabilities.dashpayPayments
                 | PlatformWalletPersistenceCapabilities.assetLockOperationIds
+                | PlatformWalletPersistenceCapabilities.privateContactRequestScanState
         )
     }
 
@@ -3296,6 +3297,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         extensionCallbacks.on_load_identity_balance_block_time_fn = loadIdentityBalanceBlockTimeCallback
         extensionCallbacks.on_persist_asset_lock_operation_id_fn = persistAssetLockOperationIdCallback
         extensionCallbacks.on_load_asset_lock_operation_id_fn = loadAssetLockOperationIdCallback
+        extensionCallbacks.on_persist_private_contact_scan_state_fn = persistPrivateContactScanStateCallback
+        extensionCallbacks.on_load_private_contact_scan_state_fn = loadPrivateContactScanStateCallback
+        extensionCallbacks.on_load_private_contact_scan_state_free_fn =
+            loadPrivateContactScanStateFreeCallback
         return extensionCallbacks
     }
 
@@ -5114,6 +5119,133 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    // MARK: - Private contact request scan state (additive persistence extension)
+
+    /// One identity's read position in DashPay's private contact request store.
+    struct PrivateContactRequestsPositionRow: Equatable {
+        let identityId: Data
+        let position: UInt64
+        /// Opaque to this side: stored and handed back as it came.
+        let keyFingerprint: Data
+    }
+
+    /// The shielded address `contactId`'s private request to `ownerId` carries.
+    struct PrivateShieldedAddressRow: Equatable {
+        let ownerId: Data
+        let contactId: Data
+        let address: Data
+    }
+
+    /// The `(owner, contact)` pair of a shielded address the round removed.
+    struct PrivateShieldedAddressKey: Equatable {
+        let ownerId: Data
+        let contactId: Data
+    }
+
+    /// The network the scan state of `walletId` is stored under, as for the
+    /// identity rows it belongs with.
+    private func scanStateNetworkRaw(walletId: Data) -> UInt32 {
+        (self.network ?? walletNetwork(walletId: walletId) ?? .testnet).rawValue
+    }
+
+    /// Apply a round's scan state. Identities the round removed lose theirs
+    /// first, so a new position or address in the same round stands.
+    func persistPrivateContactScanState(
+        walletId: Data,
+        positions: [PrivateContactRequestsPositionRow],
+        addresses: [PrivateShieldedAddressRow],
+        removedAddresses: [PrivateShieldedAddressKey],
+        clearedIdentities: [Data]
+    ) throws {
+        try onQueue {
+            guard inChangeset else {
+                throw PlatformWalletError.walletOperation(
+                    "Private contact request scan state requires a changeset")
+            }
+            let networkRaw = scanStateNetworkRaw(walletId: walletId)
+            for identityId in clearedIdentities {
+                for row in try backgroundContext.fetch(FetchDescriptor<PersistentPrivateContactRequestsPosition>(
+                    predicate: #Predicate {
+                        $0.networkRaw == networkRaw && $0.walletId == walletId && $0.identityId == identityId
+                    })) {
+                    backgroundContext.delete(row)
+                }
+                for row in try backgroundContext.fetch(FetchDescriptor<PersistentPrivateShieldedAddress>(
+                    predicate: #Predicate {
+                        $0.networkRaw == networkRaw && $0.walletId == walletId && $0.ownerId == identityId
+                    })) {
+                    backgroundContext.delete(row)
+                }
+            }
+            for row in positions {
+                let identityId = row.identityId
+                let existing = try backgroundContext.fetch(FetchDescriptor<PersistentPrivateContactRequestsPosition>(
+                    predicate: #Predicate {
+                        $0.networkRaw == networkRaw && $0.walletId == walletId && $0.identityId == identityId
+                    })).first
+                if let existing {
+                    existing.position = Int64(bitPattern: row.position)
+                    existing.keyFingerprint = row.keyFingerprint
+                } else {
+                    backgroundContext.insert(PersistentPrivateContactRequestsPosition(
+                        networkRaw: networkRaw, walletId: walletId, identityId: identityId,
+                        position: row.position, keyFingerprint: row.keyFingerprint))
+                }
+            }
+            for row in addresses {
+                let ownerId = row.ownerId
+                let contactId = row.contactId
+                let existing = try backgroundContext.fetch(FetchDescriptor<PersistentPrivateShieldedAddress>(
+                    predicate: #Predicate {
+                        $0.networkRaw == networkRaw && $0.walletId == walletId
+                            && $0.ownerId == ownerId && $0.contactId == contactId
+                    })).first
+                if let existing {
+                    existing.address = row.address
+                } else {
+                    backgroundContext.insert(PersistentPrivateShieldedAddress(
+                        networkRaw: networkRaw, walletId: walletId, ownerId: ownerId,
+                        contactId: contactId, address: row.address))
+                }
+            }
+            for key in removedAddresses {
+                let ownerId = key.ownerId
+                let contactId = key.contactId
+                for row in try backgroundContext.fetch(FetchDescriptor<PersistentPrivateShieldedAddress>(
+                    predicate: #Predicate {
+                        $0.networkRaw == networkRaw && $0.walletId == walletId
+                            && $0.ownerId == ownerId && $0.contactId == contactId
+                    })) {
+                    backgroundContext.delete(row)
+                }
+            }
+            // endChangeset performs the atomic save with the round's contacts.
+        }
+    }
+
+    /// The stored scan state of `walletId`. Throws when the store cannot be
+    /// read, so the load fails rather than reading the store from its start.
+    func loadPrivateContactScanState(walletId: Data) throws
+        -> (positions: [PrivateContactRequestsPositionRow], addresses: [PrivateShieldedAddressRow]) {
+        try onQueue {
+            let networkRaw = scanStateNetworkRaw(walletId: walletId)
+            let positions = try backgroundContext.fetch(FetchDescriptor<PersistentPrivateContactRequestsPosition>(
+                predicate: #Predicate { $0.networkRaw == networkRaw && $0.walletId == walletId }))
+            let addresses = try backgroundContext.fetch(FetchDescriptor<PersistentPrivateShieldedAddress>(
+                predicate: #Predicate { $0.networkRaw == networkRaw && $0.walletId == walletId }))
+            return (
+                positions.map {
+                    PrivateContactRequestsPositionRow(
+                        identityId: $0.identityId, position: UInt64(bitPattern: $0.position),
+                        keyFingerprint: $0.keyFingerprint)
+                },
+                addresses.map {
+                    PrivateShieldedAddressRow(ownerId: $0.ownerId, contactId: $0.contactId, address: $0.address)
+                }
+            )
+        }
+    }
+
     // MARK: - Identity snapshot structs
 
     /// Swift-side snapshot of the Rust `IdentityEntryFFI` with C
@@ -6650,6 +6782,29 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     claimedNetworks = Set(try backgroundContext.fetch(owners).compactMap(\.networkRaw))
                 }
                 for row in try backgroundContext.fetch(metadata)
+                    where !claimedNetworks.contains(row.networkRaw) {
+                    backgroundContext.delete(row)
+                }
+                // The private contact request scan state carries the same
+                // explicit network key, so it is purged by the same rule.
+                let positions: FetchDescriptor<PersistentPrivateContactRequestsPosition>
+                let addresses: FetchDescriptor<PersistentPrivateShieldedAddress>
+                if let raw = metadataNetwork?.rawValue {
+                    positions = FetchDescriptor(predicate: #Predicate {
+                        $0.walletId == walletId && $0.networkRaw == raw
+                    })
+                    addresses = FetchDescriptor(predicate: #Predicate {
+                        $0.walletId == walletId && $0.networkRaw == raw
+                    })
+                } else {
+                    positions = FetchDescriptor(predicate: #Predicate { $0.walletId == walletId })
+                    addresses = FetchDescriptor(predicate: #Predicate { $0.walletId == walletId })
+                }
+                for row in try backgroundContext.fetch(positions)
+                    where !claimedNetworks.contains(row.networkRaw) {
+                    backgroundContext.delete(row)
+                }
+                for row in try backgroundContext.fetch(addresses)
                     where !claimedNetworks.contains(row.networkRaw) {
                     backgroundContext.delete(row)
                 }
@@ -11910,6 +12065,119 @@ private func persistIdentityBalanceBlockTimeCallback(
             blockTime: blockTime?.pointee)
         return 0
     } catch { return -1 }
+}
+
+/// C shim for `on_persist_private_contact_scan_state_fn`. Copies every row
+/// before calling the handler, so Rust can drop its arrays on return.
+private func persistPrivateContactScanStateCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    positions: UnsafePointer<PrivateContactRequestsPositionFFI>?, positionsCount: UInt,
+    addresses: UnsafePointer<PrivateShieldedAddressFFI>?, addressesCount: UInt,
+    removedAddresses: UnsafePointer<ContactRequestRemovalFFI>?, removedAddressesCount: UInt,
+    clearedIdentities: UnsafePointer<FFIByteTuple32>?, clearedIdentitiesCount: UInt
+) -> Int32 {
+    guard let context, let walletId else { return -1 }
+    func rows<T>(_ pointer: UnsafePointer<T>?, _ count: UInt) -> UnsafeBufferPointer<T>? {
+        guard count > 0 else { return UnsafeBufferPointer(start: nil, count: 0) }
+        guard let pointer else { return nil }
+        return UnsafeBufferPointer(start: pointer, count: Int(count))
+    }
+    guard let positionRows = rows(positions, positionsCount),
+          let addressRows = rows(addresses, addressesCount),
+          let removedRows = rows(removedAddresses, removedAddressesCount),
+          let clearedRows = rows(clearedIdentities, clearedIdentitiesCount) else { return -1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        try handler.persistPrivateContactScanState(
+            walletId: Data(bytes: walletId, count: 32),
+            positions: positionRows.map {
+                .init(identityId: dataFromTuple32($0.identity_id), position: $0.position,
+                      keyFingerprint: dataFromTuple32($0.key_fingerprint))
+            },
+            addresses: addressRows.map {
+                var address = $0.address
+                return .init(ownerId: dataFromTuple32($0.owner_id), contactId: dataFromTuple32($0.contact_id),
+                             address: Swift.withUnsafeBytes(of: &address) { Data($0) })
+            },
+            removedAddresses: removedRows.map {
+                .init(ownerId: dataFromTuple32($0.owner_id), contactId: dataFromTuple32($0.contact_id))
+            },
+            clearedIdentities: clearedRows.map { dataFromTuple32($0) })
+        return 0
+    } catch { return -1 }
+}
+
+/// C shim for `on_load_private_contact_scan_state_fn`. Hands Rust two
+/// arrays of flat rows, released by the free shim below. A row whose
+/// stored bytes have the wrong length is skipped rather than handed back
+/// on zeros.
+private func loadPrivateContactScanStateCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    outPositions: UnsafeMutablePointer<UnsafePointer<PrivateContactRequestsPositionFFI>?>?,
+    outPositionsCount: UnsafeMutablePointer<UInt>?,
+    outAddresses: UnsafeMutablePointer<UnsafePointer<PrivateShieldedAddressFFI>?>?,
+    outAddressesCount: UnsafeMutablePointer<UInt>?
+) -> Int32 {
+    guard let context, let walletId, let outPositions, let outPositionsCount,
+          let outAddresses, let outAddressesCount else { return -1 }
+    outPositions.pointee = nil
+    outPositionsCount.pointee = 0
+    outAddresses.pointee = nil
+    outAddressesCount.pointee = 0
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    let stored: (positions: [PlatformWalletPersistenceHandler.PrivateContactRequestsPositionRow],
+                 addresses: [PlatformWalletPersistenceHandler.PrivateShieldedAddressRow])
+    do {
+        stored = try handler.loadPrivateContactScanState(walletId: Data(bytes: walletId, count: 32))
+    } catch { return -1 }
+    let positions = stored.positions.filter { $0.identityId.count == 32 && $0.keyFingerprint.count == 32 }
+    let addresses = stored.addresses.filter {
+        $0.ownerId.count == 32 && $0.contactId.count == 32 && $0.address.count == 43
+    }
+    if !positions.isEmpty {
+        let buffer = UnsafeMutablePointer<PrivateContactRequestsPositionFFI>.allocate(capacity: positions.count)
+        for (index, row) in positions.enumerated() {
+            var entry = PrivateContactRequestsPositionFFI()
+            Swift.withUnsafeMutableBytes(of: &entry.identity_id) { _ = row.identityId.copyBytes(to: $0) }
+            entry.position = row.position
+            Swift.withUnsafeMutableBytes(of: &entry.key_fingerprint) { _ = row.keyFingerprint.copyBytes(to: $0) }
+            (buffer + index).initialize(to: entry)
+        }
+        outPositions.pointee = UnsafePointer(buffer)
+        outPositionsCount.pointee = UInt(positions.count)
+    }
+    if !addresses.isEmpty {
+        let buffer = UnsafeMutablePointer<PrivateShieldedAddressFFI>.allocate(capacity: addresses.count)
+        for (index, row) in addresses.enumerated() {
+            var entry = PrivateShieldedAddressFFI()
+            Swift.withUnsafeMutableBytes(of: &entry.owner_id) { _ = row.ownerId.copyBytes(to: $0) }
+            Swift.withUnsafeMutableBytes(of: &entry.contact_id) { _ = row.contactId.copyBytes(to: $0) }
+            Swift.withUnsafeMutableBytes(of: &entry.address) { _ = row.address.copyBytes(to: $0) }
+            (buffer + index).initialize(to: entry)
+        }
+        outAddresses.pointee = UnsafePointer(buffer)
+        outAddressesCount.pointee = UInt(addresses.count)
+    }
+    return 0
+}
+
+/// C shim for `on_load_private_contact_scan_state_free_fn`: the rows are
+/// flat, so releasing the two arrays is all there is to it.
+private func loadPrivateContactScanStateFreeCallback(
+    context: UnsafeMutableRawPointer?,
+    positions: UnsafePointer<PrivateContactRequestsPositionFFI>?, positionsCount: UInt,
+    addresses: UnsafePointer<PrivateShieldedAddressFFI>?, addressesCount: UInt
+) {
+    if let positions {
+        let buffer = UnsafeMutablePointer(mutating: positions)
+        buffer.deinitialize(count: Int(positionsCount))
+        buffer.deallocate()
+    }
+    if let addresses {
+        let buffer = UnsafeMutablePointer(mutating: addresses)
+        buffer.deinitialize(count: Int(addressesCount))
+        buffer.deallocate()
+    }
 }
 
 private func loadIdentityBalanceBlockTimeCallback(

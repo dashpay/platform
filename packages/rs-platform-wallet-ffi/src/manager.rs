@@ -8,12 +8,14 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn,
-    LoadIdentityBalanceBlockTimeFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
-    PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn,
-    PersistWalletChangesetChainLockHeightFn, PersistWalletChangesetSweepsFn,
-    PersistWalletChangesetUtxoVerdictsFn, PersistWalletDashPayBackfillFn, PersistenceCallbacks,
-    PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
+    FFIPersister, FreePrivateContactScanStateFn, FreeTrackedMasternodesFn,
+    LoadAssetLockOperationIdFn, LoadIdentityBalanceBlockTimeFn, LoadPrivateContactScanStateFn,
+    LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn, PersistDpnsNameStatesFn,
+    PersistIdentityBalanceBlockTimeFn, PersistPrivateContactScanStateFn,
+    PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
+    PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn,
+    PersistWalletDashPayBackfillFn, PersistenceCallbacks, PersistenceCallbacksExtension,
+    PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
     PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::runtime;
@@ -289,6 +291,18 @@ unsafe fn persistence_extension_callbacks(
         load_asset_lock_operation_id: slot!(
             on_load_asset_lock_operation_id_fn,
             LoadAssetLockOperationIdFn
+        ),
+        persist_private_contact_scan_state: slot!(
+            on_persist_private_contact_scan_state_fn,
+            PersistPrivateContactScanStateFn
+        ),
+        load_private_contact_scan_state: slot!(
+            on_load_private_contact_scan_state_fn,
+            LoadPrivateContactScanStateFn
+        ),
+        load_private_contact_scan_state_free: slot!(
+            on_load_private_contact_scan_state_free_fn,
+            FreePrivateContactScanStateFn
         ),
     }
 }
@@ -867,6 +881,9 @@ pub unsafe extern "C" fn platform_wallet_manager_remove_wallet(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contact_persistence::{
+        ContactRequestRemovalFFI, PrivateContactRequestsPositionFFI, PrivateShieldedAddressFFI,
+    };
 
     unsafe extern "C" fn begin_changeset(_context: *mut c_void, _wallet_id: *const u8) -> i32 {
         0
@@ -1370,6 +1387,68 @@ mod tests {
         let parsed = unsafe { persistence_extension_callbacks(&ext) };
         assert!(parsed.persist_identity_balance_block_time.is_none());
         assert!(parsed.load_identity_balance_block_time.is_none());
+    }
+
+    #[test]
+    fn should_size_gate_private_contact_scan_state_slots_independently() {
+        #[allow(clippy::too_many_arguments)]
+        unsafe extern "C" fn persist(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const PrivateContactRequestsPositionFFI,
+            _: usize,
+            _: *const PrivateShieldedAddressFFI,
+            _: usize,
+            _: *const ContactRequestRemovalFFI,
+            _: usize,
+            _: *const [u8; 32],
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load(
+            _: *mut c_void,
+            _: *const u8,
+            _: *mut *const PrivateContactRequestsPositionFFI,
+            _: *mut usize,
+            _: *mut *const PrivateShieldedAddressFFI,
+            _: *mut usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn free(
+            _: *mut c_void,
+            _: *const PrivateContactRequestsPositionFFI,
+            _: usize,
+            _: *const PrivateShieldedAddressFFI,
+            _: usize,
+        ) {
+        }
+        let mut ext = PersistenceCallbacksExtension {
+            on_persist_private_contact_scan_state_fn: Some(persist),
+            on_load_private_contact_scan_state_fn: Some(load),
+            on_load_private_contact_scan_state_free_fn: Some(free),
+            ..Default::default()
+        };
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_private_contact_scan_state.is_some());
+        assert!(parsed.load_private_contact_scan_state.is_some());
+        assert!(parsed.load_private_contact_scan_state_free.is_some());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_load_private_contact_scan_state_free_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.load_private_contact_scan_state.is_some());
+        assert!(parsed.load_private_contact_scan_state_free.is_none());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_private_contact_scan_state_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_private_contact_scan_state.is_none());
+        assert!(parsed.load_private_contact_scan_state.is_none());
+        assert!(parsed.load_private_contact_scan_state_free.is_none());
     }
 
     #[test]
