@@ -256,12 +256,16 @@ impl Sdk {
 
     /// The refusal [`Self::ensure_network_serves`] gives a request that needs `required`,
     /// for a caller that finds what `required` introduced missing from the network's data
-    /// while this SDK runs below it: the network does not serve it yet.
+    /// while this SDK runs below it: the network does not serve it yet. `cause` is why the
+    /// SDK could not learn the network's version just now, when it tried and failed, as a
+    /// failed probe is the refusal's cause there
+    /// ([`Error::is_transient_protocol_version_refusal`]).
     pub(crate) fn protocol_version_not_active(
         &self,
         required: u32,
         method: &'static str,
         feature: Option<&'static str>,
+        cause: Option<Error>,
     ) -> Error {
         Error::ProtocolVersionNotActive {
             method,
@@ -269,7 +273,7 @@ impl Sdk {
             feature,
             network: self.query_settings().network_protocol_basis(),
             pinned: pinned_below(required, &self.gate_state()),
-            cause: None,
+            cause: cause.map(Box::new),
         }
     }
 
@@ -282,9 +286,10 @@ impl Sdk {
     /// A version shown below by the last probe's epoch hold ([`ProbeHold`]) is taken as it
     /// is. Otherwise the network is asked with the gate's probe, one proved query, pinned SDK
     /// or not, and the call fails when the probe does. `false` when the network is shown at
-    /// or above `protocol_version`, and when nothing can show it: an SDK without a context
+    /// or above `protocol_version`, and when nothing can show it now: an SDK without a context
     /// provider, or a mock SDK, whose expectations are not verified answers, unless a test set
-    /// one ([`Self::mock_verified_protocol_version`]).
+    /// one ([`Self::mock_verified_protocol_version`]). A version verified earlier, by this SDK
+    /// or a clone, shows nothing then without a hold: the network may have upgraded since.
     pub async fn network_proven_below(&self, protocol_version: u32) -> Result<bool, Error> {
         let state = self.gate_state();
         let verified = state.settings.verified_protocol_version;
@@ -298,7 +303,7 @@ impl Sdk {
             return Ok(true);
         }
         if !state.enforced || !state.has_context_provider {
-            return Ok(verified != 0);
+            return Ok(false);
         }
         self.probe_network_protocol_version(protocol_version, None)
             .await?;
@@ -308,13 +313,20 @@ impl Sdk {
 
     /// Take `protocol_version` as the network's verified version, as if a proved answer had
     /// shown it, for a mock SDK in a test that needs the network's version known: a mock's
-    /// expectations are not verified answers. It never lowers the version. A network SDK
-    /// refuses it with [`Error::Config`].
+    /// expectations are not verified answers. It never lowers the version. The network then
+    /// reads as proven at that version for the rest of the test, as a probe in an epoch that
+    /// outlasts the test shows it ([`Self::network_proven_below`]). A network SDK refuses it
+    /// with [`Error::Config`].
     #[cfg(feature = "mocks")]
     pub fn mock_verified_protocol_version(&self, protocol_version: u32) -> Result<(), Error> {
         match self.inner {
             SdkInstance::Mock { .. } => {
                 self.record_verified_protocol_version(protocol_version);
+                self.probe_hold.set(ProbeHold {
+                    network: protocol_version,
+                    epoch: 0,
+                    until_ms: u64::MAX,
+                });
                 Ok(())
             }
             SdkInstance::Dapi { .. } => Err(Error::Config(

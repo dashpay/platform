@@ -3758,6 +3758,54 @@ mod tests {
         assert_eq!(provider.held().expect("held").version(), 3);
     }
 
+    /// A fetched contract that declares no private type is refused, unless another
+    /// operation gave the provider a newer one declaring it while it was fetched: then that
+    /// one is read against. A newer one that declares no private type either leaves the
+    /// refusal.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_use_a_newer_contract_with_the_type_promoted_while_one_without_was_fetched() {
+        let mut stale = dashpay_without_private_requests();
+        stale.set_version(1);
+        let mut fetched = dashpay_without_private_requests();
+        fetched.set_version(2);
+
+        let mut promoted = dashpay();
+        promoted.set_version(3);
+        let mut sdk = sdk_with(HeldContractProvider::promoting(stale.clone(), promoted));
+        sdk.mock()
+            .expect_fetch(fetched.id(), Some(fetched.clone()))
+            .await
+            .expect("the DashPay fetch is expected");
+        let resolved = sdk
+            .fetch_private_document_contract(
+                fetched.id(),
+                PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+            )
+            .await
+            .expect("the newer contract with the type");
+        assert_eq!(resolved.version(), 3);
+        assert!(private_contact_request_type(&resolved).is_ok());
+
+        let mut promoted_without = dashpay_without_private_requests();
+        promoted_without.set_version(3);
+        let mut sdk = sdk_with(HeldContractProvider::promoting(stale, promoted_without));
+        sdk.mock()
+            .expect_fetch(fetched.id(), Some(fetched.clone()))
+            .await
+            .expect("the DashPay fetch is expected");
+        let refused = sdk
+            .fetch_private_document_contract(
+                fetched.id(),
+                PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+            )
+            .await;
+        assert!(
+            matches!(&refused, Err(Error::Generic(message)) if message.contains("declares no private type")),
+            "{refused:?}"
+        );
+    }
+
     /// Below protocol version 15 there is no private store: a contract that declares no
     /// private type, on an SDK running 14, is refused as not active, and the page stream ends
     /// with that refusal before any page is fetched, which the mock, answering none, would

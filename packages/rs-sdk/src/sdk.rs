@@ -763,9 +763,16 @@ impl Sdk {
     ///
     /// [`SdkBuilder::with_version`]: SdkBuilder::with_version
     pub async fn refresh_protocol_version(&self) -> Result<u32, Error> {
+        Ok(self.refresh_protocol_version_or_failure().await.0)
+    }
+
+    /// [`Self::refresh_protocol_version`], with the fetch's failure when it failed: why the
+    /// version it leaves may not show the network's, for a caller that refuses on it.
+    pub(crate) async fn refresh_protocol_version_or_failure(&self) -> (u32, Option<Error>) {
         if !self.prove() {
-            return Ok(self.protocol_version_number());
+            return (self.protocol_version_number(), None);
         }
+        let mut failure = None;
         if !self.version_pinned {
             if let Err(error) = ExtendedEpochInfo::fetch_current(self).await {
                 tracing::warn!(
@@ -776,9 +783,10 @@ impl Sdk {
                      proof-verified version learned so far (never falling back to \
                      an unverified one)"
                 );
+                failure = Some(error);
             }
         }
-        Ok(self.protocol_version_number())
+        (self.protocol_version_number(), failure)
     }
 
     /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
