@@ -551,6 +551,10 @@ GPBObjCClassDeclaration(SearchKey);
 GPBObjCClassDeclaration(SecurityLevelMap);
 GPBObjCClassDeclaration(SpecificKeys);
 GPBObjCClassDeclaration(StateTransitionBroadcastError);
+GPBObjCClassDeclaration(TenderdashBlockProof);
+GPBObjCClassDeclaration(TenderdashBlockProof_BlockId);
+GPBObjCClassDeclaration(TenderdashBlockProof_Header);
+GPBObjCClassDeclaration(TenderdashTransactionProof);
 GPBObjCClassDeclaration(WaitForStateTransitionResultRequest);
 GPBObjCClassDeclaration(WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0);
 GPBObjCClassDeclaration(WaitForStateTransitionResultResponse);
@@ -35424,6 +35428,507 @@ typedef struct GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesRespon
 
 @end
 
+#pragma mark - TenderdashBlockProof
+
+@implementation TenderdashBlockProof
+
+@dynamic hasHeader, header;
+@dynamic hasBlockId, blockId;
+@dynamic round;
+@dynamic quorumHash;
+@dynamic quorumType;
+@dynamic signature;
+
+typedef struct TenderdashBlockProof__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t round;
+  uint32_t quorumType;
+  TenderdashBlockProof_Header *header;
+  TenderdashBlockProof_BlockId *blockId;
+  NSData *quorumHash;
+  NSData *signature;
+} TenderdashBlockProof__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "header",
+        .dataTypeSpecific.clazz = GPBObjCClass(TenderdashBlockProof_Header),
+        .number = TenderdashBlockProof_FieldNumber_Header,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof__storage_, header),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "blockId",
+        .dataTypeSpecific.clazz = GPBObjCClass(TenderdashBlockProof_BlockId),
+        .number = TenderdashBlockProof_FieldNumber_BlockId,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof__storage_, blockId),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "round",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_FieldNumber_Round,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof__storage_, round),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "quorumHash",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_FieldNumber_QuorumHash,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof__storage_, quorumHash),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "quorumType",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_FieldNumber_QuorumType,
+        .hasIndex = 4,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof__storage_, quorumType),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "signature",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_FieldNumber_Signature,
+        .hasIndex = 5,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof__storage_, signature),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[TenderdashBlockProof class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(TenderdashBlockProof__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - TenderdashBlockProof_BlockId
+
+@implementation TenderdashBlockProof_BlockId
+
+@dynamic hash_p;
+@dynamic partSetTotal;
+@dynamic partSetHash;
+@dynamic stateId;
+
+typedef struct TenderdashBlockProof_BlockId__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t partSetTotal;
+  NSData *hash_p;
+  NSData *partSetHash;
+  NSData *stateId;
+} TenderdashBlockProof_BlockId__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "hash_p",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_BlockId_FieldNumber_Hash_p,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_BlockId__storage_, hash_p),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "partSetTotal",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_BlockId_FieldNumber_PartSetTotal,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_BlockId__storage_, partSetTotal),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "partSetHash",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_BlockId_FieldNumber_PartSetHash,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_BlockId__storage_, partSetHash),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "stateId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_BlockId_FieldNumber_StateId,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_BlockId__storage_, stateId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[TenderdashBlockProof_BlockId class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(TenderdashBlockProof_BlockId__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(TenderdashBlockProof)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - TenderdashBlockProof_Header
+
+@implementation TenderdashBlockProof_Header
+
+@dynamic blockVersion;
+@dynamic appVersion;
+@dynamic chainId;
+@dynamic height;
+@dynamic coreChainLockedHeight;
+@dynamic timeSeconds;
+@dynamic timeNanos;
+@dynamic hasLastBlockId, lastBlockId;
+@dynamic lastCommitHash;
+@dynamic dataHash;
+@dynamic validatorsHash;
+@dynamic nextValidatorsHash;
+@dynamic consensusHash;
+@dynamic nextConsensusHash;
+@dynamic appHash;
+@dynamic resultsHash;
+@dynamic evidenceHash;
+@dynamic proposerProTxHash;
+@dynamic proposedAppVersion;
+
+typedef struct TenderdashBlockProof_Header__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t coreChainLockedHeight;
+  int32_t timeNanos;
+  NSString *chainId;
+  TenderdashBlockProof_BlockId *lastBlockId;
+  NSData *lastCommitHash;
+  NSData *dataHash;
+  NSData *validatorsHash;
+  NSData *nextValidatorsHash;
+  NSData *consensusHash;
+  NSData *nextConsensusHash;
+  NSData *appHash;
+  NSData *resultsHash;
+  NSData *evidenceHash;
+  NSData *proposerProTxHash;
+  uint64_t blockVersion;
+  uint64_t appVersion;
+  uint64_t height;
+  int64_t timeSeconds;
+  uint64_t proposedAppVersion;
+} TenderdashBlockProof_Header__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "blockVersion",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_Header_FieldNumber_BlockVersion,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_Header__storage_, blockVersion),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "appVersion",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_Header_FieldNumber_AppVersion,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_Header__storage_, appVersion),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "chainId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_Header_FieldNumber_ChainId,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_Header__storage_, chainId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "height",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_Header_FieldNumber_Height,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_Header__storage_, height),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "coreChainLockedHeight",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_Header_FieldNumber_CoreChainLockedHeight,
+        .hasIndex = 4,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_Header__storage_, coreChainLockedHeight),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "timeSeconds",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_Header_FieldNumber_TimeSeconds,
+        .hasIndex = 5,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_Header__storage_, timeSeconds),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeInt64,
+      },
+      {
+        .name = "timeNanos",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_Header_FieldNumber_TimeNanos,
+        .hasIndex = 6,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_Header__storage_, timeNanos),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeInt32,
+      },
+      {
+        .name = "lastBlockId",
+        .dataTypeSpecific.clazz = GPBObjCClass(TenderdashBlockProof_BlockId),
+        .number = TenderdashBlockProof_Header_FieldNumber_LastBlockId,
+        .hasIndex = 7,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_Header__storage_, lastBlockId),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "lastCommitHash",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_Header_FieldNumber_LastCommitHash,
+        .hasIndex = 8,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_Header__storage_, lastCommitHash),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "dataHash",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_Header_FieldNumber_DataHash,
+        .hasIndex = 9,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_Header__storage_, dataHash),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "validatorsHash",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_Header_FieldNumber_ValidatorsHash,
+        .hasIndex = 10,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_Header__storage_, validatorsHash),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "nextValidatorsHash",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_Header_FieldNumber_NextValidatorsHash,
+        .hasIndex = 11,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_Header__storage_, nextValidatorsHash),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "consensusHash",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_Header_FieldNumber_ConsensusHash,
+        .hasIndex = 12,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_Header__storage_, consensusHash),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "nextConsensusHash",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_Header_FieldNumber_NextConsensusHash,
+        .hasIndex = 13,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_Header__storage_, nextConsensusHash),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "appHash",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_Header_FieldNumber_AppHash,
+        .hasIndex = 14,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_Header__storage_, appHash),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "resultsHash",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_Header_FieldNumber_ResultsHash,
+        .hasIndex = 15,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_Header__storage_, resultsHash),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "evidenceHash",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_Header_FieldNumber_EvidenceHash,
+        .hasIndex = 16,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_Header__storage_, evidenceHash),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "proposerProTxHash",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_Header_FieldNumber_ProposerProTxHash,
+        .hasIndex = 17,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_Header__storage_, proposerProTxHash),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "proposedAppVersion",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashBlockProof_Header_FieldNumber_ProposedAppVersion,
+        .hasIndex = 18,
+        .offset = (uint32_t)offsetof(TenderdashBlockProof_Header__storage_, proposedAppVersion),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[TenderdashBlockProof_Header class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(TenderdashBlockProof_Header__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(TenderdashBlockProof)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - TenderdashTransactionProof
+
+@implementation TenderdashTransactionProof
+
+@dynamic index;
+@dynamic total;
+@dynamic transactionPathArray, transactionPathArray_Count;
+@dynamic resultPathArray, resultPathArray_Count;
+
+typedef struct TenderdashTransactionProof__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t index;
+  uint32_t total;
+  NSMutableArray *transactionPathArray;
+  NSMutableArray *resultPathArray;
+} TenderdashTransactionProof__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "index",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashTransactionProof_FieldNumber_Index,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(TenderdashTransactionProof__storage_, index),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "total",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashTransactionProof_FieldNumber_Total,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(TenderdashTransactionProof__storage_, total),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "transactionPathArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashTransactionProof_FieldNumber_TransactionPathArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(TenderdashTransactionProof__storage_, transactionPathArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "resultPathArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = TenderdashTransactionProof_FieldNumber_ResultPathArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(TenderdashTransactionProof__storage_, resultPathArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[TenderdashTransactionProof class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(TenderdashTransactionProof__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - GetOwnerTransactionsInBlockRequest
 
 @implementation GetOwnerTransactionsInBlockRequest
@@ -35487,6 +35992,7 @@ void GetOwnerTransactionsInBlockRequest_ClearVersionOneOfCase(GetOwnerTransactio
 
 @dynamic height;
 @dynamic ownerId;
+@dynamic prove;
 
 typedef struct GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0__storage_ {
   uint32_t _has_storage_[1];
@@ -35517,6 +36023,15 @@ typedef struct GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockReq
         .offset = (uint32_t)offsetof(GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0__storage_, ownerId),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0_FieldNumber_Prove,
+        .hasIndex = 2,
+        .offset = 3,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -35600,10 +36115,12 @@ void GetOwnerTransactionsInBlockResponse_ClearVersionOneOfCase(GetOwnerTransacti
 @implementation GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0
 
 @dynamic transactionsArray, transactionsArray_Count;
+@dynamic hasProof, proof;
 
 typedef struct GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0__storage_ {
   uint32_t _has_storage_[1];
   NSMutableArray *transactionsArray;
+  TenderdashBlockProof *proof;
 } GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -35619,6 +36136,15 @@ typedef struct GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockRe
         .hasIndex = GPBNoHasBit,
         .offset = (uint32_t)offsetof(GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0__storage_, transactionsArray),
         .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(TenderdashBlockProof),
+        .number = GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_FieldNumber_Proof,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
     };
@@ -35648,12 +36174,18 @@ typedef struct GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockRe
 @dynamic stateTransition;
 @dynamic hash_p;
 @dynamic code;
+@dynamic resultData;
+@dynamic gasUsed;
+@dynamic hasProof, proof;
 
 typedef struct GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction__storage_ {
   uint32_t _has_storage_[1];
   uint32_t code;
   NSData *stateTransition;
   NSData *hash_p;
+  NSData *resultData;
+  TenderdashTransactionProof *proof;
+  int64_t gasUsed;
 } GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction__storage_;
 
 // This method is threadsafe because it is initially called
@@ -35688,6 +36220,33 @@ typedef struct GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockRe
         .offset = (uint32_t)offsetof(GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction__storage_, code),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "resultData",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction_FieldNumber_ResultData,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction__storage_, resultData),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "gasUsed",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction_FieldNumber_GasUsed,
+        .hasIndex = 4,
+        .offset = (uint32_t)offsetof(GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction__storage_, gasUsed),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeInt64,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(TenderdashTransactionProof),
+        .number = GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction_FieldNumber_Proof,
+        .hasIndex = 5,
+        .offset = (uint32_t)offsetof(GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -35772,6 +36331,7 @@ void GetBlocksRequest_ClearVersionOneOfCase(GetBlocksRequest *message) {
 
 @dynamic startHeight;
 @dynamic count;
+@dynamic prove;
 
 typedef struct GetBlocksRequest_GetBlocksRequestV0__storage_ {
   uint32_t _has_storage_[1];
@@ -35802,6 +36362,15 @@ typedef struct GetBlocksRequest_GetBlocksRequestV0__storage_ {
         .offset = (uint32_t)offsetof(GetBlocksRequest_GetBlocksRequestV0__storage_, count),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetBlocksRequest_GetBlocksRequestV0_FieldNumber_Prove,
+        .hasIndex = 2,
+        .offset = 3,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -35933,12 +36502,16 @@ typedef struct GetBlocksResponse_GetBlocksResponseV0__storage_ {
 @dynamic stateTransition;
 @dynamic hash_p;
 @dynamic code;
+@dynamic resultData;
+@dynamic gasUsed;
 
 typedef struct GetBlocksResponse_GetBlocksResponseV0_Transaction__storage_ {
   uint32_t _has_storage_[1];
   uint32_t code;
   NSData *stateTransition;
   NSData *hash_p;
+  NSData *resultData;
+  int64_t gasUsed;
 } GetBlocksResponse_GetBlocksResponseV0_Transaction__storage_;
 
 // This method is threadsafe because it is initially called
@@ -35974,6 +36547,24 @@ typedef struct GetBlocksResponse_GetBlocksResponseV0_Transaction__storage_ {
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
+      {
+        .name = "resultData",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetBlocksResponse_GetBlocksResponseV0_Transaction_FieldNumber_ResultData,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(GetBlocksResponse_GetBlocksResponseV0_Transaction__storage_, resultData),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "gasUsed",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetBlocksResponse_GetBlocksResponseV0_Transaction_FieldNumber_GasUsed,
+        .hasIndex = 4,
+        .offset = (uint32_t)offsetof(GetBlocksResponse_GetBlocksResponseV0_Transaction__storage_, gasUsed),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeInt64,
+      },
     };
     GPBDescriptor *localDescriptor =
         [GPBDescriptor allocDescriptorForClass:[GetBlocksResponse_GetBlocksResponseV0_Transaction class]
@@ -36005,6 +36596,7 @@ typedef struct GetBlocksResponse_GetBlocksResponseV0_Transaction__storage_ {
 @dynamic appHash;
 @dynamic proposerProTxHash;
 @dynamic transactionsArray, transactionsArray_Count;
+@dynamic hasProof, proof;
 
 typedef struct GetBlocksResponse_GetBlocksResponseV0_Block__storage_ {
   uint32_t _has_storage_[1];
@@ -36013,6 +36605,7 @@ typedef struct GetBlocksResponse_GetBlocksResponseV0_Block__storage_ {
   NSData *appHash;
   NSData *proposerProTxHash;
   NSMutableArray *transactionsArray;
+  TenderdashBlockProof *proof;
   uint64_t height;
   uint64_t timeMs;
 } GetBlocksResponse_GetBlocksResponseV0_Block__storage_;
@@ -36084,6 +36677,15 @@ typedef struct GetBlocksResponse_GetBlocksResponseV0_Block__storage_ {
         .hasIndex = GPBNoHasBit,
         .offset = (uint32_t)offsetof(GetBlocksResponse_GetBlocksResponseV0_Block__storage_, transactionsArray),
         .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(TenderdashBlockProof),
+        .number = GetBlocksResponse_GetBlocksResponseV0_Block_FieldNumber_Proof,
+        .hasIndex = 6,
+        .offset = (uint32_t)offsetof(GetBlocksResponse_GetBlocksResponseV0_Block__storage_, proof),
+        .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
     };

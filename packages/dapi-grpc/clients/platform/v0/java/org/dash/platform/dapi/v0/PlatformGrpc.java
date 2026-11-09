@@ -3045,7 +3045,7 @@ public final class PlatformGrpc {
     /**
      * <pre>
      * The state transitions one owner has in the Tenderdash block at a height.
-     * DAPI answers it from Tenderdash; the response carries no proof.
+     * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
      * </pre>
      */
     public void getOwnerTransactionsInBlock(org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest request,
@@ -3055,9 +3055,9 @@ public final class PlatformGrpc {
 
     /**
      * <pre>
-     * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; the
-     * response carries no proof. This is for looking blocks up, not for syncing a
-     * chain: the gateway allows each IP very few of these requests.
+     * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+     * `prove` the client trusts the node. This is for looking blocks up, not for
+     * syncing a chain: the gateway allows each IP very few of these requests.
      * </pre>
      */
     public void getBlocks(org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest request,
@@ -4271,7 +4271,7 @@ public final class PlatformGrpc {
     /**
      * <pre>
      * The state transitions one owner has in the Tenderdash block at a height.
-     * DAPI answers it from Tenderdash; the response carries no proof.
+     * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
      * </pre>
      */
     public void getOwnerTransactionsInBlock(org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest request,
@@ -4282,9 +4282,9 @@ public final class PlatformGrpc {
 
     /**
      * <pre>
-     * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; the
-     * response carries no proof. This is for looking blocks up, not for syncing a
-     * chain: the gateway allows each IP very few of these requests.
+     * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+     * `prove` the client trusts the node. This is for looking blocks up, not for
+     * syncing a chain: the gateway allows each IP very few of these requests.
      * </pre>
      */
     public void getBlocks(org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest request,
@@ -4872,7 +4872,7 @@ public final class PlatformGrpc {
     /**
      * <pre>
      * The state transitions one owner has in the Tenderdash block at a height.
-     * DAPI answers it from Tenderdash; the response carries no proof.
+     * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
      * </pre>
      */
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse getOwnerTransactionsInBlock(org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest request) {
@@ -4882,9 +4882,9 @@ public final class PlatformGrpc {
 
     /**
      * <pre>
-     * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; the
-     * response carries no proof. This is for looking blocks up, not for syncing a
-     * chain: the gateway allows each IP very few of these requests.
+     * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+     * `prove` the client trusts the node. This is for looking blocks up, not for
+     * syncing a chain: the gateway allows each IP very few of these requests.
      * </pre>
      */
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse getBlocks(org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest request) {
@@ -5547,7 +5547,7 @@ public final class PlatformGrpc {
     /**
      * <pre>
      * The state transitions one owner has in the Tenderdash block at a height.
-     * DAPI answers it from Tenderdash; the response carries no proof.
+     * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
      * </pre>
      */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse> getOwnerTransactionsInBlock(
@@ -5558,9 +5558,9 @@ public final class PlatformGrpc {
 
     /**
      * <pre>
-     * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; the
-     * response carries no proof. This is for looking blocks up, not for syncing a
-     * chain: the gateway allows each IP very few of these requests.
+     * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+     * `prove` the client trusts the node. This is for looking blocks up, not for
+     * syncing a chain: the gateway allows each IP very few of these requests.
      * </pre>
      */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse> getBlocks(

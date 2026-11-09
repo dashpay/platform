@@ -535,16 +535,16 @@ NS_ASSUME_NONNULL_BEGIN
 
 /**
  * The state transitions one owner has in the Tenderdash block at a height.
- * DAPI answers it from Tenderdash; the response carries no proof.
+ * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
  */
 - (GRPCUnaryProtoCall *)getOwnerTransactionsInBlockWithMessage:(GetOwnerTransactionsInBlockRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getBlocks(GetBlocksRequest) returns (GetBlocksResponse)
 
 /**
- * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; the
- * response carries no proof. This is for looking blocks up, not for syncing a
- * chain: the gateway allows each IP very few of these requests.
+ * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+ * `prove` the client trusts the node. This is for looking blocks up, not for
+ * syncing a chain: the gateway allows each IP very few of these requests.
  */
 - (GRPCUnaryProtoCall *)getBlocksWithMessage:(GetBlocksRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
@@ -1186,7 +1186,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 /**
  * The state transitions one owner has in the Tenderdash block at a height.
- * DAPI answers it from Tenderdash; the response carries no proof.
+ * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
  *
  * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
  */
@@ -1194,7 +1194,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 /**
  * The state transitions one owner has in the Tenderdash block at a height.
- * DAPI answers it from Tenderdash; the response carries no proof.
+ * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
  *
  * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
  */
@@ -1204,18 +1204,18 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getBlocks(GetBlocksRequest) returns (GetBlocksResponse)
 
 /**
- * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; the
- * response carries no proof. This is for looking blocks up, not for syncing a
- * chain: the gateway allows each IP very few of these requests.
+ * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+ * `prove` the client trusts the node. This is for looking blocks up, not for
+ * syncing a chain: the gateway allows each IP very few of these requests.
  *
  * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
  */
 - (void)getBlocksWithRequest:(GetBlocksRequest *)request handler:(void(^)(GetBlocksResponse *_Nullable response, NSError *_Nullable error))handler;
 
 /**
- * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; the
- * response carries no proof. This is for looking blocks up, not for syncing a
- * chain: the gateway allows each IP very few of these requests.
+ * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+ * `prove` the client trusts the node. This is for looking blocks up, not for
+ * syncing a chain: the gateway allows each IP very few of these requests.
  *
  * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
  */

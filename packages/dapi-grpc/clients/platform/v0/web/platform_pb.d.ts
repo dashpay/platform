@@ -16697,6 +16697,246 @@ export namespace GetPrivateDocumentEntriesResponse {
   }
 }
 
+export class TenderdashBlockProof extends jspb.Message {
+  hasHeader(): boolean;
+  clearHeader(): void;
+  getHeader(): TenderdashBlockProof.Header | undefined;
+  setHeader(value?: TenderdashBlockProof.Header): void;
+
+  hasBlockId(): boolean;
+  clearBlockId(): void;
+  getBlockId(): TenderdashBlockProof.BlockId | undefined;
+  setBlockId(value?: TenderdashBlockProof.BlockId): void;
+
+  getRound(): number;
+  setRound(value: number): void;
+
+  getQuorumHash(): Uint8Array | string;
+  getQuorumHash_asU8(): Uint8Array;
+  getQuorumHash_asB64(): string;
+  setQuorumHash(value: Uint8Array | string): void;
+
+  getQuorumType(): number;
+  setQuorumType(value: number): void;
+
+  getSignature(): Uint8Array | string;
+  getSignature_asU8(): Uint8Array;
+  getSignature_asB64(): string;
+  setSignature(value: Uint8Array | string): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): TenderdashBlockProof.AsObject;
+  static toObject(includeInstance: boolean, msg: TenderdashBlockProof): TenderdashBlockProof.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: TenderdashBlockProof, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): TenderdashBlockProof;
+  static deserializeBinaryFromReader(message: TenderdashBlockProof, reader: jspb.BinaryReader): TenderdashBlockProof;
+}
+
+export namespace TenderdashBlockProof {
+  export type AsObject = {
+    header?: TenderdashBlockProof.Header.AsObject,
+    blockId?: TenderdashBlockProof.BlockId.AsObject,
+    round: number,
+    quorumHash: Uint8Array | string,
+    quorumType: number,
+    signature: Uint8Array | string,
+  }
+
+  export class BlockId extends jspb.Message {
+    getHash(): Uint8Array | string;
+    getHash_asU8(): Uint8Array;
+    getHash_asB64(): string;
+    setHash(value: Uint8Array | string): void;
+
+    getPartSetTotal(): number;
+    setPartSetTotal(value: number): void;
+
+    getPartSetHash(): Uint8Array | string;
+    getPartSetHash_asU8(): Uint8Array;
+    getPartSetHash_asB64(): string;
+    setPartSetHash(value: Uint8Array | string): void;
+
+    getStateId(): Uint8Array | string;
+    getStateId_asU8(): Uint8Array;
+    getStateId_asB64(): string;
+    setStateId(value: Uint8Array | string): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): BlockId.AsObject;
+    static toObject(includeInstance: boolean, msg: BlockId): BlockId.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: BlockId, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): BlockId;
+    static deserializeBinaryFromReader(message: BlockId, reader: jspb.BinaryReader): BlockId;
+  }
+
+  export namespace BlockId {
+    export type AsObject = {
+      hash: Uint8Array | string,
+      partSetTotal: number,
+      partSetHash: Uint8Array | string,
+      stateId: Uint8Array | string,
+    }
+  }
+
+  export class Header extends jspb.Message {
+    getBlockVersion(): string;
+    setBlockVersion(value: string): void;
+
+    getAppVersion(): string;
+    setAppVersion(value: string): void;
+
+    getChainId(): string;
+    setChainId(value: string): void;
+
+    getHeight(): string;
+    setHeight(value: string): void;
+
+    getCoreChainLockedHeight(): number;
+    setCoreChainLockedHeight(value: number): void;
+
+    getTimeSeconds(): string;
+    setTimeSeconds(value: string): void;
+
+    getTimeNanos(): number;
+    setTimeNanos(value: number): void;
+
+    hasLastBlockId(): boolean;
+    clearLastBlockId(): void;
+    getLastBlockId(): TenderdashBlockProof.BlockId | undefined;
+    setLastBlockId(value?: TenderdashBlockProof.BlockId): void;
+
+    getLastCommitHash(): Uint8Array | string;
+    getLastCommitHash_asU8(): Uint8Array;
+    getLastCommitHash_asB64(): string;
+    setLastCommitHash(value: Uint8Array | string): void;
+
+    getDataHash(): Uint8Array | string;
+    getDataHash_asU8(): Uint8Array;
+    getDataHash_asB64(): string;
+    setDataHash(value: Uint8Array | string): void;
+
+    getValidatorsHash(): Uint8Array | string;
+    getValidatorsHash_asU8(): Uint8Array;
+    getValidatorsHash_asB64(): string;
+    setValidatorsHash(value: Uint8Array | string): void;
+
+    getNextValidatorsHash(): Uint8Array | string;
+    getNextValidatorsHash_asU8(): Uint8Array;
+    getNextValidatorsHash_asB64(): string;
+    setNextValidatorsHash(value: Uint8Array | string): void;
+
+    getConsensusHash(): Uint8Array | string;
+    getConsensusHash_asU8(): Uint8Array;
+    getConsensusHash_asB64(): string;
+    setConsensusHash(value: Uint8Array | string): void;
+
+    getNextConsensusHash(): Uint8Array | string;
+    getNextConsensusHash_asU8(): Uint8Array;
+    getNextConsensusHash_asB64(): string;
+    setNextConsensusHash(value: Uint8Array | string): void;
+
+    getAppHash(): Uint8Array | string;
+    getAppHash_asU8(): Uint8Array;
+    getAppHash_asB64(): string;
+    setAppHash(value: Uint8Array | string): void;
+
+    getResultsHash(): Uint8Array | string;
+    getResultsHash_asU8(): Uint8Array;
+    getResultsHash_asB64(): string;
+    setResultsHash(value: Uint8Array | string): void;
+
+    getEvidenceHash(): Uint8Array | string;
+    getEvidenceHash_asU8(): Uint8Array;
+    getEvidenceHash_asB64(): string;
+    setEvidenceHash(value: Uint8Array | string): void;
+
+    getProposerProTxHash(): Uint8Array | string;
+    getProposerProTxHash_asU8(): Uint8Array;
+    getProposerProTxHash_asB64(): string;
+    setProposerProTxHash(value: Uint8Array | string): void;
+
+    getProposedAppVersion(): string;
+    setProposedAppVersion(value: string): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): Header.AsObject;
+    static toObject(includeInstance: boolean, msg: Header): Header.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: Header, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): Header;
+    static deserializeBinaryFromReader(message: Header, reader: jspb.BinaryReader): Header;
+  }
+
+  export namespace Header {
+    export type AsObject = {
+      blockVersion: string,
+      appVersion: string,
+      chainId: string,
+      height: string,
+      coreChainLockedHeight: number,
+      timeSeconds: string,
+      timeNanos: number,
+      lastBlockId?: TenderdashBlockProof.BlockId.AsObject,
+      lastCommitHash: Uint8Array | string,
+      dataHash: Uint8Array | string,
+      validatorsHash: Uint8Array | string,
+      nextValidatorsHash: Uint8Array | string,
+      consensusHash: Uint8Array | string,
+      nextConsensusHash: Uint8Array | string,
+      appHash: Uint8Array | string,
+      resultsHash: Uint8Array | string,
+      evidenceHash: Uint8Array | string,
+      proposerProTxHash: Uint8Array | string,
+      proposedAppVersion: string,
+    }
+  }
+}
+
+export class TenderdashTransactionProof extends jspb.Message {
+  getIndex(): number;
+  setIndex(value: number): void;
+
+  getTotal(): number;
+  setTotal(value: number): void;
+
+  clearTransactionPathList(): void;
+  getTransactionPathList(): Array<Uint8Array | string>;
+  getTransactionPathList_asU8(): Array<Uint8Array>;
+  getTransactionPathList_asB64(): Array<string>;
+  setTransactionPathList(value: Array<Uint8Array | string>): void;
+  addTransactionPath(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+  clearResultPathList(): void;
+  getResultPathList(): Array<Uint8Array | string>;
+  getResultPathList_asU8(): Array<Uint8Array>;
+  getResultPathList_asB64(): Array<string>;
+  setResultPathList(value: Array<Uint8Array | string>): void;
+  addResultPath(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): TenderdashTransactionProof.AsObject;
+  static toObject(includeInstance: boolean, msg: TenderdashTransactionProof): TenderdashTransactionProof.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: TenderdashTransactionProof, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): TenderdashTransactionProof;
+  static deserializeBinaryFromReader(message: TenderdashTransactionProof, reader: jspb.BinaryReader): TenderdashTransactionProof;
+}
+
+export namespace TenderdashTransactionProof {
+  export type AsObject = {
+    index: number,
+    total: number,
+    transactionPathList: Array<Uint8Array | string>,
+    resultPathList: Array<Uint8Array | string>,
+  }
+}
+
 export class GetOwnerTransactionsInBlockRequest extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;
@@ -16728,6 +16968,9 @@ export namespace GetOwnerTransactionsInBlockRequest {
     getOwnerId_asB64(): string;
     setOwnerId(value: Uint8Array | string): void;
 
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): GetOwnerTransactionsInBlockRequestV0.AsObject;
     static toObject(includeInstance: boolean, msg: GetOwnerTransactionsInBlockRequestV0): GetOwnerTransactionsInBlockRequestV0.AsObject;
@@ -16742,6 +16985,7 @@ export namespace GetOwnerTransactionsInBlockRequest {
     export type AsObject = {
       height: string,
       ownerId: Uint8Array | string,
+      prove: boolean,
     }
   }
 
@@ -16779,6 +17023,11 @@ export namespace GetOwnerTransactionsInBlockResponse {
     setTransactionsList(value: Array<GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction>): void;
     addTransactions(value?: GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction, index?: number): GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction;
 
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): TenderdashBlockProof | undefined;
+    setProof(value?: TenderdashBlockProof): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): GetOwnerTransactionsInBlockResponseV0.AsObject;
     static toObject(includeInstance: boolean, msg: GetOwnerTransactionsInBlockResponseV0): GetOwnerTransactionsInBlockResponseV0.AsObject;
@@ -16792,6 +17041,7 @@ export namespace GetOwnerTransactionsInBlockResponse {
   export namespace GetOwnerTransactionsInBlockResponseV0 {
     export type AsObject = {
       transactionsList: Array<GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction.AsObject>,
+      proof?: TenderdashBlockProof.AsObject,
     }
 
     export class OwnerTransaction extends jspb.Message {
@@ -16808,6 +17058,19 @@ export namespace GetOwnerTransactionsInBlockResponse {
       getCode(): number;
       setCode(value: number): void;
 
+      getResultData(): Uint8Array | string;
+      getResultData_asU8(): Uint8Array;
+      getResultData_asB64(): string;
+      setResultData(value: Uint8Array | string): void;
+
+      getGasUsed(): string;
+      setGasUsed(value: string): void;
+
+      hasProof(): boolean;
+      clearProof(): void;
+      getProof(): TenderdashTransactionProof | undefined;
+      setProof(value?: TenderdashTransactionProof): void;
+
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): OwnerTransaction.AsObject;
       static toObject(includeInstance: boolean, msg: OwnerTransaction): OwnerTransaction.AsObject;
@@ -16823,6 +17086,9 @@ export namespace GetOwnerTransactionsInBlockResponse {
         stateTransition: Uint8Array | string,
         hash: Uint8Array | string,
         code: number,
+        resultData: Uint8Array | string,
+        gasUsed: string,
+        proof?: TenderdashTransactionProof.AsObject,
       }
     }
   }
@@ -16862,6 +17128,9 @@ export namespace GetBlocksRequest {
     getCount(): number;
     setCount(value: number): void;
 
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): GetBlocksRequestV0.AsObject;
     static toObject(includeInstance: boolean, msg: GetBlocksRequestV0): GetBlocksRequestV0.AsObject;
@@ -16876,6 +17145,7 @@ export namespace GetBlocksRequest {
     export type AsObject = {
       startHeight: string,
       count: number,
+      prove: boolean,
     }
   }
 
@@ -16942,6 +17212,14 @@ export namespace GetBlocksResponse {
       getCode(): number;
       setCode(value: number): void;
 
+      getResultData(): Uint8Array | string;
+      getResultData_asU8(): Uint8Array;
+      getResultData_asB64(): string;
+      setResultData(value: Uint8Array | string): void;
+
+      getGasUsed(): string;
+      setGasUsed(value: string): void;
+
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): Transaction.AsObject;
       static toObject(includeInstance: boolean, msg: Transaction): Transaction.AsObject;
@@ -16957,6 +17235,8 @@ export namespace GetBlocksResponse {
         stateTransition: Uint8Array | string,
         hash: Uint8Array | string,
         code: number,
+        resultData: Uint8Array | string,
+        gasUsed: string,
       }
     }
 
@@ -16990,6 +17270,11 @@ export namespace GetBlocksResponse {
       setTransactionsList(value: Array<GetBlocksResponse.GetBlocksResponseV0.Transaction>): void;
       addTransactions(value?: GetBlocksResponse.GetBlocksResponseV0.Transaction, index?: number): GetBlocksResponse.GetBlocksResponseV0.Transaction;
 
+      hasProof(): boolean;
+      clearProof(): void;
+      getProof(): TenderdashBlockProof | undefined;
+      setProof(value?: TenderdashBlockProof): void;
+
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): Block.AsObject;
       static toObject(includeInstance: boolean, msg: Block): Block.AsObject;
@@ -17009,6 +17294,7 @@ export namespace GetBlocksResponse {
         appHash: Uint8Array | string,
         proposerProTxHash: Uint8Array | string,
         transactionsList: Array<GetBlocksResponse.GetBlocksResponseV0.Transaction.AsObject>,
+        proof?: TenderdashBlockProof.AsObject,
       }
     }
   }

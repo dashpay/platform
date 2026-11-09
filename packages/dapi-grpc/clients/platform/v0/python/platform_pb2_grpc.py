@@ -878,16 +878,16 @@ class PlatformServicer(object):
 
     def getOwnerTransactionsInBlock(self, request, context):
         """The state transitions one owner has in the Tenderdash block at a height.
-        DAPI answers it from Tenderdash; the response carries no proof.
+        DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def getBlocks(self, request, context):
-        """Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; the
-        response carries no proof. This is for looking blocks up, not for syncing a
-        chain: the gateway allows each IP very few of these requests.
+        """Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+        `prove` the client trusts the node. This is for looking blocks up, not for
+        syncing a chain: the gateway allows each IP very few of these requests.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')

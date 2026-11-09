@@ -401,6 +401,10 @@ CF_EXTERN_C_BEGIN
 @class SecurityLevelMap;
 @class SpecificKeys;
 @class StateTransitionBroadcastError;
+@class TenderdashBlockProof;
+@class TenderdashBlockProof_BlockId;
+@class TenderdashBlockProof_Header;
+@class TenderdashTransactionProof;
 @class WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0;
 @class WaitForStateTransitionResultResponse_SuccessWithOwnerBalance;
 @class WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0;
@@ -14990,6 +14994,179 @@ GPB_FINAL @interface GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntries
 
 @end
 
+#pragma mark - TenderdashBlockProof
+
+typedef GPB_ENUM(TenderdashBlockProof_FieldNumber) {
+  TenderdashBlockProof_FieldNumber_Header = 1,
+  TenderdashBlockProof_FieldNumber_BlockId = 2,
+  TenderdashBlockProof_FieldNumber_Round = 3,
+  TenderdashBlockProof_FieldNumber_QuorumHash = 4,
+  TenderdashBlockProof_FieldNumber_QuorumType = 5,
+  TenderdashBlockProof_FieldNumber_Signature = 6,
+};
+
+/**
+ * Ties a Tenderdash block to the signature of the quorum that committed it. To
+ * check it, recompute the block hash from `header`, build the block id from that
+ * hash and `block_id`, and verify `signature` over the precommit vote for them.
+ * `header.data_hash` and `header.results_hash` then vouch for the block's
+ * transactions and their results.
+ **/
+GPB_FINAL @interface TenderdashBlockProof : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) TenderdashBlockProof_Header *header;
+/** Test to see if @c header has been set. */
+@property(nonatomic, readwrite) BOOL hasHeader;
+
+@property(nonatomic, readwrite, strong, null_resettable) TenderdashBlockProof_BlockId *blockId;
+/** Test to see if @c blockId has been set. */
+@property(nonatomic, readwrite) BOOL hasBlockId;
+
+/** the consensus round that committed the block */
+@property(nonatomic, readwrite) uint32_t round;
+
+/** the quorum that signed */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *quorumHash;
+
+/** the LLMQ type of that quorum */
+@property(nonatomic, readwrite) uint32_t quorumType;
+
+/** its threshold signature over the block */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *signature;
+
+@end
+
+#pragma mark - TenderdashBlockProof_BlockId
+
+typedef GPB_ENUM(TenderdashBlockProof_BlockId_FieldNumber) {
+  TenderdashBlockProof_BlockId_FieldNumber_Hash_p = 1,
+  TenderdashBlockProof_BlockId_FieldNumber_PartSetTotal = 2,
+  TenderdashBlockProof_BlockId_FieldNumber_PartSetHash = 3,
+  TenderdashBlockProof_BlockId_FieldNumber_StateId = 4,
+};
+
+GPB_FINAL @interface TenderdashBlockProof_BlockId : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *hash_p;
+
+@property(nonatomic, readwrite) uint32_t partSetTotal;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *partSetHash;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *stateId;
+
+@end
+
+#pragma mark - TenderdashBlockProof_Header
+
+typedef GPB_ENUM(TenderdashBlockProof_Header_FieldNumber) {
+  TenderdashBlockProof_Header_FieldNumber_BlockVersion = 1,
+  TenderdashBlockProof_Header_FieldNumber_AppVersion = 2,
+  TenderdashBlockProof_Header_FieldNumber_ChainId = 3,
+  TenderdashBlockProof_Header_FieldNumber_Height = 4,
+  TenderdashBlockProof_Header_FieldNumber_CoreChainLockedHeight = 5,
+  TenderdashBlockProof_Header_FieldNumber_TimeSeconds = 6,
+  TenderdashBlockProof_Header_FieldNumber_TimeNanos = 7,
+  TenderdashBlockProof_Header_FieldNumber_LastBlockId = 8,
+  TenderdashBlockProof_Header_FieldNumber_LastCommitHash = 9,
+  TenderdashBlockProof_Header_FieldNumber_DataHash = 10,
+  TenderdashBlockProof_Header_FieldNumber_ValidatorsHash = 11,
+  TenderdashBlockProof_Header_FieldNumber_NextValidatorsHash = 12,
+  TenderdashBlockProof_Header_FieldNumber_ConsensusHash = 13,
+  TenderdashBlockProof_Header_FieldNumber_NextConsensusHash = 14,
+  TenderdashBlockProof_Header_FieldNumber_AppHash = 15,
+  TenderdashBlockProof_Header_FieldNumber_ResultsHash = 16,
+  TenderdashBlockProof_Header_FieldNumber_EvidenceHash = 17,
+  TenderdashBlockProof_Header_FieldNumber_ProposerProTxHash = 18,
+  TenderdashBlockProof_Header_FieldNumber_ProposedAppVersion = 19,
+};
+
+/**
+ * Every field Tenderdash hashes into the block hash
+ **/
+GPB_FINAL @interface TenderdashBlockProof_Header : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t blockVersion;
+
+@property(nonatomic, readwrite) uint64_t appVersion;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *chainId;
+
+@property(nonatomic, readwrite) uint64_t height;
+
+@property(nonatomic, readwrite) uint32_t coreChainLockedHeight;
+
+@property(nonatomic, readwrite) int64_t timeSeconds;
+
+@property(nonatomic, readwrite) int32_t timeNanos;
+
+@property(nonatomic, readwrite, strong, null_resettable) TenderdashBlockProof_BlockId *lastBlockId;
+/** Test to see if @c lastBlockId has been set. */
+@property(nonatomic, readwrite) BOOL hasLastBlockId;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *lastCommitHash;
+
+/** Merkle root of the block's transactions */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *dataHash;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *validatorsHash;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *nextValidatorsHash;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *consensusHash;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *nextConsensusHash;
+
+/** the state after this block's transactions */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *appHash;
+
+/** Merkle root of the block's execution results */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *resultsHash;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *evidenceHash;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *proposerProTxHash;
+
+@property(nonatomic, readwrite) uint64_t proposedAppVersion;
+
+@end
+
+#pragma mark - TenderdashTransactionProof
+
+typedef GPB_ENUM(TenderdashTransactionProof_FieldNumber) {
+  TenderdashTransactionProof_FieldNumber_Index = 1,
+  TenderdashTransactionProof_FieldNumber_Total = 2,
+  TenderdashTransactionProof_FieldNumber_TransactionPathArray = 3,
+  TenderdashTransactionProof_FieldNumber_ResultPathArray = 4,
+};
+
+/**
+ * Merkle paths of one transaction in its block. Each path runs from the leaf's
+ * sibling up to a child of the root.
+ **/
+GPB_FINAL @interface TenderdashTransactionProof : GPBMessage
+
+/** the transaction's position in the block */
+@property(nonatomic, readwrite) uint32_t index;
+
+/** how many transactions the block holds */
+@property(nonatomic, readwrite) uint32_t total;
+
+/** Path from the SHA-256 of the transaction to `data_hash` */
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *transactionPathArray;
+/** The number of items in @c transactionPathArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger transactionPathArray_Count;
+
+/**
+ * Path to `results_hash`, from the protobuf encoding of the transaction's
+ * `code`, `result_data` and `gas_used` as Tenderdash's ExecTxResult
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *resultPathArray;
+/** The number of items in @c resultPathArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger resultPathArray_Count;
+
+@end
+
 #pragma mark - GetOwnerTransactionsInBlockRequest
 
 typedef GPB_ENUM(GetOwnerTransactionsInBlockRequest_FieldNumber) {
@@ -15019,6 +15196,7 @@ void GetOwnerTransactionsInBlockRequest_ClearVersionOneOfCase(GetOwnerTransactio
 typedef GPB_ENUM(GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0_FieldNumber) {
   GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0_FieldNumber_Height = 1,
   GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0_FieldNumber_OwnerId = 2,
+  GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0_FieldNumber_Prove = 3,
 };
 
 GPB_FINAL @interface GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0 : GPBMessage
@@ -15032,6 +15210,9 @@ GPB_FINAL @interface GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBl
  * addresses or the shielded pool have no owner, so they never match.
  **/
 @property(nonatomic, readwrite, copy, null_resettable) NSData *ownerId;
+
+/** also return what proves the answer's transactions */
+@property(nonatomic, readwrite) BOOL prove;
 
 @end
 
@@ -15063,6 +15244,7 @@ void GetOwnerTransactionsInBlockResponse_ClearVersionOneOfCase(GetOwnerTransacti
 
 typedef GPB_ENUM(GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_FieldNumber) {
   GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_FieldNumber_TransactionsArray = 1,
+  GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_FieldNumber_Proof = 2,
 };
 
 GPB_FINAL @interface GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0 : GPBMessage
@@ -15072,6 +15254,15 @@ GPB_FINAL @interface GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInB
 /** The number of items in @c transactionsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger transactionsArray_Count;
 
+/**
+ * Only when asked to prove. This proves each returned transaction is in the
+ * block. It does not prove the list is complete: to be sure of that, read the
+ * whole block with getBlocks.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) TenderdashBlockProof *proof;
+/** Test to see if @c proof has been set. */
+@property(nonatomic, readwrite) BOOL hasProof;
+
 @end
 
 #pragma mark - GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction
@@ -15080,6 +15271,9 @@ typedef GPB_ENUM(GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlock
   GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction_FieldNumber_StateTransition = 1,
   GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction_FieldNumber_Hash_p = 2,
   GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction_FieldNumber_Code = 3,
+  GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction_FieldNumber_ResultData = 4,
+  GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction_FieldNumber_GasUsed = 5,
+  GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction_FieldNumber_Proof = 6,
 };
 
 GPB_FINAL @interface GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction : GPBMessage
@@ -15092,6 +15286,17 @@ GPB_FINAL @interface GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInB
 
 /** 0 if it executed, otherwise the code of the error it paid for */
 @property(nonatomic, readwrite) uint32_t code;
+
+/** the data of its execution result */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *resultData;
+
+/** the gas of its execution result */
+@property(nonatomic, readwrite) int64_t gasUsed;
+
+/** only when asked to prove */
+@property(nonatomic, readwrite, strong, null_resettable) TenderdashTransactionProof *proof;
+/** Test to see if @c proof has been set. */
+@property(nonatomic, readwrite) BOOL hasProof;
 
 @end
 
@@ -15124,6 +15329,7 @@ void GetBlocksRequest_ClearVersionOneOfCase(GetBlocksRequest *message);
 typedef GPB_ENUM(GetBlocksRequest_GetBlocksRequestV0_FieldNumber) {
   GetBlocksRequest_GetBlocksRequestV0_FieldNumber_StartHeight = 1,
   GetBlocksRequest_GetBlocksRequestV0_FieldNumber_Count = 2,
+  GetBlocksRequest_GetBlocksRequestV0_FieldNumber_Prove = 3,
 };
 
 GPB_FINAL @interface GetBlocksRequest_GetBlocksRequestV0 : GPBMessage
@@ -15133,6 +15339,9 @@ GPB_FINAL @interface GetBlocksRequest_GetBlocksRequestV0 : GPBMessage
 
 /** how many blocks, from 1 to 10 */
 @property(nonatomic, readwrite) uint32_t count;
+
+/** also return what proves each block */
+@property(nonatomic, readwrite) BOOL prove;
 
 @end
 
@@ -15185,6 +15394,8 @@ typedef GPB_ENUM(GetBlocksResponse_GetBlocksResponseV0_Transaction_FieldNumber) 
   GetBlocksResponse_GetBlocksResponseV0_Transaction_FieldNumber_StateTransition = 1,
   GetBlocksResponse_GetBlocksResponseV0_Transaction_FieldNumber_Hash_p = 2,
   GetBlocksResponse_GetBlocksResponseV0_Transaction_FieldNumber_Code = 3,
+  GetBlocksResponse_GetBlocksResponseV0_Transaction_FieldNumber_ResultData = 4,
+  GetBlocksResponse_GetBlocksResponseV0_Transaction_FieldNumber_GasUsed = 5,
 };
 
 GPB_FINAL @interface GetBlocksResponse_GetBlocksResponseV0_Transaction : GPBMessage
@@ -15198,6 +15409,12 @@ GPB_FINAL @interface GetBlocksResponse_GetBlocksResponseV0_Transaction : GPBMess
 /** 0 if it executed, otherwise the code of the error it paid for */
 @property(nonatomic, readwrite) uint32_t code;
 
+/** the data of its execution result */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *resultData;
+
+/** the gas of its execution result */
+@property(nonatomic, readwrite) int64_t gasUsed;
+
 @end
 
 #pragma mark - GetBlocksResponse_GetBlocksResponseV0_Block
@@ -15210,6 +15427,7 @@ typedef GPB_ENUM(GetBlocksResponse_GetBlocksResponseV0_Block_FieldNumber) {
   GetBlocksResponse_GetBlocksResponseV0_Block_FieldNumber_AppHash = 5,
   GetBlocksResponse_GetBlocksResponseV0_Block_FieldNumber_ProposerProTxHash = 6,
   GetBlocksResponse_GetBlocksResponseV0_Block_FieldNumber_TransactionsArray = 7,
+  GetBlocksResponse_GetBlocksResponseV0_Block_FieldNumber_Proof = 8,
 };
 
 GPB_FINAL @interface GetBlocksResponse_GetBlocksResponseV0_Block : GPBMessage
@@ -15232,6 +15450,14 @@ GPB_FINAL @interface GetBlocksResponse_GetBlocksResponseV0_Block : GPBMessage
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetBlocksResponse_GetBlocksResponseV0_Transaction*> *transactionsArray;
 /** The number of items in @c transactionsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger transactionsArray_Count;
+
+/**
+ * Only when asked to prove. A block holds all its transactions, so recompute
+ * `data_hash` and `results_hash` from them; no Merkle paths are needed.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) TenderdashBlockProof *proof;
+/** Test to see if @c proof has been set. */
+@property(nonatomic, readwrite) BOOL hasProof;
 
 @end
 
