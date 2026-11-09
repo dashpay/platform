@@ -1813,12 +1813,14 @@ where
     }
     .await;
 
+    let activity_id = pending_entry.as_ref().map(|entry| entry.id);
     settle_private_document_payment(
         store,
         persister,
         wallet_id,
         id,
         &pending_entry,
+        activity_id,
         reservation,
         selected_notes,
         journaled,
@@ -1842,6 +1844,14 @@ where
 /// and `payment_started` tells the caller so
 /// ([`PaymentStarted::note_never_delivered`]). Otherwise they stay until the
 /// entry is read back.
+///
+/// A transition that never left the wallet has its saved record, keyed by
+/// `activity_id`, retired with the journal records in one durable write,
+/// under the store lock the redrive pass claims each re-broadcast under
+/// ([`NoteReservation::retire_undelivered`]). One whose record a redrive
+/// pass claimed a re-broadcast of meanwhile, or that cannot be retired, may
+/// leave the wallet after all: it is settled as unconfirmed, keeping its
+/// notes, record and journal records.
 #[allow(clippy::too_many_arguments)]
 async fn settle_private_document_payment<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
@@ -1849,6 +1859,7 @@ async fn settle_private_document_payment<S: ShieldedStore>(
     wallet_id: WalletId,
     id: SubwalletId,
     pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    activity_id: Option<[u8; 32]>,
     mut reservation: NoteReservation<S>,
     selected_notes: &[ShieldedNote],
     journaled: Option<&[[u8; 32]]>,
@@ -1894,8 +1905,50 @@ async fn settle_private_document_payment<S: ShieldedStore>(
         }
         Err(SpendFailure {
             error,
-            never_delivered,
+            never_delivered: true,
         }) => {
+            let commitments = journaled.unwrap_or_default();
+            let retired = match activity_id {
+                Some(activity_id) => {
+                    reservation
+                        .retire_undelivered(&activity_id, commitments)
+                        .await
+                }
+                None => {
+                    reservation.hand_over();
+                    false
+                }
+            };
+            if !retired {
+                // It may leave the wallet after all: everything stays, as for
+                // an unconfirmed payment.
+                return Err(PlatformWalletError::ShieldedSpendUnconfirmed {
+                    operation: "private document create from shielded pool",
+                    reason: format!(
+                        "its broadcast was refused before delivery ({error}), but its saved \
+                         transition was claimed for a re-broadcast or could not be retired"
+                    ),
+                });
+            }
+            record_activity_status(
+                store,
+                persister,
+                wallet_id,
+                id,
+                pending_entry,
+                ShieldedActivityStatus::Failed,
+                None,
+            )
+            .await;
+            if journaled.is_some() {
+                if let Some(persister) = persister {
+                    persister.note_discharged_private_entries(commitments.iter().copied());
+                }
+                payment_started.note_never_delivered();
+            }
+            Err(error)
+        }
+        Err(SpendFailure { error, .. }) => {
             // It did not execute: the guard owns the notes until they are
             // released, so a drop on the way still releases them.
             reservation.reclaim();
@@ -1909,47 +1962,10 @@ async fn settle_private_document_payment<S: ShieldedStore>(
                 None,
             )
             .await;
-            if never_delivered {
-                if let Some(commitments) = journaled {
-                    if discharge_journal_records(store, persister, wallet_id, commitments).await {
-                        payment_started.note_never_delivered();
-                    }
-                }
-            }
             reservation.cancel().await;
             Err(error)
         }
     }
-}
-
-/// Discharge `wallet_id`'s journal records of `commitments`, whose payment's
-/// transition never left the wallet, noting each one discharged on
-/// `persister` so a restoration that read it before skips it. Returns whether
-/// every one is gone; a failure leaves the records, which over-holds their
-/// pairs.
-async fn discharge_journal_records<S: ShieldedStore>(
-    store: &Arc<RwLock<S>>,
-    persister: Option<&WalletPersister>,
-    wallet_id: WalletId,
-    commitments: &[[u8; 32]],
-) -> bool {
-    let mut store = store.write().await;
-    let mut discharged = Vec::with_capacity(commitments.len());
-    for commitment in commitments {
-        match store.discharge_private_payment(wallet_id, commitment) {
-            Ok(_) => discharged.push(*commitment),
-            Err(e) => warn!(
-                error = %e,
-                "a never-delivered private payment's journal record was not discharged; its \
-                 pair stays held"
-            ),
-        }
-    }
-    let every_one = discharged.len() == commitments.len();
-    if let Some(persister) = persister {
-        persister.note_discharged_private_entries(discharged);
-    }
-    every_one
 }
 
 // -------------------------------------------------------------------------
@@ -3347,6 +3363,42 @@ impl<S: ShieldedStore> NoteReservation<S> {
         self.handed_over = false;
     }
 
+    /// For a spend whose transition never left the wallet: retire its saved
+    /// record `activity_id` with the journal records of `commitments` in one
+    /// durable write ([`ShieldedStore::retire_undelivered_spend`]), and
+    /// release the notes under the same store guard. Returns whether it was
+    /// retired.
+    ///
+    /// When it was not (a redrive pass claimed a re-broadcast of the record,
+    /// the record is gone, or the write failed), nothing changed and the
+    /// notes stay reserved, handed over to the spend's resolution. So do they
+    /// when the call is dropped while it waits for the store: the record may
+    /// still be saved, and a note released under a saved transition could be
+    /// spent twice.
+    pub(super) async fn retire_undelivered(
+        mut self,
+        activity_id: &[u8; 32],
+        commitments: &[[u8; 32]],
+    ) -> bool {
+        self.handed_over = true;
+        let mut store = self.store.write().await;
+        match store.retire_undelivered_spend(self.id, activity_id, commitments) {
+            Ok(true) => {
+                release_reserved_notes(&mut *store, self.id, &self.nullifiers, self.reservation);
+                self.nullifiers.clear();
+                true
+            }
+            Ok(false) => false,
+            Err(e) => {
+                warn!(
+                    error = %e,
+                    "a never-delivered spend's record was not retired; it is kept with its notes"
+                );
+                false
+            }
+        }
+    }
+
     /// Release the notes now, for a spend that did not execute.
     /// The guard owns them until the release is done: a spend dropped while it waits for the
     /// store lock still releases them on drop.
@@ -3827,6 +3879,45 @@ async fn bump_redrive_attempts_logged<S: ShieldedStore>(
     }
 }
 
+/// Claim one re-broadcast of `redrive`, durably, from the record as it is now,
+/// under the store write lock a never-delivered spend's retirement takes
+/// ([`ShieldedStore::retire_undelivered_spend`]): the attempt is counted
+/// before the broadcast starts, so a retirement after the claim sees it and
+/// refuses. A record retired, armed again with other bytes, or out of attempts
+/// since `redrive` was read is not claimed, and not broadcast. Returns the
+/// attempt count, or `None` when nothing was claimed: a counter that fails to
+/// persist claims nothing.
+async fn claim_redrive_attempt<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    redrive: &PendingRedrive,
+) -> Option<u32> {
+    let mut store = store.write().await;
+    let live = store.pending_redrives(id).is_ok_and(|current| {
+        current.iter().any(|record| {
+            record.activity_id == redrive.activity_id
+                && record.st_bytes == redrive.st_bytes
+                && record.attempts < MAX_REDRIVE_ATTEMPTS
+        })
+    });
+    if !live {
+        debug!("redrive: the record was retired or changed since it was read; not re-broadcast");
+        return None;
+    }
+    match store.bump_redrive_attempts(id, &redrive.activity_id) {
+        Ok(attempts) if attempts > 0 => Some(attempts),
+        Ok(_) => None,
+        Err(e) => {
+            warn!(
+                error = %e,
+                "redrive: the attempt could not be counted, so it is not re-broadcast; the next \
+                 pass retries"
+            );
+            None
+        }
+    }
+}
+
 /// Re-broadcast every unresolved ShieldFromIdentity transition for `wallet_id`.
 /// These records have no nullifiers or spending anchor, so they must not depend
 /// on the note-spend stranded-release pass. Exact-byte retries remain safe even
@@ -4012,6 +4103,9 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
                 continue;
             }
         };
+        let Some(attempts) = claim_redrive_attempt(store, id, &redrive).await else {
+            continue;
+        };
         let broadcast_result = st.broadcast(sdk, None).await;
         let err_display = broadcast_result
             .as_ref()
@@ -4020,7 +4114,6 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
             .unwrap_or_default();
         match classify_redrive_broadcast(&broadcast_result) {
             RedriveBroadcastOutcome::Accepted => {
-                let attempts = bump_redrive_attempts_logged(store, id, &redrive.activity_id).await;
                 info!(
                     attempts,
                     max = MAX_REDRIVE_ATTEMPTS,
@@ -4028,12 +4121,11 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
                 );
             }
             RedriveBroadcastOutcome::AlreadyExecuted => {
-                // Success signal — but still consume an attempt: the scan
+                // Success signal, but the attempt still counts: the scan
                 // normally confirms the landing and drops the record, and
                 // if it lags, this arm must not re-broadcast unboundedly
                 // on every pass. The cap parks the record for the scan /
                 // prune passes to settle.
-                let attempts = bump_redrive_attempts_logged(store, id, &redrive.activity_id).await;
                 info!(
                     attempts,
                     max = MAX_REDRIVE_ATTEMPTS,
@@ -4045,7 +4137,6 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
                 // `AlreadyExists` (still in a mempool after a lost-ACK
                 // retry) or transport noise: inconclusive; counts toward
                 // the cap.
-                let attempts = bump_redrive_attempts_logged(store, id, &redrive.activity_id).await;
                 debug!(
                     attempts,
                     max = MAX_REDRIVE_ATTEMPTS,
@@ -5105,9 +5196,11 @@ mod redrive_tests {
     /// broadcast may have been delivered and the result wait failed), the
     /// notes stay reserved and the record, association and journal record
     /// survive a reopen. Rejected after delivery, the notes and record are
-    /// released, the journal record stays. Never delivered, the journal
-    /// record is discharged too and the payment reads as not reaching the
-    /// network.
+    /// released, the journal record stays. Never delivered, the record and
+    /// the journal record are retired together and the payment reads as not
+    /// reaching the network; unless the redrive pass claimed a re-broadcast
+    /// of the record meanwhile, when it may leave the wallet after all and is
+    /// settled as unconfirmed, keeping everything.
     #[tokio::test]
     async fn should_keep_a_private_payment_s_journal_record_unless_it_never_left() {
         let sdk = Arc::new(dash_sdk::Sdk::new_mock());
@@ -5161,7 +5254,12 @@ mod redrive_tests {
                 never_delivered: true,
             },
         };
-        for outcome in ["unconfirmed", "rejected after delivery", "never delivered"] {
+        for outcome in [
+            "unconfirmed",
+            "rejected after delivery",
+            "never delivered",
+            "never delivered, re-broadcast claimed",
+        ] {
             let dir = tempfile::tempdir().expect("a directory");
             let path = dir.path().join("tree.sqlite");
             let store = Arc::new(RwLock::new(
@@ -5207,12 +5305,20 @@ mod redrive_tests {
                 "{outcome}: journaled before the broadcast"
             );
 
+            if outcome == "never delivered, re-broadcast claimed" {
+                store
+                    .write()
+                    .await
+                    .bump_redrive_attempts(id, &[0x77; 32])
+                    .expect("claimed");
+            }
             let settled = settle_private_document_payment(
                 &store,
                 None,
                 wallet_id,
                 id,
                 &None,
+                Some([0x77; 32]),
                 reservation,
                 &selected,
                 Some(&[commitment]),
@@ -5236,7 +5342,14 @@ mod redrive_tests {
                 .private_contact_redrives_for_wallet(wallet_id)
                 .expect("listed");
             match outcome {
-                "unconfirmed" => {
+                "unconfirmed" | "never delivered, re-broadcast claimed" => {
+                    assert!(
+                        matches!(
+                            settled,
+                            Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+                        ),
+                        "{outcome}: {settled:?}"
+                    );
                     assert_eq!(unspent, 0, "the notes stay reserved");
                     assert_eq!(saved.len(), 1, "the record and its association stay");
                     assert_eq!(journal.len(), 1, "the journal record stays");
@@ -5764,6 +5877,92 @@ mod redrive_tests {
             Some(MAX_REDRIVE_ATTEMPTS),
             "no attempt counters were bumped — nothing touched the network"
         );
+    }
+
+    /// A record retired while the redrive pass holds a snapshot that still
+    /// has it is not re-broadcast: the pass claims each re-broadcast under
+    /// the store write lock, from the record as it is then. Here the pass is
+    /// held at its claim of an earlier record while the retirement queues for
+    /// the lock, so it reaches the retired record with its stale snapshot.
+    #[tokio::test]
+    async fn should_not_rebroadcast_a_record_retired_after_the_pass_read_it() {
+        use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+        use dpp::serialization::PlatformSerializable;
+        use std::future::Future;
+        use std::task::{Context, Waker};
+
+        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = SubwalletId::new([0x5D; 32], 0);
+        let anchor = [0x6D; 32];
+        let earlier = identity_shield_transition([0xA1; 32], 3);
+        let retired = identity_shield_transition([0xA2; 32], 4);
+        let record = |activity: u8, transition: &StateTransition| PendingRedrive {
+            activity_id: [activity; 32],
+            anchor,
+            nullifiers: vec![[activity ^ 0xFF; 32]],
+            st_bytes: transition.serialize_to_bytes().expect("serializes"),
+            attempts: 0,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
+        };
+        {
+            let mut guard = store.write().await;
+            guard.arm_redrive(id, record(1, &earlier)).expect("armed");
+            guard.arm_redrive(id, record(2, &retired)).expect("armed");
+        }
+        let recorded: std::collections::HashSet<[u8; 32]> = [anchor].into_iter().collect();
+        let sdk_handle = Arc::new(sdk.clone());
+        let cancel = CancellationToken::new();
+
+        let mut cx = Context::from_waker(Waker::noop());
+        let held = store.read().await;
+        let mut pass = Box::pin(redrive_pending_spends(
+            &sdk_handle,
+            &store,
+            id,
+            &recorded,
+            &cancel,
+        ));
+        assert!(
+            pass.as_mut().poll(&mut cx).is_pending(),
+            "the pass read both records and waits to claim the first"
+        );
+        let mut retire = Box::pin(async {
+            store
+                .write()
+                .await
+                .retire_undelivered_spend(id, &[2; 32], &[])
+        });
+        assert!(
+            retire.as_mut().poll(&mut cx).is_pending(),
+            "the retirement queues behind the claim"
+        );
+        drop(held);
+        let ((), retirement) = tokio::join!(pass, retire);
+        assert!(
+            retirement.expect("retired"),
+            "no re-broadcast was claimed for it"
+        );
+
+        let request = |transition: &StateTransition| {
+            transition
+                .broadcast_request_for_state_transition()
+                .expect("serializes")
+        };
+        assert!(
+            sdk.mock().request_count(&request(&earlier)).await > 0,
+            "the earlier record is re-broadcast"
+        );
+        assert_eq!(
+            sdk.mock().request_count(&request(&retired)).await,
+            0,
+            "the retired record is not"
+        );
+        let left = store.read().await.pending_redrives(id).expect("records");
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].activity_id, [1; 32]);
+        assert_eq!(left[0].attempts, 1, "claimed once, before its broadcast");
     }
 }
 

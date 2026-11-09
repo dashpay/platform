@@ -1087,6 +1087,72 @@ impl ShieldedStore for FileBackedShieldedStore {
         Ok(())
     }
 
+    fn retire_undelivered_spend(
+        &mut self,
+        id: SubwalletId,
+        activity_id: &[u8; 32],
+        commitments: &[[u8; 32]],
+    ) -> Result<bool, Self::Error> {
+        if self
+            .subwallets
+            .get(&id)
+            .and_then(|subwallet| subwallet.redrive_attempts(activity_id))
+            != Some(0)
+        {
+            return Ok(false);
+        }
+        // Durable first, in one transaction: a failure removes nothing, so the
+        // record and the journal records stay together, which over-holds.
+        {
+            let mut conn = self
+                .pending_conn
+                .lock()
+                .map_err(|e| FileShieldedStoreError::Storage(format!("pending_conn mutex: {e}")))?;
+            let tx = conn
+                .transaction()
+                .map_err(|e| FileShieldedStoreError::Storage(format!("begin retirement: {e}")))?;
+            // Only a record no re-broadcast was claimed for: the durable
+            // counter is written before memory's.
+            let retired = tx
+                .execute(
+                    "DELETE FROM shielded_pending_spends \
+                     WHERE wallet_id = ?1 AND account_index = ?2 AND activity_id = ?3 \
+                     AND attempts = 0",
+                    rusqlite::params![
+                        id.wallet_id.as_slice(),
+                        id.account_index,
+                        activity_id.as_slice(),
+                    ],
+                )
+                .map_err(|e| FileShieldedStoreError::Storage(format!("retire redrive: {e}")))?;
+            if retired != 1 {
+                // Dropped uncommitted: nothing is removed.
+                return Ok(false);
+            }
+            for commitment in commitments {
+                tx.execute(
+                    "DELETE FROM shielded_private_payment_journal \
+                     WHERE wallet_id = ?1 AND commitment = ?2",
+                    rusqlite::params![id.wallet_id.as_slice(), commitment.as_slice()],
+                )
+                .map_err(|e| {
+                    FileShieldedStoreError::Storage(format!("discharge retired payment: {e}"))
+                })?;
+            }
+            tx.commit()
+                .map_err(|e| FileShieldedStoreError::Storage(format!("commit retirement: {e}")))?;
+        }
+        if let Some(subwallet) = self.subwallets.get_mut(&id) {
+            subwallet.clear_redrive(activity_id);
+        }
+        self.private_contact_payments.remove(&(id, *activity_id));
+        for commitment in commitments {
+            self.private_payment_journal
+                .remove(&(id.wallet_id, *commitment));
+        }
+        Ok(true)
+    }
+
     fn discharge_private_payment(
         &mut self,
         wallet_id: WalletId,
@@ -2870,6 +2936,85 @@ mod tests {
             .expect("journal")
             .is_empty());
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// A never-delivered spend's saved record and its journal records are
+    /// retired by one durable write: after it, a reopened store holds
+    /// neither. A write that fails part way, here at the journal's delete,
+    /// removes neither, and one whose re-broadcast was claimed is refused and
+    /// keeps both; so after any reopen, the transition the redrive pass could
+    /// broadcast and the journal record that holds its pair stay together.
+    #[test]
+    fn should_retire_an_undelivered_spend_with_its_journal_records_in_one_write() {
+        let payment = PrivateContactPayment {
+            sender: [0xB1; 32],
+            recipient: [0xA1; 32],
+            account_reference: 7,
+        };
+        let commitment = [0xC4; 32];
+        for case in ["retired", "write fails", "re-broadcast claimed"] {
+            let path = temp_tree_path("retire_undelivered");
+            let wallet_id = [0x5C; 32];
+            let id = SubwalletId::new(wallet_id, 0);
+            let redrive = PendingRedrive {
+                activity_id: [0x31; 32],
+                anchor: [0x32; 32],
+                nullifiers: vec![[0x33; 32]],
+                st_bytes: private_document_create_bytes(0xC4),
+                attempts: 0,
+                identity_nonce_finalized: false,
+                identity_user_abandoned: false,
+            };
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+            store.mark_pending(id, &[0x33; 32]).expect("reserved");
+            store
+                .arm_private_contact_payment(id, redrive.clone(), payment, &[commitment], 0)
+                .expect("armed");
+            match case {
+                "write fails" => store
+                    .pending_conn
+                    .lock()
+                    .expect("pending_conn mutex")
+                    .execute_batch(
+                        "CREATE TRIGGER reject_journal_delete BEFORE DELETE ON \
+                         shielded_private_payment_journal BEGIN SELECT RAISE(FAIL, \
+                         'injected delete failure'); END;",
+                    )
+                    .expect("trigger"),
+                "re-broadcast claimed" => {
+                    assert_eq!(
+                        store
+                            .bump_redrive_attempts(id, &redrive.activity_id)
+                            .expect("claimed"),
+                        1
+                    );
+                }
+                _ => {}
+            }
+            let retired = store.retire_undelivered_spend(id, &redrive.activity_id, &[commitment]);
+            match case {
+                "retired" => assert!(retired.expect("retired"), "{case}"),
+                "write fails" => assert!(retired.is_err(), "{case}: {retired:?}"),
+                _ => assert!(!retired.expect("refused"), "{case}"),
+            }
+            let kept = case != "retired";
+            let both = |store: &FileBackedShieldedStore| {
+                (
+                    store.pending_redrives(id).expect("records").len(),
+                    store
+                        .private_payment_journal(wallet_id)
+                        .expect("journal")
+                        .len(),
+                )
+            };
+            let expected = if kept { (1, 1) } else { (0, 0) };
+            assert_eq!(both(&store), expected, "{case}: in memory");
+            drop(store);
+            let reopened = FileBackedShieldedStore::open_path(&path, 100).expect("reopened");
+            assert_eq!(both(&reopened), expected, "{case}: reopened");
+            drop(reopened);
+            let _ = std::fs::remove_file(&path);
+        }
     }
 
     /// A journal record that does not read back stays, and fails reading

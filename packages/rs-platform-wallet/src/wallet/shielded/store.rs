@@ -537,15 +537,34 @@ pub trait ShieldedStore: Send + Sync + 'static {
     ) -> Result<(), Self::Error>;
 
     /// Remove `wallet_id`'s journal record of the entry `commitment`, once
-    /// its payment provably resolved: the entry was read back, the
-    /// transition never left the wallet, or the payment is proven expired
-    /// (its anchor pruned, an input note still unspent, its entry absent
-    /// from the store). Returns whether there was one. No other call removes
-    /// a journal record: not a note release, a redrive's removal or a purge.
+    /// its payment provably resolved: the entry was read back, or the payment
+    /// is proven expired (its anchor pruned and its entry absent from the
+    /// store). Returns whether there was one. Only this call and
+    /// [`Self::retire_undelivered_spend`] remove a journal record: not a note
+    /// release, a redrive's removal or a purge.
     fn discharge_private_payment(
         &mut self,
         wallet_id: WalletId,
         commitment: &[u8; 32],
+    ) -> Result<bool, Self::Error>;
+
+    /// Retire the saved record of `id`'s spend `activity_id`, whose
+    /// transition never left the wallet, together with the journal records of
+    /// `commitments` in `id`'s wallet, the entries it would have appended. One
+    /// durable write removes them all (the file store commits it on its
+    /// recovery connection, at `synchronous=FULL`), so no restart finds the
+    /// journal discharged while the signed transition is still saved, or the
+    /// other way round.
+    ///
+    /// Returns false, changing nothing, when no such record is saved, or when
+    /// a re-broadcast of it was claimed ([`PendingRedrive::attempts`] above
+    /// 0): the transition may then have left the wallet. The notes the spend
+    /// reserved are the caller's to release.
+    fn retire_undelivered_spend(
+        &mut self,
+        id: SubwalletId,
+        activity_id: &[u8; 32],
+        commitments: &[[u8; 32]],
     ) -> Result<bool, Self::Error>;
 
     /// Every armed redrive record for `id`.
@@ -1373,6 +1392,28 @@ impl ShieldedStore for InMemoryShieldedStore {
             .private_payment_journal
             .remove(&(wallet_id, *commitment))
             .is_some())
+    }
+
+    fn retire_undelivered_spend(
+        &mut self,
+        id: SubwalletId,
+        activity_id: &[u8; 32],
+        commitments: &[[u8; 32]],
+    ) -> Result<bool, Self::Error> {
+        let Some(subwallet) = self
+            .subwallets
+            .get_mut(&id)
+            .filter(|subwallet| subwallet.redrive_attempts(activity_id) == Some(0))
+        else {
+            return Ok(false);
+        };
+        subwallet.clear_redrive(activity_id);
+        self.private_contact_payments.remove(&(id, *activity_id));
+        for commitment in commitments {
+            self.private_payment_journal
+                .remove(&(id.wallet_id, *commitment));
+        }
+        Ok(true)
     }
 
     fn pending_redrives(&self, id: SubwalletId) -> Result<Vec<PendingRedrive>, Self::Error> {
