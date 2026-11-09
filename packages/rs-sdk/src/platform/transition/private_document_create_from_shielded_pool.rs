@@ -1,9 +1,8 @@
 //! Append entries to a private document type's store, paid from the shielded pool.
 
-use super::broadcast::BroadcastStateTransition;
+use super::broadcast::{private_document_create_requirement, BroadcastStateTransition};
 use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
-use crate::platform::ProtocolRequirement;
 use crate::{Error, Sdk};
 use dpp::platform_value::{BinaryData, Identifier};
 use dpp::shielded::OrchardBundleParams;
@@ -22,9 +21,6 @@ use dpp::version::feature_initial_protocol_versions::PRIVATE_DOCUMENT_CREATE_FRO
 /// `dpp::shielded::builder::build_private_document_create_from_shielded_pool_transition`, which
 /// builds the whole transition from notes). Every entry must be exactly the type's
 /// `entrySize`, as `platform_encryption::seal_private_document_entry` builds them.
-/// The gRPC method a state transition is sent with.
-pub(crate) const BROADCAST_STATE_TRANSITION_METHOD: &str = "broadcast_state_transition";
-
 #[async_trait::async_trait]
 pub trait PrivateDocumentCreateFromShieldedPool {
     /// Build and structure-check the transition without broadcasting it, at the SDK's protocol
@@ -117,22 +113,24 @@ impl PrivateDocumentCreateFromShieldedPool for Sdk {
         settings: Option<PutSettings>,
     ) -> Result<StateTransitionProofResult, Error> {
         // An unpinned SDK starts below protocol version 15, whose limits admit no entries: the
-        // network's version is established before the transition is built against it.
-        self.require_protocol_version(
-            PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
-            "private documents",
-        )
-        .await?;
+        // network's version is established before the transition is built against it. One
+        // still below it after that refuses with the structured activation error.
+        let requirement = private_document_create_requirement();
+        if self.protocol_version_number() < requirement.protocol_version
+            && self.refresh_protocol_version().await? < requirement.protocol_version
+        {
+            return Err(self.protocol_version_not_active(
+                requirement.protocol_version,
+                requirement.method,
+                requirement.feature,
+            ));
+        }
         // The SDK's own version does not show the network's: one seeded or pinned at 15 passes
         // the check above on a network still at 14. The transition is sent only once a verified
-        // answer shows the network serves it, as a read of the store is.
+        // answer shows the network serves it, as a read of the store is (the broadcast checks
+        // again, for a transition built elsewhere).
         self.ensure_network_serves(
-            Some(ProtocolRequirement {
-                protocol_version:
-                    PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
-                method: BROADCAST_STATE_TRANSITION_METHOD,
-                feature: Some("private document create from shielded pool transitions"),
-            }),
+            Some(requirement),
             settings.map(|settings| settings.request_settings),
         )
         .await?;
@@ -153,6 +151,7 @@ impl PrivateDocumentCreateFromShieldedPool for Sdk {
 #[cfg(all(test, feature = "mocks"))]
 mod tests {
     use super::*;
+    use crate::platform::transition::broadcast::BROADCAST_STATE_TRANSITION_METHOD;
     use crate::sdk::test::expect_epoch_refresh;
     use crate::SdkBuilder;
     use dpp::shielded::SerializedAction;
@@ -203,26 +202,42 @@ mod tests {
     }
 
     /// Below protocol version 15 the send is refused before the transition is built, rather
-    /// than built against limits that admit no entries.
+    /// than built against limits that admit no entries, with the structured activation error:
+    /// for an SDK pinned there, and for one seeded there that cannot learn a newer version.
     #[tokio::test]
     async fn should_refuse_to_send_below_protocol_version_15() {
-        let sdk: Sdk = SdkBuilder::new_mock()
-            .with_version(PlatformVersion::get(14).expect("protocol version 14"))
-            .build()
-            .expect("expected a mock sdk");
-        let error = sdk
-            .private_document_create_from_shielded_pool(
-                Identifier::new([4; 32]),
-                "privateContactRequest".to_string(),
-                vec![BinaryData::new(vec![1; 589])],
-                114_140_000,
-                bundle(),
-                None,
-            )
-            .await
-            .expect_err("protocol version 14")
-            .to_string();
-        assert!(error.contains("exists from protocol version 15"), "{error}");
+        let version_14 = PlatformVersion::get(14).expect("protocol version 14");
+        for (builder, pinned) in [
+            (SdkBuilder::new_mock().with_version(version_14), true),
+            (
+                SdkBuilder::new_mock().with_initial_version(version_14),
+                false,
+            ),
+        ] {
+            let sdk: Sdk = builder.build().expect("expected a mock sdk");
+            let error = sdk
+                .private_document_create_from_shielded_pool(
+                    Identifier::new([4; 32]),
+                    "privateContactRequest".to_string(),
+                    vec![BinaryData::new(vec![1; 589])],
+                    114_140_000,
+                    bundle(),
+                    None,
+                )
+                .await
+                .expect_err("protocol version 14");
+            assert!(
+                matches!(
+                    error,
+                    Error::ProtocolVersionNotActive {
+                        method: BROADCAST_STATE_TRANSITION_METHOD,
+                        required: 15,
+                        ..
+                    }
+                ),
+                "pinned {pinned}: {error:?}"
+            );
+        }
     }
 
     /// The builder, which cannot ask the network, refuses below protocol version 15 naming

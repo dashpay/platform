@@ -27,6 +27,7 @@ use crate::platform::data_contracts_latest_versions::{
 use crate::platform::documents::document_query::RankingDirection;
 use crate::platform::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
 use crate::platform::private_document_entries::PrivateDocumentEntries;
+use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::private_document_create_from_shielded_pool::PrivateDocumentCreateFromShieldedPool;
 use crate::platform::types::epoch::current_epoch_probe_query;
 use crate::platform::types::identity::{
@@ -81,7 +82,9 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::BinaryData;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier, Identity};
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
-use dpp::shielded::OrchardBundleParams;
+use dpp::shielded::{OrchardBundleParams, SerializedAction};
+use dpp::state_transition::private_document_create_from_shielded_pool_transition::methods::PrivateDocumentCreateFromShieldedPoolTransitionMethodsV0;
+use dpp::state_transition::private_document_create_from_shielded_pool_transition::PrivateDocumentCreateFromShieldedPoolTransition;
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::version::v13::PROTOCOL_VERSION_13;
 use dpp::version::v14::PROTOCOL_VERSION_14;
@@ -2451,6 +2454,49 @@ async fn should_refuse_a_private_document_send_until_the_network_is_verified_at_
                 required: PROTOCOL_VERSION_15,
                 network: V14,
                 pinned: false,
+                cause: None,
+                ..
+            }) => {}
+            other => panic!("pinned {pinned}: expected a local refusal, got {other:?}"),
+        }
+        assert_eq!(probes(&sdk).await, 1, "pinned {pinned}");
+    }
+}
+
+/// A private document transition built elsewhere and sent through the generic broadcast is
+/// gated as the dedicated send is: from an SDK at protocol version 15, seeded or pinned, on a
+/// network a verified answer shows at 14, it is refused locally instead of broadcast to be
+/// rejected.
+#[tokio::test]
+async fn should_refuse_a_generic_broadcast_of_a_private_document_transition_until_15() {
+    let action = SerializedAction {
+        nullifier: [1; 32],
+        rk: [2; 32],
+        cmx: [3; 32],
+        encrypted_note: vec![4; 216],
+        cv_net: [5; 32],
+        spend_auth_sig: [6; 64],
+    };
+    let transition = PrivateDocumentCreateFromShieldedPoolTransition::try_from_bundle(
+        Identifier::new([4; 32]),
+        "privateContactRequest".to_string(),
+        vec![BinaryData::new(vec![1; 589])],
+        vec![action.clone(), action],
+        114_140_000,
+        [7; 32],
+        vec![8; 64],
+        [9; 64],
+        PlatformVersion::latest(),
+    )
+    .expect("a type 29 transition");
+    for pinned in [false, true] {
+        let sdk = mock_sdk(PROTOCOL_VERSION_15, pinned, V14);
+        answer_probe(&sdk, "pv14").await;
+        match transition.broadcast(&sdk, None).await {
+            Err(Error::ProtocolVersionNotActive {
+                method: "broadcast_state_transition",
+                required: PROTOCOL_VERSION_15,
+                network: V14,
                 cause: None,
                 ..
             }) => {}
