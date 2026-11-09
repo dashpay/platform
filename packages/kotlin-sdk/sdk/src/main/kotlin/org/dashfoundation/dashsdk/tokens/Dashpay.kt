@@ -432,20 +432,6 @@ class Dashpay internal constructor(private val walletHandle: Long,
     }
 
     /**
-     * The contacts among [contactIds] that [ourIdentityId] has a private
-     * contact request to in flight, or paid for and not yet read back from
-     * the store, as the wallet records it, read from one fresh
-     * managed-identity snapshot. While one is, Rust refuses another private
-     * send or reply to it ([DashSdkError.PlatformWallet.PrivateContactRequestPending]),
-     * so a host shows it as pending and offers neither; a private sync
-     * settles it. Empty when the identity isn't managed. After a relaunch, a
-     * reply paid for in an earlier process is pending again once Rust
-     * restores it from the shielded store, which it does when the store is
-     * configured after the load or the wallet binds its shielded account.
-     * ← Swift `ManagedIdentity.privateReplyPending(contactId:)`
-     * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift).
-     */
-    /**
      * What a contact request from [ourIdentityId] waits for, as the wallet
      * decides it ([PrivateContactReadiness]). A pure read of live wallet
      * state; read it again after the shielded store is configured or the
@@ -465,6 +451,20 @@ class Dashpay internal constructor(private val walletHandle: Long,
             )
         }
 
+    /**
+     * The contacts among [contactIds] that [ourIdentityId] has a private
+     * contact request to in flight, or paid for and not yet read back from
+     * the store, as the wallet records it, read from one fresh
+     * managed-identity snapshot. While one is, Rust refuses another private
+     * send or reply to it ([DashSdkError.PlatformWallet.PrivateContactRequestPending]),
+     * so a host shows it as pending and offers neither; a private sync
+     * settles it. Empty when the identity isn't managed. After a relaunch, a
+     * reply paid for in an earlier process is pending again once Rust
+     * restores it from the shielded store, which it does when the store is
+     * configured after the load or the wallet binds its shielded account.
+     * ← Swift `ManagedIdentity.privateReplyPending(contactId:)`
+     * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift).
+     */
     suspend fun privateRepliesPending(
         ourIdentityId: ByteArray,
         contactIds: List<ByteArray>,
