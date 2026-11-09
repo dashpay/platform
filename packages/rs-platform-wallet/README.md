@@ -146,6 +146,37 @@ The local shielded balance API introduces three Rust source compatibility change
   index is zero. An absent row is different from a recorded empty scan; do not
   infer presence merely from `last_synced_index > 0`.
 
+## Invitation-claim store migration
+
+One-time-key invitation claims (`identity_create_from_one_time_key`) add Rust
+source compatibility changes for custom `ShieldedStore` implementations, even
+ones whose hosts never claim invitations:
+
+- New required methods, with no defaults:
+  - wallet-removal tombstones: `record_wallet_removal`,
+    `clear_wallet_removal`, `outstanding_wallet_removals`;
+  - claim admission: `begin_claim_admission`, `renew_claim_admission`,
+    `end_claim_admission`, `arm_redrive_under_claim`,
+    `reserve_one_time_claim_key`;
+  - destructive admission: `begin_destructive_admission`,
+    `end_destructive_admission`.
+- Contracts the reference stores rely on:
+  - admission and reservation checks are atomic with the write they guard;
+  - a store shared by several coordinators (one SQLite file) enforces them
+    across instances, not only in memory;
+  - in a persistent store, removal tombstones and claim records are durable
+    once the call returns;
+  - `begin_destructive_admission` counts live claim leases and unresolved
+    one-time claim records (under `ONE_TIME_CLAIM_RECORDS_ACCOUNT`) in its
+    scope.
+- `PendingRedrive` struct literals require `identity_index: Option<u32>`.
+  Use `None` for ordinary spend redrives; claim records carry the local
+  identity slot the claim registers at.
+
+[InMemoryShieldedStore](src/wallet/shielded/store.rs) (single instance) and
+[FileBackedShieldedStore](src/wallet/shielded/file_store.rs) (cross-instance)
+are the reference implementations.
+
 ## Dependencies
 
 - `key-wallet`: Core wallet functionality
