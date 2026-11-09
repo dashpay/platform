@@ -3505,6 +3505,62 @@ mod tests {
         assert!(Arc::ptr_eq(&resolved, &held));
     }
 
+    /// A newer contract another operation gave the provider while the reader fetched one,
+    /// here promoted right after the reader's first read, stays: the older fetched contract
+    /// does not replace it, even through a provider whose registration replaces whatever it
+    /// holds, and the page is read against the newer one.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_keep_a_newer_contract_promoted_while_the_reader_fetched() {
+        let mut stale = dashpay_without_private_requests();
+        stale.set_version(1);
+        let mut fetched = dashpay();
+        fetched.set_version(2);
+        let mut promoted = dashpay();
+        promoted.set_version(3);
+        let provider = HeldContractProvider::promoting(stale, promoted);
+        let mut sdk = sdk_with(provider.clone());
+        sdk.mock()
+            .expect_fetch(fetched.id(), Some(fetched.clone()))
+            .await
+            .expect("the DashPay fetch is expected");
+        sdk.mock()
+            .expect_fetch(
+                PrivateDocumentEntriesQuery::new(
+                    fetched.id(),
+                    PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+                    0,
+                ),
+                Some(PrivateDocumentEntries {
+                    entries: vec![],
+                    total_count: 0,
+                }),
+            )
+            .await
+            .expect("the page fetch is expected");
+
+        let resolved = sdk
+            .fetch_private_document_contract(
+                fetched.id(),
+                PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+            )
+            .await
+            .expect("the newer contract");
+        assert_eq!(resolved.version(), 3);
+        assert_eq!(provider.held().expect("held").version(), 3);
+        let scan = sdk
+            .scan_private_document_page(
+                fetched.id(),
+                PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+                0,
+                &PrivateDocumentScanKeys::new(),
+            )
+            .await
+            .expect("the page is read");
+        assert!(scan.is_complete());
+        assert_eq!(provider.held().expect("held").version(), 3);
+    }
+
     /// Below protocol version 15 there is no private store: a contract that declares no
     /// private type, on an SDK running 14, is refused as not active, and the page stream ends
     /// with that refusal before any page is fetched, which the mock, answering none, would
