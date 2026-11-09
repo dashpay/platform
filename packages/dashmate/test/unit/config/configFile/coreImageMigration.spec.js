@@ -126,15 +126,12 @@ describe('Core image migration', () => {
     expect(migrated.configs.mainnet.core.docker.image).to.equal('dashpay/dashd:24');
   });
 
-  it('should be a no-op once applied', () => {
-    const migrated = migrateConfigFile(
-      getConfigFileData(publicConfigs, 'dashpay/dashd:23'),
-      '5.0.3',
-      version,
-    );
+  it('should change nothing when applied again', () => {
+    const migrate = getMigrations()['5.0.4'];
+    const migrated = migrate(getConfigFileData({ ...publicConfigs, ...devConfigs }, 'dashpay/dashd:23'));
     const snapshot = JSON.parse(JSON.stringify(migrated));
 
-    expect(migrateConfigFile(migrated, migrated.configFormatVersion, version)).to.deep.equal(snapshot);
+    expect(migrate(migrated)).to.deep.equal(snapshot);
   });
 
   it('should leave a config without Core docker options alone', () => {
