@@ -44,7 +44,8 @@ impl IdentityManagerStartState {
     /// load does for a backend that does not attest
     /// [`PRIVATE_CONTACT_REQUEST_SCAN_STATE`](crate::changeset::PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE):
     /// nothing keeps such a backend's copy current, so the store is read from
-    /// its start.
+    /// its start. A restored hold on an unresolved private payment is kept
+    /// (`ManagedIdentity::forget_private_contact_scan_state`).
     pub(crate) fn forget_private_contact_scan_state(&mut self) {
         for managed in self
             .wallet_identities

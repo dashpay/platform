@@ -105,3 +105,37 @@ pub(crate) fn broadcast_definitely_failed(e: &dash_sdk::Error) -> bool {
         _ => false,
     }
 }
+
+/// Whether a `broadcast()` failure [`broadcast_definitely_failed`] counts as
+/// definite may still have delivered the transition: an `Unavailable`
+/// status, which can follow delivery or hide an earlier attempt's, as noted
+/// there. The spend's notes are released all the same, as the on-chain
+/// nullifier set keeps funds safe, but what the transition does may still
+/// happen: a private contact request's entry may still be appended, so its
+/// pair stays held. A consensus verdict, a rejection code and an empty
+/// address list prove the transition was not admitted.
+#[cfg(feature = "shielded")]
+pub(crate) fn broadcast_may_have_been_delivered(e: &dash_sdk::Error) -> bool {
+    use dash_sdk::dapi_client::transport::TransportError;
+    use dash_sdk::dapi_client::DapiClientError;
+    use dash_sdk::dapi_grpc::tonic::Code;
+
+    fn unavailable(t: &TransportError) -> bool {
+        let TransportError::Grpc(status) = t;
+        status.code() == Code::Unavailable
+    }
+
+    if carries_consensus_rejection(e) {
+        return false;
+    }
+    match e {
+        dash_sdk::Error::DapiClientError(DapiClientError::Transport(t)) => unavailable(t),
+        dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddressesToRetry(t)) => {
+            unavailable(t)
+        }
+        dash_sdk::Error::NoAvailableAddressesToRetry(inner) => {
+            broadcast_may_have_been_delivered(inner)
+        }
+        _ => false,
+    }
+}

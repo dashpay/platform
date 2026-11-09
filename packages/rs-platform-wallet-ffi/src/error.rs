@@ -675,6 +675,17 @@ pub enum PlatformWalletFFIResultCode {
     /// restored. A build without the `shielded` feature never restores them.
     ErrorPrivateContactPaymentsNotRestored = 72,
 
+    /// Maps `PlatformWalletError::PrivateContactRecoveryUnsupported`: the
+    /// persister does not declare that it keeps the private contact request
+    /// scan state (`PRIVATE_CONTACT_REQUEST_SCAN_STATE`, bit 14) in atomic
+    /// changesets (`ATOMIC_CHANGESETS`, bit 0, with the changeset begin and end
+    /// callbacks wired), so a private contact request is not paid for, nothing
+    /// sealed or paid. Its recovery
+    /// marker could not survive a restart, and a process reopening the wallet
+    /// could then publish the pair while the payment may still execute. Not
+    /// retryable as it is: a host persisting the scan state declares both.
+    ErrorPrivateContactRecoveryUnsupported = 73,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -963,7 +974,8 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // slot-holding contract. A blanket conversion can't write
             // `out_identity_id` (it has no out-param), so the most it can do is
             // keep the typed code alive — which is what these arms guarantee.
-            PlatformWalletError::ShieldedBroadcastFailed(..) => {
+            PlatformWalletError::ShieldedBroadcastFailed(..)
+            | PlatformWalletError::ShieldedBroadcastMaybeDelivered(..) => {
                 PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed
             }
             PlatformWalletError::ShieldedBroadcastUnconfirmed { .. } => {
@@ -1128,6 +1140,10 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // restored yet: wallet readiness, not one contact's pending request.
             PlatformWalletError::PrivateContactPaymentsNotRestored => {
                 PlatformWalletFFIResultCode::ErrorPrivateContactPaymentsNotRestored
+            }
+            // The persister cannot keep a private payment's recovery marker.
+            PlatformWalletError::PrivateContactRecoveryUnsupported => {
+                PlatformWalletFFIResultCode::ErrorPrivateContactRecoveryUnsupported
             }
             // A signer failure can also reach this blanket impl wrapped as
             // `PlatformWalletError::Sdk(dash_sdk::Error::Protocol(..))` (any
@@ -2853,5 +2869,26 @@ mod private_contact_request_error_tests {
             PlatformWalletFFIResultCode::ErrorPrivateContactPaymentsNotRestored
         );
         assert_eq!(result.code as u32, 72);
+    }
+
+    /// A private payment over a persister that cannot keep its recovery marker
+    /// reaches the host by its own code, as does a spend whose broadcast may
+    /// have been delivered by the broadcast-failed one.
+    #[test]
+    fn should_report_unsupported_private_recovery_by_its_own_code() {
+        let result =
+            PlatformWalletFFIResult::from(PlatformWalletError::PrivateContactRecoveryUnsupported);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorPrivateContactRecoveryUnsupported
+        );
+        assert_eq!(result.code as u32, 73);
+        let delivered = PlatformWalletFFIResult::from(
+            PlatformWalletError::ShieldedBroadcastMaybeDelivered("unavailable".to_string()),
+        );
+        assert_eq!(
+            delivered.code,
+            PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed
+        );
     }
 }

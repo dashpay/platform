@@ -11,7 +11,7 @@
 //! tree (or, when the host persister is wired up, restored from
 //! SwiftData before sync runs).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -112,8 +112,25 @@ pub struct FileBackedShieldedStore {
     /// The private contact request each armed record pays for, by subwallet
     /// and activity id, as the `private_contact_payment` column keeps it.
     /// Read joined with the live records, so an entry whose record was
-    /// dropped is passed over.
-    private_contact_payments: BTreeMap<(SubwalletId, [u8; 32]), PrivateContactPayment>,
+    /// dropped is passed over. A record with no association (SQL NULL, as
+    /// one saved before associations were kept) has no entry.
+    private_contact_payments: BTreeMap<(SubwalletId, [u8; 32]), SavedPrivateContactPayment>,
+    /// The wallets of damaged records retained but not loaded that carry a
+    /// private contact request association, `None` for one whose wallet does
+    /// not read either: the payment they stand for cannot be restored, so
+    /// restoring a covered wallet's reservations fails
+    /// ([`ShieldedStore::private_contact_redrives_for_wallet`]).
+    unloaded_private_contact_payments: BTreeSet<Option<WalletId>>,
+}
+
+/// The private contact request association a saved record carries.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SavedPrivateContactPayment {
+    /// The association, as it was saved.
+    Readable(PrivateContactPayment),
+    /// A non-null association that does not decode, or a column that does
+    /// not read: restoring the record's wallet fails, so its holds stay.
+    Unreadable,
 }
 
 impl FileBackedShieldedStore {
@@ -161,8 +178,10 @@ impl FileBackedShieldedStore {
         }
         match payment {
             Some(payment) => {
-                self.private_contact_payments
-                    .insert((id, redrive.activity_id), payment);
+                self.private_contact_payments.insert(
+                    (id, redrive.activity_id),
+                    SavedPrivateContactPayment::Readable(payment),
+                );
             }
             None => {
                 self.private_contact_payments
@@ -297,6 +316,7 @@ impl FileBackedShieldedStore {
             subwallets: BTreeMap::new(),
             pending_conn: Mutex::new(pending_conn),
             private_contact_payments: BTreeMap::new(),
+            unloaded_private_contact_payments: BTreeSet::new(),
         };
         store.rehydrate_pending_spends()?;
         Ok(store)
@@ -326,12 +346,25 @@ impl FileBackedShieldedStore {
                 // A malformed st_bytes value remains unclassifiable and must
                 // fail closed.
                 let classifiable_st_bytes = row.get::<_, Vec<u8>>(5).ok();
-                // A damaged association only loses the restore from it.
-                let private_contact_payment = row
-                    .get::<_, Option<Vec<u8>>>(9)
+                // The wallet, read on its own too, for a damaged record that is
+                // retained without being loaded.
+                let readable_wallet_id = row
+                    .get::<_, Vec<u8>>(0)
                     .ok()
-                    .flatten()
-                    .and_then(|bytes| PrivateContactPayment::from_bytes(&bytes));
+                    .and_then(|bytes| <[u8; 32]>::try_from(bytes.as_slice()).ok());
+                // SQL NULL is a record with no association. Anything else that
+                // does not read back fails restoring the wallet's reservations
+                // rather than losing the pair it holds.
+                let private_contact_payment = match row.get::<_, Option<Vec<u8>>>(9) {
+                    Ok(None) => None,
+                    Ok(Some(bytes)) => Some(
+                        PrivateContactPayment::from_bytes(&bytes)
+                            .map_or(SavedPrivateContactPayment::Unreadable, |payment| {
+                                SavedPrivateContactPayment::Readable(payment)
+                            }),
+                    ),
+                    Err(_) => Some(SavedPrivateContactPayment::Unreadable),
+                };
                 let decoded: rusqlite::Result<_> = (|| {
                     Ok((
                         row.get::<_, Vec<u8>>(0)?,
@@ -345,12 +378,17 @@ impl FileBackedShieldedStore {
                         row.get::<_, i64>(8)?,
                     ))
                 })();
-                Ok((classifiable_st_bytes, private_contact_payment, decoded))
+                Ok((
+                    classifiable_st_bytes,
+                    readable_wallet_id,
+                    private_contact_payment,
+                    decoded,
+                ))
             })
             .map_err(|e| FileShieldedStoreError::Storage(format!("query rehydrate: {e}")))?;
         for row in rows {
-            let (classifiable_st_bytes, private_contact_payment, decoded) =
-                row.map_err(|e| FileShieldedStoreError::RecoveryCorrupted {
+            let (classifiable_st_bytes, readable_wallet_id, private_contact_payment, decoded) = row
+                .map_err(|e| FileShieldedStoreError::RecoveryCorrupted {
                     account_index: None,
                     reason: format!("cannot decode recovery row: {e}"),
                 })?;
@@ -376,6 +414,10 @@ impl FileBackedShieldedStore {
                             error = %error,
                             "retaining but skipping a damaged shielded note-spend recovery row"
                         );
+                        if private_contact_payment.is_some() {
+                            self.unloaded_private_contact_payments
+                                .insert(readable_wallet_id);
+                        }
                         continue;
                     }
                     return Err(FileShieldedStoreError::RecoveryCorrupted {
@@ -449,6 +491,10 @@ impl FileBackedShieldedStore {
                             reason = %error,
                             "retaining but skipping a damaged shielded note-spend recovery row"
                         );
+                        if private_contact_payment.is_some() {
+                            self.unloaded_private_contact_payments
+                                .insert(readable_wallet_id);
+                        }
                         continue;
                     }
                     return Err(error);
@@ -722,19 +768,48 @@ impl ShieldedStore for FileBackedShieldedStore {
         self.arm_redrive_paying_for(id, redrive, Some(payment))
     }
 
+    /// Fails with [`FileShieldedStoreError::RecoveryCorrupted`] when a live
+    /// record of the wallet carries an association that does not read back,
+    /// or a damaged record of it retained without being loaded carries one:
+    /// the pair that payment holds could not be restored, so the restoration
+    /// fails and the wallet's holds stay.
     fn private_contact_redrives_for_wallet(
         &self,
         wallet_id: WalletId,
     ) -> Result<Vec<(PendingRedrive, PrivateContactPayment)>, Self::Error> {
-        Ok(self
-            .pending_redrives_for_wallet(wallet_id)?
-            .into_iter()
-            .filter_map(|(id, redrive)| {
-                self.private_contact_payments
-                    .get(&(id, redrive.activity_id))
-                    .map(|payment| (redrive, *payment))
-            })
-            .collect())
+        if self
+            .unloaded_private_contact_payments
+            .contains(&Some(wallet_id))
+            || self.unloaded_private_contact_payments.contains(&None)
+        {
+            return Err(FileShieldedStoreError::RecoveryCorrupted {
+                account_index: None,
+                reason: "a damaged saved payment of the wallet carries a private contact request \
+                         association"
+                    .to_string(),
+            });
+        }
+        let mut payments = Vec::new();
+        for (id, redrive) in self.pending_redrives_for_wallet(wallet_id)? {
+            match self
+                .private_contact_payments
+                .get(&(id, redrive.activity_id))
+            {
+                None => {}
+                Some(SavedPrivateContactPayment::Readable(payment)) => {
+                    payments.push((redrive, *payment));
+                }
+                Some(SavedPrivateContactPayment::Unreadable) => {
+                    return Err(FileShieldedStoreError::RecoveryCorrupted {
+                        account_index: Some(id.account_index),
+                        reason: "the private contact request a saved payment pays for does not \
+                                 decode"
+                            .to_string(),
+                    });
+                }
+            }
+        }
+        Ok(payments)
     }
 
     fn pending_redrives(&self, id: SubwalletId) -> Result<Vec<PendingRedrive>, Self::Error> {
@@ -993,6 +1068,8 @@ impl ShieldedStore for FileBackedShieldedStore {
         self.subwallets.retain(|id, _| id.wallet_id != wallet_id);
         self.private_contact_payments
             .retain(|(id, _), _| id.wallet_id != wallet_id);
+        self.unloaded_private_contact_payments
+            .remove(&Some(wallet_id));
         Ok(())
     }
 
@@ -1042,6 +1119,7 @@ impl ShieldedStore for FileBackedShieldedStore {
         }
         self.subwallets.clear();
         self.private_contact_payments.clear();
+        self.unloaded_private_contact_payments.clear();
         Ok(())
     }
 
@@ -1110,6 +1188,7 @@ impl ShieldedStore for FileBackedShieldedStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
 
     /// Unique temp path for a test tree (no `tempfile` dev-dep).
     fn temp_tree_path(tag: &str) -> std::path::PathBuf {
@@ -1457,6 +1536,104 @@ mod tests {
             drop(conn);
             let _ = std::fs::remove_file(path);
         }
+    }
+
+    /// A saved payment's private contact request association that does not
+    /// read back fails restoring its wallet's reservations, rather than losing
+    /// the pair it holds: a non-null value that does not decode on a record
+    /// that loads, which is kept, and one carried by a damaged note-spend
+    /// record retained without being loaded. SQL NULL stays a record with no
+    /// association, and the wallet restores again once the record goes.
+    #[test]
+    fn should_fail_restoring_a_wallet_whose_saved_association_does_not_read() {
+        let path = temp_tree_path("unreadable_private_contact_payment");
+        let wallet_id = [0x6A; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let note_transition: StateTransition = ShieldedTransferTransitionV0 {
+            actions: vec![],
+            value_balance: 1_000,
+            anchor: [0x52; 32],
+            proof: vec![],
+            binding_signature: [0; 64],
+        }
+        .into();
+        let record = PendingRedrive {
+            activity_id: [0x11; 32],
+            anchor: [0x52; 32],
+            nullifiers: vec![[0x13; 32]],
+            st_bytes: note_transition.serialize_to_bytes().unwrap(),
+            attempts: 0,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
+        };
+        let payment = PrivateContactPayment {
+            sender: [0xB1; 32],
+            recipient: [0xA1; 32],
+            account_reference: 5,
+        };
+        let arm = || {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+            store
+                .arm_private_contact_redrive(id, record.clone(), payment)
+                .unwrap();
+        };
+        let set = |assignment: &str| {
+            rusqlite::Connection::open(&path)
+                .unwrap()
+                .execute(
+                    &format!("UPDATE shielded_pending_spends SET {assignment}"),
+                    [],
+                )
+                .unwrap();
+        };
+        let unreadable = |store: &FileBackedShieldedStore| {
+            matches!(
+                store.private_contact_redrives_for_wallet(wallet_id),
+                Err(FileShieldedStoreError::RecoveryCorrupted { .. })
+            )
+        };
+
+        arm();
+        set("private_contact_payment = x'01'");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        assert!(unreadable(&store), "an association that does not decode");
+        assert_eq!(store.pending_redrives(id).unwrap(), vec![record.clone()]);
+        assert!(store
+            .private_contact_redrives_for_wallet([0x6B; 32])
+            .unwrap()
+            .is_empty());
+        store.clear_redrive(id, &record.activity_id).unwrap();
+        assert!(
+            store
+                .private_contact_redrives_for_wallet(wallet_id)
+                .unwrap()
+                .is_empty(),
+            "the record went"
+        );
+        drop(store);
+
+        arm();
+        set("anchor = x'01'");
+        let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        assert!(store.pending_redrives(id).unwrap().is_empty(), "not loaded");
+        assert!(unreadable(&store), "a damaged record carrying one");
+        drop(store);
+
+        set(
+            "anchor = x'5252525252525252525252525252525252525252525252525252525252525252', \
+             private_contact_payment = NULL",
+        );
+        let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        assert_eq!(store.pending_redrives(id).unwrap(), vec![record]);
+        assert!(
+            store
+                .private_contact_redrives_for_wallet(wallet_id)
+                .unwrap()
+                .is_empty(),
+            "no association"
+        );
+        drop(store);
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

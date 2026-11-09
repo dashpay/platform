@@ -260,12 +260,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 generation: Arc::clone(&generation),
                 identity_manager: {
                     // A backend that does not attest the private contact
-                    // request scan state keeps no current copy of it: the
-                    // store is read from its start.
+                    // request scan state, with the atomic changesets it needs,
+                    // keeps no current copy of it: the store is read from its
+                    // start.
                     if !self
                         .persister
                         .persistence_capabilities()
-                        .contains(PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE)
+                        .contains(PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART)
                     {
                         identity_manager.forget_private_contact_scan_state();
                     }

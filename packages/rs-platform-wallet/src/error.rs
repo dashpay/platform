@@ -696,6 +696,25 @@ pub enum PlatformWalletError {
     )]
     PrivateContactPaymentsNotRestored,
 
+    /// A private contact request is paid for only with a persister that keeps
+    /// its recovery marker durably
+    /// (`PrivateContactRequestsPosition::private_payments_unresolved`), which
+    /// it declares with
+    /// [`PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART`](crate::changeset::PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART),
+    /// the scan state and atomic changesets:
+    /// without it, a process reopening the wallet, in a build without the
+    /// `shielded` feature or before the shielded store is configured, could
+    /// not tell that the payment may still execute, and would publish the
+    /// pair publicly. Refused before anything is sealed or paid. A host
+    /// persisting the private contact request scan state in changesets it
+    /// commits whole declares both.
+    #[error(
+        "private contact requests are paid for only with a persister that keeps the private \
+         contact request scan state; declare PRIVATE_CONTACT_REQUEST_SCAN_STATE and \
+         ATOMIC_CHANGESETS"
+    )]
+    PrivateContactRecoveryUnsupported,
+
     /// No DPNS `domain` document exists for the requested name (exact
     /// normalized-label lookup came back empty). Distinct from
     /// [`Self::InvalidParameter`]: the input was well-formed, the name
@@ -1001,6 +1020,16 @@ pub enum PlatformWalletError {
 
     #[error("Shielded broadcast failed: {0}")]
     ShieldedBroadcastFailed(String),
+
+    /// A shielded spend's broadcast failed in a way that does not prove the
+    /// transition was never delivered: an `Unavailable` status, which can
+    /// follow delivery. Its notes are released, as for
+    /// [`Self::ShieldedBroadcastFailed`], since the on-chain nullifier set
+    /// keeps funds safe, but the transition may still execute: a private
+    /// contact request it pays for keeps its pair held, as for one paid for
+    /// and not read back.
+    #[error("Shielded broadcast failed, but may have been delivered: {0}")]
+    ShieldedBroadcastMaybeDelivered(String),
 
     /// The shielded identity-create transition was **broadcast and accepted by the relay**, but the
     /// SDK could not confirm its execution result (the result-proof fetch/verify failed — e.g. a

@@ -4391,54 +4391,42 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     ///
     /// The owner identity is required to exist in SwiftData before
     /// the row is inserted — the relationship is non-optional and
-    /// `networkRaw` is read off it. If a flush carries a contact
-    /// upsert for an owner identity Swift hasn't seen yet (race with
-    /// a first-time identity flush), the row is skipped; the next
-    /// flush will replay it after the identity row lands. In
-    /// practice the changeset is one round, so this only matters
-    /// for the very first identity registration where the contact
-    /// changeset and identity changeset arrive in the same store()
-    /// call — within a round, identities apply before contacts (see
-    /// the ordering in `FFIPersister::store`), so the lookup here
-    /// will normally succeed.
+    /// `networkRaw` is read off it. Within a round identities apply
+    /// before contacts (see the ordering in `FFIPersister::store`), and
+    /// the wallet only stores contact requests of the identities it
+    /// manages, so the owner is there. When it is not, or a fetch fails,
+    /// this throws, and the callback fails the round: the store declares
+    /// the private contact request scan state, so a round acknowledged
+    /// without its contact requests would let the wallet store a read
+    /// position past a request that was never saved, and no later scan
+    /// would read it again. A failed round leaves the wallet's read
+    /// position where it was, so the next scan stores the request.
     func persistContacts(
         walletId: Data,
         upserts: [ContactRequestSnapshot],
         removedSent: [ContactRequestRemovalSnapshot],
         removedIncoming: [ContactRequestRemovalSnapshot],
         ignored: [ContactIgnoredSenderSnapshot]
-    ) {
-        onQueue {
+    ) throws {
+        try onQueue {
             for entry in upserts {
                 let ownerId = entry.ownerIdentityId
                 let ownerDescriptor = FetchDescriptor<PersistentIdentity>(
                     predicate: #Predicate { $0.identityId == ownerId }
                 )
-                guard let owner = try? backgroundContext.fetch(ownerDescriptor).first else {
-                    // Owner identity hasn't landed yet. Within a
-                    // single round identities apply before contacts,
-                    // so we'd only hit this if the FFI changeset
-                    // surfaces a contact for an identity that isn't
-                    // managed by any wallet locally — there's no
-                    // identity row to hang it off, and the contract's
-                    // `ownerId` invariant means the row would be
-                    // orphaned anyway. The recurring sweep replays it
-                    // once the owner row exists; log so a contact that
-                    // is somehow dropped permanently (e.g. an
-                    // out-of-wallet owner with no PersistentIdentity)
-                    // is at least observable rather than vanishing
-                    // silently.
+                guard let owner = try backgroundContext.fetch(ownerDescriptor).first else {
                     SDKLogger.event(
-                        "persistence_contact_deferred",
+                        "persistence_contact_refused",
                         category: .persistence,
-                        severity: .warning,
+                        severity: .error,
                         fields: [
                             "identity_reference": .reference(entry.ownerIdentityId),
                             "operation": .publicText("contact_upsert"),
                             "reason": .publicText("identity_missing"),
                         ]
                     )
-                    continue
+                    throw PlatformWalletError.walletOperation(
+                        "contact request owner identity is not persisted")
                 }
 
                 let networkRaw = owner.networkRaw
@@ -4452,7 +4440,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                             && $0.isOutgoing == isOutgoing
                     }
                 )
-                if let existing = try? backgroundContext.fetch(descriptor).first {
+                if let existing = try backgroundContext.fetch(descriptor).first {
                     // Refresh in place — every column is overwritten
                     // because the FFI snapshot is authoritative for
                     // the underlying `ContactRequest` document. This
@@ -4505,14 +4493,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
 
             for tomb in removedSent {
-                deleteContactRow(
+                try deleteContactRow(
                     ownerId: tomb.ownerIdentityId,
                     contactId: tomb.contactIdentityId,
                     isOutgoing: true
                 )
             }
             for tomb in removedIncoming {
-                deleteContactRow(
+                try deleteContactRow(
                     ownerId: tomb.ownerIdentityId,
                     contactId: tomb.contactIdentityId,
                     isOutgoing: false
@@ -4527,16 +4515,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     // without (2) the ignored sender resurfaces on the
                     // next post-relaunch sweep. Per-sender (no
                     // accountReference): ALL the sender's incoming rows go.
-                    deleteIgnoredSenderIncomingRows(
+                    try deleteIgnoredSenderIncomingRows(
                         ownerId: row.ownerIdentityId,
                         senderId: row.senderIdentityId
                     )
-                    upsertIgnoredSender(row)
+                    try upsertIgnoredSender(row)
                 } else {
                     // Un-ignore: delete the ignored-sender row so the
                     // sender's requests resurface on the next sweep (the
                     // Rust side rewinds the cursor to re-fetch them).
-                    deleteIgnoredSender(
+                    try deleteIgnoredSender(
                         ownerId: row.ownerIdentityId,
                         senderId: row.senderIdentityId
                     )
@@ -4554,10 +4542,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// identity belongs to exactly one network — so we don't have to
     /// fan out the predicate across networks. Silent on miss (no
     /// existing row): the FFI changeset replays tombstones, and an
-    /// already-removed row is the success state.
+    /// already-removed row is the success state. A failed fetch throws,
+    /// failing the round.
     ///
     /// Assumes it's already running on `serialQueue`.
-    private func deleteContactRow(ownerId: Data, contactId: Data, isOutgoing: Bool) {
+    private func deleteContactRow(ownerId: Data, contactId: Data, isOutgoing: Bool) throws {
         let direction = isOutgoing
         let descriptor = FetchDescriptor<PersistentDashpayContactRequest>(
             predicate: #Predicate {
@@ -4566,7 +4555,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     && $0.isOutgoing == direction
             }
         )
-        if let existing = try? backgroundContext.fetch(descriptor).first {
+        if let existing = try backgroundContext.fetch(descriptor).first {
             backgroundContext.delete(existing)
         }
     }
@@ -4578,7 +4567,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// miss: an already-removed row is the success state.
     ///
     /// Assumes it's already running on `serialQueue`.
-    private func deleteIgnoredSenderIncomingRows(ownerId: Data, senderId: Data) {
+    private func deleteIgnoredSenderIncomingRows(ownerId: Data, senderId: Data) throws {
         let descriptor = FetchDescriptor<PersistentDashpayContactRequest>(
             predicate: #Predicate {
                 $0.ownerIdentityId == ownerId
@@ -4586,10 +4575,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     && $0.isOutgoing == false
             }
         )
-        if let rows = try? backgroundContext.fetch(descriptor) {
-            for row in rows {
-                backgroundContext.delete(row)
-            }
+        for row in try backgroundContext.fetch(descriptor) {
+            backgroundContext.delete(row)
         }
     }
 
@@ -4603,27 +4590,28 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// Upsert keyed `(networkRaw, ownerIdentityId, ignoredSenderId)` — the
     /// Rust per-sender suppression key. Idempotent: a replay of the same
     /// ignore is a no-op. Requires the owner `PersistentIdentity` to exist
-    /// (the row hangs off it); skipped + logged if it hasn't landed yet —
-    /// the next sync round replays it.
+    /// (the row hangs off it); throws, failing the round, when it does not
+    /// or a fetch fails, as `persistContacts` does for a contact row.
     ///
     /// Assumes it's already running on `serialQueue`.
-    private func upsertIgnoredSender(_ row: ContactIgnoredSenderSnapshot) {
+    private func upsertIgnoredSender(_ row: ContactIgnoredSenderSnapshot) throws {
         let ownerId = row.ownerIdentityId
         let ownerDescriptor = FetchDescriptor<PersistentIdentity>(
             predicate: #Predicate { $0.identityId == ownerId }
         )
-        guard let owner = try? backgroundContext.fetch(ownerDescriptor).first else {
+        guard let owner = try backgroundContext.fetch(ownerDescriptor).first else {
             SDKLogger.event(
-                "persistence_contact_deferred",
+                "persistence_contact_refused",
                 category: .persistence,
-                severity: .warning,
+                severity: .error,
                 fields: [
                     "identity_reference": .reference(row.ownerIdentityId),
                     "operation": .publicText("ignored_sender"),
                     "reason": .publicText("identity_missing"),
                 ]
             )
-            return
+            throw PlatformWalletError.walletOperation(
+                "ignored sender owner identity is not persisted")
         }
 
         let networkRaw = owner.networkRaw
@@ -4635,7 +4623,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     && $0.ignoredSenderId == senderId
             }
         )
-        if (try? backgroundContext.fetch(descriptor).first) == nil {
+        if try backgroundContext.fetch(descriptor).first == nil {
             backgroundContext.insert(
                 PersistentDashpayIgnoredSender(
                     owner: owner,
@@ -4650,14 +4638,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// success state.
     ///
     /// Assumes it's already running on `serialQueue`.
-    private func deleteIgnoredSender(ownerId: Data, senderId: Data) {
+    private func deleteIgnoredSender(ownerId: Data, senderId: Data) throws {
         let descriptor = FetchDescriptor<PersistentDashpayIgnoredSender>(
             predicate: #Predicate {
                 $0.ownerIdentityId == ownerId
                     && $0.ignoredSenderId == senderId
             }
         )
-        if let existing = try? backgroundContext.fetch(descriptor).first {
+        if let existing = try backgroundContext.fetch(descriptor).first {
             backgroundContext.delete(existing)
         }
     }
@@ -10818,7 +10806,7 @@ private func persistContactsCallback(
 ) -> Int32 {
     guard let context = context,
           let walletIdPtr = walletIdPtr else {
-        return 0
+        return -1
     }
     let handler = Unmanaged<PlatformWalletPersistenceHandler>
         .fromOpaque(context)
@@ -10926,14 +10914,20 @@ private func persistContactsCallback(
         }
     }
 
-    handler.persistContacts(
-        walletId: walletId,
-        upserts: upserts,
-        removedSent: removedSent,
-        removedIncoming: removedIncoming,
-        ignored: ignored
-    )
-    return 0
+    // A contact row that cannot be staged fails the round rather than
+    // acknowledging it without the row (see `persistContacts`).
+    do {
+        try handler.persistContacts(
+            walletId: walletId,
+            upserts: upserts,
+            removedSent: removedSent,
+            removedIncoming: removedIncoming,
+            ignored: ignored
+        )
+        return 0
+    } catch {
+        return -1
+    }
 }
 
 /// Copy a fixed 32-byte C tuple into an owned `Data`. Used by the

@@ -36,6 +36,11 @@ enum ContactRequestSubmissionOutcome: Equatable {
     static let restoringPrivatePaymentsMessage = "Restoring this wallet's private "
         + "payments. Contact requests wait until they are restored."
 
+    /// Code 73 is a configuration error of the app's storage, which both
+    /// declares what a private payment needs; shown as such.
+    static let recoveryUnsupportedMessage = "This storage backend can't protect "
+        + "private payments, so private contact requests are off."
+
     /// The message a request row shows: the restoring notice while the
     /// wallet's private payments are not restored, the pending notice while
     /// the wallet has a private request to the contact pending, the
@@ -59,6 +64,8 @@ enum ContactRequestSubmissionOutcome: Equatable {
                 return .privateRequestPending
             case .privateContactPaymentsNotRestored:
                 return .privatePaymentsNotRestored
+            case .privateContactRecoveryUnsupported:
+                return .failed(recoveryUnsupportedMessage)
             default:
                 break
             }

@@ -1246,6 +1246,427 @@ mod tests {
         let _ = unsafe { platform_wallet_manager_destroy(manager) };
     }
 
+    /// The accept replying in kind, for an identity the wallet manages,
+    /// routes a request that came publicly without asking for shielded
+    /// payment resources, on a manager whose shielded support was never
+    /// configured (and in a build without it): a request already replied to
+    /// is adopted, and a fresh one gets a public reply that reaches the
+    /// identity signer. Payment resources (the shielded coordinator and the
+    /// spend seed) would fail here with "not configured"; the resolver is
+    /// still read, for the DashPay crypto (the seed check and the reply's
+    /// encryption), which is what a public reply legitimately needs.
+    #[test]
+    fn should_adopt_or_reply_publicly_for_a_managed_identity_without_payment_resources() {
+        use crate::contact_request::contact_request_destroy;
+        use crate::event_handler::EventHandlerCallbacks;
+        use crate::manager::{
+            platform_wallet_manager_create, platform_wallet_manager_create_wallet_from_mnemonic,
+            platform_wallet_manager_destroy,
+        };
+        use crate::persistence::PersistenceCallbacks;
+        use crate::runtime::runtime;
+        use dash_sdk::error::ContextProviderError;
+        use dash_sdk::platform::dashpay::PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME;
+        use dash_sdk::platform::private_document_entries::{
+            PrivateDocumentEntries, PrivateDocumentEntriesQuery,
+        };
+        use dash_sdk::platform::ContextProvider;
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::{DataContract, TokenConfiguration};
+        use dpp::identity::accessors::IdentityGettersV0;
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::v0::IdentityV0;
+        use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+        use dpp::platform_value::BinaryData;
+        use dpp::prelude::Identifier;
+        use dpp::version::PlatformVersion;
+        use key_wallet::bip32::KeyDerivationType;
+        use key_wallet::mnemonic::Mnemonic;
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+        use platform_wallet::wallet::identity::network::identity_auth_derivation_path_for_type;
+        use platform_wallet::ContactRequest;
+        use rs_sdk_ffi::{
+            dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy,
+            dash_sdk_signer_create, dash_sdk_signer_destroy, mnemonic_resolver_result,
+            SignCompletionCallback,
+        };
+        use std::ffi::{c_void, CString};
+        use std::os::raw::c_char;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        const BOB_PHRASE: &str = "abandon abandon abandon abandon abandon abandon abandon \
+                                  abandon abandon abandon abandon about";
+        const ALICE_PHRASE: &str =
+            "legal winner thank year wave sausage worth useful legal winner thank yellow";
+        const SIGNING_KEY_ID: KeyID = 0;
+        const ENCRYPTION_KEY_ID: KeyID = 1;
+        const DECRYPTION_KEY_ID: KeyID = 2;
+
+        struct DashpayProvider(Arc<DataContract>);
+        impl ContextProvider for DashpayProvider {
+            fn get_data_contract(
+                &self,
+                id: &Identifier,
+                _platform_version: &PlatformVersion,
+            ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+                Ok((*id == self.0.id()).then(|| Arc::clone(&self.0)))
+            }
+            fn get_token_configuration(
+                &self,
+                _token_id: &Identifier,
+            ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+                Ok(None)
+            }
+            fn get_quorum_public_key(
+                &self,
+                _quorum_type: u32,
+                _quorum_hash: [u8; 32],
+                _core_chain_locked_height: u32,
+            ) -> Result<[u8; 48], ContextProviderError> {
+                Err(ContextProviderError::Config(
+                    "no quorum keys in this test".into(),
+                ))
+            }
+            fn get_platform_activation_height(&self) -> Result<u32, ContextProviderError> {
+                Ok(1)
+            }
+        }
+
+        /// Identity index 0's ECDSA keys of `phrase`, as the wallet derives them.
+        fn identity(phrase: &str, id: [u8; 32]) -> Identity {
+            let seed = *Mnemonic::from_phrase(phrase)
+                .expect("test mnemonic")
+                .to_seed("");
+            let wallet = key_wallet::wallet::Wallet::from_seed_bytes(
+                seed,
+                key_wallet::Network::Testnet,
+                WalletAccountCreationOptions::None,
+            )
+            .expect("test wallet");
+            let key = |key_id: KeyID, purpose: Purpose, security_level: SecurityLevel| {
+                let path = identity_auth_derivation_path_for_type(
+                    key_wallet::Network::Testnet,
+                    KeyDerivationType::ECDSA,
+                    0,
+                    key_id,
+                )
+                .expect("identity key path");
+                let xprv = wallet
+                    .derive_extended_private_key(&path)
+                    .expect("identity key");
+                let secret =
+                    dpp::secp256k1::SecretKey::from_secret_bytes(*xprv.private_key.to_bytes())
+                        .expect("secret key");
+                IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                    id: key_id,
+                    purpose,
+                    security_level,
+                    contract_bounds: None,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    read_only: false,
+                    data: BinaryData::new(
+                        dpp::secp256k1::PublicKey::from_secret_key(&secret)
+                            .serialize()
+                            .to_vec(),
+                    ),
+                    disabled_at: None,
+                })
+            };
+            let keys = [
+                key(SIGNING_KEY_ID, Purpose::AUTHENTICATION, SecurityLevel::HIGH),
+                key(
+                    ENCRYPTION_KEY_ID,
+                    Purpose::ENCRYPTION,
+                    SecurityLevel::MEDIUM,
+                ),
+                key(
+                    DECRYPTION_KEY_ID,
+                    Purpose::DECRYPTION,
+                    SecurityLevel::MEDIUM,
+                ),
+            ];
+            Identity::V0(IdentityV0 {
+                id: Identifier::from(id),
+                public_keys: keys.into_iter().map(|key| (key.id(), key)).collect(),
+                balance: 0,
+                revision: 0,
+            })
+        }
+        fn public_request(sender: &Identity, recipient: &Identity, account: u32) -> ContactRequest {
+            ContactRequest::new(
+                sender.id(),
+                recipient.id(),
+                ENCRYPTION_KEY_ID,
+                DECRYPTION_KEY_ID,
+                account,
+                vec![7; 96],
+                100,
+                1_700_000_000_000,
+            )
+        }
+
+        unsafe extern "C" fn begin(_: *mut c_void, _: *const u8) -> i32 {
+            0
+        }
+        unsafe extern "C" fn end(_: *mut c_void, _: *const u8, _: bool) -> i32 {
+            0
+        }
+        /// Bob's mnemonic, counting the reads.
+        unsafe extern "C" fn bob_resolve(
+            ctx: *const c_void,
+            _wallet_id: *const u8,
+            out: *mut c_char,
+            capacity: usize,
+            out_len: *mut usize,
+        ) -> i32 {
+            (*(ctx as *const AtomicUsize)).fetch_add(1, Ordering::SeqCst);
+            let phrase = BOB_PHRASE.as_bytes();
+            if phrase.len() + 1 > capacity {
+                return mnemonic_resolver_result::BUFFER_TOO_SMALL;
+            }
+            std::ptr::copy_nonoverlapping(phrase.as_ptr() as *const c_char, out, phrase.len());
+            *out.add(phrase.len()) = 0;
+            *out_len = phrase.len();
+            mnemonic_resolver_result::SUCCESS
+        }
+        unsafe extern "C" fn noop_destroy(_ctx: *mut c_void) {}
+        static SIGNATURES_ASKED: AtomicUsize = AtomicUsize::new(0);
+        /// Counts the signature requests and refuses them: the reply is not
+        /// sent, so the mock needs no broadcast answer.
+        unsafe extern "C" fn count_and_refuse(
+            _signer: *const c_void,
+            _pubkey: *const u8,
+            _pubkey_len: usize,
+            _key_type: u8,
+            _data: *const u8,
+            _data_len: usize,
+            completion_ctx: *mut c_void,
+            completion: SignCompletionCallback,
+        ) {
+            SIGNATURES_ASKED.fetch_add(1, Ordering::SeqCst);
+            completion(
+                completion_ctx,
+                std::ptr::null(),
+                0,
+                1,
+                c"no signature in this test".as_ptr(),
+            );
+        }
+        unsafe extern "C" fn can_sign(
+            _signer: *const c_void,
+            _pubkey: *const u8,
+            _pubkey_len: usize,
+            _key_type: u8,
+        ) -> bool {
+            true
+        }
+
+        let alice = identity(ALICE_PHRASE, [0xA1; 32]);
+        let bob = identity(BOB_PHRASE, [0xB1; 32]);
+        let incoming = public_request(&alice, &bob, 3);
+
+        let mut outcomes = Vec::new();
+        for adopt in [true, false] {
+            let platform_version = PlatformVersion::latest();
+            let contract = Arc::new(
+                dpp::system_data_contracts::load_system_data_contract(
+                    dpp::data_contracts::SystemDataContract::Dashpay,
+                    platform_version,
+                )
+                .expect("bundled DashPay"),
+            );
+            let mut sdk = dash_sdk::SdkBuilder::new_mock()
+                .with_network(key_wallet::Network::Testnet)
+                .with_version(platform_version)
+                .with_context_provider(DashpayProvider(Arc::clone(&contract)))
+                .build()
+                .expect("mock sdk");
+            runtime().block_on(async {
+                sdk.mock()
+                    .expect_fetch(contract.id(), Some((*contract).clone()))
+                    .await
+                    .expect("DashPay expectation");
+                for known in [&alice, &bob] {
+                    sdk.mock()
+                        .expect_fetch(known.id(), Some((*known).clone()))
+                        .await
+                        .expect("identity expectation");
+                }
+                sdk.mock()
+                    .expect_fetch(
+                        PrivateDocumentEntriesQuery::new(
+                            contract.id(),
+                            PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+                            0,
+                        ),
+                        Some(PrivateDocumentEntries {
+                            chunk_power: None,
+                            entries: Vec::new(),
+                            total_count: 0,
+                        }),
+                    )
+                    .await
+                    .expect("store page expectation");
+                // A public reply takes Bob's DashPay contract nonce before it
+                // is signed.
+                sdk.mock()
+                    .expect_fetch::<dash_sdk::query_types::IdentityContractNonceFetcher, _>(
+                        (bob.id(), contract.id()),
+                        None,
+                    )
+                    .await
+                    .expect("contract nonce expectation");
+            });
+
+            let persistence = PersistenceCallbacks {
+                on_changeset_begin_fn: Some(begin),
+                on_changeset_end_fn: Some(end),
+                ..Default::default()
+            };
+            let events = EventHandlerCallbacks {
+                context: std::ptr::null_mut(),
+                on_wallet_event_fn: None,
+                on_error_fn: None,
+                on_platform_address_sync_completed_fn: None,
+                on_shielded_sync_completed_fn: None,
+                on_shielded_sync_progress_fn: None,
+                on_shielded_tree_progress_fn: None,
+                release_fn: None,
+            };
+            let mut manager = NULL_HANDLE;
+            let created = unsafe {
+                platform_wallet_manager_create(
+                    &sdk as *const dash_sdk::Sdk as *const c_void,
+                    &persistence,
+                    &events,
+                    &mut manager,
+                )
+            };
+            assert_eq!(created.code, PlatformWalletFFIResultCode::Success);
+            let mnemonic = CString::new(BOB_PHRASE).expect("phrase");
+            let mut wallet_handle = NULL_HANDLE;
+            let mut wallet_id = [0u8; 32];
+            // Default accounts: the seed check verifies the resolver against
+            // BIP44 account 0.
+            let added = unsafe {
+                platform_wallet_manager_create_wallet_from_mnemonic(
+                    manager,
+                    mnemonic.as_ptr(),
+                    FFINetwork::Testnet,
+                    1,
+                    &mut wallet_handle,
+                    &mut wallet_id,
+                )
+            };
+            assert_eq!(added.code, PlatformWalletFFIResultCode::Success);
+
+            // Bob is the wallet's identity, holding Alice's public request,
+            // and, to adopt, the reply already sent to her.
+            let reply = public_request(&bob, &alice, 4);
+            PLATFORM_WALLET_STORAGE
+                .with_item(wallet_handle, |wallet| {
+                    runtime().block_on(async {
+                        let mut wm = wallet.wallet_manager().write().await;
+                        let manager = &mut wm
+                            .get_wallet_info_mut(&wallet.wallet_id())
+                            .expect("the wallet's info")
+                            .identity_manager;
+                        manager
+                            .add_identity(bob.clone(), 0, wallet.wallet_id(), wallet.persister())
+                            .expect("Bob");
+                        let managed = manager.managed_identity_mut(&bob.id()).expect("Bob");
+                        managed
+                            .add_incoming_contact_request(incoming.clone(), wallet.persister())
+                            .expect("Alice's request");
+                        if adopt {
+                            managed
+                                .add_sent_contact_request(reply.clone(), wallet.persister())
+                                .expect("the reply");
+                        }
+                    })
+                })
+                .expect("the wallet");
+
+            let reads = AtomicUsize::new(0);
+            let resolver = unsafe {
+                dash_sdk_mnemonic_resolver_create(
+                    &reads as *const AtomicUsize as *mut c_void,
+                    bob_resolve,
+                    noop_destroy,
+                )
+            };
+            let signer = unsafe { dash_sdk_signer_create(count_and_refuse, can_sign, None) };
+            let request_handle = CONTACT_REQUEST_STORAGE.insert(incoming.clone());
+            let signatures_before = SIGNATURES_ASKED.load(Ordering::SeqCst);
+            let mut established = NULL_HANDLE;
+            let result = unsafe {
+                platform_wallet_manager_accept_contact_request_replying_in_kind(
+                    manager,
+                    wallet_id.as_ptr(),
+                    resolver,
+                    0,
+                    request_handle,
+                    std::ptr::null(),
+                    signer,
+                    &mut established,
+                )
+            };
+            let message = if result.message.is_null() {
+                String::new()
+            } else {
+                unsafe { std::ffi::CStr::from_ptr(result.message) }
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            outcomes.push((
+                adopt,
+                result.code,
+                message,
+                established,
+                SIGNATURES_ASKED.load(Ordering::SeqCst) - signatures_before,
+                reads.load(Ordering::SeqCst),
+            ));
+
+            if established != NULL_HANDLE {
+                ESTABLISHED_CONTACT_STORAGE.remove(established);
+            }
+            let _ = contact_request_destroy(request_handle);
+            unsafe {
+                dash_sdk_signer_destroy(signer);
+                dash_sdk_mnemonic_resolver_destroy(resolver);
+            }
+            let _ = unsafe { platform_wallet_manager_destroy(manager) };
+        }
+
+        let (_, adopted_code, adopted_message, adopted, adopted_signatures, _) = &outcomes[0];
+        assert_eq!(
+            *adopted_code,
+            PlatformWalletFFIResultCode::Success,
+            "the reply already sent is adopted: {adopted_message}"
+        );
+        assert_ne!(
+            *adopted, NULL_HANDLE,
+            "an established contact is handed out"
+        );
+        assert_eq!(*adopted_signatures, 0, "nothing is signed to adopt");
+
+        let (_, replied_code, replied_message, replied, replied_signatures, replied_reads) =
+            &outcomes[1];
+        assert_ne!(*replied_code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(*replied, NULL_HANDLE);
+        assert!(
+            !replied_message.contains("not configured"),
+            "no payment resource was asked for: {replied_message}"
+        );
+        assert!(
+            *replied_signatures > 0,
+            "the public reply reaches the identity signer: {replied_message}"
+        );
+        assert!(*replied_reads > 0, "the DashPay crypto reads the mnemonic");
+    }
+
     /// A managed identity with no private request in flight reports none; an
     /// unknown handle is not found and leaves the flag false; a null output is
     /// refused. Reserving a reply is the wallet's own (its tests pin the
