@@ -483,5 +483,24 @@ final class PlatformWalletShutdownTests: XCTestCase {
             [PlatformWalletResultCode.errorShutdownIncomplete.rawValue, 0, 0, 0, 0, 0]
         )
         XCTAssertTrue(metrics.ranOffMainThread)
+        // Destroy runs the full native shutdown again, so its verdict, not an
+        // earlier stop's, says whether every worker stopped.
+        XCTAssertTrue(metrics.allWorkersStopped)
+    }
+
+    /// A worker that outlived its join budget can still write the manager's
+    /// persisted state after destroy returns, so a host must be able to see
+    /// that before another manager opens the same state.
+    func testShouldReportLiveWorkersWhenDestroyIsIncomplete() async {
+        let recorder = TeardownRecorder(failingStep: "destroy")
+        let manager = PlatformWalletManager.makeForTesting(
+            handle: 23,
+            calls: Self.makeCalls(recorder: recorder)
+        )
+
+        let metrics = await manager.shutdown()
+
+        XCTAssertEqual(recorder.count(named: "destroy"), 1)
+        XCTAssertFalse(metrics.allWorkersStopped)
     }
 }
