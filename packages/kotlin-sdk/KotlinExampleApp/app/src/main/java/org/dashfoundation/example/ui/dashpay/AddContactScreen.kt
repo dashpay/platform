@@ -122,7 +122,11 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
     val canSend = resolvedRecipient != null && !recipientIsSelf && !isSending &&
         unconfirmedNotice == null && recipientPending.allowsSubmission(resolvedRecipient.toHex())
     val recipientBlocked = resolvedRecipient != null &&
-        (recipientPending.isPending(resolvedRecipient.toHex()) || recipientPending.isUnavailable)
+        (
+            recipientPending.isRestoringPrivatePayments ||
+                recipientPending.isPending(resolvedRecipient.toHex()) ||
+                recipientPending.isUnavailable
+            )
 
     // Scan-to-send: consume the QR string handed back by the scanner screen
     // (the house pattern — observe the saved-state flow, then null it out).
@@ -188,7 +192,12 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
         recipientPending = recipientPending.recorded(
             privateRepliesPending(wallet, idBytes, contactIds),
             contactIds.map { it.toHex() },
-        )
+        ).withReadiness(privateContactReadiness(wallet, idBytes))
+    }
+    // Binding the shielded account restores the wallet's private payments:
+    // read the readiness again then.
+    LaunchedEffect(container.shieldedService) {
+        container.shieldedService.isBound.collect { pendingReadVersion++ }
     }
     LaunchedEffect(recipientHex) {
         val recipient = resolvedRecipient
@@ -232,6 +241,10 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                     // private sync that settles it.
                     ContactRequestSubmissionOutcome.PrivateRequestPending ->
                         recipientPending = recipientPending.withRefusal(recipient.toHex())
+                    // Nothing was sent: the screen shows the wallet restoring
+                    // its private payments until its readiness says restored.
+                    ContactRequestSubmissionOutcome.PrivatePaymentsNotRestored ->
+                        recipientPending = recipientPending.withRestoringRefusal()
                     ContactRequestSubmissionOutcome.MayHaveGoneThrough -> {
                         kickDashPaySync(scope, m)
                         unconfirmedNotice = ContactRequestSubmissionOutcome.MAY_HAVE_GONE_THROUGH_MESSAGE
@@ -256,12 +269,7 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
         isSyncingPrivate = true
         scope.launch {
             try {
-                val notice = syncPrivateContactRequests(w, m)
-                if (notice == null) {
-                    recipientPending = recipientPending.afterPrivateSync()
-                } else {
-                    errorMessage = notice
-                }
+                syncPrivateContactRequests(w, m)?.let { errorMessage = it }
             } finally {
                 isSyncingPrivate = false
                 pendingReadVersion++
@@ -301,6 +309,8 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                     // Nothing was sent: the screen offers the private sync.
                     ContactRequestSubmissionOutcome.PrivateRequestPending ->
                         recipientPending = recipientPending.withRefusal(recipient.toHex())
+                    ContactRequestSubmissionOutcome.PrivatePaymentsNotRestored ->
+                        recipientPending = recipientPending.withRestoringRefusal()
                     is ContactRequestSubmissionOutcome.Failed ->
                         errorMessage = "Accept failed: ${outcome.message}"
                 }
@@ -410,17 +420,22 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                     Text(
                         ContactRequestSubmissionOutcome.rowMessage(
                             pending = recipientPending.isPending(recipient.toHex()),
+                            restoring = recipientPending.isRestoringPrivatePayments,
                             unavailable = recipientPending.isUnavailable,
                             error = null,
                         ).orEmpty(),
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.testTag("dashpay.addContact.pending"),
                     )
-                    TextButton(
-                        onClick = { syncPrivateRequests() },
-                        enabled = !isSyncingPrivate,
-                        modifier = Modifier.testTag("dashpay.addContact.syncPrivate"),
-                    ) { Text(if (isSyncingPrivate) "Syncing private requests…" else "Sync private requests") }
+                    // A private sync settles a pending request; it does not
+                    // restore private payments, so it is not offered for that.
+                    if (!recipientPending.isRestoringPrivatePayments) {
+                        TextButton(
+                            onClick = { syncPrivateRequests() },
+                            enabled = !isSyncingPrivate,
+                            modifier = Modifier.testTag("dashpay.addContact.syncPrivate"),
+                        ) { Text(if (isSyncingPrivate) "Syncing private requests…" else "Sync private requests") }
+                    }
                 }
             }
 

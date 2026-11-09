@@ -86,10 +86,10 @@ class ContactRequestOutcomesTest {
      * A send refused as pending (code 71) when the wallet reserved nothing
      * (its store was not read to its end): the following read finds nothing
      * pending, yet the contact stays pending, with the private sync offered,
-     * until a private sync completes.
+     * until the wallet's readiness says the store was read.
      */
     @Test
-    fun shouldKeepARefusedContactPendingAfterAnEmptyReadUntilAPrivateSync() {
+    fun shouldKeepARefusedContactPendingUntilTheReadinessSaysTheStoreWasRead() {
         var snapshot = PrivateRepliesPendingSnapshot()
             .withRefusal("01")
             .recorded(emptySet(), listOf("01"))
@@ -101,9 +101,70 @@ class ContactRequestOutcomesTest {
             ContactRequestSubmissionOutcome.rowMessage(pending = snapshot.isPending("01"), error = null),
         )
 
-        snapshot = snapshot.afterPrivateSync().recorded(emptySet(), listOf("01"))
+        // A pending read that finds nothing does not lift it; the wallet's
+        // readiness saying the store was read to its end does.
+        snapshot = snapshot.recorded(emptySet(), listOf("01"))
+        assertTrue(snapshot.isPending("01"))
+        snapshot = snapshot.withReadiness(readiness(restored = true, storeRead = true))
         assertFalse(snapshot.isPending("01"))
         assertTrue(snapshot.allowsSubmission("01"))
+    }
+
+    private fun readiness(restored: Boolean, storeRead: Boolean, unresolved: Boolean = false) =
+        org.dashfoundation.dashsdk.tokens.Dashpay.PrivateContactReadiness(
+            privatePaymentsRestored = restored,
+            privateStoreRead = storeRead,
+            unresolvedPrivatePayment = unresolved,
+        )
+
+    /** Unrestored private payments (code 72) are their own outcome, apart from a pending request (71). */
+    @Test
+    fun shouldTellUnrestoredPrivatePaymentsFromAPendingRequest() {
+        assertEquals(
+            ContactRequestSubmissionOutcome.PrivatePaymentsNotRestored,
+            ContactRequestSubmissionOutcome.of(
+                DashSdkError.PlatformWallet.PrivateContactPaymentsNotRestored("not restored"),
+            ),
+        )
+        assertEquals(
+            ContactRequestSubmissionOutcome.RESTORING_PRIVATE_PAYMENTS_MESSAGE,
+            ContactRequestSubmissionOutcome.rowMessage(pending = true, restoring = true, error = null),
+        )
+    }
+
+    /**
+     * A code 72 hold survives a successful pending read that finds nothing,
+     * and a readiness read after a private sync that still says not
+     * restored; only a readiness read that says restored lifts it.
+     */
+    @Test
+    fun shouldHoldOnCode72UntilTheReadinessSaysRestored() {
+        var snapshot = PrivateRepliesPendingSnapshot().withRestoringRefusal().recorded(emptySet(), listOf("01"))
+        assertTrue(snapshot.isRestoringPrivatePayments)
+        assertFalse(snapshot.allowsSubmission("01"))
+
+        // A private sync read the store to its end; the payments are still not restored.
+        snapshot = snapshot.withReadiness(readiness(restored = false, storeRead = true, unresolved = true))
+        assertTrue(snapshot.isRestoringPrivatePayments)
+        assertFalse(snapshot.allowsSubmission("01"))
+
+        // A failed readiness read keeps what the last one said.
+        snapshot = snapshot.withReadiness(null)
+        assertTrue(snapshot.isRestoringPrivatePayments)
+
+        snapshot = snapshot.withReadiness(readiness(restored = true, storeRead = true))
+        assertFalse(snapshot.isRestoringPrivatePayments)
+        assertTrue(snapshot.allowsSubmission("01"))
+    }
+
+    /** A readiness that says not restored holds every contact without any refusal. */
+    @Test
+    fun shouldShowRestoringFromTheReadinessAlone() {
+        val snapshot = PrivateRepliesPendingSnapshot()
+            .recorded(emptySet(), listOf("01"))
+            .withReadiness(readiness(restored = false, storeRead = false))
+        assertTrue(snapshot.isRestoringPrivatePayments)
+        assertFalse(snapshot.allowsSubmission("01"))
     }
 
     /**

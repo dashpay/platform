@@ -167,6 +167,12 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
             contactIds = contactIds,
         )
         walletPending = walletPending.recorded(read, contactIds.map { it.toHex() })
+            .withReadiness(privateContactReadiness(wallet, idBytes))
+    }
+    // Binding the shielded account restores the wallet's private payments:
+    // read the readiness again then.
+    LaunchedEffect(container.shieldedService) {
+        container.shieldedService.isBound.collect { pendingReadVersion++ }
     }
     LaunchedEffect(manager) {
         manager?.dashPaySyncIsSyncing?.collect { syncing -> if (!syncing) pendingReadVersion++ }
@@ -203,10 +209,15 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
                     ContactRequestSubmissionOutcome.PrivateRequestPending -> {
                         // Nothing was sent, and the wallet may hold nothing
                         // for it (the store was not read to its end): the row
-                        // stays pending until a private sync (pull to
-                        // refresh) settles it.
+                        // stays pending until the wallet's readiness says the
+                        // store was read (pull to refresh reads it).
                         walletPending = walletPending.withRefusal(hex)
                         kickDashPaySync(scope, m)
+                    }
+                    ContactRequestSubmissionOutcome.PrivatePaymentsNotRestored -> {
+                        // The wallet is held until its private payments are
+                        // restored; every row waits for the readiness to say so.
+                        walletPending = walletPending.withRestoringRefusal()
                     }
                     is ContactRequestSubmissionOutcome.Failed ->
                         rowErrors = rowErrors + (hex to "Accept failed: ${outcome.message}")
@@ -254,10 +265,7 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
                     isRefreshing = true
                     manager?.let { m ->
                         attachOrStartSync(m)
-                        wallet?.let {
-                            privateRefreshNotice = syncPrivateContactRequests(it, m)
-                            if (privateRefreshNotice == null) walletPending = walletPending.afterPrivateSync()
-                        }
+                        wallet?.let { privateRefreshNotice = syncPrivateContactRequests(it, m) }
                         pendingReadVersion++
                     }
                     isRefreshing = false
@@ -298,6 +306,7 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
                                 isInFlight = inFlightIds.contains(hex) || !walletPending.allowsSubmission(hex),
                                 errorMessage = ContactRequestSubmissionOutcome.rowMessage(
                                     pending = walletPending.isPending(hex),
+                                    restoring = walletPending.isRestoringPrivatePayments,
                                     unavailable = walletPending.isUnavailable,
                                     error = rowErrors[hex],
                                 ),

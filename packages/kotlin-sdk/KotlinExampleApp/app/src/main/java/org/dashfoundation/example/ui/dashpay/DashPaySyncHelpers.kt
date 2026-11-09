@@ -64,6 +64,26 @@ suspend fun privateRepliesPending(
 }
 
 /**
+ * The wallet's readiness for [ourIdentityId]'s contact requests, or null
+ * when it could not be read ([PrivateRepliesPendingSnapshot.withReadiness]
+ * keeps the last one then).
+ * ← Swift `privateContactReadiness(wallet:identityId:)` (`ContactsView.swift`).
+ */
+suspend fun privateContactReadiness(
+    wallet: ManagedPlatformWallet?,
+    ourIdentityId: ByteArray,
+): org.dashfoundation.dashsdk.tokens.Dashpay.PrivateContactReadiness? {
+    if (wallet == null) return null
+    return try {
+        wallet.dashpay.privateContactReadiness(ourIdentityId)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
+}
+
+/**
  * Read DashPay's private contact request store (protocol version 15) for
  * [wallet], returning what the refresh should tell the user, or null.
  * Private requests reach the wallet only through this read, so it runs with
