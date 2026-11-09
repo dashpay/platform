@@ -584,7 +584,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     TRANSFER key of the operator identity it updates with the payout: the payout's key is
 ///     kept, re-enabled or added, and every other enabled TRANSFER key disabled, with no
 ///     fallback to an earlier operator's key, so the same payout applied twice changes nothing
-///     the second time. The identity a masternode leaves keeps its TRANSFER keys. Each step of
+///     the second time. A key change never touches the TRANSFER keys of an identity that already
+///     exists, whatever the payout: the identity a masternode leaves keeps them, and so does an
+///     identity it switches back to, until that identity's next payout change. Each step of
 ///     `update_operator_identity` 1 touches only its own kind of key, and a key whose hash
 ///     another key of the identity has is added like any other: `DRIVE_VERSION_V10`'s
 ///     `add_new_keys_to_masternode_identity` 1 adds it without a second non-unique key hash

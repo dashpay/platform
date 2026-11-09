@@ -41,23 +41,24 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// Updates the operator identity like version 0, except for its TRANSFER keys, which follow
-    /// the operator payout Core reports and nothing else.
+    /// Updates the operator identity like version 0, except for its TRANSFER keys.
     ///
     /// Version 0 was written for diffs that never carry an operator payout: it disables the key
     /// of the stored payout, and gives a new identity an existing TRANSFER key or the stored
-    /// payout, which belong to an earlier operator. Given a payout, this version reconciles
-    /// every TRANSFER key of the identity it updates with it (`reconcile_operator_payout_keys_v1`),
-    /// so applying the same payout twice changes nothing the second time. On the same identity a
-    /// cleared payout counts as one, and leaves no TRANSFER key enabled.
+    /// payout, which belong to an earlier operator. In this version the TRANSFER keys of an
+    /// identity follow the payout changes Core reports while it stays the masternode's operator
+    /// identity: given one, every TRANSFER key of the identity is reconciled with it
+    /// (`reconcile_operator_payout_keys_v1`), so applying the same payout twice changes nothing
+    /// the second time, and a cleared payout leaves no TRANSFER key enabled.
     ///
-    /// A key change without a payout means no payout: Core empties the payout whenever the
-    /// operator key changes, so a new identity gets no TRANSFER key. Core takes a key change from
-    /// the owner alone, though, so a key change never disables a TRANSFER key without a payout
-    /// to replace it: the identity left behind keeps its TRANSFER keys, as does an existing
-    /// identity the masternode switches back to, and their operators can still withdraw what was
-    /// sent to them. A payout Core reports with the switch back reconciles that identity's keys,
-    /// which disables a payout key an earlier operator left there.
+    /// A key change gives a new identity the payout Core reports with it; without one the new
+    /// identity gets no TRANSFER key, as Core empties the payout whenever the operator key
+    /// changes. A key change never touches the TRANSFER keys of an identity that already exists,
+    /// the one left behind or one the masternode switches back to, whatever the payout: the owner
+    /// alone authorizes a key change, so the payout reported with it need not be the returning
+    /// operator's own choice, and the operators of those identities must still be able to
+    /// withdraw what was sent to them. A key an earlier operator left on an identity the
+    /// masternode switches back to stays until that identity's next payout change.
     ///
     /// Platform node ids are handled as in version 0, except that each step touches only its own
     /// kind of key (the BLS operator key, the platform node id key, the TRANSFER keys), so one key
@@ -208,18 +209,11 @@ where
             return Ok(());
         };
 
-        // An existing identity is one an earlier operator with this key left. Core takes the key
-        // change from the owner alone, so without a payout to replace them its TRANSFER keys stay
-        // as they are, and that operator can still withdraw what was sent to it.
+        // An existing identity is one an earlier operator with this key left. A key change never
+        // touches its TRANSFER keys, whatever the payout: the owner alone authorizes it, so the
+        // payout need not be the returning operator's own choice, and that operator must still be
+        // able to withdraw what was sent to it. Its next payout change reconciles them.
         let mut changes = KeyChanges::default();
-        if let Some(new_payout_address) = new_payout_address {
-            Self::reconcile_operator_payout_keys_v1(
-                &identity_keys,
-                Some(new_payout_address),
-                &mut last_key_id,
-                &mut changes,
-            )?;
-        }
 
         if let Some(new_platform_node_id) = new_platform_node_id {
             if let Some((key_id, found_old_key)) = identity_keys.iter().find(|(_, key)| {
@@ -763,31 +757,27 @@ mod tests {
         );
     }
 
-    /// A key change to an operator identity that already exists, an earlier operator's,
-    /// reconciles its TRANSFER keys with a payout: the earlier operator's key is disabled and
-    /// the payout's added, with a new platform node id key under its own id. Without a payout,
-    /// cleared or absent, its TRANSFER keys stay as they are, so the earlier operator can still
-    /// withdraw what was sent to it.
+    /// A key change to an operator identity that already exists, an earlier operator's, leaves
+    /// its TRANSFER keys as they are whatever the payout: none is disabled, re-enabled or added,
+    /// not even for a payout one of them holds. The owner alone authorizes a key change, so the
+    /// payout need not be the returning operator's own choice, and the earlier operator can still
+    /// withdraw what was sent to it. The platform node id key is added under its own id.
     #[test]
-    fn should_reconcile_the_transfer_keys_of_an_existing_identity_a_key_change_moves_to() {
-        for (payout, expected_transfer_keys) in [
-            (
-                Some(Some([0x56; 20])),
-                vec![
-                    (2, Purpose::TRANSFER, vec![0x55; 20], true),
-                    (3, Purpose::TRANSFER, vec![0x56; 20], false),
-                ],
-            ),
-            (
-                Some(None),
-                vec![(2, Purpose::TRANSFER, vec![0x55; 20], false)],
-            ),
-            (None, vec![(2, Purpose::TRANSFER, vec![0x55; 20], false)]),
+    fn should_leave_the_transfer_keys_of_an_existing_identity_a_key_change_moves_to() {
+        for payout in [
+            Some(Some([0x56; 20])),
+            Some(Some([0x58; 20])),
+            Some(None),
+            None,
         ] {
             let (platform, platform_state) =
                 platform_with_operator(Some([0x51; 20]), &[([0x51; 20], false)], true);
             let earlier_key = vec![0x63; 48];
-            add_operator_identity(&platform, &earlier_key, &[([0x55; 20], false)]);
+            add_operator_identity(
+                &platform,
+                &earlier_key,
+                &[([0x55; 20], false), ([0x56; 20], true)],
+            );
             update(
                 &platform,
                 &platform_state,
@@ -803,7 +793,10 @@ mod tests {
                     .filter(|(_, purpose, ..)| *purpose == Purpose::TRANSFER)
                     .cloned()
                     .collect::<Vec<_>>(),
-                expected_transfer_keys,
+                [
+                    (2, Purpose::TRANSFER, vec![0x55; 20], false),
+                    (3, Purpose::TRANSFER, vec![0x56; 20], true),
+                ],
                 "payout {payout:?}"
             );
             let node_id_keys = identity

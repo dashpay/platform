@@ -17,6 +17,7 @@ use dpp::dashcore_rpc::json::{
     DMNStateDiff, MasternodeListDiff, MasternodeListItem, MasternodeType,
 };
 use dpp::dashcore_rpc::Error as CoreRpcError;
+use dpp::fee::Credits;
 use dpp::identifier::{Identifier, MasternodeIdentifiers};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -296,38 +297,52 @@ fn should_not_give_a_new_operator_identity_the_previous_operators_payout_key() {
     }
 }
 
+/// An operator key change of `masternode` to `pub_key_operator`, with `payout` printed if any.
+fn operator_key_change(
+    masternode: &MasternodeListItem,
+    pub_key_operator: &[u8],
+    payout: Option<[u8; 20]>,
+) -> (ProTxHash, DMNStateDiff) {
+    (
+        masternode.pro_tx_hash,
+        DMNStateDiff {
+            pub_key_operator: Some(pub_key_operator.to_vec()),
+            operator_payout_address: payout.map(Some),
+            ..empty_state_diff()
+        },
+    )
+}
+
 /// An operator key that comes back lands on the identity its earlier operator left, which still
-/// holds that operator's payout key. A payout Core reports now reconciles its TRANSFER keys: the
-/// earlier payout's key is disabled and the new payout's added. Without a payout they stay as
-/// they are: the owner alone can bring the key back, and the earlier operator must still be able
-/// to withdraw what was sent to it.
+/// holds that operator's payout key. The key change leaves its TRANSFER keys as they are, with or
+/// without a payout Core reports with it: the owner alone authorizes a key change, so that payout
+/// need not be the returning operator's own choice, and the earlier operator must still be able
+/// to withdraw what was sent to it. The stored payout follows Core. The next payout change Core
+/// reports while the masternode stays on that identity reconciles its keys as usual.
 #[test]
-fn should_reconcile_the_payout_keys_of_an_identity_a_masternode_switches_back_to_only_with_a_payout(
+fn should_leave_the_payout_keys_of_an_identity_a_masternode_switches_back_to_until_its_next_payout_change(
 ) {
     let without_payout = masternode_with_operator_payout(0x65);
     let with_payout = masternode_with_operator_payout(0x66);
-    let key_change = |masternode: &MasternodeListItem, key: u8, payout: Option<u8>| {
-        (
-            masternode.pro_tx_hash,
-            DMNStateDiff {
-                pub_key_operator: Some(vec![key; 48]),
-                operator_payout_address: payout.map(|payout| Some([payout; 20])),
-                ..empty_state_diff()
-            },
-        )
-    };
     let (platform, state) = masternode_list_after_diffs(
         PlatformVersion::latest(),
         vec![without_payout.clone(), with_payout.clone()],
         vec![
             vec![
-                key_change(&without_payout, 0x75, Some(0x85)),
-                key_change(&with_payout, 0x76, Some(0x86)),
+                operator_key_change(&without_payout, &[0x75; 48], Some([0x85; 20])),
+                operator_key_change(&with_payout, &[0x76; 48], Some([0x86; 20])),
             ],
             vec![
-                key_change(&without_payout, 0x65, None),
-                key_change(&with_payout, 0x66, Some(0x96)),
+                operator_key_change(&without_payout, &[0x65; 48], None),
+                operator_key_change(&with_payout, &[0x66; 48], Some([0x96; 20])),
             ],
+            vec![(
+                with_payout.pro_tx_hash,
+                DMNStateDiff {
+                    operator_payout_address: Some(Some([0xa6; 20])),
+                    ..empty_state_diff()
+                },
+            )],
         ],
     );
 
@@ -342,11 +357,11 @@ fn should_reconcile_the_payout_keys_of_an_identity_a_masternode_switches_back_to
     assert_eq!(stored_operator_payout(&state, &without_payout), None);
     assert_eq!(
         transfer_keys(&platform, &with_payout, &with_payout.state.pub_key_operator),
-        [(vec![0x66; 20], true), (vec![0x96; 20], false)]
+        [(vec![0x66; 20], true), (vec![0xa6; 20], false)]
     );
     assert_eq!(
         stored_operator_payout(&state, &with_payout),
-        Some([0x96; 20])
+        Some([0xa6; 20])
     );
     // The intermediate operators keep their payout keys.
     assert_eq!(
@@ -359,93 +374,98 @@ fn should_reconcile_the_payout_keys_of_an_identity_a_masternode_switches_back_to
     );
 }
 
-/// Core authenticates an operator key change with the owner's key alone, so an owner can rotate
-/// the operator key away from operator A, back to A without a payout, and away again, all without
-/// A. A must still be able to withdraw the credits it accrued: the return without a payout leaves
-/// the TRANSFER keys of A's identity as they are, so its payout key stays enabled after the owner
-/// moves on, and a withdrawal signed with it goes through.
-#[tokio::test]
-async fn should_keep_a_returning_operators_payout_key_when_the_owner_switches_back_without_a_payout(
-) {
-    let platform_version = PlatformVersion::latest();
-    let mut rng = StdRng::seed_from_u64(0x78);
-    let (payout_key, payout_private_key) = IdentityPublicKey::random_key_with_known_attributes(
+/// The credits, 0.5 Dash, an operator identity holds in the funded scenarios.
+const ACCRUED: Credits = 50_000_000_000;
+
+/// Masternode `id`, whose operator payout is the hash of a key the test can sign with, and that
+/// key's private key.
+fn masternode_with_signable_operator_payout(id: u8) -> (MasternodeListItem, [u8; 32]) {
+    let mut rng = StdRng::seed_from_u64(id as u64);
+    let (payout_key, private_key) = IdentityPublicKey::random_key_with_known_attributes(
         0,
         &mut rng,
         Purpose::TRANSFER,
         SecurityLevel::CRITICAL,
         KeyType::ECDSA_HASH160,
         None,
-        platform_version,
+        PlatformVersion::latest(),
     )
     .expect("expected a payout key");
-    let payout: [u8; 20] = payout_key
-        .data()
-        .as_slice()
-        .try_into()
-        .expect("expected a 20-byte payout");
-    let mut masternode = masternode_with_operator_payout(0x78);
-    masternode.state.operator_payout_address = Some(payout);
-    let operator_a = masternode.state.pub_key_operator.clone();
-    let operator_b = vec![0x88; 48];
-    let identity_a =
-        Identifier::create_operator_identifier(masternode.pro_tx_hash.as_byte_array(), &operator_a);
-    let accrued = dash_to_credits!(0.5);
-    let key_change = |pub_key_operator: &Vec<u8>| {
-        vec![(
-            masternode.pro_tx_hash,
-            DMNStateDiff {
-                pub_key_operator: Some(pub_key_operator.clone()),
-                ..empty_state_diff()
-            },
-        )]
-    };
+    let mut masternode = masternode_with_operator_payout(id);
+    masternode.state.operator_payout_address = Some(
+        payout_key
+            .data()
+            .as_slice()
+            .try_into()
+            .expect("expected a 20-byte payout"),
+    );
+    (masternode, private_key)
+}
 
+/// `masternode_list_after_diffs` at the latest protocol version for `masternode` alone, with
+/// `ACCRUED` credited to its first operator identity once the full list is processed.
+fn funded_operator_after_diffs(
+    masternode: &MasternodeListItem,
+    diffs: Vec<DMNStateDiffs>,
+) -> (TempPlatform<MockCoreRPCLike>, PlatformState) {
+    let platform_version = PlatformVersion::latest();
+    let identity_id = Identifier::create_operator_identifier(
+        masternode.pro_tx_hash.as_byte_array(),
+        &masternode.state.pub_key_operator,
+    );
     let (platform, state, _) = masternode_list_after_diffs_with_core_payouts(
         platform_version,
         vec![masternode.clone()],
-        vec![
-            key_change(&operator_b),
-            key_change(&operator_a),
-            key_change(&operator_b),
-        ],
+        diffs,
         &[],
         |platform, transaction| {
             platform
                 .drive
-                .add_to_system_credits(accrued, Some(transaction), platform_version)
+                .add_to_system_credits(ACCRUED, Some(transaction), platform_version)
                 .expect("expected to add to system credits");
             platform
                 .drive
                 .add_to_identity_balance(
-                    identity_a.to_buffer(),
-                    accrued,
+                    identity_id.to_buffer(),
+                    ACCRUED,
                     &BlockInfo::default(),
                     true,
                     Some(transaction),
                     platform_version,
                 )
-                .expect("expected to credit operator A's identity");
+                .expect("expected to credit the operator identity");
         },
     );
+    (platform, state)
+}
 
-    assert_eq!(
-        state.full_masternode_list()[&masternode.pro_tx_hash]
-            .state
-            .pub_key_operator,
-        operator_b
-    );
-    assert_eq!(
-        transfer_keys(&platform, &masternode, &operator_a),
-        [(payout.to_vec(), false)]
-    );
-
+/// Asserts that the first operator identity of `masternode` still holds `ACCRUED`, and that a
+/// withdrawal from it signed with its payout key, whose private key is `payout_private_key`,
+/// executes.
+async fn assert_first_operator_withdraws_with_its_payout_key(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    masternode: &MasternodeListItem,
+    payout_private_key: [u8; 32],
+) {
+    let platform_version = PlatformVersion::latest();
+    let payout = masternode
+        .state
+        .operator_payout_address
+        .expect("expected the first operator's payout");
     let identity = platform
         .drive
-        .fetch_full_identity(identity_a.to_buffer(), None, platform_version)
-        .expect("expected to fetch operator A's identity")
-        .expect("expected operator A's identity");
-    assert_eq!(identity.balance(), accrued);
+        .fetch_full_identity(
+            Identifier::create_operator_identifier(
+                masternode.pro_tx_hash.as_byte_array(),
+                &masternode.state.pub_key_operator,
+            )
+            .to_buffer(),
+            None,
+            platform_version,
+        )
+        .expect("expected to fetch the operator identity")
+        .expect("expected the operator identity");
+    assert_eq!(identity.balance(), ACCRUED);
     let payout_key = identity
         .public_keys()
         .values()
@@ -490,6 +510,86 @@ async fn should_keep_a_returning_operators_payout_key_when_the_owner_switches_ba
         processing_result.execution_results().as_slice(),
         [StateTransitionExecutionResult::SuccessfulExecution { .. }]
     );
+}
+
+/// Core authenticates an operator key change with the owner's key alone, so an owner can rotate
+/// the operator key away from operator A, back to A without a payout, and away again, all without
+/// A. A must still be able to withdraw the credits it accrued: the return without a payout leaves
+/// the TRANSFER keys of A's identity as they are, so its payout key stays enabled after the owner
+/// moves on, and a withdrawal signed with it goes through.
+#[tokio::test]
+async fn should_keep_a_returning_operators_payout_key_when_the_owner_switches_back_without_a_payout(
+) {
+    let (masternode, payout_private_key) = masternode_with_signable_operator_payout(0x78);
+    let operator_a = masternode.state.pub_key_operator.clone();
+    let operator_b = [0x88; 48];
+
+    let (platform, state) = funded_operator_after_diffs(
+        &masternode,
+        vec![
+            vec![operator_key_change(&masternode, &operator_b, None)],
+            vec![operator_key_change(&masternode, &operator_a, None)],
+            vec![operator_key_change(&masternode, &operator_b, None)],
+        ],
+    );
+
+    assert_eq!(
+        state.full_masternode_list()[&masternode.pro_tx_hash]
+            .state
+            .pub_key_operator,
+        operator_b
+    );
+    assert_eq!(
+        transfer_keys(&platform, &masternode, &operator_a),
+        [(
+            masternode.state.operator_payout_address.unwrap().to_vec(),
+            false
+        )]
+    );
+    assert_first_operator_withdraws_with_its_payout_key(&platform, &masternode, payout_private_key)
+        .await;
+}
+
+/// The owner alone authorizes an operator key change, so the payout Core reports with a switch
+/// back to operator A need not be A's own choice. The switch back leaves the TRANSFER keys of
+/// A's identity as they are: no key for that payout is added, A's payout key stays enabled, and a
+/// withdrawal signed with it goes through. The stored payout follows Core.
+#[tokio::test]
+async fn should_keep_a_returning_operators_payout_key_when_the_owner_switches_back_with_a_payout() {
+    let (masternode, payout_private_key) = masternode_with_signable_operator_payout(0x79);
+    let operator_a = masternode.state.pub_key_operator.clone();
+
+    let (platform, state) = funded_operator_after_diffs(
+        &masternode,
+        vec![
+            vec![operator_key_change(&masternode, &[0x89; 48], None)],
+            vec![operator_key_change(
+                &masternode,
+                &operator_a,
+                Some([0x99; 20]),
+            )],
+        ],
+    );
+
+    assert_eq!(
+        state.full_masternode_list()[&masternode.pro_tx_hash]
+            .state
+            .pub_key_operator,
+        operator_a
+    );
+    assert_eq!(
+        stored_operator_payout(&state, &masternode),
+        Some([0x99; 20])
+    );
+    assert_eq!(
+        transfer_keys(&platform, &masternode, &operator_a),
+        [(
+            masternode.state.operator_payout_address.unwrap().to_vec(),
+            false
+        )]
+    );
+    assert_first_operator_withdraws_with_its_payout_key(&platform, &masternode, payout_private_key)
+        .await;
 }
 
 /// Core prints the stored payout again when the stored one went stale through a clear or a reset
