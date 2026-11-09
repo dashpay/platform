@@ -20,6 +20,9 @@ struct ContactRequestsView: View {
     @Binding var optimisticSentIds: Set<Data>
 
     @EnvironmentObject var walletManager: PlatformWalletManager
+    /// Observed for its bind: binding the shielded account restores the
+    /// wallet's private payments, so the readiness is read again then.
+    @EnvironmentObject var shieldedService: ShieldedService
     @EnvironmentObject var contactMeta: DashPayContactMetaStore
     @Environment(\.modelContext) private var modelContext
 
@@ -144,6 +147,7 @@ struct ContactRequestsView: View {
                                         || !walletPending.allowsSubmission(to: row.contactIdentityId),
                                     errorMessage: ContactRequestSubmissionOutcome.rowMessage(
                                         pending: walletPending.isPending(row.contactIdentityId),
+                                        restoring: walletPending.isRestoringPrivatePayments,
                                         unavailable: walletPending.isUnavailable,
                                         error: rowErrors[row.contactIdentityId]
                                     ),
@@ -186,13 +190,11 @@ struct ContactRequestsView: View {
             await attachOrStartSync(walletManager)
             if let wallet = try? requireWallet() {
                 privateRefreshNotice = await syncPrivateContactRequests(wallet)
-                if privateRefreshNotice == nil {
-                    walletPending.recordPrivateSync()
-                }
             }
             reloadPendingReplies()
         }
         .task { reloadPendingReplies() }
+        .onChange(of: shieldedService.isBound) { _, _ in reloadPendingReplies() }
         .onChange(of: rowSignature) { _, _ in
             pruneOverlays()
             reloadPendingReplies()
@@ -227,14 +229,17 @@ struct ContactRequestsView: View {
     /// wallet.
     private func reloadPendingReplies() {
         let contactIds = incomingPending.map(\.contactIdentityId)
+        let wallet = try? requireWallet()
         walletPending.record(
             privateRepliesPending(
-                wallet: try? requireWallet(),
+                wallet: wallet,
                 identityId: identity.identityId,
                 contactIds: contactIds
             ),
             for: contactIds
         )
+        walletPending.recordReadiness(
+            privateContactReadiness(wallet: wallet, identityId: identity.identityId))
     }
 
     // MARK: - Overlay maintenance
@@ -303,10 +308,14 @@ struct ContactRequestsView: View {
                 case .privateRequestPending:
                     // Nothing was sent, and the wallet may hold nothing for
                     // it (the store was not read to its end): the row stays
-                    // pending until a private sync (pull to refresh) settles
-                    // it.
+                    // pending until the wallet's readiness says the store was
+                    // read (pull to refresh reads it).
                     walletPending.recordRefusal(of: contactId)
                     kickDashPaySync(walletManager)
+                case .privatePaymentsNotRestored:
+                    // The wallet is held until its private payments are
+                    // restored; every row waits for the readiness to say so.
+                    walletPending.recordRestoringRefusal()
                 case .failed(let message):
                     rowErrors[contactId] = "Accept failed: \(message)"
                 }
