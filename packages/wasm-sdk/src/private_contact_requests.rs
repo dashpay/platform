@@ -678,6 +678,7 @@ mod tests {
             .await
             .expect("the contract fetch is expected");
         let page = PrivateDocumentEntries {
+            chunk_power: None,
             entries: vec![PrivateDocumentEntry {
                 position: 0,
                 block_height: 1,
