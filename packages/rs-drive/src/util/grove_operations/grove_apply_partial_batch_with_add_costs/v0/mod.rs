@@ -56,6 +56,7 @@ impl Drive {
                 disable_operation_consistency_check: false,
                 base_root_storage_is_free: true,
                 batch_pause_height: None,
+                allow_replacement_accounting: false,
             }),
             |cost, old_flags, new_flags| {
                 // if there were no flags before then the new flags are used
