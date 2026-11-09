@@ -96,11 +96,16 @@ use super::store::{
 use super::CAUGHT_UP_COOLDOWN;
 use crate::error::PlatformWalletError;
 use crate::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
+use crate::wallet::identity::network::dashpay_contract;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
+use dash_sdk::platform::dashpay::PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME;
+use dash_sdk::platform::private_document_scan::MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
+use futures::StreamExt;
 
 /// Network-scoped shielded coordinator.
 ///
@@ -1520,6 +1525,11 @@ impl NetworkShieldedCoordinator {
             }
             if !cancel.is_cancelled() {
                 self.release_stranded_spends(snapshot, &recorded).await;
+                self.discharge_expired_private_payments(
+                    subwallets.iter().map(|(id, _)| id.wallet_id),
+                    &recorded,
+                )
+                .await;
             }
         }
 
@@ -1703,7 +1713,18 @@ impl NetworkShieldedCoordinator {
             }
             acc
         };
-        if stale.is_empty() {
+        // A private payment's journal record outlives its reservation: its
+        // expiry is judged against the same pre-scan anchor set
+        // (`Self::discharge_expired_private_payments`).
+        let journaled = {
+            let store = self.store.read().await;
+            subwallets.iter().any(|(id, _)| {
+                store
+                    .private_payment_journal(id.wallet_id)
+                    .is_ok_and(|records| !records.is_empty())
+            })
+        };
+        if stale.is_empty() && !journaled {
             return None;
         }
 
@@ -1854,6 +1875,128 @@ impl NetworkShieldedCoordinator {
                 .await;
             }
         }
+    }
+
+    /// Discharge the private payment journal records of payments proven
+    /// expired, durably, and note them on their wallet's persister so the
+    /// wallet releases the pairs they hold
+    /// (`WalletPersister::note_discharged_private_entries`). A payment is
+    /// proven never to execute when, after this pass's spent-note reconcile:
+    ///
+    /// 1. its anchor is absent from the PRE-scan `recorded` set: a pruned
+    ///    root never re-enters it, so the transition can never execute from
+    ///    then on (`shielded_anchor_retention_blocks` 1000, pruned every
+    ///    `shielded_anchor_pruning_interval` 100 blocks);
+    /// 2. one of its input notes is still unspent: had it executed before
+    ///    the anchor was pruned, the reconcile would have seen its nullifiers
+    ///    spent;
+    /// 3. its entry is absent from DashPay's private contact request store,
+    ///    read raw after that anchor set was fetched: an entry starts with its
+    ///    commitment, so none needs opening.
+    ///
+    /// A relay refusal or a missing redrive record is never taken as proof.
+    /// A store read that fails discharges nothing; the next pass retries,
+    /// the journal record keeping the anchor.
+    pub(crate) async fn discharge_expired_private_payments(
+        &self,
+        wallet_ids: impl IntoIterator<Item = WalletId>,
+        recorded: &HashSet<[u8; 32]>,
+    ) {
+        let wallets: std::collections::BTreeSet<WalletId> = wallet_ids.into_iter().collect();
+        let candidates: Vec<(WalletId, super::store::PrivatePaymentRecord)> = {
+            let store = self.store.read().await;
+            let mut candidates = Vec::new();
+            for wallet_id in &wallets {
+                let Ok(records) = store.private_payment_journal(*wallet_id) else {
+                    continue;
+                };
+                for record in records {
+                    if recorded.contains(&record.anchor) {
+                        continue;
+                    }
+                    let notes = store
+                        .get_all_notes(SubwalletId::new(*wallet_id, record.account_index))
+                        .unwrap_or_default();
+                    let input_unspent = record.nullifiers.iter().any(|nullifier| {
+                        notes
+                            .iter()
+                            .any(|note| note.nullifier == *nullifier && !note.is_spent)
+                    });
+                    if input_unspent {
+                        candidates.push((*wallet_id, record));
+                    }
+                }
+            }
+            candidates
+        };
+        if candidates.is_empty() {
+            return;
+        }
+        let appended = match self.private_contact_request_commitments().await {
+            Ok(appended) => appended,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    "private payment expiry: the private contact request store was not read; \
+                     retried next pass"
+                );
+                return;
+            }
+        };
+        let persisters = self.persisters.read().await;
+        let mut store = self.store.write().await;
+        for (wallet_id, record) in candidates {
+            if appended.contains(&record.commitment) {
+                continue;
+            }
+            match store.discharge_private_payment(wallet_id, &record.commitment) {
+                Ok(_) => {
+                    tracing::info!(
+                        wallet_id = %hex::encode(wallet_id),
+                        commitment = %hex::encode(record.commitment),
+                        "a private payment's anchor was pruned with an input unspent and its \
+                         entry absent from the store: it can never execute, its pair is freed"
+                    );
+                    if let Some(persister) = persisters.get(&wallet_id) {
+                        persister.note_discharged_private_entries([record.commitment]);
+                    }
+                }
+                Err(error) => tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    %error,
+                    "an expired private payment's journal record was not discharged; retried \
+                     next pass"
+                ),
+            }
+        }
+    }
+
+    /// The commitments of every entry of DashPay's private contact request
+    /// store, read now from its start, raw: an entry starts with its
+    /// commitment.
+    async fn private_contact_request_commitments(
+        &self,
+    ) -> Result<HashSet<[u8; 32]>, PlatformWalletError> {
+        let contract_id = dashpay_contract()?.id();
+        let mut pages = std::pin::pin!(self.sdk.private_document_pages(
+            contract_id,
+            PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+            0,
+            MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
+        ));
+        let mut commitments = HashSet::new();
+        while let Some(page) = pages.next().await {
+            for entry in page?.entries.entries {
+                if let Some(commitment) = entry
+                    .data
+                    .get(..32)
+                    .and_then(|commitment| <[u8; 32]>::try_from(commitment).ok())
+                {
+                    commitments.insert(commitment);
+                }
+            }
+        }
+        Ok(commitments)
     }
 
     /// Derive best-effort activity entries from each subwallet's

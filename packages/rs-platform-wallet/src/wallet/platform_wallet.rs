@@ -3096,6 +3096,7 @@ where
                 migrated.push(PrivatePaymentRecord {
                     account_index: id.account_index,
                     activity_id: redrive.activity_id,
+                    anchor: redrive.anchor,
                     commitment,
                     payment: *payment,
                     nullifiers: redrive.nullifiers.clone(),

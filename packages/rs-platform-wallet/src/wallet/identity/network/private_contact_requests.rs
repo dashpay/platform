@@ -2247,7 +2247,7 @@ mod tests {
     #[cfg(feature = "shielded")]
     use crate::wallet::shielded::{
         FileBackedShieldedStore, NetworkShieldedCoordinator, OrchardKeySet, PrivateContactPayment,
-        ShieldedStore, SubwalletId,
+        ShieldedNote, ShieldedStore, SubwalletId,
     };
     use crate::PlatformWalletManager;
     use dash_sdk::error::ContextProviderError;
@@ -2271,6 +2271,8 @@ mod tests {
     use platform_encryption::{
         account_reference_version, decrypt_account_label, decrypt_extended_public_key,
     };
+    #[cfg(feature = "shielded")]
+    use std::collections::HashSet;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Mutex;
     use std::time::Duration;
@@ -6422,6 +6424,210 @@ mod tests {
             "paid, not read back: {retried:?}"
         );
         assert_eq!(retry.lock().expect("retry").len(), 1, "the retry pays");
+    }
+
+    /// A private payment that never executes is proven expired once its
+    /// anchor is pruned, one of its input notes still unspent and its entry
+    /// absent from the store: the coordinator discharges its journal record,
+    /// the pair is freed, a retry to it pays, and a reopened store restores
+    /// no hold. A still-recorded anchor, a spent input or an entry in the
+    /// store each keep the record and the hold.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_free_a_pair_once_its_private_payment_provably_expired() {
+        #[derive(Clone, Copy, Debug, PartialEq)]
+        enum Case {
+            Expired,
+            AnchorRecorded,
+            InputSpent,
+            EntryAppended,
+        }
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let anchor = [0x7C; 32];
+        for case in [
+            Case::Expired,
+            Case::AnchorRecorded,
+            Case::InputSpent,
+            Case::EntryAppended,
+        ] {
+            // A backend that keeps the viewing key, so the wallet binds.
+            let (_manager, alice_wallet) = wallet_on(
+                RecordingPersistence::attesting(
+                    PersistenceCapabilities::SHIELDED_FVK_RESTART
+                        .union(PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART),
+                ),
+                ALICE_PHRASE,
+                &alice,
+                &[&alice, &bob],
+                vec![],
+            )
+            .await;
+            let dir = tempfile::tempdir().expect("temporary shielded store");
+            let db_path = dir.path().join("tree.sqlite");
+            let coordinator = Arc::new(NetworkShieldedCoordinator::new(
+                Arc::clone(&alice_wallet.identity().sdk),
+                Network::Testnet,
+                db_path.clone(),
+                FileBackedShieldedStore::open_path(&db_path, 100).expect("the store"),
+            ));
+            // Bound, the coordinator holds the wallet's persister, on which it
+            // notes the discharge.
+            alice_wallet
+                .bind_shielded(&seed(ALICE_PHRASE), &[0], &coordinator)
+                .await
+                .expect("bound");
+            let subwallet = SubwalletId::new(alice_wallet.wallet_id(), 0);
+            let input = ShieldedNote {
+                position: 0,
+                cmx: [0x11; 32],
+                nullifier: [0x12; 32],
+                block_height: 1,
+                is_spent: false,
+                value: 1_000_000_000_000,
+                note_data: vec![],
+            };
+            coordinator
+                .store()
+                .write()
+                .await
+                .save_note(subwallet, &input)
+                .expect("the input note");
+            let paid = Arc::new(Mutex::new(Vec::new()));
+            let pay = {
+                let store = Arc::clone(coordinator.store());
+                let paid = Arc::clone(&paid);
+                let (sender, recipient) = (alice.id(), bob.id());
+                move |entry: BinaryData, started: PaymentStarted| async move {
+                    paid.lock().expect("paid").push(entry.clone());
+                    let transition = private_contact_request_payment(entry);
+                    arm_redrive_before_broadcast(
+                        &store,
+                        subwallet,
+                        Some([0x7D; 32]),
+                        anchor,
+                        vec![[0x12; 32]],
+                        &transition,
+                        "private document create from shielded pool",
+                        Some(PrivateContactPayment {
+                            sender: sender.to_buffer(),
+                            recipient: recipient.to_buffer(),
+                            account_reference: started
+                                .account_reference()
+                                .expect("the send names its request"),
+                        }),
+                        Some(&started),
+                    )
+                    .await?;
+                    Err::<ResponseMetadata, _>(PlatformWalletError::ShieldedSpendUnconfirmed {
+                        operation: "private document create from shielded pool",
+                        reason: "the result wait timed out".to_string(),
+                    })
+                }
+            };
+            let view = alice_wallet.identity().dashpay();
+            let sent = view
+                .send_private_contact_request(
+                    &alice.id(),
+                    &bob.id(),
+                    None,
+                    AutoAcceptProofSource::None,
+                    None,
+                    &alice_signer,
+                    &alice_crypto,
+                    pay,
+                )
+                .await;
+            assert!(
+                matches!(
+                    sent,
+                    Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+                ),
+                "{sent:?}"
+            );
+            let entry = paid.lock().expect("paid")[0].clone();
+            match case {
+                Case::InputSpent => {
+                    coordinator
+                        .store()
+                        .write()
+                        .await
+                        .mark_spent(subwallet, &input.nullifier)
+                        .expect("spent");
+                }
+                Case::EntryAppended => publish(&alice_wallet, 0, vec![entry.to_vec()]).await,
+                Case::Expired | Case::AnchorRecorded => {}
+            }
+            let recorded: HashSet<[u8; 32]> = match case {
+                Case::AnchorRecorded => HashSet::from([anchor]),
+                _ => HashSet::new(),
+            };
+            coordinator
+                .discharge_expired_private_payments([alice_wallet.wallet_id()], &recorded)
+                .await;
+
+            let journaled = coordinator
+                .store()
+                .read()
+                .await
+                .private_payment_journal(alice_wallet.wallet_id())
+                .expect("the journal")
+                .len();
+            if case != Case::Expired {
+                assert_eq!(journaled, 1, "{case:?}: the record stays");
+                let held = view
+                    .send_private_contact_request(
+                        &alice.id(),
+                        &bob.id(),
+                        None,
+                        AutoAcceptProofSource::None,
+                        None,
+                        &alice_signer,
+                        &alice_crypto,
+                        no_payment,
+                    )
+                    .await;
+                assert!(
+                    matches!(
+                        held,
+                        Err(PlatformWalletError::PrivateContactRequestPending(_))
+                    ),
+                    "{case:?}: {held:?}"
+                );
+                continue;
+            }
+            assert_eq!(journaled, 0, "discharged");
+            let retry = Arc::new(Mutex::new(Vec::new()));
+            let retried = view
+                .send_private_contact_request(
+                    &alice.id(),
+                    &bob.id(),
+                    None,
+                    AutoAcceptProofSource::None,
+                    None,
+                    &alice_signer,
+                    &alice_crypto,
+                    keep_entry(&retry),
+                )
+                .await;
+            assert!(
+                matches!(
+                    retried,
+                    Err(PlatformWalletError::PrivateContactRequestPending(_))
+                ),
+                "paid, not read back: {retried:?}"
+            );
+            assert_eq!(retry.lock().expect("retry").len(), 1, "the retry pays");
+            // Reopened, the store keeps the discharge.
+            drop(coordinator);
+            let reopened = FileBackedShieldedStore::open_path(&db_path, 100).expect("reopened");
+            assert!(reopened
+                .private_payment_journal(alice_wallet.wallet_id())
+                .expect("the journal")
+                .is_empty());
+        }
     }
 
     /// A payment that may have reached the network keeps its pair pending

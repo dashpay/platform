@@ -999,6 +999,7 @@ impl ShieldedStore for FileBackedShieldedStore {
             .map(|commitment| PrivatePaymentRecord {
                 account_index: id.account_index,
                 activity_id: redrive.activity_id,
+                anchor: redrive.anchor,
                 commitment: *commitment,
                 payment,
                 nullifiers: redrive.nullifiers.clone(),
@@ -2814,6 +2815,7 @@ mod tests {
         let expected = PrivatePaymentRecord {
             account_index: 1,
             activity_id: redrive.activity_id,
+            anchor: redrive.anchor,
             commitment: [0xC3; 32],
             payment,
             nullifiers: redrive.nullifiers.clone(),

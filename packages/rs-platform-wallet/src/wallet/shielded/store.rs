@@ -226,6 +226,11 @@ pub struct PrivatePaymentRecord {
     pub account_index: u32,
     /// The spend's activity id, which keys its redrive record.
     pub activity_id: [u8; 32],
+    /// The recorded anchor the spend was built against: once Platform no
+    /// longer records it, the spend can never execute, which with an input
+    /// note still unspent and the entry absent from the store proves the
+    /// payment expired.
+    pub anchor: [u8; 32],
     /// The commitment of the entry it appends, which keys the record.
     pub commitment: [u8; 32],
     /// The request it pays for.
@@ -235,17 +240,20 @@ pub struct PrivatePaymentRecord {
 }
 
 impl PrivatePaymentRecord {
-    /// The format version [`Self::to_bytes`] writes.
-    const FORMAT_VERSION: u8 = 1;
+    /// The format version [`Self::to_bytes`] writes. Version 1, written before
+    /// the anchor was kept, does not read back: its wallet's holds stay.
+    const FORMAT_VERSION: u8 = 2;
     /// The bytes before the nullifiers: version, account index, activity id,
-    /// commitment, sender, recipient, account reference and nullifier count.
-    const HEADER_LEN: usize = 1 + 4 + 32 + 32 + 32 + 32 + 4 + 2;
+    /// anchor, commitment, sender, recipient, account reference and nullifier
+    /// count.
+    const HEADER_LEN: usize = 1 + 4 + 32 + 32 + 32 + 32 + 32 + 4 + 2;
 
     /// The bytes the file store keeps it as: [`Self::FORMAT_VERSION`], the
-    /// account index little-endian, the activity id, the commitment, the
-    /// sender, the recipient, the account reference little-endian, the
-    /// nullifier count as a little-endian `u16`, then the nullifiers. `None`
-    /// when it has no nullifier or more than a `u16` counts.
+    /// account index little-endian, the activity id, the anchor, the
+    /// commitment, the sender, the recipient, the account reference
+    /// little-endian, the nullifier count as a little-endian `u16`, then the
+    /// nullifiers. `None` when it has no nullifier or more than a `u16`
+    /// counts.
     pub(super) fn to_bytes(&self) -> Option<Vec<u8>> {
         let count = u16::try_from(self.nullifiers.len()).ok()?;
         if count == 0 {
@@ -255,6 +263,7 @@ impl PrivatePaymentRecord {
         bytes.push(Self::FORMAT_VERSION);
         bytes.extend_from_slice(&self.account_index.to_le_bytes());
         bytes.extend_from_slice(&self.activity_id);
+        bytes.extend_from_slice(&self.anchor);
         bytes.extend_from_slice(&self.commitment);
         bytes.extend_from_slice(&self.payment.sender);
         bytes.extend_from_slice(&self.payment.recipient);
@@ -276,6 +285,7 @@ impl PrivatePaymentRecord {
         }
         let (account_index, rest) = rest.split_first_chunk::<4>()?;
         let (activity_id, rest) = rest.split_first_chunk::<32>()?;
+        let (anchor, rest) = rest.split_first_chunk::<32>()?;
         let (commitment, rest) = rest.split_first_chunk::<32>()?;
         let (sender, rest) = rest.split_first_chunk::<32>()?;
         let (recipient, rest) = rest.split_first_chunk::<32>()?;
@@ -289,6 +299,7 @@ impl PrivatePaymentRecord {
         Some(Self {
             account_index: u32::from_le_bytes(*account_index),
             activity_id: *activity_id,
+            anchor: *anchor,
             commitment: *commitment,
             payment: PrivateContactPayment {
                 sender: *sender,
@@ -514,10 +525,11 @@ pub trait ShieldedStore: Send + Sync + 'static {
     ) -> Result<(), Self::Error>;
 
     /// Remove `wallet_id`'s journal record of the entry `commitment`, once
-    /// its payment provably resolved: the entry was read back, or the
-    /// transition never left the wallet. Returns whether there was one. No
-    /// other call removes a journal record: not a note release, a redrive's
-    /// removal or a purge.
+    /// its payment provably resolved: the entry was read back, the
+    /// transition never left the wallet, or the payment is proven expired
+    /// (its anchor pruned, an input note still unspent, its entry absent
+    /// from the store). Returns whether there was one. No other call removes
+    /// a journal record: not a note release, a redrive's removal or a purge.
     fn discharge_private_payment(
         &mut self,
         wallet_id: WalletId,
@@ -1270,6 +1282,7 @@ impl ShieldedStore for InMemoryShieldedStore {
                 PrivatePaymentRecord {
                     account_index: id.account_index,
                     activity_id: redrive.activity_id,
+                    anchor: redrive.anchor,
                     commitment: *commitment,
                     payment,
                     nullifiers: redrive.nullifiers.clone(),
