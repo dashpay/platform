@@ -8370,8 +8370,9 @@ mod tests {
             "the bind restores the reservation"
         );
         // An identical rebind while a scan holds the store returns without
-        // waiting for it: the wallet is held until the restoration, deferred
-        // to a task, runs once the store frees, and the pair stays held.
+        // waiting for it. The bind already restored from this store, so the
+        // wallet is not held again, and the pair stays held by its restored
+        // reservation.
         {
             let scan = after.store().write().await;
             tokio::time::timeout(
@@ -8382,21 +8383,13 @@ mod tests {
             .expect("the rebind does not wait for the store")
             .expect("rebound");
             assert!(
-                restarted.private_payments_held().await,
-                "held until the deferred restoration"
+                !restarted.private_payments_held().await,
+                "restored from this store already: not held again"
             );
+            assert!(pending_to(&restarted, BOB, &alice).await);
             drop(scan);
         }
-        for _ in 0..100 {
-            if !restarted.private_payments_held().await {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        assert!(
-            !restarted.private_payments_held().await,
-            "the deferred restoration released the wallet"
-        );
+        assert!(!restarted.private_payments_held().await);
         assert!(pending_to(&restarted, BOB, &alice).await);
 
         let accepted = restarted

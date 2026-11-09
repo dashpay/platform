@@ -51,7 +51,9 @@ use {
         discharge_read_back_private_payments, private_document_create_from_pool_with_metadata,
     },
     super::shielded::store::{PendingRedrive, PrivateContactPayment, PrivatePaymentRecord},
-    super::shielded::{NetworkShieldedCoordinator, OrchardKeySet, ShieldedStore},
+    super::shielded::{
+        FileBackedShieldedStore, NetworkShieldedCoordinator, OrchardKeySet, ShieldedStore,
+    },
     crate::{
         AutoAcceptProofSource, ContactCryptoProvider, ContactRequest, EstablishedContact,
         PaymentStarted,
@@ -427,6 +429,13 @@ pub struct PlatformWallet {
     /// wallet handles observe the one flag.
     #[cfg(feature = "shielded")]
     pub(crate) shielded_detached: Arc<std::sync::atomic::AtomicBool>,
+    /// This generation's restorations of its private contact request
+    /// payments from a shielded store's journal: the store one last succeeded
+    /// from, and the store a deferred one is queued for
+    /// ([`Self::restore_private_payments_or_defer`]). `Arc` so cloned wallet
+    /// handles share them.
+    #[cfg(feature = "shielded")]
+    private_payment_restores: Arc<std::sync::Mutex<PrivatePaymentRestores>>,
 }
 
 impl PlatformWallet {
@@ -808,6 +817,8 @@ impl PlatformWallet {
             shield_guard: Arc::new(tokio::sync::Mutex::new(())),
             #[cfg(feature = "shielded")]
             shielded_detached: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            #[cfg(feature = "shielded")]
+            private_payment_restores: Arc::default(),
         }
     }
 
@@ -1042,14 +1053,33 @@ impl PlatformWallet {
         )
         .await?;
         // After the install transaction: the restore takes the store and
-        // wallet locks on its own. It never waits for the store, which a
-        // running scan may hold for minutes while a host binds on its UI
-        // thread: a busy store defers it to a task, the wallet's contact
-        // requests held until it succeeds.
+        // wallet locks on its own.
+        self.restore_private_payments_or_defer(coordinator).await;
+        Ok(())
+    }
+
+    /// Restore this wallet's private contact request payments from
+    /// `coordinator`'s store at once, or, while the store is busy, on a task
+    /// once it frees. It never waits for the store, which a running scan may
+    /// hold for minutes while a host binds on its UI thread.
+    ///
+    /// A busy store holds the wallet's contact requests until the deferred
+    /// restoration succeeds, unless this generation already restored from that
+    /// store: then its reservations are in place and nothing is held or
+    /// queued. At most one deferred restoration per store is queued: a bind
+    /// while one waits queues none. Returns whether one was queued.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn restore_private_payments_or_defer(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+    ) -> bool {
         let restore = self.private_payment_restore(coordinator);
         match restore.restore_and_release(false).await {
-            Ok(Some(_)) => {}
+            Ok(Some(_)) => false,
             Ok(None) => {
+                if restore.restored_from_this_store() || !restore.queue_deferred() {
+                    return false;
+                }
                 tracing::debug!(
                     wallet_id = %hex::encode(self.wallet_id),
                     "the shielded store is busy; private contact request payments are \
@@ -1064,7 +1094,9 @@ impl PlatformWallet {
                              contact requests stay held"
                         );
                     }
+                    restore.finish_deferred();
                 });
+                true
             }
             Err(error) => {
                 tracing::warn!(
@@ -1073,9 +1105,9 @@ impl PlatformWallet {
                     "private contact request payments not restored at bind; the wallet's \
                      contact requests stay held until a restoration succeeds"
                 );
+                false
             }
         }
-        Ok(())
     }
 
     /// The body of [`Self::install_shielded_views`]: one coordinator install
@@ -1876,6 +1908,7 @@ impl PlatformWallet {
             wallet_manager: Arc::clone(&self.wallet_manager),
             persister: self.persister.clone(),
             generation: Arc::clone(&self.generation),
+            restores: Arc::clone(&self.private_payment_restores),
             wallet_id: self.wallet_id,
             network: self.sdk.network,
         }
@@ -2765,6 +2798,8 @@ impl Clone for PlatformWallet {
             shield_guard: self.shield_guard.clone(),
             #[cfg(feature = "shielded")]
             shielded_detached: self.shielded_detached.clone(),
+            #[cfg(feature = "shielded")]
+            private_payment_restores: self.private_payment_restores.clone(),
         }
     }
 }
@@ -2914,14 +2949,31 @@ struct PrivatePaymentRestore {
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     persister: WalletPersister,
     generation: Arc<WalletGeneration>,
+    restores: Arc<std::sync::Mutex<PrivatePaymentRestores>>,
     wallet_id: WalletId,
     network: dashcore::Network,
+}
+
+/// A wallet generation's restorations of its private contact request
+/// payments ([`PlatformWallet::restore_private_payments_or_defer`]). Weak, so
+/// a store dropped since is never taken for a new one at the same address.
+#[cfg(feature = "shielded")]
+#[derive(Default)]
+struct PrivatePaymentRestores {
+    /// The store a restoration last succeeded from.
+    restored_from: std::sync::Weak<RwLock<FileBackedShieldedStore>>,
+    /// The store a deferred restoration is queued for.
+    queued_for: std::sync::Weak<RwLock<FileBackedShieldedStore>>,
+    /// How many deferred restorations were queued, for tests.
+    #[cfg(test)]
+    queued: usize,
 }
 
 #[cfg(feature = "shielded")]
 impl PrivatePaymentRestore {
     /// Restore, and raise or release the wallet's hold as it went: released
-    /// once a restoration succeeds, raised when it fails or cannot run yet.
+    /// once a restoration succeeds, raised when it fails, and when it cannot
+    /// run yet unless this generation already restored from this store.
     /// `Ok(None)` when the store is busy and `wait` is false.
     async fn restore_and_release(
         &self,
@@ -2929,16 +2981,73 @@ impl PrivatePaymentRestore {
     ) -> Result<Option<Vec<(Identifier, Identifier)>>, PlatformWalletError> {
         let restored = self.restore(wait).await;
         match &restored {
-            Ok(Some(_)) => self.persister.private_payments_restored(),
+            Ok(Some(_)) => {
+                self.restores_lock().restored_from = Arc::downgrade(self.coordinator.store());
+                self.persister.private_payments_restored();
+            }
+            Ok(None) if self.restored_from_this_store() => {}
             Ok(None) | Err(_) => self.persister.hold_until_private_payments_restored(),
         }
         restored
     }
 
+    fn restores_lock(&self) -> std::sync::MutexGuard<'_, PrivatePaymentRestores> {
+        self.restores
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Whether this generation already restored from this coordinator's store.
+    fn restored_from_this_store(&self) -> bool {
+        self.restores_lock()
+            .restored_from
+            .upgrade()
+            .is_some_and(|store| Arc::ptr_eq(&store, self.coordinator.store()))
+    }
+
+    /// Queue a deferred restoration from this store, unless one is queued
+    /// already. Returns whether it was queued.
+    fn queue_deferred(&self) -> bool {
+        let mut restores = self.restores_lock();
+        if restores
+            .queued_for
+            .upgrade()
+            .is_some_and(|store| Arc::ptr_eq(&store, self.coordinator.store()))
+        {
+            return false;
+        }
+        restores.queued_for = Arc::downgrade(self.coordinator.store());
+        #[cfg(test)]
+        {
+            restores.queued += 1;
+        }
+        true
+    }
+
+    /// The deferred restoration from this store ran: another may be queued.
+    fn finish_deferred(&self) {
+        let mut restores = self.restores_lock();
+        if restores
+            .queued_for
+            .upgrade()
+            .is_some_and(|store| Arc::ptr_eq(&store, self.coordinator.store()))
+        {
+            restores.queued_for = std::sync::Weak::new();
+        }
+    }
+
     /// The restoration [`PlatformWallet::restore_private_contact_payments`]
-    /// documents, fenced against the wallet's replacement: the generation's
-    /// lifecycle gate is held from the liveness check until the reservations
-    /// are restored, so a removal cannot complete in between.
+    /// documents, fenced against the wallet's replacement.
+    ///
+    /// It holds no lifecycle gate, so a removal never waits for its store
+    /// waits. The fence is the step that reserves the pairs
+    /// (`reserve_unresolved_private_payments`), which checks the wallet's
+    /// generation under the wallet manager's write lock, the one a removal
+    /// takes: a restoration of a wallet removed, or re-created under its id,
+    /// reserves nothing on the replacement and fails. What it does before
+    /// that holds whatever the generation: the journal's read-back
+    /// discharges and migrations are facts about the shared store, and the
+    /// holds it raises or releases are this generation's own.
     async fn restore(
         &self,
         wait: bool,
@@ -2950,7 +3059,6 @@ impl PrivatePaymentRestore {
                 self.network
             )));
         }
-        let _lifecycle = self.generation.payment_guard().await;
         let current = {
             let wm = self.wallet_manager.read().await;
             wm.get_wallet_info(&self.wallet_id)
@@ -3311,11 +3419,18 @@ mod private_contact_request_payment_tests {
     }
 
     fn coordinator_at(dir: &std::path::Path) -> Arc<NetworkShieldedCoordinator> {
+        coordinator_on(dir, dashcore::Network::Testnet)
+    }
+
+    fn coordinator_on(
+        dir: &std::path::Path,
+        network: dashcore::Network,
+    ) -> Arc<NetworkShieldedCoordinator> {
         let db_path = dir.join("tree.sqlite");
         let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store");
         Arc::new(NetworkShieldedCoordinator::new(
             Arc::new(dash_sdk::Sdk::new_mock()),
-            dashcore::Network::Testnet,
+            network,
             db_path,
             store,
         ))
@@ -3445,6 +3560,82 @@ mod private_contact_request_payment_tests {
             .expect("removal task")
             .expect("the removal completes");
         assert!(!wallet.core().is_current_generation().await);
+    }
+
+    /// A restoration waiting for a busy shielded store holds no lifecycle
+    /// gate: a removal is not held behind its store wait. The step that
+    /// reserves its pairs fences it to the wallet's generation instead.
+    #[tokio::test]
+    async fn should_not_hold_a_removal_behind_a_restoration_s_store_wait() {
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let (_manager, wallet) = manager_with_wallet().await;
+        let coordinator = coordinator_on(dir.path(), wallet.sdk.network);
+
+        let store = coordinator.store().write().await;
+        let restore = {
+            let wallet = Arc::clone(&wallet);
+            let coordinator = Arc::clone(&coordinator);
+            tokio::spawn(async move { wallet.restore_private_contact_payments(&coordinator).await })
+        };
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(!restore.is_finished(), "the restoration waits at the store");
+        let teardown = tokio::time::timeout(
+            Duration::from_millis(200),
+            wallet.generation.teardown_guard(),
+        )
+        .await;
+        assert!(
+            teardown.is_ok(),
+            "a removal takes the lifecycle gate while the restoration waits"
+        );
+        drop(teardown);
+        drop(store);
+        restore
+            .await
+            .expect("restore task")
+            .expect("the restoration completes");
+    }
+
+    /// A bind while the shielded store is busy defers the restoration of
+    /// the wallet's private payments to one task per store: a second bind
+    /// while it waits queues none. Once a restoration from that store
+    /// succeeded, a busy store neither holds the wallet's contact requests
+    /// again nor queues another.
+    #[tokio::test]
+    async fn should_coalesce_deferred_restorations_and_keep_a_restored_wallet_available() {
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let (_manager, wallet) = manager_with_wallet().await;
+        let coordinator = coordinator_on(dir.path(), wallet.sdk.network);
+        let queued = || {
+            wallet
+                .private_payment_restores
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .queued
+        };
+
+        let store = coordinator.store().write().await;
+        assert!(wallet.restore_private_payments_or_defer(&coordinator).await);
+        assert!(!wallet.restore_private_payments_or_defer(&coordinator).await);
+        assert_eq!(queued(), 1, "one deferred restoration per store");
+        assert!(wallet.private_payments_held().await, "held until it runs");
+        drop(store);
+        for _ in 0..100 {
+            if !wallet.private_payments_held().await {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(!wallet.private_payments_held().await, "restored");
+
+        let store = coordinator.store().write().await;
+        assert!(!wallet.restore_private_payments_or_defer(&coordinator).await);
+        assert!(
+            !wallet.private_payments_held().await,
+            "a busy store holds a restored wallet no more"
+        );
+        assert_eq!(queued(), 1, "and queues nothing");
+        drop(store);
     }
 }
 
