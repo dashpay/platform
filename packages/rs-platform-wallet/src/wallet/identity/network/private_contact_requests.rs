@@ -2307,7 +2307,9 @@ mod tests {
         private_payment_journal_snapshot, PrunedAnchorEvidence,
     };
     #[cfg(feature = "shielded")]
-    use crate::wallet::shielded::operations::arm_redrive_before_broadcast;
+    use crate::wallet::shielded::operations::{
+        arm_redrive_before_broadcast, pay_private_document_refused_before_delivery,
+    };
     #[cfg(feature = "shielded")]
     use crate::wallet::shielded::{
         FileBackedShieldedStore, NetworkShieldedCoordinator, OrchardKeySet, PrivateContactPayment,
@@ -6946,6 +6948,127 @@ mod tests {
                 "{case}: the reopened store keeps the discharge"
             );
         }
+    }
+
+    /// A private payment refused before anything was delivered is retired,
+    /// its record and journal records with it, and the retirement is published
+    /// before the settlement waits for the store to record its activity. So a
+    /// send cancelled during that wait still leaves its pair free: a retry to
+    /// the pair pays, with no restart.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_free_a_pair_whose_undelivered_settlement_was_cancelled_after_retirement() {
+        use crate::wallet::shielded::{
+            ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection,
+        };
+        use std::future::Future;
+        use std::task::{Context, Waker};
+
+        let fixture = ExpiryFixture::new().await;
+        let pay = {
+            let alice = identity(ALICE_PHRASE, ALICE);
+            let bob = identity(BOB_PHRASE, BOB);
+            let store = Arc::clone(fixture.coordinator.store());
+            let persister = fixture.wallet.persister().clone();
+            let wallet_id = fixture.wallet.wallet_id();
+            let subwallet = fixture.subwallet;
+            let input = fixture.input.clone();
+            move |entry: BinaryData, started: PaymentStarted| async move {
+                let account_reference = started
+                    .account_reference()
+                    .expect("the send names its request");
+                pay_private_document_refused_before_delivery(
+                    &store,
+                    Some(&persister),
+                    wallet_id,
+                    subwallet,
+                    &[input],
+                    ShieldedActivityEntry {
+                        id: [0x7D; 32],
+                        kind: ShieldedActivityKind::ShieldedSpend,
+                        direction: ShieldedDirection::Out,
+                        amount: 0,
+                        fee: Some(0),
+                        counterparty: None,
+                        memo: None,
+                        block_height: None,
+                        status: ShieldedActivityStatus::Pending,
+                        created_at_ms: 1,
+                        min_note_position: None,
+                        note_cmxs: vec![],
+                        spent_nullifiers: vec![],
+                    },
+                    private_contact_request_payment(entry),
+                    PrivateContactPayment {
+                        sender: alice.id().to_buffer(),
+                        recipient: bob.id().to_buffer(),
+                        account_reference,
+                    },
+                    &started,
+                )
+                .await
+            }
+        };
+        let wallet_id = fixture.wallet.wallet_id();
+        let store = fixture.coordinator.store();
+        let mut cx = Context::from_waker(Waker::noop());
+        let mut send = Box::pin(fixture.send_again(pay));
+        // Step the send one store section at a time: each turn a write of the
+        // test's own is queued behind the send's, so the send runs one
+        // section and then waits behind it. Stop once the payment was
+        // journaled and then retired: the send then waits to record its
+        // activity.
+        let mut held = store.write().await;
+        let mut journaled = false;
+        let mut retired = false;
+        for _ in 0..64 {
+            let records = held
+                .private_payment_journal(wallet_id)
+                .expect("journal")
+                .len();
+            journaled |= records > 0;
+            if journaled && records == 0 {
+                retired = true;
+                break;
+            }
+            let mut next = Box::pin(store.write());
+            assert!(
+                send.as_mut().poll(&mut cx).is_pending(),
+                "the send waits for the store"
+            );
+            assert!(next.as_mut().poll(&mut cx).is_pending());
+            drop(held);
+            assert!(
+                send.as_mut().poll(&mut cx).is_pending(),
+                "the send waits behind the test's write"
+            );
+            held = match next.as_mut().poll(&mut cx) {
+                std::task::Poll::Ready(guard) => guard,
+                std::task::Poll::Pending => panic!("the test's write is next"),
+            };
+        }
+        assert!(retired, "the payment was journaled, then retired");
+        assert_eq!(
+            held.get_activity_by_entry_id(fixture.subwallet, &[0x7D; 32])
+                .expect("activity")
+                .map(|entry| entry.status),
+            Some(ShieldedActivityStatus::Pending),
+            "the send waits for the store to record its activity"
+        );
+        // Cancelled there.
+        drop(send);
+        drop(held);
+
+        let retry = Arc::new(Mutex::new(Vec::new()));
+        let retried = fixture.send_again(keep_entry(&retry)).await;
+        assert!(
+            matches!(
+                retried,
+                Err(PlatformWalletError::PrivateContactRequestPending(_))
+            ),
+            "paid, not read back: {retried:?}"
+        );
+        assert_eq!(retry.lock().expect("retry").len(), 1, "the retry pays");
     }
 
     /// A private payment that never executes is proven expired once its

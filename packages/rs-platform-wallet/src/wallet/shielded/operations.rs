@@ -1832,14 +1832,12 @@ where
     }
     .await;
 
-    let activity_id = pending_entry.as_ref().map(|entry| entry.id);
     settle_private_document_payment(
         store,
         persister,
         wallet_id,
         id,
         &pending_entry,
-        activity_id,
         reservation,
         selected_notes,
         journaled,
@@ -1865,12 +1863,17 @@ where
 /// entry is read back.
 ///
 /// A transition that never left the wallet has its saved record, keyed by
-/// `activity_id`, retired with the journal records in one durable write,
-/// under the store lock the redrive pass claims each re-broadcast under
-/// ([`NoteReservation::retire_undelivered`]). One whose record a redrive
-/// pass claimed a re-broadcast of meanwhile, or that cannot be retired, may
-/// leave the wallet after all: it is settled as unconfirmed, keeping its
-/// notes, record and journal records.
+/// its activity entry's id (`pending_entry`), retired with the journal
+/// records in one durable write, under the store lock the redrive pass claims
+/// each re-broadcast under ([`NoteReservation::retire_undelivered`]). One
+/// whose record a redrive pass claimed a re-broadcast of meanwhile, or that
+/// cannot be retired, may leave the wallet after all: it is settled as
+/// unconfirmed, keeping its notes, record and journal records.
+///
+/// A retirement is published at once, with nothing awaited in between: the
+/// discharged commitments on `persister` and the never-delivered notice on
+/// `payment_started`. The activity row is updated after, so a settlement
+/// cancelled while it waits for the store still leaves the pair free.
 #[allow(clippy::too_many_arguments)]
 async fn settle_private_document_payment<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
@@ -1878,7 +1881,6 @@ async fn settle_private_document_payment<S: ShieldedStore>(
     wallet_id: WalletId,
     id: SubwalletId,
     pending_entry: &Option<super::activity::ShieldedActivityEntry>,
-    activity_id: Option<[u8; 32]>,
     mut reservation: NoteReservation<S>,
     selected_notes: &[ShieldedNote],
     journaled: Option<&[[u8; 32]]>,
@@ -1927,7 +1929,7 @@ async fn settle_private_document_payment<S: ShieldedStore>(
             never_delivered: true,
         }) => {
             let commitments = journaled.unwrap_or_default();
-            let retired = match activity_id {
+            let retired = match pending_entry.as_ref().map(|entry| entry.id) {
                 Some(activity_id) => {
                     reservation
                         .retire_undelivered(&activity_id, commitments)
@@ -1949,6 +1951,15 @@ async fn settle_private_document_payment<S: ShieldedStore>(
                     ),
                 });
             }
+            // Published before anything is awaited: retired, nothing can
+            // execute it, and a settlement dropped from here on must still
+            // leave its pair free.
+            if journaled.is_some() {
+                if let Some(persister) = persister {
+                    persister.note_discharged_private_entries(commitments.iter().copied());
+                }
+                payment_started.note_never_delivered();
+            }
             record_activity_status(
                 store,
                 persister,
@@ -1959,12 +1970,6 @@ async fn settle_private_document_payment<S: ShieldedStore>(
                 None,
             )
             .await;
-            if journaled.is_some() {
-                if let Some(persister) = persister {
-                    persister.note_discharged_private_entries(commitments.iter().copied());
-                }
-                payment_started.note_never_delivered();
-            }
             Err(error)
         }
         Err(SpendFailure { error, .. }) => {
@@ -1985,6 +1990,63 @@ async fn settle_private_document_payment<S: ShieldedStore>(
             Err(error)
         }
     }
+}
+
+/// A private document payment from `notes` whose broadcast is refused before
+/// anything was delivered, saved and settled as the private flow does
+/// ([`submit_private_document_payment`]): for tests outside this module that
+/// drive a settlement through a contact request's pair.
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn pay_private_document_refused_before_delivery<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    id: SubwalletId,
+    notes: &[ShieldedNote],
+    pending_entry: super::activity::ShieldedActivityEntry,
+    state_transition: StateTransition,
+    private_contact: PrivateContactPayment,
+    payment_started: &PaymentStarted,
+) -> Result<ResponseMetadata, PlatformWalletError> {
+    // Reserved and recorded pending, as the private flow does before it
+    // submits.
+    let reservation = {
+        let mut locked = store.write().await;
+        locked
+            .save_activity(id, &pending_entry)
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+        mark_notes_pending(&mut *locked, store, id, notes)?
+    };
+    let journaled = private_document_commitments(&state_transition).ok_or_else(|| {
+        PlatformWalletError::ShieldedBuildError("the payment's entries do not read".to_string())
+    })?;
+    submit_private_document_payment(
+        PrivateDocumentSubmission {
+            store,
+            persister,
+            wallet_id,
+            id,
+            pending_entry: Some(pending_entry),
+            selected_notes: notes,
+            reservation,
+            state_transition,
+            anchor: [7; 32],
+            anchor_height: 0,
+            private_contact: Some(private_contact),
+            journaled: Some(&journaled),
+            payment_started,
+        },
+        |_| {
+            std::future::ready(Err(SpendFailure {
+                error: PlatformWalletError::ShieldedBroadcastFailed(
+                    "refused before delivery".to_string(),
+                ),
+                never_delivered: true,
+            }))
+        },
+    )
+    .await
 }
 
 // -------------------------------------------------------------------------
@@ -5259,6 +5321,26 @@ mod redrive_tests {
         }
     }
 
+    /// A pending activity entry keyed `id`, as a spend records before it
+    /// broadcasts.
+    fn pending_entry(id: [u8; 32]) -> ShieldedActivityEntry {
+        ShieldedActivityEntry {
+            id,
+            kind: ShieldedActivityKind::ShieldedSpend,
+            direction: ShieldedDirection::Out,
+            amount: 0,
+            fee: Some(0),
+            counterparty: None,
+            memo: None,
+            block_height: None,
+            status: ShieldedActivityStatus::Pending,
+            created_at_ms: 1,
+            min_note_position: None,
+            note_cmxs: vec![],
+            spent_nullifiers: vec![],
+        }
+    }
+
     /// A private contact request payment's journal record outlives its notes'
     /// and redrive record whatever the spend's outcome, except a transition
     /// that provably never left the wallet. Settled unconfirmed (its
@@ -5386,8 +5468,7 @@ mod redrive_tests {
                 None,
                 wallet_id,
                 id,
-                &None,
-                Some([0x77; 32]),
+                &Some(pending_entry([0x77; 32])),
                 reservation,
                 &selected,
                 Some(&[commitment]),
