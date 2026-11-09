@@ -885,7 +885,6 @@ mod dpns_v3_tests {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("expected to store the copy");
         }

@@ -126,7 +126,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("put document");
     }

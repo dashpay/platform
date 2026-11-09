@@ -105,7 +105,6 @@ fn insert(drive: &crate::drive::Drive, contract: &DataContract, type_name: &str,
             true,
             None,
             platform_version(),
-            None,
         )
         .expect("insert document");
 }
@@ -2218,7 +2217,6 @@ fn delete_post(drive: &crate::drive::Drive, contract: &DataContract, id: [u8; 32
             true,
             None,
             platform_version(),
-            None,
         )
         .expect("expected to delete the post");
 }

@@ -563,7 +563,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("insert widget");
     }
@@ -2251,7 +2250,6 @@ mod tests {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("insert score");
         }

@@ -1659,7 +1659,6 @@ mod tests {
                     true,
                     Some(&transaction),
                     platform_version_13,
-                    None,
                 )
                 .expect("expected to insert the grade document");
         }

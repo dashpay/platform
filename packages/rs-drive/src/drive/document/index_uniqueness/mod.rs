@@ -250,7 +250,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("insert existing preorder");
 
@@ -327,7 +326,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("insert existing preorder");
 
@@ -495,7 +493,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("insert existing preorder");
 
@@ -895,7 +892,6 @@ mod unique_time_range_index_tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("add document");
         document_id
@@ -1306,7 +1302,6 @@ mod unique_integer_range_index_tests {
                 true,
                 None,
                 PlatformVersion::latest(),
-                None,
             )
             .expect("add document");
         document.id()
