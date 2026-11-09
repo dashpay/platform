@@ -596,7 +596,7 @@ fn poke_sync_on_unconfirmed<T>(result: &Result<T, PlatformWalletError>, handle: 
 /// withdraw) to a typed FFI result, mirroring the identity-create sibling's
 /// code split so hosts can tell "definitively failed, safe to retry" from
 /// "may have executed, do NOT retry".
-fn map_spend_result(
+pub(crate) fn map_spend_result(
     result: Result<(), PlatformWalletError>,
     operation: &str,
 ) -> PlatformWalletFFIResult {
@@ -620,6 +620,13 @@ fn map_spend_result(
         Err(e @ PlatformWalletError::ShieldedIdentityDebitPending { .. })
         | Err(e @ PlatformWalletError::ShieldedRecoveryCorrupted { .. })
         | Err(e @ PlatformWalletError::ShieldedRecoveryKeysRequired { .. }) => e.into(),
+        // A private contact request in flight, or paid and not yet read back
+        // from the store: nothing new was paid, and a later private sync
+        // settles it, so it keeps its own pending code. A wallet removed
+        // before the payment started keeps the lifecycle refusal code
+        // (`NotFound`) every other export gives it.
+        Err(e @ PlatformWalletError::PrivateContactRequestPending(..))
+        | Err(e @ PlatformWalletError::WalletRemovedBeforeSend(..)) => e.into(),
         // Retryable: the wallet couldn't build the spend against any
         // Platform-recorded anchor yet (its commitment tree is mid-block after
         // an index-chunk sync). Nothing was broadcast and the notes were
@@ -2990,6 +2997,19 @@ mod tests {
         );
         assert_eq!(message_of(&result), rendered);
         assert!(message_of(&result).contains("this request was not started"));
+    }
+
+    /// A private payment refused because its wallet was removed first keeps
+    /// the lifecycle refusal code, not the generic operation failure.
+    #[test]
+    fn map_spend_result_keeps_a_wallet_removed_before_send_at_not_found() {
+        let removed: Result<(), PlatformWalletError> = Err(
+            PlatformWalletError::WalletRemovedBeforeSend("wallet removed".to_string()),
+        );
+        let result = map_spend_result(removed, "private contact request");
+        assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
+        assert_eq!(result.code as i32, 98);
+        assert!(message_of(&result).contains("wallet removed"));
     }
 
     /// A key-unavailable signer completion preserved under `Sdk` by the wallet
