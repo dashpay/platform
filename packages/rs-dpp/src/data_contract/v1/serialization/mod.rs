@@ -1,14 +1,16 @@
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_required_fields_error;
+use crate::data_contract::document_type::serialized_version::DocumentTypeInSerializationFormat;
 use crate::data_contract::document_type::validate_required_since_within_contract_version;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
-use crate::data_contract::{DataContract, DataContractV1};
+use crate::data_contract::{DataContract, DataContractV1, DocumentName};
 use crate::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use crate::ProtocolError;
 use std::collections::BTreeMap;
 
 use crate::data_contract::serialized_version::v1::DataContractInSerializationFormatV1;
+use crate::data_contract::serialized_version::v2::DataContractInSerializationFormatV2;
 use crate::validation::operations::ProtocolValidationOperation;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -70,6 +72,31 @@ impl DataContractV1 {
 
                 Ok(data_contract)
             }
+            // Fully validated, a stored contract is parsed from its schemas, which are checked,
+            // since a caller asking for full validation does not trust the bytes; its compiled
+            // types must then be what those schemas compile to at this version, so the contract
+            // read is the one state holds, or none
+            DataContractInSerializationFormat::V2(serialization_format_v2) if full_validation => {
+                let DataContractInSerializationFormatV2 {
+                    base,
+                    document_types,
+                } = serialization_format_v2;
+                let data_contract = DataContractV1::try_from_platform_versioned_v1(
+                    base,
+                    full_validation,
+                    validation_operations,
+                    platform_version,
+                )?;
+                data_contract.ensure_compiled_as_parsed(&document_types, platform_version)?;
+
+                Ok(data_contract)
+            }
+            DataContractInSerializationFormat::V2(serialization_format_v2) => {
+                let data_contract =
+                    DataContractV1::try_from_platform_versioned_v2(serialization_format_v2)?;
+
+                Ok(data_contract)
+            }
         }
     }
 
@@ -128,17 +155,78 @@ impl DataContractV1 {
     }
 
     pub(in crate::data_contract) fn try_from_platform_versioned_v1(
-        data_contract_data: DataContractInSerializationFormatV1,
+        mut data_contract_data: DataContractInSerializationFormatV1,
         full_validation: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        let document_schemas = std::mem::take(&mut data_contract_data.document_schemas);
+        let document_types = DocumentType::create_document_types_from_document_schemas(
+            data_contract_data.id,
+            1,
+            data_contract_data.config.version(),
+            document_schemas,
+            data_contract_data.schema_defs.as_ref(),
+            &data_contract_data.tokens,
+            &data_contract_data.config,
+            full_validation,
+            !data_contract_data.tokens.is_empty(),
+            validation_operations,
+            platform_version,
+        )?;
+
+        Self::with_document_types(data_contract_data, document_types)
+    }
+
+    /// A stored format version 2 contract read without full validation, as Drive reads its own
+    /// state and proof verification reads state a proof authenticates: its document types read
+    /// back from their compiled forms rather than parsed from their schemas, which is what the
+    /// stored form spares. Only state holds format version 2, written by consensus from a
+    /// contract it fully validated; the untrusted decoders read bytes nothing vouches for from
+    /// their schemas ([`DataContractInSerializationFormat::into_schema_form`]) and never reach
+    /// here. Refuses compiled types that are not those of the raw schemas beside them, by name,
+    /// which no writer produces. Charges no validation operations.
+    pub(in crate::data_contract) fn try_from_platform_versioned_v2(
+        data_contract_data: DataContractInSerializationFormatV2,
+    ) -> Result<Self, ProtocolError> {
+        let DataContractInSerializationFormatV2 {
+            mut base,
+            document_types,
+        } = data_contract_data;
+        let document_schemas = std::mem::take(&mut base.document_schemas);
+
+        if !document_types.keys().eq(document_schemas.keys()) {
+            return Err(ProtocolError::CorruptedSerialization(
+                "a stored contract's compiled document types are not those of its schemas"
+                    .to_string(),
+            ));
+        }
+        // The same names in the same order: each compiled type beside its schema
+        let document_types = document_types
+            .into_iter()
+            .zip(document_schemas.into_values())
+            .map(|((name, stored), schema)| {
+                let document_type = stored.into_document_type(&name, base.id, schema)?;
+                Ok((name, document_type))
+            })
+            .collect::<Result<BTreeMap<_, _>, ProtocolError>>()?;
+
+        Self::with_document_types(base, document_types)
+    }
+
+    /// The contract of format version 1's fields, its raw schemas aside, with `document_types`,
+    /// however they were read: its `requiredSince` declarations checked against its version and
+    /// its keywords lowercased, as every format version reads them.
+    fn with_document_types(
+        data_contract_data: DataContractInSerializationFormatV1,
+        document_types: BTreeMap<DocumentName, DocumentType>,
     ) -> Result<Self, ProtocolError> {
         let DataContractInSerializationFormatV1 {
             id,
             config,
             version,
             owner_id,
-            document_schemas,
+            document_schemas: _,
             schema_defs,
             created_at,
             updated_at,
@@ -152,24 +240,10 @@ impl DataContractV1 {
             description,
         } = data_contract_data;
 
-        let document_types = DocumentType::create_document_types_from_document_schemas(
-            id,
-            1,
-            config.version(),
-            document_schemas,
-            schema_defs.as_ref(),
-            &tokens,
-            &config,
-            full_validation,
-            !tokens.is_empty(),
-            validation_operations,
-            platform_version,
-        )?;
-
         validate_required_since_within_contract_version(&document_types, version)
             .map_err(consensus_or_protocol_required_fields_error)?;
 
-        let data_contract = DataContractV1 {
+        Ok(DataContractV1 {
             id,
             version,
             owner_id,
@@ -189,9 +263,41 @@ impl DataContractV1 {
                 .map(|keyword| keyword.to_lowercase())
                 .collect(),
             description,
-        };
+        })
+    }
 
-        Ok(data_contract)
+    /// Refuses `compiled`, a stored contract's compiled document types, unless they are what
+    /// this contract, parsed from the same schemas, compiles to at `platform_version`: the same
+    /// names, and for each the same stored form, what its documents are checked against
+    /// included. A reader that fully validates a stored contract then holds the document types
+    /// state holds, or an error, never others: after a protocol version that parses or builds
+    /// differently, the stored contract is read as stored only by a reader that trusts its
+    /// bytes.
+    fn ensure_compiled_as_parsed(
+        &self,
+        compiled: &BTreeMap<DocumentName, DocumentTypeInSerializationFormat>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError> {
+        if !compiled.keys().eq(self.document_types.keys()) {
+            return Err(ProtocolError::CorruptedSerialization(
+                "a stored contract's compiled document types are not those of its schemas"
+                    .to_string(),
+            ));
+        }
+        for ((name, stored), document_type) in compiled.iter().zip(self.document_types.values()) {
+            if !stored.is_compiled_from(
+                document_type.as_ref(),
+                self.schema_defs.as_ref(),
+                platform_version,
+            )? {
+                return Err(ProtocolError::CorruptedSerialization(format!(
+                    "a stored contract's compiled document type {name} is not what protocol \
+                     version {} compiles its schema to",
+                    platform_version.protocol_version
+                )));
+            }
+        }
+        Ok(())
     }
 }
 

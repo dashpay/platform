@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::query::document_history_drive_query::{
     invalid, DocumentHistoryDriveQuery, DocumentHistoryDriveQueryExecutionResult,
 };
+use crate::query::refuse_a_private_document_type;
 use crate::verify::grovedb_proof_envelope::{
     require_supported_grovedb_proof_envelope, MINIMUM_GROVEDB_PROOF_ENVELOPE_VERSION,
 };
@@ -22,6 +23,7 @@ impl Drive {
         document_type: DocumentTypeRef,
         version: &PlatformVersion,
     ) -> Result<(RootHash, DocumentHistoryDriveQueryExecutionResult), Error> {
+        refuse_a_private_document_type(document_type).map_err(Error::Query)?;
         require_supported_grovedb_proof_envelope(proof, "document history proof")?;
         if !document_type.documents_keep_history() {
             return Err(invalid("document type does not keep history"));

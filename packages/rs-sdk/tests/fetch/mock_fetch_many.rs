@@ -20,6 +20,7 @@ use dpp::{
 use dpp::{
     platform_value::Value,
     prelude::Identifier,
+    version::PlatformVersion,
     voting::{
         vote_choices::resource_vote_choice::ResourceVoteChoice,
         vote_polls::{
@@ -142,7 +143,7 @@ async fn should_match_public_mock_poll_expectations_with_effective_query_limits(
 async fn should_match_public_mock_identity_vote_expectations_with_effective_query_limits() {
     let poll = mock_vote_poll();
     let expected: ResourceVotesByIdentity = [(
-        poll.unique_id().unwrap(),
+        poll.unique_id(PlatformVersion::latest()).unwrap(),
         Some(ResourceVoteWithCount {
             resource_vote: ResourceVote::V0(ResourceVoteV0 {
                 vote_poll: poll,

@@ -14,7 +14,7 @@ const RETAINED_REVISION: &str =
     "contracts.contract.documents.document_type.history.document.revision";
 const INDEX_PROPERTY: &str = "contracts.contract.documents.document_type.index_property";
 
-const PRIMARY_KEY_TREES: [ElementKind; 8] = [
+const PRIMARY_KEY_TREES: [ElementKind; 9] = [
     ElementKind::Tree,
     ElementKind::CountTree,
     ElementKind::ProvableCountTree,
@@ -23,6 +23,7 @@ const PRIMARY_KEY_TREES: [ElementKind; 8] = [
     ElementKind::CountSumTree,
     ElementKind::ProvableCountSumTree,
     ElementKind::ProvableCountProvableSumTree,
+    ElementKind::PrivateDocumentStore,
 ];
 
 const INDEX_PROPERTY_TREES: [ElementKind; 10] = [
@@ -65,7 +66,9 @@ pub(crate) fn document_type() -> StructureNode {
                 &PRIMARY_KEY_TREES,
                 "Chosen by the document type's documentsCountable \
                                             and documentsSummable settings; see \
-                                            primary_key_tree_type.rs.",
+                                            primary_key_tree_type.rs. A private \
+                                            document store for a private type; see \
+                                            private_document_store.rs.",
             )
             .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
             .lazy()
@@ -73,7 +76,11 @@ pub(crate) fn document_type() -> StructureNode {
             .book("drive/document-count-trees.md")
             .describe(
                 "The documents, by id. Absent for index only \
-                           document types, which store no documents.",
+                           document types, which store no documents. For a \
+                           private document type (protocol version 15), its \
+                           fixed-size encrypted entries in append order, each \
+                           behind a 16-byte header of the block height and time; \
+                           such a type has no index levels.",
             )
             .child(
                 StructureNode::identifier("document", "document_id", "The document id")

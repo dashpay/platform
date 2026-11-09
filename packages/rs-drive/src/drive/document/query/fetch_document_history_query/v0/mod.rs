@@ -1,12 +1,35 @@
 use crate::drive::document::paths::contract_documents_keeping_history_primary_key_path_for_document_id;
 use crate::drive::Drive;
 use crate::error::Error;
-use dpp::data_contract::document_type::DocumentPropertyType;
+use crate::query::refuse_a_private_document_type;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
 use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 
 impl Drive {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn fetch_document_history_query_v0(
+        contract_id: [u8; 32],
+        document_type: DocumentTypeRef,
+        document_id: [u8; 32],
+        start_at_ms: u64,
+        limit: Option<u16>,
+        offset: Option<u16>,
+    ) -> Result<PathQuery, Error> {
+        // In place, unversioned in effect: no type is private before protocol version 15
+        refuse_a_private_document_type(document_type).map_err(Error::Query)?;
+        Self::fetch_document_history_query_v0_for_name(
+            contract_id,
+            document_type.name(),
+            document_id,
+            start_at_ms,
+            limit,
+            offset,
+        )
+    }
+
+    /// Lowers the timestamp-keyed layout when the caller already owns the type lookup.
+    pub(crate) fn fetch_document_history_query_v0_for_name(
         contract_id: [u8; 32],
         document_type_name: &str,
         document_id: [u8; 32],

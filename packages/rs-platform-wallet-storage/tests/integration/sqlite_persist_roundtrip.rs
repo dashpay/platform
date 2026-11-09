@@ -385,7 +385,6 @@ fn tc014_account_registration_roundtrip() {
 /// the bincode-serde payload in `asset_locks.lifecycle_blob`.
 #[test]
 fn tc010_asset_lock_roundtrip() {
-    use dashcore::hashes::Hash;
     use dashcore::{OutPoint, Transaction, Txid};
     use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
     use platform_wallet::changeset::{AssetLockChangeSet, AssetLockEntry};
@@ -452,7 +451,6 @@ fn tc010_asset_lock_roundtrip() {
 /// lifecycle blob, chain proof included.
 #[test]
 fn tc010b_recovered_from_chain_lock_roundtrip() {
-    use dashcore::hashes::Hash;
     use dashcore::{OutPoint, Transaction, Txid};
     use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
     use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
@@ -526,7 +524,6 @@ fn tc010b_recovered_from_chain_lock_roundtrip() {
 /// landing over `RecoveredFromChain`.
 #[test]
 fn tc010c_stale_recovery_snapshot_cannot_regress_consumed_row() {
-    use dashcore::hashes::Hash;
     use dashcore::{OutPoint, Transaction, Txid};
     use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
     use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;

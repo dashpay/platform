@@ -1,3 +1,4 @@
+use crate::util::estimated_layers::EstimatedLayers;
 // Protocol 15 generation: index references point at the primary key tree
 // entry for every document type, including keep-history types whose entry
 // is itself a reference into the history tree; everything else matches v0.
@@ -37,11 +38,9 @@ use dpp::document::Document;
 use dpp::document::DocumentV0Getters;
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
 use grovedb::EstimatedLayerSizes::AllItems;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds the terminal reference.
@@ -57,9 +56,7 @@ impl Drive {
         all_fields_null: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -400,9 +397,7 @@ impl Drive {
         terminal: &[String],
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,

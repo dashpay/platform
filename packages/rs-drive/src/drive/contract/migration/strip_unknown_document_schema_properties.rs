@@ -170,8 +170,19 @@ impl Drive {
                 }
             };
 
+        // A contract in the stored format keeps the document types it was compiled with: the
+        // later parse this migration guards against never reads its schemas, so it is left as
+        // it is. Only a block that activates this version and the stored format at once, after
+        // storing contracts in it, meets one.
+        if matches!(
+            serialization_format,
+            DataContractInSerializationFormat::V2(_)
+        ) {
+            return Ok(());
+        }
+
         let mut contract_modified = false;
-        for (doc_type_name, schema_value) in serialization_format.document_schemas_mut().iter_mut()
+        for (doc_type_name, schema_value) in serialization_format.document_schemas_mut()?.iter_mut()
         {
             if strip_unknown_properties_from_document_schema(schema_value) {
                 tracing::info!(

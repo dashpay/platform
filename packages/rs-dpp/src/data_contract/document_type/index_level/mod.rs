@@ -346,12 +346,27 @@ impl IndexLevel {
         self.indexed_array_max_items
     }
 
+    /// The levels below this one, by key, to change in place: for a stored document type
+    /// generation that stamps its levels with what it stored, by its own rules.
+    pub(crate) fn sub_levels_mut(&mut self) -> &mut BTreeMap<String, IndexLevel> {
+        &mut self.sub_index_levels
+    }
+
+    /// Sets the `maxItems` of the typed array reached at this level, or `None` for a level not
+    /// keyed by a typed array's elements (see [`Self::indexed_array_max_items`]).
+    pub(crate) fn set_indexed_array_max_items(&mut self, max_items: Option<u16>) {
+        self.indexed_array_max_items = max_items;
+    }
+
     /// Marks every level reached through one of `array_properties`, the typed array
     /// properties the document type's indexes name with their `maxItems`, as keyed by the
     /// array's elements. The index tree is built from the indexes alone, which do not know
     /// their properties' types; the document type parser calls this with the arrays it
     /// resolved. A level key is the property's name except on a bucketed first level, whose
     /// source is a timestamp or an integer, never a typed array.
+    ///
+    /// The parser's alone: a stored document type generation stamps its levels with its own
+    /// copy of this walk, so a change here does not change how stored contracts read back.
     pub fn stamp_indexed_arrays(&mut self, array_properties: &BTreeMap<String, u16>) {
         for (level_key, sub_level) in self.sub_index_levels.iter_mut() {
             if let Some(max_items) = array_properties.get(level_key) {
@@ -540,7 +555,9 @@ impl IndexLevel {
         }
     }
 
-    fn try_from_indices_v0<I, T>(
+    /// Generation 0 of [`Self::try_from_indices`]: also called directly by the loader of a
+    /// stored document type whose generation was written with it.
+    pub(in crate::data_contract::document_type) fn try_from_indices_v0<I, T>(
         indices: I,
         document_type_name: &str,
     ) -> Result<Self, ProtocolError>

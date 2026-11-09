@@ -79,6 +79,20 @@ impl ConfigurationForSystemContract for SystemDataContract {
                 config.set_sized_integer_types_enabled(true);
                 Ok(config)
             }
+            SystemDataContract::DecisionProposals => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(true);
+                Ok(config)
+            }
+            // Every integer of an order is a signed 8-byte value: the `depth` index of each
+            // order type sums one of them, which a summed property must be, and a partial fill
+            // rewrites `remaining` (and a bid's `escrow`) without changing the stored size of
+            // the order.
+            SystemDataContract::TokenMarket => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
         }
     }
 }
@@ -150,6 +164,82 @@ mod tests {
     use crate::data_contract::serialized_version::DataContractInSerializationFormat;
     use crate::serialization::PlatformSerializableWithPlatformVersion;
     use platform_version::TryIntoPlatformVersioned;
+    /// A system contract is written by genesis and protocol upgrades, which nothing refuses
+    /// before Drive does, so each must fit the contract size caps at every protocol version
+    /// that has it: its bytes in the format transitions carry under `max_serialized_size`
+    /// and, where contracts are stored compiled, its compiled bytes under
+    /// `max_compiled_contract_size`.
+    #[cfg(feature = "validation")]
+    #[test]
+    fn should_fit_every_system_contract_under_the_contract_size_caps() {
+        use crate::serialization::PlatformSerializableWithPlatformVersion;
+        use platform_version::version::PLATFORM_VERSIONS;
+
+        for platform_version in PLATFORM_VERSIONS.iter() {
+            let contract_versions = &platform_version.system_data_contracts;
+            for system_contract in SystemDataContract::ALL {
+                // Only the contracts a version has; any of them failing to load fails the test
+                let absent = match system_contract {
+                    // A reserved slot, with no contract at any version
+                    SystemDataContract::FeatureFlags => true,
+                    // Inserted by the upgrade to protocol version 13; earlier meta-schemas
+                    // refuse its schema
+                    SystemDataContract::DocumentHistory => platform_version.protocol_version < 13,
+                    SystemDataContract::AppConnect => contract_versions.app_connect == 0,
+                    SystemDataContract::ModerationCharters => {
+                        contract_versions.moderation_charters == 0
+                    }
+                    SystemDataContract::DecisionProposals => {
+                        contract_versions.decision_proposals == 0
+                    }
+                    SystemDataContract::TokenMarket => contract_versions.token_market == 0,
+                    SystemDataContract::Withdrawals
+                    | SystemDataContract::MasternodeRewards
+                    | SystemDataContract::DPNS
+                    | SystemDataContract::Dashpay
+                    | SystemDataContract::WalletUtils
+                    | SystemDataContract::TokenHistory
+                    | SystemDataContract::KeywordSearch => false,
+                };
+                if absent {
+                    continue;
+                }
+                let contract = load_system_data_contract(system_contract, platform_version)
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "{system_contract:?} does not load at protocol version {}: {error}",
+                            platform_version.protocol_version
+                        )
+                    });
+                let origin = format!(
+                    "{system_contract:?} at protocol version {}",
+                    platform_version.protocol_version
+                );
+                let carried_size = contract
+                    .serialize_to_bytes_with_platform_version(platform_version)
+                    .expect("expected the system contract to serialize")
+                    .len();
+                assert!(
+                    carried_size
+                        <= platform_version.dpp.contract_versions.max_serialized_size as usize,
+                    "{origin} serializes to {carried_size} bytes"
+                );
+                let stored_size = contract
+                    .serialize_to_storage_bytes(platform_version)
+                    .expect("expected the system contract to serialize for storage")
+                    .len();
+                if let Some(max_compiled_size) =
+                    platform_version.system_limits.max_compiled_contract_size
+                {
+                    assert!(
+                        stored_size <= max_compiled_size as usize,
+                        "{origin} is stored in {stored_size} bytes"
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn test_load_system_data_contract_v8_vs_v9() {
         let contract_1 = load_system_data_contract(
@@ -1376,6 +1466,342 @@ mod dpns_v3_tests {
                 .answering_index(&preorder)
                 .map(|index| index.name.as_str()),
             Some("nameHash")
+        );
+    }
+}
+
+#[cfg(test)]
+mod dashpay_v3_tests {
+    use super::*;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::document_type::accessors::{
+        DocumentTypeV0Getters, DocumentTypeV2Getters,
+    };
+    use crate::data_contract::document_type::property_constraints::{
+        ConstraintExpression, PropertyConstraint,
+    };
+    use crate::data_contract::document_type::{
+        DistinctFrom, DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRef,
+        EncryptedFor, EncryptedForRecipient, EncryptionScheme,
+    };
+    use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+    use crate::document::DocumentV0;
+    use platform_value::{Identifier, Value};
+    use std::collections::BTreeMap;
+
+    /// DashPay v3, registered as the chain registers it, under full validation.
+    fn dashpay() -> DataContract {
+        load_system_data_contract(SystemDataContract::Dashpay, PlatformVersion::latest())
+            .expect("DashPay v3 registers under full validation")
+    }
+
+    fn document_type<'a>(contract: &'a DataContract, name: &str) -> DocumentTypeRef<'a> {
+        contract
+            .document_type_for_name(name)
+            .unwrap_or_else(|_| panic!("the {name} type"))
+    }
+
+    /// The upgrade to protocol version 15 replaces DashPay v2 with v3 through
+    /// `apply_contract`, which runs no contract update checks, as the upgrade to 14
+    /// replaced v1 with v2. Documents written under either are read with v3's types
+    /// from then on, so every property v1 or v2 declares must be stored exactly as
+    /// it was. DashPay keeps sized integer types off: an integer is an i64 whatever
+    /// its bounds, so the key indexes' new `maximum` changes nothing stored.
+    /// The bytes of an envelope around a private entry's payload, fixed by the private document
+    /// envelope (version 1): the commitment (32), the ephemeral key (33), the body's tag (16) and
+    /// the sender-recovery ciphertext (81) around the body, and the body's own header before the
+    /// payload (version, auth mode, sender id, sender key id, auth, recipient id, payload length:
+    /// 1 + 1 + 32 + 4 + 65 + 32 + 2).
+    const PRIVATE_ENTRY_WRAPPER_BYTES: usize = 162;
+    const PRIVATE_ENTRY_BODY_HEADER_BYTES: usize = 137;
+
+    /// The type's properties in the document property encoding, as a private entry's payload
+    /// carries them: each in position order, an optional one led by a presence byte.
+    fn payload(document_type: DocumentTypeRef, properties: &BTreeMap<String, Value>) -> Vec<u8> {
+        let mut bytes = vec![];
+        for (name, property) in document_type.properties() {
+            match properties.get(name) {
+                Some(value) => {
+                    if !property.required {
+                        bytes.push(1);
+                    }
+                    bytes.extend(
+                        property
+                            .property_type
+                            .encode_value_ref_with_size(value, property.required)
+                            .expect("the value encodes"),
+                    );
+                }
+                None => bytes.push(0),
+            }
+        }
+        bytes
+    }
+
+    /// `privateContactRequest` is private, and its entries take the smallest size that holds its
+    /// largest payload in the envelope: every property at its largest, `accountReference` an
+    /// 8-byte integer as DashPay stores every integer, is 290 bytes, so 137 + 290 + 162 = 589.
+    /// The entry size is frozen with the contract, so this pins it to the properties.
+    #[test]
+    fn should_size_private_contact_requests_to_hold_their_largest_payload() {
+        let contract = dashpay();
+        let private_contact_request = document_type(&contract, "privateContactRequest");
+        let entry_size = private_contact_request
+            .private_document()
+            .expect("privateContactRequest is private")
+            .entry_size() as usize;
+        assert!(!private_contact_request.documents_mutable());
+        assert!(!private_contact_request.documents_can_be_deleted());
+
+        let largest = BTreeMap::from([
+            ("accountReference".to_string(), Value::U32(u32::MAX)),
+            ("extendedPublicKey".to_string(), Value::Bytes(vec![1; 69])),
+            ("accountLabel".to_string(), Value::Text("a".repeat(63))),
+            ("autoAcceptProof".to_string(), Value::Bytes(vec![2; 102])),
+            ("shieldedAddress".to_string(), Value::Bytes(vec![3; 43])),
+        ]);
+        let largest_payload = payload(private_contact_request, &largest);
+        assert_eq!(largest_payload.len(), 290);
+        assert_eq!(
+            PRIVATE_ENTRY_BODY_HEADER_BYTES + largest_payload.len() + PRIVATE_ENTRY_WRAPPER_BYTES,
+            entry_size
+        );
+
+        // The payload is the document's own property encoding: a document of the type
+        // serializes to its system fields followed by exactly these bytes.
+        let document = DocumentV0 {
+            id: Identifier::from([4; 32]),
+            owner_id: Identifier::from([5; 32]),
+            properties: largest,
+            ..Default::default()
+        };
+        let serialized = document
+            .serialize(
+                private_contact_request,
+                &contract,
+                PlatformVersion::latest(),
+            )
+            .expect("the document serializes");
+        assert!(serialized.ends_with(&largest_payload));
+
+        // The smallest payload: the two required properties and three absent ones.
+        let smallest = BTreeMap::from([
+            ("accountReference".to_string(), Value::U32(0)),
+            ("extendedPublicKey".to_string(), Value::Bytes(vec![1; 69])),
+        ]);
+        assert_eq!(
+            payload(private_contact_request, &smallest).len(),
+            8 + 69 + 3
+        );
+    }
+
+    #[test]
+    fn should_store_every_dashpay_v1_and_v2_property_as_it_was_stored() {
+        let v3 = dashpay();
+        for protocol_version in [13, 14] {
+            let older = load_system_data_contract(
+                SystemDataContract::Dashpay,
+                PlatformVersion::get(protocol_version).expect("a known protocol version"),
+            )
+            .expect("an older DashPay");
+            for (type_name, older_type) in older.document_types() {
+                let v3_type = v3
+                    .document_type_for_name(type_name)
+                    .unwrap_or_else(|_| panic!("v3 keeps the {type_name} type"));
+                for (path, older_property) in older_type.flattened_properties() {
+                    let v3_property = v3_type
+                        .flattened_properties()
+                        .get(path)
+                        .unwrap_or_else(|| panic!("v3 keeps {type_name}.{path}"));
+                    assert_eq!(
+                        older_property.property_type.stored_encoding(),
+                        v3_property.property_type.stored_encoding(),
+                        "{type_name}.{path} must be stored as DashPay at protocol version \
+                         {protocol_version} stored it"
+                    );
+                }
+            }
+        }
+    }
+
+    /// The two checks of the contact request data trigger, as declarations: the
+    /// recipient is an identity, and not the writer. The two ECDH fields name their
+    /// encryption, so their lengths must be an IV plus whole AES blocks.
+    #[test]
+    fn should_declare_the_contact_request_checks_and_encryption() {
+        let contract = dashpay();
+        let contact_request = document_type(&contract, "contactRequest");
+        let to_user_id = contact_request
+            .flattened_properties()
+            .get("toUserId")
+            .expect("toUserId");
+
+        assert_eq!(
+            to_user_id.property_type,
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::Identity
+            )
+        );
+        assert_eq!(to_user_id.distinct_from, Some(DistinctFrom::OwnerId));
+
+        let recipe = EncryptedFor {
+            recipient: EncryptedForRecipient::Property("toUserId".to_string()),
+            recipient_key: "recipientKeyIndex".to_string(),
+            sender_key: "senderKeyIndex".to_string(),
+            scheme: EncryptionScheme::EcdhSecp256k1Aes256Cbc,
+        };
+        let mut encrypted = contact_request
+            .encrypted_properties()
+            .into_iter()
+            .map(|(path, encrypted_for)| (path.as_str(), encrypted_for.clone()))
+            .collect::<Vec<_>>();
+        encrypted.sort_by_key(|(path, _)| *path);
+        assert_eq!(
+            encrypted,
+            vec![
+                ("encryptedAccountLabel", recipe.clone()),
+                ("encryptedPublicKey", recipe),
+            ]
+        );
+    }
+
+    /// The check of the profile data trigger, as two rules: each DIP-33 payment
+    /// address starts with its type byte, 0x00 (P2PKH) or 0x01 (P2SH). A profile
+    /// without the address reads its first byte as 0, so the rule holds, as the
+    /// trigger skipped an absent address.
+    #[test]
+    fn should_hold_each_profile_payment_address_to_its_type_byte() {
+        let contract = dashpay();
+        let profile = document_type(&contract, "profile");
+        let rules = profile.property_constraints();
+
+        assert_eq!(rules.len(), 2);
+        for (rule_name, address) in [
+            ("corePaymentAddressType", "corePaymentAddress"),
+            ("platformPaymentAddressType", "platformPaymentAddress"),
+        ] {
+            assert_eq!(
+                rules.get(rule_name),
+                Some(&PropertyConstraint::In {
+                    operand: ConstraintExpression::ByteAt {
+                        path: address.to_string(),
+                        index: 0,
+                    },
+                    values: [0, 1].into(),
+                }),
+                "the {rule_name} rule"
+            );
+        }
+    }
+}
+
+#[cfg(all(test, feature = "token-market-contract", feature = "validation"))]
+mod token_market_tests {
+    use super::*;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::document_type::accessors::{
+        DocumentTypeV0Getters, DocumentTypeV2Getters,
+    };
+    use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
+    use crate::data_contract::document_type::DocumentPropertyType;
+    use crate::document::transfer::Transferable;
+    use crate::nft::TradeMode;
+    use crate::system_data_contracts::token_market_contract::v1::document_types::{ask, bid};
+
+    /// The order types are what the marketplace transitions rely on: only they create orders,
+    /// orders stay mutable and deletable so a partial fill can rewrite them and a close can
+    /// delete them with their storage flags, every integer is a signed 8-byte value, and the
+    /// `depth` index sums what the order holds in escrow.
+    #[test]
+    fn should_load_the_order_types_the_marketplace_writes() {
+        let contract =
+            load_system_data_contract(SystemDataContract::TokenMarket, PlatformVersion::latest())
+                .expect("the token market contract loads with full validation");
+        assert_eq!(contract.id(), token_market_contract::ID);
+        assert_eq!(contract.owner_id(), token_market_contract::OWNER_ID);
+        assert_eq!(contract.document_types().len(), 2);
+
+        for (name, summed) in [
+            (ask::NAME, ask::properties::REMAINING),
+            (bid::NAME, bid::properties::ESCROW),
+        ] {
+            let document_type = contract
+                .document_type_for_name(name)
+                .unwrap_or_else(|_| panic!("the {name} type"));
+            assert!(document_type.documents_mutable(), "{name} is mutable");
+            assert!(
+                document_type.documents_can_be_deleted(),
+                "{name} is deletable"
+            );
+            assert_eq!(
+                document_type.creation_restriction_mode(),
+                CreationRestrictionMode::NoCreationAllowed,
+                "only the marketplace transitions create {name} orders"
+            );
+            // The data trigger bindings refuse a user's replace and delete; these defaults
+            // refuse the remaining document transitions (transfer, purchase, price update and
+            // index-only delete), so a schema edit that enables one fails here.
+            assert_eq!(
+                document_type.documents_transferable(),
+                Transferable::Never,
+                "{name} orders cannot be transferred"
+            );
+            assert_eq!(
+                document_type.trade_mode(),
+                TradeMode::None,
+                "{name} orders cannot be priced or purchased as documents"
+            );
+            assert!(
+                !document_type.index_only(),
+                "{name} orders are not index-only"
+            );
+            for property in document_type.properties().values() {
+                if matches!(
+                    property.property_type,
+                    DocumentPropertyType::U8
+                        | DocumentPropertyType::U16
+                        | DocumentPropertyType::U32
+                        | DocumentPropertyType::U64
+                        | DocumentPropertyType::I8
+                        | DocumentPropertyType::I16
+                        | DocumentPropertyType::I32
+                ) {
+                    panic!("{name} stores an integer narrower than i64 or unsigned");
+                }
+            }
+            let depth = document_type
+                .indexes()
+                .get(ask::indexes::DEPTH)
+                .unwrap_or_else(|| panic!("{name} has a depth index"));
+            assert_eq!(depth.summable.as_deref(), Some(summed));
+            // Prices are per whole token at each order's decimals, so the book and the depth
+            // sums are kept apart per scale: a query names the token and the decimals.
+            let index_properties = |index_name: &str| -> Vec<String> {
+                document_type
+                    .indexes()
+                    .get(index_name)
+                    .unwrap_or_else(|| panic!("{name} has a {index_name} index"))
+                    .properties
+                    .iter()
+                    .map(|property| property.name.clone())
+                    .collect()
+            };
+            assert_eq!(
+                index_properties(ask::indexes::DEPTH),
+                ["tokenId", "decimals", "price"]
+            );
+            assert_eq!(
+                index_properties(ask::indexes::BOOK),
+                ["tokenId", "decimals", "price", "$createdAt"]
+            );
+        }
+    }
+
+    #[test]
+    fn should_not_exist_before_protocol_version_15() {
+        let platform_version = PlatformVersion::get(14).expect("protocol version 14");
+        assert!(
+            load_system_data_contract(SystemDataContract::TokenMarket, platform_version).is_err()
         );
     }
 }

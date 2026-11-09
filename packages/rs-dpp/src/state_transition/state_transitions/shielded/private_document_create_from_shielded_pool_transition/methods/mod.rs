@@ -1,0 +1,61 @@
+mod v0;
+
+pub use v0::*;
+
+#[cfg(feature = "state-transition-signing")]
+use crate::shielded::SerializedAction;
+use crate::state_transition::private_document_create_from_shielded_pool_transition::PrivateDocumentCreateFromShieldedPoolTransition;
+#[cfg(feature = "state-transition-signing")]
+use crate::{
+    state_transition::{
+        private_document_create_from_shielded_pool_transition::v0::PrivateDocumentCreateFromShieldedPoolTransitionV0,
+        StateTransition,
+    },
+    ProtocolError,
+};
+#[cfg(feature = "state-transition-signing")]
+use platform_value::{BinaryData, Identifier};
+#[cfg(feature = "state-transition-signing")]
+use platform_version::version::PlatformVersion;
+
+impl PrivateDocumentCreateFromShieldedPoolTransitionMethodsV0
+    for PrivateDocumentCreateFromShieldedPoolTransition
+{
+    #[cfg(feature = "state-transition-signing")]
+    fn try_from_bundle(
+        data_contract_id: Identifier,
+        document_type_name: String,
+        entries: Vec<BinaryData>,
+        actions: Vec<SerializedAction>,
+        value_balance: u64,
+        anchor: [u8; 32],
+        proof: Vec<u8>,
+        binding_signature: [u8; 64],
+        platform_version: &PlatformVersion,
+    ) -> Result<StateTransition, ProtocolError> {
+        match platform_version
+            .dpp
+            .state_transition_serialization_versions
+            .private_document_create_from_shielded_pool_state_transition
+            .default_current_version
+        {
+            0 => PrivateDocumentCreateFromShieldedPoolTransitionV0::try_from_bundle(
+                data_contract_id,
+                document_type_name,
+                entries,
+                actions,
+                value_balance,
+                anchor,
+                proof,
+                binding_signature,
+                platform_version,
+            ),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "PrivateDocumentCreateFromShieldedPoolTransition::try_from_bundle"
+                    .to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+}

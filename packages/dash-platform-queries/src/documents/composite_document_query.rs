@@ -401,9 +401,33 @@ pub(super) fn drive_sub_queries<'a>(
         .collect::<Result<Vec<_>, Error>>()
 }
 
+/// [`DocumentQuery::check_composite_shape`] as a request error, in the same words
+/// before the request is sent and after it is answered. A configuration refusal
+/// keeps only its message: the SDK reports a refusal before sending as its own
+/// configuration error, which would name the configuration twice.
+fn check_composite_request(request: &DocumentQuery) -> Result<(), drive_proof_verifier::Error> {
+    request
+        .check_composite_shape()
+        .map_err(|e| drive_proof_verifier::Error::RequestError {
+            error: match e {
+                Error::Config(message) => message,
+                e => e.to_string(),
+            },
+        })
+}
+
 impl FromProof<DocumentQuery> for CompositeDocuments {
     type Request = DocumentQuery;
     type Response = GetDocumentsResponse;
+
+    /// The encoder checks the composite shape only when sub-queries are present, so a
+    /// query without them would be sent as a plain page, served, and refused below.
+    fn check_request(
+        request: &Self::Request,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(), drive_proof_verifier::Error> {
+        check_composite_request(request)
+    }
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
@@ -416,11 +440,7 @@ impl FromProof<DocumentQuery> for CompositeDocuments {
         Self: 'a,
     {
         let request: Self::Request = request.into();
-        request
-            .check_composite_shape()
-            .map_err(|e| drive_proof_verifier::Error::RequestError {
-                error: e.to_string(),
-            })?;
+        check_composite_request(&request)?;
         let response: Self::Response = response.into();
 
         let query: DriveDocumentQuery = (&request).try_into().map_err(|e: Error| {

@@ -2,6 +2,7 @@ use crate::drive::document::paths::{contract_document_type_path, DOCUMENT_HISTOR
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::object_size_info::DriveKeyInfo::KeyRef;
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
@@ -10,9 +11,7 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::{Element, TransactionArg};
 
 impl Drive {
     /// Inserts the contract with all generation 2 trees and each retained type's history tree.
@@ -31,9 +30,9 @@ impl Drive {
             Self::contract_element_for_insert_v1(contract, &block_info, platform_version)?;
 
         let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+            None::<EstimatedLayers>
         } else {
-            Some(HashMap::new())
+            Some(EstimatedLayers::new())
         };
         let batch_operations = self.insert_contract_operations_v3(
             contract_element,
@@ -69,9 +68,7 @@ impl Drive {
         contract_element: Element,
         contract: &DataContract,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -94,9 +91,7 @@ impl Drive {
         contract_element: Element,
         contract: &DataContract,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

@@ -1,12 +1,14 @@
 #![cfg(feature = "full")]
 
 use crate::config::DriveConfig;
-use crate::drive::Drive;
+use crate::drive::shielded::paths::shielded_credit_pool_nullifiers_path_vec;
+use crate::drive::{Drive, RootTree};
 use crate::query::{
     DriveDocumentQuery, SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus,
 };
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
 use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
+use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::moderation::ContractModerationList;
@@ -16,7 +18,7 @@ use dpp::platform_value::Value;
 use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
-use grovedb::PathQuery;
+use grovedb::{PathQuery, Query};
 use grovedb_version::version::{v4::GROVE_V4, v5::GROVE_V5};
 use std::collections::BTreeMap;
 
@@ -314,5 +316,93 @@ fn should_accept_explicit_zero_cursor_offsets_only_after_the_grove_upgrade() {
             assert!(!expected.0.is_empty(), "{cursor} reads the stored profiles");
             assert_eq!(read(&with_zero_offset), expected, "{cursor} results");
         }
+    }
+}
+
+#[test]
+fn should_preserve_execution_proof_component_merges_and_their_bytes() {
+    let version = PlatformVersion::latest();
+    let owner = [1; 32];
+    let recipient = [2; 32];
+    let addresses = [
+        PlatformAddress::P2pkh([3; 20]),
+        PlatformAddress::P2sh([4; 20]),
+    ];
+    let mut address_query = Drive::balances_for_clear_addresses_query(&addresses);
+    address_query.query.limit = None;
+    let balance = Drive::identity_balance_query(&owner);
+    let recipient_balance = Drive::identity_balance_query(&recipient);
+    let recipients = Drive::balances_for_identity_ids_query(&[owner, recipient]);
+    let revision = Drive::revision_and_balance_path_query(owner, &GROVE_V4).unwrap();
+    let mut identity = Drive::full_identity_query(&owner, &GROVE_V4).unwrap();
+    identity.query.limit = None;
+    let pots = Drive::contract_fee_pots_query(owner, &[ContractFeePot::Owner], &GROVE_V4).unwrap();
+    let nullifiers = PathQuery::new_unsized(
+        shielded_credit_pool_nullifiers_path_vec(),
+        Query::new_single_key(vec![5; 32]),
+    );
+    let outpoint = PathQuery::new_unsized(
+        vec![vec![RootTree::SpentAssetLockTransactions as u8]],
+        Query::new_single_key(vec![6; 36]),
+    );
+    let mut document = SingleDocumentDriveQuery::latest_not_contested(
+        owner,
+        "withdrawal".to_string(),
+        false,
+        recipient,
+    )
+    .construct_path_query(version)
+    .unwrap();
+    document.query.limit = None;
+    // These are the component combinations used by execution proof producers;
+    // each clears its outer budget before merging a second result selection.
+    let combinations = [
+        ("contract fee claim", vec![&pots, &recipients]),
+        (
+            "identity credit transfer",
+            vec![&balance, &recipient_balance],
+        ),
+        (
+            "identity transfer to addresses",
+            vec![&revision, &address_query],
+        ),
+        (
+            "identity create from addresses",
+            vec![&identity, &address_query],
+        ),
+        (
+            "identity top up from addresses",
+            vec![&revision, &address_query],
+        ),
+        ("unshield", vec![&nullifiers, &address_query]),
+        ("shielded withdrawal", vec![&nullifiers, &document]),
+        (
+            "shield from asset lock surplus",
+            vec![&outpoint, &address_query],
+        ),
+        (
+            "identity create from shielded pool",
+            vec![&identity, &nullifiers],
+        ),
+        (
+            "identity top up from shielded pool",
+            vec![&nullifiers, &identity],
+        ),
+        ("owned document execution", vec![&document, &balance]),
+        (
+            "multiple execution results",
+            vec![&identity, &document, &address_query, &pots],
+        ),
+    ];
+    for (name, components) in combinations {
+        let previous = PathQuery::merge(components.clone(), &GROVE_V4).unwrap();
+        let current = PathQuery::merge(components, &GROVE_V5).unwrap();
+        assert_eq!(current, previous, "{name}");
+        let config = bincode::config::standard().with_big_endian();
+        assert_eq!(
+            bincode::encode_to_vec(&current, config).unwrap(),
+            bincode::encode_to_vec(&previous, config).unwrap(),
+            "{name} query bytes",
+        );
     }
 }

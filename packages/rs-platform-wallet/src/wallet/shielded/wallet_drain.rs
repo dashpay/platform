@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use dashcore::blockdata::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
-use dashcore::hashes::Hash;
 use dashcore::{PubkeyHash, ScriptBuf, TxOut};
 use dpp::balances::credits::CREDITS_PER_DUFF;
 use key_wallet::wallet::managed_wallet_info::coin_selection::{SelectionError, SelectionStrategy};

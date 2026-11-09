@@ -16,7 +16,7 @@ use dash_sdk::platform::{
 };
 use dash_sdk::Error;
 use dpp::address_funds::PlatformAddress;
-use dpp::dashcore::{hashes::Hash, ProTxHash};
+use dpp::dashcore::ProTxHash;
 use dpp::data_contract::DataContractFactory;
 use dpp::platform_value::platform_value;
 use dpp::version::PlatformVersion;

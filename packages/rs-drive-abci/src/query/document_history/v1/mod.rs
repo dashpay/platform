@@ -19,6 +19,7 @@ use dpp::version::PlatformVersion;
 use drive::query::document_history_drive_query::{
     DocumentHistoryDriveQuery, DocumentHistoryFilter, DocumentHistoryState,
 };
+use drive::query::refuse_a_private_document_type;
 use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
@@ -74,6 +75,11 @@ impl<C> Platform<C> {
         let document_type = check_validation_result_with_data!(contract
             .document_type_for_name(&query.document_type_name)
             .map_err(|_| QueryError::NotFound("document type not found".to_owned())));
+        if let Err(refusal) = refuse_a_private_document_type(document_type) {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument(refusal.to_string()),
+            ));
+        }
         if !document_type.documents_keep_history() {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::InvalidArgument("document type does not keep history".to_owned()),

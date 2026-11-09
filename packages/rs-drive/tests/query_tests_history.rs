@@ -3165,6 +3165,24 @@ fn test_query_historical_protocol_15_uses_composite_history() {
     };
 
     let version = PlatformVersion::get(15).unwrap();
+    // Compiled contract storage changes the fixture root independently of the history layout.
+    let mut carried_storage_version = version.clone();
+    carried_storage_version
+        .dpp
+        .contract_versions
+        .contract_storage_serialization_version = 1;
+    let (carried_drive, _) = setup(10, None, 73509, &carried_storage_version);
+    assert_eq!(
+        carried_drive
+            .grove
+            .root_hash(None, &version.drive.grove_version)
+            .unwrap()
+            .unwrap(),
+        [
+            79, 26, 80, 105, 213, 254, 12, 9, 90, 129, 14, 60, 16, 58, 213, 28, 46, 162, 207, 99,
+            226, 207, 30, 164, 65, 222, 123, 33, 180, 85, 47, 229,
+        ]
+    );
     let (drive, contract) = setup(10, None, 73509, version);
     let document_type = contract.document_type_for_name("person").unwrap();
     let root = drive
@@ -3175,8 +3193,8 @@ fn test_query_historical_protocol_15_uses_composite_history() {
     assert_eq!(
         root,
         [
-            79, 26, 80, 105, 213, 254, 12, 9, 90, 129, 14, 60, 16, 58, 213, 28, 46, 162, 207, 99,
-            226, 207, 30, 164, 65, 222, 123, 33, 180, 85, 47, 229,
+            66, 6, 172, 169, 64, 192, 127, 120, 130, 36, 173, 212, 240, 10, 216, 245, 150, 168,
+            189, 249, 167, 237, 65, 203, 155, 74, 134, 83, 84, 43, 231, 80,
         ]
     );
     let current_query = json!({"orderBy": [["firstName", "asc"]], "limit": 100});

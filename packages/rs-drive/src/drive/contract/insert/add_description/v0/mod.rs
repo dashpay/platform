@@ -1,6 +1,7 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use dpp::block::block_info::BlockInfo;
@@ -9,10 +10,9 @@ use dpp::data_contracts::keyword_search_contract;
 use dpp::document::{Document, DocumentV0};
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 impl Drive {
     /// Creates the documents in the Keyword Search contract for the contract description and
@@ -65,11 +65,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
         let batch_operations = self.add_new_contract_description_operations_v0(
             contract_id,
@@ -100,9 +96,7 @@ impl Drive {
         description: &String,
         short_only: bool,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -286,7 +280,7 @@ mod tests {
 
     /// Exercises `add_new_contract_description_v0` with apply=false: the
     /// estimated-costs branch which populates
-    /// `estimated_costs_only_with_layer_info = Some(HashMap::new())`. This
+    /// `estimated_costs_only_with_layer_info = Some(EstimatedLayers::new())`. This
     /// drives the code through `apply_batch_low_level_drive_operations` with
     /// layer info instead of actually writing to grove.
     #[test]

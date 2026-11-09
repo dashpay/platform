@@ -217,7 +217,7 @@ fn should_serve_released_document_history_wire_requests_before_activation() {
             );
             let path_query = Drive::fetch_document_history_query(
                 contract.id().to_buffer(),
-                "profile",
+                document_type,
                 document.id().to_buffer(),
                 1000,
                 Some(2),

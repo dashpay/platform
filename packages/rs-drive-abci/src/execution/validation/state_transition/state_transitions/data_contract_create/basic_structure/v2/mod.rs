@@ -335,6 +335,7 @@ mod tests {
 
         data_contract_for_serialization
             .document_schemas_mut()
+            .expect("expected a transport format's schemas")
             .insert(
                 "note".to_string(),
                 platform_value!({
@@ -473,6 +474,7 @@ mod tests {
             .expect("failed to convert data contract");
         serialized
             .document_schemas_mut()
+            .expect("expected a transport format's schemas")
             .get_mut("niceDocument")
             .expect("expected the niceDocument schema")
             .insert("actionFees".to_string(), action_fees)

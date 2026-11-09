@@ -25,12 +25,16 @@ pub mod groups;
 pub mod identity_keys_remaining_budgets;
 /// Identity token balance
 pub mod identity_token_balance;
+/// A page of the entries of a private document type's store
+pub mod private_document_entries;
 /// Token contract info
 pub mod token_contract_info;
 /// Token info
 pub mod token_info;
 /// Token status
 pub mod token_status;
+/// The state of a yes/no vote poll and a masternode's answer on one
+pub mod yes_no_vote_polls;
 
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
@@ -65,7 +69,6 @@ use drive::grovedb::Element;
 pub use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 
-use dpp::dashcore::hashes::Hash;
 #[cfg(feature = "mocks")]
 use {
     bincode::{Decode, Encode},

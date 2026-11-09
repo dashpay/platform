@@ -1,14 +1,12 @@
+use crate::util::estimated_layers::EstimatedLayers;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
-use grovedb::batch::KeyInfoPath;
 
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
-use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
+use grovedb::EstimatedLayerSizes::AllItems;
 use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg};
 
 use dpp::data_contract::document_type::IndexLevelTypeInfo;
 use dpp::data_contract::document_type::IndexType::{ContestedResourceIndex, NonUniqueIndex};
-use grovedb::EstimatedSumTrees::NoSumTrees;
-use std::collections::HashMap;
 
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::document_reference_estimated_layer_sizes_v1;
@@ -28,37 +26,21 @@ use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::version::PlatformVersion;
 
 impl Drive {
-    /// Removes the terminal reference.
-    ///
-    /// v2 (protocol version 15) is v1 with the reference shape written by
-    /// the protocol 15 document writers: estimated costs describe a
-    /// reference to the primary-key entry, with a sum item on summable
-    /// indexes. The pruning behaviour below is unchanged from v1.
-    ///
-    /// v1 (protocol version 14) differs from v0 in exactly one place: on a
-    /// `preallocated` indexOnly index, the empty-tree pruning climb stops at
-    /// the member level, keeping the preallocated apparatus the referenced
-    /// document's creator paid for — see
-    /// `add_preallocated_index_tree_operations`. Every other index prunes
-    /// drained groups exactly as v0 does.
+    /// Removes an index reference with the same pruning as v1. Estimates describe the
+    /// entries layer and each deleted reference as the insert walker writes them,
+    /// including primary-pointer and summable reference shapes.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn remove_reference_for_index_level_for_contract_operations_v2(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         index_path_info: PathInfo<0>,
-        // Borrow rather than owned — see the parallel change on the
-        // insert path (`add_reference_for_index_level_for_contract_operations`)
-        // for the rationale (`IndexLevelTypeInfo` dropped `Copy` when
-        // `summable: Option<String>` was added in v3).
         index_type: &IndexLevelTypeInfo,
         any_fields_null: bool,
         all_fields_null: bool,
         storage_flags: &Option<&StorageFlags>,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         skip_missing_expired_entry: bool,
         event_id: [u8; 32],
         transaction: TransactionArg,
@@ -255,7 +237,7 @@ impl Drive {
 
             // Delete-side sum-decrement is implicit: under a summable
             // index, the existing reference at `[..., 0, doc_id]` is an
-            // `Element::ReferenceWithSumItem(path, max_hops, amount_i64, flags)`
+            // `Element::ItemWithSumItem(doc_id, amount_i64, flags)`
             // (written by the insert path). The contribution is
             // recovered from the reference element itself — Drive
             // never re-reads the source document at delete time
@@ -267,16 +249,16 @@ impl Drive {
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
-                // On this level we will have a 0 and all the top index paths
+                // The `[0]` layer: the index's entries for this value
                 estimated_costs_only_with_layer_info.insert(
                     key_info_path.clone(),
                     EstimatedLayerInformation {
                         tree_type: reference_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
-                        estimated_layer_sizes: AllSubtrees(
+                        estimated_layer_sizes: document_reference_estimated_layer_sizes_v1(
                             DEFAULT_HASH_SIZE_U8,
-                            NoSumTrees,
                             storage_flags.map(|s| s.serialized_size()),
+                            index_type.summable.is_some(),
                         ),
                     },
                 );

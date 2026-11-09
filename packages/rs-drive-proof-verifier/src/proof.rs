@@ -42,6 +42,7 @@ pub mod document_sum;
 pub mod groups;
 pub mod identity_keys_remaining_budgets;
 pub mod identity_token_balance;
+pub mod private_document_entries;
 pub mod token_contract_info;
 pub mod token_direct_purchase;
 pub mod token_info;
@@ -49,10 +50,11 @@ pub mod token_perpetual_distribution_last_claim;
 pub mod token_pre_programmed_distributions;
 pub mod token_status;
 pub mod token_total_supply;
+pub mod yes_no_vote_polls;
 
 use crate::from_request::TryFromRequest;
 use crate::verify::{
-    supported_grovedb_proof_bytes, require_supported_grovedb_proof_bytes, verify_page_drive_proves, verify_tenderdash_proof, verify_tenderdash_signature,
+    document_query_proof_bytes, supported_grovedb_proof_bytes, require_supported_grovedb_proof_bytes, verify_page_drive_proves, verify_tenderdash_proof, verify_tenderdash_signature,
 };
 use crate::{types::*, ContextProvider, DataContractProvider, Error};
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
@@ -82,7 +84,6 @@ use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::core_subsidy::NetworkCoreSubsidy;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{Network, ProTxHash};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::Credits;
@@ -193,6 +194,43 @@ pub trait FromProof<Req> {
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         Self: Sized + 'a;
+
+    /// Check, before the request is sent, that this type can be verified from an answer to it.
+    ///
+    /// Several types can share one request type while each accepting only some of its shapes
+    /// (every document view is fetched with the same document query). A shape refused only
+    /// after the answer is reported as a failed proof, which callers retry on another node
+    /// and hold against the one that answered, although that node answered it correctly.
+    /// Refusing it here keeps it off the network.
+    ///
+    /// It may also refuse a request every node refuses: sent, such a request fails on each
+    /// node it reaches, and a refusal some nodes answer with an error the caller retries
+    /// gets those nodes banned.
+    ///
+    /// The default accepts every request. An implementation must not refuse a request that
+    /// an honest node at `platform_version` or at any later version serves and
+    /// [`FromProof::maybe_from_proof_with_metadata()`] verifies: an answer is verified at the
+    /// version it is signed with when that is newer.
+    ///
+    /// # Arguments
+    ///
+    /// * `request`: The request that is about to be sent.
+    /// * `platform_version`: The platform version the request is built for.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` when the request can be sent.
+    /// * `Err(Error)` when no node serves the request, or no answer to it can be verified as
+    ///   this type.
+    fn check_request(
+        _request: &Self::Request,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(), Error>
+    where
+        Self: Sized,
+    {
+        Ok(())
+    }
 
     /// Retrieve the requested object from the proof.
     ///
@@ -401,15 +439,19 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
     }
 }
 
-// Query construction follows the producer, while security checks keep the caller's
-// verifier version. Metadata is untrusted until the signature binds it to the root.
-// A producer newer than this build is read with the newest known construction rules,
-// the same fallback the SDK uses for verifier tables. A wrong guess cannot authenticate
-// data the signed root does not hold, and a changed layout is expected to fail
-// verification for answers that return data. An absence answer can still verify at a
-// location a newer protocol no longer uses, so relocating such an index needs an SDK
-// update. Reserved mock versions also sit above the newest one, so their tables are
-// never looked up.
+// The producer's signed version selects how the producer laid out its proof, while
+// security checks keep the caller's verifier version. For the non-unique identity
+// lookup it selects the GroveDB version its merged queries are built with and, for a
+// two-proof answer, the tables that decode the identity after the strict checks. For a
+// state transition outcome it selects only whether the proof carries the owner balance:
+// every key and query is rebuilt with the caller's rules. Metadata is untrusted until
+// the signature binds it to the root. A producer newer than this build is read with the
+// newest known tables, the same fallback the SDK uses for verifier tables. A wrong guess
+// cannot authenticate data the signed root does not hold, and a changed layout is
+// expected to fail verification for answers that return data. An absence answer can
+// still verify at a location a newer protocol no longer uses, so relocating such an
+// index needs an SDK update. Reserved mock versions also sit above the newest one, so
+// their tables are never looked up.
 fn proof_query_platform_version(
     metadata: &ResponseMetadata,
 ) -> Result<&'static PlatformVersion, Error> {
@@ -2083,7 +2125,10 @@ where
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let (root_hash, documents) = request
-            .verify_proof(supported_grovedb_proof_bytes(proof)?, platform_version)
+            .verify_proof(
+                document_query_proof_bytes(proof, mtd, platform_version)?,
+                platform_version,
+            )
             .map_drive_error(proof, mtd)?;
 
         let documents = documents
@@ -2478,9 +2523,42 @@ impl FromProof<platform::GetPrefundedSpecializedBalanceRequest> for PrefundedSpe
     }
 }
 
+/// The vote poll of the vote a single-vote request asks for.
+///
+/// A vote is the identity's vote on one vote poll, so the request has to start at that poll,
+/// including it.
+fn requested_vote_poll_id(
+    request: &platform::GetContestedResourceIdentityVotesRequest,
+) -> Result<Identifier, Error> {
+    match request.version.as_ref().ok_or(Error::EmptyVersion)? {
+        get_contested_resource_identity_votes_request::Version::V0(v0) => {
+            match &v0.start_at_vote_poll_id_info {
+                Some(start) if start.start_poll_identifier_included => {
+                    Identifier::from_bytes(&start.start_at_poll_identifier).map_err(|e| {
+                        Error::RequestError {
+                            error: e.to_string(),
+                        }
+                    })
+                }
+                _ => Err(Error::RequestError {
+                    error: "a vote request must start at the vote poll of the vote, including it"
+                        .to_string(),
+                }),
+            }
+        }
+    }
+}
+
 impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for Vote {
     type Request = platform::GetContestedResourceIdentityVotesRequest;
     type Response = platform::GetContestedResourceIdentityVotesResponse;
+
+    fn check_request(
+        request: &Self::Request,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        requested_vote_poll_id(request).map(|_| ())
+    }
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
@@ -2493,13 +2571,7 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for Vote {
         Self: Sized + 'a,
     {
         let request = request.into();
-        let id_in_request = match request.version.as_ref().ok_or(Error::EmptyVersion)? {
-            get_contested_resource_identity_votes_request::Version::V0(v0) => {
-                Identifier::from_bytes(&v0.identity_id).map_err(|e| Error::RequestError {
-                    error: e.to_string(),
-                })?
-            }
-        };
+        let vote_poll_id = requested_vote_poll_id(&request)?;
 
         let (maybe_votes, mtd, proof) = ResourceVotesByIdentity::maybe_from_proof_with_metadata(
             request,
@@ -2509,34 +2581,15 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for Vote {
             provider,
         )?;
 
-        let (id, vote) = match maybe_votes {
-            Some(v) if v.len() > 1 => {
-                return Err(Error::ResponseDecodeError {
-                    error: format!("expected 1 vote, got {}", v.len()),
-                })
-            }
-            Some(v) if v.is_empty() => return Ok((None, mtd, proof)),
-            Some(v) => v
-                .into_iter()
-                .next()
-                .expect("is_empty() must detect empty map"),
-            None => return Ok((None, mtd, proof)),
-        };
+        // The proved votes are keyed by vote poll id. When the identity has not voted on the
+        // requested poll, the proof carries its votes on the polls that follow it in the
+        // requested order instead, up to the limit, and none of them is the requested vote.
+        let vote = maybe_votes
+            .and_then(|mut votes| votes.shift_remove(&vote_poll_id))
+            .flatten()
+            .map(|vote| Vote::ResourceVote(vote.resource_vote));
 
-        if id != id_in_request {
-            return Err(Error::ResponseDecodeError {
-                error: format!(
-                    "expected vote for identity {}, got vote for identity {}",
-                    id_in_request, id
-                ),
-            });
-        }
-
-        Ok((
-            vote.map(|vote| Vote::ResourceVote(vote.resource_vote)),
-            mtd,
-            proof,
-        ))
+        Ok((vote, mtd, proof))
     }
 }
 
@@ -6488,15 +6541,19 @@ mod tests {
 
     #[test]
     fn vote_identity_vote_rejects_bad_identity_id_length() {
-        // The Vote impl validates id_in_request length before delegating.
+        // The request is validated before the proof is read.
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo;
         use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
         let request: platform::GetContestedResourceIdentityVotesRequest =
             GetContestedResourceIdentityVotesRequestV0 {
                 identity_id: vec![0u8; 5], // bad
-                limit: None,
+                limit: Some(1),
                 offset: None,
                 order_ascending: true,
-                start_at_vote_poll_id_info: None,
+                start_at_vote_poll_id_info: Some(StartAtVotePollIdInfo {
+                    start_at_poll_identifier: vec![1u8; 32],
+                    start_poll_identifier_included: true,
+                }),
                 prove: true,
             }
             .into();
@@ -6513,6 +6570,71 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn should_refuse_a_vote_request_that_does_not_start_at_its_vote_poll() {
+        // The proved votes are keyed by vote poll id, so without the poll the request starts
+        // at, including it, there is no vote to pick from them. Such a request is refused
+        // before it is sent: refused only once a node answered, it would count against that
+        // node although the node answered it correctly.
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo;
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
+        let request =
+            |start_at_vote_poll_id_info| -> platform::GetContestedResourceIdentityVotesRequest {
+                GetContestedResourceIdentityVotesRequestV0 {
+                    identity_id: vec![7u8; 32],
+                    limit: Some(1),
+                    offset: None,
+                    order_ascending: true,
+                    start_at_vote_poll_id_info,
+                    prove: true,
+                }
+                .into()
+            };
+
+        let starting_at_its_vote_poll = request(Some(StartAtVotePollIdInfo {
+            start_at_poll_identifier: vec![1u8; 32],
+            start_poll_identifier_included: true,
+        }));
+        <Vote as FromProof<platform::GetContestedResourceIdentityVotesRequest>>::check_request(
+            &starting_at_its_vote_poll,
+            default_platform_version(),
+        )
+        .expect("a request starting at its vote poll is sent");
+
+        for start_at_vote_poll_id_info in [
+            None,
+            Some(StartAtVotePollIdInfo {
+                start_at_poll_identifier: vec![1u8; 32],
+                start_poll_identifier_included: false,
+            }),
+            // Not a vote poll id: 5 bytes instead of 32.
+            Some(StartAtVotePollIdInfo {
+                start_at_poll_identifier: vec![1u8; 5],
+                start_poll_identifier_included: true,
+            }),
+        ] {
+            let request = request(start_at_vote_poll_id_info);
+            let err = <Vote as FromProof<
+                platform::GetContestedResourceIdentityVotesRequest,
+            >>::check_request(&request, default_platform_version())
+            .unwrap_err();
+            assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+
+            let provider = unreachable_provider();
+            let err = <Vote as FromProof<
+                platform::GetContestedResourceIdentityVotesRequest,
+            >>::maybe_from_proof(
+                request,
+                platform::GetContestedResourceIdentityVotesResponse::default(),
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+            assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+        }
     }
 
     #[test]

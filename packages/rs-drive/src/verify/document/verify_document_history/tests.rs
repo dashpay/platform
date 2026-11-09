@@ -380,15 +380,15 @@ fn should_serve_both_history_pointer_types_as_one_grovedb_proof() {
 
 #[test]
 fn should_preserve_non_history_roots_fees_and_proofs_after_grove_upgrade() {
-    use dpp::dashcore::hashes::{sha256, Hash};
+    use dpp::dashcore::hashes::sha256;
     use grovedb_version::version::v4::GROVE_V4;
 
     for selected in [
         PlatformVersion::get(14).unwrap(),
         PlatformVersion::get(15).unwrap(),
     ] {
-        // Historical bytes pin replay compatibility independently of agreement
-        // between the current GroveDB engines.
+        // Current upstream commitments pin replay compatibility independently of agreement
+        // between GroveDB engines. Protocol 15 stores contracts compiled.
         let (expected_root, expected_proof) = if selected.protocol_version == 14 {
             (
                 "7dbeb13c417200f86e7f29d5f0967d62c222ae6f4abaf6d83a79adfc6ec732c1",
@@ -396,8 +396,8 @@ fn should_preserve_non_history_roots_fees_and_proofs_after_grove_upgrade() {
             )
         } else {
             (
-                "7ea3acea864c917efe5c201b7be554ebbb105d3c065ae85684c93f355223db31",
-                "5a2bf14e60db3fb2b1deef28a8a9f94da1e0cbaab961ff958ad8bd0b15a01512",
+                "651594de7d2cae89a6730ecdd0332a8b9702ca4ae0774765ffe4c5a8df75b7dc",
+                "19f71d377e3e4378cc613495e47b6854f41d1a626b37c6a35c8ea5f8e8a19126",
             )
         };
         let mut reference = selected.clone();
@@ -493,7 +493,11 @@ fn should_preserve_non_history_roots_fees_and_proofs_after_grove_upgrade() {
             assert_eq!(sha256::Hash::hash(&proof).to_string(), expected_proof);
             assert_eq!(
                 (contract_fee.storage_fee, contract_fee.processing_fee),
-                (110_781_000, 1_773_200)
+                if selected.protocol_version == 14 {
+                    (110_781_000, 1_773_200)
+                } else {
+                    (178_335_000, 2_789_600)
+                }
             );
             assert_eq!(
                 (document_fee.storage_fee, document_fee.processing_fee),
@@ -613,7 +617,7 @@ fn should_preserve_non_history_roots_fees_and_proofs_after_grove_upgrade() {
                 let expected_nested_proof = if selected.protocol_version == 14 {
                     "9a1b6f2933735c9a54d7eadac8872d08ce5936e4bc798aa6d00abebd73248578"
                 } else {
-                    "3ad7a6bdde75984eaa8b353cde0329abb1c27de1671320fe9e99b7aca2378bc1"
+                    "3c84d97bc0393698e5e2a33cd55e52c4e2f526dd4e13c96065578d25af797846"
                 };
                 assert_eq!(
                     sha256::Hash::hash(&nested_proof).to_string(),
@@ -1126,10 +1130,10 @@ fn should_include_reference_hops_in_history_pointer_size_estimates() {
 #[test]
 fn should_charge_count_tree_overhead_when_propagating_history_roots() {
     use crate::drive::document::paths::contract_documents_primary_key_path;
+    use crate::util::estimated_layers::EstimatedLayers;
     use crate::util::storage_flags::StorageFlags;
     use grovedb::batch::KeyInfoPath;
     use grovedb::{EstimatedLayerCount, EstimatedLayerSizes, EstimatedSumTrees};
-    use std::collections::HashMap;
     let version = PlatformVersion::get(15).unwrap();
     let contract = json_document_to_contract(
         "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
@@ -1153,7 +1157,7 @@ fn should_charge_count_tree_overhead_when_propagating_history_roots() {
         contract: &contract,
         document_type,
     };
-    let mut layers = HashMap::new();
+    let mut layers = EstimatedLayers::new();
     Drive::add_estimation_costs_for_add_document_to_primary_storage(
         &info,
         contract_documents_primary_key_path(contract.id().as_slice(), "profile"),
@@ -1164,6 +1168,7 @@ fn should_charge_count_tree_overhead_when_propagating_history_roots() {
     let mut root = contract_document_type_path_vec(contract.id().as_slice(), "profile");
     root.push(vec![DOCUMENT_HISTORY_TREE_KEY]);
     let mut layer = layers
+        .into_layers()
         .remove(&KeyInfoPath::from_known_path(
             root.iter().map(Vec::as_slice),
         ))
@@ -1332,6 +1337,82 @@ fn should_reject_history_proofs_that_omit_a_queried_branch() {
         assert!(
             verify(&query, &forged, document_type, version).is_err(),
             "a metadata proof that omits branch {omitted} verified as an authenticated absence"
+        );
+    }
+}
+
+#[test]
+fn should_keep_the_exact_history_query_and_its_parent_echo_at_the_history_host() {
+    use grovedb::QueryItem;
+    let contract_id = [1; 32];
+    let document_id = [2; 32];
+    let time = vec![128, 0, 0, 0, 0, 0, 7, 208];
+    let cursor = vec![128, 0, 0, 0, 0, 0, 7, 208, 128, 0, 0, 0, 0, 0, 0, 1];
+    for (filter, item, offset) in [
+        (
+            DocumentHistoryFilter::StartAtTime(2000),
+            QueryItem::RangeFrom(time..),
+            None,
+        ),
+        (
+            DocumentHistoryFilter::StartAfter {
+                time_ms: 2000,
+                revision: 1,
+            },
+            QueryItem::RangeAfter(cursor..),
+            None,
+        ),
+        (
+            DocumentHistoryFilter::StartAtRevision(2),
+            QueryItem::RangeFull(std::ops::RangeFull),
+            Some(1),
+        ),
+        (
+            DocumentHistoryFilter::Revision(1),
+            QueryItem::RangeFull(std::ops::RangeFull),
+            Some(0),
+        ),
+        (
+            DocumentHistoryFilter::Revision(65536),
+            QueryItem::RangeFull(std::ops::RangeFull),
+            Some(65535),
+        ),
+    ] {
+        let query = DocumentHistoryDriveQuery {
+            contract_id,
+            document_type_name: "note".into(),
+            document_id,
+            filter,
+            limit: Some(1),
+        };
+        let mut expected = Query::new();
+        for branch in [0, 1] {
+            expected.insert_key(vec![branch]);
+            expected.add_conditional_subquery(
+                QueryItem::Key(vec![branch]),
+                None,
+                Some(Query::new_single_key(document_id.to_vec())),
+            );
+        }
+        let mut page = Query::new_single_query_item(item);
+        page.limit = Some(1);
+        page.offset = offset;
+        let mut history = Query::new_single_key(document_id.to_vec());
+        history.add_parent_tree_on_subquery = true;
+        history.set_subquery(page);
+        expected.insert_key(vec![2]);
+        expected.add_conditional_subquery(QueryItem::Key(vec![2]), None, Some(history));
+        let expected = PathQuery::new_unsized(
+            vec![vec![64], contract_id.to_vec(), vec![1], b"note".to_vec()],
+            expected,
+        );
+        assert_eq!(
+            query
+                .construct_path_query(PlatformVersion::latest())
+                .unwrap(),
+            expected,
+            "{:?}",
+            query.filter
         );
     }
 }

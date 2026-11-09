@@ -19,6 +19,7 @@ use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::common::encode::encode_u64;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType, QueryTarget};
 use crate::util::object_size_info::DocumentInfo;
 use crate::util::object_size_info::PathKeyElementInfo::{
@@ -36,8 +37,7 @@ use dpp::document::DocumentV0Getters;
 use dpp::version::PlatformVersion;
 use grovedb::batch::{key_info::KeyInfo, KeyInfoPath};
 use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
+use grovedb::{Element, TransactionArg, TreeType};
 
 impl Drive {
     /// Stores immutable revisions separately from the current primary-key entry.
@@ -47,7 +47,7 @@ impl Drive {
         info: &DocumentAndContractInfo,
         block_info: &BlockInfo,
         insert_without_check: bool,
-        estimated: &mut Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>,
+        estimated: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,

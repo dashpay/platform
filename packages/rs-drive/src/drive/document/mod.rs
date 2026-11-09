@@ -117,6 +117,9 @@ pub mod paths;
 /// Primary key tree type resolution
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod primary_key_tree_type;
+/// The store of a private document type (protocol version 15)
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod private_document_store;
 #[cfg(feature = "server")]
 pub(crate) mod prove;
 /// Terminal property-name tree resolution for ranked (indexed-tree) indexes
@@ -133,6 +136,10 @@ pub(crate) mod index_level_tree_types;
 /// index walkers' own tree-type rules
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod layout;
+
+/// Whether a document's unique index entry sits under the key of its values
+#[cfg(feature = "server")]
+pub mod shared_unique_entry;
 
 /// What creating one document costs, element by element, from the elements
 /// the index walkers write

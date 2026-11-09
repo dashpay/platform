@@ -66,8 +66,8 @@ use dpp::consensus::state::data_trigger::DataTriggerError::{
   DataTriggerConditionError, DataTriggerExecutionError, DataTriggerInvalidResultError,
 };
 use wasm_bindgen::{JsError, JsValue};
-use dpp::consensus::basic::data_contract::{ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError, DataContractInvalidRequiredFieldsUpdateError, DataContractTokenConfigurationUpdateError, DecimalsOverLimitError, DuplicateKeywordsError, GroupExceedsMaxMembersError, GroupHasTooFewMembersError, GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError, GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupPositionDoesNotExistError, GroupRequiredPowerIsInvalidError, GroupTotalPowerLessThanRequiredError, InvalidDescriptionLengthError, InvalidDocumentTypeRequiredSecurityLevelError, InvalidKeywordCharacterError, InvalidKeywordLengthError, InvalidTokenBaseSupplyError, InvalidTokenDistributionFunctionDivideByZeroError, InvalidTokenDistributionFunctionIncoherenceError, InvalidTokenDistributionFunctionInvalidParameterError, InvalidTokenDistributionFunctionInvalidParameterTupleError, InvalidTokenLanguageCodeError, InvalidTokenNameCharacterError, InvalidTokenNameLengthError, MainGroupIsNotDefinedError, NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractGroupPositionsError, NonContiguousContractTokenPositionsError, PreProgrammedDistributionAmountOverLimitError, NonTransferableTokenPaymentMustBurnError, NonTransferableTokenShieldedPoolError, NonTransferableTokenTradeableError, RedundantDocumentPaidForByTokenWithContractId, TokenPaymentByBurningOnlyAllowedOnInternalTokenError, TokenShieldedPoolIncompatibleRulesError, TooManyKeywordsError, UnknownDocumentActionTokenEffectError, UnknownDocumentCreationRestrictionModeError, UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError};
-use dpp::consensus::basic::document::{ContestedDocumentsTemporarilyNotAllowedError, DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError, DocumentPropertyConstraintViolatedError, DocumentPropertyMaxBytesExceededError, DocumentPropertyNotDistinctError, DocumentPropertyNotGeneratedError, DocumentReferencePreimageInvalidError, InvalidEncryptedPropertyShapeError, MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
+use dpp::consensus::basic::data_contract::{ContestedUniqueIndexOnMutableDocumentTypeError, DataContractCompiledMaxSizeExceededError, ContestedUniqueIndexWithUniqueIndexError, DataContractInvalidRequiredFieldsUpdateError, DataContractTokenConfigurationUpdateError, DecimalsOverLimitError, DuplicateKeywordsError, GroupExceedsMaxMembersError, GroupHasTooFewMembersError, GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError, GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupPositionDoesNotExistError, GroupRequiredPowerIsInvalidError, GroupTotalPowerLessThanRequiredError, InvalidDescriptionLengthError, InvalidDocumentTypeRequiredSecurityLevelError, InvalidKeywordCharacterError, InvalidKeywordLengthError, InvalidTokenBaseSupplyError, InvalidTokenDistributionFunctionDivideByZeroError, InvalidTokenDistributionFunctionIncoherenceError, InvalidTokenDistributionFunctionInvalidParameterError, InvalidTokenDistributionFunctionInvalidParameterTupleError, InvalidTokenLanguageCodeError, InvalidTokenNameCharacterError, InvalidTokenNameLengthError, MainGroupIsNotDefinedError, NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractGroupPositionsError, NonContiguousContractTokenPositionsError, PreProgrammedDistributionAmountOverLimitError, NonTransferableTokenPaymentMustBurnError, NonTransferableTokenShieldedPoolError, NonTransferableTokenTradeableError, RedundantDocumentPaidForByTokenWithContractId, TokenPaymentByBurningOnlyAllowedOnInternalTokenError, TokenShieldedPoolIncompatibleRulesError, TooManyKeywordsError, UnknownDocumentActionTokenEffectError, UnknownDocumentCreationRestrictionModeError, UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError};
+use dpp::consensus::basic::document::{ContestedDocumentsTemporarilyNotAllowedError, DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError, DocumentPropertyConstraintViolatedError, DocumentPropertyMaxBytesExceededError, DocumentPropertyNotDistinctError, DocumentPropertyNotGeneratedError, DocumentReferencePreimageInvalidError, DocumentTypePrivateError, InvalidEncryptedPropertyShapeError, MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
 use dpp::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, InvalidKeyPurposeForContractBoundsError, TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError};
 use dpp::consensus::basic::overflow_error::OverflowError;
@@ -83,6 +83,13 @@ use dpp::consensus::state::document::referenced_document_requirement_not_met_err
 use dpp::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
 use dpp::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
 use dpp::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
+use dpp::consensus::state::document::referenced_document_type_private_error::ReferencedDocumentTypePrivateError;
+use dpp::consensus::state::document::document_type_not_private_error::DocumentTypeNotPrivateError;
+use dpp::consensus::state::document::private_document_entry_size_mismatch_error::PrivateDocumentEntrySizeMismatchError;
+use dpp::consensus::basic::document::{
+    DuplicatePrivateDocumentEntryError, InvalidPrivateDocumentEntryCountError,
+    InvalidPrivateDocumentEntrySizeError,
+};
 use dpp::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
 use dpp::consensus::state::document::referenced_document_rule_read_invalid_error::ReferencedDocumentRuleReadInvalidError;
 use dpp::consensus::state::document::referenced_document_preceded_error::ReferencedDocumentPrecededError;
@@ -192,6 +199,11 @@ use dpp::consensus::state::voting::masternode_voted_too_many_times::MasternodeVo
 use dpp::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
 use dpp::consensus::state::voting::vote_choice_not_allowed_for_vote_poll_error::VoteChoiceNotAllowedForVotePollError;
 use dpp::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
+use dpp::consensus::state::voting::yes_no_vote_poll_not_available_for_voting_error::YesNoVotePollNotAvailableForVotingError;
+use dpp::consensus::state::decision_proposal::DecisionProposalEndDateOutOfRangeError;
+use dpp::consensus::basic::decision_proposal::{
+    DecisionProposalFundMismatchError, InvalidDecisionProposalRuleError,
+};
 
 use crate::errors::consensus::basic::data_contract::{
     DataContractErrorWasm, DataContractHaveNewUniqueIndexErrorWasm,
@@ -808,6 +820,21 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::ReferencedDocumentPrecededError(e) => {
             generic_consensus_error!(ReferencedDocumentPrecededError, e).into()
         }
+        StateError::YesNoVotePollNotAvailableForVotingError(e) => {
+            generic_consensus_error!(YesNoVotePollNotAvailableForVotingError, e).into()
+        }
+        StateError::DecisionProposalEndDateOutOfRangeError(e) => {
+            generic_consensus_error!(DecisionProposalEndDateOutOfRangeError, e).into()
+        }
+        StateError::ReferencedDocumentTypePrivateError(e) => {
+            generic_consensus_error!(ReferencedDocumentTypePrivateError, e).into()
+        }
+        StateError::DocumentTypeNotPrivateError(e) => {
+            generic_consensus_error!(DocumentTypeNotPrivateError, e).into()
+        }
+        StateError::PrivateDocumentEntrySizeMismatchError(e) => {
+            generic_consensus_error!(PrivateDocumentEntrySizeMismatchError, e).into()
+        }
     }
 }
 
@@ -1423,6 +1450,27 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::NonTransferableTokenTradeableError(e) => {
             generic_consensus_error!(NonTransferableTokenTradeableError, e).into()
+        }
+        BasicError::DataContractCompiledMaxSizeExceededError(e) => {
+            generic_consensus_error!(DataContractCompiledMaxSizeExceededError, e).into()
+        }
+        BasicError::DecisionProposalFundMismatchError(e) => {
+            generic_consensus_error!(DecisionProposalFundMismatchError, e).into()
+        }
+        BasicError::InvalidDecisionProposalRuleError(e) => {
+            generic_consensus_error!(InvalidDecisionProposalRuleError, e).into()
+        }
+        BasicError::DocumentTypePrivateError(e) => {
+            generic_consensus_error!(DocumentTypePrivateError, e).into()
+        }
+        BasicError::InvalidPrivateDocumentEntryCountError(e) => {
+            generic_consensus_error!(InvalidPrivateDocumentEntryCountError, e).into()
+        }
+        BasicError::InvalidPrivateDocumentEntrySizeError(e) => {
+            generic_consensus_error!(InvalidPrivateDocumentEntrySizeError, e).into()
+        }
+        BasicError::DuplicatePrivateDocumentEntryError(e) => {
+            generic_consensus_error!(DuplicatePrivateDocumentEntryError, e).into()
         }
     }
 }

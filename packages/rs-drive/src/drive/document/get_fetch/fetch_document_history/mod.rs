@@ -27,7 +27,6 @@ impl Drive {
     pub fn fetch_document_history_legacy(
         &self,
         contract_id: [u8; 32],
-        document_type_name: &str,
         document_type: DocumentTypeRef,
         document_id: [u8; 32],
         transaction: TransactionArg,
@@ -45,7 +44,6 @@ impl Drive {
         {
             0 => self.fetch_document_history_v0(
                 contract_id,
-                document_type_name,
                 document_type,
                 document_id,
                 transaction,
@@ -82,7 +80,6 @@ impl Drive {
                 let (start_at_ms, limit) = query.legacy_read()?;
                 let revisions = self.fetch_document_history_v0(
                     query.contract_id,
-                    &query.document_type_name,
                     document_type,
                     query.document_id,
                     transaction,

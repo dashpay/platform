@@ -4,6 +4,7 @@ use crate::error::Error;
 use crate::query::document_history_drive_query::{
     invalid, DocumentHistoryDriveQuery, DocumentHistoryDriveQueryExecutionResult,
 };
+use crate::query::refuse_a_private_document_type;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
@@ -19,6 +20,7 @@ impl Drive {
         transaction: TransactionArg,
         version: &PlatformVersion,
     ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
+        refuse_a_private_document_type(document_type).map_err(Error::Query)?;
         if !document_type.documents_keep_history() {
             return Err(invalid("document type does not keep history"));
         }

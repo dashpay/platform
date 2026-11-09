@@ -23,7 +23,7 @@ impl Drive {
     pub fn prove_document_history_legacy(
         &self,
         contract_id: [u8; 32],
-        document_type_name: &str,
+        document_type: DocumentTypeRef,
         document_id: [u8; 32],
         transaction: TransactionArg,
         start_at_ms: u64,
@@ -40,7 +40,7 @@ impl Drive {
         {
             0 => self.prove_document_history_v0(
                 contract_id,
-                document_type_name,
+                document_type,
                 document_id,
                 transaction,
                 start_at_ms,
@@ -76,7 +76,7 @@ impl Drive {
                 let (start_at_ms, limit) = query.legacy_read()?;
                 self.prove_document_history_v0(
                     query.contract_id,
-                    &query.document_type_name,
+                    document_type,
                     query.document_id,
                     transaction,
                     start_at_ms,

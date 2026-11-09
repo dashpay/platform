@@ -8,6 +8,11 @@ use crate::drive::votes;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::Query;
+use dpp::decision_proposal::is_decision_proposal;
+use dpp::state_transition::batch_transition::batched_transition::document_transition::{
+    DocumentTransition, DocumentTransitionV0Methods,
+};
+use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use grovedb::{PathQuery, SizedQuery};
 use platform_version::version::PlatformVersion;
 use platform_version::TryFromPlatformVersioned;
@@ -25,6 +30,28 @@ pub enum SingleDocumentDriveQueryContestedStatus {
     MaybeContested = 1,
     /// We know that the document was contested by the system and the contest is not over.
     Contested = 2,
+}
+
+impl SingleDocumentDriveQueryContestedStatus {
+    /// Where the document of `document_transition` is stored once the transition executes,
+    /// which is where its proof looks. A create stating a fund opens a contest, and its
+    /// document waits in the contest's area. A decision proposal (protocol version 15) states a
+    /// fund too, but the fund pays the yes/no poll it opens, and the proposal is stored as any
+    /// document is.
+    pub fn of_document_transition(document_transition: &DocumentTransition) -> Self {
+        match document_transition {
+            DocumentTransition::Create(create_transition)
+                if create_transition.prefunded_voting_balance().is_some()
+                    && !is_decision_proposal(
+                        &document_transition.data_contract_id(),
+                        document_transition.document_type_name(),
+                    ) =>
+            {
+                SingleDocumentDriveQueryContestedStatus::Contested
+            }
+            _ => SingleDocumentDriveQueryContestedStatus::NotContested,
+        }
+    }
 }
 
 impl TryFrom<i32> for SingleDocumentDriveQueryContestedStatus {
@@ -101,9 +128,23 @@ impl SingleDocumentDriveQuery {
                 self.construct_non_contested_path_query(true, platform_version)
             }
             SingleDocumentDriveQueryContestedStatus::MaybeContested => {
-                let non_contested =
+                let mut non_contested =
                     self.construct_non_contested_path_query(true, platform_version)?;
-                let contested = self.construct_contested_path_query(true);
+                let mut contested = self.construct_contested_path_query(true);
+                if platform_version
+                    .drive
+                    .grove_version
+                    .grovedb_versions
+                    .path_query_methods
+                    .merge
+                    == 2
+                {
+                    // Each branch selects one document, so turning its global limit into an
+                    // instance cap produces the same merged bytes as the earlier limit lift.
+                    for selection in [&mut non_contested, &mut contested] {
+                        selection.query.query.limit = selection.query.limit.take();
+                    }
+                }
                 PathQuery::merge(
                     vec![&non_contested, &contested],
                     &platform_version.drive.grove_version,
@@ -181,6 +222,16 @@ impl TryFromPlatformVersioned<SingleDocumentDriveQuery> for PathQuery {
 mod tests {
     use super::*;
     use crate::error::drive::DriveError;
+    #[cfg(feature = "full")]
+    use crate::util::test_helpers::setup::setup_drive;
+    #[cfg(feature = "full")]
+    use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
+    #[cfg(feature = "full")]
+    use grovedb::{Element, GroveDb};
+    #[cfg(feature = "full")]
+    use grovedb_version::version::{v4::GROVE_V4, v5::GROVE_V5};
+    #[cfg(feature = "full")]
+    use std::collections::BTreeSet;
 
     fn keep_history_query(block_time_ms: Option<u64>) -> SingleDocumentDriveQuery {
         SingleDocumentDriveQuery {
@@ -230,6 +281,186 @@ mod tests {
     }
 
     #[test]
+    fn should_merge_maybe_contested_legacy_history_for_a_protocol_15_caller() {
+        let mut caller = PlatformVersion::get(15).expect("protocol 15").clone();
+        caller
+            .drive
+            .methods
+            .document
+            .document_history_storage_layout = 0;
+        let mut query = keep_history_query(None);
+        query.contested_status = SingleDocumentDriveQueryContestedStatus::MaybeContested;
+        let actual = query
+            .construct_path_query(&caller)
+            .expect("legacy history query merges");
+        let expected = query
+            .construct_path_query(PlatformVersion::get(14).expect("protocol 14"))
+            .expect("released query merges");
+        assert_eq!(actual, expected);
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    fn should_preserve_single_document_merge_bytes_and_results_across_layouts() {
+        for layout in [0, 1] {
+            for keeps_history in [false, true] {
+                for present in [false, true] {
+                    let mut caller = PlatformVersion::latest().clone();
+                    caller
+                        .drive
+                        .methods
+                        .document
+                        .document_history_storage_layout = layout;
+                    let mut previous = caller.clone();
+                    previous.drive.grove_version = GROVE_V4;
+                    let drive = setup_drive(None);
+                    let mut query = keep_history_query(None);
+                    query.document_type_keeps_history = keeps_history;
+                    let ordinary = query
+                        .construct_non_contested_path_query(true, &caller)
+                        .unwrap();
+                    let contested = query.construct_contested_path_query(true);
+                    let mut created = BTreeSet::new();
+                    for path in [&ordinary.path, &contested.path] {
+                        for depth in 0..path.len() {
+                            if created.insert(path[..=depth].to_vec()) {
+                                drive
+                                    .grove
+                                    .insert(
+                                        &path[..depth],
+                                        &path[depth],
+                                        Element::empty_tree(),
+                                        None,
+                                        None,
+                                        &GROVE_V5,
+                                    )
+                                    .unwrap()
+                                    .expect("selection subtree");
+                            }
+                        }
+                    }
+                    if present {
+                        let mut document_path = ordinary.path.clone();
+                        let key = if keeps_history && layout == 0 {
+                            drive
+                                .grove
+                                .insert(
+                                    document_path.as_slice(),
+                                    &query.document_id,
+                                    Element::empty_tree(),
+                                    None,
+                                    None,
+                                    &GROVE_V5,
+                                )
+                                .unwrap()
+                                .expect("legacy document subtree");
+                            document_path.push(query.document_id.to_vec());
+                            vec![0]
+                        } else {
+                            query.document_id.to_vec()
+                        };
+                        drive
+                            .grove
+                            .insert(
+                                document_path.as_slice(),
+                                &key,
+                                Element::new_item(vec![7]),
+                                None,
+                                None,
+                                &GROVE_V5,
+                            )
+                            .unwrap()
+                            .expect("ordinary document");
+                        drive
+                            .grove
+                            .insert(
+                                contested.path.as_slice(),
+                                &query.document_id,
+                                Element::new_item(vec![8]),
+                                None,
+                                None,
+                                &GROVE_V5,
+                            )
+                            .unwrap()
+                            .expect("contested document");
+                    }
+                    for status in [
+                        SingleDocumentDriveQueryContestedStatus::NotContested,
+                        SingleDocumentDriveQueryContestedStatus::Contested,
+                        SingleDocumentDriveQueryContestedStatus::MaybeContested,
+                    ] {
+                        query.contested_status = status;
+                        let old = query.construct_path_query(&previous).expect("V4 query");
+                        let new = query.construct_path_query(&caller).expect("V5 query");
+                        assert_eq!(
+                            old, new,
+                            "layout {layout}, history {keeps_history}, present {present}"
+                        );
+                        let config = bincode::config::standard().with_big_endian();
+                        assert_eq!(
+                            bincode::encode_to_vec(&old, config).unwrap(),
+                            bincode::encode_to_vec(&new, config).unwrap()
+                        );
+                        let read = |selection: &PathQuery, grove_version| {
+                            drive
+                                .grove
+                                .query_raw(
+                                    selection,
+                                    false,
+                                    true,
+                                    true,
+                                    QueryPathKeyElementTrioResultType,
+                                    None,
+                                    grove_version,
+                                )
+                                .unwrap()
+                                .expect("document selection")
+                                .0
+                                .to_path_key_elements()
+                        };
+                        let expected = read(&old, &GROVE_V4);
+                        assert_eq!(read(&new, &GROVE_V5), expected);
+                        assert_eq!(
+                            expected.len(),
+                            if present {
+                                if query.contested_status
+                                    == SingleDocumentDriveQueryContestedStatus::MaybeContested
+                                {
+                                    2
+                                } else {
+                                    1
+                                }
+                            } else {
+                                0
+                            }
+                        );
+                        for (selection, grove_version) in [(&old, &GROVE_V4), (&new, &GROVE_V5)] {
+                            let proof = drive
+                                .grove
+                                .prove_query(selection, None, grove_version)
+                                .unwrap()
+                                .expect("document proof");
+                            let (root, rows) =
+                                GroveDb::verify_query(&proof, selection, grove_version)
+                                    .expect("verified document proof");
+                            assert_eq!(
+                                root,
+                                drive.grove.root_hash(None, grove_version).unwrap().unwrap()
+                            );
+                            assert_eq!(
+                                rows.into_iter()
+                                    .filter(|(_, _, element)| element.is_some())
+                                    .count(),
+                                expected.len()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn should_reject_unknown_primary_key_path_query_version() {
         let mut platform_version = PlatformVersion::latest().clone();
         platform_version
@@ -251,5 +482,60 @@ mod tests {
                 received: 2,
             }) if method == "document_history_storage_layout" && known_versions == vec![0, 1]
         ));
+    }
+
+    use dpp::decision_proposal::{
+        DECISION_PROPOSALS_CONTRACT_ID, DECISION_PROPOSAL_FUND_NAME, PROPOSAL_DOCUMENT_TYPE_NAME,
+    };
+    use dpp::fee::Credits;
+    use dpp::identifier::Identifier;
+    use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
+    use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+    use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransition;
+
+    fn create(
+        contract_id: Identifier,
+        document_type_name: &str,
+        stated_fund: Option<(String, Credits)>,
+    ) -> DocumentTransition {
+        let mut create = DocumentCreateTransition::default();
+        create.base_mut().set_data_contract_id(contract_id);
+        create
+            .base_mut()
+            .set_document_type_name(document_type_name.to_string());
+        *create.prefunded_voting_balances_mut() = stated_fund;
+        DocumentTransition::Create(create)
+    }
+
+    /// A create stating a contest fund is looked for in the contest's area, while a decision
+    /// proposal, which states the decision proposal fund, is stored and looked for as any
+    /// document
+    #[test]
+    fn should_look_for_a_decision_proposal_among_documents_and_a_contested_create_in_its_contest() {
+        let contract_id = Identifier::new([7; 32]);
+        assert_eq!(
+            SingleDocumentDriveQueryContestedStatus::of_document_transition(&create(
+                contract_id,
+                "domain",
+                Some(("parentNameAndLabel".to_string(), 20_000_000_000)),
+            )),
+            SingleDocumentDriveQueryContestedStatus::Contested
+        );
+        assert_eq!(
+            SingleDocumentDriveQueryContestedStatus::of_document_transition(&create(
+                contract_id,
+                "domain",
+                None,
+            )),
+            SingleDocumentDriveQueryContestedStatus::NotContested
+        );
+        assert_eq!(
+            SingleDocumentDriveQueryContestedStatus::of_document_transition(&create(
+                DECISION_PROPOSALS_CONTRACT_ID,
+                PROPOSAL_DOCUMENT_TYPE_NAME,
+                Some((DECISION_PROPOSAL_FUND_NAME.to_string(), 50_000_000_000)),
+            )),
+            SingleDocumentDriveQueryContestedStatus::NotContested
+        );
     }
 }

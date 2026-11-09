@@ -305,6 +305,7 @@ macro_rules! node_query {
         }
     };
 }
+pub(super) use node_query;
 
 node_query!(
     KeysQuery,
@@ -354,7 +355,7 @@ pub(super) async fn assert_no_node_bans<R: TransportRequest<Client = QueryNodeCl
             let error = client
                 .execute(query.clone(), RequestSettings::default())
                 .await
-                .expect_err("invalid caller offset");
+                .expect_err("a request every node refuses");
             let bans = client.address_list().ban_info();
             let attempts = attempts.lock().expect("attempt log").len();
             if grpc_code(&error.inner) != Some(Code::InvalidArgument)
@@ -373,7 +374,7 @@ pub(super) async fn assert_no_node_bans<R: TransportRequest<Client = QueryNodeCl
     .expect("bounded three-call scenario cannot wait for bans to expire");
     assert!(
         failures.is_empty(),
-        "bad caller offset consumed healthy nodes:\n{}",
+        "a request every node refuses consumed healthy nodes:\n{}",
         failures.join("\n")
     );
 }

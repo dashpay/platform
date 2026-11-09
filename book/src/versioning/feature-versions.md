@@ -239,6 +239,8 @@ And those go deeper. For example, `DPPContractVersions` contains not just
 pub struct DPPContractVersions {
     pub max_serialized_size: u32,
     pub contract_serialization_version: FeatureVersionBounds,
+    pub contract_storage_serialization_version: FeatureVersion,
+    pub contract_storage_document_type_version: FeatureVersion,
     pub contract_structure_version: FeatureVersion,
     pub created_data_contract_structure: FeatureVersion,
     pub config: FeatureVersionBounds,
@@ -252,6 +254,16 @@ Notice `max_serialized_size: u32`. Not every field is a `FeatureVersion`. Some
 are configuration values -- limits, thresholds, constants -- that change between
 protocol versions. The version struct is flexible enough to hold both "which
 implementation to use" and "what parameters to use."
+
+Notice also that a contract has two serialization selectors.
+`contract_serialization_version` is the format state transitions carry and
+clients are sent; `contract_storage_serialization_version` is the format Drive
+writes to state. They are separate because a stored format need not be one a
+transition may carry: format version 2 holds the contract's compiled document
+types, which only state holds, and is written only from the protocol version
+whose table selects it. `contract_storage_document_type_version` picks the
+generation each compiled document type is stored in; the stored form carries
+its generation, so a reader never needs the table to decode it.
 
 ## The Drive ABCI Branch
 

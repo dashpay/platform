@@ -71,6 +71,19 @@ impl DataContractV0 {
 
                 Ok(data_contract)
             }
+            // The structure of protocol versions 1 to 8 reads a stored format version 2 contract
+            // as its format version 1, parsing the schemas: that structure holds no compiled
+            // types, and no state of those versions holds format version 2
+            DataContractInSerializationFormat::V2(serialization_format_v2) => {
+                let data_contract = DataContractV0::try_from_platform_versioned_v1(
+                    serialization_format_v2.into(),
+                    full_validation,
+                    validation_operations,
+                    platform_version,
+                )?;
+
+                Ok(data_contract)
+            }
         }
     }
 

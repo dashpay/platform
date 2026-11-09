@@ -300,6 +300,7 @@ mod tests {
     use dpp::secp256k1::Keypair;
 
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contract::document_type::random_document::{
         CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
     };
@@ -656,7 +657,7 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 25_000_000_000, // 0.25 Dash
+            balance: 27_000_000_000, // 0.27 Dash
             revision: 0,
         }
         .into();
@@ -732,7 +733,13 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
-            24003037140
+            // from protocol version 15 the contract is stored compiled (format version 2), about
+            // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
+            // charged per compiled byte
+            // and a document type's schema size is billed at least the values the
+            // repeated-key walk read; the DashPay v3 schema adds its declarations and the
+            // privateContactRequest type (one more document type registration fee)
+            26005728080
         );
 
         let check_result = platform
@@ -961,7 +968,7 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 27_000_000_000,
+            balance: 29_000_000_000,
             revision: 0,
         }
         .into();
@@ -1086,7 +1093,10 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 346660);
+        // From protocol version 15 a document type's schema size is billed at least the
+        // values the repeated-key walk read
+        // and DashPay v3's declarations add to the schema the validation is billed for
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 346830);
 
         let check_result = platform
             .check_tx(
@@ -1320,7 +1330,7 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 25_000_000_000, // 0.25 Dash
+            balance: 27_000_000_000, // 0.27 Dash
             revision: 0,
         }
         .into();
@@ -1399,7 +1409,13 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
-            24006074280
+            // from protocol version 15 the contract is stored compiled (format version 2), about
+            // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
+            // charged per compiled byte
+            // and a document type's schema size is billed at least the values the
+            // repeated-key walk read; the DashPay v3 schema adds its declarations and the
+            // privateContactRequest type (one more document type registration fee)
+            26011456160
         );
 
         let check_result = platform
@@ -1481,7 +1497,11 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 24_200_000_000, // we have enough balance only for 1 insertion (this is where this test is different)
+            // we have enough balance only for 1 insertion (this is where this test is different);
+            // from protocol version 15 one insertion stores the contract compiled, about 1.8
+            // times its bytes, and DashPay v3 adds its declarations and a document type, so it
+            // needs more
+            balance: 26_400_000_000,
             revision: 0,
         }
         .into();
@@ -1877,7 +1897,13 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
-            24003037140
+            // from protocol version 15 the contract is stored compiled (format version 2), about
+            // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
+            // charged per compiled byte
+            // and a document type's schema size is billed at least the values the
+            // repeated-key walk read; the DashPay v3 schema adds its declarations and the
+            // privateContactRequest type (one more document type registration fee)
+            26005728080
         );
 
         platform
@@ -1970,8 +1996,14 @@ mod tests {
             // contract bytes; the DPNS v3 preorder type the update copies in has its own
             // (its per-owner index, its non-unique `nameHashAndHeight` index and its countable
             // `nameHash` index each registered at 0.01 Dash, `$createdAt` and
-            // `$createdAtBlockHeight` required, a ttl, the `atMostAThousandPerName` rule)
-            29003303730
+            // `$createdAtBlockHeight` required, a ttl, the `atMostAThousandPerName` rule); from
+            // protocol version 15 the contract is read and stored compiled (format version 2),
+            // about 1.8 times its bytes, which are byte-billed, and checking its compiled size
+            // is charged per compiled byte
+            // and a document type's schema size is billed at least the values the
+            // repeated-key walk read; the DashPay v3 schema adds its declarations and the
+            // privateContactRequest type (one more document type registration fee)
+            31006514040
         );
 
         let check_result = platform
@@ -2562,7 +2594,13 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
-            24003037140
+            // from protocol version 15 the contract is stored compiled (format version 2), about
+            // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
+            // charged per compiled byte
+            // and a document type's schema size is billed at least the values the
+            // repeated-key walk read; the DashPay v3 schema adds its declarations and the
+            // privateContactRequest type (one more document type registration fee)
+            26005728080
         );
 
         platform
@@ -2685,7 +2723,10 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 448640);
+        // From protocol version 15 a document type's schema size is billed at least the
+        // values the repeated-key walk read
+        // and DashPay v3's declarations add to the schema the validation is billed for
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 448810);
 
         let check_result = platform
             .check_tx(
@@ -2838,6 +2879,12 @@ mod tests {
             .expect("expected to set the document id");
 
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
+        // The generator fills the payment addresses with random bytes, and from DashPay v3
+        // (protocol version 15) a rule holds each to its type byte, 0x00 or 0x01
+        if profile.properties().contains_key("corePaymentAddress") {
+            document.set("corePaymentAddress", vec![0u8; 21].into());
+            document.set("platformPaymentAddress", vec![1u8; 21].into());
+        }
 
         let mut altered_document = document.clone();
 
@@ -4354,7 +4401,7 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 25_000_000_000, // 0.25 Dash
+            balance: 27_000_000_000, // 0.27 Dash
             revision: 0,
         }
         .into();
@@ -4622,7 +4669,7 @@ mod tests {
         let identity: Identity = IdentityV0 {
             id: Identifier::new([7; 32]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 25_000_000_000, // 0.25 Dash
+            balance: 27_000_000_000, // 0.27 Dash
             revision: 0,
         }
         .into();
@@ -4750,7 +4797,7 @@ mod tests {
                     BasicError::SerializedObjectParsingError(_)
                 ))
             );
-            assert_eq!(balance, 25_000_000_000, "nothing is charged");
+            assert_eq!(balance, 27_000_000_000, "nothing is charged");
         }
     }
 
@@ -4772,7 +4819,7 @@ mod tests {
                 execution_result,
                 StateTransitionExecutionResult::SuccessfulExecution { .. }
             );
-            assert!(balance < 25_000_000_000, "the create is paid");
+            assert!(balance < 27_000_000_000, "the create is paid");
         }
     }
 }

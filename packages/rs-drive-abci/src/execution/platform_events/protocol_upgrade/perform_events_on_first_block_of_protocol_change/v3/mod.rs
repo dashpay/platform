@@ -248,8 +248,8 @@ mod tests {
                 .unwrap();
             assert_eq!(
                 hex::encode(root),
-                "9e2aef15983ee44cceaed85ad737f27b3f32fe3f2fc3bb0743cb5230eada61d6",
-                "activation must preserve its historical state commitment",
+                "c864ce5e5cfe403de963f0cee6de489237a892f2f34f0cd8df0ae4861dacb8dc",
+                "activation includes the current system contracts and retained-history migration",
             );
             roots.push(root);
             if commit {
@@ -292,5 +292,51 @@ mod tests {
                 platform_version,
             )
             .expect("a protocol 14 transition must not run the protocol 15 migration");
+    }
+    #[test]
+    fn should_leave_the_proposal_history_layout_created_before_migration_unchanged() {
+        let version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let fresh = TestPlatformBuilder::new()
+            .with_initial_protocol_version(15)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let contract =
+            load_system_data_contract(SystemDataContract::DecisionProposals, version).unwrap();
+        let path = document_type_path(contract.id().as_bytes(), "proposal");
+        let expected = subtree_rows(&fresh.drive, path.clone(), None, version);
+        let transaction = platform.drive.grove.start_transaction();
+        platform
+            .perform_events_on_first_block_of_protocol_change(
+                &platform.state.load(),
+                &BlockInfo::default_with_time(3000),
+                &transaction,
+                14,
+                version,
+            )
+            .unwrap();
+        assert_eq!(
+            subtree_rows(&platform.drive, path.clone(), Some(&transaction), version),
+            expected
+        );
+        platform
+            .drive
+            .migrate_document_history_storage(&transaction, version)
+            .unwrap();
+        assert_eq!(
+            subtree_rows(&platform.drive, path.clone(), Some(&transaction), version),
+            expected,
+            "the activation-created proposal already has the retained-history layout"
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .unwrap();
+        assert_eq!(subtree_rows(&platform.drive, path, None, version), expected);
     }
 }

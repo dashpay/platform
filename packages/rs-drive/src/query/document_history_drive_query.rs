@@ -172,14 +172,13 @@ impl DocumentHistoryDriveQuery {
         {
             0 => {
                 let (start_at_ms, limit) = self.legacy_read()?;
-                Drive::fetch_document_history_query(
+                Drive::fetch_document_history_query_v0_for_name(
                     self.contract_id,
                     &self.document_type_name,
                     self.document_id,
                     start_at_ms,
                     limit,
                     None,
-                    platform_version,
                 )
             }
             1 => self.merged_path_query(platform_version),

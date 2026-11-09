@@ -12,6 +12,7 @@ use crate::drive::document::{
     make_document_reference_v1, make_document_reference_with_sum_item_v1,
     read_document_sum_contribution,
 };
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::drive::document::derived_index_values::set_derived_index_values;
 use crate::drive::Drive;
@@ -50,10 +51,10 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, MaybeTree, TransactionArg};
+use grovedb::{Element, MaybeTree, TransactionArg};
 use itertools::Itertools;
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 /// Whether an old-document indexed-field value read back from storage is
 /// null/absent — the counterpart of `document_top_field.is_empty()` on the
@@ -142,9 +143,7 @@ impl Drive {
         document_and_contract_info: DocumentAndContractInfo,
         block_info: &BlockInfo,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

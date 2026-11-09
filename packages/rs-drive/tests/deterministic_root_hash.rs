@@ -310,7 +310,12 @@ mod tests {
             // item in the contract's other tree (`[64, id, 2] / 64`), one more tree under
             // the contract's root subtree, serializes every contract with config version 2,
             // and ships DashPay contract v2 with the optional `shieldedAddress` profile field.
-            _ => "c25bc863d30a4185311546d51bacfdc030ee57671dbae774775d0efd4474220c",
+            14 => "c25bc863d30a4185311546d51bacfdc030ee57671dbae774775d0efd4474220c",
+            // From protocol version 15 the contract is stored compiled (format version 2), its
+            // document types beside its schemas, and is DashPay v3, which declares the checks of
+            // its data triggers and adds the private `privateContactRequest` type, whose store
+            // the insert creates.
+            _ => "66306426bce1beaa7319e7e6d822bcf8a7c93f14425c2f82841a3222a7502912",
         };
 
         assert_eq!(

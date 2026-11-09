@@ -15,6 +15,7 @@ use drive_token_method_versions::DriveTokenMethodVersions;
 use drive_verify_method_versions::DriveVerifyMethodVersions;
 use drive_vote_method_versions::DriveVoteMethodVersions;
 use grovedb_version::version::GroveVersion;
+use versioned_feature_core::OptionalFeatureVersion;
 
 pub mod drive_address_funds_method_versions;
 pub mod drive_contract_group_method_versions;
@@ -122,6 +123,11 @@ pub struct DriveFetchMethodVersions {
 pub struct DriveProveMethodVersions {
     pub prove_elements: FeatureVersion,
     pub prove_multiple_state_transition_results: FeatureVersion,
+    /// Also selects the layout `verify_state_transition_was_executed_with_proof`
+    /// expects from a producer at this version: from 1, the proof of an owned,
+    /// fee-paying transition carries the owner's credit balance. A new generation
+    /// needs a mapping in `Drive::proof_carries_owner_balance`, which refuses an
+    /// unmapped one with `UnknownVersionMismatch`.
     pub prove_state_transition: FeatureVersion,
 }
 
@@ -161,6 +167,12 @@ pub struct DriveFeesMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DrivePlatformSystemMethodVersions {
     pub estimation_costs: DriveSystemEstimationCostsMethodVersions,
+    /// Reads the chain locked Core height at which Platform first saw a Core fork active.
+    /// `None` (not active) before protocol version 15.
+    pub fetch_core_fork_activation_height: OptionalFeatureVersion,
+    /// Records the chain locked Core height at which Platform first saw a Core fork active.
+    /// `None` (not active) before protocol version 15.
+    pub store_core_fork_activation_height: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

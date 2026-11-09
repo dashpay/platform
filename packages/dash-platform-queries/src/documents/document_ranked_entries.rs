@@ -155,7 +155,7 @@
 //! ```
 
 use crate::documents::document_query::DocumentQuery;
-use crate::documents::ranked_proof_helpers::verify_ranked_query;
+use crate::documents::ranked_proof_helpers::{check_ranked_request, verify_ranked_query};
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::ContextProvider;
 use dpp::dashcore::Network;
@@ -165,6 +165,19 @@ use drive_proof_verifier::{DocumentRankedEntries, FromProof};
 impl FromProof<DocumentQuery> for DocumentRankedEntries {
     type Request = DocumentQuery;
     type Response = GetDocumentsResponse;
+
+    /// A request outside the ranked grammar is not refused by every node: a node routing
+    /// with an older query table serves it as a plain grouped aggregate, whose proof the
+    /// ranked verifier then refuses. The check resolves the pending window selections as the
+    /// verifier does, then runs the grammar and picks the covering index with the verifier's
+    /// own code, so it refuses a window that does not resolve, a resolved shape no verifier
+    /// accepts, and a query no index serves.
+    fn check_request(
+        request: &Self::Request,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), drive_proof_verifier::Error> {
+        check_ranked_request(request, platform_version)
+    }
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
