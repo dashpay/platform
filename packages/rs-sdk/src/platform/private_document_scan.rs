@@ -440,6 +440,11 @@ pub struct PrivateDocumentPage {
 
 type PageFuture = Pin<Box<dyn Future<Output = Result<PrivateDocumentEntries, Error>> + Send>>;
 type PageStream = Pin<Box<dyn Stream<Item = Result<PrivateDocumentPage, Error>> + Send>>;
+/// A page read with the height of the proof it was read with.
+type HeightedPageFuture =
+    Pin<Box<dyn Future<Output = Result<(PrivateDocumentEntries, u64), Error>> + Send>>;
+type HeightedPageStream =
+    Pin<Box<dyn Stream<Item = Result<(PrivateDocumentPage, u64), Error>> + Send>>;
 
 /// Where a walk over a store's pages is.
 enum PageWalk {
@@ -573,6 +578,60 @@ where
             }
         },
     )
+}
+
+/// [`private_document_page_walk`] over `fetch`, which reads a page with the height of its
+/// proof, each page yielded with the lowest height of the reads it holds: the read from its
+/// start, and those completing it from where an older snapshot ended
+/// ([`whole_chunk_pages`]). A start fetched again keeps the height of its last read, the one
+/// the walk kept.
+fn private_document_page_walk_with_heights<F>(
+    fetch: F,
+    start_position: u64,
+    max_concurrent: usize,
+) -> impl Stream<Item = Result<(PrivateDocumentPage, u64), Error>> + Send
+where
+    F: Fn(u64) -> HeightedPageFuture + Clone + Send + Sync + 'static,
+{
+    // The height of the last read from each start, until the page holding
+    // that start is yielded. Pages hold disjoint ranges of positions, and
+    // every read a page holds starts inside its range.
+    let heights: Arc<Mutex<BTreeMap<u64, u64>>> = Arc::default();
+    let read_heights = Arc::clone(&heights);
+    let fetch = move |start: u64| -> PageFuture {
+        let fetch = fetch.clone();
+        let heights = Arc::clone(&read_heights);
+        Box::pin(async move {
+            let (entries, height) = fetch(start).await?;
+            heights
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .insert(start, height);
+            Ok(entries)
+        })
+    };
+    private_document_page_walk(fetch, start_position, max_concurrent).map(move |page| {
+        let page = page?;
+        let start = page.start_position;
+        let end = start
+            .saturating_add(page.entries.entries.len() as u64)
+            .max(start.saturating_add(1));
+        let mut heights = heights.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut read = heights.split_off(&start);
+        let mut later = read.split_off(&end);
+        heights.append(&mut later);
+        drop(heights);
+        let height = read
+            .contains_key(&start)
+            .then(|| read.into_values().min())
+            .flatten()
+            .ok_or_else(|| {
+                Error::Generic(format!(
+                    "no proved height for the private document page from position {start}"
+                ))
+            })?;
+        Ok((page, height))
+    })
 }
 
 /// How many more times a page whose snapshot of the store ends at or before its start is
@@ -758,8 +817,9 @@ impl Sdk {
 
     /// [`Self::private_document_pages`], with the height each page's proof was made at, from
     /// the response metadata verified with it: for a caller that must show every page, and
-    /// the store's end the first page reports, at or above a height. The pages and the walk
-    /// are those of [`Self::private_document_pages`].
+    /// the store's end the first page reports, at or above a height. A page completed from
+    /// more than one read, the first from a node behind, carries the lowest of their heights.
+    /// The pages and the walk are those of [`Self::private_document_pages`].
     pub fn private_document_pages_with_heights(
         &self,
         data_contract_id: Identifier,
@@ -769,9 +829,6 @@ impl Sdk {
     ) -> impl Stream<Item = Result<(PrivateDocumentPage, u64), Error>> + Send {
         let sdk = self.clone();
         let document_type_name = document_type_name.to_string();
-        // Each page is fetched once, from its own start: the height of the
-        // proof read from a start is kept under it until the page is yielded.
-        let heights: Arc<Mutex<BTreeMap<u64, u64>>> = Arc::default();
         let resolve = {
             let sdk = sdk.clone();
             let document_type_name = document_type_name.clone();
@@ -780,61 +837,40 @@ impl Sdk {
                     .await
             }
         };
-        let page_heights = Arc::clone(&heights);
-        stream::once(resolve)
-            .flat_map(move |resolved| -> PageStream {
-                match resolved {
-                    Err(error) => Box::pin(stream::once(async move { Err(error) })),
-                    Ok(_) => {
+        stream::once(resolve).flat_map(move |resolved| -> HeightedPageStream {
+            match resolved {
+                Err(error) => Box::pin(stream::once(async move { Err(error) })),
+                Ok(_) => {
+                    let sdk = sdk.clone();
+                    let document_type_name = document_type_name.clone();
+                    let fetch = move |start: u64| -> HeightedPageFuture {
                         let sdk = sdk.clone();
-                        let document_type_name = document_type_name.clone();
-                        let heights = Arc::clone(&page_heights);
-                        let fetch = move |start: u64| -> PageFuture {
-                            let sdk = sdk.clone();
-                            let heights = Arc::clone(&heights);
-                            let query = PrivateDocumentEntriesQuery::new(
-                                data_contract_id,
-                                document_type_name.clone(),
-                                start,
-                            );
-                            Box::pin(async move {
-                                let (entries, metadata) =
-                                    PrivateDocumentEntries::fetch_with_metadata(&sdk, query, None)
-                                        .await?;
-                                heights
-                                    .lock()
-                                    .unwrap_or_else(PoisonError::into_inner)
-                                    .insert(start, metadata.height);
-                                entries.ok_or_else(|| {
-                                    Error::Generic(format!(
-                                        "no page of the private document type of contract \
-                                         {data_contract_id} from position {start}"
-                                    ))
-                                })
-                            })
-                        };
-                        Box::pin(private_document_page_walk(
-                            fetch,
-                            start_position,
-                            max_concurrent,
-                        ))
-                    }
+                        let query = PrivateDocumentEntriesQuery::new(
+                            data_contract_id,
+                            document_type_name.clone(),
+                            start,
+                        );
+                        Box::pin(async move {
+                            let (entries, metadata) =
+                                PrivateDocumentEntries::fetch_with_metadata(&sdk, query, None)
+                                    .await?;
+                            let entries = entries.ok_or_else(|| {
+                                Error::Generic(format!(
+                                    "no page of the private document type of contract \
+                                     {data_contract_id} from position {start}"
+                                ))
+                            })?;
+                            Ok((entries, metadata.height))
+                        })
+                    };
+                    Box::pin(private_document_page_walk_with_heights(
+                        fetch,
+                        start_position,
+                        max_concurrent,
+                    ))
                 }
-            })
-            .map(move |page| {
-                let page = page?;
-                let height = heights
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .remove(&page.start_position)
-                    .ok_or_else(|| {
-                        Error::Generic(format!(
-                            "no proved height for the private document page from position {}",
-                            page.start_position
-                        ))
-                    })?;
-                Ok((page, height))
-            })
+            }
+        })
     }
 
     /// Fetches the proved page of the store of the private type `document_type_name` of
@@ -1519,6 +1555,70 @@ mod tests {
             positions.extend(page.entries.entries.iter().map(|entry| entry.position));
         }
         assert_eq!(positions, (0..30).collect::<Vec<_>>());
+    }
+
+    /// A page completed from where an older snapshot ended carries the lower height of its two
+    /// reads; every other page, the height of its own.
+    #[tokio::test]
+    async fn should_yield_a_completed_page_at_the_lowest_height_of_its_reads() {
+        let fetch = |start: u64| -> HeightedPageFuture {
+            Box::pin(async move {
+                // The node answering the page from 12 is behind, at height 7: its store held
+                // 14 entries. The rest of that chunk, and every other page, come at height 9.
+                if start == 12 {
+                    return Ok((drive_page(4, 14, start), 7));
+                }
+                Ok((drive_page(4, 30, start), 9))
+            })
+        };
+        let pages: Vec<(PrivateDocumentPage, u64)> = private_document_page_walk_with_heights(
+            fetch,
+            0,
+            MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
+        )
+        .map(|page| page.expect("every page reads"))
+        .collect()
+        .await;
+        let mut positions = Vec::new();
+        for (page, height) in &pages {
+            let expected = if page.start_position == 12 { 7 } else { 9 };
+            assert_eq!(*height, expected, "page from {}", page.start_position);
+            positions.extend(page.entries.entries.iter().map(|entry| entry.position));
+        }
+        assert_eq!(positions, (0..30).collect::<Vec<_>>());
+    }
+
+    /// A page fetched again, its first read from a node behind that held no entry from its
+    /// start, carries the height of the read the walk kept.
+    #[tokio::test]
+    async fn should_yield_a_page_fetched_again_at_the_height_of_its_kept_read() {
+        let behind_once = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let fetch = move |start: u64| -> HeightedPageFuture {
+            let behind_once = std::sync::Arc::clone(&behind_once);
+            Box::pin(async move {
+                if start == 8 && behind_once.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                    return Ok((drive_page(4, 8, start), 5));
+                }
+                Ok((drive_page(4, 30, start), 9))
+            })
+        };
+        let pages: Vec<(PrivateDocumentPage, u64)> = private_document_page_walk_with_heights(
+            fetch,
+            0,
+            MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
+        )
+        .map(|page| page.expect("every page reads"))
+        .collect()
+        .await;
+        assert!(
+            pages.iter().all(|(_, height)| *height == 9),
+            "{:?}",
+            pages
+                .iter()
+                .map(|(page, height)| (page.start_position, *height))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(pages.len(), 8);
     }
 
     /// A fetch of Drive's pages of a store of 30 entries in chunks of 4 where the fetch from
