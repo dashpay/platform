@@ -2975,6 +2975,7 @@ impl PrivatePaymentRestore {
         };
         let restored = restore_journaled_private_payments(
             &self.wallet_manager,
+            &self.generation,
             &self.persister,
             self.wallet_id,
             &payments,

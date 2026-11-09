@@ -98,8 +98,7 @@ struct DischargedPrivateEntries {
     /// that read a record before it was discharged, and reserves its pair
     /// after, checks it here first under the wallet lock
     /// ([`WalletPersister::private_entry_discharged`]). Only a shielded build
-    /// keeps a journal to discharge.
-    #[cfg_attr(not(feature = "shielded"), allow(dead_code))]
+    /// keeps a journal to discharge: empty otherwise.
     session: BTreeSet<[u8; 32]>,
 }
 
@@ -180,7 +179,6 @@ impl WalletPersister {
 
     /// Whether the journal record of `commitment` was discharged in this
     /// session, its reservation released or not.
-    #[cfg(feature = "shielded")]
     pub(crate) fn private_entry_discharged(&self, commitment: &[u8; 32]) -> bool {
         self.discharged_entries().session.contains(commitment)
     }
