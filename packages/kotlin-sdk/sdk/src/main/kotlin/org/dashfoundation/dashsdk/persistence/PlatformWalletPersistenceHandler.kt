@@ -4646,15 +4646,19 @@ internal fun unpackPrivateAddresses(
 
 /**
  * [rows] packed as [NativePersistenceBridge.onLoadPrivateContactScanState]
- * hands them back. A row whose stored bytes have the wrong length is
- * skipped rather than handed back misaligned.
+ * hands them back. A stored row whose bytes have the wrong length (Room
+ * keeps any blob) cannot cross the ABI: it throws, which fails the load
+ * through [PlatformWalletPersistenceHandler.onLoadPrivateContactScanState]'s
+ * `loadOrThrow`, rather than handing back the rest without it.
  */
 internal fun packPrivatePositions(rows: List<PrivateContactRequestsPositionEntity>): ByteArray {
-    val kept = rows.filter { it.identityId.size == 32 && it.keyFingerprint.size == 32 }
+    require(rows.all { it.identityId.size == 32 && it.keyFingerprint.size == 32 }) {
+        "a stored private contact request read position has a malformed id or fingerprint"
+    }
     val buffer = java.nio.ByteBuffer
-        .allocate(kept.size * NativePersistenceBridge.PRIVATE_POSITION_ENTRY_SIZE)
+        .allocate(rows.size * NativePersistenceBridge.PRIVATE_POSITION_ENTRY_SIZE)
         .order(java.nio.ByteOrder.LITTLE_ENDIAN)
-    for (row in kept) {
+    for (row in rows) {
         buffer.put(row.identityId).putLong(row.position).put(row.keyFingerprint)
     }
     return buffer.array()
@@ -4662,9 +4666,11 @@ internal fun packPrivatePositions(rows: List<PrivateContactRequestsPositionEntit
 
 /** See [packPrivatePositions]. */
 internal fun packPrivateAddresses(rows: List<PrivateShieldedAddressEntity>): ByteArray {
-    val kept = rows.filter { it.ownerId.size == 32 && it.contactId.size == 32 && it.address.size == 43 }
-    val buffer = java.nio.ByteBuffer.allocate(kept.size * NativePersistenceBridge.PRIVATE_ADDRESS_ENTRY_SIZE)
-    for (row in kept) {
+    require(rows.all { it.ownerId.size == 32 && it.contactId.size == 32 && it.address.size == 43 }) {
+        "a stored private shielded address has a malformed id or address"
+    }
+    val buffer = java.nio.ByteBuffer.allocate(rows.size * NativePersistenceBridge.PRIVATE_ADDRESS_ENTRY_SIZE)
+    for (row in rows) {
         buffer.put(row.ownerId).put(row.contactId).put(row.address)
     }
     return buffer.array()

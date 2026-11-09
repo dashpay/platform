@@ -132,6 +132,27 @@ class PrivateContactScanStatePersistenceTest {
         assertEquals(0, addresses.size)
     }
 
+    /**
+     * A stored row that cannot cross the ABI fails the load instead of
+     * handing back the rest without it: a valid position beside a 42-byte
+     * address would otherwise resume past the entry that carried it.
+     */
+    @Test
+    fun shouldFailTheLoadOnAStoredRowThatCannotCrossTheAbi() = runTest {
+        round(positions = position(owner, 12))
+        db.privateContactScanStateDao().upsertAddress(
+            org.dashfoundation.dashsdk.persistence.entities.PrivateShieldedAddressEntity(
+                walletId = walletId,
+                ownerId = owner,
+                contactId = contact,
+                address = ByteArray(42) { 9 },
+            ),
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            handler.onLoadPrivateContactScanState(walletId)
+        }
+    }
+
     /** A partial row fails the callback instead of storing a misread row. */
     @Test
     fun shouldRefuseARoundWithAPartialRow() {
