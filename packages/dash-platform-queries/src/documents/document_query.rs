@@ -40,11 +40,12 @@ use drive::config::DEFAULT_QUERY_LIMIT;
 use drive::error::Error as DriveError;
 use drive::query::drive_document_ranked_query::mode_detection::ranked_order_key;
 use drive::query::{
-    resolve_integer_range_bucket_clause, resolve_time_range_bucket_clause,
-    validate_resolved_time_range_clause_shapes, DriveDocumentQuery, HavingAggregate,
-    HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
-    IntegerRangeGridSpec, InternalClauses, OrderClause, ResolvedTimeRange, SelectFunction,
-    SelectProjection, TimeRangeGridSpec, TimeRangeSelector, WhereClause, WhereOperator,
+    refuse_several_window_selections, resolve_integer_range_bucket_clause,
+    resolve_time_range_bucket_clause, validate_resolved_time_range_clause_shapes,
+    DriveDocumentQuery, HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator,
+    HavingRightOperand, IntegerRangeGridSpec, InternalClauses, OrderClause, ResolvedTimeRange,
+    SelectFunction, SelectProjection, TimeRangeGridSpec, TimeRangeSelector, WhereClause,
+    WhereOperator,
 };
 use drive_proof_verifier::{types::Documents, FromProof};
 
@@ -272,12 +273,7 @@ impl DocumentQuery {
     /// the having view verifies, and every node refuses one without a grouping.
     pub(super) fn ensure_no_having(&self) -> Result<(), drive_proof_verifier::Error> {
         if !self.having.is_empty() {
-            return Err(drive_proof_verifier::Error::RequestError {
-                error: "a having clause is answered as a having-range page, which a count, sum \
-                        or average view cannot verify; fetch a grouped query with one as \
-                        DocumentHavingEntries"
-                    .to_string(),
-            });
+            return Err(having_page_refusal());
         }
         Ok(())
     }
@@ -655,10 +651,13 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
     /// refuses it. A projection field on the documents select is left alone: the server
     /// refuses it on the V1 wire, and the V0 encoder drops it, so the documents served verify.
     /// The window selections are resolved as the verifier resolves them, which refuses one that
-    /// does not resolve, or an `In` or range clause beside it on the field it buckets.
+    /// does not resolve, or an `In` or range clause beside it on the field it buckets. The
+    /// resolved query is then handed to the verifier's own check, which builds Drive's path query
+    /// from it as the verifier does before reading the proof, so a query no index serves is
+    /// refused too.
     fn check_request(
         request: &Self::Request,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), drive_proof_verifier::Error> {
         request.ensure_no_sub_queries()?;
         if request.select.function != SelectFunction::Documents {
@@ -689,10 +688,12 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
             });
         }
         // The verifier rebuilds the resolved query as Drive's before it reads the proof.
-        let (resolved, _) = request.resolved_for_checking()?;
-        DriveDocumentQuery::try_from(&resolved)
-            .map(drop)
-            .map_err(unconvertible_documents_query)
+        let (resolved, resolved_time_ranges) = request.resolved_for_checking()?;
+        let drive_query = drive_query_with_provenance(&resolved, resolved_time_ranges)?;
+        <drive_proof_verifier::types::Documents as FromProof<DriveDocumentQuery>>::check_request(
+            &drive_query,
+            platform_version,
+        )
     }
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
@@ -733,13 +734,7 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
                 normalize_time_range_clauses_with_metadata_time(&mut request, time_ms)?;
         }
 
-        let mut drive_query: DriveDocumentQuery = (&request)
-            .try_into()
-            .map_err(unconvertible_documents_query)?;
-        // The conversion cannot recover which equalities came from resolution,
-        // so the provenance is carried across here; index selection reads it
-        // to pin the query to the index that buckets the field.
-        drive_query.resolved_time_ranges = resolved_time_ranges;
+        let drive_query = drive_query_with_provenance(&request, resolved_time_ranges)?;
 
         <drive_proof_verifier::types::Documents as FromProof<DriveDocumentQuery>>::maybe_from_proof_with_metadata(
             drive_query,
@@ -749,6 +744,31 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
             provider,
         )
     }
+}
+
+/// The refusal of a `having` clause in a count, sum or average view.
+pub(super) fn having_page_refusal() -> drive_proof_verifier::Error {
+    drive_proof_verifier::Error::RequestError {
+        error: "a having clause is answered as a having-range page, which a count, sum or \
+                average view cannot verify; fetch a grouped query with one as \
+                DocumentHavingEntries"
+            .to_string(),
+    }
+}
+
+/// Drive's query for `resolved`, a documents select whose window selections are already
+/// resolved, carrying the resolution provenance `resolved_time_ranges`. The conversion cannot
+/// recover which equalities came from resolution, so the provenance is carried across here;
+/// index selection reads it to pin the query to the index that buckets the field. The check
+/// before sending and the verifier both build their query here, so neither can drop it.
+fn drive_query_with_provenance(
+    resolved: &DocumentQuery,
+    resolved_time_ranges: Vec<ResolvedTimeRange>,
+) -> Result<DriveDocumentQuery<'_>, drive_proof_verifier::Error> {
+    let mut drive_query =
+        DriveDocumentQuery::try_from(resolved).map_err(unconvertible_documents_query)?;
+    drive_query.resolved_time_ranges = resolved_time_ranges;
+    Ok(drive_query)
 }
 
 /// Resolve a request's pending time-range (`IN_TIME_RANGE`) selections into
@@ -866,16 +886,13 @@ impl DocumentQuery {
             .map_err(|e| drive_proof_verifier::Error::RequestError {
                 error: format!("invalid window selection query shape: {}", e),
             })?;
-        if resolved_time_ranges.len() > 1 {
-            return Err(drive_proof_verifier::Error::RequestError {
-                error: format!(
-                    "at most one window selection (IN_TIME_RANGE or IN_INTEGER_RANGE) is \
-                     supported per query; this one resolves {}, and no single index can \
-                     bucket more than one field",
-                    resolved_time_ranges.len()
-                ),
-            });
-        }
+        // Drive's rule, in Drive's words: the only clear refusal of two windows the aggregate,
+        // ranked and having checks get, which would otherwise only find no index to serve them.
+        refuse_several_window_selections(&resolved_time_ranges, "query").map_err(|e| {
+            drive_proof_verifier::Error::RequestError {
+                error: e.to_string(),
+            }
+        })?;
         Ok((query, resolved_time_ranges))
     }
 }

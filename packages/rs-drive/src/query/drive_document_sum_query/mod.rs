@@ -41,6 +41,13 @@ pub mod mode_detection;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod path_query;
 
+// The request-only plan of a proved sum or average, shared by the server's
+// dispatchers and the SDK's verifiers.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod proof_plan;
+#[cfg(any(feature = "server", feature = "verify"))]
+pub use proof_plan::SumProofPlan;
+
 #[cfg(feature = "server")]
 pub mod execute_point_lookup;
 
@@ -56,7 +63,7 @@ mod tests;
 #[cfg(feature = "server")]
 use crate::query::ResolvedTimeRange;
 #[cfg(any(feature = "server", feature = "verify"))]
-use crate::query::{WhereClause, WhereOperator};
+use crate::query::{CountMode, WhereClause, WhereOperator};
 
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
@@ -105,6 +112,19 @@ pub enum SumMode {
     GroupByRange,
     /// One sum per `(In-value, range-value)` pair.
     GroupByCompound,
+}
+
+/// The routing ([`crate::query::aggregate_routing`]) decides one SQL-shape
+/// mode for counts, sums and averages; a sum reads it as its own.
+impl From<CountMode> for SumMode {
+    fn from(mode: CountMode) -> Self {
+        match mode {
+            CountMode::Aggregate => SumMode::Aggregate,
+            CountMode::GroupByIn => SumMode::GroupByIn,
+            CountMode::GroupByRange => SumMode::GroupByRange,
+            CountMode::GroupByCompound => SumMode::GroupByCompound,
+        }
+    }
 }
 
 /// The lower-level routing decision the dispatcher reaches after
@@ -213,11 +233,9 @@ pub struct DocumentSumRequest<'a> {
     ///   rather than clamped, so a tuned operator default or an
     ///   over-max request can't byte-differ the
     ///   `SizedQuery::limit` the SDK reconstructs for merk-root
-    ///   verification. See the
-    ///   [`drive_dispatcher`]'s `RangeDistinctProof` /
-    ///   `RangeAggregateCarrierProof` arms for the
-    ///   validate-don't-clamp policy, mirrored from count's
-    ///   prove-path arms.
+    ///   verification. See [`DriveDocumentSumQuery::proof_plan`]
+    ///   for the validate-don't-clamp policy, mirrored from count's
+    ///   proof plan.
     pub limit: Option<u32>,
     /// Whether to return a `Proof(Vec<u8>)` instead of materializing
     /// the aggregate/entries server-side.

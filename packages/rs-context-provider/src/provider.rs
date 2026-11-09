@@ -60,6 +60,12 @@ pub trait ContextProvider: Send + Sync {
     /// Providers that maintain a writable known-contracts cache (e.g. the
     /// mobile `TrustedHttpContextProvider`) override this; the default is a
     /// no-op for providers that fetch on demand or don't cache.
+    ///
+    /// A provider that overrides it keeps a held contract of a higher version
+    /// than `contract`, deciding atomically under its own cache lock: a
+    /// registration that waited on a fetch must not replace a newer contract
+    /// another operation registered meanwhile, which a proof of that newer
+    /// version would then fail to verify against.
     fn register_data_contract(&self, _contract: Arc<DataContract>) {}
 
     /// Fetches the token configuration for a specified token ID.

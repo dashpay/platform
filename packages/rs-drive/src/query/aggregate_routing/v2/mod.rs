@@ -24,11 +24,11 @@
 //! global aggregate produces one row, and bounding it is a client-side
 //! comparison, not a query.
 
+use super::not_yet_implemented;
 use super::v1::compute_aggregate_mode_and_check_limit_v1;
 use super::AggregateRouting;
-use crate::error::query::QueryError;
-use crate::query::document_query::v1::not_yet_implemented;
-use drive::query::{HavingClause, OrderClause, SelectProjection, WhereClause, WhereOperator};
+use crate::error::Error;
+use crate::query::{HavingClause, OrderClause, SelectProjection, WhereClause, WhereOperator};
 use std::borrow::Cow;
 
 #[allow(clippy::too_many_arguments)]
@@ -40,7 +40,7 @@ pub(super) fn compute_aggregate_mode_and_check_limit_v2(
     limit: Option<u32>,
     having: &[HavingClause],
     function_name: &str,
-) -> Result<AggregateRouting, QueryError> {
+) -> Result<AggregateRouting, Error> {
     if !having.is_empty() && !group_by.is_empty() {
         return match having {
             [_single] => Ok(AggregateRouting::HavingRange),
