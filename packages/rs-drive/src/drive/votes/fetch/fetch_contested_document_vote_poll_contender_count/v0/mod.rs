@@ -93,14 +93,8 @@ impl Drive {
             }
         };
 
-        let fee_result = Drive::calculate_fee(
-            None,
-            Some(cost_operations),
-            epoch,
-            self.config.epochs_per_era,
-            platform_version,
-            None,
-        )?;
+        let fee_result =
+            self.calculate_fee(None, Some(cost_operations), epoch, platform_version)?;
         Ok((fee_result, contenders))
     }
 }

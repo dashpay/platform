@@ -15,7 +15,6 @@ use dpp::fee::fee_result::FeeResult;
 
 use crate::drive::contract::serialize_contract_for_storage;
 
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
 
@@ -51,7 +50,6 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         if !apply {
             return self.insert_contract(
@@ -124,13 +122,11 @@ impl Drive {
             .data_contracts
             .insert_rewritten(updated_contract_fetch_info, transaction.is_some());
 
-        Drive::calculate_fee(
+        self.calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
-            self.config.epochs_per_era,
             platform_version,
-            previous_fee_versions,
         )
     }
 
@@ -305,7 +301,6 @@ mod tests {
                             apply,
                             None,
                             selected_version,
-                            None,
                         )
                     }
                     .expect("calculate update fee")
@@ -388,7 +383,7 @@ mod tests {
                 .expect("add keep-history document type");
             contract.increment_version();
             drive
-                .update_contract(&contract, BlockInfo::default(), true, None, version, None)
+                .update_contract(&contract, BlockInfo::default(), true, None, version)
                 .expect("update contract with keep-history document type");
 
             let type_path =

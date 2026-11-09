@@ -1179,7 +1179,6 @@ mod tests {
                 storage_flags,
                 None,
                 new_version,
-                None,
             )
             .expect("a migrated document must remain updatable");
         let updated_page = verify(&query(
@@ -1258,7 +1257,6 @@ mod tests {
                 true,
                 None,
                 new_version,
-                None,
             )
             .expect("an existing v14 contract must accept a new v15 document");
         fresh_document.set_revision(Some(2));
@@ -1275,7 +1273,6 @@ mod tests {
                 None,
                 None,
                 new_version,
-                None,
             )
             .expect("a document inserted after activation must remain updatable");
         let fresh_query = query(

@@ -527,8 +527,8 @@ impl MockResponse for YesNoVotePollState {
 }
 
 /// A page of private document entries as the mock encodes it: each entry's position, block
-/// height, block time and data, and the store's count.
-type MockPrivateDocumentEntries = (Vec<(u64, u64, u64, Vec<u8>)>, u64);
+/// height, block time and data, the store's count, and its chunk power when the page has it.
+type MockPrivateDocumentEntries = (Vec<(u64, u64, u64, Vec<u8>)>, u64, Option<u8>);
 
 impl MockResponse for PrivateDocumentEntries {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
@@ -544,15 +544,18 @@ impl MockResponse for PrivateDocumentEntries {
                 )
             })
             .collect();
-        bincode::encode_to_vec((entries, self.total_count), BINCODE_CONFIG)
-            .expect("encode PrivateDocumentEntries")
+        bincode::encode_to_vec(
+            (entries, self.total_count, self.chunk_power),
+            BINCODE_CONFIG,
+        )
+        .expect("encode PrivateDocumentEntries")
     }
 
     fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
     where
         Self: Sized,
     {
-        let ((entries, total_count), _): (MockPrivateDocumentEntries, usize) =
+        let ((entries, total_count, chunk_power), _): (MockPrivateDocumentEntries, usize) =
             bincode::decode_from_slice(buf, BINCODE_CONFIG).expect("decode PrivateDocumentEntries");
         PrivateDocumentEntries {
             entries: entries
@@ -567,6 +570,7 @@ impl MockResponse for PrivateDocumentEntries {
                 )
                 .collect(),
             total_count,
+            chunk_power,
         }
     }
 }

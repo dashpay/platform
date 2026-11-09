@@ -75,14 +75,8 @@ impl Drive {
         let contested_document_vote_poll_drive_query_execution_result =
             query.execute_no_proof(self, transaction, &mut drive_operations, platform_version)?;
         let cost = if let Some(epoch) = epoch {
-            let fee_result = Drive::calculate_fee(
-                None,
-                Some(drive_operations),
-                epoch,
-                self.config.epochs_per_era,
-                platform_version,
-                None,
-            )?;
+            let fee_result =
+                self.calculate_fee(None, Some(drive_operations), epoch, platform_version)?;
             fee_result.processing_fee
         } else {
             0

@@ -345,7 +345,6 @@ fn should_migrate_history_when_skipping_from_protocol_13_to_15() {
             true,
             None,
             registered_version,
-            None,
         )
         .unwrap();
     document.set_revision(Some(2));
@@ -362,7 +361,6 @@ fn should_migrate_history_when_skipping_from_protocol_13_to_15() {
             None,
             None,
             registered_version,
-            None,
         )
         .unwrap();
     let dpns_id = SystemDataContract::DPNS.id().to_buffer();

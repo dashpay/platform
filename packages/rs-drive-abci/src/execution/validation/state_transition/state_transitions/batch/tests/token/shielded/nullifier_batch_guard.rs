@@ -24,7 +24,6 @@ use dpp::data_contract::accessors::v0::DataContractV0Setters;
 use dpp::data_contract::accessors::v1::DataContractV1Setters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
 use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -128,7 +127,6 @@ impl FundedPool {
                 true,
                 None,
                 version,
-                None,
             )
             .unwrap();
         if !shielded {
@@ -614,7 +612,6 @@ impl FundedPool {
                 &transaction,
                 &mut 0,
                 version,
-                &CachedEpochIndexFeeVersions::new(),
             )
             .expect("execute and charge real event");
         self.platform
@@ -734,7 +731,7 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 .value
                 .unwrap()
         ),
-        "c07c0e75b87b3f5fb7c122a16dfe27ce694775c312178c69c9433283bbc0a5df"
+        "a78e27312332ff597d9bf527c061cf59e69a6b51563e0343400bfbef6e596c03"
     );
     assert_eq!(
         pool.platform
@@ -2185,39 +2182,39 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
         let (expected_validation, expected_settled) = match case {
             "shield" => (
                 "6a823c2db94612652926e6b9c1ae7feec9c2547dfd4cfc4e474318da1c16d59c",
-                "8584380ff13669be4d493924a66a8750784e13af6e6c41be4348608b9e18887f",
+                "26456b2f2674b799c518535bc540b10958ced63cf02ca24ffe3575d5069cbfee",
             ),
             "valid-payment" => (
                 "9388d5cf63c4a571b9fb009679e2e34d0b681acc88f0f5195e7287c7efbd92f7",
-                "3ba57d1cb5bf0a2749ede59d6b84f08f1fc7a6fd4ca1ca1457f33b2513f564a5",
+                "75eee0fb5505f957be07f65fd78158e36c451e10303c6b25a8d37ce799cebe81",
             ),
             "failed-payment" => (
                 "d9b5fe191841bea952494f2a45e3833f925f4d367a1937b2ef1235a1aa01f51e",
-                "e957f31348200171df2cfdb99a5378d8c4bbc7e4eb726b66f0b63811ecaa55fd",
+                "5ebbe8df6322d78e259cfbac017308edec9f0faac1c6ba137135474d0ff0c1ef",
             ),
             "within-bundle-repeat" => (
                 "8023e03a697a20f6a78396a05503a4bc583ca8f69e19bd7ee07a6ae0ce7be478",
-                "2f60fb4d6c4e3270b477e1b0a7131e9f6f349decfd0bc5830788baf89aedb4b0",
+                "ffabe9541bddcbcfa55e223f2611e7aa4691d9bc43772c6b17e0305ed7d97121",
             ),
             "stored-repeat" => (
                 "05652ac85c972902e8c09d20a7d8586e17e9434a478b335da136ad85f73def01",
-                "0e3ea504f13549f352c5dfa521372695717ff7ffb854dbd06b0dbc12bd858e01",
+                "5205a8992fd53d30138484eb9f04e011a3b4c2f7a9fc464a04d6f1ce5ef34a63",
             ),
             "open-mint-group" => (
                 "5c68381297c9bf68c5e85ebe6bb9e0f1289e2c07718eecfb5e6773d6009455bb",
-                "34586ea612ed739bbe858c7db9ac8c3145d738ce95eb97a80b82ac35b9a5f254",
+                "b316371c068be93be5a58fce59c175ef7c6c32028103b4b031d4fe45a373ac16",
             ),
             "closing-mint-group" => (
                 "2cedc16732c76e0605b5f46085db3d69c12936a5af55a2a82f52ec9e9ca67e38",
-                "e6f7555fb692e4b6fe0d560410640c0d5d2a7932bfa5e58e8ffb0e9cd40996d2",
+                "1e6d20b67fcefef863533d5d3d1b708c2b3a2044c5397c4e0a9efbb01722cac7",
             ),
             "open-burn-group" => (
                 "e664a045f020ff84de1ca98f364fbabccfc141ad46aa82c79491a340bb0db5f8",
-                "60d431bc6943eaa96ee2d1cb4fd4e058591f55e343aab1239103adbb108b96de",
+                "04722561bf7430db3765880d08ea128b11b249e39c1ed607c4013e0f3ff17e34",
             ),
             "closing-burn-group" => (
                 "93e1732286f168c4a91d2765931e181c5721bfca1bfd5f93b8baacca03e00b2b",
-                "7ce72adc722c5ec449fecf3d4baf3c0a454699c9cbe1ff4f0dcdbaa33e13003c",
+                "898114233f06416d17727a955501c2ba7154236af14b3e1671500759d4861336",
             ),
             _ => unreachable!("enumerated characterization case"),
         };

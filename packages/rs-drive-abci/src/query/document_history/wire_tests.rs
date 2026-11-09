@@ -143,7 +143,6 @@ fn should_serve_released_document_history_wire_requests_before_activation() {
                 true,
                 None,
                 version,
-                None,
             )
             .unwrap();
         expected.push((

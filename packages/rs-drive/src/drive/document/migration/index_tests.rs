@@ -106,7 +106,6 @@ fn read_and_prove_index_matrix(countable: bool) {
                     true,
                     None,
                     old,
-                    None,
                 )
                 .unwrap();
         };
@@ -168,7 +167,6 @@ fn read_and_prove_index_matrix(countable: bool) {
                 Some(Cow::Borrowed(&writer_flags)),
                 None,
                 old,
-                None,
             )
             .unwrap();
         let type_path = contract_document_type_path_vec(contract.id().as_slice(), "tip");

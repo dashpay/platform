@@ -92,7 +92,6 @@ fn should_serve_history_as_one_grovedb_proof_with_trusted_read_parity() {
                 true,
                 None,
                 version,
-                None,
             )
             .unwrap();
     }
@@ -296,7 +295,6 @@ fn should_serve_both_history_pointer_types_as_one_grovedb_proof() {
                     true,
                     None,
                     version,
-                    None,
                 )
                 .unwrap();
         }
@@ -437,7 +435,6 @@ fn should_preserve_non_history_roots_fees_and_proofs_after_grove_upgrade() {
                     true,
                     None,
                     version,
-                    None,
                 )
                 .unwrap();
             let mut primary = contract_document_type_path_vec(contract.id().as_bytes(), "profile");
@@ -521,7 +518,6 @@ fn should_preserve_non_history_roots_fees_and_proofs_after_grove_upgrade() {
                     true,
                     None,
                     version,
-                    None,
                 )
                 .unwrap();
             let request_type = contract.document_type_for_name("contactRequest").unwrap();
@@ -547,7 +543,6 @@ fn should_preserve_non_history_roots_fees_and_proofs_after_grove_upgrade() {
                     true,
                     None,
                     version,
-                    None,
                 )
                 .unwrap();
             let mut reads = vec![];
@@ -677,7 +672,6 @@ fn should_authenticate_history_pages_metadata_and_absence() {
                 true,
                 None,
                 version,
-                None,
             )
             .unwrap();
     }
@@ -761,7 +755,6 @@ fn should_authenticate_history_pages_metadata_and_absence() {
             true,
             None,
             version,
-            None,
         )
         .unwrap();
     let (_, new_proof) = prove(&drive, &query, document_type, version);
@@ -968,7 +961,6 @@ fn should_use_sequence_one_for_an_immutable_document_without_a_revision() {
             true,
             None,
             version,
-            None,
         )
         .unwrap();
     let query = DocumentHistoryDriveQuery {
@@ -1050,19 +1042,11 @@ fn should_bound_estimates_for_deep_plain_and_summable_histories() {
             let block = BlockInfo::default_with_time(revision * 1000);
             let estimated = (revision == 257).then(|| {
                 drive
-                    .add_document_for_contract(
-                        info.clone(),
-                        true,
-                        block,
-                        false,
-                        None,
-                        version,
-                        None,
-                    )
+                    .add_document_for_contract(info.clone(), true, block, false, None, version)
                     .unwrap()
             });
             let actual = drive
-                .add_document_for_contract(info, true, block, true, None, version, None)
+                .add_document_for_contract(info, true, block, true, None, version)
                 .unwrap();
             if let Some(estimated) = estimated {
                 assert!(
@@ -1297,7 +1281,6 @@ fn should_reject_history_proofs_that_omit_a_queried_branch() {
             true,
             None,
             version,
-            None,
         )
         .unwrap();
     let query = DocumentHistoryDriveQuery {

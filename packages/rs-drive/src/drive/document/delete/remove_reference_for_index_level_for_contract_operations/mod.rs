@@ -383,7 +383,6 @@ mod tests {
                             true,
                             None,
                             version,
-                            None,
                         )
                         .unwrap();
                     document.set_revision(Some(2));
@@ -400,7 +399,6 @@ mod tests {
                             None,
                             None,
                             version,
-                            None,
                         )
                         .unwrap();
                     let applied = drive
@@ -414,7 +412,6 @@ mod tests {
                             None,
                             None,
                             version,
-                            None,
                         )
                         .unwrap();
                     assert!(

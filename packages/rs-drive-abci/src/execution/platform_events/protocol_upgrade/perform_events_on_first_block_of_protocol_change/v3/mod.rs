@@ -139,7 +139,6 @@ mod tests {
                         true,
                         None,
                         old,
-                        None,
                     )
                     .unwrap();
             }

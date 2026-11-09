@@ -792,7 +792,6 @@ mod action_fee_tests {
                 true,
                 None,
                 setup.platform_version,
-                None,
             )
             .expect("expected to rewrite the contract with the raised moderators part");
 
@@ -1540,7 +1539,6 @@ mod action_fee_tests {
                 true,
                 None,
                 setup.platform_version,
-                None,
             )
             .expect("expected to take credits from the contract owner");
     }

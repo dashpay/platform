@@ -244,7 +244,6 @@ fn should_accept_explicit_zero_cursor_offsets_only_after_the_grove_upgrade() {
                     true,
                     None,
                     version,
-                    None,
                 )
                 .expect("stored profile document");
         }

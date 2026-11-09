@@ -180,7 +180,6 @@ mod legacy_tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("put document");
     }
@@ -416,7 +415,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("put document");
     }
@@ -451,7 +449,6 @@ mod tests {
                     StorageFlags::optional_default_as_cow(),
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("replace document in the same block");
         }

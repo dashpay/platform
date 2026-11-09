@@ -215,7 +215,6 @@ fn fixture_signed_as_for_document(
             true,
             None,
             producer,
-            None,
         )
         .unwrap();
     let transition = if moderated {
@@ -234,7 +233,6 @@ fn fixture_signed_as_for_document(
                 None,
                 None,
                 producer,
-                None,
             )
             .unwrap();
         ContractUserModerationTransitionV0 {

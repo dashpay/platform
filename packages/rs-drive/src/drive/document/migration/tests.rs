@@ -145,7 +145,6 @@ fn migrate_summable_history(revision_count: u64) -> DocumentHistoryMigrationStat
                 true,
                 None,
                 old,
-                None,
             )
             .unwrap();
     }
@@ -337,7 +336,6 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
                 true,
                 None,
                 old,
-                None,
             )
             .unwrap();
     }
@@ -595,7 +593,6 @@ fn should_halt_migration_when_an_inventoried_index_reference_was_not_rewritten()
             true,
             None,
             old,
-            None,
         )
         .unwrap();
     let transaction = drive.grove.start_transaction();

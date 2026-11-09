@@ -4632,7 +4632,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert document");
 
@@ -4646,7 +4645,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to delete document");
 
@@ -4771,7 +4769,6 @@ mod tests {
                 true,
                 None,
                 latest,
-                None,
             )
             .expect("expected to insert document");
 
@@ -4878,7 +4875,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert document");
 
@@ -5010,7 +5006,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert document");
 

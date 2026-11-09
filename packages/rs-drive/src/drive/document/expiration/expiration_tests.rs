@@ -165,7 +165,6 @@ fn insert_at_version(
             apply,
             None,
             platform_version,
-            None,
         )
         .expect("document inserts")
 }
@@ -438,7 +437,6 @@ fn should_remove_the_entry_when_the_owner_deletes_the_document() {
             true,
             None,
             PlatformVersion::latest(),
-            None,
         )
         .expect("the owner deletes");
     assert!(
@@ -472,7 +470,6 @@ fn should_keep_the_tree_of_an_expiry_time_until_its_last_entry_goes() {
                 true,
                 None,
                 PlatformVersion::latest(),
-                None,
             )
             .expect("the owner deletes");
     };
@@ -506,7 +503,6 @@ fn should_not_let_documents_deleted_early_delay_the_ones_that_expire() {
                 true,
                 None,
                 PlatformVersion::latest(),
-                None,
             )
             .expect("the owner deletes");
     }
@@ -538,7 +534,6 @@ fn should_keep_the_expiry_and_the_flagless_storage_when_a_document_is_replaced()
             owner_flags(),
             None,
             platform_version,
-            None,
         )
         .expect("the document is replaced");
 
@@ -832,7 +827,6 @@ fn should_estimate_a_change_without_the_deletion_its_creation_prepaid() {
                 owner_flags(),
                 None,
                 platform_version,
-                None,
             )
             .expect("the replace is estimated")
     };
@@ -883,7 +877,6 @@ fn should_prepay_the_deletion_of_the_bytes_a_change_adds() {
                 owner_flags(),
                 None,
                 platform_version,
-                None,
             )
             .expect("the replace runs");
         (fee, added_bytes as u64)
@@ -1030,7 +1023,6 @@ fn should_estimate_at_least_what_replacing_a_document_with_a_time_to_live_costs(
                     owner_flags(),
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("the replace runs")
         };
@@ -1269,7 +1261,6 @@ fn should_estimate_at_least_what_shrinking_an_expiring_array_costs() {
                     owner_flags(),
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("the replace runs")
         };

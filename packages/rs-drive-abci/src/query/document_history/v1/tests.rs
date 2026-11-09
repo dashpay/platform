@@ -163,7 +163,6 @@ fn should_verify_signed_legacy_history_from_protocol_14_with_protocol_15_client(
                 true,
                 None,
                 version,
-                None,
             )
             .unwrap();
     }
@@ -303,7 +302,6 @@ fn history_api_proof_round_trip(gapped: bool) {
                 true,
                 None,
                 version,
-                None,
             )
             .unwrap();
     }

@@ -138,7 +138,6 @@ async fn should_preserve_supported_offset_pages_and_original_proof_roots() {
                     true,
                     None,
                     version,
-                    None,
                 )
                 .expect("insert historical profile");
         }

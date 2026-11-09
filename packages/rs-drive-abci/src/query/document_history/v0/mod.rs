@@ -287,7 +287,6 @@ mod tests {
                 true,
                 None,
                 version,
-                None,
             )
             .expect("put document");
 
