@@ -622,11 +622,21 @@ pub(crate) fn map_spend_result(
         | Err(e @ PlatformWalletError::ShieldedRecoveryKeysRequired { .. }) => e.into(),
         // A private contact request in flight, or paid and not yet read back
         // from the store: nothing new was paid, and a later private sync
-        // settles it, so it keeps its own pending code. A wallet removed
-        // before the payment started keeps the lifecycle refusal code
-        // (`NotFound`) every other export gives it.
+        // settles it, so it keeps its own pending code; unrestored private
+        // payments keep theirs, and so does a persister that cannot keep a
+        // private payment's recovery marker. A wallet removed before the
+        // payment started keeps the lifecycle refusal code (`NotFound`) every
+        // other export gives it. A protocol-version refusal from the store
+        // read before any payment keeps the blanket conversion's split: a
+        // lasting refusal is `ErrorProtocolVersionNotActive`, a transient one
+        // the catch-all.
         Err(e @ PlatformWalletError::PrivateContactRequestPending(..))
-        | Err(e @ PlatformWalletError::WalletRemovedBeforeSend(..)) => e.into(),
+        | Err(e @ PlatformWalletError::PrivateContactPaymentsNotRestored)
+        | Err(e @ PlatformWalletError::PrivateContactRecoveryUnsupported)
+        | Err(e @ PlatformWalletError::WalletRemovedBeforeSend(..))
+        | Err(e @ PlatformWalletError::Sdk(dash_sdk::Error::ProtocolVersionNotActive { .. })) => {
+            e.into()
+        }
         // Retryable: the wallet couldn't build the spend against any
         // Platform-recorded anchor yet (its commitment tree is mid-block after
         // an index-chunk sync). Nothing was broadcast and the notes were

@@ -2869,6 +2869,15 @@ mod private_contact_request_error_tests {
             PlatformWalletFFIResultCode::ErrorPrivateContactPaymentsNotRestored
         );
         assert_eq!(result.code as u32, 72);
+        #[cfg(feature = "shielded")]
+        assert_eq!(
+            map_spend_result(
+                Err(PlatformWalletError::PrivateContactPaymentsNotRestored),
+                "private contact request"
+            )
+            .code,
+            PlatformWalletFFIResultCode::ErrorPrivateContactPaymentsNotRestored
+        );
     }
 
     /// A private payment over a persister that cannot keep its recovery marker
@@ -2890,5 +2899,28 @@ mod private_contact_request_error_tests {
             delivered.code,
             PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed
         );
+        // The explicit private send and accept report them through the spend
+        // contract alike.
+        #[cfg(feature = "shielded")]
+        {
+            assert_eq!(
+                map_spend_result(
+                    Err(PlatformWalletError::PrivateContactRecoveryUnsupported),
+                    "private contact request"
+                )
+                .code,
+                PlatformWalletFFIResultCode::ErrorPrivateContactRecoveryUnsupported
+            );
+            assert_eq!(
+                map_spend_result(
+                    Err(PlatformWalletError::ShieldedBroadcastMaybeDelivered(
+                        "unavailable".to_string()
+                    )),
+                    "private contact request"
+                )
+                .code,
+                PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed
+            );
+        }
     }
 }
