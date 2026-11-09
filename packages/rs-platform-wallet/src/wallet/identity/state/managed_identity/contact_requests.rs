@@ -847,6 +847,18 @@ impl ManagedIdentity {
     ) {
         self.dashpay.private_contact_requests_position = position.position;
         self.dashpay.private_scan_keys = Some(position.key_fingerprint);
+        self.dashpay.private_payments_unrestored |= position.private_payments_unresolved;
+    }
+
+    /// The reservations of this identity's private payments from an earlier
+    /// process are restored from the shielded store: release the hold a load
+    /// set ([`DashPayState::private_payments_unrestored`]). Returns whether it
+    /// was set, so the caller stores the record it changed.
+    ///
+    /// [`DashPayState::private_payments_unrestored`]: super::DashPayState::private_payments_unrestored
+    #[cfg(feature = "shielded")]
+    pub(crate) fn note_private_payments_restored(&mut self) -> bool {
+        std::mem::take(&mut self.dashpay.private_payments_unrestored)
     }
 
     /// The fingerprint of the keys a private sync scans DashPay's private
@@ -895,14 +907,15 @@ impl ManagedIdentity {
             self.dashpay.private_contact_requests_read = false;
         }
         self.dashpay.private_scan_keys = Some(key_fingerprint);
-        Some(PrivateContactRequestsPosition {
-            position: self.dashpay.private_contact_requests_position,
-            key_fingerprint,
-        })
+        Some(self.private_contact_requests_position_record())
     }
 
     /// The private read position as a backend stores it: with the
-    /// fingerprint of the keys it holds for.
+    /// fingerprint of the keys it holds for, and whether a private payment of
+    /// this identity may be unresolved
+    /// ([`DashPayState::private_payments_unresolved`]).
+    ///
+    /// [`DashPayState::private_payments_unresolved`]: super::DashPayState::private_payments_unresolved
     pub(crate) fn private_contact_requests_position_record(
         &self,
     ) -> PrivateContactRequestsPosition {
@@ -912,6 +925,7 @@ impl ManagedIdentity {
                 .dashpay
                 .private_scan_keys
                 .unwrap_or_else(|| self.private_scan_key_fingerprint()),
+            private_payments_unresolved: self.dashpay.private_payments_unresolved(),
         }
     }
 
@@ -938,6 +952,7 @@ impl ManagedIdentity {
         self.dashpay.private_contact_requests_position = 0;
         self.dashpay.private_scan_keys = None;
         self.dashpay.private_shielded_addresses.clear();
+        self.dashpay.private_payments_unrestored = false;
     }
 
     /// Record the shielded address `request`, a private request from

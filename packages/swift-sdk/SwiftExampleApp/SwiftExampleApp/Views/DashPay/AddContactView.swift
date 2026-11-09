@@ -18,6 +18,9 @@ struct AddContactView: View {
     let onSent: (Identifier, String?) -> Void
 
     @EnvironmentObject var walletManager: PlatformWalletManager
+    /// Observed for its bind: binding the shielded account restores the
+    /// wallet's private payments, so the readiness is read again then.
+    @EnvironmentObject var shieldedService: ShieldedService
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
 
@@ -113,11 +116,13 @@ struct AddContactView: View {
             && resolvedRecipient.map(recipientPending.allowsSubmission(to:)) == true
     }
 
-    /// Whether the footer shows the recipient's pending state: a private
-    /// request to them is pending, or the wallet could not be read.
+    /// Whether the footer shows the recipient's pending state: the wallet's
+    /// private payments are being restored, a private request to them is
+    /// pending, or the wallet could not be read.
     private var recipientBlocked: Bool {
         guard let recipient = resolvedRecipient else { return false }
-        return recipientPending.isPending(recipient) || recipientPending.isUnavailable
+        return recipientPending.isRestoringPrivatePayments
+            || recipientPending.isPending(recipient) || recipientPending.isUnavailable
     }
 
     var body: some View {
@@ -157,6 +162,7 @@ struct AddContactView: View {
             }
             .navigationTitle("Add Contact")
             .task(id: resolvedRecipient) { reloadRecipientPending() }
+            .onChange(of: shieldedService.isBound) { _, _ in reloadRecipientPending() }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -428,21 +434,26 @@ struct AddContactView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(ContactRequestSubmissionOutcome.rowMessage(
                         pending: recipientPending.isPending(recipient),
+                        restoring: recipientPending.isRestoringPrivatePayments,
                         unavailable: recipientPending.isUnavailable,
                         error: nil
                     ) ?? "")
                     .accessibilityIdentifier("dashpay.addContact.pending")
-                    Button {
-                        syncPrivateRequests()
-                    } label: {
-                        if isSyncingPrivate {
-                            ProgressView()
-                        } else {
-                            Text("Sync private requests")
+                    // A private sync settles a pending request; it does not
+                    // restore private payments, so it is not offered for that.
+                    if !recipientPending.isRestoringPrivatePayments {
+                        Button {
+                            syncPrivateRequests()
+                        } label: {
+                            if isSyncingPrivate {
+                                ProgressView()
+                            } else {
+                                Text("Sync private requests")
+                            }
                         }
+                        .disabled(isSyncingPrivate)
+                        .accessibilityIdentifier("dashpay.addContact.syncPrivate")
                     }
-                    .disabled(isSyncingPrivate)
-                    .accessibilityIdentifier("dashpay.addContact.syncPrivate")
                 }
             }
         }
@@ -452,14 +463,17 @@ struct AddContactView: View {
     /// recipient is pending.
     private func reloadRecipientPending() {
         let contactIds = resolvedRecipient.map { [$0] } ?? []
+        let wallet = try? requireWallet()
         recipientPending.record(
             privateRepliesPending(
-                wallet: try? requireWallet(),
+                wallet: wallet,
                 identityId: identity.identityId,
                 contactIds: contactIds
             ),
             for: contactIds
         )
+        recipientPending.recordReadiness(
+            privateContactReadiness(wallet: wallet, identityId: identity.identityId))
     }
 
     /// Read the private store, which settles a pending private request, then
@@ -472,8 +486,6 @@ struct AddContactView: View {
             if let wallet = try? requireWallet() {
                 if let notice = await syncPrivateContactRequests(wallet) {
                     errorMessage = notice
-                } else {
-                    recipientPending.recordPrivateSync()
                 }
             }
             reloadRecipientPending()
@@ -589,6 +601,10 @@ struct AddContactView: View {
                     // it: the footer shows it as pending and offers the
                     // private sync that settles it.
                     recipientPending.recordRefusal(of: recipient)
+                case .privatePaymentsNotRestored:
+                    // Nothing was sent: the footer shows the wallet restoring
+                    // its private payments until its readiness says restored.
+                    recipientPending.recordRestoringRefusal()
                 case .failed(let message):
                     errorMessage = message
                 }
@@ -650,6 +666,8 @@ struct AddContactView: View {
                 case .privateRequestPending:
                     // Nothing was sent: the footer offers the private sync.
                     recipientPending.recordRefusal(of: recipient)
+                case .privatePaymentsNotRestored:
+                    recipientPending.recordRestoringRefusal()
                 case .failed(let message):
                     errorMessage = "Accept failed: \(message)"
                 }

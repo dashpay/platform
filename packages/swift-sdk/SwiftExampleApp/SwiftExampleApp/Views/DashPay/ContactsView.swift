@@ -261,6 +261,17 @@ func privateRepliesPending(
     }
 }
 
+/// The wallet's readiness for `identityId`'s contact requests, or nil when
+/// it could not be read (`PrivateRepliesPendingSnapshot.recordReadiness`
+/// keeps the last one then).
+@MainActor
+func privateContactReadiness(
+    wallet: ManagedPlatformWallet?,
+    identityId: Data
+) -> PrivateContactReadiness? {
+    try? wallet?.privateContactReadiness(identityId: identityId)
+}
+
 /// Read DashPay's private contact request store (protocol version 15) for
 /// `wallet`, returning what the refresh should tell the user, or nil.
 /// Private requests reach the wallet only through this read, so it runs with

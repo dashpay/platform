@@ -77,7 +77,7 @@ mod prepared_payment;
 pub use prepared_payment::PreparedDashPayPayment;
 mod private_contact_requests;
 pub use private_contact_requests::{
-    PaymentStarted, PrivateContactSyncReport, PrivateDocumentKeyPaths,
+    PaymentStarted, PrivateContactReadiness, PrivateContactSyncReport, PrivateDocumentKeyPaths,
 };
 mod profile;
 mod public_keys;

@@ -6453,6 +6453,7 @@ impl PrivateContactScanStateRows {
                         identity_id: identity_id.to_buffer(),
                         position: position.position,
                         key_fingerprint: position.key_fingerprint,
+                        private_payments_unresolved: position.private_payments_unresolved,
                     },
                 )
                 .collect();
@@ -6605,6 +6606,7 @@ fn load_private_contact_scan_state(
             managed.apply_private_contact_requests_position(PrivateContactRequestsPosition {
                 position: row.position,
                 key_fingerprint: row.key_fingerprint,
+                private_payments_unresolved: row.private_payments_unresolved,
             });
         }
     }
@@ -8264,6 +8266,7 @@ mod tests {
             PrivateContactRequestsPosition {
                 position: 12,
                 key_fingerprint: [3; 32],
+                private_payments_unresolved: true,
             },
         );
         contacts
@@ -8293,6 +8296,7 @@ mod tests {
                 identity_id: [7; 32],
                 position: 12,
                 key_fingerprint: [3; 32],
+                private_payments_unresolved: true,
             }]
         );
         assert_eq!(
@@ -8322,11 +8326,13 @@ mod tests {
                 identity_id: [7; 32],
                 position: 12,
                 key_fingerprint: [3; 32],
+                private_payments_unresolved: true,
             },
             PrivateContactRequestsPositionFFI {
                 identity_id: [8; 32],
                 position: 99,
                 key_fingerprint: [4; 32],
+                private_payments_unresolved: false,
             },
         ]);
         host.addresses.lock().unwrap().extend([
@@ -8354,6 +8360,10 @@ mod tests {
             .and_then(|identities| identities.get_mut(&0))
             .expect("identity");
         assert_eq!(managed.dashpay().private_contact_requests_position(), 12);
+        assert!(
+            managed.dashpay().private_payments_unresolved(),
+            "the unresolved-payment marker is restored with the position"
+        );
         // The address shows once the contact's request to us came privately
         // (a private request carries no core height).
         let owner = Identifier::from([7; 32]);
@@ -8404,6 +8414,7 @@ mod tests {
                 identity_id: [7; 32],
                 position: 12,
                 key_fingerprint: [3; 32],
+                private_payments_unresolved: true,
             });
         let undeclared =
             scan_state_persister(&host, PersistenceCapabilities::NONE, scan_state_trio());
@@ -8455,6 +8466,7 @@ mod tests {
             PrivateContactRequestsPosition {
                 position: 1,
                 key_fingerprint: [0; 32],
+                private_payments_unresolved: false,
             },
         );
         unwired

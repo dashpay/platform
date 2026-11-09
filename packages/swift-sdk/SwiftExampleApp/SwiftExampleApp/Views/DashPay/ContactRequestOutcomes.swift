@@ -9,13 +9,20 @@ import SwiftDashSDK
 /// contact in flight, or paid and not yet read back), which a public send or
 /// accept can also meet, sent nothing new: the view shows it as pending and
 /// offers a private sync, which settles it, after which the user may try
-/// again. Every other error is an ordinary failure the user may retry.
+/// again. Unrestored private payments (code 72) hold the wallet, not one
+/// contact: the view shows "restoring private payments" until the wallet's
+/// readiness reads restored; no private sync lifts it. Every other error is
+/// an ordinary failure the user may retry.
 enum ContactRequestSubmissionOutcome: Equatable {
     /// The private send or reply may have gone through: do not submit again.
     case mayHaveGoneThrough
     /// A private request to the contact is pending in the wallet; nothing
     /// was sent. A private sync settles it.
     case privateRequestPending
+    /// The wallet's private payments from an earlier process are not
+    /// restored yet; nothing was sent. Restoring them, not a private sync,
+    /// lifts it.
+    case privatePaymentsNotRestored
     /// It failed; the message is the error's.
     case failed(String)
 
@@ -26,11 +33,18 @@ enum ContactRequestSubmissionOutcome: Equatable {
         + "pending. Sync private requests to settle it, then try again if it did not "
         + "go through."
 
-    /// The message a request row shows: the pending notice while the wallet
-    /// has a private request to the contact pending, the unavailable notice
-    /// while the wallet could not be read, whatever error an earlier attempt
-    /// left, and that error otherwise.
-    static func rowMessage(pending: Bool, unavailable: Bool = false, error: String?) -> String? {
+    static let restoringPrivatePaymentsMessage = "Restoring this wallet's private "
+        + "payments. Contact requests wait until they are restored."
+
+    /// The message a request row shows: the restoring notice while the
+    /// wallet's private payments are not restored, the pending notice while
+    /// the wallet has a private request to the contact pending, the
+    /// unavailable notice while the wallet could not be read, and whatever
+    /// error an earlier attempt left otherwise.
+    static func rowMessage(
+        pending: Bool, restoring: Bool = false, unavailable: Bool = false, error: String?
+    ) -> String? {
+        if restoring { return restoringPrivatePaymentsMessage }
         if pending { return privateRequestPendingMessage }
         if unavailable { return PrivateRepliesPendingSnapshot.unavailableMessage }
         return error
@@ -43,6 +57,8 @@ enum ContactRequestSubmissionOutcome: Equatable {
                 return .mayHaveGoneThrough
             case .privateContactRequestPending:
                 return .privateRequestPending
+            case .privateContactPaymentsNotRestored:
+                return .privatePaymentsNotRestored
             default:
                 break
             }
@@ -62,7 +78,15 @@ enum ContactRequestSubmissionOutcome: Equatable {
 /// read: code 71 also means the private store could not be read to its end
 /// before the first send or accept since load, with nothing reserved, so the
 /// read may find nothing pending. That contact stays pending, with the
-/// private sync offered, until a private sync completes.
+/// private sync offered, until the wallet's readiness says the store was
+/// read to its end.
+///
+/// Whether the wallet's private payments are restored is the wallet's
+/// readiness (`ManagedPlatformWallet.privateContactReadiness`), not
+/// anything the views conclude: a code 72 refusal, or a readiness read that
+/// says not restored, shows "restoring private payments" for every contact,
+/// and only a readiness read that says restored lifts it. A private sync
+/// changes neither on its own.
 struct PrivateRepliesPendingSnapshot: Equatable {
     static let unavailableMessage = "Could not read whether a private request to "
         + "this contact is pending. Sync private requests to check again."
@@ -73,9 +97,15 @@ struct PrivateRepliesPendingSnapshot: Equatable {
     private(set) var covered: Set<Data> = []
     /// False after a failed read, until a read succeeds.
     private(set) var available = true
-    /// Contacts a send or accept was refused for as pending (code 71) since
-    /// the last completed private sync.
+    /// Contacts a send or accept was refused for as pending (code 71), until
+    /// the wallet's readiness says the private store was read to its end.
     private(set) var refused: Set<Data> = []
+    /// The wallet's readiness for the identity, as last read; nil until a
+    /// read succeeds.
+    private(set) var readiness: PrivateContactReadiness?
+    /// Set by a code 72 refusal; cleared only by a readiness read that says
+    /// the private payments are restored.
+    private(set) var restoringRefused = false
 
     /// Record a read of `contactIds`: the pending ones, or nil when the read
     /// failed.
@@ -95,15 +125,37 @@ struct PrivateRepliesPendingSnapshot: Equatable {
         refused.insert(contactId)
     }
 
-    /// Record a completed private sync, which settles every refusal: the
-    /// next read says what is still pending.
-    mutating func recordPrivateSync() {
-        refused.removeAll()
+    /// Record a send or accept refused because the wallet's private payments
+    /// are not restored (code 72).
+    mutating func recordRestoringRefusal() {
+        restoringRefused = true
+    }
+
+    /// Record a read of the wallet's readiness, or nil when it failed, which
+    /// keeps what the last read said. A readiness that says restored lifts a
+    /// code 72 refusal; one that says the private store was read to its end
+    /// leaves a contact's pending state to the pending read.
+    mutating func recordReadiness(_ read: PrivateContactReadiness?) {
+        guard let read else { return }
+        readiness = read
+        if read.privatePaymentsRestored {
+            restoringRefused = false
+        }
+        if read.privateStoreRead {
+            refused.removeAll()
+        }
+    }
+
+    /// Whether the wallet's private payments are being restored: a send or
+    /// accept was refused with code 72, or the last readiness read says they
+    /// are not restored. Every contact waits while they are.
+    var isRestoringPrivatePayments: Bool {
+        restoringRefused || readiness?.privatePaymentsRestored == false
     }
 
     /// Whether `contactId` is pending: the last successful read found a
     /// private request to it, or a send or accept to it was refused as
-    /// pending since the last completed private sync.
+    /// pending and the store has not been read to its end since.
     func isPending(_ contactId: Data) -> Bool {
         pending.contains(contactId) || refused.contains(contactId)
     }
@@ -115,6 +167,7 @@ struct PrivateRepliesPendingSnapshot: Equatable {
     /// read covered it and found nothing pending.
     func allowsSubmission(to contactId: Data) -> Bool {
         available && covered.contains(contactId) && !isPending(contactId)
+            && !isRestoringPrivatePayments
     }
 }
 

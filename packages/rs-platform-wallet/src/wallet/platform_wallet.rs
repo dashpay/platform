@@ -1814,7 +1814,8 @@ impl PlatformWallet {
     /// wallet the manager holds, and by its load for the wallets it loads once
     /// the store is configured: no keys are needed. Once it succeeds, the
     /// wallet's public contact requests, which a load holds for a wallet that
-    /// bound a shielded account before
+    /// bound a shielded account before, and for an identity whose position
+    /// record marks a private payment that may be unresolved
     /// ([`PlatformWalletError::PrivateContactPaymentsNotRestored`]), go
     /// ahead.
     ///
@@ -1853,9 +1854,28 @@ impl PlatformWallet {
             .restore_private_payments(&payments)
             .await?;
         // After the restored reservations are in place: a public send that
-        // sees the hold gone sees them.
+        // sees the holds gone sees them. The identities' holds first, which
+        // their position records stored, then the wallet's.
+        self.identity
+            .dashpay()
+            .note_private_payments_restored()
+            .await?;
         self.persister.private_payments_restored();
         Ok(restored)
+    }
+
+    /// Whether this wallet's public contact requests wait for its private
+    /// payments from an earlier process to be restored
+    /// ([`Self::restore_private_contact_payments`]): it bound a shielded account
+    /// before, or one of its identities was loaded marking a private payment
+    /// that may be unresolved.
+    pub async fn private_payments_held(&self) -> bool {
+        self.persister.private_payments_unrestored()
+            || self
+                .identity
+                .dashpay()
+                .any_private_payments_unrestored()
+                .await
     }
 
     /// The entries of the private contact requests whose payment from this

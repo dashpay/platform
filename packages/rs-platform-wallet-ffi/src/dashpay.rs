@@ -1129,10 +1129,12 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
         path: &key_wallet::bip32::DerivationPath,
     ) -> Result<key_wallet::bip32::ExtendedPubKey, platform_wallet::PlatformWalletError> {
         use key_wallet::signer::ExtendedPubKeySigner;
+        // A missing mnemonic stays the key-unavailable outcome: the private sync's seed check
+        // derives through here before any page is read.
         self.signer
             .extended_public_key(path)
             .await
-            .map_err(|e| platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string()))
+            .map_err(private_document_signer_error)
     }
 
     async fn ecdh_shared_secret(
@@ -1317,7 +1319,8 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
     }
 }
 
-/// A signer failure of a private document operation as a wallet error: the
+/// A signer failure of a private document operation, or of the receiving xpub
+/// derivation the private sync's seed check makes first, as a wallet error: the
 /// SDK's refusal stays typed; a missing mnemonic is the key-unavailable
 /// outcome (FFI code 31), carried as the signer's typed completion is, with
 /// the reserved marker at position 0 of a `ProtocolError::Generic` payload
@@ -1981,6 +1984,85 @@ mod tests {
         assert!(
             matches!(refused, Err(PlatformWalletError::Sdk(_))),
             "the key is unavailable: {refused:?}"
+        );
+        unsafe { rs_sdk_ffi::dash_sdk_mnemonic_resolver_destroy(missing) };
+    }
+
+    /// A private sync whose resolver has no mnemonic is refused at its seed check, before any
+    /// page is read, with the key-unavailable code (31), as the page scan is, so a host routes
+    /// it to key repair rather than reporting an unknown failure.
+    #[test]
+    fn should_report_a_missing_mnemonic_at_the_private_sync_seed_check_as_key_unavailable() {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::v0::IdentityV0;
+        use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+
+        let manager = crate::test_fixtures::mock_manager();
+        let wallet = runtime()
+            .block_on(manager.create_wallet_from_seed_bytes(
+                key_wallet::Network::Testnet,
+                &[7; 64],
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            ))
+            .expect("a wallet");
+        let key = dpp::secp256k1::PublicKey::from_secret_key(
+            &dpp::secp256k1::SecretKey::from_secret_bytes([3; 32]).expect("a secret key"),
+        );
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([0xB1; 32]),
+            public_keys: [(
+                1,
+                IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                    id: 1,
+                    purpose: Purpose::ENCRYPTION,
+                    security_level: SecurityLevel::MEDIUM,
+                    contract_bounds: None,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    read_only: false,
+                    data: BinaryData::new(key.serialize().to_vec()),
+                    disabled_at: None,
+                }),
+            )]
+            .into_iter()
+            .collect(),
+            balance: 0,
+            revision: 0,
+        });
+        runtime().block_on(async {
+            let mut wm = wallet.wallet_manager().write().await;
+            wm.get_wallet_info_mut(&wallet.wallet_id())
+                .expect("the wallet's info")
+                .identity_manager
+                .add_identity(identity, 0, wallet.wallet_id(), wallet.persister())
+                .expect("the identity");
+        });
+
+        let missing = unsafe {
+            rs_sdk_ffi::dash_sdk_mnemonic_resolver_create(
+                std::ptr::null_mut(),
+                missing_resolve,
+                noop_destroy,
+            )
+        };
+        let provider = unsafe {
+            resolver_contact_crypto_provider(
+                missing,
+                wallet.wallet_id(),
+                key_wallet::Network::Testnet,
+            )
+        };
+        let refused = runtime().block_on(
+            wallet
+                .identity()
+                .dashpay()
+                .sync_private_contact_requests(&provider, 1),
+        );
+        let error = refused.expect_err("the mnemonic is missing");
+        assert_eq!(
+            PlatformWalletFFIResult::from(error).code,
+            PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
         );
         unsafe { rs_sdk_ffi::dash_sdk_mnemonic_resolver_destroy(missing) };
     }

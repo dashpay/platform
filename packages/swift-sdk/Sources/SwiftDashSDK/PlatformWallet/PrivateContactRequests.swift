@@ -44,6 +44,44 @@ public struct PrivateContactInfo: Sendable, Equatable {
     }
 }
 
+/// What a contact request from one of the wallet's identities waits for, as
+/// the wallet decides it (`platform_wallet_get_private_contact_readiness`),
+/// so a host shows "restoring private payments" apart from "reading the
+/// private store" and from a contact's pending request rather than inferring
+/// them from the refusals it got.
+public struct PrivateContactReadiness: Sendable, Equatable {
+    /// Whether the wallet's private payments from an earlier process are
+    /// restored for the identity. While false, its public sends and accepts,
+    /// the in-kind accept included, are refused with
+    /// `PlatformWalletError.privateContactPaymentsNotRestored` (72) until the
+    /// shielded store is configured or the wallet's shielded account bound;
+    /// no private sync lifts it.
+    public let privatePaymentsRestored: Bool
+    /// Whether a private sync read DashPay's private contact request store to
+    /// its end for the identity since load. Until then its first send or
+    /// accept reads it first, and is refused with
+    /// `PlatformWalletError.privateContactRequestPending` (71) while that
+    /// read cannot finish.
+    public let privateStoreRead: Bool
+    /// Whether a private contact request the identity paid for may still be
+    /// unresolved. A contact's own pending request is
+    /// `ManagedIdentity.privateReplyPending(contactId:)`.
+    public let unresolvedPrivatePayment: Bool
+
+    public init(privatePaymentsRestored: Bool, privateStoreRead: Bool, unresolvedPrivatePayment: Bool) {
+        self.privatePaymentsRestored = privatePaymentsRestored
+        self.privateStoreRead = privateStoreRead
+        self.unresolvedPrivatePayment = unresolvedPrivatePayment
+    }
+
+    init(ffi: PrivateContactReadinessFFI) {
+        self.init(
+            privatePaymentsRestored: ffi.private_payments_restored,
+            privateStoreRead: ffi.private_store_read,
+            unresolvedPrivatePayment: ffi.unresolved_private_payment)
+    }
+}
+
 /// What one pass over DashPay's private contact request store did.
 public struct PrivateContactSyncResult: Sendable {
     /// The requests the pass ingested, received and sent, including ones the
@@ -102,6 +140,20 @@ extension ManagedIdentity {
 }
 
 extension ManagedPlatformWallet {
+    /// What a contact request from `identityId`, one of this wallet's
+    /// identities, waits for, as the wallet decides it. A pure read of live
+    /// wallet state; read it again after the shielded store is configured or
+    /// the wallet binds its shielded account to see the restore.
+    public func privateContactReadiness(identityId: Identifier) throws -> PrivateContactReadiness {
+        var ffi = PrivateContactReadinessFFI()
+        let handle = self.handle
+        let result = identityId.withFFIBytes { idPtr in
+            platform_wallet_get_private_contact_readiness(handle, idPtr, &ffi)
+        }
+        try result.check()
+        return PrivateContactReadiness(ffi: ffi)
+    }
+
     /// Read DashPay's private contact request store for every identity of
     /// this wallet, at most `maxPages` pages (the default reads to the end),
     /// and ingest what it holds for them: requests to them, each sender

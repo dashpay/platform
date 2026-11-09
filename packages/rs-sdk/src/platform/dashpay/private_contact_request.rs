@@ -24,6 +24,7 @@
 
 use super::contact_request::{recipient_key_purpose_is_valid, sender_key_purpose_is_valid};
 use crate::error::StaleNodeError;
+use crate::platform::private_document_entries::private_document_entries_requirement;
 use crate::platform::private_document_scan::{
     PrivateDocumentScan, PrivateDocumentScanKeys, ReceivedPrivateDocumentEntry,
     SentPrivateDocumentEntry,
@@ -49,7 +50,6 @@ use dpp::secp256k1::rand::rngs::StdRng;
 use dpp::secp256k1::rand::{RngCore, SeedableRng};
 use dpp::secp256k1::{PublicKey, SecretKey};
 use dpp::util::hash::ripemd160_sha256;
-use dpp::version::feature_initial_protocol_versions::PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION;
 use dpp::version::PlatformVersion;
 use futures::{StreamExt, TryStreamExt};
 use platform_encryption::{
@@ -1391,14 +1391,13 @@ impl Sdk {
     /// The DashPay contract, with its `privateContactRequest` type, as the context provider
     /// holds it ([`Sdk::fetch_private_document_contract`]): a page's proof is verified against
     /// the contract the provider gives. The network's protocol version is established as 15 or
-    /// later first, as an unpinned SDK starts below it and would otherwise resolve a DashPay
-    /// without the type.
+    /// later first (`Sdk::establish_protocol_requirement`), as an unpinned SDK starts below it
+    /// and would otherwise resolve a DashPay without the type: the gate's probe asks with a
+    /// proof whatever this SDK's proof setting, and below 15 the call is refused with
+    /// [`Error::ProtocolVersionNotActive`].
     async fn fetch_private_contact_request_contract(&self) -> Result<Arc<DataContract>, Error> {
-        self.require_protocol_version(
-            PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
-            "DashPay private contact requests",
-        )
-        .await?;
+        self.establish_protocol_requirement(private_document_entries_requirement(), None)
+            .await?;
         let dashpay_id = self.get_dashpay_contract_id()?;
         self.fetch_private_document_contract(dashpay_id, PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME)
             .await
@@ -3170,7 +3169,8 @@ mod tests {
     }
 
     /// Below protocol version 15 the SDK refuses private contact requests before resolving
-    /// DashPay, whose older versions have no private type.
+    /// DashPay, whose older versions have no private type: an SDK pinned there with the
+    /// structured activation error, naming the pin.
     #[cfg(feature = "mocks")]
     #[tokio::test]
     async fn should_refuse_private_contact_requests_below_protocol_version_15() {
@@ -3183,10 +3183,15 @@ mod tests {
             .await
             .expect_err("protocol version 14");
         assert!(
-            error
-                .to_string()
-                .contains("exists from protocol version 15"),
-            "{error}"
+            matches!(
+                error,
+                Error::ProtocolVersionNotActive {
+                    required: 15,
+                    pinned: true,
+                    ..
+                }
+            ),
+            "{error:?}"
         );
         let signer = TransitionSigner(BTreeMap::new());
         let error = sdk
@@ -3202,10 +3207,15 @@ mod tests {
             .await
             .expect_err("protocol version 14");
         assert!(
-            error
-                .to_string()
-                .contains("exists from protocol version 15"),
-            "{error}"
+            matches!(
+                error,
+                Error::ProtocolVersionNotActive {
+                    required: 15,
+                    pinned: true,
+                    ..
+                }
+            ),
+            "{error:?}"
         );
     }
 
@@ -3756,6 +3766,54 @@ mod tests {
             .expect("the page is read");
         assert!(scan.is_complete());
         assert_eq!(provider.held().expect("held").version(), 3);
+    }
+
+    /// A fetched contract that declares no private type is refused, unless another
+    /// operation gave the provider a newer one declaring it while it was fetched: then that
+    /// one is read against. A newer one that declares no private type either leaves the
+    /// refusal.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_use_a_newer_contract_with_the_type_promoted_while_one_without_was_fetched() {
+        let mut stale = dashpay_without_private_requests();
+        stale.set_version(1);
+        let mut fetched = dashpay_without_private_requests();
+        fetched.set_version(2);
+
+        let mut promoted = dashpay();
+        promoted.set_version(3);
+        let mut sdk = sdk_with(HeldContractProvider::promoting(stale.clone(), promoted));
+        sdk.mock()
+            .expect_fetch(fetched.id(), Some(fetched.clone()))
+            .await
+            .expect("the DashPay fetch is expected");
+        let resolved = sdk
+            .fetch_private_document_contract(
+                fetched.id(),
+                PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+            )
+            .await
+            .expect("the newer contract with the type");
+        assert_eq!(resolved.version(), 3);
+        assert!(private_contact_request_type(&resolved).is_ok());
+
+        let mut promoted_without = dashpay_without_private_requests();
+        promoted_without.set_version(3);
+        let mut sdk = sdk_with(HeldContractProvider::promoting(stale, promoted_without));
+        sdk.mock()
+            .expect_fetch(fetched.id(), Some(fetched.clone()))
+            .await
+            .expect("the DashPay fetch is expected");
+        let refused = sdk
+            .fetch_private_document_contract(
+                fetched.id(),
+                PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+            )
+            .await;
+        assert!(
+            matches!(&refused, Err(Error::Generic(message)) if message.contains("declares no private type")),
+            "{refused:?}"
+        );
     }
 
     /// Below protocol version 15 there is no private store: a contract that declares no
