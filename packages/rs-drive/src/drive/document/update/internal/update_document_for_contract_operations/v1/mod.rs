@@ -186,6 +186,7 @@ impl Drive {
         }
         self.update_stored_document_operations_v1(
             document_and_contract_info,
+            false,
             block_info,
             previous_batch_operations,
             estimated_costs_only_with_layer_info,
@@ -202,10 +203,15 @@ impl Drive {
     /// type, which dropping storage flags leaves as it is), so an update gathers the same
     /// operations as before at every protocol version. `draw_random_document_properties`
     /// calls it to fill the `sys.random` properties of a document of any type, and
-    /// `settle_random_token_amounts` to fill the drawn amount into a token history document.
+    /// `settle_random_token_amounts` to fill the drawn amount into a token history document,
+    /// both with `index_trees_as_inserted`: the index trees it creates then carry storage
+    /// flags only where an insert's do (`index_trees_carry_storage_flags`). The primary
+    /// storage and the references keep the document's flags either way, as an insert's do.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn update_stored_document_operations_v1(
         &self,
         document_and_contract_info: DocumentAndContractInfo,
+        index_trees_as_inserted: bool,
         block_info: &BlockInfo,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
@@ -288,7 +294,7 @@ impl Drive {
         let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
         let owner_id = document_and_contract_info.owned_document_info.owner_id;
-        let Some((document, storage_flags)) = document_and_contract_info
+        let Some((document, document_storage_flags)) = document_and_contract_info
             .owned_document_info
             .document_info
             .get_borrowed_document_and_storage_flags()
@@ -296,6 +302,13 @@ impl Drive {
             return Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "must have document and storage flags",
             )));
+        };
+        let storage_flags = if index_trees_as_inserted
+            && !document_and_contract_info.index_trees_carry_storage_flags()
+        {
+            None
+        } else {
+            document_storage_flags
         };
         // we need to construct the path for documents on the contract
         // the path is
@@ -317,7 +330,7 @@ impl Drive {
         let document_reference = make_document_reference(
             document,
             document_and_contract_info.document_type,
-            storage_flags,
+            document_storage_flags,
         );
 
         // next we need to get the old document from storage
@@ -523,7 +536,7 @@ impl Drive {
                     document,
                     document_and_contract_info.document_type,
                     sum_value,
-                    storage_flags,
+                    document_storage_flags,
                 )
             } else {
                 document_reference.clone()
@@ -1117,7 +1130,7 @@ impl Drive {
                 // as a change, and an index skipping both was passed by above)
 
                 // We can only trust the reference content has not changed if there are no storage flags
-                let trust_refresh_reference = storage_flags.is_none();
+                let trust_refresh_reference = document_storage_flags.is_none();
 
                 // unique indexes will be stored under key "0"
                 // non unique indices should have a tree at key "0" that has all elements based off of primary key

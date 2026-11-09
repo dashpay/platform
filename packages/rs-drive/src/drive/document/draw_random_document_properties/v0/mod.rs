@@ -302,6 +302,7 @@ impl Drive {
                 contract: &contract.contract,
                 document_type,
             },
+            true,
             block_info,
             &mut None,
             &mut None,
@@ -392,6 +393,45 @@ mod tests {
                             }
                         },
                         "indices": [{ "name": "byRarity", "properties": [{ "rarity": "asc" }] }],
+                        "required": ["name", "rarity"],
+                        "additionalProperties": false
+                    },
+                    "namedCard": {
+                        "type": "object",
+                        "documentsMutable": false,
+                        "properties": {
+                            "name": { "type": "string", "maxLength": 32, "position": 0 },
+                            "rarity": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 100,
+                                "generatedFrom": { "function": "sys.random.uniform" },
+                                "position": 1
+                            }
+                        },
+                        "indices": [
+                            { "name": "byRarity", "properties": [{ "rarity": "asc" }] },
+                            { "name": "byName", "properties": [{ "name": "asc" }] }
+                        ],
+                        "required": ["name", "rarity"],
+                        "additionalProperties": false
+                    },
+                    "mutableCard": {
+                        "type": "object",
+                        "properties": {
+                            "name": { "type": "string", "maxLength": 32, "position": 0 },
+                            "rarity": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 100,
+                                "generatedFrom": { "function": "sys.random.uniform" },
+                                "position": 1
+                            }
+                        },
+                        "indices": [
+                            { "name": "byRarity", "properties": [{ "rarity": "asc" }] },
+                            { "name": "byName", "properties": [{ "name": "asc" }] }
+                        ],
                         "required": ["name", "rarity"],
                         "additionalProperties": false
                     },
@@ -561,6 +601,105 @@ mod tests {
         );
         if expected != 1 {
             assert!(cards_with_rarity(&drive, &contract, 1, &platform_version).is_empty());
+        }
+    }
+
+    /// What a draw leaves is what an insert of the drawn value writes, down to the storage
+    /// flags of the index trees (an immutable type of a contract that cannot be deleted keeps
+    /// none on them, and its references keep the document's), so the state is the same and
+    /// removing the document returns the same.
+    #[test]
+    fn should_leave_the_index_elements_an_insert_of_the_drawn_value_writes() {
+        let platform_version = drawing_platform_version();
+        let grove_version = &platform_version.drive.grove_version;
+        for document_type_name in ["card", "namedCard", "mutableCard"] {
+            let (drawn_drive, contract) = setup(&platform_version);
+            let document_type = contract
+                .document_type_for_name(document_type_name)
+                .expect("the type");
+            let mut placeholder = card(1);
+            let mut holding_the_draw = card(1);
+            if document_type_name == "mutableCard" {
+                placeholder.set_revision(Some(1));
+                holding_the_draw.set_revision(Some(1));
+            }
+            let request = request(contract.id(), document_type_name, placeholder.id());
+            let expected = draw_v0(&BEACON, &request, "rarity", rarity_range()).expect("draws");
+            holding_the_draw.set(
+                "rarity",
+                Value::U8(u8::try_from(expected).expect("a rarity is at most 100")),
+            );
+
+            let insert = |drive: &Drive, document: &Document| {
+                drive
+                    .add_document_for_contract(
+                        DocumentAndContractInfo {
+                            owned_document_info: OwnedDocumentInfo {
+                                document_info: DocumentRefInfo((
+                                    document,
+                                    Some(Cow::Owned(StorageFlags::new_single_epoch(
+                                        0,
+                                        Some(OWNER),
+                                    ))),
+                                )),
+                                owner_id: Some(OWNER),
+                            },
+                            contract: &contract,
+                            document_type,
+                        },
+                        false,
+                        BlockInfo::default(),
+                        true,
+                        None,
+                        &platform_version,
+                    )
+                    .expect("the document inserts");
+            };
+            insert(&drawn_drive, &placeholder);
+            drawn_drive
+                .draw_random_document_properties(
+                    &BEACON,
+                    &[request],
+                    &BlockInfo::default(),
+                    None,
+                    &platform_version,
+                )
+                .expect("the draw runs");
+
+            let (inserted_drive, _) = setup(&platform_version);
+            insert(&inserted_drive, &holding_the_draw);
+
+            let root_hash = |drive: &Drive| {
+                drive
+                    .grove
+                    .root_hash(None, grove_version)
+                    .unwrap()
+                    .expect("the root hash")
+            };
+            assert_eq!(
+                root_hash(&drawn_drive),
+                root_hash(&inserted_drive),
+                "a draw into a {document_type_name} leaves what an insert of its value writes"
+            );
+
+            let delete_fee = |drive: &Drive| {
+                drive
+                    .delete_document_for_contract(
+                        placeholder.id(),
+                        &contract,
+                        document_type_name,
+                        BlockInfo::default(),
+                        true,
+                        None,
+                        &platform_version,
+                    )
+                    .expect("the document deletes")
+            };
+            assert_eq!(
+                delete_fee(&drawn_drive),
+                delete_fee(&inserted_drive),
+                "removing a drawn {document_type_name} returns what removing an inserted one does"
+            );
         }
     }
 

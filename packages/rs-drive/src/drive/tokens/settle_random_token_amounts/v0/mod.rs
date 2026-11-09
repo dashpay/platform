@@ -301,6 +301,7 @@ impl Drive {
                 contract,
                 document_type,
             },
+            true,
             block_info,
             &mut None,
             &mut None,
