@@ -615,9 +615,10 @@ impl TxoReconcileSchedule {
     /// Claim the wallet for one run at `now`; `false` when a run is already
     /// in flight. The claim restarts the wallet's cadence whether or not the
     /// run goes ahead, so a run its gate refuses is not retried on every
-    /// poll — except a refusal for [`TxoReconcileSkip::NotSteadyState`],
-    /// whose release ([`TxoReconcileFinish::Deferred`]) leaves the wallet
-    /// due for the steady state to come.
+    /// poll — except a refusal for [`TxoReconcileSkip::NotSteadyState`] or
+    /// [`TxoReconcileSkip::WalletUnknown`], whose release
+    /// ([`TxoReconcileFinish::Deferred`]) leaves the wallet due for the
+    /// steady state to come, or for a wallet registered under the id.
     pub fn try_begin(&mut self, wallet_id: WalletId, now: Instant) -> bool {
         if self.in_flight.contains_key(&wallet_id) {
             return false;
@@ -814,7 +815,10 @@ impl TxoReconciler {
     /// releases it, and so does dropping this future before it completes.
     /// A refusal keeps the claim's cadence stamp, except
     /// [`TxoReconcileSkip::NotSteadyState`]: SPV left its steady state, so
-    /// the wallet is due again once it is back, not a cadence later.
+    /// the wallet is due again once it is back, not a cadence later; and
+    /// [`TxoReconcileSkip::WalletUnknown`]: the wallet is not loaded (a
+    /// begin racing its removal), so one registered under the id is due at
+    /// once, as [`TxoReconcileSchedule::forget`] promises.
     pub async fn begin(&self, wallet_id: &WalletId) -> Result<TxoReconcileRun, TxoReconcileSkip> {
         self.claim_across(wallet_id, self.gate(wallet_id)).await
     }
@@ -830,10 +834,18 @@ impl TxoReconciler {
         let mut claim = ProvisionalClaim::take(&self.schedule, *wallet_id, Instant::now())
             .ok_or(TxoReconcileSkip::AlreadyRunning)?;
         let tip = gate.await.inspect_err(|skip| {
-            // Not steady yet: no stamp, so the wallet is due as soon as it
-            // is (due_wallets reports nothing until then, so no poll loop).
-            // Every other refusal keeps the claim's stamp when it drops.
-            if *skip == TxoReconcileSkip::NotSteadyState {
+            // Not steady yet, or the wallet is not (or no longer) loaded: no
+            // stamp, so the wallet is due as soon as it is steady and loaded.
+            // A late begin for a wallet removal forgot would otherwise leave
+            // a fresh stamp that a same-id wallet re-added in this steady
+            // session inherits. Neither can loop: due_wallets reports
+            // nothing while not steady, and lists only loaded wallets, so it
+            // never reports an unknown one. Every other refusal keeps the
+            // claim's stamp when it drops.
+            if matches!(
+                skip,
+                TxoReconcileSkip::NotSteadyState | TxoReconcileSkip::WalletUnknown
+            ) {
                 claim.release(TxoReconcileFinish::Deferred);
             }
         })?;
@@ -2126,6 +2138,32 @@ mod tests {
         assert!(
             !due_now(&reconciler, &A),
             "another refusal restarts the cadence"
+        );
+    }
+
+    /// A begin that arrives after the wallet's removal is refused as
+    /// unknown and leaves no stamp, so a wallet re-added under the same id
+    /// within the same steady session is due on the next poll, not a
+    /// cadence later.
+    #[tokio::test]
+    async fn a_begin_refused_for_an_unknown_wallet_leaves_a_re_added_wallet_due() {
+        let reconciler = reconciler();
+        assert!(due_now(&reconciler, &A), "a new steady session");
+
+        // Removed: the manager forgets the wallet's cadence.
+        lock_schedule(&reconciler.schedule).forget(&A);
+        assert_eq!(
+            reconciler
+                .claim_across(&A, async { Err(TxoReconcileSkip::WalletUnknown) })
+                .await,
+            Err(TxoReconcileSkip::WalletUnknown),
+            "a begin racing the removal"
+        );
+
+        // Re-added under the same id, with no new steady-state edge.
+        assert!(
+            due_now(&reconciler, &A),
+            "the re-added wallet is due on the same session's next poll"
         );
     }
 

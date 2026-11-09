@@ -183,7 +183,8 @@ pub unsafe extern "C" fn platform_wallet_manager_txo_reconcile_due_wallets(
 /// holds no claim. Either way the wallet's cadence restarts now, unless
 /// another run already held it — or the skip is
 /// [`TXO_RECONCILE_SKIP_NOT_STEADY_STATE`], which leaves the wallet due as
-/// soon as SPV is steady again.
+/// soon as SPV is steady again, or [`TXO_RECONCILE_SKIP_WALLET_UNKNOWN`],
+/// which leaves a wallet registered under the id due at once.
 ///
 /// On `RUN`, `*out_start` (a `TXO_RECONCILE_START_*`) says where the run
 /// starts, from where the wallet's last run stopped; for
