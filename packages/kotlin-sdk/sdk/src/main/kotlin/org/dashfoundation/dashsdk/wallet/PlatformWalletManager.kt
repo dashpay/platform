@@ -2923,6 +2923,8 @@ data class OneTimeOrchardKey(
  * accepts.
  */
 fun generateOneTimeOrchardKey(): OneTimeOrchardKey {
+    // Handle-less, so this may be the first SDK call in the process.
+    Sdk.initialize()
     val blob = mapNativeErrors { FundingNative.generateOneTimeOrchardKey() }
     // The blob's first 32 bytes are bearer spend authority; wipe the transient
     // JVM copy once the two owned arrays have been sliced out (#4204 key-hygiene).
@@ -2946,6 +2948,7 @@ fun generateOneTimeOrchardKey(): OneTimeOrchardKey {
  */
 fun orchardAddressFromSpendingKey(spendingKey: ByteArray): ByteArray {
     require(spendingKey.size == 32) { "spendingKey must be 32 bytes, got ${spendingKey.size}" }
+    Sdk.initialize()
     return mapNativeErrors { FundingNative.orchardAddressFromSpendingKey(spendingKey) }
 }
 
