@@ -237,13 +237,35 @@ budget) has to cover, or the batch is refused unpaid
 (`IdentityInsufficientBalanceError`, 40210). A batch that fails validation is never
 sponsored: its signer pays for the work that ran, and a request the document
 type does not offer is a paid rejection (`GasFeesPaidByNotAllowedError`,
-40129). Storage refunds still go to the document's owner, whoever paid the
-storage: a sponsored document refunds its owner when it is deleted or replaced
-by a smaller one, even when the sponsor pays for that transition too. Each
-token the sponsor hands out is therefore worth up to the storage fee of the
-largest document the type allows, so a document type that offers sponsorship
-should bound its documents' size (`maxLength`, `maxItems`) and price the
-action accordingly.
+40129).
+
+Storage refunds go to whoever paid for the storage. From protocol version 15,
+execution names the sponsor it charges as the owner in the storage flags of
+everything the batch's documents write (`record_gas_sponsor_as_storage_owner`;
+the owner's 32 bytes are there either way and the estimate reads no owner, so
+no fee changes), and a contest's end date entries name whoever the document's
+flags name. A sponsored document therefore refunds the sponsor when it is
+deleted or shrinks. A document of a type with a `ttl` is stored without storage
+flags and refunds nobody, sponsored or not. The sponsor still pays the storage
+fee of every document it sponsors, up to the largest the type allows, and gets
+back only the part not yet paid out to past epochs, so a document type that
+offers sponsorship should bound its documents' size (`maxLength`, `maxItems`,
+`maxBytes`) and price the action accordingly.
+
+From protocol version 15 the owner a write names owns the element afterwards,
+at any size. What happens to the bytes depends on who is involved:
+
+- When the old or new owner is the owner of a contract whose document type the
+  batch updates offers sponsorship, the handover is full: the old owner is
+  refunded for the whole element and the payer charged for all of it. Otherwise
+  a document's owner could keep storage the sponsor paid for, by growing the
+  document or by transferring it to a second identity and deleting it there.
+  This does not change the estimate: a document update is already estimated as
+  the insertion of everything it writes.
+- Any other owner change, an ordinary transfer or purchase, keeps the stored
+  bytes and moves them to the new owner, the references of the indexes it
+  leaves unchanged included. Nobody is refunded for them, and the new owner is
+  the one refunded when they are freed later.
 
 The signer's minimum balance pre-check runs before the contracts are loaded;
 its v1 asks a batch that requests sponsorship for its principal only

@@ -3,6 +3,7 @@ use crate::version::drive_versions::drive_contract_method_versions::{
     DriveContractFeePotMethodVersions, DriveContractMethodVersions,
 };
 use crate::version::drive_versions::drive_document_method_versions::v5::DRIVE_DOCUMENT_METHOD_VERSIONS_V5;
+use crate::version::drive_versions::drive_grove_method_versions::v2::DRIVE_GROVE_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_identity_method_versions::v2::DRIVE_IDENTITY_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_identity_method_versions::{
     DriveIdentityCostEstimationMethodVersions, DriveIdentityMethodVersions,
@@ -91,6 +92,9 @@ use grovedb_version::version::v5::GROVE_V5;
 ///   applies it (`merk_insert_element` 1 in both estimators), and lets a batch carry the same
 ///   keyless append more than once (`apply_batch.keyless_append_repeats`).
 ///
+/// * **Storage handover** (protocol v15 note 28): `grove_methods` is
+///   `DRIVE_GROVE_METHOD_VERSIONS_V2`.
+///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     methods: DriveMethodVersions {
@@ -140,5 +144,6 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     // estimated as it is applied, and a batch may repeat a keyless append. GROVE_V4, which v9
     // keeps, refuses all three.
     grove_version: GROVE_V5,
+    grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V2, // changed in v10: the flags update follows the written owner
     ..DRIVE_VERSION_V9
 };

@@ -9,6 +9,7 @@ use crate::util::estimated_layers::EstimatedLayers;
 
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
+use std::collections::BTreeSet;
 
 impl Drive {
     /// Applies a batch of Drive operations to groveDB depending on the drive version.
@@ -39,6 +40,27 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
+        self.apply_batch_low_level_drive_operations_with_full_handover_owners(
+            estimated_costs_only_with_layer_info,
+            transaction,
+            batch_operations,
+            BTreeSet::new(),
+            drive_operations,
+            drive_version,
+        )
+    }
+
+    /// [`Self::apply_batch_low_level_drive_operations`], for a batch where an owner change
+    /// involving one of `full_handover_owners` is a full handover (protocol version 15).
+    pub(crate) fn apply_batch_low_level_drive_operations_with_full_handover_owners(
+        &self,
+        estimated_costs_only_with_layer_info: Option<EstimatedLayers>,
+        transaction: TransactionArg,
+        batch_operations: Vec<LowLevelDriveOperation>,
+        full_handover_owners: BTreeSet<[u8; 32]>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
         match drive_version
             .methods
             .operations
@@ -65,6 +87,7 @@ impl Drive {
                     estimated_costs_only_with_layer_info,
                     transaction,
                     batch_operations,
+                    full_handover_owners,
                     drive_operations,
                     drive_version,
                 )

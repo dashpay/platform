@@ -2,6 +2,7 @@ use crate::util::estimated_layers::EstimatedLayers;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::state_transition_action::batch::document_type_offers_gas_sponsorship;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::ConsumedDocument;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use crate::util::object_size_info::DocumentInfo::{DocumentRefAndSerialization, DocumentRefInfo};
@@ -270,6 +271,29 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
 }
 
 impl DocumentOperationType<'_> {
+    /// The owner of this update's contract, when its document type offers gas sponsorship:
+    /// the identity that may hold the storage of a document someone else owns. Batches always
+    /// carry the resolved contract, so an update that names only its id has no sponsor here.
+    pub(crate) fn storage_sponsor_of_updated_document(&self) -> Result<Option<[u8; 32]>, Error> {
+        let Self::UpdateDocument {
+            contract_info,
+            document_type_info,
+            ..
+        } = self
+        else {
+            return Ok(None);
+        };
+        let contract = match contract_info {
+            DataContractInfo::DataContractFetchInfo(fetch_info) => &fetch_info.contract,
+            DataContractInfo::BorrowedDataContract(contract) => *contract,
+            DataContractInfo::OwnedDataContract(contract) => contract,
+            DataContractInfo::DataContractId(_) => return Ok(None),
+        };
+        let document_type = document_type_info.clone().resolve(contract)?;
+        Ok(document_type_offers_gas_sponsorship(document_type)
+            .then(|| contract.owner_id().to_buffer()))
+    }
+
     /// Run all direct TTL cleanup before any operation in this batch is built.
     pub(crate) fn prepare_time_range_ttl(
         &self,
