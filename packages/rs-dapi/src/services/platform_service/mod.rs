@@ -3,6 +3,7 @@
 
 mod broadcast_state_transition;
 mod error_mapping;
+mod get_recent_state_transition_status;
 mod get_status;
 mod shielded_proof_failure_budget;
 mod wait_for_state_transition_result;
@@ -14,7 +15,8 @@ use dapi_grpc::platform::v0::get_path_elements_request;
 use dapi_grpc::platform::v0::platform_server::Platform;
 use dapi_grpc::platform::v0::{
     BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetPathElementsRequest,
-    GetPathElementsResponse, GetStatusRequest, GetStatusResponse,
+    GetPathElementsResponse, GetRecentStateTransitionStatusRequest,
+    GetRecentStateTransitionStatusResponse, GetStatusRequest, GetStatusResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
@@ -312,6 +314,32 @@ impl Platform for PlatformServiceImpl {
                     );
 
                 Ok(response)
+            }
+        }
+    }
+
+    /// Implementation of getRecentStateTransitionStatus
+    ///
+    /// This node's unproved view of a state transition by hash: committed, pending or unknown.
+    /// See [`PlatformServiceImpl::get_recent_state_transition_status_impl`].
+    async fn get_recent_state_transition_status(
+        &self,
+        request: Request<GetRecentStateTransitionStatusRequest>,
+    ) -> Result<Response<GetRecentStateTransitionStatusResponse>, Status> {
+        let method = type_name_of_val(request.get_ref());
+        trace!(
+            method,
+            "Received get_recent_state_transition_status request"
+        );
+        match self.get_recent_state_transition_status_impl(request).await {
+            Ok(response) => {
+                info!(method, "request succeeded");
+                Ok(Response::new(response))
+            }
+            Err(error) => {
+                let status = error.to_status();
+                warn!(method, error = %status, source = %error, "get recent state transition status request failed");
+                Err(status)
             }
         }
     }

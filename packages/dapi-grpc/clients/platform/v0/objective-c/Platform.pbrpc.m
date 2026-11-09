@@ -723,6 +723,45 @@
              responseClass:[WaitForStateTransitionResultResponse class]];
 }
 
+#pragma mark getRecentStateTransitionStatus(GetRecentStateTransitionStatusRequest) returns (GetRecentStateTransitionStatusResponse)
+
+/**
+ * What the node answering knows of a state transition, by hash, without
+ * waiting: committed, in its mempool, or unknown to it. Unproved and per node
+ * (protocol version 15 and later)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getRecentStateTransitionStatusWithRequest:(GetRecentStateTransitionStatusRequest *)request handler:(void(^)(GetRecentStateTransitionStatusResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetRecentStateTransitionStatusWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+/**
+ * What the node answering knows of a state transition, by hash, without
+ * waiting: committed, in its mempool, or unknown to it. Unproved and per node
+ * (protocol version 15 and later)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetRecentStateTransitionStatusWithRequest:(GetRecentStateTransitionStatusRequest *)request handler:(void(^)(GetRecentStateTransitionStatusResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getRecentStateTransitionStatus"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetRecentStateTransitionStatusResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+/**
+ * What the node answering knows of a state transition, by hash, without
+ * waiting: committed, in its mempool, or unknown to it. Unproved and per node
+ * (protocol version 15 and later)
+ */
+- (GRPCUnaryProtoCall *)getRecentStateTransitionStatusWithMessage:(GetRecentStateTransitionStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getRecentStateTransitionStatus"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetRecentStateTransitionStatusResponse class]];
+}
+
 #pragma mark getConsensusParams(GetConsensusParamsRequest) returns (GetConsensusParamsResponse)
 
 /**
