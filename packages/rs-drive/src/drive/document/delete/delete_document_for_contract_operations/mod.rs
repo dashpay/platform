@@ -275,7 +275,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to store the document");
 
@@ -336,15 +335,14 @@ mod tests {
                 &platform_version.drive,
             )
             .expect("expected to cost the operations");
-        Drive::calculate_fee(
-            None,
-            Some(drive_operations),
-            &Epoch::new(0).expect("expected epoch 0"),
-            drive.config.epochs_per_era,
-            platform_version,
-            None,
-        )
-        .expect("expected the fee")
+        drive
+            .calculate_fee(
+                None,
+                Some(drive_operations),
+                &Epoch::new(0).expect("expected epoch 0"),
+                platform_version,
+            )
+            .expect("expected the fee")
     }
 
     /// A consumed document is deleted from what its lookup read

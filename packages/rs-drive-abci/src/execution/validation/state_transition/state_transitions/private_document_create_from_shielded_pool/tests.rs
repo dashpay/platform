@@ -16,7 +16,9 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::DataContract;
+use dpp::data_contracts::SystemDataContract;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{BinaryData, Identifier};
 use dpp::serialization::PlatformSerializable;
@@ -31,6 +33,7 @@ use dpp::state_transition::private_document_create_from_shielded_pool_transition
 use dpp::state_transition::private_document_create_from_shielded_pool_transition::PrivateDocumentCreateFromShieldedPoolTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
+use dpp::system_data_contracts::load_system_data_contract;
 use drive::drive::Drive;
 use grovedb_commitment_tree::{
     Builder, BundleType, ClientMemoryCommitmentTree, DashMemo, ExtractedNoteCommitment,
@@ -322,6 +325,63 @@ fn should_append_the_entries_behind_the_block_header_and_pay_exactly_the_fee() {
         assert_eq!(stored.block_time_ms, 1_700_000_000_000);
         assert_eq!(stored.data, entry.to_vec());
     }
+}
+
+/// DashPay's `privateContactRequest` (DashPay v3, which a chain born at protocol version 15
+/// registers at genesis) takes entries: its store exists, and a transition appending two
+/// 589-byte entries to it executes and leaves them in the store.
+#[test]
+fn should_append_private_contact_requests_to_dashpay() {
+    let platform_version = PlatformVersion::latest();
+    let platform = setup_platform();
+    let dashpay = load_system_data_contract(SystemDataContract::Dashpay, platform_version)
+        .expect("DashPay v3");
+    let private_contact_request = dashpay
+        .document_type_for_name("privateContactRequest")
+        .expect("the privateContactRequest type");
+    let entry_size = private_contact_request
+        .private_document()
+        .expect("privateContactRequest is private")
+        .entry_size();
+    assert_eq!(entry_size, 589);
+
+    let entries = entries(2, entry_size);
+    let (st, anchor) = proven_transition(dashpay.id(), "privateContactRequest", entries.clone());
+    seed_pool(&platform, &anchor);
+    let platform_state = platform.state.load();
+    let (fee_results, _) = process_state_transitions(
+        &platform,
+        &[st],
+        BlockInfo {
+            height: 3,
+            time_ms: 1_700_000_000_000,
+            ..Default::default()
+        },
+        &platform_state,
+    );
+    assert_eq!(fee_results[0].total_base_fee(), fee(&entries));
+
+    let page = platform
+        .drive
+        .fetch_private_document_entries(
+            dashpay.id().to_buffer(),
+            private_contact_request,
+            0,
+            None,
+            platform_version,
+        )
+        .expect("expected to read DashPay's store");
+    assert_eq!(page.total_count, 2);
+    assert_eq!(
+        page.entries
+            .iter()
+            .map(|stored| stored.data.clone())
+            .collect::<Vec<_>>(),
+        entries
+            .iter()
+            .map(|entry| entry.to_vec())
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]

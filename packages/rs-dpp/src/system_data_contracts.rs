@@ -1484,6 +1484,10 @@ mod dashpay_v3_tests {
         DistinctFrom, DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRef,
         EncryptedFor, EncryptedForRecipient, EncryptionScheme,
     };
+    use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+    use crate::document::DocumentV0;
+    use platform_value::{Identifier, Value};
+    use std::collections::BTreeMap;
 
     /// DashPay v3, registered as the chain registers it, under full validation.
     fn dashpay() -> DataContract {
@@ -1503,6 +1507,94 @@ mod dashpay_v3_tests {
     /// from then on, so every property v1 or v2 declares must be stored exactly as
     /// it was. DashPay keeps sized integer types off: an integer is an i64 whatever
     /// its bounds, so the key indexes' new `maximum` changes nothing stored.
+    /// The bytes of an envelope around a private entry's payload, fixed by the private document
+    /// envelope (version 1): the commitment (32), the ephemeral key (33), the body's tag (16) and
+    /// the sender-recovery ciphertext (81) around the body, and the body's own header before the
+    /// payload (version, auth mode, sender id, sender key id, auth, recipient id, payload length:
+    /// 1 + 1 + 32 + 4 + 65 + 32 + 2).
+    const PRIVATE_ENTRY_WRAPPER_BYTES: usize = 162;
+    const PRIVATE_ENTRY_BODY_HEADER_BYTES: usize = 137;
+
+    /// The type's properties in the document property encoding, as a private entry's payload
+    /// carries them: each in position order, an optional one led by a presence byte.
+    fn payload(document_type: DocumentTypeRef, properties: &BTreeMap<String, Value>) -> Vec<u8> {
+        let mut bytes = vec![];
+        for (name, property) in document_type.properties() {
+            match properties.get(name) {
+                Some(value) => {
+                    if !property.required {
+                        bytes.push(1);
+                    }
+                    bytes.extend(
+                        property
+                            .property_type
+                            .encode_value_ref_with_size(value, property.required)
+                            .expect("the value encodes"),
+                    );
+                }
+                None => bytes.push(0),
+            }
+        }
+        bytes
+    }
+
+    /// `privateContactRequest` is private, and its entries take the smallest size that holds its
+    /// largest payload in the envelope: every property at its largest, `accountReference` an
+    /// 8-byte integer as DashPay stores every integer, is 290 bytes, so 137 + 290 + 162 = 589.
+    /// The entry size is frozen with the contract, so this pins it to the properties.
+    #[test]
+    fn should_size_private_contact_requests_to_hold_their_largest_payload() {
+        let contract = dashpay();
+        let private_contact_request = document_type(&contract, "privateContactRequest");
+        let entry_size = private_contact_request
+            .private_document()
+            .expect("privateContactRequest is private")
+            .entry_size() as usize;
+        assert!(!private_contact_request.documents_mutable());
+        assert!(!private_contact_request.documents_can_be_deleted());
+
+        let largest = BTreeMap::from([
+            ("accountReference".to_string(), Value::U32(u32::MAX)),
+            ("extendedPublicKey".to_string(), Value::Bytes(vec![1; 69])),
+            ("accountLabel".to_string(), Value::Text("a".repeat(63))),
+            ("autoAcceptProof".to_string(), Value::Bytes(vec![2; 102])),
+            ("shieldedAddress".to_string(), Value::Bytes(vec![3; 43])),
+        ]);
+        let largest_payload = payload(private_contact_request, &largest);
+        assert_eq!(largest_payload.len(), 290);
+        assert_eq!(
+            PRIVATE_ENTRY_BODY_HEADER_BYTES + largest_payload.len() + PRIVATE_ENTRY_WRAPPER_BYTES,
+            entry_size
+        );
+
+        // The payload is the document's own property encoding: a document of the type
+        // serializes to its system fields followed by exactly these bytes.
+        let document = DocumentV0 {
+            id: Identifier::from([4; 32]),
+            owner_id: Identifier::from([5; 32]),
+            properties: largest,
+            ..Default::default()
+        };
+        let serialized = document
+            .serialize(
+                private_contact_request,
+                &contract,
+                PlatformVersion::latest(),
+            )
+            .expect("the document serializes");
+        assert!(serialized.ends_with(&largest_payload));
+
+        // The smallest payload: the two required properties and three absent ones.
+        let smallest = BTreeMap::from([
+            ("accountReference".to_string(), Value::U32(0)),
+            ("extendedPublicKey".to_string(), Value::Bytes(vec![1; 69])),
+        ]);
+        assert_eq!(
+            payload(private_contact_request, &smallest).len(),
+            8 + 69 + 3
+        );
+    }
+
     #[test]
     fn should_store_every_dashpay_v1_and_v2_property_as_it_was_stored() {
         let v3 = dashpay();

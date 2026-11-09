@@ -938,7 +938,6 @@ pub(crate) mod gas_sponsorship_tests {
                 true,
                 None,
                 setup.platform_version,
-                None,
             )
             .expect("expected to spend the gold");
 

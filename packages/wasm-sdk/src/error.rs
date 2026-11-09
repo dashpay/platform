@@ -535,6 +535,25 @@ mod tests {
         assert_eq!(error.message(), message);
     }
 
+    /// An SDK without a context provider cannot verify any proof, and retrying cannot change
+    /// that: JS reads a context provider error that says what is missing, not a proof failure,
+    /// and is not told to retry.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    fn should_report_a_missing_context_provider_as_a_non_retriable_context_provider_error() {
+        let error = WasmSdkError::from(SdkError::from(
+            dash_sdk::ProofVerifierError::ContextProviderNotSet,
+        ));
+
+        assert_eq!(error.kind(), WasmSdkErrorKind::ContextProviderError);
+        assert!(!error.is_retriable());
+        assert!(
+            error.message().contains("context provider is not set"),
+            "{}",
+            error.message()
+        );
+    }
+
     /// What the SDK's retry loop ends a document request with when its node answered at an
     /// older protocol version than the SDK's and then no node was left to ask.
     #[cfg(not(target_arch = "wasm32"))]
