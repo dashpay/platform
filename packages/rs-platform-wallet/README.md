@@ -146,6 +146,12 @@ The local shielded balance API introduces three Rust source compatibility change
   index is zero. An absent row is different from a recorded empty scan; do not
   infer presence merely from `last_synced_index > 0`.
 
+## Shielded store lifetime migration
+
+`ShieldedStore` now requires `Send + Sync + 'static`: a spend dropped before it hands its reserved notes over releases them on a spawned task when the store is locked, and that task owns the store's `Arc`. This is a Rust source compatibility change, not a consensus one.
+
+A custom `ShieldedStore` that borrows from its embedding application (a `&'a` connection, configuration or buffer held in the store type) no longer satisfies the trait. Move the borrowed resource into the store, by value or behind an `Arc` (an `Arc<Mutex<_>>` or `Arc<RwLock<_>>` for one shared with the application), so the store type has no lifetime parameter. The in-repo [InMemoryShieldedStore](src/wallet/shielded/store.rs) and [FileBackedShieldedStore](src/wallet/shielded/file_store.rs) already own what they use and need no change.
+
 ## Dependencies
 
 - `key-wallet`: Core wallet functionality
