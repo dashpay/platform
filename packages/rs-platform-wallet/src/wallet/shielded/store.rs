@@ -258,7 +258,10 @@ pub(super) struct MarkSpentOutcome {
 ///
 /// All mutating methods take `&mut self` so implementations can
 /// batch writes without interior mutability.
-pub trait ShieldedStore: Send + Sync {
+///
+/// A store is `'static`: a spend dropped before it hands its notes over
+/// releases their reservation on a spawned task when the store is locked.
+pub trait ShieldedStore: Send + Sync + 'static {
     /// The error type returned by storage operations.
     type Error: StdError + Send + Sync + 'static;
 
