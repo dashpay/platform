@@ -136,9 +136,12 @@ pub enum PlatformWalletFFIResultCode {
     ErrorWalletAlreadyExists = 15,
     /// Maps `PlatformWalletError::ShieldedBroadcastFailed`. The shielded
     /// transition (identity-create, unshield, transfer, or withdrawal) was
-    /// DEFINITIVELY not executed — either the relay/CheckTx rejected the
-    /// broadcast, or Platform reported the transition's own execution error.
-    /// Any note reservations were released and the caller is free to retry.
+    /// DEFINITIVELY not executed — either it never left the wallet (CheckTx
+    /// refused it with no earlier attempt that could have delivered it, or
+    /// there was nowhere to send it), or Platform reported the transition's
+    /// own execution error. A broadcast that may have been delivered is never
+    /// reported here: it is [`Self::ErrorShieldedSpendUnconfirmed`]. Any note
+    /// reservations were released and the caller is free to retry.
     /// For identity-create, the new identity does NOT exist and
     /// `out_identity_id` is left untouched (still zeroed).
     ErrorShieldedBroadcastFailed = 16,
@@ -152,14 +155,18 @@ pub enum PlatformWalletFFIResultCode {
     /// the caller can hold the slot and surface the pending identity.
     ErrorShieldedBroadcastUnconfirmed = 17,
     /// Maps `PlatformWalletError::ShieldedSpendUnconfirmed` (unshield /
-    /// shielded transfer / shielded withdrawal). The spend transition was
-    /// ACCEPTED by the relay but its execution result could not be confirmed
-    /// (DAPI wait timeout, result-proof fetch/verify failure, …). The spend
-    /// may have executed on chain, so the wallet intentionally KEEPS the
-    /// notes reserved: the next nullifier sync promotes them to spent if the
-    /// spend landed, and an app restart frees them if it never did. The host
-    /// must NOT auto-retry — a retry would select different unreserved notes
-    /// and could double-send if the original spend landed.
+    /// shielded transfer / shielded withdrawal / identity top-up and create /
+    /// private document create from the pool), and
+    /// `PlatformWalletError::ShieldedBroadcastMaybeDelivered`. The spend
+    /// transition was accepted by the relay, or may have been delivered, but
+    /// its execution result could not be confirmed (a broadcast attempt that
+    /// failed in transport, a DAPI wait timeout, a result-proof fetch/verify
+    /// failure, …). The spend may have executed on chain, so the wallet
+    /// intentionally KEEPS the notes reserved and its recovery record: the
+    /// next nullifier sync promotes them to spent if the spend landed, and the
+    /// redrive and anchor-prune passes release them once it provably never
+    /// can. The host must NOT auto-retry — a retry would select different
+    /// unreserved notes and could double-send if the original spend landed.
     ErrorShieldedSpendUnconfirmed = 18,
     /// Maps `PlatformWalletError::ShieldedNoRecordedAnchor`. The wallet could
     /// not build the spend against any Platform-recorded anchor yet: its local
@@ -974,14 +981,17 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // slot-holding contract. A blanket conversion can't write
             // `out_identity_id` (it has no out-param), so the most it can do is
             // keep the typed code alive — which is what these arms guarantee.
-            PlatformWalletError::ShieldedBroadcastFailed(..)
-            | PlatformWalletError::ShieldedBroadcastMaybeDelivered(..) => {
+            PlatformWalletError::ShieldedBroadcastFailed(..) => {
                 PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed
             }
             PlatformWalletError::ShieldedBroadcastUnconfirmed { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed
             }
-            PlatformWalletError::ShieldedSpendUnconfirmed { .. } => {
+            // A broadcast that may have been delivered may still execute: it
+            // reads as unconfirmed, never as failed, so a host does not pay
+            // again with other notes.
+            PlatformWalletError::ShieldedSpendUnconfirmed { .. }
+            | PlatformWalletError::ShieldedBroadcastMaybeDelivered(..) => {
                 PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
             }
             PlatformWalletError::ShieldedIdentityDebitPending { .. } => {
@@ -2892,12 +2902,13 @@ mod private_contact_request_error_tests {
             PlatformWalletFFIResultCode::ErrorPrivateContactRecoveryUnsupported
         );
         assert_eq!(result.code as u32, 73);
+        // A broadcast that may have been delivered reads as unconfirmed.
         let delivered = PlatformWalletFFIResult::from(
             PlatformWalletError::ShieldedBroadcastMaybeDelivered("unavailable".to_string()),
         );
         assert_eq!(
             delivered.code,
-            PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed
+            PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
         );
         // The explicit private send and accept report them through the spend
         // contract alike.
@@ -2919,7 +2930,7 @@ mod private_contact_request_error_tests {
                     "private contact request"
                 )
                 .code,
-                PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed
+                PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
             );
         }
     }

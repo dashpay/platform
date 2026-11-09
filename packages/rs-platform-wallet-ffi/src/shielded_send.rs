@@ -608,7 +608,11 @@ pub(crate) fn map_spend_result(
         // shield reserves nothing. Either way the next sync (or an app
         // restart) reconciles the outcome; the typed Display already
         // carries the operation name and guidance.
-        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => {
+        // A broadcast that may have been delivered reads the same: it may
+        // still execute, so its notes and recovery record stay, and a host
+        // must not pay again.
+        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+        | Err(e @ PlatformWalletError::ShieldedBroadcastMaybeDelivered(_)) => {
             PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
                 e.to_string(),
@@ -645,17 +649,14 @@ pub(crate) fn map_spend_result(
             PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
             format!("Wallet is still syncing to a confirmed state — try again shortly. ({e})"),
         ),
-        // Definitive failure: the notes were released; the host may retry. A
-        // broadcast that may have been delivered reads the same for the spend,
-        // while a private contact request it paid for stays pending (71 on a
-        // retry, `managed_identity_get_private_reply_pending`).
-        Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_))
-        | Err(e @ PlatformWalletError::ShieldedBroadcastMaybeDelivered(_)) => {
-            PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
-                format!("{operation} failed: {e}"),
-            )
-        }
+        // Definitive failure: the transition never left the wallet, or Platform
+        // executed and rejected it; the notes were released and the host may
+        // retry. A private contact request it paid for may stay pending (71
+        // on a retry, `managed_identity_get_private_reply_pending`).
+        Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
+            format!("{operation} failed: {e}"),
+        ),
         // Definitively failed on an address-nonce race (a shield spends platform
         // address funds; a shield reserves no notes). Its own code carries the
         // safe-to-retry contract AND lets the host recognize the self-healing
