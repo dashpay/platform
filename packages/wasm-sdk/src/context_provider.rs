@@ -118,7 +118,8 @@ impl ContextProvider for WasmTrustedContext {
 
     /// Forwarded to the inner known-contracts cache, so a contract the SDK registers (the
     /// DPNS contract a name registration was built against, whose confirmations decode under
-    /// it) replaces the one the cache held.
+    /// it) replaces the one the cache held, unless the held one has a higher version: that
+    /// one is kept, and later lookups resolve it.
     fn register_data_contract(&self, contract: Arc<DataContract>) {
         self.inner.register_data_contract(contract)
     }
@@ -369,9 +370,17 @@ impl WasmTrustedContext {
         &self.discovered_addresses
     }
 
-    /// Add a data contract to the known contracts cache
+    /// Add a data contract to the known contracts cache, unless it holds a newer
+    /// one under the same id.
     pub fn add_known_contract(&self, contract: DataContract) {
         self.inner.add_known_contract(contract);
+    }
+
+    /// Put a data contract in the known contracts cache in place of whatever it
+    /// holds under its id, of any version: an explicit seed
+    /// (`WasmSdk::add_known_contract_js`).
+    pub(crate) fn replace_known_contract(&self, contract: DataContract) {
+        self.inner.replace_known_contract(contract);
     }
 
     /// Keep the strictly newer contract, preserving the existing body on ties.
@@ -463,10 +472,12 @@ impl QuorumContext {
         }
     }
 
-    pub(crate) fn add_known_contract(&self, contract: DataContract) {
+    /// Put `contract` in place of whatever is held under its id, of any version:
+    /// an explicit seed (`WasmSdk::add_known_contract_js`).
+    pub(crate) fn replace_known_contract(&self, contract: DataContract) {
         match self {
-            Self::Trusted(context) => context.add_known_contract(contract),
-            Self::Verified(context) => context.add_known_contract(contract),
+            Self::Trusted(context) => context.replace_known_contract(contract),
+            Self::Verified(context) => context.replace_known_contract(contract),
         }
     }
 

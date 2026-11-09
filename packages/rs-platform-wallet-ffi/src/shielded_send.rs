@@ -622,8 +622,8 @@ pub(crate) fn map_spend_result(
         | Err(e @ PlatformWalletError::ShieldedRecoveryKeysRequired { .. }) => e.into(),
         // A private contact request in flight, or paid and not yet read back
         // from the store: nothing new was paid, and a later private sync
-        // settles it, so it keeps its own pending code, as do unrestored
-        // private payments. A wallet removed before the payment started keeps
+        // settles it, so it keeps its own pending code; unrestored private
+        // payments keep theirs. A wallet removed before the payment started keeps
         // the lifecycle refusal code (`NotFound`) every other export gives
         // it. A protocol-version refusal from the store read before any
         // payment keeps the blanket conversion's split: a lasting refusal
@@ -3066,7 +3066,7 @@ mod tests {
                 "private contact request",
             )
             .code,
-            PlatformWalletFFIResultCode::ErrorPrivateContactRequestPending
+            PlatformWalletFFIResultCode::ErrorPrivateContactPaymentsNotRestored
         );
     }
 

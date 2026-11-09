@@ -993,21 +993,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// the unconfirmed private contact request payments of every wallet this
     /// manager holds whose public contact requests wait for them
     /// ([`PlatformWallet::restore_private_contact_payments`]): a wallet loaded
-    /// after binding a shielded account in an earlier process. A wallet whose
+    /// after binding a shielded account in an earlier process, or with an
+    /// identity marking a private payment that may be unresolved
+    /// ([`PlatformWallet::private_payments_held`]). A wallet whose
     /// restoration fails stays held, until a bind or a later call restores it.
     #[cfg(feature = "shielded")]
     pub(crate) async fn restore_held_private_contact_payments(
         &self,
         coordinator: &Arc<NetworkShieldedCoordinator>,
     ) {
-        let held: Vec<Arc<PlatformWallet>> = self
-            .wallets
-            .load()
-            .values()
-            .filter(|wallet| wallet.persister().private_payments_unrestored())
-            .cloned()
-            .collect();
-        for wallet in held {
+        let wallets: Vec<Arc<PlatformWallet>> = self.wallets.load().values().cloned().collect();
+        for wallet in wallets {
+            if !wallet.private_payments_held().await {
+                continue;
+            }
             if let Err(error) = wallet.restore_private_contact_payments(coordinator).await {
                 tracing::warn!(
                     wallet_id = %hex::encode(wallet.wallet_id()),

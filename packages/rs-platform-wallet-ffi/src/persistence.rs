@@ -6605,6 +6605,10 @@ fn load_private_contact_scan_state(
             managed.apply_private_contact_requests_position(PrivateContactRequestsPosition {
                 position: row.position,
                 key_fingerprint: row.key_fingerprint,
+                // The row does not carry the marker yet: restore it set,
+                // which holds the identity until its private payments are
+                // restored from the shielded store, rather than clear.
+                private_payments_unresolved: true,
             });
         }
     }
@@ -8264,6 +8268,7 @@ mod tests {
             PrivateContactRequestsPosition {
                 position: 12,
                 key_fingerprint: [3; 32],
+                private_payments_unresolved: false,
             },
         );
         contacts
@@ -8455,6 +8460,7 @@ mod tests {
             PrivateContactRequestsPosition {
                 position: 1,
                 key_fingerprint: [0; 32],
+                private_payments_unresolved: false,
             },
         );
         unwired

@@ -112,25 +112,16 @@ impl PrivateDocumentCreateFromShieldedPool for Sdk {
         bundle: OrchardBundleParams,
         settings: Option<PutSettings>,
     ) -> Result<StateTransitionProofResult, Error> {
-        // An unpinned SDK starts below protocol version 15, whose limits admit no entries: the
-        // network's version is established before the transition is built against it. One
-        // still below it after that refuses with the structured activation error.
-        let requirement = private_document_create_requirement();
-        if self.protocol_version_number() < requirement.protocol_version
-            && self.refresh_protocol_version().await? < requirement.protocol_version
-        {
-            return Err(self.protocol_version_not_active(
-                requirement.protocol_version,
-                requirement.method,
-                requirement.feature,
-            ));
-        }
-        // The SDK's own version does not show the network's: one seeded or pinned at 15 passes
-        // the check above on a network still at 14. The transition is sent only once a verified
-        // answer shows the network serves it, as a read of the store is (the broadcast checks
-        // again, for a transition built elsewhere).
-        self.ensure_network_serves(
-            Some(requirement),
+        // The network's version is established before the transition is built against it, as
+        // limits below protocol version 15 admit no entries, under the caller's request settings
+        // (`Sdk::establish_protocol_requirement`). The transition is sent only once a verified
+        // answer shows the network serves it and this SDK speaks it, as a read of the store is
+        // (the broadcast checks again, for a transition built elsewhere); otherwise the send is
+        // refused with the structured activation error, the probe's failure as its cause when it
+        // failed, so a caller can tell a refusal that may lift at once from one the network's
+        // version or a pin explains.
+        self.establish_protocol_requirement(
+            private_document_create_requirement(),
             settings.map(|settings| settings.request_settings),
         )
         .await?;
@@ -203,7 +194,9 @@ mod tests {
 
     /// Below protocol version 15 the send is refused before the transition is built, rather
     /// than built against limits that admit no entries, with the structured activation error:
-    /// for an SDK pinned there, and for one seeded there that cannot learn a newer version.
+    /// for an SDK pinned there, which asks nothing, and for one seeded there whose refresh
+    /// failed, here for want of an answer: that failure is the refusal's cause, so the refusal
+    /// reads as one that may lift, and the pin and the network's version read as before.
     #[tokio::test]
     async fn should_refuse_to_send_below_protocol_version_15() {
         let version_14 = PlatformVersion::get(14).expect("protocol version 14");
@@ -228,13 +221,22 @@ mod tests {
                 .expect_err("protocol version 14");
             assert!(
                 matches!(
-                    error,
+                    &error,
                     Error::ProtocolVersionNotActive {
                         method: BROADCAST_STATE_TRANSITION_METHOD,
                         required: 15,
+                        // No answer was verified.
+                        network: 0,
+                        pinned: refused_pinned,
+                        cause,
                         ..
-                    }
+                    } if *refused_pinned == pinned && cause.is_some() == !pinned
                 ),
+                "pinned {pinned}: {error:?}"
+            );
+            assert_eq!(
+                error.is_transient_protocol_version_refusal(),
+                !pinned,
                 "pinned {pinned}: {error:?}"
             );
         }

@@ -158,6 +158,15 @@ pub struct DashPayState {
     /// same id cannot release a claim of the new wallet. In memory only.
     pub(super) public_contact_request_claims: BTreeMap<Identifier, BTreeSet<u64>>,
 
+    /// Whether this identity was loaded with a private contact request
+    /// payment that may be unresolved
+    /// (`PrivateContactRequestsPosition::private_payments_unresolved`) and no
+    /// restoration from the shielded store has restored its reservations
+    /// since. While set, the identity sends and accepts no public contact
+    /// request, as no reservation holds the pair its payment is for. In
+    /// memory, from what a load restored.
+    pub(super) private_payments_unrestored: bool,
+
     /// Lowest Platform-assigned `$createdAtCoreBlockHeight` among OUR sent
     /// `contactRequest` docs to each recipient seen by a sweep this process.
     ///
@@ -331,6 +340,22 @@ impl DashPayState {
     /// for and is not yet read back from the store; see the field doc.
     pub fn private_reply_pending(&self, contact: &Identifier) -> bool {
         self.pending_private_replies.contains_key(contact)
+    }
+
+    /// Whether this identity was loaded with a private contact request payment
+    /// that may be unresolved, and no restoration from the shielded store has
+    /// restored its reservations since: its public contact requests are held.
+    pub fn private_payments_unrestored(&self) -> bool {
+        self.private_payments_unrestored
+    }
+
+    /// Whether a private contact request this identity paid for may still be
+    /// unresolved, as its position record stores it
+    /// (`PrivateContactRequestsPosition::private_payments_unresolved`): it
+    /// holds a private request it is paying for or has not read back, or it
+    /// was loaded with one no restoration has restored since.
+    pub fn private_payments_unresolved(&self) -> bool {
+        !self.pending_private_replies.is_empty() || self.private_payments_unrestored
     }
 
     /// The shielded address kept for `contact`, whichever way the tracked

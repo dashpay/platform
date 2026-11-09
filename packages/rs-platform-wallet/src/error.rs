@@ -678,13 +678,17 @@ pub enum PlatformWalletError {
     )]
     PrivateContactRequestPending(Identifier),
 
-    /// This wallet bound a shielded account before this process started, so
-    /// the shielded store may hold a private contact request payment from an
+    /// This wallet bound a shielded account before this process started, or
+    /// the identity was loaded with its private scan state marking a private
+    /// payment that may be unresolved
+    /// (`PrivateContactRequestsPosition::private_payments_unresolved`), so the
+    /// shielded store may hold a private contact request payment from an
     /// earlier process that is still unconfirmed, and its reservations are not
     /// restored yet: no public contact request is sent or accepted, nothing
     /// signed or broadcast, until they are. Opening the shielded store
     /// (`PlatformWalletManager::configure_shielded`) restores them, with no
-    /// keys; so does binding the wallet's shielded account.
+    /// keys; so does binding the wallet's shielded account. A private sync
+    /// does not, and a build without the `shielded` feature never does.
     #[error(
         "this wallet's unconfirmed private contact request payments from an earlier process are \
          not restored yet; configure the shielded store or bind the wallet's shielded account, \

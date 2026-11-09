@@ -90,6 +90,16 @@ impl FetchUnproved for PrivateDocumentEntries {
 /// The gRPC method a page of a private document type's store is read with.
 const PRIVATE_DOCUMENT_ENTRIES_METHOD: &str = "get_private_document_entries";
 
+/// What reading a private document type's store needs: protocol version 15, which
+/// introduced private types.
+pub(crate) fn private_document_entries_requirement() -> ProtocolRequirement {
+    ProtocolRequirement {
+        protocol_version: PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+        method: PRIVATE_DOCUMENT_ENTRIES_METHOD,
+        feature: None,
+    }
+}
+
 /// Whether `contract` declares `document_type_name` as a private type.
 fn declares_private_type(contract: &DataContract, document_type_name: &str) -> bool {
     contract
@@ -120,16 +130,8 @@ impl Sdk {
         data_contract_id: Identifier,
         document_type_name: &str,
     ) -> Result<Arc<DataContract>, Error> {
-        self.ensure_network_serves(
-            Some(ProtocolRequirement {
-                protocol_version:
-                    PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
-                method: PRIVATE_DOCUMENT_ENTRIES_METHOD,
-                feature: None,
-            }),
-            None,
-        )
-        .await?;
+        self.ensure_network_serves(Some(private_document_entries_requirement()), None)
+            .await?;
         let provider = self.context_provider();
         if let Some(provider) = &provider {
             if let Some(held) = provider.get_data_contract(&data_contract_id, self.version())? {
@@ -143,12 +145,24 @@ impl Sdk {
             .map(Arc::new)
             .ok_or_else(|| Error::Generic(format!("the contract {data_contract_id} is gone")))?;
         if !declares_private_type(&contract, document_type_name) {
+            // Another operation may have given the provider a newer contract declaring the
+            // type while this one was fetched: it is read against that one.
+            if let Some(provider) = &provider {
+                if let Some(held) = provider.get_data_contract(&data_contract_id, self.version())? {
+                    if held.version() > contract.version()
+                        && declares_private_type(&held, document_type_name)
+                    {
+                        return Ok(held);
+                    }
+                }
+            }
             if self.protocol_version_number()
                 < PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION
             {
                 return Err(self.protocol_version_not_active(
                     PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
                     PRIVATE_DOCUMENT_ENTRIES_METHOD,
+                    None,
                     None,
                 ));
             }
