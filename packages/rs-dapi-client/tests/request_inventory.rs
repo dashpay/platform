@@ -100,6 +100,12 @@ const ADDITIONS: &[(&str, Verdict)] = &[
         "field GetIdentityByNonUniquePublicKeyHashRequest.v1 = 2 GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1",
         Verdict::Gate(14),
     ),
+    // A 5.0 node does not know V1, and every node before protocol 15 refuses it: the history
+    // layout it reads exists only from protocol 15.
+    (
+        "field GetDocumentHistoryRequest.v1 = 2 GetDocumentHistoryRequest.GetDocumentHistoryRequestV1",
+        Verdict::Gate(15),
+    ),
     (
         "field WaitForStateTransitionResultRequest.WaitForStateTransitionResultRequestV0.request_user_balance = 3 bool",
         Verdict::NoGate("a node that drops it answers without the balance, which the result allows"),
