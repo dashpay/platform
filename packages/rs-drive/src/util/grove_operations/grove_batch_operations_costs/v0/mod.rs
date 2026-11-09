@@ -29,7 +29,6 @@ impl Drive {
                 disable_operation_consistency_check: false,
                 base_root_storage_is_free: true,
                 batch_pause_height: None,
-                allow_replacement_accounting: false,
             }),
             |_, _, _| Ok(false),
             |_, _, _| Err(GroveError::InternalError("not implemented".to_string())),

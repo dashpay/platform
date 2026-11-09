@@ -71,7 +71,6 @@ impl Drive {
                 disable_operation_consistency_check: !self.config.batching_consistency_verification,
                 base_root_storage_is_free: true,
                 batch_pause_height: None,
-                allow_replacement_accounting: false,
             }),
             |cost, old_flags, new_flags| {
                 StorageFlags::update_element_flags(cost, old_flags, new_flags)
