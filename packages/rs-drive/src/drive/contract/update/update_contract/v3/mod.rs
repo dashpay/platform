@@ -328,6 +328,10 @@ mod tests {
                 let applied = fee_for(true, version);
                 assert!(estimate.total_base_fee() >= applied.total_base_fee(),
                     "add_type={add_type}, via_apply_contract={via_apply_contract}: estimate {estimate:?}, applied {applied:?}");
+                assert!(estimate.storage_fee >= applied.storage_fee,
+                    "add_type={add_type}, via_apply_contract={via_apply_contract}: storage estimate {}, applied {}", estimate.storage_fee, applied.storage_fee);
+                assert!(estimate.processing_fee >= applied.processing_fee,
+                    "add_type={add_type}, via_apply_contract={via_apply_contract}: processing estimate {}, applied {}", estimate.processing_fee, applied.processing_fee);
                 assert_eq!(
                     stored_bytes(),
                     serialize_contract_for_storage(&contract, version).unwrap(),
