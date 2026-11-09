@@ -936,13 +936,13 @@
           "sdk": "partial",
           "example_app": "partial",
           "restart": "required",
-          "reason": "SwiftData schema V5 stores each identity's read position and its private contacts' shielded addresses (PersistentPrivateContactRequestsPosition, PersistentPrivateShieldedAddress) inside the changeset round, clears the state of a removed identity, purges it with the wallet, hands it back through the load/free shims and declares the capability; the example app's Storage Explorer lists both models. No test restarts a process and resumes a private sync from the stored position."
+          "reason": "SwiftData schema V5 stores each identity's read position and its private contacts' shielded addresses (PersistentPrivateContactRequestsPosition, PersistentPrivateShieldedAddress) inside the changeset round, clears the state of a removed identity, purges it with the wallet, hands it back through the load/free shims (a stored row that cannot cross fails the load) and declares the capability; the example app's Storage Explorer lists both models. No test restarts a process and resumes a private sync from the stored position."
         },
         "kotlin": {
           "sdk": "partial",
           "example_app": "not-applicable",
           "restart": "required",
-          "reason": "Room v16 (migration 15 to 16) stores the same rows in the round, clears a removed identity's state, purges it with the wallet and declares the capability; JNI wires the persist/load/free slots only for a bridge that overrides both callbacks, and rows cross as packed byte arrays. The example app has no storage explorer. No test restarts a process and resumes a private sync from the stored position."
+          "reason": "Room v16 (migration 15 to 16) stores the same rows in the round, clears a removed identity's state, purges it with the wallet and declares the capability; JNI wires the persist/load/free slots only for a bridge that overrides both callbacks and the contact upsert (the capability also needs contact persistence on the Rust side), rows cross as packed byte arrays, and a stored row that cannot cross fails the load. The example app has no storage explorer. No test restarts a process and resumes a private sync from the stored position."
         }
       },
       "verification": [
