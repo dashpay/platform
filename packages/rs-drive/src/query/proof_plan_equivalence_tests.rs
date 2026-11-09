@@ -120,7 +120,6 @@ fn populated_drive(contract: &DataContract, platform_version: &PlatformVersion) 
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("insert a widget");
     }
