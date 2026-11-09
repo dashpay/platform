@@ -1056,7 +1056,10 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // `available`/`required` duff amounts still travel in the message
             // (there are no out-params for them), but the code now lets a host
             // branch on the shortfall without parsing text.
-            PlatformWalletError::AssetLockInsufficientFunds { .. } => {
+            // Funds awaiting finality share the shortfall code until hosts
+            // get a dedicated code for it.
+            PlatformWalletError::AssetLockInsufficientFunds { .. }
+            | PlatformWalletError::AssetLockFundsAwaitingFinality { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds
             }
             PlatformWalletError::AssetLockTooManyInputs { .. } => {
@@ -1139,6 +1142,7 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::DecisionProposalNotFound { .. } => {
                 PlatformWalletFFIResultCode::NotFound
             }
+            PlatformWalletError::AccountNotFound(..) => PlatformWalletFFIResultCode::NotFound,
             // The persister trio, split by the store's own retry
             // classification — flattened to ErrorUnknown a host could not tell
             // a busy database from a corrupt one. `PersisterRestore` carries
@@ -1618,6 +1622,14 @@ mod tests {
         assert_eq!(
             msg, rendered,
             "structured available/required duffs must survive the FFI boundary verbatim"
+        );
+
+        let result: PlatformWalletFFIResult =
+            PlatformWalletError::AssetLockFundsAwaitingFinality { waiting: 600 }.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds,
+            "funds awaiting finality share the shortfall code"
         );
     }
 

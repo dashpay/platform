@@ -853,7 +853,6 @@ mod tests {
         use dapi_grpc::tonic::metadata::{MetadataMap, MetadataValue};
         use dpp::consensus::basic::identity::IdentityAssetLockProofLockedTransactionMismatchError;
         use dpp::consensus::basic::BasicError;
-        use dpp::dashcore::hashes::Hash;
         use dpp::dashcore::Txid;
         use dpp::serialization::PlatformSerializableWithPlatformVersion;
         use dpp::version::PlatformVersion;

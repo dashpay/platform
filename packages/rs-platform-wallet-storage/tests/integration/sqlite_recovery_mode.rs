@@ -11,7 +11,6 @@
 use crate::common;
 
 use common::{ensure_wallet_meta, fresh_persister, fresh_recovery_persister, wid};
-use dashcore::hashes::Hash;
 use dashcore::Txid;
 use dpp::identity::accessors::IdentityGettersV0;
 use platform_wallet::changeset::{

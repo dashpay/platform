@@ -73,7 +73,7 @@ pub fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static st
 pub fn seed_for_mnemonic(mnemonic: &str) -> Result<Zeroizing<[u8; 64]>, PlatformWalletError> {
     let mnemonic = parse_mnemonic_any_language(mnemonic)
         .map_err(|e| PlatformWalletError::InvalidParameter(e.to_string()))?;
-    Ok(Zeroizing::new(mnemonic.to_seed("")))
+    Ok(mnemonic.to_seed(""))
 }
 
 /// Returns the BIP-32 master key of `mnemonic` on `network`, wiped when
