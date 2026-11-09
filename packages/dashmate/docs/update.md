@@ -87,7 +87,13 @@ $  dashmate update --format=json --config local_1 | jq
 
 Dashmate 5.0.4 moves mainnet and testnet nodes on the stock `dashpay/dashd:23` image to `dashpay/dashd:24`; `dashmate update` pulls it and `dashmate restart --safe` starts it. A node with an image you set yourself keeps it.
 
-Local networks and devnets keep their nodes on Core v23, since a Core v24 node discards the sporks a v23 node stored and does not request them from v23 peers. Move such a network as a whole: set `core.docker.image` on every node, restart them, then sign the sporks again on the node holding the spork key (`local_seed` on a local network), e.g. `dashmate core cli "sporkupdate SPORK_17_QUORUM_DKG_ENABLED 0" --config=local_seed`. For a local network, `dashmate group reset --hard` followed by `dashmate setup local` gives a fresh network on Core v24.
+Local networks and devnets keep their nodes on Core v23, since a Core v24 node discards the sporks a v23 node stored and does not request them from v23 peers. Move such a network as a whole: set `core.docker.image` on every node, restart them, then sign the sporks again on a node holding the spork key (any node of a local network):
+
+```bash
+$ dashmate core cli "sporkupdate SPORK_2_INSTANTSEND_ENABLED 0" --config=local_seed
+$ dashmate core cli "sporkupdate SPORK_17_QUORUM_DKG_ENABLED 0" --config=local_seed
+$ dashmate core cli "sporkupdate SPORK_19_CHAINLOCKS_ENABLED 0" --config=local_seed
+``` For a local network, `dashmate group reset --hard` followed by `dashmate setup local` gives a fresh network on Core v24.
 
 ## Major Updates with Platform Reset
 
