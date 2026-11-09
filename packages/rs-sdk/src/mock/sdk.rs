@@ -51,6 +51,9 @@ pub struct MockDashPlatformSdk {
     /// The block height the metadata of a response answered from an expectation reports
     /// ([Self::set_response_height]); 0 unless set.
     response_height: u64,
+    /// The block height the metadata of a response of one type answered from an expectation
+    /// reports, by the type's name ([Self::set_response_height_of]), over `response_height`.
+    response_heights_of: BTreeMap<&'static str, u64>,
 }
 
 impl MockDashPlatformSdk {
@@ -84,6 +87,7 @@ impl MockDashPlatformSdk {
             sdk: ArcSwapOption::new(None),
             response_time_ms: 0,
             response_height: 0,
+            response_heights_of: BTreeMap::new(),
         }
     }
 
@@ -98,6 +102,15 @@ impl MockDashPlatformSdk {
     /// reports, for code under test that reads the height a response was proved at.
     pub fn set_response_height(&mut self, height: u64) -> &mut Self {
         self.response_height = height;
+        self
+    }
+
+    /// Sets the block height the metadata of every response of type `O` answered from an
+    /// expectation reports, over [Self::set_response_height]: for code under test that reads
+    /// two kinds of responses proved at different heights.
+    pub fn set_response_height_of<O>(&mut self, height: u64) -> &mut Self {
+        self.response_heights_of
+            .insert(std::any::type_name::<O>(), height);
         self
     }
 
@@ -619,7 +632,11 @@ impl MockDashPlatformSdk {
                     ResponseMetadata {
                         protocol_version: dpp::version::LATEST_VERSION,
                         time_ms: self.response_time_ms,
-                        height: self.response_height,
+                        height: self
+                            .response_heights_of
+                            .get(std::any::type_name::<O>())
+                            .copied()
+                            .unwrap_or(self.response_height),
                         ..Default::default()
                     },
                     Proof::default(),
