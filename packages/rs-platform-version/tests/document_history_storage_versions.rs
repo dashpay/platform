@@ -148,7 +148,13 @@ fn should_activate_storage_migration_and_history_proofs_together() {
     assert_eq!(grove.path_query_methods.merge, 2);
     assert_eq!(grove.path_query_methods.per_instance_query_offsets, 1);
     assert_eq!(grove.element.path_query_push, 2);
-    assert_eq!(grove.operations.proof.count_offset_reference_empty_tree_rows, 1);
+    assert_eq!(
+        grove
+            .operations
+            .proof
+            .count_offset_reference_empty_tree_rows,
+        1
+    );
     // Contract writers create the per-type history tree.
     let contract = &version.drive.methods.contract;
     assert_eq!(contract.insert.insert_contract, 3);
