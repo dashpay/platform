@@ -24,6 +24,7 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
 use dash_sdk::Sdk;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+use platform_wallet::changeset::PlatformWalletPersistence;
 use platform_wallet::PlatformWalletManager;
 use platform_wallet::{PersistenceCapabilities, PERSISTENCE_CAPABILITIES_VERSION};
 use std::os::raw::c_void;
@@ -175,6 +176,32 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
         dpns_event_callback,
         out_handle,
     )
+}
+
+/// The persistence capabilities a manager created from these callbacks
+/// would attest, without creating one: the declaration intersected with what
+/// the vtable and the extension structurally carry, as
+/// [`platform_wallet_manager_create_with_extensions`] computes them. For a
+/// host adapter's own tests, such as the JNI layer checking which bridge
+/// overrides keep a capability. `persistence` is consumed: its `release_fn`
+/// runs before this returns.
+///
+/// # Safety
+/// As for [`platform_wallet_manager_create_with_extensions`]: `extension`
+/// must point to a readable [`PersistenceCallbacksExtension`] of at least
+/// its declared `struct_size`, and `persistence`'s context must be valid
+/// for its `release_fn`.
+pub unsafe fn effective_persistence_capabilities(
+    persistence: PersistenceCallbacks,
+    declared: &PersistenceCapabilitiesFFI,
+    extension: *const PersistenceCallbacksExtension,
+) -> PersistenceCapabilities {
+    FFIPersister::new_with_persistence_capabilities_and_extensions(
+        persistence,
+        persistence_capabilities_declaration(declared),
+        persistence_extension_callbacks(extension),
+    )
+    .persistence_capabilities()
 }
 
 /// Read one negotiated slot out of a size/version-tagged extension struct
@@ -1387,6 +1414,44 @@ mod tests {
         let parsed = unsafe { persistence_extension_callbacks(&ext) };
         assert!(parsed.persist_identity_balance_block_time.is_none());
         assert!(parsed.load_identity_balance_block_time.is_none());
+    }
+
+    /// The effective capabilities are the declaration intersected with what
+    /// the callbacks carry, and the vtable's `release_fn` runs once.
+    #[test]
+    fn should_compute_the_effective_persistence_capabilities_without_a_manager() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static RELEASES: AtomicUsize = AtomicUsize::new(0);
+        unsafe extern "C" fn release(_: *mut c_void) {
+            RELEASES.fetch_add(1, Ordering::SeqCst);
+        }
+        let declared = PersistenceCapabilitiesFFI {
+            version: PERSISTENCE_CAPABILITIES_VERSION,
+            reserved: 0,
+            bits: PersistenceCapabilities::ATOMIC_CHANGESETS
+                .union(PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE)
+                .bits(),
+        };
+        let extension = PersistenceCallbacksExtension::default();
+        let effective = unsafe {
+            effective_persistence_capabilities(
+                PersistenceCallbacks {
+                    context: std::ptr::NonNull::<u8>::dangling().as_ptr().cast(),
+                    release_fn: Some(release),
+                    on_changeset_begin_fn: Some(begin_changeset),
+                    on_changeset_end_fn: Some(end_changeset),
+                    ..PersistenceCallbacks::default()
+                },
+                &declared,
+                &extension,
+            )
+        };
+        assert!(effective.contains(PersistenceCapabilities::ATOMIC_CHANGESETS));
+        assert!(
+            !effective.contains(PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE),
+            "declared without the callbacks it needs"
+        );
+        assert_eq!(RELEASES.load(Ordering::SeqCst), 1);
     }
 
     #[test]
