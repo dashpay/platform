@@ -1067,36 +1067,39 @@ impl PlatformWallet {
     /// restoration succeeds, unless this generation already restored from that
     /// store: then its reservations are in place and nothing is held or
     /// queued. At most one deferred restoration per store is queued: a bind
-    /// while one waits queues none. Returns whether one was queued.
+    /// while one waits queues none. The queue frees however its task ends,
+    /// a panic or an abort included (`DeferredFinish`). Returns the task of
+    /// the deferred restoration when one was queued.
     #[cfg(feature = "shielded")]
     pub(crate) async fn restore_private_payments_or_defer(
         &self,
         coordinator: &Arc<NetworkShieldedCoordinator>,
-    ) -> bool {
+    ) -> Option<tokio::task::JoinHandle<()>> {
         let restore = self.private_payment_restore(coordinator);
         match restore.restore_and_release(false).await {
-            Ok(Some(_)) => false,
+            Ok(Some(_)) => None,
             Ok(None) => {
                 if restore.restored_from_this_store() || !restore.queue_deferred() {
-                    return false;
+                    return None;
                 }
                 tracing::debug!(
                     wallet_id = %hex::encode(self.wallet_id),
                     "the shielded store is busy; private contact request payments are \
                      restored once it frees"
                 );
-                tokio::spawn(async move {
-                    if let Err(error) = restore.restore_and_release(true).await {
+                // Owned by the task's future from before it is first polled,
+                // so the queue frees even for a task dropped unpolled.
+                let restore = DeferredFinish(restore);
+                Some(tokio::spawn(async move {
+                    if let Err(error) = restore.0.restore_and_release(true).await {
                         tracing::warn!(
-                            wallet_id = %hex::encode(restore.wallet_id),
+                            wallet_id = %hex::encode(restore.0.wallet_id),
                             %error,
                             "private contact request payments not restored; the wallet's \
                              contact requests stay held"
                         );
                     }
-                    restore.finish_deferred();
-                });
-                true
+                }))
             }
             Err(error) => {
                 tracing::warn!(
@@ -1105,7 +1108,7 @@ impl PlatformWallet {
                     "private contact request payments not restored at bind; the wallet's \
                      contact requests stay held until a restoration succeeds"
                 );
-                false
+                None
             }
         }
     }
@@ -2954,6 +2957,22 @@ struct PrivatePaymentRestore {
     network: dashcore::Network,
 }
 
+/// A deferred restoration, freeing its queue
+/// ([`PrivatePaymentRestore::finish_deferred`]) however its task ends: run,
+/// panicked, or dropped with its runtime or by an abort, polled or not.
+/// Otherwise a task that ended early would leave the queue taken, so no later
+/// bind would queue another and the wallet would stay held until a configure
+/// or a restart.
+#[cfg(feature = "shielded")]
+struct DeferredFinish(PrivatePaymentRestore);
+
+#[cfg(feature = "shielded")]
+impl Drop for DeferredFinish {
+    fn drop(&mut self) {
+        self.0.finish_deferred();
+    }
+}
+
 /// A wallet generation's restorations of its private contact request
 /// payments ([`PlatformWallet::restore_private_payments_or_defer`]). Weak, so
 /// a store dropped since is never taken for a new one at the same address.
@@ -3596,6 +3615,43 @@ mod private_contact_request_payment_tests {
             .expect("the restoration completes");
     }
 
+    /// A deferred restoration whose task ends early, here aborted while it
+    /// waits for the store, still frees the queue: the next bind queues one.
+    #[tokio::test]
+    async fn should_free_the_deferred_restore_queue_when_its_task_is_dropped() {
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let (_manager, wallet) = manager_with_wallet().await;
+        let coordinator = coordinator_on(dir.path(), wallet.sdk.network);
+        let queued = || {
+            wallet
+                .private_payment_restores
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .queued
+        };
+
+        let store = coordinator.store().write().await;
+        let task = wallet
+            .restore_private_payments_or_defer(&coordinator)
+            .await
+            .expect("queued");
+        assert!(wallet
+            .restore_private_payments_or_defer(&coordinator)
+            .await
+            .is_none());
+        task.abort();
+        assert!(task.await.is_err_and(|error| error.is_cancelled()));
+        assert!(
+            wallet
+                .restore_private_payments_or_defer(&coordinator)
+                .await
+                .is_some(),
+            "the aborted task freed the queue"
+        );
+        assert_eq!(queued(), 2);
+        drop(store);
+    }
+
     /// A bind while the shielded store is busy defers the restoration of
     /// the wallet's private payments to one task per store: a second bind
     /// while it waits queues none. Once a restoration from that store
@@ -3615,8 +3671,14 @@ mod private_contact_request_payment_tests {
         };
 
         let store = coordinator.store().write().await;
-        assert!(wallet.restore_private_payments_or_defer(&coordinator).await);
-        assert!(!wallet.restore_private_payments_or_defer(&coordinator).await);
+        assert!(wallet
+            .restore_private_payments_or_defer(&coordinator)
+            .await
+            .is_some());
+        assert!(wallet
+            .restore_private_payments_or_defer(&coordinator)
+            .await
+            .is_none());
         assert_eq!(queued(), 1, "one deferred restoration per store");
         assert!(wallet.private_payments_held().await, "held until it runs");
         drop(store);
@@ -3629,7 +3691,10 @@ mod private_contact_request_payment_tests {
         assert!(!wallet.private_payments_held().await, "restored");
 
         let store = coordinator.store().write().await;
-        assert!(!wallet.restore_private_payments_or_defer(&coordinator).await);
+        assert!(wallet
+            .restore_private_payments_or_defer(&coordinator)
+            .await
+            .is_none());
         assert!(
             !wallet.private_payments_held().await,
             "a busy store holds a restored wallet no more"
