@@ -16,6 +16,7 @@ use dpp::platform_value::Identifier;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use sha2::{Digest, Sha256};
+use tokio::sync::OwnedSemaphorePermit;
 
 use super::block_proof::{build_block_proof, transaction_proofs};
 use super::error_mapping::base64_decode;
@@ -42,9 +43,10 @@ impl PlatformServiceImpl {
         let generation = self.platform_cache.generation();
 
         // Held until the block is read and decoded
-        let _permit = self
+        let permit = self
             .get_owner_transactions_permits
-            .try_acquire()
+            .clone()
+            .try_acquire_owned()
             .map_err(|_| {
                 DapiError::ResourceExhausted(
                     "too many getOwnerTransactionsInBlock requests in progress".to_string(),
@@ -57,9 +59,9 @@ impl PlatformServiceImpl {
             .block
             .ok_or_else(|| DapiError::NotFound(format!("no block at height {height}")))?;
         let platform_version = block_platform_version(block.header.version.app, height)?;
-        let block_txs = block.data.txs;
-
-        let owned = select_owned_transactions(&block_txs, owner_id, platform_version)?;
+        let (block_txs, owned, _permit) =
+            select_owned_transactions_blocking(block.data.txs, owner_id, platform_version, permit)
+                .await?;
         let indexes = owned.iter().map(|tx| tx.index).collect::<Vec<_>>();
         // Most blocks hold nothing of a given owner, so the results are read only when needed
         let results = if owned.is_empty() {
@@ -197,6 +199,25 @@ fn select_owned_transactions(
     Ok(owned)
 }
 
+/// Run [`select_owned_transactions`] on the blocking pool, handing the block's transactions
+/// and the permit back with the selection.
+///
+/// Decoding a full block takes long enough to hold up every other request if it runs on
+/// the async threads. A blocking task cannot be cancelled, so it carries the permit: a
+/// request whose caller went away still counts against the limit until its decode ends.
+async fn select_owned_transactions_blocking(
+    block_txs: Vec<String>,
+    owner_id: Identifier,
+    platform_version: &'static PlatformVersion,
+    permit: OwnedSemaphorePermit,
+) -> DAPIResult<(Vec<String>, Vec<OwnedTransaction>, OwnedSemaphorePermit)> {
+    tokio::task::spawn_blocking(move || {
+        let owned = select_owned_transactions(&block_txs, owner_id, platform_version)?;
+        Ok((block_txs, owned, permit))
+    })
+    .await?
+}
+
 /// Pair each selected transaction with its execution result.
 ///
 /// Results line up with the block's transactions by position, so a list of another
@@ -259,6 +280,8 @@ mod tests {
     use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
     use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
     use std::collections::BTreeMap;
+    use std::sync::Arc;
+    use tokio::sync::Semaphore;
 
     const ALICE: Identifier = Identifier::new([1; 32]);
     const BOB: Identifier = Identifier::new([2; 32]);
@@ -404,6 +427,45 @@ mod tests {
             select_owned_transactions(&txs, ALICE, PlatformVersion::latest()),
             Err(DapiError::Internal(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn should_hand_back_the_permit_with_the_selection_decoded_off_the_async_threads() {
+        let permits = Arc::new(Semaphore::new(1));
+        let permit = permits.clone().try_acquire_owned().unwrap();
+        let txs = vec![transfer(BOB, ALICE, 1), transfer(ALICE, BOB, 2)];
+
+        let (block_txs, owned, permit) = select_owned_transactions_blocking(
+            txs.clone(),
+            ALICE,
+            PlatformVersion::latest(),
+            permit,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(block_txs, txs);
+        assert_eq!(owned.iter().map(|tx| tx.index).collect::<Vec<_>>(), [1]);
+        assert_eq!(permits.available_permits(), 0);
+        drop(permit);
+        assert_eq!(permits.available_permits(), 1);
+    }
+
+    #[tokio::test]
+    async fn should_release_the_permit_when_the_block_does_not_decode() {
+        let permits = Arc::new(Semaphore::new(1));
+        let permit = permits.clone().try_acquire_owned().unwrap();
+
+        let result = select_owned_transactions_blocking(
+            vec!["not base64!".to_string()],
+            ALICE,
+            PlatformVersion::latest(),
+            permit,
+        )
+        .await;
+
+        assert!(matches!(result, Err(DapiError::Internal(_))));
+        assert_eq!(permits.available_permits(), 1);
     }
 
     #[test]
