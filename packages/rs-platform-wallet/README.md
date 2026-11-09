@@ -154,6 +154,16 @@ removes a spend's saved record and its journal records in one durable write,
 and refuses, changing nothing, once a re-broadcast of the record was claimed
 (`PendingRedrive::attempts` above 0).
 
+Note reservations are owned by the spend attempt that took them: stores must
+implement `mark_pending_by(id, nullifier, reservation)`, which reserves a note
+for the attempt `reservation`, and `clear_pending_reserved_by(id, nullifier,
+reservation)`, which releases it only while that same attempt still holds it,
+returning whether it did. Keep the owner with each reservation and compare and
+clear it under the store's own lock. Forwarding `clear_pending_reserved_by` to
+the unconditional `clear_pending` defeats the protection it gives: a cleanup
+that runs after a purge, a rebind or a wallet's replacement would release a
+newer attempt's notes or delete its records.
+
 Anchored note reservations and saved records now keep the proved height of
 the anchor set their anchor was read from: `set_pending_spend` takes an
 `anchor_height: Option<u64>`, `StalePendingSpend` carries it as a fourth
