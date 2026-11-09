@@ -1,5 +1,7 @@
 use crate::util::object_size_info::OwnedDocumentInfo;
-use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::v0::DataContractConfigGettersV0;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 
@@ -36,5 +38,20 @@ impl DocumentAndContractInfo<'_> {
             contract,
             document_type,
         }
+    }
+
+    /// Whether the trees of this document's indexes carry its storage flags, which its
+    /// primary storage and its index references always keep. They do not for an immutable
+    /// type of a contract that cannot be deleted: nothing ever removes those trees for a
+    /// refund. The insert walker applies this, and a draw of a `sys.random` property follows
+    /// it, so a drawn document's index trees are the ones its create priced.
+    pub(crate) fn index_trees_carry_storage_flags(&self) -> bool {
+        self.document_type.documents_mutable()
+            || self.contract.config().can_be_deleted()
+            // indexOnly entries ARE the rows: they are deleted (and refunded) whenever the
+            // doctype allows deletion, so their flags must ride even though the type is
+            // immutable and the contract may not be deletable. PV14-only (`index_only()`
+            // cannot be true below meta-schema v3), so historical replay is untouched.
+            || (self.document_type.index_only() && self.document_type.documents_can_be_deleted())
     }
 }
