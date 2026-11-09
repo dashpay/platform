@@ -195,10 +195,10 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // The following responses are excluded as they don't support proofs:
     // - "GetConsensusParamsResponse"
     // - "GetStatusResponse"
-    // - "GetOwnerTransactionsInBlockResponse"
-    // - "GetBlocksResponse"
     //
     // The following responses are excluded as they need custom proof handling:
+    // - "GetOwnerTransactionsInBlockResponse" (a Tenderdash block proof, not a GroveDB one)
+    // - "GetBlocksResponse" (a Tenderdash block proof in each block)
     // - "GetIdentityByNonUniquePublicKeyHashResponse" (V0 carries two proofs)
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests

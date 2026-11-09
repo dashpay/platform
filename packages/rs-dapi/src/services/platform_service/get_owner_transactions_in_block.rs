@@ -1,7 +1,7 @@
 //! `getOwnerTransactionsInBlock`: the state transitions one owner has in a block.
 //!
 //! Drive keeps no record of which transitions a block held, so the answer comes from
-//! the block Tenderdash stored. It is not proved: the client trusts the node it asks.
+//! the block Tenderdash stored. A client trusts the node it asks unless it sets `prove`.
 
 use dapi_grpc::platform::v0::get_owner_transactions_in_block_response::get_owner_transactions_in_block_response_v0::OwnerTransaction;
 use dapi_grpc::platform::v0::get_owner_transactions_in_block_response::{
@@ -17,6 +17,7 @@ use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::StateTransition;
 use sha2::{Digest, Sha256};
 
+use super::block_proof::{build_block_proof, transaction_proofs};
 use super::error_mapping::base64_decode;
 use crate::cache::make_cache_key;
 use crate::clients::tenderdash_client::{BlockTxResult, MAX_TENDERDASH_HEIGHT};
@@ -31,7 +32,7 @@ impl PlatformServiceImpl {
         request: Request<GetOwnerTransactionsInBlockRequest>,
     ) -> DAPIResult<Response<GetOwnerTransactionsInBlockResponse>> {
         let request = request.into_inner();
-        let (height, owner_id) = parse_request(&request)?;
+        let (height, owner_id, prove) = parse_request(&request)?;
 
         let key = make_cache_key("get_owner_transactions_in_block", &request);
         if let Some(cached) = self.platform_cache.get(&key) {
@@ -39,26 +40,49 @@ impl PlatformServiceImpl {
         }
         let generation = self.platform_cache.generation();
 
-        let block = self
-            .tenderdash_client
-            .block(height)
-            .await?
+        let result = self.tenderdash_client.block(height).await?;
+        let block_id = result.block_id;
+        let block = result
             .block
             .ok_or_else(|| DapiError::NotFound(format!("no block at height {height}")))?;
         let block_txs = block.data.txs;
 
         let owned = select_owned_transactions(&block_txs, owner_id)?;
+        let indexes = owned.iter().map(|tx| tx.index).collect::<Vec<_>>();
         // Most blocks hold nothing of a given owner, so the results are read only when needed
-        let transactions = if owned.is_empty() {
+        let results = if owned.is_empty() {
             Vec::new()
         } else {
-            let results = self.tenderdash_client.block_results(height).await?;
-            attach_results(owned, &results.txs_results, block_txs.len())?
+            self.tenderdash_client
+                .block_results(height)
+                .await?
+                .txs_results
+        };
+        let mut transactions = if owned.is_empty() {
+            Vec::new()
+        } else {
+            attach_results(owned, &results, block_txs.len())?
+        };
+
+        let proof = if prove {
+            let commit = self.tenderdash_client.commit(height).await?;
+            let quorum_type = self.tenderdash_client.validator_quorum_type().await?;
+            let proof = build_block_proof(height, &block_id, commit, quorum_type)?;
+            let proofs = transaction_proofs(&proof, &block_txs, &results, &indexes)?;
+            for (transaction, transaction_proof) in transactions.iter_mut().zip(proofs) {
+                transaction.proof = Some(transaction_proof);
+            }
+            Some(proof)
+        } else {
+            None
         };
 
         let response = GetOwnerTransactionsInBlockResponse {
             version: Some(get_owner_transactions_in_block_response::Version::V0(
-                GetOwnerTransactionsInBlockResponseV0 { transactions },
+                GetOwnerTransactionsInBlockResponseV0 {
+                    transactions,
+                    proof,
+                },
             )),
         };
         self.platform_cache.put_from_generation(
@@ -72,8 +96,10 @@ impl PlatformServiceImpl {
     }
 }
 
-/// Validate the request, returning the height and the owner it asks about.
-fn parse_request(request: &GetOwnerTransactionsInBlockRequest) -> DAPIResult<(u64, Identifier)> {
+/// Validate the request, returning the height, the owner and whether to prove the answer.
+fn parse_request(
+    request: &GetOwnerTransactionsInBlockRequest,
+) -> DAPIResult<(u64, Identifier, bool)> {
     let Some(get_owner_transactions_in_block_request::Version::V0(v0)) = &request.version else {
         return Err(DapiError::InvalidArgument(
             "missing request version".to_string(),
@@ -87,7 +113,7 @@ fn parse_request(request: &GetOwnerTransactionsInBlockRequest) -> DAPIResult<(u6
     let owner_id = Identifier::from_bytes(&v0.owner_id)
         .map_err(|_| DapiError::InvalidArgument("owner_id must be 32 bytes".to_string()))?;
 
-    Ok((v0.height, owner_id))
+    Ok((v0.height, owner_id, v0.prove))
 }
 
 /// A state transition of the owner, and its position in the block.
@@ -148,10 +174,19 @@ fn attach_results(
             let result = results.get(transaction.index).ok_or_else(|| {
                 DapiError::Internal(format!("no result for transaction {}", transaction.index))
             })?;
+            let result_data = base64_decode(&result.data).ok_or_else(|| {
+                DapiError::Internal(format!(
+                    "the result of transaction {} is not base64",
+                    transaction.index
+                ))
+            })?;
             Ok(OwnerTransaction {
                 hash: Sha256::digest(&transaction.state_transition).to_vec(),
                 state_transition: transaction.state_transition,
                 code: result.code,
+                result_data,
+                gas_used: result.gas_used,
+                proof: None,
             })
         })
         .collect()
@@ -211,7 +246,11 @@ mod tests {
     fn request(height: u64, owner_id: Vec<u8>) -> GetOwnerTransactionsInBlockRequest {
         GetOwnerTransactionsInBlockRequest {
             version: Some(get_owner_transactions_in_block_request::Version::V0(
-                GetOwnerTransactionsInBlockRequestV0 { height, owner_id },
+                GetOwnerTransactionsInBlockRequestV0 {
+                    height,
+                    owner_id,
+                    prove: false,
+                },
             )),
         }
     }
@@ -266,13 +305,23 @@ mod tests {
     fn should_give_each_transaction_its_own_result_and_hash() {
         let txs = [transfer(BOB, ALICE, 1), transfer(ALICE, BOB, 2)];
         let owned = select_owned_transactions(&txs, ALICE).unwrap();
-        let results = [BlockTxResult { code: 0 }, BlockTxResult { code: 40100 }];
+        let results = [
+            BlockTxResult::default(),
+            BlockTxResult {
+                code: 40100,
+                data: "AQI=".to_string(),
+                gas_used: 9,
+            },
+        ];
 
         let transactions = attach_results(owned, &results, txs.len()).unwrap();
 
         let bytes = STANDARD.decode(&txs[1]).unwrap();
         assert_eq!(transactions.len(), 1);
         assert_eq!(transactions[0].code, 40100);
+        assert_eq!(transactions[0].result_data, [1, 2]);
+        assert_eq!(transactions[0].gas_used, 9);
+        assert!(transactions[0].proof.is_none());
         assert_eq!(transactions[0].hash, Sha256::digest(&bytes).to_vec());
         assert_eq!(transactions[0].state_transition, bytes);
     }
@@ -283,17 +332,30 @@ mod tests {
         let owned = select_owned_transactions(&txs, ALICE).unwrap();
 
         assert!(matches!(
-            attach_results(owned, &[BlockTxResult { code: 0 }], txs.len()),
+            attach_results(owned, &[BlockTxResult::default()], txs.len()),
             Err(DapiError::Internal(_))
         ));
     }
 
     #[test]
     fn should_accept_a_valid_request() {
-        let (height, owner_id) = parse_request(&request(7, vec![1; 32])).unwrap();
+        let (height, owner_id, prove) = parse_request(&request(7, vec![1; 32])).unwrap();
 
         assert_eq!(height, 7);
         assert_eq!(owner_id, ALICE);
+        assert!(!prove);
+    }
+
+    #[test]
+    fn should_read_the_prove_flag() {
+        let mut proved = request(7, vec![1; 32]);
+        let Some(get_owner_transactions_in_block_request::Version::V0(v0)) = &mut proved.version
+        else {
+            unreachable!();
+        };
+        v0.prove = true;
+
+        assert!(parse_request(&proved).unwrap().2);
     }
 
     #[test]

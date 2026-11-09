@@ -1,6 +1,7 @@
 // Platform service modular implementation
 // This file contains the core PlatformServiceImpl struct and delegates to individual modules
 
+mod block_proof;
 mod broadcast_state_transition;
 mod error_mapping;
 mod get_blocks;

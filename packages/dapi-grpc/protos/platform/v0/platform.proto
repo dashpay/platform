@@ -170,12 +170,12 @@ service Platform {
   rpc getPrivateDocumentEntries(GetPrivateDocumentEntriesRequest)
       returns (GetPrivateDocumentEntriesResponse);
   // The state transitions one owner has in the Tenderdash block at a height.
-  // DAPI answers it from Tenderdash; the response carries no proof.
+  // DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
   rpc getOwnerTransactionsInBlock(GetOwnerTransactionsInBlockRequest)
       returns (GetOwnerTransactionsInBlockResponse);
-  // Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; the
-  // response carries no proof. This is for looking blocks up, not for syncing a
-  // chain: the gateway allows each IP very few of these requests.
+  // Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+  // `prove` the client trusts the node. This is for looking blocks up, not for
+  // syncing a chain: the gateway allows each IP very few of these requests.
   rpc getBlocks(GetBlocksRequest) returns (GetBlocksResponse);
 }
 
@@ -4461,6 +4461,60 @@ message GetPrivateDocumentEntriesResponse {
   oneof version { GetPrivateDocumentEntriesResponseV0 v0 = 1; }
 }
 
+// Ties a Tenderdash block to the signature of the quorum that committed it. To
+// check it, recompute the block hash from `header`, build the block id from that
+// hash and `block_id`, and verify `signature` over the precommit vote for them.
+// `header.data_hash` and `header.results_hash` then vouch for the block's
+// transactions and their results.
+message TenderdashBlockProof {
+  message BlockId {
+    bytes hash = 1;
+    uint32 part_set_total = 2;
+    bytes part_set_hash = 3;
+    bytes state_id = 4;
+  }
+  // Every field Tenderdash hashes into the block hash
+  message Header {
+    uint64 block_version = 1 [ jstype = JS_STRING ];
+    uint64 app_version = 2 [ jstype = JS_STRING ];
+    string chain_id = 3;
+    uint64 height = 4 [ jstype = JS_STRING ];
+    uint32 core_chain_locked_height = 5;
+    int64 time_seconds = 6 [ jstype = JS_STRING ];
+    int32 time_nanos = 7;
+    BlockId last_block_id = 8;
+    bytes last_commit_hash = 9;
+    bytes data_hash = 10;    // Merkle root of the block's transactions
+    bytes validators_hash = 11;
+    bytes next_validators_hash = 12;
+    bytes consensus_hash = 13;
+    bytes next_consensus_hash = 14;
+    bytes app_hash = 15;     // the state after this block's transactions
+    bytes results_hash = 16; // Merkle root of the block's execution results
+    bytes evidence_hash = 17;
+    bytes proposer_pro_tx_hash = 18;
+    uint64 proposed_app_version = 19 [ jstype = JS_STRING ];
+  }
+  Header header = 1;
+  BlockId block_id = 2;
+  uint32 round = 3;       // the consensus round that committed the block
+  bytes quorum_hash = 4;  // the quorum that signed
+  uint32 quorum_type = 5; // the LLMQ type of that quorum
+  bytes signature = 6;    // its threshold signature over the block
+}
+
+// Merkle paths of one transaction in its block. Each path runs from the leaf's
+// sibling up to a child of the root.
+message TenderdashTransactionProof {
+  uint32 index = 1; // the transaction's position in the block
+  uint32 total = 2; // how many transactions the block holds
+  // Path from the SHA-256 of the transaction to `data_hash`
+  repeated bytes transaction_path = 3;
+  // Path to `results_hash`, from the protobuf encoding of the transaction's
+  // `code`, `result_data` and `gas_used` as Tenderdash's ExecTxResult
+  repeated bytes result_path = 4;
+}
+
 message GetOwnerTransactionsInBlockRequest {
   message GetOwnerTransactionsInBlockRequestV0 {
     uint64 height = 1 [ jstype = JS_STRING ]; // the Tenderdash block height, from 1
@@ -4468,6 +4522,7 @@ message GetOwnerTransactionsInBlockRequest {
     // as its owner. A recipient is not an owner, and transitions funded from
     // addresses or the shielded pool have no owner, so they never match.
     bytes owner_id = 2;
+    bool prove = 3; // also return what proves the answer's transactions
   }
   oneof version { GetOwnerTransactionsInBlockRequestV0 v0 = 1; }
 }
@@ -4478,8 +4533,15 @@ message GetOwnerTransactionsInBlockResponse {
       bytes state_transition = 1; // the serialized state transition
       bytes hash = 2;             // its SHA-256, the hash Tenderdash knows it by
       uint32 code = 3;            // 0 if it executed, otherwise the code of the error it paid for
+      bytes result_data = 4;      // the data of its execution result
+      int64 gas_used = 5 [ jstype = JS_STRING ]; // the gas of its execution result
+      TenderdashTransactionProof proof = 6;      // only when asked to prove
     }
     repeated OwnerTransaction transactions = 1; // in block order
+    // Only when asked to prove. This proves each returned transaction is in the
+    // block. It does not prove the list is complete: to be sure of that, read the
+    // whole block with getBlocks.
+    TenderdashBlockProof proof = 2;
   }
   oneof version { GetOwnerTransactionsInBlockResponseV0 v0 = 1; }
 }
@@ -4488,6 +4550,7 @@ message GetBlocksRequest {
   message GetBlocksRequestV0 {
     uint64 start_height = 1 [ jstype = JS_STRING ]; // the first Tenderdash height, from 1
     uint32 count = 2; // how many blocks, from 1 to 10
+    bool prove = 3;   // also return what proves each block
   }
   oneof version { GetBlocksRequestV0 v0 = 1; }
 }
@@ -4498,6 +4561,8 @@ message GetBlocksResponse {
       bytes state_transition = 1; // the serialized state transition
       bytes hash = 2;             // its SHA-256, the hash Tenderdash knows it by
       uint32 code = 3;            // 0 if it executed, otherwise the code of the error it paid for
+      bytes result_data = 4;      // the data of its execution result
+      int64 gas_used = 5 [ jstype = JS_STRING ]; // the gas of its execution result
     }
     message Block {
       uint64 height = 1 [ jstype = JS_STRING ];
@@ -4507,6 +4572,9 @@ message GetBlocksResponse {
       bytes app_hash = 5;             // the state after this block's transactions
       bytes proposer_pro_tx_hash = 6;
       repeated Transaction transactions = 7; // in block order
+      // Only when asked to prove. A block holds all its transactions, so recompute
+      // `data_hash` and `results_hash` from them; no Merkle paths are needed.
+      TenderdashBlockProof proof = 8;
     }
     // Consecutive blocks from the start height. There can be fewer than the count
     // when the node's chain ends or the response reaches its size limit; ask from

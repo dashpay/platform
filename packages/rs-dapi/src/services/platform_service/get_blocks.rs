@@ -1,10 +1,9 @@
 //! `getBlocks`: up to ten consecutive blocks of the Platform chain.
 //!
-//! The blocks come from Tenderdash and are not proved: the client trusts the node it asks.
+//! The blocks come from Tenderdash. A client trusts the node it asks unless it sets `prove`.
 //! This is for looking blocks up, not for syncing a chain from DAPI, so the cap here works
 //! together with a much lower per-IP request limit in the gateway's rate limiter.
 
-use std::future::Future;
 use std::ops::RangeInclusive;
 
 use chrono::DateTime;
@@ -14,10 +13,12 @@ use dapi_grpc::platform::v0::{GetBlocksRequest, GetBlocksResponse, get_blocks_re
 use dapi_grpc::tonic::{Request, Response};
 use sha2::{Digest, Sha256};
 
+use super::block_proof::{build_block_proof, check_block_contents};
 use super::error_mapping::base64_decode;
 use crate::cache::make_cache_key;
 use crate::clients::tenderdash_client::{
-    Block as TenderdashBlock, BlockTxResult, MAX_TENDERDASH_HEIGHT, ResultBlock, ResultBlockResults,
+    Block as TenderdashBlock, BlockTxResult, MAX_TENDERDASH_HEIGHT, ResultBlock,
+    ResultBlockResults, ResultCommit,
 };
 use crate::error::{DAPIResult, DapiError};
 use crate::services::platform_service::PlatformServiceImpl;
@@ -35,7 +36,7 @@ impl PlatformServiceImpl {
         request: Request<GetBlocksRequest>,
     ) -> DAPIResult<Response<GetBlocksResponse>> {
         let request = request.into_inner();
-        let heights = parse_request(&request)?;
+        let (heights, prove) = parse_request(&request)?;
 
         let key = make_cache_key("get_blocks", &request);
         if let Some(cached) = self.platform_cache.get(&key) {
@@ -43,7 +44,7 @@ impl PlatformServiceImpl {
         }
         let generation = self.platform_cache.generation();
 
-        let blocks = collect_blocks(heights, |height| self.fetch_block(height)).await?;
+        let blocks = self.fetch_blocks(heights, prove).await?;
 
         let response = GetBlocksResponse {
             version: Some(get_blocks_response::Version::V0(GetBlocksResponseV0 {
@@ -60,27 +61,49 @@ impl PlatformServiceImpl {
         Ok(Response::new(response))
     }
 
-    async fn fetch_block(&self, height: u64) -> DAPIResult<Option<Block>> {
-        read_block(
-            height,
-            self.tenderdash_client.block(height),
-            self.tenderdash_client.block_results(height),
-        )
-        .await
+    /// Read the whole range from Tenderdash in one batched request.
+    async fn fetch_blocks(
+        &self,
+        heights: RangeInclusive<u64>,
+        prove: bool,
+    ) -> DAPIResult<Vec<Block>> {
+        let quorum_type = if prove {
+            Some(self.tenderdash_client.validator_quorum_type().await?)
+        } else {
+            None
+        };
+        let mut entries = self
+            .tenderdash_client
+            .block_batch(heights.clone(), prove)
+            .await?
+            .into_iter();
+
+        collect_blocks(heights, |height| {
+            let entry = entries.next().ok_or_else(|| {
+                DapiError::Internal(format!("no batch entry for height {height}"))
+            })?;
+            read_block(
+                height,
+                entry.block,
+                entry.results,
+                entry.commit.zip(quorum_type),
+            )
+        })
     }
 }
 
-/// Await the two Tenderdash answers for one height; `results` is only awaited, and so only
-/// sent, when the block has transactions.
+/// Turn the Tenderdash answers for one height into a block. `results` is only looked at
+/// when the block has transactions, and `signed` is `Some` only when asked to prove.
 ///
 /// `None` means the node's chain does not reach this height. A block it holds without its
 /// results is an error instead, because that block must not vanish from a range.
-async fn read_block(
+fn read_block(
     height: u64,
-    block: impl Future<Output = DAPIResult<ResultBlock>>,
-    results: impl Future<Output = DAPIResult<ResultBlockResults>>,
+    block: DAPIResult<ResultBlock>,
+    results: DAPIResult<ResultBlockResults>,
+    signed: Option<(DAPIResult<ResultCommit>, u32)>,
 ) -> DAPIResult<Option<Block>> {
-    let result = match block.await {
+    let result = match block {
         Ok(result) => result,
         Err(error) if error.is_missing_tenderdash_height() => return Ok(None),
         Err(error) => return Err(error),
@@ -91,14 +114,26 @@ async fn read_block(
     let results = if block.data.txs.is_empty() {
         Vec::new()
     } else {
-        results.await?.txs_results
+        results?.txs_results
     };
 
-    build_block(height, &result.block_id.hash, block, &results).map(Some)
+    let mut built = build_block(height, &result.block_id.hash, block, &results)?;
+    if let Some((commit, quorum_type)) = signed {
+        let proof = build_block_proof(height, &result.block_id, commit?, quorum_type)?;
+        let hashes = built
+            .transactions
+            .iter()
+            .map(|transaction| transaction.hash.clone())
+            .collect::<Vec<_>>();
+        check_block_contents(&proof, &hashes, &results)?;
+        built.proof = Some(proof);
+    }
+
+    Ok(Some(built))
 }
 
-/// Validate the request, returning the heights it asks for.
-fn parse_request(request: &GetBlocksRequest) -> DAPIResult<RangeInclusive<u64>> {
+/// Validate the request, returning the heights it asks for and whether to prove them.
+fn parse_request(request: &GetBlocksRequest) -> DAPIResult<(RangeInclusive<u64>, bool)> {
     let Some(get_blocks_request::Version::V0(v0)) = &request.version else {
         return Err(DapiError::InvalidArgument(
             "missing request version".to_string(),
@@ -121,20 +156,19 @@ fn parse_request(request: &GetBlocksRequest) -> DAPIResult<RangeInclusive<u64>> 
         )));
     }
 
-    Ok(v0.start_height..=end_height)
+    Ok((v0.start_height..=end_height, v0.prove))
 }
 
-/// Fetch the blocks one at a time, stopping early where the chain ends or the response
-/// is full. The first block is always either returned or the error of the query.
-async fn collect_blocks<F, Fut>(heights: RangeInclusive<u64>, fetch: F) -> DAPIResult<Vec<Block>>
-where
-    F: Fn(u64) -> Fut,
-    Fut: Future<Output = DAPIResult<Option<Block>>>,
-{
+/// Take the blocks in order, stopping early where the chain ends or the response is full.
+/// The first block is always either returned or the error of the query.
+fn collect_blocks(
+    heights: RangeInclusive<u64>,
+    mut read: impl FnMut(u64) -> DAPIResult<Option<Block>>,
+) -> DAPIResult<Vec<Block>> {
     let mut blocks = Vec::new();
     let mut response_bytes = 0;
     for height in heights {
-        let Some(block) = fetch(height).await? else {
+        let Some(block) = read(height)? else {
             if blocks.is_empty() {
                 return Err(DapiError::NotFound(format!("no block at height {height}")));
             }
@@ -177,10 +211,15 @@ fn build_block(
                     "transaction {index} of block {height} is not base64"
                 ))
             })?;
+            let result_data = base64_decode(&result.data).ok_or_else(|| {
+                DapiError::Internal(format!("result {index} of block {height} is not base64"))
+            })?;
             Ok(Transaction {
                 hash: Sha256::digest(&state_transition).to_vec(),
                 state_transition,
                 code: result.code,
+                result_data,
+                gas_used: result.gas_used,
             })
         })
         .collect::<DAPIResult<Vec<_>>>()?;
@@ -196,10 +235,11 @@ fn build_block(
             &block.header.proposer_pro_tx_hash,
         )?,
         transactions,
+        proof: None,
     })
 }
 
-fn decode_hex(field: &str, value: &str) -> DAPIResult<Vec<u8>> {
+pub(super) fn decode_hex(field: &str, value: &str) -> DAPIResult<Vec<u8>> {
     hex::decode(value)
         .map_err(|error| DapiError::Internal(format!("block {field} is not hex: {error}")))
 }
@@ -214,6 +254,8 @@ fn parse_time_ms(time: &str) -> DAPIResult<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::platform_service::block_proof::tenderdash_commit;
+    use dapi_grpc::platform::v0::TenderdashBlockProof;
     use dapi_grpc::platform::v0::get_blocks_request::GetBlocksRequestV0;
     use serde_json::json;
 
@@ -222,6 +264,7 @@ mod tests {
             version: Some(get_blocks_request::Version::V0(GetBlocksRequestV0 {
                 start_height,
                 count,
+                prove: false,
             })),
         }
     }
@@ -252,8 +295,8 @@ mod tests {
 
     #[test]
     fn should_accept_up_to_ten_blocks() {
-        assert_eq!(parse_request(&request(5, 1)).unwrap(), 5..=5);
-        assert_eq!(parse_request(&request(5, 10)).unwrap(), 5..=14);
+        assert_eq!(parse_request(&request(5, 1)).unwrap(), (5..=5, false));
+        assert_eq!(parse_request(&request(5, 10)).unwrap(), (5..=14, false));
     }
 
     #[test]
@@ -281,7 +324,7 @@ mod tests {
         }
         assert_eq!(
             parse_request(&request(MAX_TENDERDASH_HEIGHT, 1)).unwrap(),
-            MAX_TENDERDASH_HEIGHT..=MAX_TENDERDASH_HEIGHT
+            (MAX_TENDERDASH_HEIGHT..=MAX_TENDERDASH_HEIGHT, false)
         );
     }
 
@@ -293,108 +336,216 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn should_return_every_block_of_the_range_in_order() {
-        let blocks = collect_blocks(
-            3..=6,
-            |height| async move { Ok(Some(block_of_size(height, 1))) },
-        )
-        .await
-        .unwrap();
+    #[test]
+    fn should_return_every_block_of_the_range_in_order() {
+        let blocks = collect_blocks(3..=6, |height| Ok(Some(block_of_size(height, 1)))).unwrap();
 
         assert_eq!(heights(&blocks), [3, 4, 5, 6]);
     }
 
-    #[tokio::test]
-    async fn should_return_the_blocks_that_exist_when_the_range_passes_the_tip() {
-        let blocks = collect_blocks(3..=12, |height| async move {
+    #[test]
+    fn should_return_the_blocks_that_exist_when_the_range_passes_the_tip() {
+        let blocks = collect_blocks(3..=12, |height| {
             Ok((height <= 5).then(|| block_of_size(height, 1)))
         })
-        .await
         .unwrap();
 
         assert_eq!(heights(&blocks), [3, 4, 5]);
     }
 
-    #[tokio::test]
-    async fn should_report_not_found_when_the_first_block_is_missing() {
-        let result = collect_blocks(3..=12, |_| async { Ok(None) }).await;
+    #[test]
+    fn should_report_not_found_when_the_first_block_is_missing() {
+        let result = collect_blocks(3..=12, |_| Ok(None));
 
         assert!(matches!(result, Err(DapiError::NotFound(_))));
     }
 
-    #[tokio::test]
-    async fn should_fail_rather_than_cut_the_range_short_on_another_error() {
-        let result = collect_blocks(3..=12, |height| async move {
+    #[test]
+    fn should_fail_rather_than_cut_the_range_short_on_another_error() {
+        let result = collect_blocks(3..=12, |height| {
             if height > 5 {
                 Err(DapiError::Internal("broken".to_string()))
             } else {
                 Ok(Some(block_of_size(height, 1)))
             }
-        })
-        .await;
+        });
 
         assert!(matches!(result, Err(DapiError::Internal(_))));
     }
 
-    #[tokio::test]
-    async fn should_fail_rather_than_omit_a_block_whose_results_are_missing() {
+    #[test]
+    fn should_fail_rather_than_omit_a_block_whose_results_are_missing() {
         let result = collect_blocks(3..=12, |height| {
             let txs = if height > 5 {
                 json!(["AQI="])
             } else {
                 json!(null)
             };
-            read_block(height, async move { Ok(tenderdash_block(txs)) }, async {
-                Err(tenderdash_error("could not find results for height #6"))
-            })
-        })
-        .await;
+            read_block(
+                height,
+                Ok(tenderdash_block(txs)),
+                Err(tenderdash_error("could not find results for height #6")),
+                None,
+            )
+        });
 
         let error = result.unwrap_err();
         assert!(error.is_missing_tenderdash_height());
     }
 
-    #[tokio::test]
-    async fn should_end_the_range_when_the_block_itself_is_missing() {
+    #[test]
+    fn should_end_the_range_when_the_block_itself_is_missing() {
         let blocks = collect_blocks(3..=12, |height| {
+            let block = if height > 5 {
+                Err(tenderdash_error(
+                    "height must be less than or equal to the head of the node's blockchain",
+                ))
+            } else {
+                Ok(tenderdash_block(json!(null)))
+            };
             read_block(
                 height,
-                async move {
-                    if height > 5 {
-                        Err(tenderdash_error(
-                            "height must be less than or equal to the head of the node's blockchain",
-                        ))
-                    } else {
-                        Ok(tenderdash_block(json!(null)))
-                    }
-                },
-                async { Err(DapiError::Internal("no results expected".to_string())) },
+                block,
+                Err(DapiError::Internal("no results expected".to_string())),
+                None,
             )
         })
-        .await
         .unwrap();
 
         assert_eq!(heights(&blocks), [3, 4, 5]);
     }
 
-    #[tokio::test]
-    async fn should_stop_before_the_response_passes_its_size_limit() {
-        let blocks = collect_blocks(1..=10, |height| async move {
-            Ok(Some(block_of_size(height, 1_500_000)))
-        })
-        .await
+    /// Read one block holding `[1, 2]` with the given commit as its proof.
+    fn read_proved_block(commit: ResultCommit) -> DAPIResult<Option<Block>> {
+        read_block(
+            7,
+            Ok(tenderdash_block(json!(["AQI="]))),
+            Ok(serde_json::from_value(json!({
+                "txs_results": [{ "code": 0, "gas_used": "9" }],
+            }))
+            .unwrap()),
+            Some((Ok(commit), 6)),
+        )
+    }
+
+    #[test]
+    fn should_use_no_results_of_a_block_without_transactions() {
+        let block = read_block(
+            7,
+            Ok(tenderdash_block(json!(null))),
+            Err(DapiError::Internal("not looked at".to_string())),
+            None,
+        )
+        .unwrap()
         .unwrap();
+
+        assert!(block.transactions.is_empty());
+    }
+
+    #[test]
+    fn should_fail_when_the_commit_of_a_proved_block_is_missing() {
+        let result = read_block(
+            7,
+            Ok(tenderdash_block(json!(null))),
+            Ok(ResultBlockResults::default()),
+            Some((Err(DapiError::Client("no commit".to_string())), 6)),
+        );
+
+        assert!(matches!(result, Err(DapiError::Client(_))));
+    }
+
+    #[test]
+    fn should_not_read_past_the_block_that_fills_the_response() {
+        let mut read = Vec::new();
+
+        let blocks = collect_blocks(1..=10, |height| {
+            read.push(height);
+            Ok(Some(block_of_size(height, 3_000_000)))
+        })
+        .unwrap();
+
+        assert_eq!(heights(&blocks), [1]);
+        assert_eq!(read, [1, 2]);
+    }
+
+    fn results_of_the_proved_block() -> [BlockTxResult; 1] {
+        [BlockTxResult {
+            gas_used: 9,
+            ..Default::default()
+        }]
+    }
+
+    #[test]
+    fn should_attach_a_proof_when_asked_to_prove() {
+        let commit = tenderdash_commit(
+            7,
+            "ABCD",
+            &[Sha256::digest([1, 2]).to_vec()],
+            &results_of_the_proved_block(),
+        );
+
+        let block = read_proved_block(commit).unwrap().unwrap();
+
+        let proof = block.proof.unwrap();
+        assert_eq!(proof.quorum_type, 6);
+        assert_eq!(proof.header.unwrap().height, 7);
+        assert_eq!(block.transactions[0].gas_used, 9);
+    }
+
+    #[test]
+    fn should_fail_rather_than_return_a_proof_the_block_does_not_satisfy() {
+        let commit = tenderdash_commit(
+            7,
+            "ABCD",
+            &[Sha256::digest([3, 4]).to_vec()],
+            &results_of_the_proved_block(),
+        );
+
+        assert!(matches!(
+            read_proved_block(commit),
+            Err(DapiError::Internal(_))
+        ));
+    }
+
+    #[test]
+    fn should_count_the_proof_in_the_response_size() {
+        let blocks = collect_blocks(1..=2, |height| {
+            let mut block = block_of_size(height, 2_000_000);
+            block.proof = Some(TenderdashBlockProof {
+                signature: vec![0; 100_000],
+                ..Default::default()
+            });
+            Ok(Some(block))
+        })
+        .unwrap();
+
+        assert_eq!(heights(&blocks), [1]);
+    }
+
+    #[test]
+    fn should_read_the_prove_flag() {
+        let mut proved = request(5, 1);
+        let Some(get_blocks_request::Version::V0(v0)) = &mut proved.version else {
+            unreachable!();
+        };
+        v0.prove = true;
+
+        assert_eq!(parse_request(&proved).unwrap(), (5..=5, true));
+    }
+
+    #[test]
+    fn should_stop_before_the_response_passes_its_size_limit() {
+        let blocks =
+            collect_blocks(1..=10, |height| Ok(Some(block_of_size(height, 1_500_000)))).unwrap();
 
         assert_eq!(heights(&blocks), [1, 2]);
     }
 
-    #[tokio::test]
-    async fn should_return_a_first_block_larger_than_the_size_limit() {
-        let blocks = collect_blocks(1..=10, |height| async move {
+    #[test]
+    fn should_return_a_first_block_larger_than_the_size_limit() {
+        let blocks = collect_blocks(1..=10, |height| {
             Ok(Some(block_of_size(height, MAX_RESPONSE_BYTES + 1)))
         })
-        .await
         .unwrap();
 
         assert_eq!(heights(&blocks), [1]);
@@ -444,6 +595,7 @@ mod tests {
         )
         .unwrap();
 
+        assert!(block.proof.is_none());
         assert_eq!(block.height, 7);
         assert_eq!(block.hash, [0xab, 0xcd]);
         assert_eq!(block.time_ms, 1_722_265_200_123);
@@ -476,7 +628,7 @@ mod tests {
                 7,
                 &result.block_id.hash,
                 result.block.unwrap(),
-                &[BlockTxResult { code: 0 }],
+                &[BlockTxResult::default()],
             ),
             Err(DapiError::Internal(_))
         ));
@@ -491,7 +643,7 @@ mod tests {
                 7,
                 &result.block_id.hash,
                 result.block.unwrap(),
-                &[BlockTxResult { code: 0 }],
+                &[BlockTxResult::default()],
             ),
             Err(DapiError::Internal(_))
         ));
