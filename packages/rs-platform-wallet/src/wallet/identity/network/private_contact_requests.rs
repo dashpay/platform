@@ -198,15 +198,6 @@ impl ScannedIdentity {
     }
 }
 
-/// Whether `error` is the SDK's refusal of a private document request on a
-/// network whose verified protocol version, or this SDK's pinned one, is
-/// below the one that serves them: not a refusal that may lift soon. The
-/// private sync sends no other request a protocol version gates.
-fn serves_no_private_documents(error: &dash_sdk::Error) -> bool {
-    matches!(error, dash_sdk::Error::ProtocolVersionNotActive { .. })
-        && !error.is_transient_protocol_version_refusal()
-}
-
 /// Handed to a private request's `pay`, which marks it right before anything
 /// it does may reach the network. Until it is marked, a send dropped (a
 /// cancelled accept, a timeout) releases its reservation, as nothing was paid
@@ -709,10 +700,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// or reply from `identity_id` to `recipient` is chosen or sent, so a
     /// private request paid for in an earlier process holds the pair here
     /// too. A network that serves no private documents yet holds none, so
-    /// its refusal (a verified protocol version, or this SDK's pinned one,
-    /// below the one that serves them) reads as nothing to read. A refusal
-    /// that may lift soon, the network's version not being learnt, still
-    /// refuses: the store may hold one.
+    /// the SDK's refusal of the read reads as nothing to read, but only once
+    /// a verified answer shows the network below the protocol version that
+    /// serves them (`Sdk::network_proven_below`): a refusal alone does not
+    /// say whether the network or this SDK is below it, and an SDK pinned
+    /// below it refuses a store the network has. Without that evidence the
+    /// refusal comes back as it is, and nothing is sent.
     pub(super) async fn read_private_store_before_deciding<C>(
         &self,
         identity_id: &Identifier,
@@ -726,7 +719,20 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .read_private_store_before_sending(identity_id, recipient, crypto)
             .await
         {
-            Err(PlatformWalletError::Sdk(error)) if serves_no_private_documents(&error) => Ok(()),
+            Err(PlatformWalletError::Sdk(
+                refusal @ dash_sdk::Error::ProtocolVersionNotActive { required, .. },
+            )) => match self.sdk.network_proven_below(required).await {
+                Ok(true) => Ok(()),
+                Ok(false) => Err(PlatformWalletError::Sdk(refusal)),
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        "the network's protocol version could not be verified; the private \
+                         store is not taken as empty"
+                    );
+                    Err(PlatformWalletError::Sdk(refusal))
+                }
+            },
             read => read,
         }
     }
@@ -2057,13 +2063,15 @@ mod tests {
             known,
             entries,
             PlatformVersion::latest(),
+            None,
         )
         .await
     }
 
     /// [`wallet_on`], with its SDK pinned to `platform_version` and holding
     /// DashPay as that version bundles it, which a DashPay fetch also
-    /// answers.
+    /// answers; `verified_network` is the network's version a verified
+    /// answer showed, when one did.
     async fn wallet_at<P: PlatformWalletPersistence + 'static>(
         persistence: Arc<P>,
         phrase: &str,
@@ -2071,6 +2079,7 @@ mod tests {
         known: &[&Identity],
         entries: Vec<Vec<u8>>,
         platform_version: &'static PlatformVersion,
+        verified_network: Option<u32>,
     ) -> (PlatformWalletManager<P>, Arc<PlatformWallet>) {
         let contract = Arc::new(
             dpp::system_data_contracts::load_system_data_contract(
@@ -2085,6 +2094,10 @@ mod tests {
             .with_context_provider(DashpayContractProvider(Arc::clone(&contract)))
             .build()
             .expect("mock sdk");
+        if let Some(verified) = verified_network {
+            sdk.mock_verified_protocol_version(verified)
+                .expect("a mock SDK");
+        }
         sdk.mock()
             .expect_fetch(contract.id(), Some((*contract).clone()))
             .await
@@ -5133,10 +5146,10 @@ mod tests {
         assert!(pending_to(&bob_wallet, BOB, &alice).await);
     }
 
-    /// On a network below protocol version 15 there is no private store to
-    /// read: a public send goes on to its broadcast, as it did before private
-    /// contact requests, rather than being refused for a read that cannot
-    /// run.
+    /// On a network a verified answer shows below protocol version 15 there
+    /// is no private store to read: a public send goes on to its broadcast,
+    /// as it did before private contact requests, rather than being refused
+    /// for a read that cannot run.
     #[tokio::test]
     async fn should_send_publicly_on_a_network_below_protocol_version_15() {
         let alice = identity(ALICE_PHRASE, ALICE);
@@ -5150,6 +5163,7 @@ mod tests {
             &[&alice, &bob],
             vec![],
             PlatformVersion::get(14).expect("protocol version 14"),
+            Some(14),
         )
         .await;
         let sent = bob_wallet
@@ -5172,6 +5186,52 @@ mod tests {
             "the send goes on to its transition: {sent:?}"
         );
         assert!(!store_read(&bob_wallet, BOB).await, "nothing was read");
+    }
+
+    /// An SDK pinned below protocol version 15 refuses to read the private
+    /// store whatever the network runs. On a network a verified answer shows
+    /// at 15, or one whose version is not verified, the store may hold a
+    /// private request, so a public send is refused with that refusal and
+    /// sends nothing.
+    #[tokio::test]
+    async fn should_refuse_a_public_send_from_an_sdk_pinned_below_a_network_at_15() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let bob_signer = signer(BOB_PHRASE, &bob);
+        for verified_network in [Some(15), None] {
+            let (_manager, bob_wallet) = wallet_at(
+                Arc::new(NoPersistence),
+                BOB_PHRASE,
+                &bob,
+                &[&alice, &bob],
+                vec![],
+                PlatformVersion::get(14).expect("protocol version 14"),
+                verified_network,
+            )
+            .await;
+            let sent = bob_wallet
+                .identity()
+                .dashpay()
+                .send_contact_request_with_external_signer(
+                    &bob.id(),
+                    &alice.id(),
+                    None,
+                    AutoAcceptProofSource::None,
+                    &bob_signer,
+                    &bob_crypto,
+                )
+                .await;
+            assert!(
+                matches!(
+                    &sent,
+                    Err(PlatformWalletError::Sdk(
+                        dash_sdk::Error::ProtocolVersionNotActive { .. }
+                    ))
+                ),
+                "verified {verified_network:?}: {sent:?}"
+            );
+        }
     }
 
     /// The first private send since load reads the store first. While that
