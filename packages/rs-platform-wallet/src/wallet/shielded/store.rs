@@ -231,6 +231,11 @@ pub struct PrivatePaymentRecord {
     /// note still unspent and the entry absent from the store proves the
     /// payment expired.
     pub anchor: [u8; 32],
+    /// The proved height of the recorded-anchor set `anchor` was chosen from:
+    /// the anchor was recorded then, so only its absence from a set proved at
+    /// or above this height shows it pruned. `u64::MAX` for a payment saved
+    /// before the journal kept it, whose expiry is never proven.
+    pub anchor_height: u64,
     /// The commitment of the entry it appends, which keys the record.
     pub commitment: [u8; 32],
     /// The request it pays for.
@@ -240,20 +245,21 @@ pub struct PrivatePaymentRecord {
 }
 
 impl PrivatePaymentRecord {
-    /// The format version [`Self::to_bytes`] writes. Version 1, written before
-    /// the anchor was kept, does not read back: its wallet's holds stay.
-    const FORMAT_VERSION: u8 = 2;
+    /// The format version [`Self::to_bytes`] writes. Versions 1 and 2, written
+    /// before the anchor and its height were kept, do not read back: their
+    /// wallet's holds stay.
+    const FORMAT_VERSION: u8 = 3;
     /// The bytes before the nullifiers: version, account index, activity id,
-    /// anchor, commitment, sender, recipient, account reference and nullifier
-    /// count.
-    const HEADER_LEN: usize = 1 + 4 + 32 + 32 + 32 + 32 + 32 + 4 + 2;
+    /// anchor, anchor height, commitment, sender, recipient, account reference
+    /// and nullifier count.
+    const HEADER_LEN: usize = 1 + 4 + 32 + 32 + 8 + 32 + 32 + 32 + 4 + 2;
 
     /// The bytes the file store keeps it as: [`Self::FORMAT_VERSION`], the
-    /// account index little-endian, the activity id, the anchor, the
-    /// commitment, the sender, the recipient, the account reference
-    /// little-endian, the nullifier count as a little-endian `u16`, then the
-    /// nullifiers. `None` when it has no nullifier or more than a `u16`
-    /// counts.
+    /// account index little-endian, the activity id, the anchor, the anchor
+    /// height little-endian, the commitment, the sender, the recipient, the
+    /// account reference little-endian, the nullifier count as a
+    /// little-endian `u16`, then the nullifiers. `None` when it has no
+    /// nullifier or more than a `u16` counts.
     pub(super) fn to_bytes(&self) -> Option<Vec<u8>> {
         let count = u16::try_from(self.nullifiers.len()).ok()?;
         if count == 0 {
@@ -264,6 +270,7 @@ impl PrivatePaymentRecord {
         bytes.extend_from_slice(&self.account_index.to_le_bytes());
         bytes.extend_from_slice(&self.activity_id);
         bytes.extend_from_slice(&self.anchor);
+        bytes.extend_from_slice(&self.anchor_height.to_le_bytes());
         bytes.extend_from_slice(&self.commitment);
         bytes.extend_from_slice(&self.payment.sender);
         bytes.extend_from_slice(&self.payment.recipient);
@@ -286,6 +293,7 @@ impl PrivatePaymentRecord {
         let (account_index, rest) = rest.split_first_chunk::<4>()?;
         let (activity_id, rest) = rest.split_first_chunk::<32>()?;
         let (anchor, rest) = rest.split_first_chunk::<32>()?;
+        let (anchor_height, rest) = rest.split_first_chunk::<8>()?;
         let (commitment, rest) = rest.split_first_chunk::<32>()?;
         let (sender, rest) = rest.split_first_chunk::<32>()?;
         let (recipient, rest) = rest.split_first_chunk::<32>()?;
@@ -300,6 +308,7 @@ impl PrivatePaymentRecord {
             account_index: u32::from_le_bytes(*account_index),
             activity_id: *activity_id,
             anchor: *anchor,
+            anchor_height: u64::from_le_bytes(*anchor_height),
             commitment: *commitment,
             payment: PrivateContactPayment {
                 sender: *sender,
@@ -478,12 +487,15 @@ pub trait ShieldedStore: Send + Sync + 'static {
     /// durable once this returns, across a crash or power loss too: the
     /// spend is broadcast only after it. A store that cannot keep all of it
     /// durably fails, and the payment is refused.
+    /// `anchor_height` is the proved height of the recorded-anchor set the
+    /// spend's anchor was chosen from ([`PrivatePaymentRecord::anchor_height`]).
     fn arm_private_contact_payment(
         &mut self,
         id: SubwalletId,
         redrive: PendingRedrive,
         payment: PrivateContactPayment,
         commitments: &[[u8; 32]],
+        anchor_height: u64,
     ) -> Result<(), Self::Error>;
 
     /// The armed records of `wallet_id` that pay for a private contact
@@ -1267,6 +1279,7 @@ impl ShieldedStore for InMemoryShieldedStore {
         redrive: PendingRedrive,
         payment: PrivateContactPayment,
         commitments: &[[u8; 32]],
+        anchor_height: u64,
     ) -> Result<(), Self::Error> {
         if redrive.nullifiers.is_empty() {
             return Err(InMemoryStoreError(
@@ -1283,6 +1296,7 @@ impl ShieldedStore for InMemoryShieldedStore {
                     account_index: id.account_index,
                     activity_id: redrive.activity_id,
                     anchor: redrive.anchor,
+                    anchor_height,
                     commitment: *commitment,
                     payment,
                     nullifiers: redrive.nullifiers.clone(),

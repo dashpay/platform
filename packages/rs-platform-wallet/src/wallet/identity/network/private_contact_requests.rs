@@ -2243,6 +2243,8 @@ mod tests {
     use crate::wallet::identity::network::SeedCryptoProvider;
     use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
     #[cfg(feature = "shielded")]
+    use crate::wallet::shielded::coordinator::private_payment_journal_snapshot;
+    #[cfg(feature = "shielded")]
     use crate::wallet::shielded::operations::arm_redrive_before_broadcast;
     #[cfg(feature = "shielded")]
     use crate::wallet::shielded::{
@@ -3567,6 +3569,7 @@ mod tests {
                         "private document create from shielded pool",
                         Some(payment),
                         Some(&started),
+                        0,
                     )
                     .await?;
                     Err::<ResponseMetadata, _>(PlatformWalletError::ShieldedSpendUnconfirmed {
@@ -6207,6 +6210,7 @@ mod tests {
                             .expect("the send names its request"),
                     }),
                     Some(&started),
+                    0,
                 )
                 .await?;
                 // What the payment returns once the endpoint answered with a
@@ -6333,6 +6337,7 @@ mod tests {
                             .expect("the send names its request"),
                     }),
                     Some(&started),
+                    0,
                 )
                 .await?;
                 Err::<ResponseMetadata, _>(PlatformWalletError::ShieldedSpendUnconfirmed {
@@ -6426,35 +6431,31 @@ mod tests {
         assert_eq!(retry.lock().expect("retry").len(), 1, "the retry pays");
     }
 
-    /// A private payment that never executes is proven expired once its
-    /// anchor is pruned, one of its input notes still unspent and its entry
-    /// absent from the store: the coordinator discharges its journal record,
-    /// the pair is freed, a retry to it pays, and a reopened store restores
-    /// no hold. A still-recorded anchor, a spent input or an entry in the
-    /// store each keep the record and the hold.
+    /// Alice's wallet, bound to a coordinator over a new store, holding one
+    /// unspent input note: the private payment expiry tests pay from it.
     #[cfg(feature = "shielded")]
-    #[tokio::test]
-    async fn should_free_a_pair_once_its_private_payment_provably_expired() {
-        #[derive(Clone, Copy, Debug, PartialEq)]
-        enum Case {
-            Expired,
-            AnchorRecorded,
-            InputSpent,
-            EntryAppended,
-        }
-        let alice = identity(ALICE_PHRASE, ALICE);
-        let bob = identity(BOB_PHRASE, BOB);
-        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
-        let alice_signer = signer(ALICE_PHRASE, &alice);
-        let anchor = [0x7C; 32];
-        for case in [
-            Case::Expired,
-            Case::AnchorRecorded,
-            Case::InputSpent,
-            Case::EntryAppended,
-        ] {
+    struct ExpiryFixture {
+        _manager: PlatformWalletManager<RecordingPersistence>,
+        wallet: Arc<PlatformWallet>,
+        coordinator: Arc<NetworkShieldedCoordinator>,
+        subwallet: SubwalletId,
+        input: ShieldedNote,
+        db_path: std::path::PathBuf,
+        _dir: tempfile::TempDir,
+    }
+
+    #[cfg(feature = "shielded")]
+    impl ExpiryFixture {
+        /// The proved height of the anchor set the expiry tests judge by.
+        const ANCHOR_SET_HEIGHT: u64 = 10;
+        /// The anchor the payment's record names.
+        const ANCHOR: [u8; 32] = [0x7C; 32];
+
+        async fn new() -> Self {
+            let alice = identity(ALICE_PHRASE, ALICE);
+            let bob = identity(BOB_PHRASE, BOB);
             // A backend that keeps the viewing key, so the wallet binds.
-            let (_manager, alice_wallet) = wallet_on(
+            let (manager, wallet) = wallet_on(
                 RecordingPersistence::attesting(
                     PersistenceCapabilities::SHIELDED_FVK_RESTART
                         .union(PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART),
@@ -6468,18 +6469,18 @@ mod tests {
             let dir = tempfile::tempdir().expect("temporary shielded store");
             let db_path = dir.path().join("tree.sqlite");
             let coordinator = Arc::new(NetworkShieldedCoordinator::new(
-                Arc::clone(&alice_wallet.identity().sdk),
+                Arc::clone(&wallet.identity().sdk),
                 Network::Testnet,
                 db_path.clone(),
                 FileBackedShieldedStore::open_path(&db_path, 100).expect("the store"),
             ));
             // Bound, the coordinator holds the wallet's persister, on which it
             // notes the discharge.
-            alice_wallet
+            wallet
                 .bind_shielded(&seed(ALICE_PHRASE), &[0], &coordinator)
                 .await
                 .expect("bound");
-            let subwallet = SubwalletId::new(alice_wallet.wallet_id(), 0);
+            let subwallet = SubwalletId::new(wallet.wallet_id(), 0);
             let input = ShieldedNote {
                 position: 0,
                 cmx: [0x11; 32],
@@ -6495,10 +6496,38 @@ mod tests {
                 .await
                 .save_note(subwallet, &input)
                 .expect("the input note");
+            Self {
+                _manager: manager,
+                wallet,
+                coordinator,
+                subwallet,
+                input,
+                db_path,
+                _dir: dir,
+            }
+        }
+
+        /// Every response the mock answers is proved at `height`.
+        fn prove_at(&self, height: u64) {
+            let mut sdk = (*self.wallet.identity().sdk).clone();
+            sdk.mock().set_response_height(height);
+        }
+
+        /// Send a private request from Alice to Bob whose payment, spending
+        /// the input note against `anchor` read from a proof at
+        /// `anchor_height`, is journaled and times out unconfirmed. Returns
+        /// the entry paid for.
+        async fn pay_unconfirmed(&self, anchor: [u8; 32], anchor_height: u64) -> BinaryData {
+            let alice = identity(ALICE_PHRASE, ALICE);
+            let bob = identity(BOB_PHRASE, BOB);
+            let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+            let alice_signer = signer(ALICE_PHRASE, &alice);
             let paid = Arc::new(Mutex::new(Vec::new()));
             let pay = {
-                let store = Arc::clone(coordinator.store());
+                let store = Arc::clone(self.coordinator.store());
                 let paid = Arc::clone(&paid);
+                let subwallet = self.subwallet;
+                let nullifier = self.input.nullifier;
                 let (sender, recipient) = (alice.id(), bob.id());
                 move |entry: BinaryData, started: PaymentStarted| async move {
                     paid.lock().expect("paid").push(entry.clone());
@@ -6508,7 +6537,7 @@ mod tests {
                         subwallet,
                         Some([0x7D; 32]),
                         anchor,
-                        vec![[0x12; 32]],
+                        vec![nullifier],
                         &transition,
                         "private document create from shielded pool",
                         Some(PrivateContactPayment {
@@ -6519,6 +6548,7 @@ mod tests {
                                 .expect("the send names its request"),
                         }),
                         Some(&started),
+                        anchor_height,
                     )
                     .await?;
                     Err::<ResponseMetadata, _>(PlatformWalletError::ShieldedSpendUnconfirmed {
@@ -6527,8 +6557,10 @@ mod tests {
                     })
                 }
             };
-            let view = alice_wallet.identity().dashpay();
-            let sent = view
+            let sent = self
+                .wallet
+                .identity()
+                .dashpay()
                 .send_private_contact_request(
                     &alice.id(),
                     &bob.id(),
@@ -6548,59 +6580,62 @@ mod tests {
                 "{sent:?}"
             );
             let entry = paid.lock().expect("paid")[0].clone();
-            match case {
-                Case::InputSpent => {
-                    coordinator
-                        .store()
-                        .write()
-                        .await
-                        .mark_spent(subwallet, &input.nullifier)
-                        .expect("spent");
-                }
-                Case::EntryAppended => publish(&alice_wallet, 0, vec![entry.to_vec()]).await,
-                Case::Expired | Case::AnchorRecorded => {}
-            }
-            let recorded: HashSet<[u8; 32]> = match case {
-                Case::AnchorRecorded => HashSet::from([anchor]),
-                _ => HashSet::new(),
-            };
-            coordinator
-                .discharge_expired_private_payments([alice_wallet.wallet_id()], &recorded)
-                .await;
+            entry
+        }
 
-            let journaled = coordinator
+        /// The journal records a pass reads before it fetches the anchor set.
+        async fn journal_snapshot(
+            &self,
+        ) -> Vec<(WalletId, crate::wallet::shielded::PrivatePaymentRecord)> {
+            private_payment_journal_snapshot(
+                &*self.coordinator.store().read().await,
+                [self.wallet.wallet_id()],
+            )
+        }
+
+        /// The discharge a pass runs after a note scan covering
+        /// `scan_covered_height`, against `journal` and the anchor set
+        /// `recorded` proved at [`Self::ANCHOR_SET_HEIGHT`].
+        async fn discharge(
+            &self,
+            journal: &[(WalletId, crate::wallet::shielded::PrivatePaymentRecord)],
+            recorded: &HashSet<[u8; 32]>,
+            scan_covered_height: Option<u64>,
+        ) {
+            self.coordinator
+                .discharge_expired_private_payments(
+                    journal,
+                    recorded,
+                    Self::ANCHOR_SET_HEIGHT,
+                    scan_covered_height,
+                )
+                .await;
+        }
+
+        /// How many records the wallet's journal holds.
+        async fn journaled(&self) -> usize {
+            self.coordinator
                 .store()
                 .read()
                 .await
-                .private_payment_journal(alice_wallet.wallet_id())
+                .private_payment_journal(self.wallet.wallet_id())
                 .expect("the journal")
-                .len();
-            if case != Case::Expired {
-                assert_eq!(journaled, 1, "{case:?}: the record stays");
-                let held = view
-                    .send_private_contact_request(
-                        &alice.id(),
-                        &bob.id(),
-                        None,
-                        AutoAcceptProofSource::None,
-                        None,
-                        &alice_signer,
-                        &alice_crypto,
-                        no_payment,
-                    )
-                    .await;
-                assert!(
-                    matches!(
-                        held,
-                        Err(PlatformWalletError::PrivateContactRequestPending(_))
-                    ),
-                    "{case:?}: {held:?}"
-                );
-                continue;
-            }
-            assert_eq!(journaled, 0, "discharged");
-            let retry = Arc::new(Mutex::new(Vec::new()));
-            let retried = view
+                .len()
+        }
+
+        /// Send Alice's request to Bob again with `pay`.
+        async fn send_again<F, Fut>(&self, pay: F) -> Result<ContactRequest, PlatformWalletError>
+        where
+            F: FnOnce(BinaryData, PaymentStarted) -> Fut + Send,
+            Fut: Future<Output = Result<ResponseMetadata, PlatformWalletError>> + Send,
+        {
+            let alice = identity(ALICE_PHRASE, ALICE);
+            let bob = identity(BOB_PHRASE, BOB);
+            let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+            let alice_signer = signer(ALICE_PHRASE, &alice);
+            self.wallet
+                .identity()
+                .dashpay()
                 .send_private_contact_request(
                     &alice.id(),
                     &bob.id(),
@@ -6609,25 +6644,219 @@ mod tests {
                     None,
                     &alice_signer,
                     &alice_crypto,
-                    keep_entry(&retry),
+                    pay,
                 )
-                .await;
+                .await
+        }
+
+        /// The record stays and the pair it holds stays held.
+        async fn assert_kept(&self, case: &str) {
+            assert_eq!(self.journaled().await, 1, "{case}: the record stays");
+            let held = self.send_again(no_payment).await;
+            assert!(
+                matches!(
+                    held,
+                    Err(PlatformWalletError::PrivateContactRequestPending(_))
+                ),
+                "{case}: {held:?}"
+            );
+        }
+
+        /// The record is discharged, durably, and a retry to the pair pays.
+        async fn assert_discharged(&self, case: &str) {
+            assert_eq!(self.journaled().await, 0, "{case}: discharged");
+            let retry = Arc::new(Mutex::new(Vec::new()));
+            let retried = self.send_again(keep_entry(&retry)).await;
             assert!(
                 matches!(
                     retried,
                     Err(PlatformWalletError::PrivateContactRequestPending(_))
                 ),
-                "paid, not read back: {retried:?}"
+                "{case}: paid, not read back: {retried:?}"
             );
-            assert_eq!(retry.lock().expect("retry").len(), 1, "the retry pays");
-            // Reopened, the store keeps the discharge.
-            drop(coordinator);
-            let reopened = FileBackedShieldedStore::open_path(&db_path, 100).expect("reopened");
-            assert!(reopened
-                .private_payment_journal(alice_wallet.wallet_id())
-                .expect("the journal")
-                .is_empty());
+            assert_eq!(
+                retry.lock().expect("retry").len(),
+                1,
+                "{case}: the retry pays"
+            );
+            let reopened =
+                FileBackedShieldedStore::open_path(&self.db_path, 100).expect("reopened");
+            assert!(
+                reopened
+                    .private_payment_journal(self.wallet.wallet_id())
+                    .expect("the journal")
+                    .is_empty(),
+                "{case}: the reopened store keeps the discharge"
+            );
         }
+    }
+
+    /// A private payment that never executes is proven expired once its
+    /// anchor is pruned, one of its input notes still unspent and its entry
+    /// absent from the store: the coordinator discharges its journal record,
+    /// the pair is freed, a retry to it pays, and a reopened store restores
+    /// no hold. A still-recorded anchor, a spent input or an entry in the
+    /// store each keep the record and the hold.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_free_a_pair_once_its_private_payment_provably_expired() {
+        #[derive(Clone, Copy, Debug, PartialEq)]
+        enum Case {
+            Expired,
+            AnchorRecorded,
+            InputSpent,
+            EntryAppended,
+        }
+        let height = ExpiryFixture::ANCHOR_SET_HEIGHT;
+        for case in [
+            Case::Expired,
+            Case::AnchorRecorded,
+            Case::InputSpent,
+            Case::EntryAppended,
+        ] {
+            let fixture = ExpiryFixture::new().await;
+            fixture.prove_at(height);
+            let entry = fixture.pay_unconfirmed(ExpiryFixture::ANCHOR, height).await;
+            match case {
+                Case::InputSpent => {
+                    fixture
+                        .coordinator
+                        .store()
+                        .write()
+                        .await
+                        .mark_spent(fixture.subwallet, &fixture.input.nullifier)
+                        .expect("spent");
+                }
+                Case::EntryAppended => publish(&fixture.wallet, 0, vec![entry.to_vec()]).await,
+                Case::Expired | Case::AnchorRecorded => {}
+            }
+            let recorded: HashSet<[u8; 32]> = match case {
+                Case::AnchorRecorded => HashSet::from([ExpiryFixture::ANCHOR]),
+                _ => HashSet::new(),
+            };
+            let journal = fixture.journal_snapshot().await;
+            fixture.discharge(&journal, &recorded, Some(height)).await;
+            if case == Case::Expired {
+                fixture.assert_discharged(&format!("{case:?}")).await;
+            } else {
+                fixture.assert_kept(&format!("{case:?}")).await;
+            }
+        }
+    }
+
+    /// The expiry evidence is pinned to the anchor set's proved height H and
+    /// to the journal records read before it: a record journaled after the
+    /// snapshot, one armed again since, one whose anchor was read above H, a
+    /// note scan or a store read below H each discharge nothing. The payment
+    /// whose scan or store read was below H is discharged once both cover H,
+    /// and a retry to its pair pays.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_discharge_an_expired_private_payment_only_on_evidence_at_its_anchor_set_height()
+    {
+        #[derive(Clone, Copy, Debug, PartialEq)]
+        enum Case {
+            JournaledAfterSnapshot,
+            ArmedAgainSinceSnapshot,
+            AnchorReadAboveSet,
+            ScanBelowSet,
+            StoreBelowSet,
+        }
+        let height = ExpiryFixture::ANCHOR_SET_HEIGHT;
+        let recorded = HashSet::new();
+        for case in [
+            Case::JournaledAfterSnapshot,
+            Case::ArmedAgainSinceSnapshot,
+            Case::AnchorReadAboveSet,
+            Case::ScanBelowSet,
+            Case::StoreBelowSet,
+        ] {
+            let fixture = ExpiryFixture::new().await;
+            // Read before the anchor set: the payment is journaled after it.
+            let before = fixture.journal_snapshot().await;
+            fixture.prove_at(match case {
+                Case::StoreBelowSet => height - 1,
+                _ => height,
+            });
+            let anchor_height = match case {
+                Case::AnchorReadAboveSet => height + 1,
+                _ => height,
+            };
+            let entry = fixture
+                .pay_unconfirmed(ExpiryFixture::ANCHOR, anchor_height)
+                .await;
+            let journal = match case {
+                Case::JournaledAfterSnapshot => before,
+                _ => fixture.journal_snapshot().await,
+            };
+            assert!(
+                case == Case::JournaledAfterSnapshot || journal.len() == 1,
+                "{case:?}: the snapshot holds the record"
+            );
+            if case == Case::ArmedAgainSinceSnapshot {
+                // A retry armed the same entry again, against a newer anchor
+                // the set may not hold yet.
+                let payment = journal[0].1.payment;
+                arm_redrive_before_broadcast(
+                    fixture.coordinator.store(),
+                    fixture.subwallet,
+                    Some([0x7D; 32]),
+                    [0x7E; 32],
+                    vec![fixture.input.nullifier],
+                    &private_contact_request_payment(entry.clone()),
+                    "private document create from shielded pool",
+                    Some(payment),
+                    None,
+                    height,
+                )
+                .await
+                .expect("armed again");
+            }
+            let scan_covered_height = match case {
+                Case::ScanBelowSet => Some(height - 1),
+                _ => Some(height),
+            };
+            fixture
+                .discharge(&journal, &recorded, scan_covered_height)
+                .await;
+            fixture.assert_kept(&format!("{case:?}")).await;
+            if matches!(case, Case::ScanBelowSet | Case::StoreBelowSet) {
+                // The same payment, once the scan and the store read cover H.
+                fixture.prove_at(height);
+                fixture.discharge(&journal, &recorded, Some(height)).await;
+                fixture
+                    .assert_discharged(&format!("{case:?} at the set's height"))
+                    .await;
+            }
+        }
+    }
+
+    /// The store read for expiry keeps only the candidates it finds, however
+    /// many other entries it reads to show them absent.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_keep_only_candidate_commitments_from_the_store_read_for_expiry() {
+        let fixture = ExpiryFixture::new().await;
+        let held = [0xC1; 32];
+        let absent = [0xC2; 32];
+        let mut entries: Vec<Vec<u8>> = (0u32..2_000)
+            .map(|index| {
+                let mut entry = vec![0u8; 64];
+                entry[..4].copy_from_slice(&index.to_be_bytes());
+                entry[4] = 0xEE;
+                entry
+            })
+            .collect();
+        let mut candidate_entry = held.to_vec();
+        candidate_entry.extend_from_slice(&[0u8; 32]);
+        entries.insert(1_234, candidate_entry);
+        publish(&fixture.wallet, 0, entries).await;
+        let kept = fixture
+            .coordinator
+            .private_contact_requests_held(&HashSet::from([held, absent]), 0)
+            .await
+            .expect("the store reads");
+        assert_eq!(kept, HashSet::from([held]));
     }
 
     /// A payment that may have reached the network keeps its pair pending
@@ -6755,6 +6984,7 @@ mod tests {
                     "private document create from shielded pool",
                     None,
                     Some(&started),
+                    0,
                 )
                 .await?;
                 std::future::pending::<()>().await;
@@ -7227,6 +7457,7 @@ mod tests {
                     "private document create from shielded pool",
                     Some(payment),
                     Some(&started),
+                    0,
                 )
                 .await?;
                 Err::<ResponseMetadata, _>(PlatformWalletError::ShieldedSpendUnconfirmed {

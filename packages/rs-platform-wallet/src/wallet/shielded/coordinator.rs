@@ -90,8 +90,8 @@ use super::balance::{
 use super::file_store::FileBackedShieldedStore;
 use super::keys::AccountViewingKeys;
 use super::store::{
-    IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, ShieldedStore, StalePendingSpend,
-    SubwalletId,
+    IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, PrivatePaymentRecord, ShieldedStore,
+    StalePendingSpend, SubwalletId,
 };
 use super::CAUGHT_UP_COOLDOWN;
 use crate::error::PlatformWalletError;
@@ -1506,7 +1506,13 @@ impl NetworkShieldedCoordinator {
         // Runs before the balance read so freed notes are reflected in
         // this pass's balances. Skipped on a cancelled pass: the re-drive
         // broadcasts, and a skipped release simply waits for the next pass.
-        if let Some((snapshot, recorded)) = stranded_release.filter(|_| !cancelled) {
+        if let Some(PreScanEvidence {
+            stale,
+            journal,
+            recorded,
+            recorded_height,
+        }) = stranded_release.filter(|_| !cancelled)
+        {
             for (id, _) in &subwallets {
                 // Network broadcasts: a stop that lands after the scan's
                 // snapshot above stops the loop here, and the helper
@@ -1524,10 +1530,12 @@ impl NetworkShieldedCoordinator {
                 .await;
             }
             if !cancel.is_cancelled() {
-                self.release_stranded_spends(snapshot, &recorded).await;
+                self.release_stranded_spends(stale, &recorded).await;
                 self.discharge_expired_private_payments(
-                    subwallets.iter().map(|(id, _)| id.wallet_id),
+                    &journal,
                     &recorded,
+                    recorded_height,
+                    notes.covered_height,
                 )
                 .await;
             }
@@ -1679,30 +1687,37 @@ impl NetworkShieldedCoordinator {
             .unwrap_or(0)
     }
 
-    /// Pre-scan half of the stranded-reservation release: snapshot the
-    /// anchored reservations armed right now and fetch Platform's recorded
-    /// anchor set, or `None` when there is nothing to do.
+    /// Pre-scan half of the stranded-reservation release and of the private
+    /// payment expiry: snapshot the anchored reservations armed right now and
+    /// the wallets' private payment journal records, then fetch Platform's
+    /// recorded anchor set with the height of its proof, or `None` when there
+    /// is nothing to do.
     ///
     /// MUST run before the pass's note scan — the release's fund-safety
     /// argument ([`Self::release_stranded_spends`]) rests on both the
-    /// snapshot and the set predating the scan's spent-note reconcile.
+    /// snapshot and the set predating the scan's spent-note reconcile. The
+    /// journal is read before the set: a payment journaled after the fetch
+    /// may name a newer anchor than the set holds, so it is no candidate this
+    /// pass ([`Self::discharge_expired_private_payments`]).
     ///
-    /// Skips the network round-trip when no anchored reservation exists (the
-    /// common case), and treats a recorded-anchor fetch failure as
-    /// non-fatal — a sync must not fail because that query hiccupped; the
-    /// release simply waits for the next pass.
+    /// Skips the network round-trip when neither an anchored reservation nor
+    /// a journal record exists (the common case), and treats a
+    /// recorded-anchor fetch failure as non-fatal: a sync must not fail
+    /// because that query hiccupped, and the release simply waits for the
+    /// next pass.
     async fn prefetch_stranded_release(
         &self,
         subwallets: &[(SubwalletId, AccountViewingKeys)],
-    ) -> Option<(Vec<(SubwalletId, StalePendingSpend)>, HashSet<[u8; 32]>)> {
-        // Gather anchored reservations across every synced subwallet. The
-        // common case is none — then the network round-trip is skipped.
-        let stale: Vec<(SubwalletId, StalePendingSpend)> = {
+    ) -> Option<PreScanEvidence> {
+        // Gather anchored reservations across every synced subwallet, and the
+        // journal records of their wallets. The common case is none, and then
+        // the network round-trip is skipped.
+        let (stale, journal) = {
             let store = self.store.read().await;
-            let mut acc = Vec::new();
+            let mut stale: Vec<(SubwalletId, StalePendingSpend)> = Vec::new();
             for (id, _) in subwallets {
                 match store.stale_pending_spends(*id) {
-                    Ok(entries) => acc.extend(entries.into_iter().map(|entry| (*id, entry))),
+                    Ok(entries) => stale.extend(entries.into_iter().map(|entry| (*id, entry))),
                     Err(e) => tracing::warn!(
                         wallet_id = %hex::encode(id.wallet_id),
                         account = id.account_index,
@@ -1711,27 +1726,25 @@ impl NetworkShieldedCoordinator {
                     ),
                 }
             }
-            acc
+            let journal = private_payment_journal_snapshot(
+                &*store,
+                subwallets.iter().map(|(id, _)| id.wallet_id),
+            );
+            (stale, journal)
         };
-        // A private payment's journal record outlives its reservation: its
-        // expiry is judged against the same pre-scan anchor set
-        // (`Self::discharge_expired_private_payments`).
-        let journaled = {
-            let store = self.store.read().await;
-            subwallets.iter().any(|(id, _)| {
-                store
-                    .private_payment_journal(id.wallet_id)
-                    .is_ok_and(|records| !records.is_empty())
-            })
-        };
-        if stale.is_empty() && !journaled {
+        if stale.is_empty() && journal.is_empty() {
             return None;
         }
 
         use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
-        match dash_sdk::query_types::ShieldedAnchors::fetch_current(&self.sdk).await {
-            Ok(dash_sdk::query_types::ShieldedAnchors(anchors)) => {
-                Some((stale, anchors.into_iter().collect()))
+        match dash_sdk::query_types::ShieldedAnchors::fetch_current_with_metadata(&self.sdk).await {
+            Ok((dash_sdk::query_types::ShieldedAnchors(anchors), metadata)) => {
+                Some(PreScanEvidence {
+                    stale,
+                    journal,
+                    recorded: anchors.into_iter().collect(),
+                    recorded_height: metadata.height,
+                })
             }
             Err(e) => {
                 tracing::warn!(
@@ -1880,65 +1893,84 @@ impl NetworkShieldedCoordinator {
     /// Discharge the private payment journal records of payments proven
     /// expired, durably, and note them on their wallet's persister so the
     /// wallet releases the pairs they hold
-    /// (`WalletPersister::note_discharged_private_entries`). A payment is
-    /// proven never to execute when, after this pass's spent-note reconcile:
+    /// (`WalletPersister::note_discharged_private_entries`).
     ///
-    /// 1. its anchor is absent from the PRE-scan `recorded` set: a pruned
-    ///    root never re-enters it, so the transition can never execute from
-    ///    then on (`shielded_anchor_retention_blocks` 1000, pruned every
-    ///    `shielded_anchor_pruning_interval` 100 blocks);
-    /// 2. one of its input notes is still unspent: had it executed before
-    ///    the anchor was pruned, the reconcile would have seen its nullifiers
-    ///    spent;
-    /// 3. its entry is absent from DashPay's private contact request store,
-    ///    read raw after that anchor set was fetched: an entry starts with its
+    /// The candidates are `journal`, the records the pass read before it
+    /// fetched `recorded`, the anchor set proved at `recorded_height` (H).
+    /// A payment is proven never to execute when:
+    ///
+    /// 1. its record still reads in the journal exactly as `journal` has it:
+    ///    a payment journaled since, or armed again, may name an anchor newer
+    ///    than the set;
+    /// 2. its anchor was read from a proof at or below H (`anchor_height`), so
+    ///    the set at H holds it unless it was pruned, and it is absent from
+    ///    the set: a pruned root never re-enters it, so the transition cannot
+    ///    execute above H (`shielded_anchor_retention_blocks` 1000, pruned
+    ///    every `shielded_anchor_pruning_interval` 100 blocks);
+    /// 3. one of its input notes is still unspent after this pass's note scan,
+    ///    which covers H (`scan_covered_height`,
+    ///    `MultiSyncNotesResult::covered_height`): had it executed at or below
+    ///    H, the scan would have seen its nullifiers spent;
+    /// 4. its entry is absent from DashPay's private contact request store,
+    ///    read raw through its end with every page proved at or above H
+    ///    ([`Self::private_contact_requests_held`]): an entry starts with its
     ///    commitment, so none needs opening.
     ///
-    /// A relay refusal or a missing redrive record is never taken as proof.
-    /// A store read that fails discharges nothing; the next pass retries,
-    /// the journal record keeping the anchor.
+    /// Anything short of that discharges nothing this pass, and the next pass
+    /// retries: a scan or a store read below H, a read that fails, a record
+    /// changed since. A relay refusal or a missing redrive record is never
+    /// taken as proof. Points 1 and 3 are checked again under the store write
+    /// guard that discharges the record.
     pub(crate) async fn discharge_expired_private_payments(
         &self,
-        wallet_ids: impl IntoIterator<Item = WalletId>,
+        journal: &[(WalletId, PrivatePaymentRecord)],
         recorded: &HashSet<[u8; 32]>,
+        recorded_height: u64,
+        scan_covered_height: Option<u64>,
     ) {
-        let wallets: std::collections::BTreeSet<WalletId> = wallet_ids.into_iter().collect();
-        let candidates: Vec<(WalletId, super::store::PrivatePaymentRecord)> = {
+        let pruned: Vec<&(WalletId, PrivatePaymentRecord)> = journal
+            .iter()
+            .filter(|(_, record)| {
+                record.anchor_height <= recorded_height && !recorded.contains(&record.anchor)
+            })
+            .collect();
+        if pruned.is_empty() {
+            return;
+        }
+        if !matches!(scan_covered_height, Some(covered) if covered >= recorded_height) {
+            tracing::debug!(
+                ?scan_covered_height,
+                recorded_height,
+                "private payment expiry: the note scan does not cover the anchor set's height; \
+                 retried next pass"
+            );
+            return;
+        }
+        let candidates: Vec<(WalletId, PrivatePaymentRecord)> = {
             let store = self.store.read().await;
-            let mut candidates = Vec::new();
-            for wallet_id in &wallets {
-                let Ok(records) = store.private_payment_journal(*wallet_id) else {
-                    continue;
-                };
-                for record in records {
-                    if recorded.contains(&record.anchor) {
-                        continue;
-                    }
-                    let notes = store
-                        .get_all_notes(SubwalletId::new(*wallet_id, record.account_index))
-                        .unwrap_or_default();
-                    let input_unspent = record.nullifiers.iter().any(|nullifier| {
-                        notes
-                            .iter()
-                            .any(|note| note.nullifier == *nullifier && !note.is_spent)
-                    });
-                    if input_unspent {
-                        candidates.push((*wallet_id, record));
-                    }
-                }
-            }
-            candidates
+            pruned
+                .into_iter()
+                .filter(|(wallet_id, record)| expirable(&*store, *wallet_id, record))
+                .cloned()
+                .collect()
         };
         if candidates.is_empty() {
             return;
         }
-        let appended = match self.private_contact_request_commitments().await {
-            Ok(appended) => appended,
+        let commitments: HashSet<[u8; 32]> = candidates
+            .iter()
+            .map(|(_, record)| record.commitment)
+            .collect();
+        let held = match self
+            .private_contact_requests_held(&commitments, recorded_height)
+            .await
+        {
+            Ok(held) => held,
             Err(error) => {
                 tracing::warn!(
                     %error,
-                    "private payment expiry: the private contact request store was not read; \
-                     retried next pass"
+                    "private payment expiry: the private contact request store was not read at \
+                     the anchor set's height; retried next pass"
                 );
                 return;
             }
@@ -1946,7 +1978,7 @@ impl NetworkShieldedCoordinator {
         let persisters = self.persisters.read().await;
         let mut store = self.store.write().await;
         for (wallet_id, record) in candidates {
-            if appended.contains(&record.commitment) {
+            if held.contains(&record.commitment) || !expirable(&*store, wallet_id, &record) {
                 continue;
             }
             match store.discharge_private_payment(wallet_id, &record.commitment) {
@@ -1971,32 +2003,53 @@ impl NetworkShieldedCoordinator {
         }
     }
 
-    /// The commitments of every entry of DashPay's private contact request
-    /// store, read now from its start, raw: an entry starts with its
-    /// commitment.
-    async fn private_contact_request_commitments(
+    /// Which of `candidates` DashPay's private contact request store holds,
+    /// read now from its start through the end its first page shows, raw: an
+    /// entry starts with its commitment. Only the matches are kept, though
+    /// every entry is read to show the others absent. Every page must be
+    /// proved at or above `floor`, the first page's end with it: a page below
+    /// fails the read, as the store it shows may predate the floor.
+    pub(crate) async fn private_contact_requests_held(
         &self,
+        candidates: &HashSet<[u8; 32]>,
+        floor: u64,
     ) -> Result<HashSet<[u8; 32]>, PlatformWalletError> {
         let contract_id = dashpay_contract()?.id();
-        let mut pages = std::pin::pin!(self.sdk.private_document_pages(
+        let mut pages = std::pin::pin!(self.sdk.private_document_pages_with_heights(
             contract_id,
             PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
             0,
             MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
         ));
-        let mut commitments = HashSet::new();
+        let mut held = HashSet::new();
+        let mut read = false;
         while let Some(page) = pages.next().await {
-            for entry in page?.entries.entries {
+            let (page, height) = page?;
+            if height < floor {
+                return Err(PlatformWalletError::ShieldedSyncFailed(format!(
+                    "the private contact request store's page from position {} is proved at \
+                     height {height}, below {floor}",
+                    page.start_position
+                )));
+            }
+            read = true;
+            for entry in page.entries.entries {
                 if let Some(commitment) = entry
                     .data
                     .get(..32)
                     .and_then(|commitment| <[u8; 32]>::try_from(commitment).ok())
+                    .filter(|commitment| candidates.contains(commitment))
                 {
-                    commitments.insert(commitment);
+                    held.insert(commitment);
                 }
             }
         }
-        Ok(commitments)
+        if !read {
+            return Err(PlatformWalletError::ShieldedSyncFailed(
+                "the private contact request store returned no page".to_string(),
+            ));
+        }
+        Ok(held)
     }
 
     /// Derive best-effort activity entries from each subwallet's
@@ -2395,6 +2448,70 @@ fn is_own_orchard_recipient(views: &AccountViewingKeys, recipient: &[u8]) -> boo
         .incoming_viewing_key
         .diversifier_index(&addr)
         .is_some()
+}
+
+/// What a sync pass reads before its note scan, for the steps after it that
+/// may act only on evidence from before the scan
+/// ([`NetworkShieldedCoordinator::prefetch_stranded_release`]).
+struct PreScanEvidence {
+    /// The anchored reservations, for
+    /// [`NetworkShieldedCoordinator::release_stranded_spends`].
+    stale: Vec<(SubwalletId, StalePendingSpend)>,
+    /// The private payment journal records of the synced wallets, read before
+    /// the anchor set was fetched, for
+    /// [`NetworkShieldedCoordinator::discharge_expired_private_payments`].
+    journal: Vec<(WalletId, PrivatePaymentRecord)>,
+    /// Platform's recorded anchor set.
+    recorded: HashSet<[u8; 32]>,
+    /// The height of the proof the anchor set was read from.
+    recorded_height: u64,
+}
+
+/// The private payment journal records of `wallet_ids`, each wallet once, in
+/// order. A wallet whose journal does not read has none here: nothing of it is
+/// a candidate for expiry.
+pub(crate) fn private_payment_journal_snapshot<S: ShieldedStore>(
+    store: &S,
+    wallet_ids: impl IntoIterator<Item = WalletId>,
+) -> Vec<(WalletId, PrivatePaymentRecord)> {
+    let wallets: std::collections::BTreeSet<WalletId> = wallet_ids.into_iter().collect();
+    let mut journal = Vec::new();
+    for wallet_id in wallets {
+        match store.private_payment_journal(wallet_id) {
+            Ok(records) => journal.extend(records.into_iter().map(|record| (wallet_id, record))),
+            Err(error) => tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                %error,
+                "private payment expiry: the journal does not read; no payment of the wallet \
+                 is a candidate this pass"
+            ),
+        }
+    }
+    journal
+}
+
+/// Whether `wallet_id`'s journal still holds `record` exactly as a pass's
+/// snapshot read it, with one of its input notes unspent. A store read that
+/// fails says no.
+fn expirable<S: ShieldedStore>(
+    store: &S,
+    wallet_id: WalletId,
+    record: &PrivatePaymentRecord,
+) -> bool {
+    let unchanged = store
+        .private_payment_journal(wallet_id)
+        .is_ok_and(|records| records.contains(record));
+    if !unchanged {
+        return false;
+    }
+    let Ok(notes) = store.get_all_notes(SubwalletId::new(wallet_id, record.account_index)) else {
+        return false;
+    };
+    record.nullifiers.iter().any(|nullifier| {
+        notes
+            .iter()
+            .any(|note| note.nullifier == *nullifier && !note.is_spent)
+    })
 }
 
 #[cfg(test)]

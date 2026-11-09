@@ -1648,7 +1648,8 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
             .collect::<Vec<[u8; 32]>>()
     });
     let built = async {
-        let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
+        let (spends, anchor, anchor_height) =
+            extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
         let (state_transition, fee_used) =
             build_private_document_create_from_shielded_pool_transition(
                 spends,
@@ -1667,10 +1668,10 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
             fee_used, exact_fee,
             "builder fee must match the reserved private document create fee"
         );
-        Ok::<_, PlatformWalletError>((state_transition, fee_used, anchor.to_bytes()))
+        Ok::<_, PlatformWalletError>((state_transition, fee_used, anchor.to_bytes(), anchor_height))
     }
     .await;
-    let (state_transition, fee_used, anchor_bytes) = match built {
+    let (state_transition, fee_used, anchor_bytes, anchor_height) = match built {
         Ok(built) => built,
         Err(e) => {
             // Nothing was saved or broadcast.
@@ -1712,6 +1713,7 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
             reservation,
             state_transition,
             anchor: anchor_bytes,
+            anchor_height,
             private_contact,
             journaled: journaled.as_deref(),
             payment_started,
@@ -1742,6 +1744,8 @@ struct PrivateDocumentSubmission<'a, S: ShieldedStore> {
     reservation: NoteReservation<S>,
     state_transition: StateTransition,
     anchor: [u8; 32],
+    /// The proved height of the recorded-anchor set `anchor` was chosen from.
+    anchor_height: u64,
     private_contact: Option<PrivateContactPayment>,
     journaled: Option<&'a [[u8; 32]]>,
     payment_started: &'a PaymentStarted,
@@ -1779,6 +1783,7 @@ where
         mut reservation,
         state_transition,
         anchor,
+        anchor_height,
         private_contact,
         journaled,
         payment_started,
@@ -1796,6 +1801,7 @@ where
             "private document create from shielded pool",
             private_contact,
             Some(payment_started),
+            anchor_height,
         )
         .await?;
         if anchored {
@@ -2998,6 +3004,19 @@ async fn extract_spends_and_anchor<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     notes: &[ShieldedNote],
 ) -> Result<(Vec<SpendableNote>, Anchor), PlatformWalletError> {
+    extract_spends_and_recorded_anchor(sdk, store, notes)
+        .await
+        .map(|(spends, anchor, _)| (spends, anchor))
+}
+
+/// [`extract_spends_and_anchor`], with the proved height of the recorded
+/// anchor set the anchor was chosen from: the anchor was recorded at that
+/// height.
+async fn extract_spends_and_recorded_anchor<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    notes: &[ShieldedNote],
+) -> Result<(Vec<SpendableNote>, Anchor, u64), PlatformWalletError> {
     // Nothing selected — fail before the network round-trip.
     if notes.is_empty() {
         return Err(PlatformWalletError::ShieldedBuildError(
@@ -3008,8 +3027,8 @@ async fn extract_spends_and_anchor<S: ShieldedStore>(
     // Fetch the recorded anchor set OUTSIDE the store lock so the network
     // round-trip doesn't serialize with other store users, and so the lock is
     // held only for the mutually-consistent depth/witness probe below.
-    let dash_sdk::query_types::ShieldedAnchors(recorded_anchors) =
-        dash_sdk::query_types::ShieldedAnchors::fetch_current(sdk).await?;
+    let (dash_sdk::query_types::ShieldedAnchors(recorded_anchors), metadata) =
+        dash_sdk::query_types::ShieldedAnchors::fetch_current_with_metadata(sdk).await?;
     let recorded: HashSet<[u8; 32]> = recorded_anchors.into_iter().collect();
 
     // Hold a single read lock across the whole probe so the checkpoint depths
@@ -3018,6 +3037,7 @@ async fn extract_spends_and_anchor<S: ShieldedStore>(
     // under us.
     let store = store.read().await;
     select_recorded_spends(&*store, notes, &recorded)
+        .map(|(spends, anchor)| (spends, anchor, metadata.height))
 }
 
 /// Pick the shallowest checkpoint depth whose tree root is in `recorded`,
@@ -3555,6 +3575,9 @@ async fn broadcast_shielded_spend_with_redrive_with_metadata<S: ShieldedStore>(
 /// not be recovered. `payment_started`, when given, is marked right after
 /// the record is saved, under the same store lock: dropped while it waits
 /// for the lock, the spend leaves neither a record nor a mark.
+/// `anchor_recorded_at` is the proved height of the recorded-anchor set the
+/// spend's anchor was chosen from, kept in the journal record: an expiry
+/// proof needs the anchor absent from a set proved at or above it.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn arm_redrive_before_broadcast<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
@@ -3566,6 +3589,7 @@ pub(crate) async fn arm_redrive_before_broadcast<S: ShieldedStore>(
     operation: &'static str,
     private_contact: Option<PrivateContactPayment>,
     payment_started: Option<&PaymentStarted>,
+    anchor_recorded_at: u64,
 ) -> Result<(), PlatformWalletError> {
     use dpp::serialization::PlatformSerializable;
 
@@ -3604,9 +3628,13 @@ pub(crate) async fn arm_redrive_before_broadcast<S: ShieldedStore>(
     };
     let mut store = store.write().await;
     match journal {
-        Some((payment, commitments)) => {
-            store.arm_private_contact_payment(id, redrive, payment, &commitments)
-        }
+        Some((payment, commitments)) => store.arm_private_contact_payment(
+            id,
+            redrive,
+            payment,
+            &commitments,
+            anchor_recorded_at,
+        ),
         None => store.arm_redrive(id, redrive),
     }
     .map_err(|e| {
@@ -4771,6 +4799,7 @@ mod redrive_tests {
                     reservation,
                     state_transition: transition,
                     anchor: [7; 32],
+                    anchor_height: 0,
                     private_contact: Some(payment),
                     journaled: Some(&[[9; 32]]),
                     payment_started: &started,
@@ -4915,6 +4944,7 @@ mod redrive_tests {
                 reservation,
                 state_transition: transition,
                 anchor: [7; 32],
+                anchor_height: 0,
                 private_contact: Some(PrivateContactPayment {
                     sender: [0xB1; 32],
                     recipient: [0xA1; 32],
@@ -5030,6 +5060,7 @@ mod redrive_tests {
                 },
                 payment,
                 &[[0xC4; 32]],
+                0,
             )
             .expect("the newer payment saved");
             drop(held);
@@ -5161,6 +5192,7 @@ mod redrive_tests {
                 "private document create from shielded pool",
                 Some(payment),
                 Some(&started),
+                0,
             )
             .await
             .expect("saved before the broadcast");
@@ -5546,6 +5578,7 @@ mod redrive_tests {
             "test spend",
             None,
             Some(&started),
+            0,
         );
         let mut save = Box::pin(save);
         assert!(
@@ -5572,6 +5605,7 @@ mod redrive_tests {
             "test spend",
             None,
             Some(&started),
+            0,
         )
         .await
         .expect("saved");
@@ -5606,6 +5640,7 @@ mod redrive_tests {
             "test spend",
             None,
             None,
+            0,
         )
         .await;
         assert!(
@@ -5629,6 +5664,7 @@ mod redrive_tests {
             "test spend",
             None,
             None,
+            0,
         )
         .await
         .expect("saved");

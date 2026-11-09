@@ -2105,6 +2105,7 @@ mod private_payment_hold_tests {
                     account_reference: 0,
                 },
                 &[[0xC1; 32]],
+                0,
             )
             .expect("the payment saved");
     }

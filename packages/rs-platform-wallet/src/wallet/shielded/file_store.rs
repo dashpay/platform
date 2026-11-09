@@ -993,6 +993,7 @@ impl ShieldedStore for FileBackedShieldedStore {
         redrive: PendingRedrive,
         payment: PrivateContactPayment,
         commitments: &[[u8; 32]],
+        anchor_height: u64,
     ) -> Result<(), Self::Error> {
         let records: Vec<PrivatePaymentRecord> = commitments
             .iter()
@@ -1000,6 +1001,7 @@ impl ShieldedStore for FileBackedShieldedStore {
                 account_index: id.account_index,
                 activity_id: redrive.activity_id,
                 anchor: redrive.anchor,
+                anchor_height,
                 commitment: *commitment,
                 payment,
                 nullifiers: redrive.nullifiers.clone(),
@@ -1625,7 +1627,7 @@ mod tests {
         {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
             store
-                .arm_private_contact_payment(id, record(1, 3), payment, &[[0xC1; 32]])
+                .arm_private_contact_payment(id, record(1, 3), payment, &[[0xC1; 32]], 0)
                 .expect("arm the payment");
             store.arm_redrive(id, record(4, 6)).expect("arm a spend");
             store.bump_redrive_attempts(id, &[1u8; 32]).expect("bump");
@@ -1695,6 +1697,7 @@ mod tests {
                     record(activity, nullifier),
                     payment,
                     &[[activity; 32]],
+                    0,
                 )
                 .expect("armed");
         };
@@ -1920,7 +1923,7 @@ mod tests {
         let arm = || {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
             store
-                .arm_private_contact_payment(id, record.clone(), payment, &[[0xC2; 32]])
+                .arm_private_contact_payment(id, record.clone(), payment, &[[0xC2; 32]], 0)
                 .unwrap();
         };
         let set = |assignment: &str| {
@@ -2816,6 +2819,7 @@ mod tests {
             account_index: 1,
             activity_id: redrive.activity_id,
             anchor: redrive.anchor,
+            anchor_height: 0,
             commitment: [0xC3; 32],
             payment,
             nullifiers: redrive.nullifiers.clone(),
@@ -2828,7 +2832,7 @@ mod tests {
             store.mark_pending(id, nullifier).expect("reserved");
         }
         store
-            .arm_private_contact_payment(id, redrive.clone(), payment, &[[0xC3; 32]])
+            .arm_private_contact_payment(id, redrive.clone(), payment, &[[0xC3; 32]], 0)
             .expect("armed");
         assert!(store
             .private_payment_journal_open(wallet_id)
@@ -2911,6 +2915,7 @@ mod tests {
                         },
                         payment,
                         &[[0xD4; 32]],
+                        0,
                     )
                     .expect("armed");
                 store
