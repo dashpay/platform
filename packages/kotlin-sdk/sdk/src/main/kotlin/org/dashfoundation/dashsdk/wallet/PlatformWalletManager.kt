@@ -79,6 +79,15 @@ data class PlatformWalletPersistenceCapabilities(
          * is deliberately absent: Android never attests it).
          */
         const val CORE_SWEEP_REMOVAL: Long = NativePersistenceBridge.CAPABILITY_CORE_SWEEP_REMOVAL
+        /**
+         * The private contact request sync's scan state (each identity's
+         * read position in DashPay's private contact request store, and its
+         * private contacts' shielded addresses) is stored on its round and
+         * restored at load. Mirrors
+         * `PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE`.
+         */
+        const val PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long =
+            NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
     }
 }
 

@@ -58,10 +58,10 @@ use platform_wallet_ffi::{
     DpnsNameStateFFI, IdentityEntryFFI, IdentityKeyEntryFFI, IdentityKeyRemovalFFI,
     IdentityKeyRestoreFFI, IdentityRestoreEntryFFI, InvitationEntryFFI, OutPointFFI,
     PaymentRestoreEntryFFI, PersistenceCallbacks, PersistenceCallbacksExtension,
-    PlatformAddressFFI, ProviderSpecialTxRestoreEntryFFI, SpentOutPointFFI, SweepBatchFFI,
-    TokenBalanceRemovalFFI, TokenBalanceUpsertFFI, TransactionRecordFFI,
-    UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI, WalletChangeSetFFI,
-    WalletRestoreEntryFFI,
+    PlatformAddressFFI, PrivateContactRequestsPositionFFI, PrivateShieldedAddressFFI,
+    ProviderSpecialTxRestoreEntryFFI, SpentOutPointFFI, SweepBatchFFI, TokenBalanceRemovalFFI,
+    TokenBalanceUpsertFFI, TransactionRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI,
+    UtxoRestoreEntryFFI, WalletChangeSetFFI, WalletRestoreEntryFFI,
 };
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
@@ -244,6 +244,17 @@ pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> Persistence
             "onWalletChangesetDashPayBackfill",
             WALLET_CHANGESET_DASHPAY_BACKFILL_DESCRIPTOR,
         ),
+        private_contact_scan_state: bridge_overrides(
+            env,
+            bridge,
+            "onPersistPrivateContactScanState",
+            PERSIST_PRIVATE_CONTACT_SCAN_STATE_DESCRIPTOR,
+        ) && bridge_overrides(
+            env,
+            bridge,
+            "onLoadPrivateContactScanState",
+            LOAD_PRIVATE_CONTACT_SCAN_STATE_DESCRIPTOR,
+        ),
     })
 }
 
@@ -300,6 +311,10 @@ struct BridgeOverrides {
     header: bool,
     /// `onWalletChangesetDashPayBackfill`, which stores the record.
     backfill: bool,
+    /// Both `onPersistPrivateContactScanState` and
+    /// `onLoadPrivateContactScanState`: an inherited no-op store would
+    /// acknowledge a read position it never kept.
+    private_contact_scan_state: bool,
 }
 
 /// The extension slots wired for a bridge with `overrides` (see
@@ -320,6 +335,15 @@ fn extension_for(overrides: BridgeOverrides) -> PersistenceCallbacksExtension {
         } else {
             None
         },
+        on_persist_private_contact_scan_state_fn: overrides
+            .private_contact_scan_state
+            .then_some(tramp_persist_private_contact_scan_state),
+        on_load_private_contact_scan_state_fn: overrides
+            .private_contact_scan_state
+            .then_some(tramp_load_private_contact_scan_state),
+        on_load_private_contact_scan_state_free_fn: overrides
+            .private_contact_scan_state
+            .then_some(tramp_load_private_contact_scan_state_free),
         ..Default::default()
     }
 }
@@ -1082,6 +1106,216 @@ unsafe extern "C" fn tramp_persist_wallet_dashpay_backfill(
         )?
         .i()
     })
+}
+
+/// Packed `byte[]` row widths of the private contact request scan state, the
+/// same flat packing the backfill cover set uses: a read position is
+/// `identityId ‖ position (u64 LE) ‖ keyFingerprint`, a shielded address
+/// `ownerId ‖ contactId ‖ address`, an address removal `ownerId ‖
+/// contactId`, a cleared identity its id.
+pub(crate) const PRIVATE_POSITION_ENTRY_LEN: usize = 32 + 8 + 32;
+pub(crate) const PRIVATE_ADDRESS_ENTRY_LEN: usize = 32 + 32 + 43;
+pub(crate) const PRIVATE_ADDRESS_REMOVAL_ENTRY_LEN: usize = 32 + 32;
+
+/// Descriptor of `NativePersistenceBridge.onPersistPrivateContactScanState`:
+/// `(walletId, positions, addresses, removedAddresses, clearedIdentities)`.
+const PERSIST_PRIVATE_CONTACT_SCAN_STATE_DESCRIPTOR: &str = "([B[B[B[B[B)I";
+
+/// Descriptor of `NativePersistenceBridge.onLoadPrivateContactScanState`:
+/// `(walletId) -> [positions, addresses]`.
+const LOAD_PRIVATE_CONTACT_SCAN_STATE_DESCRIPTOR: &str = "([B)[[B";
+
+fn pack_private_positions(rows: &[PrivateContactRequestsPositionFFI]) -> Vec<u8> {
+    let mut packed = Vec::with_capacity(rows.len() * PRIVATE_POSITION_ENTRY_LEN);
+    for row in rows {
+        packed.extend_from_slice(&row.identity_id);
+        packed.extend_from_slice(&row.position.to_le_bytes());
+        packed.extend_from_slice(&row.key_fingerprint);
+    }
+    packed
+}
+
+fn pack_private_addresses(rows: &[PrivateShieldedAddressFFI]) -> Vec<u8> {
+    let mut packed = Vec::with_capacity(rows.len() * PRIVATE_ADDRESS_ENTRY_LEN);
+    for row in rows {
+        packed.extend_from_slice(&row.owner_id);
+        packed.extend_from_slice(&row.contact_id);
+        packed.extend_from_slice(&row.address);
+    }
+    packed
+}
+
+/// The rows packed in `packed`, or `None` when its length is not a whole
+/// number of rows.
+fn unpack_private_positions(packed: &[u8]) -> Option<Vec<PrivateContactRequestsPositionFFI>> {
+    let (rows, rest) = packed.as_chunks::<PRIVATE_POSITION_ENTRY_LEN>();
+    if !rest.is_empty() {
+        return None;
+    }
+    rows.iter()
+        .map(|row| {
+            Some(PrivateContactRequestsPositionFFI {
+                identity_id: row[..32].try_into().ok()?,
+                position: u64::from_le_bytes(row[32..40].try_into().ok()?),
+                key_fingerprint: row[40..].try_into().ok()?,
+            })
+        })
+        .collect()
+}
+
+/// The rows packed in `packed`, or `None` when its length is not a whole
+/// number of rows.
+fn unpack_private_addresses(packed: &[u8]) -> Option<Vec<PrivateShieldedAddressFFI>> {
+    let (rows, rest) = packed.as_chunks::<PRIVATE_ADDRESS_ENTRY_LEN>();
+    if !rest.is_empty() {
+        return None;
+    }
+    rows.iter()
+        .map(|row| {
+            Some(PrivateShieldedAddressFFI {
+                owner_id: row[..32].try_into().ok()?,
+                contact_id: row[32..64].try_into().ok()?,
+                address: row[64..].try_into().ok()?,
+            })
+        })
+        .collect()
+}
+
+/// Deliver a round's private contact request scan state (see
+/// `PersistPrivateContactScanStateFn`) as four packed arrays.
+#[allow(clippy::too_many_arguments)]
+unsafe extern "C" fn tramp_persist_private_contact_scan_state(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    positions: *const PrivateContactRequestsPositionFFI,
+    positions_count: usize,
+    addresses: *const PrivateShieldedAddressFFI,
+    addresses_count: usize,
+    removed_addresses: *const ContactRequestRemovalFFI,
+    removed_addresses_count: usize,
+    cleared_identities: *const [u8; 32],
+    cleared_identities_count: usize,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        let positions = env.byte_array_from_slice(&pack_private_positions(slice_or_empty(
+            positions,
+            positions_count,
+        )))?;
+        let addresses = env.byte_array_from_slice(&pack_private_addresses(slice_or_empty(
+            addresses,
+            addresses_count,
+        )))?;
+        let removed_rows = slice_or_empty(removed_addresses, removed_addresses_count);
+        let mut removed =
+            Vec::with_capacity(removed_rows.len() * PRIVATE_ADDRESS_REMOVAL_ENTRY_LEN);
+        for row in removed_rows {
+            removed.extend_from_slice(&row.owner_id);
+            removed.extend_from_slice(&row.contact_id);
+        }
+        let removed = env.byte_array_from_slice(&removed)?;
+        let cleared: Vec<u8> = slice_or_empty(cleared_identities, cleared_identities_count)
+            .iter()
+            .flatten()
+            .copied()
+            .collect();
+        let cleared = env.byte_array_from_slice(&cleared)?;
+        env.call_method(
+            bridge,
+            "onPersistPrivateContactScanState",
+            PERSIST_PRIVATE_CONTACT_SCAN_STATE_DESCRIPTOR,
+            &[
+                (&wid).into(),
+                (&positions).into(),
+                (&addresses).into(),
+                (&removed).into(),
+                (&cleared).into(),
+            ],
+        )?
+        .i()
+    })
+}
+
+/// Hand Rust a wallet's stored scan state (see
+/// `LoadPrivateContactScanStateFn`). The rows are staged in owned buffers
+/// and minted as raw arrays only once the whole read succeeded; a failed
+/// read, an exception or a malformed array returns `ERR_JNI`, which fails
+/// the load rather than reading the store from its start.
+unsafe extern "C" fn tramp_load_private_contact_scan_state(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    out_positions: *mut *const PrivateContactRequestsPositionFFI,
+    out_positions_count: *mut usize,
+    out_addresses: *mut *const PrivateShieldedAddressFFI,
+    out_addresses_count: *mut usize,
+) -> i32 {
+    *out_positions = ptr::null();
+    *out_positions_count = 0;
+    *out_addresses = ptr::null();
+    *out_addresses_count = 0;
+    let loaded = with_bridge_load(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        let arrays: JObjectArray = env
+            .call_method(
+                bridge,
+                "onLoadPrivateContactScanState",
+                LOAD_PRIVATE_CONTACT_SCAN_STATE_DESCRIPTOR,
+                &[(&wid).into()],
+            )?
+            .l()?
+            .into();
+        if env.get_array_length(&arrays)? != 2 {
+            return Err(jni::errors::Error::JniCall(
+                jni::errors::JniError::InvalidArguments,
+            ));
+        }
+        let positions: JByteArray = env.get_object_array_element(&arrays, 0)?.into();
+        let addresses: JByteArray = env.get_object_array_element(&arrays, 1)?.into();
+        Ok((
+            env.convert_byte_array(&positions)?,
+            env.convert_byte_array(&addresses)?,
+        ))
+    });
+    let Some((positions, addresses)) = loaded else {
+        return ERR_JNI;
+    };
+    let (Some(positions), Some(addresses)) = (
+        unpack_private_positions(&positions),
+        unpack_private_addresses(&addresses),
+    ) else {
+        return ERR_JNI;
+    };
+    if !positions.is_empty() {
+        *out_positions_count = positions.len();
+        *out_positions = Box::into_raw(positions.into_boxed_slice()) as *const _;
+    }
+    if !addresses.is_empty() {
+        *out_addresses_count = addresses.len();
+        *out_addresses = Box::into_raw(addresses.into_boxed_slice()) as *const _;
+    }
+    0
+}
+
+/// Release the arrays [`tramp_load_private_contact_scan_state`] minted.
+unsafe extern "C" fn tramp_load_private_contact_scan_state_free(
+    _context: *mut c_void,
+    positions: *const PrivateContactRequestsPositionFFI,
+    positions_count: usize,
+    addresses: *const PrivateShieldedAddressFFI,
+    addresses_count: usize,
+) {
+    if !positions.is_null() {
+        drop(Box::from_raw(ptr::slice_from_raw_parts_mut(
+            positions.cast_mut(),
+            positions_count,
+        )));
+    }
+    if !addresses.is_null() {
+        drop(Box::from_raw(ptr::slice_from_raw_parts_mut(
+            addresses.cast_mut(),
+            addresses_count,
+        )));
+    }
 }
 
 unsafe fn persist_changeset_account(
@@ -5136,6 +5370,7 @@ mod tests {
                 sweeps: false,
                 header,
                 backfill,
+                private_contact_scan_state: false,
             });
             assert_eq!(
                 extension.on_persist_wallet_dashpay_backfill_fn.is_some(),
@@ -5147,9 +5382,88 @@ mod tests {
             sweeps: true,
             header: false,
             backfill: false,
+            private_contact_scan_state: false,
         });
         assert!(sweeps_only.on_persist_wallet_changeset_sweeps_fn.is_some());
         assert!(sweeps_only.on_persist_wallet_dashpay_backfill_fn.is_none());
+    }
+
+    /// The scan-state trio is wired only for a bridge that implements both
+    /// its store and its load; one that inherits either gets none of it, so
+    /// `FFIPersister` does not attest the capability and each launch reads
+    /// the private store from its start.
+    #[test]
+    fn the_scan_state_slots_are_wired_only_for_a_bridge_that_stores_and_loads_it() {
+        for wired in [false, true] {
+            let extension = extension_for(BridgeOverrides {
+                sweeps: false,
+                header: false,
+                backfill: false,
+                private_contact_scan_state: wired,
+            });
+            assert_eq!(
+                extension.on_persist_private_contact_scan_state_fn.is_some(),
+                wired
+            );
+            assert_eq!(
+                extension.on_load_private_contact_scan_state_fn.is_some(),
+                wired
+            );
+            assert_eq!(
+                extension
+                    .on_load_private_contact_scan_state_free_fn
+                    .is_some(),
+                wired
+            );
+        }
+        let names = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            method_descriptor(&names(&["[B", "[B", "[B", "[B", "[B"]), "int"),
+            PERSIST_PRIVATE_CONTACT_SCAN_STATE_DESCRIPTOR
+        );
+        assert_eq!(
+            method_descriptor(&names(&["[B"]), "[[B"),
+            LOAD_PRIVATE_CONTACT_SCAN_STATE_DESCRIPTOR
+        );
+    }
+
+    /// A read position and a shielded address survive the packed arrays the
+    /// bridge stores and hands back, a full-width position included; an
+    /// array that is not a whole number of rows is refused.
+    #[test]
+    fn the_scan_state_rows_round_trip_through_their_packed_arrays() {
+        let positions = [
+            PrivateContactRequestsPositionFFI {
+                identity_id: [7; 32],
+                position: u64::MAX,
+                key_fingerprint: [3; 32],
+            },
+            PrivateContactRequestsPositionFFI {
+                identity_id: [8; 32],
+                position: 12,
+                key_fingerprint: [4; 32],
+            },
+        ];
+        let addresses = [PrivateShieldedAddressFFI {
+            owner_id: [7; 32],
+            contact_id: [5; 32],
+            address: [9; 43],
+        }];
+        let packed = pack_private_positions(&positions);
+        assert_eq!(packed.len(), 2 * PRIVATE_POSITION_ENTRY_LEN);
+        assert_eq!(
+            unpack_private_positions(&packed).as_deref(),
+            Some(&positions[..])
+        );
+        let packed = pack_private_addresses(&addresses);
+        assert_eq!(packed.len(), PRIVATE_ADDRESS_ENTRY_LEN);
+        assert_eq!(
+            unpack_private_addresses(&packed).as_deref(),
+            Some(&addresses[..])
+        );
+        assert_eq!(unpack_private_positions(&[]).as_deref(), Some(&[][..]));
+        assert!(unpack_private_positions(&[0; PRIVATE_POSITION_ENTRY_LEN + 1]).is_none());
+        assert!(unpack_private_addresses(&[0; PRIVATE_ADDRESS_ENTRY_LEN - 1]).is_none());
     }
 
     /// A bridge inheriting the no-op account writers gets neither account

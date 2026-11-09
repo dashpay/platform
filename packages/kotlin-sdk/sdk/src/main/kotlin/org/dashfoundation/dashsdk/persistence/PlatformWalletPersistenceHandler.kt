@@ -47,6 +47,8 @@ import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.InvitationEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressesSyncStateEntity
+import org.dashfoundation.dashsdk.persistence.entities.PrivateContactRequestsPositionEntity
+import org.dashfoundation.dashsdk.persistence.entities.PrivateShieldedAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.PublicKeyEntity
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedActivityEntity
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedNoteEntity
@@ -154,7 +156,8 @@ class PlatformWalletPersistenceHandler(
             CAPABILITY_WALLET_RESTORE or
             CAPABILITY_DPNS_NAME_STATES or
             CAPABILITY_TRACKED_ASSET_LOCKS or
-            CAPABILITY_CORE_SWEEP_REMOVAL
+            CAPABILITY_CORE_SWEEP_REMOVAL or
+            CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
 
     /**
      * The single-thread executor created when no [dispatcher] is injected.
@@ -807,6 +810,54 @@ class PlatformWalletPersistenceHandler(
         }
         0
     }
+
+    /**
+     * Port of `PlatformWalletPersistenceHandler.swift`'s
+     * `persistPrivateContactScanState`: staged into the round, so the read
+     * position commits with, or rolls back with, the contact requests read
+     * before it. Identities the round removed lose theirs first, so a new
+     * position or address in the same round stands.
+     */
+    override fun onPersistPrivateContactScanState(
+        walletId: ByteArray,
+        positions: ByteArray,
+        addresses: ByteArray,
+        removedAddresses: ByteArray,
+        clearedIdentities: ByteArray,
+    ): Int = guarded {
+        val positionRows = unpackPrivatePositions(walletId, positions)
+        val addressRows = unpackPrivateAddresses(walletId, addresses)
+        val removed = chunks(removedAddresses, NativePersistenceBridge.PRIVATE_ADDRESS_REMOVAL_ENTRY_SIZE)
+            .map { it.copyOfRange(0, 32) to it.copyOfRange(32, 64) }
+        val cleared = chunks(clearedIdentities, NativePersistenceBridge.PRIVATE_CLEARED_IDENTITY_ENTRY_SIZE)
+        stage(walletId) { db ->
+            // Drop stale post-deletion callbacks (can't resurrect a wallet).
+            db.walletDao().getByWalletId(walletId) ?: return@stage
+            val dao = db.privateContactScanStateDao()
+            for (identityId in cleared) {
+                dao.deletePositionsOfIdentity(walletId, identityId)
+                dao.deleteAddressesOfIdentity(walletId, identityId)
+            }
+            positionRows.forEach { dao.upsertPosition(it) }
+            addressRows.forEach { dao.upsertAddress(it) }
+            for ((ownerId, contactId) in removed) {
+                dao.deleteAddress(walletId, ownerId, contactId)
+            }
+        }
+        0
+    }
+
+    /** The stored scan state of [walletId], packed as it was stored. */
+    override fun onLoadPrivateContactScanState(walletId: ByteArray): Array<ByteArray> =
+        loadOrThrow {
+            runBlockingResult {
+                val dao = database.privateContactScanStateDao()
+                arrayOf(
+                    packPrivatePositions(dao.positionsByWallet(walletId)),
+                    packPrivateAddresses(dao.addressesByWallet(walletId)),
+                )
+            }
+        }
 
     override fun onWalletChangesetChainLockHeight(walletId: ByteArray, height: Int): Int = guarded {
         val round = openRound(walletId)
@@ -3650,6 +3701,8 @@ class PlatformWalletPersistenceHandler(
             database.shieldedDao().deleteActivityByWallet(walletId)
             database.shieldedDao().deleteSyncStatesByWallet(walletId)
             database.shieldedDao().deleteViewingKeysByWallet(walletId)
+            database.privateContactScanStateDao().deletePositionsByWallet(walletId)
+            database.privateContactScanStateDao().deleteAddressesByWallet(walletId)
 
             // The wallet row itself — cascades accounts → core / platform
             // addresses.
@@ -4135,6 +4188,9 @@ class PlatformWalletPersistenceHandler(
         internal const val CAPABILITY_CORE_SWEEP_REMOVAL: Long =
             NativePersistenceBridge.CAPABILITY_CORE_SWEEP_REMOVAL
 
+        internal const val CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long =
+            NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
+
         private const val TAG = "DashPersistence"
 
         /**
@@ -4552,6 +4608,67 @@ internal fun contractBoundsJsonToId(blob: ByteArray): ByteArray? {
 
 private fun now(): java.util.Date = java.util.Date()
 private fun nowSeconds(): Long = System.currentTimeMillis() / 1000
+
+/** [packed] split into its rows of [size] bytes; a partial row is refused. */
+internal fun chunks(packed: ByteArray, size: Int): List<ByteArray> {
+    require(packed.size % size == 0) { "packed rows must be $size bytes each" }
+    return (0 until packed.size / size).map { packed.copyOfRange(it * size, (it + 1) * size) }
+}
+
+/** Rows of [NativePersistenceBridge.onPersistPrivateContactScanState]'s `positions`. */
+internal fun unpackPrivatePositions(
+    walletId: ByteArray,
+    packed: ByteArray,
+): List<PrivateContactRequestsPositionEntity> =
+    chunks(packed, NativePersistenceBridge.PRIVATE_POSITION_ENTRY_SIZE).map { row ->
+        PrivateContactRequestsPositionEntity(
+            walletId = walletId.copyOf(),
+            identityId = row.copyOfRange(0, 32),
+            position = java.nio.ByteBuffer.wrap(row, 32, 8)
+                .order(java.nio.ByteOrder.LITTLE_ENDIAN).long,
+            keyFingerprint = row.copyOfRange(40, 72),
+        )
+    }
+
+/** Rows of [NativePersistenceBridge.onPersistPrivateContactScanState]'s `addresses`. */
+internal fun unpackPrivateAddresses(
+    walletId: ByteArray,
+    packed: ByteArray,
+): List<PrivateShieldedAddressEntity> =
+    chunks(packed, NativePersistenceBridge.PRIVATE_ADDRESS_ENTRY_SIZE).map { row ->
+        PrivateShieldedAddressEntity(
+            walletId = walletId.copyOf(),
+            ownerId = row.copyOfRange(0, 32),
+            contactId = row.copyOfRange(32, 64),
+            address = row.copyOfRange(64, 107),
+        )
+    }
+
+/**
+ * [rows] packed as [NativePersistenceBridge.onLoadPrivateContactScanState]
+ * hands them back. A row whose stored bytes have the wrong length is
+ * skipped rather than handed back misaligned.
+ */
+internal fun packPrivatePositions(rows: List<PrivateContactRequestsPositionEntity>): ByteArray {
+    val kept = rows.filter { it.identityId.size == 32 && it.keyFingerprint.size == 32 }
+    val buffer = java.nio.ByteBuffer
+        .allocate(kept.size * NativePersistenceBridge.PRIVATE_POSITION_ENTRY_SIZE)
+        .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+    for (row in kept) {
+        buffer.put(row.identityId).putLong(row.position).put(row.keyFingerprint)
+    }
+    return buffer.array()
+}
+
+/** See [packPrivatePositions]. */
+internal fun packPrivateAddresses(rows: List<PrivateShieldedAddressEntity>): ByteArray {
+    val kept = rows.filter { it.ownerId.size == 32 && it.contactId.size == 32 && it.address.size == 43 }
+    val buffer = java.nio.ByteBuffer.allocate(kept.size * NativePersistenceBridge.PRIVATE_ADDRESS_ENTRY_SIZE)
+    for (row in kept) {
+        buffer.put(row.ownerId).put(row.contactId).put(row.address)
+    }
+    return buffer.array()
+}
 
 /**
  * Split a DIP-0018 bech32m platform address into `(addressType, 20-byte
