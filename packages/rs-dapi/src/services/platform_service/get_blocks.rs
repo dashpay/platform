@@ -17,7 +17,7 @@ use sha2::{Digest, Sha256};
 use super::error_mapping::base64_decode;
 use crate::cache::make_cache_key;
 use crate::clients::tenderdash_client::{
-    Block as TenderdashBlock, BlockTxResult, MAX_TENDERDASH_HEIGHT,
+    Block as TenderdashBlock, BlockTxResult, MAX_TENDERDASH_HEIGHT, ResultBlock, ResultBlockResults,
 };
 use crate::error::{DAPIResult, DapiError};
 use crate::services::platform_service::PlatformServiceImpl;
@@ -60,28 +60,41 @@ impl PlatformServiceImpl {
         Ok(Response::new(response))
     }
 
-    /// `None` means the node's chain does not reach this height. A block it holds without
-    /// its results is an error instead, because that block must not vanish from a range.
     async fn fetch_block(&self, height: u64) -> DAPIResult<Option<Block>> {
-        let result = match self.tenderdash_client.block(height).await {
-            Ok(result) => result,
-            Err(error) if error.is_missing_tenderdash_height() => return Ok(None),
-            Err(error) => return Err(error),
-        };
-        let Some(block) = result.block else {
-            return Ok(None);
-        };
-        let results = if block.data.txs.is_empty() {
-            Vec::new()
-        } else {
-            self.tenderdash_client
-                .block_results(height)
-                .await?
-                .txs_results
-        };
-
-        build_block(height, &result.block_id.hash, block, &results).map(Some)
+        read_block(
+            height,
+            self.tenderdash_client.block(height),
+            self.tenderdash_client.block_results(height),
+        )
+        .await
     }
+}
+
+/// Await the two Tenderdash answers for one height; `results` is only awaited, and so only
+/// sent, when the block has transactions.
+///
+/// `None` means the node's chain does not reach this height. A block it holds without its
+/// results is an error instead, because that block must not vanish from a range.
+async fn read_block(
+    height: u64,
+    block: impl Future<Output = DAPIResult<ResultBlock>>,
+    results: impl Future<Output = DAPIResult<ResultBlockResults>>,
+) -> DAPIResult<Option<Block>> {
+    let result = match block.await {
+        Ok(result) => result,
+        Err(error) if error.is_missing_tenderdash_height() => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let Some(block) = result.block else {
+        return Ok(None);
+    };
+    let results = if block.data.txs.is_empty() {
+        Vec::new()
+    } else {
+        results.await?.txs_results
+    };
+
+    build_block(height, &result.block_id.hash, block, &results).map(Some)
 }
 
 /// Validate the request, returning the heights it asks for.
@@ -201,7 +214,6 @@ fn parse_time_ms(time: &str) -> DAPIResult<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::clients::tenderdash_client::{ResultBlock, ResultBlockResults};
     use dapi_grpc::platform::v0::get_blocks_request::GetBlocksRequestV0;
     use serde_json::json;
 
@@ -223,6 +235,15 @@ mod tests {
             }],
             ..Default::default()
         }
+    }
+
+    /// An error in the shape Tenderdash's RPC answers with.
+    fn tenderdash_error(data: &str) -> DapiError {
+        DapiError::from_tenderdash_error(json!({
+            "code": -32603,
+            "message": "Internal error",
+            "data": data,
+        }))
     }
 
     fn heights(blocks: &[Block]) -> Vec<u64> {
@@ -318,20 +339,43 @@ mod tests {
 
     #[tokio::test]
     async fn should_fail_rather_than_omit_a_block_whose_results_are_missing() {
-        let result = collect_blocks(3..=12, |height| async move {
-            if height > 5 {
-                Err(DapiError::from_tenderdash_error(json!({
-                    "code": -32603,
-                    "message": "Internal error",
-                    "data": "could not find results for height #6",
-                })))
+        let result = collect_blocks(3..=12, |height| {
+            let txs = if height > 5 {
+                json!(["AQI="])
             } else {
-                Ok(Some(block_of_size(height, 1)))
-            }
+                json!(null)
+            };
+            read_block(height, async move { Ok(tenderdash_block(txs)) }, async {
+                Err(tenderdash_error("could not find results for height #6"))
+            })
         })
         .await;
 
-        assert!(matches!(result, Err(DapiError::TenderdashClientError(_))));
+        let error = result.unwrap_err();
+        assert!(error.is_missing_tenderdash_height());
+    }
+
+    #[tokio::test]
+    async fn should_end_the_range_when_the_block_itself_is_missing() {
+        let blocks = collect_blocks(3..=12, |height| {
+            read_block(
+                height,
+                async move {
+                    if height > 5 {
+                        Err(tenderdash_error(
+                            "height must be less than or equal to the head of the node's blockchain",
+                        ))
+                    } else {
+                        Ok(tenderdash_block(json!(null)))
+                    }
+                },
+                async { Err(DapiError::Internal("no results expected".to_string())) },
+            )
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(heights(&blocks), [3, 4, 5]);
     }
 
     #[tokio::test]
