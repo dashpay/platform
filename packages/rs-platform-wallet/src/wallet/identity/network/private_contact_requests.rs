@@ -2816,6 +2816,124 @@ mod tests {
         assert_eq!(marker(&persistence), Some(false), "unmarked once released");
     }
 
+    /// A saved private payment whose transition reads back but whose
+    /// association with the request it pays for does not leaves the relaunched
+    /// wallet held: the restoration from the shielded store fails rather than
+    /// lose the pair it holds, and no public contact request goes to anyone.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_stay_held_when_a_saved_payment_s_association_does_not_read() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let bob_signer = signer(BOB_PHRASE, &bob);
+        let incoming = public_request(&alice, &bob, 3);
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let db_path = dir.path().join("tree.sqlite");
+
+        let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open the store");
+        let before_coordinator = Arc::new(NetworkShieldedCoordinator::new(
+            Arc::new(dash_sdk::Sdk::new_mock()),
+            Network::Testnet,
+            db_path.clone(),
+            store,
+        ));
+        let (_before_manager, before) = wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![]).await;
+        add_incoming(&before, BOB, &incoming).await;
+        let kept = Arc::new(snapshot(&before, &bob.id(), BOB_PHRASE).await);
+        let subwallet = SubwalletId::new(before.wallet_id(), 0);
+        let pay = {
+            let store = Arc::clone(before_coordinator.store());
+            let (sender, recipient) = (bob.id(), alice.id());
+            move |entry: BinaryData, started: PaymentStarted| async move {
+                let transition = private_contact_request_payment(entry);
+                let payment = PrivateContactPayment {
+                    sender: sender.to_buffer(),
+                    recipient: recipient.to_buffer(),
+                    account_reference: started
+                        .account_reference()
+                        .expect("the send names its request"),
+                };
+                arm_redrive_before_broadcast(
+                    &store,
+                    subwallet,
+                    Some([0x77; 32]),
+                    [7; 32],
+                    vec![[1; 32]],
+                    &transition,
+                    "private document create from shielded pool",
+                    Some(payment),
+                    Some(&started),
+                )
+                .await?;
+                Err::<ResponseMetadata, _>(PlatformWalletError::ShieldedSpendUnconfirmed {
+                    operation: "private document create",
+                    reason: "the result wait timed out".to_string(),
+                })
+            }
+        };
+        let paid = before
+            .identity()
+            .dashpay()
+            .accept_private_contact_request(&incoming, None, &bob_signer, &bob_crypto, pay)
+            .await;
+        assert!(
+            matches!(
+                paid,
+                Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+            ),
+            "{paid:?}"
+        );
+        drop(before_coordinator);
+        rusqlite::Connection::open(&db_path)
+            .expect("the store's file")
+            .execute(
+                "UPDATE shielded_pending_spends SET private_contact_payment = x'01'",
+                [],
+            )
+            .expect("the association is damaged");
+
+        let restarted_manager = PlatformWalletManager::new(
+            Arc::new(dashpay_sdk(&[&alice, &bob], vec![], PlatformVersion::latest(), None).await),
+            kept,
+            Arc::new(NoopEventHandler),
+        );
+        restarted_manager
+            .load_from_persistor()
+            .await
+            .expect("the relaunch loads");
+        restarted_manager
+            .configure_shielded(&db_path)
+            .await
+            .expect("the shielded store opens");
+        let restarted = restarted_manager
+            .get_wallet(&before.wallet_id())
+            .await
+            .expect("the relaunched wallet");
+        assert!(restarted.private_payments_held().await, "still held");
+        for recipient in [alice.id(), Identifier::from([0xCC; 32])] {
+            let public = restarted
+                .identity()
+                .dashpay()
+                .send_contact_request_with_external_signer(
+                    &bob.id(),
+                    &recipient,
+                    None,
+                    AutoAcceptProofSource::None,
+                    &bob_signer,
+                    &bob_crypto,
+                )
+                .await;
+            assert!(
+                matches!(
+                    public,
+                    Err(PlatformWalletError::PrivateContactPaymentsNotRestored)
+                ),
+                "{recipient}: {public:?}"
+            );
+        }
+    }
+
     /// The page of DashPay's private store from `start`, holding `entries`.
     fn store_page(start: u64, entries: Vec<Vec<u8>>) -> PrivateDocumentEntries {
         let total_count = start + entries.len() as u64;
