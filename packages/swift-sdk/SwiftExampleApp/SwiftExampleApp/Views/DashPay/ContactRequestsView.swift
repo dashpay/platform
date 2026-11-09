@@ -186,6 +186,9 @@ struct ContactRequestsView: View {
             await attachOrStartSync(walletManager)
             if let wallet = try? requireWallet() {
                 privateRefreshNotice = await syncPrivateContactRequests(wallet)
+                if privateRefreshNotice == nil {
+                    walletPending.recordPrivateSync()
+                }
             }
             reloadPendingReplies()
         }
@@ -292,11 +295,17 @@ struct ContactRequestsView: View {
                 kickDashPaySync(walletManager)
             } catch {
                 switch ContactRequestSubmissionOutcome.of(error) {
-                case .mayHaveGoneThrough, .privateRequestPending:
+                case .mayHaveGoneThrough:
                     // As `SendViewModel` treats an unconfirmed spend: not a
                     // failure to retry. The wallet keeps the reply pending,
-                    // and the row reads that; a sync (pull to refresh reads
-                    // the private store) settles it.
+                    // and the row reads that; the next sync settles it.
+                    kickDashPaySync(walletManager)
+                case .privateRequestPending:
+                    // Nothing was sent, and the wallet may hold nothing for
+                    // it (the store was not read to its end): the row stays
+                    // pending until a private sync (pull to refresh) settles
+                    // it.
+                    walletPending.recordRefusal(of: contactId)
                     kickDashPaySync(walletManager)
                 case .failed(let message):
                     rowErrors[contactId] = "Accept failed: \(message)"

@@ -57,6 +57,12 @@ enum ContactRequestSubmissionOutcome: Equatable {
 /// (Accept, Ignore, Send). A failed read is not "nothing pending": the last
 /// successful snapshot stays, and those controls stay off for every contact
 /// until a read covering it succeeds.
+///
+/// A send or accept Rust refused as pending (code 71) is kept apart from the
+/// read: code 71 also means the private store could not be read to its end
+/// before the first send or accept since load, with nothing reserved, so the
+/// read may find nothing pending. That contact stays pending, with the
+/// private sync offered, until a private sync completes.
 struct PrivateRepliesPendingSnapshot: Equatable {
     static let unavailableMessage = "Could not read whether a private request to "
         + "this contact is pending. Sync private requests to check again."
@@ -67,6 +73,9 @@ struct PrivateRepliesPendingSnapshot: Equatable {
     private(set) var covered: Set<Data> = []
     /// False after a failed read, until a read succeeds.
     private(set) var available = true
+    /// Contacts a send or accept was refused for as pending (code 71) since
+    /// the last completed private sync.
+    private(set) var refused: Set<Data> = []
 
     /// Record a read of `contactIds`: the pending ones, or nil when the read
     /// failed.
@@ -80,10 +89,23 @@ struct PrivateRepliesPendingSnapshot: Equatable {
         available = true
     }
 
-    /// Whether the last successful read found a private request to
-    /// `contactId` pending.
+    /// Record that a send or accept to `contactId` was refused as pending
+    /// (code 71).
+    mutating func recordRefusal(of contactId: Data) {
+        refused.insert(contactId)
+    }
+
+    /// Record a completed private sync, which settles every refusal: the
+    /// next read says what is still pending.
+    mutating func recordPrivateSync() {
+        refused.removeAll()
+    }
+
+    /// Whether `contactId` is pending: the last successful read found a
+    /// private request to it, or a send or accept to it was refused as
+    /// pending since the last completed private sync.
     func isPending(_ contactId: Data) -> Bool {
-        pending.contains(contactId)
+        pending.contains(contactId) || refused.contains(contactId)
     }
 
     /// Whether the last read failed.
@@ -92,7 +114,7 @@ struct PrivateRepliesPendingSnapshot: Equatable {
     /// Whether a send or reply to `contactId` may be offered: a successful
     /// read covered it and found nothing pending.
     func allowsSubmission(to contactId: Data) -> Bool {
-        available && covered.contains(contactId) && !pending.contains(contactId)
+        available && covered.contains(contactId) && !isPending(contactId)
     }
 }
 
