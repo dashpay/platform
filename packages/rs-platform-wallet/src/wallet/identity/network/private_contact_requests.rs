@@ -403,7 +403,9 @@ fn release_reservation(
 /// (`WalletPersister::note_read_back_private_entries`), once what records
 /// them is durable: at once for a backend that commits inline, after a flush
 /// otherwise. A failed flush notes nothing, which keeps the records, and so
-/// the pairs held, until a later read.
+/// the pairs held, until a later read. Only a shielded build keeps a journal,
+/// so only it notes anything.
+#[cfg(feature = "shielded")]
 fn note_read_back_once_durable(persister: &WalletPersister, read_back: Vec<[u8; 32]>) {
     if !persister.store_commits_inline() {
         if let Err(error) = persister.flush() {
@@ -1965,7 +1967,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             // account reference (another copy of it), or is
                             // newer. An entry whose record was not built, its
                             // recipient unreadable, settles nothing.
-                            let mut read_back = Vec::new();
+                            #[cfg(feature = "shielded")]
+                            let mut read_back: Vec<[u8; 32]> = Vec::new();
                             for (commitment, record) in sent_commitments
                                 .iter()
                                 .filter(|(_, record)| record.sender_id == identity_id)
@@ -1979,6 +1982,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                                     });
                                 if reconciled {
                                     managed.settle_private_reply(&record.recipient_id, commitment);
+                                    #[cfg(feature = "shielded")]
                                     read_back.push(*commitment);
                                 }
                             }
@@ -2002,6 +2006,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             // read back are discharged once what records them is
                             // durable: a record lost with them would leave the
                             // pair unheld while no request of it is recorded.
+                            #[cfg(feature = "shielded")]
                             if !read_back.is_empty() {
                                 note_read_back_once_durable(&self.persister, read_back);
                             }

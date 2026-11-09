@@ -1300,6 +1300,31 @@ impl NetworkShieldedCoordinator {
         Ok(())
     }
 
+    /// Discharge the private payment journal records of the private contact
+    /// requests each registered wallet's private sync read back and recorded
+    /// durably (`WalletPersister::note_read_back_private_entries`).
+    async fn discharge_read_back_private_payments(&self) {
+        let noted: Vec<(WalletId, WalletPersister)> = self
+            .persisters
+            .read()
+            .await
+            .iter()
+            .filter(|(_, persister)| persister.has_read_back_private_entries())
+            .map(|(wallet_id, persister)| (*wallet_id, persister.clone()))
+            .collect();
+        if noted.is_empty() {
+            return;
+        }
+        let mut store = self.store.write().await;
+        for (wallet_id, persister) in &noted {
+            super::operations::discharge_read_back_private_payments(
+                &mut *store,
+                persister,
+                *wallet_id,
+            );
+        }
+    }
+
     /// Run one shielded sync pass for every registered wallet on
     /// this coordinator's network. Returns a per-wallet outcome
     /// summary suitable for emission to UI / persistence layers
@@ -1334,31 +1359,6 @@ impl NetworkShieldedCoordinator {
     /// [`sync_notes_across`]: super::sync::sync_notes_across
     /// [`PlatformEventManager::on_shielded_sync_completed`]:
     ///     crate::events::PlatformEventManager::on_shielded_sync_completed
-    /// Discharge the private payment journal records of the private contact
-    /// requests each registered wallet's private sync read back and recorded
-    /// durably (`WalletPersister::note_read_back_private_entries`).
-    async fn discharge_read_back_private_payments(&self) {
-        let noted: Vec<(WalletId, WalletPersister)> = self
-            .persisters
-            .read()
-            .await
-            .iter()
-            .filter(|(_, persister)| persister.has_read_back_private_entries())
-            .map(|(wallet_id, persister)| (*wallet_id, persister.clone()))
-            .collect();
-        if noted.is_empty() {
-            return;
-        }
-        let mut store = self.store.write().await;
-        for (wallet_id, persister) in &noted {
-            super::operations::discharge_read_back_private_payments(
-                &mut *store,
-                persister,
-                *wallet_id,
-            );
-        }
-    }
-
     pub async fn sync(&self, force: bool, cancel: &CancellationToken) -> ShieldedSyncPassSummary {
         // A stop that landed before any work: nothing to finalize, so
         // return the empty summary without touching Platform or the

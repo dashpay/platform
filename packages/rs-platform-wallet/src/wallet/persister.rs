@@ -66,7 +66,9 @@ pub struct WalletPersister {
     /// coordinator's sync pass, a restoration, a private payment). Shared by
     /// the clones the wallet and the coordinator hold. In memory only: a
     /// record left undischarged by a restart holds nothing, as the request
-    /// it pays for is recorded.
+    /// it pays for is recorded. Only a shielded build keeps a journal to
+    /// discharge, so only it keeps them.
+    #[cfg(feature = "shielded")]
     read_back_private_entries: Arc<std::sync::Mutex<BTreeSet<[u8; 32]>>>,
     /// The (sender, recipient) pairs of journaled private payments whose
     /// sender the wallet did not manage when they were last restored: an
@@ -117,6 +119,7 @@ impl WalletPersister {
             wallet_id,
             inner,
             contact_payment_gate: Arc::new(tokio::sync::Mutex::new(())),
+            #[cfg(feature = "shielded")]
             read_back_private_entries: Arc::default(),
             absent_sender_private_pairs: Arc::default(),
             discharged_private_entries: Arc::default(),
@@ -127,6 +130,7 @@ impl WalletPersister {
     /// Note the commitments of private contact request entries a private sync
     /// read back and recorded durably, for their journal records to be
     /// discharged ([`Self::take_read_back_private_entries`]).
+    #[cfg(feature = "shielded")]
     pub(crate) fn note_read_back_private_entries(
         &self,
         commitments: impl IntoIterator<Item = [u8; 32]>,
@@ -291,6 +295,7 @@ impl WalletPersister {
         self.private_payments_unrestored.load(Ordering::Acquire)
     }
 
+    #[cfg(feature = "shielded")]
     fn read_back_entries(&self) -> std::sync::MutexGuard<'_, BTreeSet<[u8; 32]>> {
         self.read_back_private_entries
             .lock()
