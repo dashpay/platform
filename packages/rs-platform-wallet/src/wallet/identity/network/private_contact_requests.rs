@@ -1069,6 +1069,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// viewing key, and, in every build, for an identity loaded with its
     /// position record marking a private payment that may be unresolved
     /// (`PrivateContactRequestsPosition::private_payments_unresolved`).
+    ///
+    /// Then `identity_id` is fetched from Platform, proved, and its keys
+    /// folded into the cached identity (`IdentityWallet::refresh_identity`'s
+    /// fold): a DashPay encryption or decryption key another device added,
+    /// to which a request in the store may be sealed, changes the identity's
+    /// scanning keys, which rewinds its read
+    /// (`Self::reconcile_private_scan_keys`), so the store is read again
+    /// with it before anything is decided. A fetch that fails refuses the
+    /// request as the SDK reported it, with nothing read or sent: the keys a
+    /// read would scan with are not shown current. One proved identity fetch
+    /// per public request or acceptance.
     pub(super) async fn read_private_store_before_deciding<C>(
         &self,
         identity_id: &Identifier,
@@ -1083,6 +1094,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         {
             return Err(PlatformWalletError::PrivateContactPaymentsNotRestored);
         }
+        self.fetch_and_fold_identity(identity_id).await?;
         match self
             .read_private_store_before_sending(identity_id, recipient, crypto)
             .await
@@ -6450,6 +6462,119 @@ mod tests {
         assert_eq!(report.requests.len(), 1, "{:?}", report.requests);
         managed(&bob_wallet, BOB, |managed| {
             assert!(managed.dashpay().incoming_request(&alice.id()).is_some());
+        })
+        .await;
+    }
+
+    /// A public request is decided with the keys Platform proves the sender
+    /// identity holds now: Bob read the store to its end with keys missing the
+    /// decryption key another device added, to which Alice's private request
+    /// is sealed. His public request to her fetches his identity, folds the
+    /// key in, reads the store again with it, finds her private request, and
+    /// is refused: a public one would publish the pair she kept private.
+    #[tokio::test]
+    async fn should_read_the_store_with_a_key_another_device_added_before_a_public_request() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let bob_signer = signer(BOB_PHRASE, &bob);
+        let (entry, _) = alice_to_bob([0x55; 43]).await;
+        let stale = without_key(&bob, DECRYPTION_KEY_ID);
+        let (_manager, bob_wallet) = wallet(BOB_PHRASE, &stale, &[&alice, &bob], vec![entry]).await;
+        let view = bob_wallet.identity().dashpay();
+        let report = view
+            .sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("Bob reads the store with his older keys");
+        assert_eq!(report.requests, vec![], "nothing opens");
+        assert!(store_read(&bob_wallet, BOB).await, "read to its end");
+
+        let public = view
+            .send_contact_request_with_external_signer(
+                &bob.id(),
+                &alice.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &bob_signer,
+                &bob_crypto,
+            )
+            .await;
+        assert!(
+            matches!(
+                public,
+                Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(sender))
+                    if sender == alice.id()
+            ),
+            "{public:?}"
+        );
+        managed(&bob_wallet, BOB, |managed| {
+            assert!(
+                managed
+                    .identity
+                    .public_keys()
+                    .contains_key(&DECRYPTION_KEY_ID),
+                "the key is folded in"
+            );
+            assert!(
+                managed.dashpay().incoming_request(&alice.id()).is_some(),
+                "her private request is recorded"
+            );
+        })
+        .await;
+    }
+
+    /// A public request, or a public acceptance, whose sender identity cannot
+    /// be fetched is refused as the SDK reported the fetch, before the store is
+    /// read again or anything is signed: the keys a read would scan with are
+    /// not shown current.
+    #[tokio::test]
+    async fn should_refuse_a_public_request_when_its_sender_identity_does_not_fetch() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let bob_signer = signer(BOB_PHRASE, &bob);
+        let (entry, _) = alice_to_bob([0x55; 43]).await;
+        let stale = without_key(&bob, DECRYPTION_KEY_ID);
+        let (_manager, bob_wallet) = wallet(BOB_PHRASE, &stale, &[&alice, &bob], vec![entry]).await;
+        let view = bob_wallet.identity().dashpay();
+        view.sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("Bob reads the store with his older keys");
+        set_identity_known(&bob_wallet, &bob, false).await;
+
+        let public = view
+            .send_contact_request_with_external_signer(
+                &bob.id(),
+                &alice.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &bob_signer,
+                &bob_crypto,
+            )
+            .await;
+        // Refused by the identity fetch itself, not a step further on: the
+        // mock names the request it has no answer for.
+        let fetch_failed = |error: Option<&PlatformWalletError>| {
+            matches!(error, Some(PlatformWalletError::Sdk(error))
+                if format!("{error:?}").contains("GetIdentityRequest"))
+        };
+        assert!(fetch_failed(public.as_ref().err()), "{public:?}");
+        let incoming = public_request(&alice, &bob, 3);
+        add_incoming(&bob_wallet, BOB, &incoming).await;
+        let accepted = view
+            .accept_contact_request_with_external_signer(&incoming, &bob_signer, &bob_crypto)
+            .await;
+        assert!(fetch_failed(accepted.as_ref().err()), "{accepted:?}");
+        managed(&bob_wallet, BOB, |managed| {
+            assert!(!managed
+                .identity
+                .public_keys()
+                .contains_key(&DECRYPTION_KEY_ID));
+            assert!(
+                managed.dashpay().outgoing_request(&alice.id()).is_none(),
+                "nothing sent"
+            );
+            assert!(!managed.dashpay().private_reply_pending(&alice.id()));
         })
         .await;
     }
