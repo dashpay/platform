@@ -1790,6 +1790,7 @@ mod tests {
     /// A page of entries no key of the wallet opens.
     fn store_page(start: u64, len: u64, total_count: u64) -> PrivateDocumentEntries {
         PrivateDocumentEntries {
+            chunk_power: None,
             entries: (start..start + len)
                 .map(|position| {
                     dash_sdk::platform::private_document_entries::PrivateDocumentEntry {

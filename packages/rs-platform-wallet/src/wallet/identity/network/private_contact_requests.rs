@@ -1720,6 +1720,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 ))
             })?;
         let page = PrivateDocumentEntries {
+            chunk_power: None,
             entries: entries
                 .iter()
                 .zip(0u64..)
@@ -2117,6 +2118,7 @@ mod tests {
         }
         let total_count = entries.len() as u64;
         let page = PrivateDocumentEntries {
+            chunk_power: None,
             entries: entries
                 .into_iter()
                 .zip(0u64..)
@@ -2171,6 +2173,7 @@ mod tests {
     fn store_page(start: u64, entries: Vec<Vec<u8>>) -> PrivateDocumentEntries {
         let total_count = start + entries.len() as u64;
         PrivateDocumentEntries {
+            chunk_power: None,
             entries: entries
                 .into_iter()
                 .zip(start..)
