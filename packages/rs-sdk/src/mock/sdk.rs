@@ -223,6 +223,12 @@ impl MockDashPlatformSdk {
                 "GetPrivateDocumentEntriesRequest" => load_expectation::<
                     proto::GetPrivateDocumentEntriesRequest,
                 >(&mut dapi, filename)?,
+                "GetOwnerTransactionsInBlockRequest" => load_expectation::<
+                    proto::GetOwnerTransactionsInBlockRequest,
+                >(&mut dapi, filename)?,
+                "GetBlocksRequest" => {
+                    load_expectation::<proto::GetBlocksRequest>(&mut dapi, filename)?
+                }
                 "GetDocumentHistoryRequest" => {
                     load_expectation::<proto::GetDocumentHistoryRequest>(&mut dapi, filename)?
                 }

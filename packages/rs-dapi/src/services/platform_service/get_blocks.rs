@@ -12,7 +12,7 @@ use dapi_grpc::platform::v0::get_blocks_response::get_blocks_response_v0::{Block
 use dapi_grpc::platform::v0::get_blocks_response::{self, GetBlocksResponseV0};
 use dapi_grpc::platform::v0::{GetBlocksRequest, GetBlocksResponse, get_blocks_request};
 use dapi_grpc::tonic::{Request, Response};
-use sha2::{Digest, Sha256};
+use drive_proof_verifier::block_proof::transaction_hash;
 
 use super::block_proof::{build_block_proof, check_block_contents, check_block_fields};
 use super::error_mapping::base64_decode;
@@ -258,7 +258,7 @@ fn build_block(
                 DapiError::Internal(format!("result {index} of block {height} is not base64"))
             })?;
             Ok(Transaction {
-                hash: Sha256::digest(&state_transition).to_vec(),
+                hash: transaction_hash(&state_transition).to_vec(),
                 state_transition,
                 code: result.code,
                 result_data,
@@ -309,6 +309,7 @@ mod tests {
     use dapi_grpc::platform::v0::get_blocks_request::GetBlocksRequestV0;
     use dapi_grpc::tonic::Code;
     use serde_json::json;
+    use sha2::{Digest, Sha256};
     use std::time::Duration;
 
     fn request(start_height: u64, count: u32) -> GetBlocksRequest {
