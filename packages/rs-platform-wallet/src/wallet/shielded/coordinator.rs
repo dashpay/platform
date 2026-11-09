@@ -51,7 +51,7 @@
 //!
 //! [`sync_notes_across`]: super::sync::sync_notes_across
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -178,6 +178,16 @@ pub struct NetworkShieldedCoordinator {
     /// network instead of once per wallet. Cleared on any
     /// activity; bypassed by `force` syncs.
     last_caught_up_at: std::sync::Mutex<Option<Instant>>,
+
+    /// The journal records, by wallet and entry commitment, whose entry an
+    /// expiry read found in DashPay's private store
+    /// ([`Self::discharge_expired_private_payments`]): their payments
+    /// executed, so they are no candidates for expiry and no later pass reads
+    /// the store again for them. Each record stays, holding its pair, until a
+    /// private sync reads its entry back and records the request, which
+    /// discharges it; then it leaves this set too. In memory only: a restart
+    /// reads the store for it once more.
+    landed_private_payments: std::sync::Mutex<BTreeSet<(WalletId, [u8; 32])>>,
 
     /// Optional progress callback fired once per chunk inside
     /// `sync_shielded_notes`. Lets the manager translate chunk-level
@@ -405,6 +415,7 @@ impl NetworkShieldedCoordinator {
             accounts: Arc::new(RwLock::new(BTreeMap::new())),
             persisters: Arc::new(RwLock::new(BTreeMap::new())),
             last_caught_up_at: std::sync::Mutex::new(None),
+            landed_private_payments: std::sync::Mutex::new(BTreeSet::new()),
             progress_handler: std::sync::Mutex::new(None),
             tree_progress_handler: std::sync::Mutex::new(None),
             lifecycle: tokio::sync::Mutex::new(()),
@@ -1962,8 +1973,23 @@ impl NetworkShieldedCoordinator {
         evidence: PrunedAnchorEvidence<'_>,
     ) {
         let recorded_height = evidence.height;
+        // Entries found landed before are no candidates: their payments
+        // executed. One whose record is gone was read back and leaves.
+        let landed: BTreeSet<(WalletId, [u8; 32])> = {
+            let mut landed = self
+                .landed_private_payments
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            landed.retain(|(wallet_id, commitment)| {
+                journal
+                    .iter()
+                    .any(|(owner, record)| owner == wallet_id && record.commitment == *commitment)
+            });
+            landed.clone()
+        };
         let pruned: Vec<&(WalletId, PrivatePaymentRecord)> = journal
             .iter()
+            .filter(|(wallet_id, record)| !landed.contains(&(*wallet_id, record.commitment)))
             .filter(|(_, record)| evidence.proves_pruned(&record.anchor, record.anchor_height))
             .collect();
         if pruned.is_empty() {
@@ -1998,6 +2024,18 @@ impl NetworkShieldedCoordinator {
                 return;
             }
         };
+        // An entry the store holds at or above H executed: its record waits
+        // for a private sync to read it back, and no later pass reads the
+        // store again for it.
+        self.landed_private_payments
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .extend(
+                candidates
+                    .iter()
+                    .filter(|(_, record)| held.contains(&record.commitment))
+                    .map(|(wallet_id, record)| (*wallet_id, record.commitment)),
+            );
         let persisters = self.persisters.read().await;
         let mut store = self.store.write().await;
         for (wallet_id, record) in candidates {

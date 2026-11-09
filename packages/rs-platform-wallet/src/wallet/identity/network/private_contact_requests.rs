@@ -7469,6 +7469,51 @@ mod tests {
             .is_empty());
     }
 
+    /// An expiry read that finds a candidate's entry in the store shows its
+    /// payment executed: the record stays, holding its pair until a private
+    /// sync reads the entry back and records the request, and no later pass
+    /// reads the store again for it.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_not_read_the_store_again_for_an_entry_an_expiry_read_found() {
+        use dash_sdk::dapi_grpc::platform::v0::GetPrivateDocumentEntriesRequest;
+        use dash_sdk::platform::Query;
+
+        let fixture = ExpiryFixture::new().await;
+        let height = ExpiryFixture::ANCHOR_SET_HEIGHT;
+        fixture.prove_at(height);
+        let entry = fixture.pay_unconfirmed(ExpiryFixture::ANCHOR, height).await;
+        publish(&fixture.wallet, 0, vec![entry.to_vec()]).await;
+        let mut sdk = (*fixture.wallet.identity().sdk).clone();
+        let request: GetPrivateDocumentEntriesRequest = PrivateDocumentEntriesQuery::new(
+            dashpay_contract().expect("bundled DashPay").id(),
+            PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+            0,
+        )
+        .query(&sdk.query_settings())
+        .expect("encodes");
+        let recorded = HashSet::new();
+        let journal = fixture.journal_snapshot().await;
+
+        let before = sdk.mock().request_count(&request).await;
+        fixture.discharge(&journal, &recorded, Some(height)).await;
+        let read = sdk.mock().request_count(&request).await;
+        assert!(read > before, "the expiry read the store");
+        assert_eq!(
+            fixture.journaled().await,
+            1,
+            "landed: kept for its read-back"
+        );
+
+        fixture.discharge(&journal, &recorded, Some(height)).await;
+        assert_eq!(
+            sdk.mock().request_count(&request).await,
+            read,
+            "no store read for it again"
+        );
+        assert_eq!(fixture.journaled().await, 1);
+    }
+
     /// A private payment that never executes is proven expired once its
     /// anchor is pruned and its entry is absent from the store: the
     /// coordinator discharges its journal record, the pair is freed, a retry
