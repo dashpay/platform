@@ -77,6 +77,22 @@ use crate::shielded_send::{
 /// 32-byte transmission key.
 const SHIELDED_ADDRESS_LEN: usize = 43;
 
+/// A private sync, and the store read a send or accept makes first, check
+/// that the resolver's seed is the wallet's before reading anything. A
+/// mismatch takes the code every DashPay export gives it, and the seed
+/// check reports (`ErrorInvalidParameter`); any other error is handed back.
+fn seed_mismatch_result(
+    error: PlatformWalletError,
+) -> Result<PlatformWalletFFIResult, PlatformWalletError> {
+    match error {
+        error @ PlatformWalletError::SeedMismatch { .. } => Ok(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            error.to_string(),
+        )),
+        error => Err(error),
+    }
+}
+
 /// What a pass over DashPay's private contact request store did
 /// (`PrivateContactSyncReport`). Counts above `u32::MAX` saturate.
 #[repr(C)]
@@ -179,7 +195,10 @@ pub unsafe extern "C" fn platform_wallet_sync_private_contact_requests(
             .sync_private_contact_requests(&provider, max_pages as usize)
             .await
     });
-    let report = unwrap_result_or_return!(result);
+    let report = match result {
+        Ok(report) => report,
+        Err(error) => return seed_mismatch_result(error).unwrap_or_else(|error| error.into()),
+    };
     unsafe {
         *out_report = PrivateContactSyncReportFFI {
             next_position: report.next_position,
@@ -482,7 +501,8 @@ unsafe fn send_private_contact_request_inner(
             unsafe { *out_request_handle = CONTACT_REQUEST_STORAGE.insert(request) };
             PlatformWalletFFIResult::ok()
         }
-        Err(error) => map_spend_result(Err(error), "private contact request"),
+        Err(error) => seed_mismatch_result(error)
+            .unwrap_or_else(|error| map_spend_result(Err(error), "private contact request")),
     }
 }
 
@@ -603,7 +623,8 @@ unsafe fn accept_private_contact_request_inner(
             unsafe { *out_established_handle = ESTABLISHED_CONTACT_STORAGE.insert(contact) };
             PlatformWalletFFIResult::ok()
         }
-        Err(error) => map_spend_result(Err(error), "private contact request accept"),
+        Err(error) => seed_mismatch_result(error)
+            .unwrap_or_else(|error| map_spend_result(Err(error), "private contact request accept")),
     }
 }
 
@@ -888,6 +909,10 @@ unsafe fn accept_contact_request_replying_in_kind_inner(
             {
                 return PlatformWalletFFIResult::err(code, message);
             }
+            let error = match seed_mismatch_result(error) {
+                Ok(result) => return result,
+                Err(error) => error,
+            };
             #[cfg(feature = "shielded")]
             if payment_asked.load(Ordering::SeqCst) {
                 return map_spend_result(Err(error), "contact request accept");
@@ -902,6 +927,25 @@ unsafe fn accept_contact_request_replying_in_kind_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A wrong seed refused by the private sync, or by the store read a send
+    /// or accept makes first, takes the code every DashPay export gives it;
+    /// any other error is left to the export's own mapping.
+    #[test]
+    fn should_report_a_seed_mismatch_from_the_private_store_by_its_dashpay_code() {
+        let result = seed_mismatch_result(PlatformWalletError::SeedMismatch {
+            wallet_id: "ab".to_string(),
+        })
+        .expect("a seed mismatch is mapped here");
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert!(matches!(
+            seed_mismatch_result(PlatformWalletError::PrivateContactPaymentsNotRestored),
+            Err(PlatformWalletError::PrivateContactPaymentsNotRestored)
+        ));
+    }
 
     #[test]
     fn should_clear_both_sync_outputs_on_an_unknown_wallet() {
