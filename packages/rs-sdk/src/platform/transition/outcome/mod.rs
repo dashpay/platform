@@ -45,11 +45,18 @@ use drive_proof_verifier::types::{
 use futures::future::try_join_all;
 use inputs::{NonceInput, PoolSpend, ShieldedPool, TransitionInputs};
 use judge::{anchor_deadline, judge_nonces, judge_shielded, AnchorRead, InputRead, InputsVerdict};
+use rs_dapi_client::transport::sleep;
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::Duration;
 
 /// How many times the nullifiers are read again when every answer is older than the anchor set
 /// that misses the spend's anchor, before the call gives up with [`Error::StaleNode`].
-const NULLIFIER_REREADS: usize = 2;
+const NULLIFIER_REREADS: u32 = 2;
+
+/// How long the first nullifier reread waits, and how much longer each later one waits: a node
+/// behind the anchor read needs time to reach its block, which an immediate reread would not
+/// give it.
+const NULLIFIER_REREAD_DELAY: Duration = Duration::from_secs(1);
 
 /// The outcome of a state transition, from reads of its inputs whose proofs the SDK verified.
 ///
@@ -463,8 +470,8 @@ impl PoolReads for Sdk {
 /// The pools are read at once within a step, and each step starts once the one before has
 /// answered, so the nullifiers are usually proven at or above the anchor sets. The judgment
 /// does not rely on that: it orders the reads by the heights their proofs were signed at, and
-/// reads the nullifiers again when they come back older than an anchor set that misses an
-/// anchor.
+/// reads the nullifiers again, after waiting for the node to catch up, when they come back
+/// older than an anchor set that misses an anchor.
 async fn read_shielded_spend<R: PoolReads + ?Sized>(
     reader: &R,
     spends: &[PoolSpend],
@@ -502,7 +509,10 @@ async fn read_shielded_spend<R: PoolReads + ?Sized>(
         .await?;
         let nullifiers: Vec<InputRead> = per_pool.into_iter().flatten().collect();
         match judge_shielded(&nullifiers, &anchors, anchors_recorded_by) {
-            InputsVerdict::Unordered if rereads < NULLIFIER_REREADS => rereads += 1,
+            InputsVerdict::Unordered if rereads < NULLIFIER_REREADS => {
+                rereads += 1;
+                sleep(NULLIFIER_REREAD_DELAY.saturating_mul(rereads)).await;
+            }
             InputsVerdict::Unordered => {
                 return Err(StaleNodeError::Height {
                     expected_height: anchors.iter().map(|a| a.height).max().unwrap_or(0),
@@ -1109,7 +1119,7 @@ mod read_sequence_tests {
         )
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn should_read_the_nullifiers_again_when_they_are_older_than_the_anchor_set_missing_the_anchor(
     ) {
         // The anchor set at 30 misses the anchor the wallet saw recorded by 10. The first
@@ -1125,6 +1135,7 @@ mod read_sequence_tests {
             },
         );
 
+        let started = tokio::time::Instant::now();
         let outcome = outcome(&pools, &shielded_transfer(), Some(10))
             .await
             .expect("expected an outcome");
@@ -1133,9 +1144,37 @@ mod read_sequence_tests {
             TransitionOutcome::CannotExecute(CannotExecuteReason::AnchorExpired)
         );
         assert_eq!(pools.nullifier_reads(), 2);
+        // The reread waited for the node to catch up.
+        assert_eq!(started.elapsed(), NULLIFIER_REREAD_DELAY);
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
+    async fn should_reach_anchor_expired_when_a_lagging_node_catches_up_on_the_last_reread() {
+        // The node answering the nullifiers is two blocks behind, then one, then at the anchor
+        // read's height: the waits between rereads let it get there.
+        let pools = ScriptedPools::default().with(
+            ShieldedPool::Credit,
+            PoolScript {
+                anchors: vec![NEWER_ANCHOR],
+                anchors_height: 30,
+                nullifier_heights: vec![28, 29, 30],
+                ..Default::default()
+            },
+        );
+
+        let started = tokio::time::Instant::now();
+        let outcome = outcome(&pools, &shielded_transfer(), Some(10))
+            .await
+            .expect("expected an outcome");
+        assert_eq!(
+            outcome,
+            TransitionOutcome::CannotExecute(CannotExecuteReason::AnchorExpired)
+        );
+        assert_eq!(pools.nullifier_reads(), 3);
+        assert_eq!(started.elapsed(), NULLIFIER_REREAD_DELAY * 3);
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn should_give_up_with_a_stale_node_error_when_every_nullifier_read_stays_older() {
         let pools = ScriptedPools::default().with(
             ShieldedPool::Credit,
@@ -1147,6 +1186,7 @@ mod read_sequence_tests {
             },
         );
 
+        let started = tokio::time::Instant::now();
         let error = outcome(&pools, &shielded_transfer(), Some(10))
             .await
             .expect_err("expected the reads to stay unordered");
@@ -1161,8 +1201,9 @@ mod read_sequence_tests {
             ),
             "{error:?}"
         );
-        // The first read and every reread.
-        assert_eq!(pools.nullifier_reads(), 1 + NULLIFIER_REREADS);
+        // The first read and every reread, each reread waiting longer than the one before.
+        assert_eq!(pools.nullifier_reads(), 1 + NULLIFIER_REREADS as usize);
+        assert_eq!(started.elapsed(), NULLIFIER_REREAD_DELAY * 3);
     }
 
     #[tokio::test]
