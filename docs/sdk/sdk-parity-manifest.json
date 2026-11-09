@@ -8,6 +8,7 @@
     "atomic_changesets",
     "invitations",
     "pending_contact_crypto",
+    "private_contact_request_scan_state",
     "provider_transactions",
     "shielded_viewing_keys",
     "tracked_asset_locks",
@@ -32,10 +33,13 @@
     "managed_identity_get_dashpay_payments": "packages/rs-platform-wallet-ffi/src/dashpay_payment.rs",
     "managed_identity_get_private_contact": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "managed_identity_get_private_reply_pending": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
+    "on_load_private_contact_scan_state_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+    "on_load_private_contact_scan_state_free_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "on_load_shielded_viewing_keys_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "on_load_shielded_viewing_keys_free_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "on_persist_address_balances_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "on_persist_dashpay_payments_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+    "on_persist_private_contact_scan_state_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "on_persist_shielded_viewing_keys_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "platform_address_wallet_addresses_with_balances": "packages/rs-platform-wallet-ffi/src/platform_addresses/wallet.rs",
     "platform_wallet_claim_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
@@ -797,13 +801,13 @@
           "sdk": "partial",
           "example_app": "partial",
           "restart": "required",
-          "reason": "PrivateContactRequests.swift wraps the store sync, the shielded send, the accept replying in kind (the wallet replies privately to a request that came privately, and with a document otherwise; a public or adopted reply needs no shielded support or payment mnemonic read, and a build without shielded support refuses only a private reply, with code 69), the explicit private-reply accept, PrivateContactInfo and the wallet's pending-reply read, all signed with the identity signer the public calls take and counted as native manager operations; codes 68 to 71 are typed and pinned in ErrorHandlingTests. The sync, send and accepts have no automated or recorded gate: a private reply needs a protocol version 15 network with shielded funds. The private marker (core height 0) round-trips through the persisted coreHeightCreatedAt, but no test covers a restart, and the wallet keeps a pending reply in memory only. The example app has the send-privately toggle, accepts with acceptContactRequestReplyingInKind, keeps a pending or unconfirmed private send or reply pending by reading the wallet's flag, and reports private refresh failures (quiet before protocol version 15), with no recorded gate."
+          "reason": "PrivateContactRequests.swift wraps the store sync, the shielded send, the accept replying in kind (the wallet replies privately to a request that came privately, and with a document otherwise; a public or adopted reply needs no shielded support or payment mnemonic read, and a build without shielded support refuses only a private reply, with code 69), the explicit private-reply accept, PrivateContactInfo and the wallet's pending-reply read, all signed with the identity signer the public calls take and counted as native manager operations; codes 68 to 71 are typed and pinned in ErrorHandlingTests. The sync, send and accepts have no automated or recorded gate: a private reply needs a protocol version 15 network with shielded funds. The private marker (core height 0) round-trips through the persisted coreHeightCreatedAt, but no test covers a restart, and the wallet keeps a pending reply in memory only. The example app has the send-privately toggle, accepts with acceptContactRequestReplyingInKind, keeps a pending or unconfirmed private send or reply pending by reading the wallet's flag (a failed read keeps the last snapshot and the controls off), offers a private sync for a pending request a public send or accept meets (code 71), and reports private refresh failures (quiet before protocol version 15), with no recorded gate."
         },
         "kotlin": {
           "sdk": "partial",
           "example_app": "partial",
           "restart": "required",
-          "reason": "Dashpay.syncPrivateContactRequests, privateContact and privateRepliesPending (fresh managed-identity snapshots) and PlatformWalletManager.sendPrivateContactRequest / acceptContactRequestReplyingInKind / acceptPrivateContactRequest bridge the same FFI (signed with the manager's identity signer, behind the manager's teardown gate); the in-kind accept is exported in every build, and codes 68 to 71 map to typed PlatformWallet errors (DashSdkErrorTest). JNI descriptors are covered only by the FfiSmokeTest symbol test; the flows need a protocol version 15 network with shielded funds and have no recorded gate, no test covers a restart, and the wallet keeps a pending reply in memory only. The example app accepts with acceptContactRequestReplyingInKind, keeps a pending or unconfirmed reply pending by reading the wallet's flag on its Requests rows and Add Contact, and reports private refresh failures (quiet before protocol version 15); it has no send-privately toggle."
+          "reason": "Dashpay.syncPrivateContactRequests, privateContact and privateRepliesPending (fresh managed-identity snapshots) and PlatformWalletManager.sendPrivateContactRequest / acceptContactRequestReplyingInKind / acceptPrivateContactRequest bridge the same FFI (signed with the manager's identity signer, behind the manager's teardown gate); the in-kind accept is exported in every build, and codes 68 to 71 map to typed PlatformWallet errors (DashSdkErrorTest). JNI descriptors are covered only by the FfiSmokeTest symbol test; the flows need a protocol version 15 network with shielded funds and have no recorded gate, no test covers a restart, and the wallet keeps a pending reply in memory only. The example app accepts with acceptContactRequestReplyingInKind, keeps a pending or unconfirmed reply pending by reading the wallet's flag on its Requests rows and Add Contact (a failed read keeps the last snapshot and the controls off), offers a private sync for a pending request a public send or accept meets (code 71), and reports private refresh failures (quiet before protocol version 15); it has no send-privately toggle."
         }
       },
       "verification": [
@@ -909,6 +913,77 @@
           "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
           "id": "privateContactRequestSymbolsBindAndRejectInvalidInput",
           "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "dashpay.private_contact_request_scan_state",
+      "title": "DashPay private contact request sync resumes after restart from its persisted read position",
+      "area": "persistence",
+      "shared_apis": [
+        "on_persist_private_contact_scan_state_fn",
+        "on_load_private_contact_scan_state_fn",
+        "on_load_private_contact_scan_state_free_fn"
+      ],
+      "required_persistence_capabilities": [
+        "atomic_changesets",
+        "private_contact_request_scan_state",
+        "wallet_restore"
+      ],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "SwiftData schema V5 stores each identity's read position and its private contacts' shielded addresses (PersistentPrivateContactRequestsPosition, PersistentPrivateShieldedAddress) inside the changeset round, clears the state of a removed identity, purges it with the wallet, hands it back through the load/free shims and declares the capability; the example app's Storage Explorer lists both models. No test restarts a process and resumes a private sync from the stored position."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "not-applicable",
+          "restart": "required",
+          "reason": "Room v16 (migration 15 to 16) stores the same rows in the round, clears a removed identity's state, purges it with the wallet and declares the capability; JNI wires the persist/load/free slots only for a bridge that overrides both callbacks, and rows cross as packed byte arrays. The example app has no storage explorer. No test restarts a process and resumes a private sync from the stored position."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+          "id": "should_restore_the_private_contact_request_scan_state_onto_its_identity",
+          "command": "cargo test -p platform-wallet-ffi --lib should_restore_the_private_contact_request_scan_state_onto_its_identity",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+          "id": "should_leave_hosts_without_the_scan_state_capability_unchanged",
+          "command": "cargo test -p platform-wallet-ffi --lib should_leave_hosts_without_the_scan_state_capability_unchanged",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/PrivateContactScanStatePersistenceTests.swift",
+          "id": "testShouldDeclareTheCapabilityAndRoundTripThroughTheCallbackShims",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:SwiftDashSDKTests/PrivateContactScanStatePersistenceTests",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/PrivateContactScanStatePersistenceTest.kt",
+          "id": "shouldStoreReplaceAndRemoveTheScanStateWithItsRound",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*PrivateContactScanStatePersistenceTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/persistence.rs",
+          "id": "the_scan_state_slots_are_wired_only_for_a_bridge_that_stores_and_loads_it",
+          "command": "cargo test -p rs-unified-sdk-jni --lib the_scan_state_slots_are_wired_only_for_a_bridge_that_stores_and_loads_it",
           "covers_restart": false
         }
       ]
