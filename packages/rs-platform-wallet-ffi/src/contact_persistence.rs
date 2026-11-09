@@ -234,6 +234,11 @@ pub struct PrivateContactRequestsPositionFFI {
     /// The fingerprint of the scanning keys `position` holds for. Opaque
     /// to the host: store it and return it as it came.
     pub key_fingerprint: [u8; 32],
+    /// Whether a private contact request the identity paid for may still
+    /// be unresolved. Store it and return it as it came: loaded set, it
+    /// holds the identity's public contact requests until its private
+    /// payments are restored from the shielded store.
+    pub private_payments_unresolved: bool,
 }
 
 /// The shielded address `contact_id`'s tracked private request to
@@ -310,16 +315,24 @@ const _: [u8; 1] = [0u8; std::mem::align_of::<ContactIgnoredSenderFFI>()];
 
 // Expected `PrivateContactRequestsPositionFFI` layout on 64-bit targets:
 //
-//   0..=31    identity_id      [u8; 32]
-//   32..=39   position         u64
-//   40..=71   key_fingerprint  [u8; 32]
+//   0..=31    identity_id                  [u8; 32]
+//   32..=39   position                     u64
+//   40..=71   key_fingerprint              [u8; 32]
+//   72        private_payments_unresolved  bool
+//   73..=79   (tail padding to 8)
 //
-// Total size = 72, alignment = 8 (from the u64).
-const _: [u8; 72] = [0u8; std::mem::size_of::<PrivateContactRequestsPositionFFI>()];
+// Total size = 80, alignment = 8 (from the u64).
+const _: [u8; 80] = [0u8; std::mem::size_of::<PrivateContactRequestsPositionFFI>()];
 const _: [u8; 8] = [0u8; std::mem::align_of::<PrivateContactRequestsPositionFFI>()];
 const _: () = assert!(std::mem::offset_of!(PrivateContactRequestsPositionFFI, position) == 32);
 const _: () =
     assert!(std::mem::offset_of!(PrivateContactRequestsPositionFFI, key_fingerprint) == 40);
+const _: () = assert!(
+    std::mem::offset_of!(
+        PrivateContactRequestsPositionFFI,
+        private_payments_unresolved
+    ) == 72
+);
 
 // Expected `PrivateShieldedAddressFFI` layout on all targets:
 //
