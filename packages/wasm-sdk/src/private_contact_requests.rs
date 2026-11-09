@@ -718,3 +718,381 @@ mod tests {
         assert_eq!(held.version(), current.version());
     }
 }
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod binding_tests {
+    use super::*;
+    use dash_sdk::dpp::dashcore::{Network, PrivateKey};
+    use dash_sdk::dpp::secp256k1::PublicKey;
+    use dash_sdk::platform::dashpay::{
+        ReceivedPrivateContactRequest, RejectedPrivateContactRequest, SentPrivateContactRequest,
+    };
+    use js_sys::{Array, BigInt, Object, Reflect, Uint8Array};
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_test::wasm_bindgen_test;
+    use wasm_dpp2::PrivateKeyWasm;
+
+    /// 2^53 + 1: the first integer a JavaScript number cannot hold.
+    const BEYOND_SAFE_INTEGER: u64 = 9_007_199_254_740_993;
+
+    fn object(fields: &[(&str, JsValue)]) -> JsValue {
+        let object = Object::new();
+        for (key, value) in fields {
+            Reflect::set(&object, &JsValue::from_str(key), value).expect("fixture property");
+        }
+        object.into()
+    }
+
+    fn get(value: &JsValue, key: &str) -> JsValue {
+        Reflect::get(value, &JsValue::from_str(key)).expect("a property")
+    }
+
+    fn bytes(fill: u8, len: usize) -> JsValue {
+        Uint8Array::from(vec![fill; len].as_slice()).into()
+    }
+
+    fn secret_key(byte: u8) -> SecretKey {
+        SecretKey::from_secret_bytes([byte; 32]).expect("a secret key")
+    }
+
+    /// `secret_key(byte)` as the `PrivateKey` wrapper JavaScript passes.
+    fn private_key(byte: u8) -> JsValue {
+        PrivateKeyWasm::from(
+            PrivateKey::from_byte_array(&[byte; 32], Network::Testnet).expect("a private key"),
+        )
+        .into()
+    }
+
+    fn key(key_id: u32, byte: u8) -> JsValue {
+        object(&[("keyId", key_id.into()), ("privateKey", private_key(byte))])
+    }
+
+    fn request_options(fields: &[(&str, JsValue)]) -> JsValue {
+        let mut request = vec![
+            ("accountReference", JsValue::from(7u32)),
+            ("extendedPublicKey", bytes(0x33, 69)),
+        ];
+        request.extend(fields.iter().cloned());
+        object(&[("request", object(&request))])
+    }
+
+    fn big(value: &JsValue) -> String {
+        assert!(value.is_bigint(), "a bigint: {value:?}");
+        String::from(
+            value
+                .clone()
+                .unchecked_into::<BigInt>()
+                .to_string(10)
+                .expect("decimal"),
+        )
+    }
+
+    fn byte_array(value: &JsValue) -> Vec<u8> {
+        assert!(
+            value.is_instance_of::<Uint8Array>(),
+            "a Uint8Array: {value:?}"
+        );
+        value.clone().unchecked_into::<Uint8Array>().to_vec()
+    }
+
+    #[wasm_bindgen_test]
+    fn should_read_a_request_with_and_without_its_optional_fields() {
+        let bare = request_from_options(&request_options(&[])).expect("the required fields");
+        assert_eq!(
+            bare,
+            PrivateContactRequest {
+                account_reference: 7,
+                extended_public_key: [0x33; 69],
+                account_label: None,
+                auto_accept_proof: None,
+                shielded_address: None,
+            }
+        );
+        let absent = request_from_options(&request_options(&[
+            ("accountLabel", JsValue::UNDEFINED),
+            ("autoAcceptProof", JsValue::NULL),
+            ("shieldedAddress", JsValue::UNDEFINED),
+        ]))
+        .expect("absent optional fields");
+        assert_eq!(absent, bare);
+
+        let full = request_from_options(&request_options(&[
+            ("accountLabel", "Savings".into()),
+            ("autoAcceptProof", bytes(0x44, 38)),
+            ("shieldedAddress", bytes(0x55, 43)),
+        ]))
+        .expect("every field");
+        assert_eq!(full.account_label.as_deref(), Some("Savings"));
+        assert_eq!(full.auto_accept_proof, Some(vec![0x44; 38]));
+        assert_eq!(full.shielded_address, Some([0x55; 43]));
+    }
+
+    #[wasm_bindgen_test]
+    fn should_refuse_a_fixed_size_request_field_of_another_size() {
+        for (name, len) in [
+            ("extendedPublicKey", 68),
+            ("extendedPublicKey", 70),
+            ("shieldedAddress", 42),
+            ("shieldedAddress", 44),
+        ] {
+            let options = if name == "extendedPublicKey" {
+                object(&[(
+                    "request",
+                    object(&[
+                        ("accountReference", 7u32.into()),
+                        ("extendedPublicKey", bytes(0x33, len)),
+                    ]),
+                )])
+            } else {
+                request_options(&[(name, bytes(0x55, len))])
+            };
+            assert!(
+                request_from_options(&options).is_err(),
+                "{name} of {len} bytes"
+            );
+        }
+        assert!(
+            request_from_options(&object(&[("request", object(&[]))])).is_err(),
+            "the required fields are missing"
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn should_read_scan_keys_from_the_wrappers_javascript_passes() {
+        let alice = Identifier::new([0xA1; 32]);
+        let bob = Identifier::new([0xB1; 32]);
+        let options = object(&[
+            (
+                "recipients",
+                Array::of2(
+                    &object(&[
+                        ("identityId", IdentifierWasm::from(alice).into()),
+                        ("keys", Array::of2(&key(2, 0x12), &key(3, 0x13)).into()),
+                    ]),
+                    &object(&[
+                        (
+                            "identityId",
+                            Uint8Array::from(bob.as_bytes().as_slice()).into(),
+                        ),
+                        ("keys", Array::new().into()),
+                    ]),
+                )
+                .into(),
+            ),
+            (
+                "senders",
+                Array::of1(&object(&[
+                    ("identityId", IdentifierWasm::from(alice).to_base58().into()),
+                    ("encryptionKeys", Array::of1(&key(1, 0x11)).into()),
+                ]))
+                .into(),
+            ),
+        ]);
+        let read = scan_key_options(&options).expect("the scan keys");
+        type ReadKeys = Vec<(KeyID, [u8; 32])>;
+        let recipients: Vec<(Identifier, ReadKeys)> = read
+            .recipients
+            .iter()
+            .map(|(identity_id, keys)| {
+                (
+                    *identity_id,
+                    keys.0
+                        .iter()
+                        .map(|(key_id, secret_key)| (*key_id, secret_key.to_secret_bytes()))
+                        .collect(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            recipients,
+            vec![
+                (alice, vec![(2, [0x12; 32]), (3, [0x13; 32])]),
+                (bob, vec![]),
+            ]
+        );
+        assert_eq!(read.senders.len(), 1);
+        assert_eq!(read.senders[0].0, alice);
+        assert_eq!(read.senders[0].1 .0.len(), 1);
+        assert_eq!(read.senders[0].1 .0[0].0, 1);
+        assert_eq!(read.senders[0].1 .0[0].1.to_secret_bytes(), [0x11; 32]);
+
+        let none = scan_key_options(&object(&[])).expect("no identities");
+        assert!(none.recipients.is_empty() && none.senders.is_empty());
+    }
+
+    #[wasm_bindgen_test]
+    fn should_refuse_malformed_scan_keys() {
+        let alice: JsValue = IdentifierWasm::from(Identifier::new([0xA1; 32])).into();
+        for (case, recipient) in [
+            (
+                "an identity id of 31 bytes",
+                object(&[
+                    ("identityId", bytes(0xA1, 31)),
+                    ("keys", Array::of1(&key(2, 0x12)).into()),
+                ]),
+            ),
+            (
+                "a key without its id",
+                object(&[
+                    ("identityId", alice.clone()),
+                    (
+                        "keys",
+                        Array::of1(&object(&[("privateKey", private_key(0x12))])).into(),
+                    ),
+                ]),
+            ),
+            (
+                "a private key that is not one",
+                object(&[
+                    ("identityId", alice.clone()),
+                    (
+                        "keys",
+                        Array::of1(&object(&[
+                            ("keyId", 2u32.into()),
+                            ("privateKey", 12u32.into()),
+                        ]))
+                        .into(),
+                    ),
+                ]),
+            ),
+            (
+                "keys that are not an array",
+                object(&[("identityId", alice.clone()), ("keys", 2u32.into())]),
+            ),
+        ] {
+            let options = object(&[("recipients", Array::of1(&recipient).into())]);
+            assert!(scan_key_options(&options).is_err(), "{case}");
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_hand_a_scan_back_with_exact_bigints_and_byte_arrays() {
+        let request = PrivateContactRequest {
+            account_reference: 7,
+            extended_public_key: [0x33; 69],
+            account_label: None,
+            auto_accept_proof: Some(vec![0x44; 38]),
+            shielded_address: Some([0x55; 43]),
+        };
+        let recipient_public_key = PublicKey::from_secret_key(&secret_key(2));
+        let reasons = [
+            (
+                PrivateContactRequestRejection::AnonymousSender,
+                "anonymousSender",
+                None,
+            ),
+            (PrivateContactRequestRejection::NotSigned, "notSigned", None),
+            (
+                PrivateContactRequestRejection::SenderNotFound,
+                "senderNotFound",
+                None,
+            ),
+            (
+                PrivateContactRequestRejection::SenderKeyNotUsable("disabled".into()),
+                "senderKeyNotUsable",
+                Some("disabled"),
+            ),
+            (
+                PrivateContactRequestRejection::SenderNotAuthenticated,
+                "senderNotAuthenticated",
+                None,
+            ),
+            (
+                PrivateContactRequestRejection::RecipientKeyNotUsable("another point".into()),
+                "recipientKeyNotUsable",
+                Some("another point"),
+            ),
+            (
+                PrivateContactRequestRejection::InvalidRequest("too long".into()),
+                "invalidRequest",
+                Some("too long"),
+            ),
+            (PrivateContactRequestRejection::Duplicate, "duplicate", None),
+        ];
+        let scan = PrivateContactRequestScan {
+            received: vec![ReceivedPrivateContactRequest {
+                position: BEYOND_SAFE_INTEGER,
+                block_height: BEYOND_SAFE_INTEGER + 1,
+                block_time_ms: u64::MAX,
+                recipient_id: Identifier::new([0xB1; 32]),
+                recipient_key_id: 2,
+                sender_id: Identifier::new([0xA1; 32]),
+                sender_key_id: 1,
+                commitment: [0xC0; 32],
+                request: request.clone(),
+            }],
+            sent: vec![SentPrivateContactRequest {
+                position: BEYOND_SAFE_INTEGER + 2,
+                block_height: 3,
+                block_time_ms: 4,
+                sender_id: Identifier::new([0xA1; 32]),
+                sender_key_id: 1,
+                recipient_id: Identifier::new([0xB1; 32]),
+                recipient_public_key,
+                commitment: [0xC1; 32],
+                request,
+            }],
+            rejected: reasons
+                .iter()
+                .zip(0u64..)
+                .map(|((reason, _, _), offset)| RejectedPrivateContactRequest {
+                    position: BEYOND_SAFE_INTEGER + 3 + offset,
+                    block_height: 5,
+                    reason: reason.clone(),
+                })
+                .collect(),
+            next_position: u64::MAX - 1,
+            total_count: u64::MAX,
+        };
+
+        let result = to_object(&ScanResult::from(scan)).expect("the result converts");
+        let received = get(&get(&result, "received"), "0");
+        assert_eq!(big(&get(&received, "position")), "9007199254740993");
+        assert_eq!(big(&get(&received, "blockHeight")), "9007199254740994");
+        assert_eq!(big(&get(&received, "blockTimeMs")), u64::MAX.to_string());
+        assert_eq!(byte_array(&get(&received, "recipientId")), vec![0xB1; 32]);
+        assert_eq!(byte_array(&get(&received, "senderId")), vec![0xA1; 32]);
+        assert_eq!(get(&received, "recipientKeyId").as_f64(), Some(2.0));
+        assert_eq!(byte_array(&get(&received, "commitment")), vec![0xC0; 32]);
+        let fields = get(&received, "request");
+        assert_eq!(get(&fields, "accountReference").as_f64(), Some(7.0));
+        assert_eq!(
+            byte_array(&get(&fields, "extendedPublicKey")),
+            vec![0x33; 69]
+        );
+        assert!(get(&fields, "accountLabel").is_undefined());
+        assert_eq!(byte_array(&get(&fields, "autoAcceptProof")), vec![0x44; 38]);
+        assert_eq!(byte_array(&get(&fields, "shieldedAddress")), vec![0x55; 43]);
+
+        let sent = get(&get(&result, "sent"), "0");
+        assert_eq!(big(&get(&sent, "position")), "9007199254740995");
+        assert_eq!(
+            byte_array(&get(&sent, "recipientPublicKey")),
+            recipient_public_key.serialize().to_vec()
+        );
+        assert_eq!(byte_array(&get(&sent, "commitment")), vec![0xC1; 32]);
+
+        let rejected: Array = get(&result, "rejected").unchecked_into();
+        assert_eq!(rejected.length() as usize, reasons.len());
+        for ((_, reason, detail), (index, entry)) in reasons.iter().zip(rejected.iter().enumerate())
+        {
+            assert_eq!(
+                big(&get(&entry, "position")),
+                (BEYOND_SAFE_INTEGER + 3 + index as u64).to_string()
+            );
+            assert_eq!(get(&entry, "reason").as_string().as_deref(), Some(*reason));
+            assert_eq!(
+                get(&entry, "detail").as_string().as_deref(),
+                *detail,
+                "{reason}"
+            );
+        }
+
+        assert_eq!(
+            big(&get(&result, "nextPosition")),
+            (u64::MAX - 1).to_string()
+        );
+        assert_eq!(big(&get(&result, "totalCount")), u64::MAX.to_string());
+        assert_eq!(get(&result, "isComplete").as_bool(), Some(false));
+    }
+}
