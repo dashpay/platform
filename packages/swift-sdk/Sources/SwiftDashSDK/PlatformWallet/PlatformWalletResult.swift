@@ -673,9 +673,11 @@ public enum PlatformWalletError: LocalizedError {
     /// parity: `DashSdkError.PlatformWallet.AssetLockInsufficientFunds`.
     case assetLockInsufficientFunds(String)
     /// An asset lock needs more inputs than one may carry: a drain of every
-    /// eligible input, or a fixed amount held only in many small coins. Nothing
-    /// was broadcast and no partial drain occurred; consolidating the coins lets
-    /// it fit.
+    /// eligible input, or a fixed amount held only in many small coins. The
+    /// build broadcast nothing, released its reservation and drained nothing;
+    /// consolidating the coins lets it fit. Also the outcome of resuming a
+    /// tracked lock over the cap: it is not re-sent (an earlier attempt may
+    /// have reached the network), it stays tracked, and nothing is released.
     case assetLockTooManyInputs(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition

@@ -481,7 +481,10 @@ pub trait ShieldedStore: Send + Sync {
     /// (scanning through position `N-1` sets this to `N`).
     fn last_synced_note_index(&self, id: SubwalletId) -> Result<u64, Self::Error>;
 
-    /// Persist the sync watermark (next index to scan) for `id`.
+    /// Persist the sync watermark (next index to scan) for `id`. Only a
+    /// pass that reached the tip calls this: the setter also records the
+    /// scan coverage and the `ScannedThisSession` balance source behind
+    /// [`local_account_balance`](Self::local_account_balance).
     fn set_last_synced_note_index(
         &mut self,
         id: SubwalletId,

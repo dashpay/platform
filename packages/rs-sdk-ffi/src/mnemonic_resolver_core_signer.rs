@@ -326,7 +326,7 @@ impl MnemonicResolverCoreSigner {
             .map_err(|e| MnemonicResolverSignerError::InvalidMnemonic(e.to_string()))?;
 
         // ---- Derive seed and BIP-32 key at `path` ---------------------------
-        let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(""));
+        let seed: Zeroizing<[u8; 64]> = mnemonic.to_seed("");
         drop(mnemonic);
 
         let master = ExtendedPrivKey::new_master(self.network, seed.as_ref())
@@ -888,7 +888,7 @@ mod tests {
         // Independently derive the expected xpub straight from the known
         // BIP-39 vector — same network + path, no resolver in the loop.
         let mnemonic = parse_mnemonic_any_language(ENGLISH_PHRASE).expect("valid phrase");
-        let master = ExtendedPrivKey::new_master(Network::Testnet, &mnemonic.to_seed(""))
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &*mnemonic.to_seed(""))
             .expect("master derivation");
         let derived = master.derive_priv(&path).expect("path derivation");
         let expected = ExtendedPubKey::from_priv(&derived);
@@ -950,7 +950,7 @@ mod tests {
         let mnemonic = Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet =
-            Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
+            Wallet::from_seed_bytes(*seed, Network::Testnet, WalletAccountCreationOptions::None)
                 .expect("seeded wallet");
         let expected = wallet
             .derive_extended_public_key(&path)
@@ -1001,7 +1001,7 @@ mod tests {
         let mnemonic = Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet =
-            Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
+            Wallet::from_seed_bytes(*seed, Network::Testnet, WalletAccountCreationOptions::None)
                 .expect("seeded wallet");
         let xprv = wallet
             .derive_extended_private_key(&path)
@@ -1057,7 +1057,7 @@ mod tests {
         let mnemonic = Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet =
-            Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
+            Wallet::from_seed_bytes(*seed, Network::Testnet, WalletAccountCreationOptions::None)
                 .expect("seeded wallet");
         let secret = wallet
             .derive_extended_private_key(&path)
@@ -1144,7 +1144,7 @@ mod tests {
         let mnemonic = Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet =
-            Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
+            Wallet::from_seed_bytes(*seed, Network::Testnet, WalletAccountCreationOptions::None)
                 .expect("seeded wallet");
         let enc_key: Zeroizing<[u8; 32]> = {
             let path = root_path.clone().extend([

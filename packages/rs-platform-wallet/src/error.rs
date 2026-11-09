@@ -66,6 +66,12 @@ pub enum PlatformWalletError {
     #[error("Wallet not found: {0}")]
     WalletNotFound(String),
 
+    /// The wallet lacks an account the operation needs, such as BIP-44
+    /// account 0. Distinct from [`Self::WalletNotFound`] because the wallet
+    /// itself is still there.
+    #[error("Account not found: {0}")]
+    AccountNotFound(String),
+
     /// A payment refused before anything reached the network: its wallet
     /// was removed or re-created after the handle it came through was
     /// taken. A prepared payment refused at send was abandoned; a build
@@ -626,10 +632,23 @@ pub enum PlatformWalletError {
     )]
     AssetLockInsufficientFunds { available: u64, required: u64 },
 
+    /// Only coins that are not final yet would fund the asset lock: `waiting`
+    /// duffs of them are neither confirmed nor InstantSend-locked. Unlike
+    /// [`Self::AssetLockInsufficientFunds`], the build can succeed once they
+    /// become final. Nothing was built for the wire.
+    #[error("asset lock funds awaiting finality: {waiting} duffs of coins not final yet")]
+    AssetLockFundsAwaitingFinality { waiting: u64 },
+
     /// An asset lock, whole-balance or of a fixed amount, needs more inputs
     /// than an asset lock may carry (`max_asset_lock_transaction_inputs`, 100:
-    /// Dash Core relay policy and Platform consensus alike). Nothing was built
-    /// for the wire; consolidating the coins lets the lock fit.
+    /// Dash Core relay policy and Platform consensus alike). Nothing new was
+    /// sent: a build refuses the lock before tracking it and releases its
+    /// reservation, and a resume of a tracked `Built` / `Broadcast` row over
+    /// the cap is refused instead of re-sent, leaving the row tracked and
+    /// releasing nothing (an earlier attempt may still have reached peers).
+    /// Reservations do not survive a restart, so after one the row's inputs
+    /// are not held and may be spent elsewhere. Consolidating the coins
+    /// lets a new lock fit.
     #[error("Asset lock requires {count} inputs, exceeding the limit of {max}")]
     AssetLockTooManyInputs { count: usize, max: usize },
 

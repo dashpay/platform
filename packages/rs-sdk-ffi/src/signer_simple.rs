@@ -377,10 +377,9 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_and_path(
         Ok(m) => m,
         Err(_) => return fail(SIGN_WITH_MNEMONIC_ERR_INVALID_MNEMONIC),
     };
-    // `to_seed` returns `[u8; 64]` by value; wrap immediately so the
-    // 64 bytes get zeroed when this function returns (success or fail).
-    let seed: zeroize::Zeroizing<[u8; 64]> =
-        zeroize::Zeroizing::new(mnemonic.to_seed(passphrase_str));
+    // `to_seed` returns a `Zeroizing` buffer, so the 64 bytes get zeroed
+    // when this function returns (success or fail).
+    let seed: zeroize::Zeroizing<[u8; 64]> = mnemonic.to_seed(passphrase_str);
 
     // ---- Derivation path -----------------------------------------------------
     let path = match DerivationPath::from_str(path_str) {

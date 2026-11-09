@@ -716,7 +716,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_default_address(
 /// you want to avoid concurrent passes. Returns an error if the
 /// wallet doesn't exist or the sync itself fails. Wallets with no
 /// bound shielded sub-wallet succeed silently with no observable
-/// state change.
+/// state change, and so does a pass whose scan a concurrent
+/// [`platform_wallet_manager_shielded_sync_stop`] cut short: it
+/// published nothing, and the next pass re-walks from the last
+/// completed watermark.
 ///
 /// # Safety
 /// - `wallet_id_bytes` must point at 32 readable bytes.

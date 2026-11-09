@@ -38,6 +38,8 @@ pub mod activity_recorder;
 pub mod balance;
 #[cfg(test)]
 mod balance_tests;
+#[cfg(test)]
+mod cancelled_scan_tests;
 pub mod coordinator;
 pub mod file_store;
 pub mod fund_from_asset_lock;

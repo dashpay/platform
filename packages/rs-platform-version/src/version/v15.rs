@@ -115,7 +115,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    the parent's subdomain rule. DPNS needs no new data trigger bindings:
 ///    its `domain` Replace and Delete rejects are never reached, as
 ///    `documentsMutable` and `canBeDeleted` false refuse both first (10404).
-///    (The bindings move to 3 for the token market contract alone, note 17.)
+///    (The bindings move to 3 for the token market contract, note 17, and
+///    DashPay, note 24, not for DPNS.)
 ///
 /// 4. **`countOf` and `sumOf` match byte array keys**: `CONTRACT_VERSIONS_V7`
 ///    selects `parse_property_constraints` 1, whose grammar binds a filter key
@@ -161,6 +162,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    first entry the parser may read where every check reads the last
 ///    (`InvalidContractStructure`; a stored contract with one, which no JSON
 ///    could have written, must drop it to be updated),
+///    refuses a contested index whose contest its index values do not decide
+///    (`InvalidContractStructure`, note 19) or that is keyed by a property path or a
+///    system property (`InvalidContractStructure`, note 21),
 ///    and refuses a document type the typed validation schema does not represent
 ///    (`InvalidContractStructure`), so every type registered from this version
 ///    has its documents checked natively (note 6). The parser is generation 3
@@ -392,13 +396,122 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     stored without storage flags by `transition_to_version_15`. Users cannot write them:
 ///     `creationRestrictionMode` 2 refuses a create, and the data trigger `bindings` 3
 ///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuse a replace or a delete.
+///
+/// 18. **Core fork activations recorded in state**: `update_core_info` 1
+///     (`DRIVE_ABCI_METHOD_VERSIONS_V11`) asks Core, in a block that moves the chain locked
+///     Core height, whether Dash Core's V24 is active at that height: the coinbase of that
+///     Core block has payload version 4 or higher, which Core requires exactly while V24 is
+///     active. The first block that sees it active stores the height in `Misc`
+///     (`CORE_FORK_V24_ACTIVATION_KEY`, a big endian `u32` written once, through
+///     `DRIVE_VERSION_V10`'s `platform_system` methods), where the app hash covers it, and no
+///     later block asks Core about V24. A chain born at this version asks at init chain, at
+///     the genesis core height. A block that keeps the chain locked height asks nothing, so
+///     a chain upgraded to this version records V24 at its first block that moves the height
+///     to one where V24 is active, which can be a few blocks after Core activated it. A Core
+///     error or a coinbase without a payload fails the block, as other Core errors in
+///     `update_core_info` do. Protocol v14 and earlier keep `update_core_info` 0, which
+///     neither asks nor records.
+///
+/// 19. **A contest is decided by its index values**: a document joins its type's contest
+///     when every `fieldMatches` entry matches it, and two documents with the same index
+///     values share one unique index entry. A `fieldMatches` field outside the index, or a
+///     match telling `""` from `"\0"` (which share an index key) on a string that may be
+///     empty, lets a document outside the contest take the index values of one in it, and
+///     the award at the end of the contest then finds the entry taken. Registration under
+///     `check_document_type_schema` 1 (note 7) refuses such a contest
+///     (`Index::contest_is_decided_by_index_values`, `InvalidContractStructure`),
+///     and document create state validation 3 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`)
+///     refuses a create outside the contest of a type registered earlier with one while a
+///     contest for the same index keys is live (`DuplicateUniqueIndexError`), reading the
+///     poll at its path, which encodes the values as index keys, so a create of `"\0"` finds
+///     the contest of `""`. Only such a type pays that lookup, and not for a document
+///     with an empty index key (a missing value, or an empty byte array), whose unique index
+///     entry Drive keeps per document (`unique_index_entry_is_shared`), nor for an index
+///     holding a system property (`$ownerId`), whose poll no create can address. A contract
+///     registered earlier with such a contest keeps it, but an update, which carries the
+///     whole contract, is refused like a registration. Protocol v14 and earlier keep
+///     `check_document_type_schema` 0 and document create state validation 2.
+///
+/// 20. **Asset unlocks with a stable txid once Core's V24 is active**:
+///     `build_untied_withdrawal_transactions_from_documents` 1
+///     (`DRIVE_ABCI_METHOD_VERSIONS_V11`) gives a withdrawal it pools asset unlock payload
+///     version 2 once Platform has recorded Dash Core's V24 as active (note 18), read in the
+///     block's transaction, and the withdrawal's whole amount is not below Core's dust
+///     threshold for its output script (`core_dust_relay_fee_per_kb`); otherwise version 1.
+///     The txid of a version 2 asset unlock leaves out the requested height, quorum hash and
+///     signature, so a withdrawal re-signed after it expires keeps its txid and Core can
+///     InstantSend-lock it before it is mined. The version is kept in the untied transaction
+///     bytes the queue stores, so withdrawals pooled before the switch stay version 1 when
+///     they are re-signed, and a dust withdrawal, the only kind the expiry step marks FAILED,
+///     is never version 2. Pooling does not ask Core: a withdrawal pooled in the block that
+///     records V24 is already version 2, and until a block records it, the first that moves
+///     the chain locked height to one where V24 is active, withdrawals stay version 1, which
+///     Core always accepts. Protocol v14 and earlier keep
+///     `build_untied_withdrawal_transactions_from_documents` 0, which emits version 1.
+///
+/// 21. **A contest is keyed by top-level properties**: a contested create keys its vote poll
+///     by looking each index property up by name among the document's top-level properties
+///     (`Index::extract_values`), where a property path (`records.identity`) or a system
+///     property (`$ownerId`) is never found, so the poll holds a null value and Drive fails
+///     every contested create of the type without storing it: the contest can never start.
+///     Registration under `check_document_type_schema` 1 (note 7) refuses a contested index
+///     holding one (`Index::contest_is_keyed_by_top_level_properties`,
+///     `InvalidContractStructure`). A contract registered earlier with one keeps it, but an
+///     update is refused like a registration. Protocol v14 and earlier keep
+///     `check_document_type_schema` 0.
+///
+/// 22. **A masternode that returns to a voting address keeps its vote**: each voting address
+///     a masternode uses has its own voter identity, and a vote must be signed by the key of
+///     the identity for the masternode's current address. When the address changes,
+///     `update_voter_identity` disables the key of the identity it leaves and, when the
+///     identity for the new address already exists because the masternode used that address
+///     before, re-enables a key. Version 0 re-enabled it on the identity it had just disabled,
+///     so the returning key stayed disabled, every vote of the masternode was refused
+///     (`PublicKeyIsDisabledError`), and the key of the address it left stayed enabled,
+///     though it cannot vote for the masternode. Version 1 (`DRIVE_ABCI_METHOD_VERSIONS_V11`)
+///     re-enables the key of the returning identity. Protocol v14 and earlier keep
+///     `update_voter_identity` 0.
+///
+/// 23. **An identity create's identity id is checked in basic structure**: the identity create
+///     `basic_structure` 1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuses, without a fee, an
+///     identity id other than the one the asset lock's outpoint derives, before the asset lock
+///     proof is verified; `advanced_structure` 2 drops that check, which advanced structure 1
+///     made after the asset lock proof, and still charges its double SHA-256, so fees do not
+///     change. Only the error a block reports for a transition with a wrong identity id and an
+///     asset lock that is spent or whose proof does not verify changes; an asset lock proof
+///     whose structure is invalid is still refused first, for its structure. Such a transition
+///     is refused unpaid either way. Protocol v14 and earlier keep `basic_structure` 0 and
+///     `advanced_structure` 0 or 1.
+///
+/// 24. **DashPay v3 states what its data triggers checked, and its ciphertexts' shape**:
+///     `SYSTEM_DATA_CONTRACT_VERSIONS_V4` selects DashPay contract v3, loaded at
+///     genesis and re-stored by `transition_to_version_15` (`apply_contract`, as the
+///     upgrade to v2 did). A `contactRequest`'s `toUserId` refers to an identity
+///     (`refersTo`, a missing one is `ReferencedEntityNotFoundError`, 40120) other than
+///     the writer (`distinctFrom` `$ownerId`, `DocumentPropertyNotDistinctError`,
+///     10419); `encryptedPublicKey` and `encryptedAccountLabel` declare
+///     `ecdh-secp256k1-aes256-cbc` between the `senderKeyIndex` and `recipientKeyIndex`
+///     keys (`encryptedFor`), so each must be an IV plus whole AES blocks
+///     (`InvalidEncryptedPropertyShapeError`, 10420), a check new at this version
+///     (protocol v14 accepts any account label of 48 to 80 bytes), and both key indexes
+///     gain the u32 `maximum` that requires. A `profile`'s rules `corePaymentAddressType` and
+///     `platformPaymentAddressType` hold the first byte of each DIP-33 payment
+///     address to 0x00 or 0x01 (`byteAt`, `DocumentPropertyConstraintViolatedError`,
+///     10422), and the two address descriptions name the rules instead of the data
+///     trigger. Every property is stored as v2 stores it (DashPay keeps sized integer
+///     types off, so the key indexes stay i64), so documents written under v1 and v2
+///     read back unchanged. The data trigger `bindings` 3 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`,
+///     which also add note 17's order rejects) drop the DashPay contact request create and
+///     profile create and replace triggers, which made the identity, writer and type byte
+///     checks and refused with `DataTriggerConditionError` (40500). Protocol v14 keeps
+///     DashPay v2 and bindings 2, and earlier versions the contract and bindings they had.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17)
+    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17); fetch_core_fork_activation_height and store_core_fork_activation_height Some(0) keep the Core fork activations (note 18)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; consensus_params_update 2 installs the full evidence policy (note 16)
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); data trigger bindings 3 refuse a replace or a delete of a token market order (note 17)
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; consensus_params_update 2 installs the full evidence policy (note 16); update_core_info 1 records the chain locked height at which Core's V24 is first seen active (note 18); build_untied_withdrawal_transactions_from_documents 1 emits asset unlock payload version 2 once V24 is recorded as active (note 20); update_voter_identity 1 re-enables the voter key of the address a masternode returns to (note 22)
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); data trigger bindings 3 refuse a replace or a delete of a token market order (note 17) and drop the DashPay bindings (note 24); document create state_validation 3 keeps a create outside a contest off the values of a live one its index values do not decide (note 19); identity create basic_structure 1 checks the identity id before the asset lock proof and advanced_structure 2 no longer does (note 23)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -419,7 +532,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         methods: DPP_METHOD_VERSIONS_V3,
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
-    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12); the token market contract is selected (note 17)
+    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12); the token market contract is selected (note 17); DashPay v3 states what its data triggers checked (note 24)
     fee_version: FEE_VERSION4, // changed: decision proposals prefund their poll with 0.5 Dash (note 12)
     system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes, and the private document store limits size its store (note 13)
     consensus: ConsensusVersions {
