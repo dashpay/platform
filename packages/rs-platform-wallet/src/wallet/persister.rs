@@ -70,11 +70,6 @@ pub struct WalletPersister {
     /// discharge, so only it keeps them.
     #[cfg(feature = "shielded")]
     read_back_private_entries: Arc<std::sync::Mutex<BTreeSet<[u8; 32]>>>,
-    /// The (sender, recipient) pairs of journaled private payments whose
-    /// sender the wallet did not manage when they were last restored: an
-    /// identity added since holds them until the next restoration reserves
-    /// them. Replaced by every restoration. In memory only.
-    absent_sender_private_pairs: Arc<std::sync::Mutex<BTreeSet<(Identifier, Identifier)>>>,
     /// The commitments of the private contact request payments whose journal
     /// records were discharged in this session (read back, never delivered,
     /// or proven expired). Shared by the clones the wallet and the
@@ -121,7 +116,6 @@ impl WalletPersister {
             contact_payment_gate: Arc::new(tokio::sync::Mutex::new(())),
             #[cfg(feature = "shielded")]
             read_back_private_entries: Arc::default(),
-            absent_sender_private_pairs: Arc::default(),
             discharged_private_entries: Arc::default(),
             private_payments_unrestored: Arc::default(),
         }
@@ -143,34 +137,6 @@ impl WalletPersister {
     #[cfg(feature = "shielded")]
     pub(crate) fn take_read_back_private_entries(&self) -> BTreeSet<[u8; 32]> {
         std::mem::take(&mut *self.read_back_entries())
-    }
-
-    /// Hold `pairs`, the (sender, recipient) pairs of journaled private
-    /// payments whose sender the wallet does not manage now, replacing the
-    /// ones an earlier restoration held.
-    #[cfg(feature = "shielded")]
-    pub(crate) fn hold_absent_sender_private_pairs(
-        &self,
-        pairs: BTreeSet<(Identifier, Identifier)>,
-    ) {
-        *self
-            .absent_sender_private_pairs
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = pairs;
-    }
-
-    /// Whether a journaled private payment from `sender` to `recipient` holds
-    /// the pair though the wallet did not manage `sender` when it was last
-    /// restored ([`Self::hold_absent_sender_private_pairs`]).
-    pub(crate) fn absent_sender_private_pair_held(
-        &self,
-        sender: &Identifier,
-        recipient: &Identifier,
-    ) -> bool {
-        self.absent_sender_private_pairs
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .contains(&(*sender, *recipient))
     }
 
     /// Note `commitments`, whose private payments' journal records were just

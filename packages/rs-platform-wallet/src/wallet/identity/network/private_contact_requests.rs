@@ -431,11 +431,9 @@ pub(crate) struct ReservedPrivatePayments {
     /// The (sender, recipient) pairs reserved, each once, in the payments'
     /// order.
     pub(crate) restored: Vec<(Identifier, Identifier)>,
-    /// The pairs of payments whose sender the wallet does not manage.
-    #[cfg_attr(not(feature = "shielded"), allow(dead_code))]
-    pub(crate) absent: BTreeSet<(Identifier, Identifier)>,
-    /// Every payment left unresolved, reserved or with its sender absent, as
-    /// (entry commitment, sender, recipient).
+    /// Every payment left unresolved, reserved or with its sender not managed
+    /// by the wallet, as (entry commitment, sender, recipient): the wallet's
+    /// hold on each pair until its record is discharged.
     #[cfg_attr(not(feature = "shielded"), allow(dead_code))]
     pub(crate) unresolved: Vec<([u8; 32], Identifier, Identifier)>,
 }
@@ -458,7 +456,7 @@ pub(crate) struct ReservedPrivatePayments {
 /// - one whose request the sender's tracked request to its recipient records
 ///   or supersedes, as a private sync that recorded it settled it;
 /// - one whose sender the wallet does not manage, returned in
-///   [`ReservedPrivatePayments::absent`].
+///   [`ReservedPrivatePayments::unresolved`] for the wallet to hold its pair.
 ///
 /// The pair `paying` is retargeted to the entry of its first payment left to
 /// reserve, as the entry about to be paid is not paid for; every other pair
@@ -480,7 +478,6 @@ pub(crate) fn reserve_unresolved_private_payments(
             continue;
         }
         let Some(managed) = info.identity_manager.managed_identity_mut(&sender) else {
-            reserved.absent.insert((sender, recipient));
             reserved.unresolved.push((commitment, sender, recipient));
             continue;
         };
@@ -525,14 +522,13 @@ pub(crate) async fn restore_journaled_private_payments(
         .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?;
     let ReservedPrivatePayments {
         restored,
-        absent,
         unresolved,
     } = reserve_unresolved_private_payments(
         info, generation, wallet_id, persister, payments, None,
     )?;
-    persister.hold_absent_sender_private_pairs(absent);
     // The wallet holds each unresolved payment's pair too, beyond its sender
-    // identity, until its record is discharged.
+    // identity, and whether or not it manages the sender, until its record is
+    // discharged.
     persister.note_journaled_private_payments(unresolved);
     // Under the same lock, after the reservations: a send that sees an
     // identity's hold gone sees them.
@@ -882,13 +878,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .await?;
         self.release_discharged_private_requests().await?;
         // Held beyond the sender identity: a journaled payment's pair outlives
-        // the identity's removal, as does an absent sender's.
+        // the identity's removal, and holds for a sender loaded after it was
+        // restored, until its record is discharged.
         let held_by_wallet = self
             .persister
-            .absent_sender_private_pair_held(sender_identity_id, recipient_identity_id)
-            || self
-                .persister
-                .private_pair_journaled(sender_identity_id, recipient_identity_id);
+            .private_pair_journaled(sender_identity_id, recipient_identity_id);
         let reserved = self
             .with_managed(sender_identity_id, |managed| {
                 if adopt_reply
@@ -2101,9 +2095,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// A payment whose request the sender's tracked request to that recipient
     /// records or supersedes is resolved and left alone, as
     /// [`Self::restore_pending_private_contact_requests`] leaves it. One
-    /// whose sender the wallet does not manage holds its pair for the public
-    /// send of an identity added later, until the next restoration
-    /// (`WalletPersister::hold_absent_sender_private_pairs`).
+    /// whose sender the wallet does not manage holds its pair for the sends
+    /// of an identity added later, until its record is discharged
+    /// (`WalletPersister::private_pair_journaled`).
     ///
     /// An identity loaded marking a private payment that may be unresolved
     /// is released when the journal is authoritative (`journal_authoritative`:
@@ -7542,6 +7536,97 @@ mod tests {
             .expect("journal")
             .is_empty());
         assert!(!persister.private_pair_journaled(&alice.id(), &bob.id()));
+    }
+
+    /// A payment restored while the wallet did not manage its sender holds the
+    /// pair for that sender once it is loaded, through the wallet-level hold
+    /// its commitment owns: so its discharge releases the pair, and a retry
+    /// pays with no other restoration.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_release_an_absent_sender_s_pair_once_its_payment_is_discharged() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (_manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let wallet_id = alice_wallet.wallet_id();
+        let commitment = [0x5C; 32];
+        let identities = |change: Box<
+            dyn FnOnce(&mut crate::wallet::identity::IdentityManager, &WalletPersister) + Send,
+        >| {
+            let iw = alice_wallet.identity();
+            async move {
+                let mut wm = iw.wallet_manager.write().await;
+                change(
+                    &mut wm
+                        .get_wallet_info_mut(&wallet_id)
+                        .expect("the wallet")
+                        .identity_manager,
+                    &iw.persister,
+                );
+            }
+        };
+        identities(Box::new(|manager, persister| {
+            manager
+                .remove_identity(&alice.id(), persister)
+                .expect("removed");
+        }))
+        .await;
+        let view = alice_wallet.identity().dashpay();
+        let restored = view
+            .restore_private_payments(&[(alice.id(), bob.id(), 1, commitment)], true)
+            .await
+            .expect("restored");
+        assert!(restored.is_empty(), "the sender is not managed");
+        let loaded = alice.clone();
+        identities(Box::new(move |manager, persister| {
+            manager
+                .add_identity(loaded, 0, wallet_id, persister)
+                .expect("loaded");
+        }))
+        .await;
+        let send = |kept: Arc<Mutex<Vec<BinaryData>>>| {
+            let view = alice_wallet.identity().dashpay();
+            let (alice_id, bob_id) = (alice.id(), bob.id());
+            let (signer, crypto) = (&alice_signer, &alice_crypto);
+            async move {
+                view.send_private_contact_request(
+                    &alice_id,
+                    &bob_id,
+                    None,
+                    AutoAcceptProofSource::None,
+                    None,
+                    signer,
+                    crypto,
+                    keep_entry(&kept),
+                )
+                .await
+            }
+        };
+        let kept = Arc::new(Mutex::new(Vec::new()));
+        let held = send(Arc::clone(&kept)).await;
+        assert!(
+            matches!(
+                held,
+                Err(PlatformWalletError::PrivateContactRequestPending(_))
+            ),
+            "{held:?}"
+        );
+        assert!(kept.lock().expect("kept").is_empty(), "held: nothing paid");
+
+        alice_wallet
+            .persister()
+            .note_discharged_private_entries([commitment]);
+        let retried = send(Arc::clone(&kept)).await;
+        assert!(
+            matches!(
+                retried,
+                Err(PlatformWalletError::PrivateContactRequestPending(_))
+            ),
+            "paid, not read back: {retried:?}"
+        );
+        assert_eq!(kept.lock().expect("kept").len(), 1, "the retry pays");
     }
 
     /// A payment a restoration from the journal finds unresolved holds its

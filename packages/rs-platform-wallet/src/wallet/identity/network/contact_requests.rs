@@ -852,9 +852,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             return Ok(None);
         }
         if managed.dashpay().private_reply_pending(recipient)
-            || self
-                .persister
-                .absent_sender_private_pair_held(sender, recipient)
             || self.persister.private_pair_journaled(sender, recipient)
         {
             return Err(PlatformWalletError::PrivateContactRequestPending(
