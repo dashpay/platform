@@ -155,27 +155,26 @@ class FfiSmokeTest {
     }
 
     /**
-     * Rust↔Kotlin persistence-descriptor lockstep. The trampolines resolve
-     * each bridge method by (name, descriptor) only when its slot first
-     * fires — for the invitation upsert that would be mid-way through a
-     * live, funded `create_invitation`. Resolving the whole table up front
-     * turns a descriptor typo into a CI failure instead.
-     */
-    /**
      * The private contact request scan state needs every override it
-     * depends on: JNI wires its slots only for a bridge that overrides the
-     * contact upsert native calls, the scan-state store and the scan-state
-     * load (a read position vouches for the requests an inherited no-op
-     * contact writer never stored). A bridge declaring the capability but
-     * leaving any one of them inherited is not attested; one implementing
-     * all three, and the Room handler, keep it.
+     * depends on, and atomic changesets: JNI wires its slots only for a
+     * bridge that overrides the contact upsert native calls, the
+     * scan-state store and the scan-state load (a read position vouches
+     * for the requests an inherited no-op contact writer never stored), and
+     * the wallet keeps the state only with `ATOMIC_CHANGESETS` too (an
+     * un-ignore stores the sender's removal and the position rewind in one
+     * changeset). JNI always wires the changeset begin and end callbacks,
+     * so the atomic half is the bridge's declaration. A bridge declaring
+     * both but leaving any override inherited, or declaring the scan state
+     * without atomic rounds, has neither; one implementing all three and
+     * declaring both, and the Room handler, keep both.
      */
     @Test
     fun privateContactScanStateCapabilityNeedsEveryOverride() {
         NativeLoader.ensureLoaded()
-        val bit = NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
+        val bits = NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE or
+            ATOMIC_CHANGESETS
         fun effective(bridge: NativePersistenceBridge): Boolean =
-            WalletManagerNative.nativeEffectivePersistenceCapabilityBits(bridge) and bit != 0L
+            WalletManagerNative.nativeEffectivePersistenceCapabilityBits(bridge) and bits == bits
 
         assertTrue("every override", effective(ScanStateBridge.Full()))
         assertFalse("no contact upsert", effective(ScanStateBridge.WithoutContactUpsert()))
@@ -185,6 +184,13 @@ class FfiSmokeTest {
             "every override, not declared",
             effective(object : ScanStateBridge.Full() {
                 override fun persistenceCapabilitiesBits(): Long = 0L
+            }),
+        )
+        assertFalse(
+            "every override, no atomic changesets",
+            effective(object : ScanStateBridge.Full() {
+                override fun persistenceCapabilitiesBits(): Long =
+                    NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
             }),
         )
 
@@ -199,6 +205,13 @@ class FfiSmokeTest {
         }
     }
 
+    /**
+     * Rust↔Kotlin persistence-descriptor lockstep. The trampolines resolve
+     * each bridge method by (name, descriptor) only when its slot first
+     * fires — for the invitation upsert that would be mid-way through a
+     * live, funded `create_invitation`. Resolving the whole table up front
+     * turns a descriptor typo into a CI failure instead.
+     */
     @Test
     fun persistenceBridgeDescriptorsAllResolve() {
         NativeLoader.ensureLoaded()
@@ -228,7 +241,7 @@ private abstract class ScanStateBridge : NativePersistenceBridge() {
     override fun persistenceCapabilitiesVersion(): Int = 1
 
     override fun persistenceCapabilitiesBits(): Long =
-        CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
+        CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE or ATOMIC_CHANGESETS
 
     open class Full : ScanStateBridge() {
         @Suppress("LongParameterList")
@@ -343,3 +356,6 @@ private abstract class ScanStateBridge : NativePersistenceBridge() {
         ): Int = 0
     }
 }
+
+/** `PersistenceCapabilities::ATOMIC_CHANGESETS` (bit 0). */
+private const val ATOMIC_CHANGESETS: Long = 1L
