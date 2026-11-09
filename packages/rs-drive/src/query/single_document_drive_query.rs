@@ -142,7 +142,15 @@ impl SingleDocumentDriveQuery {
                     // Each branch selects one document, so turning its global limit into an
                     // instance cap produces the same merged bytes as the earlier limit lift.
                     for selection in [&mut non_contested, &mut contested] {
-                        selection.query.query.limit = selection.query.limit.take();
+                        if let Some(global_limit) = selection.query.limit.take() {
+                            selection.query.query.limit = Some(
+                                selection
+                                    .query
+                                    .query
+                                    .limit
+                                    .map_or(global_limit, |limit| limit.min(global_limit)),
+                            );
+                        }
                     }
                 }
                 PathQuery::merge(
@@ -447,6 +455,10 @@ mod tests {
                                 root,
                                 drive.grove.root_hash(None, grove_version).unwrap().unwrap()
                             );
+                            let (current_root, current_rows) =
+                                GroveDb::verify_query(&proof, &new, &GROVE_V5)
+                                    .expect("current verifier accepts the producer's proof");
+                            assert_eq!((current_root, &current_rows), (root, &rows));
                             assert_eq!(
                                 rows.into_iter()
                                     .filter(|(_, _, element)| element.is_some())

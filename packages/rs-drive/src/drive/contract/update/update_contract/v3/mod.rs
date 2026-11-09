@@ -311,14 +311,6 @@ mod tests {
                     .expect("calculate update fee")
                 };
                 let estimate = fee_for(false, version);
-                let mut previous_insert_version = version.clone();
-                previous_insert_version
-                    .drive
-                    .methods
-                    .contract
-                    .insert
-                    .insert_contract = 2;
-                let previous_estimate = fee_for(false, &previous_insert_version);
                 let stored_bytes = || {
                     drive
                         .grove
@@ -346,7 +338,6 @@ mod tests {
                     serialize_contract_for_storage(&contract, version).unwrap(),
                     "the applied update must be persisted"
                 );
-                println!("add_type={add_type}, via_apply_contract={via_apply_contract}, previous={previous_estimate:?}, estimate={estimate:?}, applied={applied:?}");
             }
         }
     }
