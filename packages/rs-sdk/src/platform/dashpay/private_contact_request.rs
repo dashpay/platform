@@ -976,6 +976,16 @@ pub fn private_contact_requests_from_scan(
     identities: &BTreeMap<Identifier, ProvedIdentity>,
     platform_version: &PlatformVersion,
 ) -> Result<PrivateContactRequestScan, Error> {
+    // A contract whose type is not private holds no store, as sealing refuses it: an empty
+    // scan of it is refused too, rather than handing back its cursor.
+    if private_contact_request_type(dashpay_contract)?
+        .private_document()
+        .is_none()
+    {
+        return Err(Error::Generic(format!(
+            "DashPay {PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME} is not a private type"
+        )));
+    }
     // A scan of another store's page is refused whatever it holds: even with no entry the
     // wallet's keys open, its cursor is that store's, which must not be kept as DashPay's.
     if !scan.is_of_store(
@@ -2845,6 +2855,53 @@ mod tests {
             PlatformVersion::latest(),
         )
         .is_ok());
+    }
+
+    /// A contract whose `privateContactRequest` type is an ordinary public type holds no
+    /// private store: a scan of it is refused, even an empty one, rather than handing back its
+    /// cursor.
+    #[test]
+    fn should_refuse_a_scan_of_a_contract_whose_type_is_not_private() {
+        use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+        use dpp::platform_value::platform_value;
+        use dpp::platform_value::string_encoding::Encoding;
+
+        let id = Identifier::from([0x5E; 32]);
+        let public = DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": id.to_string(Encoding::Base58),
+                "ownerId": Identifier::from([8; 32]).to_string(Encoding::Base58),
+                "version": 1,
+                "documentSchemas": {
+                    PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME: {
+                        "type": "object",
+                        "properties": {
+                            "accountReference": {
+                                "type": "integer", "minimum": 0, "position": 0
+                            }
+                        },
+                        "additionalProperties": false
+                    }
+                }
+            }),
+            true,
+            PlatformVersion::latest(),
+        )
+        .expect("the contract registers");
+        let target = PrivateDocumentTarget {
+            contract_id: id.to_buffer(),
+            document_type_name: PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+        };
+        let error = private_contact_requests_from_scan(
+            &public,
+            recipient_keys().scan_page(&target, 0, &page(vec![])),
+            &BTreeMap::new(),
+            PlatformVersion::latest(),
+        )
+        .expect_err("a public type")
+        .to_string();
+        assert!(error.contains("is not a private type"), "{error}");
     }
 
     /// Two recovered sent requests to the same recipient for the same account reference are
