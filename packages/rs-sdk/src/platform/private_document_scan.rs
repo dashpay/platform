@@ -514,8 +514,10 @@ where
 }
 
 /// The pages of `chunk_size` entries from `first`, a chunk boundary, to `total`, fetched up to
-/// `max_concurrent` at once and yielded in store order. A page that does not hold its whole
-/// chunk, short of the store's end, is an error: the walk would otherwise skip entries.
+/// `max_concurrent` at once and yielded in store order. A page that ends at the end of an older
+/// snapshot of the store, partway through its chunk, is completed with the rest of the chunk
+/// read from where it stopped. A page that holds more than its chunk, or stops short of it for
+/// any other reason before the store's end, is an error: the walk would otherwise skip entries.
 fn whole_chunk_pages<F>(
     fetch: F,
     first: u64,
@@ -532,17 +534,40 @@ where
     .filter(move |start| *start < total);
     stream::iter(starts)
         .map(move |start| {
-            let page = fetch(start);
+            let fetch = fetch.clone();
             async move {
-                let entries = page.await?;
-                let len = entries.entries.len() as u64;
-                let first_position = entries.entries.first().map(|entry| entry.position);
-                let whole = len == chunk_size || start.saturating_add(len) >= total;
-                if len > chunk_size || !whole || first_position.is_some_and(|p| p != start) {
-                    return Err(Error::Generic(format!(
-                        "the page from position {start} holds {len} entries, not the chunk of \
-                         {chunk_size} the store's earlier pages set"
-                    )));
+                let mut entries = fetch(start).await?;
+                // A page read from an older snapshot than the first page's (a node behind,
+                // within the SDK's tolerance) may end at that snapshot's end, partway through
+                // its chunk: the rest of the chunk is read from where it stopped, into the same
+                // page, before any later chunk is yielded, so no entry is skipped.
+                loop {
+                    let len = entries.entries.len() as u64;
+                    let end = start.saturating_add(len);
+                    let first_position = entries.entries.first().map(|entry| entry.position);
+                    let refused = || {
+                        Error::Generic(format!(
+                            "the page from position {start} holds {len} entries, not the chunk \
+                             of {chunk_size} the store's earlier pages set"
+                        ))
+                    };
+                    if len > chunk_size || first_position.is_some_and(|p| p != start) {
+                        return Err(refused());
+                    }
+                    if len == chunk_size || end >= total {
+                        break;
+                    }
+                    // Short of its chunk and of the walk's end: only the end of the store it
+                    // was read from explains that.
+                    if end < entries.total_count {
+                        return Err(refused());
+                    }
+                    let rest = fetch(end).await?;
+                    if rest.entries.first().map(|entry| entry.position) != Some(end) {
+                        return Err(refused());
+                    }
+                    entries.entries.extend(rest.entries);
+                    entries.total_count = rest.total_count;
                 }
                 Ok(PrivateDocumentPage {
                     start_position: start,
@@ -1266,6 +1291,30 @@ mod tests {
             Box::pin(async move {
                 // The node answering the page from 4 is behind: its store held 6 entries.
                 let total = if start == 4 { 6 } else { 30 };
+                Ok(drive_page(4, total, start))
+            })
+        };
+        let pages = walk(fetch, 0, MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES).await;
+        let mut expected_start = 0;
+        let mut positions = Vec::new();
+        for page in pages {
+            let page = page.expect("every page reads");
+            assert_eq!(page.start_position, expected_start);
+            expected_start += page.entries.entries.len() as u64;
+            positions.extend(page.entries.entries.iter().map(|entry| entry.position));
+        }
+        assert_eq!(positions, (0..30).collect::<Vec<_>>());
+    }
+
+    /// A page fetched at once with others from a node behind, whose store ended partway
+    /// through its chunk, is completed from where it stopped before any later chunk is
+    /// yielded: every entry up to the first page's count comes once, in order.
+    #[tokio::test]
+    async fn should_complete_a_chunk_an_older_snapshot_ended_partway_through() {
+        let fetch = |start: u64| -> PageFuture {
+            Box::pin(async move {
+                // The node answering the page from 12 is behind: its store held 14 entries.
+                let total = if start == 12 { 14 } else { 30 };
                 Ok(drive_page(4, total, start))
             })
         };
