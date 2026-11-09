@@ -27,6 +27,9 @@ pub mod identities_contract_keys_query;
 pub mod identity_keys_remaining_budgets;
 pub mod moderation_charters;
 pub mod private_document_entries;
+#[cfg(test)]
+mod private_document_envelope_tests;
+pub mod private_document_scan;
 pub mod query;
 pub mod query_settings;
 #[cfg(feature = "shielded")]

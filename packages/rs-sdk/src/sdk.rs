@@ -5,8 +5,8 @@ use crate::internal_cache::NonceCache;
 use crate::mock::MockResponse;
 #[cfg(feature = "mocks")]
 use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
-use crate::platform::fetch_current_no_parameters::FetchCurrent;
 use crate::platform::transition::put_settings::PutSettings;
+use crate::platform::types::epoch::resolve_current_epoch;
 use crate::platform::Identifier;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
@@ -18,7 +18,6 @@ use dash_context_provider::ContextProvider;
 use dash_context_provider::MockContextProvider;
 use dpp::bincode;
 use dpp::bincode::error::DecodeError;
-use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::dashcore::Network;
 use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::prelude::IdentityNonce;
@@ -757,12 +756,24 @@ impl Sdk {
     /// Returns the SDK's protocol version number after the (possible) ratchet.
     ///
     /// [`SdkBuilder::with_version`]: SdkBuilder::with_version
+    /// [`ExtendedEpochInfo::fetch_current`]: crate::platform::fetch_current_no_parameters::FetchCurrent::fetch_current
     pub async fn refresh_protocol_version(&self) -> Result<u32, Error> {
+        Ok(self.refresh_protocol_version_or_failure(None).await.0)
+    }
+
+    /// [`Self::refresh_protocol_version`], under the caller's request `settings` (the SDK's
+    /// own when `None`), with the fetch's failure when it failed: why the version it leaves
+    /// may not show the network's, for a caller that refuses on it.
+    pub(crate) async fn refresh_protocol_version_or_failure(
+        &self,
+        settings: Option<RequestSettings>,
+    ) -> (u32, Option<Error>) {
         if !self.prove() {
-            return Ok(self.protocol_version_number());
+            return (self.protocol_version_number(), None);
         }
+        let mut failure = None;
         if !self.version_pinned {
-            if let Err(error) = ExtendedEpochInfo::fetch_current(self).await {
+            if let Err(error) = resolve_current_epoch(self, settings).await {
                 tracing::warn!(
                     target: "dash_sdk::protocol_version",
                     %error,
@@ -771,9 +782,10 @@ impl Sdk {
                      proof-verified version learned so far (never falling back to \
                      an unverified one)"
                 );
+                failure = Some(error);
             }
         }
-        Ok(self.protocol_version_number())
+        (self.protocol_version_number(), failure)
     }
 
     /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.

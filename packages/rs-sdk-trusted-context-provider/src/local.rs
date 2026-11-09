@@ -11,6 +11,7 @@ use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{DataContract, Identifier};
 use dpp::version::PlatformVersion;
 
+use crate::known_contracts::hold_unless_newer_held;
 use crate::system_contracts::{is_inactive_system_contract, system_data_contract};
 
 /// The data contracts and token configurations a context provider can serve
@@ -35,19 +36,35 @@ impl LocalContextResolver {
         Self::default()
     }
 
-    /// Add a data contract to the known contracts cache
+    /// Add a data contract to the known contracts cache, as
+    /// [`Self::add_known_data_contract`] adds one.
     pub fn add_known_contract(&self, contract: DataContract) {
         self.add_known_data_contract(Arc::new(contract));
     }
 
-    /// Add a shared data contract to the known contracts cache.
+    /// Add a shared data contract to the known contracts cache, unless it
+    /// holds one of a higher version under the same id, which another
+    /// operation promoted: a registration that waited on its fetch, or an
+    /// older contract restored from a saved cache, does not replace it.
     pub fn add_known_data_contract(&self, contract: Arc<DataContract>) {
+        let mut known = self
+            .known_contracts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        hold_unless_newer_held(&mut known, contract);
+    }
+
+    /// Put a data contract in the known contracts cache in place of whatever it
+    /// holds under its id, of any version: an explicit replacement by a holder
+    /// that means it, such as one rolling back to a contract it bundles.
+    /// [`Self::add_known_contract`] keeps a newer one instead.
+    pub fn replace_known_contract(&self, contract: DataContract) {
         let id = contract.id();
         let mut known = self
             .known_contracts
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        known.insert(id, contract);
+        known.insert(id, Arc::new(contract));
     }
 
     /// Insert a contract only when its version is strictly newer, returning
@@ -88,12 +105,16 @@ impl LocalContextResolver {
         known.remove(id).is_some()
     }
 
-    /// Add multiple data contracts to the known contracts cache, each through
-    /// [`Self::add_known_contract_if_newer`]. A copy preloaded from storage
+    /// Add multiple data contracts to the known contracts cache, each as
+    /// [`Self::add_known_contract`] adds one. A copy preloaded from storage
     /// never replaces a newer version the cache already holds.
     pub fn add_known_contracts(&self, contracts: Vec<DataContract>) {
+        let mut known = self
+            .known_contracts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         for contract in contracts {
-            self.add_known_contract_if_newer(contract);
+            hold_unless_newer_held(&mut known, Arc::new(contract));
         }
     }
 
@@ -301,12 +322,11 @@ mod tests {
         let mut same_version = app_contract();
         same_version.set_version(2);
         resolver.add_known_contracts(vec![same_version]);
+        let after_same = resolver.get_known_contract(&id).expect("cached contract");
+        assert_eq!(after_same.version(), 2);
         assert!(
-            Arc::ptr_eq(
-                &cached,
-                &resolver.get_known_contract(&id).expect("cached contract")
-            ),
-            "an equal version must keep the cached body"
+            !Arc::ptr_eq(&cached, &after_same),
+            "an equal version replaces the held body, as in the verified provider's cache"
         );
 
         let mut newer = app_contract();

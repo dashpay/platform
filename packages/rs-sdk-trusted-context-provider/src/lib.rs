@@ -18,6 +18,7 @@
 //! system-contract and HTTP plumbing; the name of the crate predates it.
 
 pub mod error;
+mod known_contracts;
 pub mod local;
 mod proof_fetches;
 mod proof_transport;

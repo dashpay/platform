@@ -27,6 +27,10 @@ use crate::platform::data_contracts_latest_versions::{
 use crate::platform::documents::document_query::RankingDirection;
 use crate::platform::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
 use crate::platform::private_document_entries::PrivateDocumentEntries;
+use crate::platform::private_document_scan::PrivateDocumentScanKeys;
+use crate::platform::transition::broadcast::BroadcastStateTransition;
+use crate::platform::transition::private_document_create_from_shielded_pool::PrivateDocumentCreateFromShieldedPool;
+use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::types::epoch::current_epoch_probe_query;
 use crate::platform::types::identity::{
     IdentityRequest, IdentityResponse, NonUniquePublicKeyHashQuery,
@@ -40,6 +44,9 @@ use crate::platform::{
 };
 use crate::SdkBuilder;
 use dapi_grpc::mock::Mockable;
+use dapi_grpc::platform::v0::get_contested_resources_response::{
+    get_contested_resources_response_v0, GetContestedResourcesResponseV0,
+};
 use dapi_grpc::platform::v0::get_contract_group_info_response::GetContractGroupInfoResponseV0;
 use dapi_grpc::platform::v0::get_data_contracts_latest_versions_response::{
     get_data_contracts_latest_versions_response_v0::Result as LatestVersionsResult,
@@ -47,6 +54,9 @@ use dapi_grpc::platform::v0::get_data_contracts_latest_versions_response::{
     GetDataContractsLatestVersionsResponseV0,
 };
 use dapi_grpc::platform::v0::get_documents_request::WhereClause;
+use dapi_grpc::platform::v0::{
+    get_contested_resources_response, GetContestedResourcesRequest, GetContestedResourcesResponse,
+};
 use dapi_grpc::platform::v0::{
     get_contract_group_info_request, get_contract_group_info_response,
     get_data_contracts_by_range_request, get_data_contracts_latest_versions_request,
@@ -66,7 +76,7 @@ use dapi_grpc::platform::v0::{
     GetIdentityKeysRemainingBudgetsRequest, GetMasternodeYesNoVoteRequest,
     GetMostRecentShieldedAnchorRequest, GetPrivateDocumentEntriesRequest,
     GetShieldedAnchorsRequest, GetShieldedEncryptedNotesRequest, GetShieldedNotesCountRequest,
-    GetShieldedNullifiersRequest, GetShieldedPoolStateRequest, GetYesNoVotePollStateRequest,
+    GetShieldedNullifiersRequest, GetShieldedPoolStateRequest, GetYesNoVotePollStateRequest, Proof,
     ResponseMetadata,
 };
 use dapi_grpc::tonic::Status;
@@ -77,8 +87,12 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::TokenConfiguration;
 use dpp::document::Document;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::platform_value::BinaryData;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier, Identity};
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
+use dpp::shielded::{OrchardBundleParams, SerializedAction};
+use dpp::state_transition::private_document_create_from_shielded_pool_transition::methods::PrivateDocumentCreateFromShieldedPoolTransitionMethodsV0;
+use dpp::state_transition::private_document_create_from_shielded_pool_transition::PrivateDocumentCreateFromShieldedPoolTransition;
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::version::v13::PROTOCOL_VERSION_13;
 use dpp::version::v14::PROTOCOL_VERSION_14;
@@ -87,13 +101,14 @@ use dpp::version::{PlatformVersion, PLATFORM_VERSIONS};
 use dpp::voting::vote_polls::yes_no_vote_poll::{
     YesNoMinimumVotingPower, YesNoVotePoll, YesNoVotePollPurpose,
 };
+use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive::query::{
     HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
     SelectProjection, TimeRangeSelector, WhereClause as DriveWhereClause, WhereOperator,
 };
 use drive_proof_verifier::types::{
-    Documents, MostRecentShieldedAnchor, ShieldedAnchors, ShieldedEncryptedNotes,
-    ShieldedNotesCount, ShieldedNullifierStatuses, ShieldedPoolState,
+    ContestedResource, Documents, MostRecentShieldedAnchor, ShieldedAnchors,
+    ShieldedEncryptedNotes, ShieldedNotesCount, ShieldedNullifierStatuses, ShieldedPoolState,
 };
 use drive_proof_verifier::{
     DocumentAverage, DocumentCount, DocumentHavingEntries, DocumentRankedEntries,
@@ -166,6 +181,71 @@ impl ContextProvider for NoQuorumKeys {
         _: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         Ok(None)
+    }
+    fn get_token_configuration(
+        &self,
+        _: &Identifier,
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        Ok(None)
+    }
+    fn get_quorum_public_key(
+        &self,
+        _: u32,
+        _: [u8; 32],
+        _: u32,
+    ) -> Result<[u8; 48], ContextProviderError> {
+        Err(ContextProviderError::InvalidQuorum(
+            "no quorum keys here".to_string(),
+        ))
+    }
+    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+        Ok(1)
+    }
+}
+
+/// Configured so that it can never give a quorum key, as wasm-sdk's context without a
+/// trusted quorum source.
+struct NoQuorumSource;
+impl ContextProvider for NoQuorumSource {
+    fn get_data_contract(
+        &self,
+        _: &Identifier,
+        _: &PlatformVersion,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        Ok(None)
+    }
+    fn get_token_configuration(
+        &self,
+        _: &Identifier,
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        Ok(None)
+    }
+    fn get_quorum_public_key(
+        &self,
+        _: u32,
+        _: [u8; 32],
+        _: u32,
+    ) -> Result<[u8; 48], ContextProviderError> {
+        Err(ContextProviderError::Config(
+            "no quorum source is configured".to_string(),
+        ))
+    }
+    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+        Ok(1)
+    }
+}
+
+/// Configured so that it can never give a data contract.
+struct NoContractSource;
+impl ContextProvider for NoContractSource {
+    fn get_data_contract(
+        &self,
+        _: &Identifier,
+        _: &PlatformVersion,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        Err(ContextProviderError::Config(
+            "no data contract source is configured".to_string(),
+        ))
     }
     fn get_token_configuration(
         &self,
@@ -595,6 +675,89 @@ async fn should_refuse_without_asking_when_pinned_below_the_version() {
     );
     assert_eq!(probes(&sdk).await, 0);
     assert_eq!(sent(&sdk, &fee_pots()).await, 0);
+}
+
+/// A proved fetch the node answered fails with a configuration error naming `reason`, after
+/// one attempt, and bans no node.
+async fn assert_fails_on_the_sdk_setup(sdk: &Sdk, reason: &str) {
+    let result = ExtendedEpochInfo::fetch_with_metadata(sdk, probe_request(), None).await;
+    assert_failed_on_the_sdk_setup(sdk, result, probes(sdk).await, reason);
+}
+
+/// `result`, of a proved fetch the node answered `sent` times, is a configuration error
+/// naming `reason`, the fetch was not retried, and no node was banned for it.
+fn assert_failed_on_the_sdk_setup<T: std::fmt::Debug>(
+    sdk: &Sdk,
+    result: Result<T, Error>,
+    sent: usize,
+    reason: &str,
+) {
+    let banned = sdk.address_list().is_banned(&node());
+    assert!(
+        matches!(
+            &result,
+            Err(Error::ContextProviderError(ContextProviderError::Config(message)))
+                if message.contains(reason)
+        ),
+        "{result:?}, sent {sent} times, node banned: {banned}"
+    );
+    assert_eq!(sent, 1, "sent once, never retried");
+    assert!(!banned);
+}
+
+/// A context provider set up so that it can never give a quorum key cannot check any answer
+/// either, so another node's answer would fail alike: the fetch fails with the provider's
+/// configuration error, is not sent to another node, and bans no node.
+#[tokio::test]
+async fn should_fail_a_proved_fetch_once_and_ban_no_node_when_the_provider_has_no_quorum_source() {
+    let sdk = sdk_with_provider(V13, false, 0, true, NoQuorumSource);
+    answer_probe(&sdk, "pv13").await;
+    assert_fails_on_the_sdk_setup(&sdk, "no quorum source is configured").await;
+}
+
+/// A context provider set up so that it can never give a data contract fails alike for every
+/// node's answer, also where Drive looks the contract up through the provider and its own
+/// errors cannot carry the provider's: the fetch fails with the provider's configuration
+/// error, is not sent to another node, and bans no node.
+#[tokio::test]
+async fn should_fail_a_proved_fetch_once_and_ban_no_node_when_the_provider_has_no_contract_source()
+{
+    let sdk = sdk_with_provider(V13, false, 0, true, NoContractSource);
+    let request: GetContestedResourcesRequest = VotePollsByDocumentTypeQuery {
+        contract_id: dpns().id(),
+        document_type_name: "domain".to_string(),
+        index_name: "parentNameAndLabel".to_string(),
+        start_at_value: None,
+        start_index_values: vec![dpp::platform_value::Value::Text("dash".to_string())],
+        end_index_values: vec![],
+        limit: None,
+        order_ascending: true,
+    }
+    .query(&QuerySettings {
+        request_settings: &RequestSettings::default(),
+        protocol_version: PlatformVersion::latest(),
+        verified_protocol_version: 0,
+        prove: true,
+    })
+    .unwrap();
+    // Drive looks the contract up before it reads the proof, so no real proof is needed.
+    let response = GetContestedResourcesResponse {
+        version: Some(get_contested_resources_response::Version::V0(
+            GetContestedResourcesResponseV0 {
+                result: Some(get_contested_resources_response_v0::Result::Proof(
+                    Proof::default(),
+                )),
+                metadata: Some(ResponseMetadata {
+                    protocol_version: V13,
+                    ..Default::default()
+                }),
+            },
+        )),
+    };
+    answer(&sdk, &request, Ok(response)).await;
+    let result = ContestedResource::fetch_many(&sdk, request.clone()).await;
+    let sent = sent(&sdk, &request).await;
+    assert_failed_on_the_sdk_setup(&sdk, result, sent, "no data contract source is configured");
 }
 
 /// An SDK without proofs still learns the network's version from a proved probe.
@@ -1523,13 +1686,42 @@ fn assert_refused_for<T: std::fmt::Debug>(
     }
 }
 
-/// A `domain` query that reads the elements of `records.identity`.
+/// A `post` contract whose `hashtags` is a typed array of strings, indexed by element.
+fn posts() -> Arc<DataContract> {
+    let schemas = dpp::platform_value::platform_value!({"post": {
+        "type": "object",
+        "properties": {
+            "hashtags": {
+                "type": "array",
+                "maxItems": 10,
+                "items": {"type": "string", "minLength": 1, "maxLength": 61},
+                "position": 0
+            }
+        },
+        "indices": [
+            {"name": "byHashtag", "properties": [{"hashtags": "asc"}]}
+        ],
+        "additionalProperties": false
+    }});
+    Arc::new(
+        dpp::data_contract::DataContractFactory::new(PlatformVersion::latest().protocol_version)
+            .unwrap()
+            .create_with_value_config(Identifier::new([9; 32]), 0, schemas, None, None)
+            .unwrap()
+            .data_contract_owned(),
+    )
+}
+
+/// A `post` query that reads the elements of `hashtags`, which the type's index serves.
 fn contains_query() -> DocumentQuery {
-    plain_query().with_where(DriveWhereClause {
-        field: "records.identity".to_string(),
-        operator: WhereOperator::Contains,
-        value: dpp::platform_value::Value::Identifier([1; 32]),
-    })
+    DocumentQuery::new(posts(), "post")
+        .unwrap()
+        .with_limit(10)
+        .with_where(DriveWhereClause {
+            field: "hashtags".to_string(),
+            operator: WhereOperator::Contains,
+            value: dpp::platform_value::Value::Text("dash".to_string()),
+        })
 }
 
 /// A `tip` contract whose documents are summed by `amount`.
@@ -1793,7 +1985,10 @@ fn should_refuse_a_document_query_that_does_not_state_its_requirement() {
 }
 
 /// A mock SDK does not enforce the gate: it sends a query that uses a protocol 14 feature
-/// whatever version it starts at, as a test registered it.
+/// whatever version it starts at, as a test registered it. The check before sending still runs
+/// at the version the query is encoded with, so the feature here is a composite page, which a
+/// check at 13 reads by its shape alone; a typed array's elements, by contrast, are read only
+/// from 14, so a check at 13 refuses a `contains` as its verifier at 13 would.
 #[tokio::test]
 async fn should_send_protocol_14_document_queries_from_a_mock_that_does_not_enforce_the_gate() {
     let mut sdk = SdkBuilder::new_mock()
@@ -1801,10 +1996,10 @@ async fn should_send_protocol_14_document_queries_from_a_mock_that_does_not_enfo
         .build()
         .unwrap();
     sdk.mock()
-        .expect_fetch_many(contains_query(), None::<Documents>)
+        .expect_fetch(composite_query(), None::<CompositeDocuments>)
         .await
         .expect("a mock at 13 encodes the query");
-    Document::fetch_many(&sdk, contains_query())
+    CompositeDocuments::fetch(&sdk, composite_query())
         .await
         .expect("a mock sends what a test registered");
 }
@@ -2363,5 +2558,317 @@ async fn should_ask_the_network_before_sending_or_refusing_yes_no_queries_given_
     }
     for request in &votes {
         assert_eq!(sent(&sdk, request).await, 1, "{request:?}");
+    }
+}
+
+/// A refusal does not tell a network below a version from this SDK's own limit, such as a pin
+/// below it: `network_proven_below` does. With no verified answer, or one below the version
+/// that no probe hold covers, it asks the network, pinned or not, and takes the answer; a
+/// version verified at or above is taken without asking; a probe that fails fails the call.
+#[tokio::test]
+async fn should_tell_a_network_proven_below_a_version_from_a_pin_below_it() {
+    for (verified, signed, below) in [
+        (0, "pv13", true),
+        (0, "pv14", false),
+        // Verified below, but no hold shows the network still there: asked again.
+        (V13, "pv14", false),
+    ] {
+        let sdk = mock_sdk(V13, true, verified);
+        answer_probe(&sdk, signed).await;
+        let context = format!("verified {verified}, network {signed}");
+        assert_eq!(
+            sdk.network_proven_below(V14).await.expect(&context),
+            below,
+            "{context}"
+        );
+        assert_eq!(probes(&sdk).await, 1, "{context}");
+    }
+
+    let sdk = mock_sdk(V13, true, V14);
+    assert!(!sdk.network_proven_below(V14).await.expect("verified at 14"));
+    assert_eq!(probes(&sdk).await, 0);
+
+    let sdk = mock_sdk(V13, true, 0);
+    assert!(
+        sdk.network_proven_below(V14).await.is_err(),
+        "the probe has no answer"
+    );
+}
+
+/// A version verified earlier, by this SDK or a clone, does not show the network below a
+/// version now, as it may have upgraded since: an SDK that cannot ask it, because it enforces
+/// no gate, takes the network as proven below only while a probe's epoch hold shows it. A
+/// test's mock version stands for such a hold.
+#[tokio::test]
+async fn should_not_take_a_version_verified_earlier_as_the_network_below_now() {
+    let now_ms = chrono::Utc::now().timestamp_millis() as u64;
+    let hold = |epoch, until_ms| ProbeHold {
+        network: V13,
+        epoch,
+        until_ms,
+    };
+    let sdk = SdkBuilder::new_mock().build().unwrap();
+    sdk.verified_protocol_version.store(V13, Ordering::Relaxed);
+    assert!(
+        !sdk.network_proven_below(V14).await.unwrap(),
+        "a version verified earlier"
+    );
+    sdk.probe_hold.set(hold(3, now_ms - 1));
+    assert!(
+        !sdk.network_proven_below(V14).await.unwrap(),
+        "a hold whose epoch has ended"
+    );
+    sdk.probe_hold.set(hold(4, now_ms + 3_600_000));
+    assert!(
+        sdk.network_proven_below(V14).await.unwrap(),
+        "a hold that still shows it"
+    );
+
+    let mock = SdkBuilder::new_mock().build().unwrap();
+    mock.mock_verified_protocol_version(V13).unwrap();
+    assert!(
+        mock.network_proven_below(V14).await.unwrap(),
+        "a test's version"
+    );
+    assert!(!mock.network_proven_below(V13).await.unwrap());
+}
+
+/// A private document send from an SDK at protocol version 15, seeded or pinned, on a network
+/// a verified answer shows at 14 is refused before it is built, rather than broadcast to be
+/// rejected.
+#[tokio::test]
+async fn should_refuse_a_private_document_send_until_the_network_is_verified_at_15() {
+    for pinned in [false, true] {
+        let sdk = mock_sdk(PROTOCOL_VERSION_15, pinned, V14);
+        answer_probe(&sdk, "pv14").await;
+        let result = sdk
+            .private_document_create_from_shielded_pool(
+                Identifier::new([4; 32]),
+                "privateContactRequest".to_string(),
+                vec![BinaryData::new(vec![1; 589])],
+                114_140_000,
+                OrchardBundleParams {
+                    actions: vec![],
+                    anchor: [7; 32],
+                    proof: vec![],
+                    binding_signature: [9; 64],
+                },
+                None,
+            )
+            .await;
+        match result {
+            Err(Error::ProtocolVersionNotActive {
+                method: "broadcast_state_transition",
+                required: PROTOCOL_VERSION_15,
+                network: V14,
+                pinned: false,
+                cause: None,
+                ..
+            }) => {}
+            other => panic!("pinned {pinned}: expected a local refusal, got {other:?}"),
+        }
+        assert_eq!(probes(&sdk).await, 1, "pinned {pinned}");
+    }
+}
+
+/// The bundle of a private document send that the gate refuses before it is built.
+fn unbuilt_bundle() -> OrchardBundleParams {
+    OrchardBundleParams {
+        actions: vec![],
+        anchor: [7; 32],
+        proof: vec![],
+        binding_signature: [9; 64],
+    }
+}
+
+/// An unpinned SDK below protocol version 15 that asks for no proofs still learns the
+/// network's version before refusing a private document send: the gate's probe asks for a
+/// proof whatever the SDK's setting, and the refusal is of the network proven at 14, not of
+/// a version the SDK never asked.
+#[tokio::test]
+async fn should_probe_before_refusing_a_private_document_send_without_proofs() {
+    let sdk = sdk_with_proofs(V14, false, 0, false);
+    answer_probe(&sdk, "pv14").await;
+    let result = sdk
+        .private_document_create_from_shielded_pool(
+            Identifier::new([4; 32]),
+            "privateContactRequest".to_string(),
+            vec![BinaryData::new(vec![1; 589])],
+            114_140_000,
+            unbuilt_bundle(),
+            None,
+        )
+        .await;
+    match result {
+        Err(Error::ProtocolVersionNotActive {
+            required: PROTOCOL_VERSION_15,
+            network: V14,
+            pinned: false,
+            ..
+        }) => {}
+        other => panic!("expected the network proven at 14, got {other:?}"),
+    }
+    assert_eq!(probes(&sdk).await, 1, "the network was asked");
+}
+
+/// A private document send learns the network's version under the caller's request
+/// settings: one attempt, banning no node for an answer it cannot verify, as the caller
+/// asked.
+#[tokio::test]
+async fn should_learn_the_version_for_a_private_document_send_under_the_caller_settings() {
+    let sdk = sdk_with_provider(V14, false, 0, true, NoQuorumKeys);
+    answer_probe(&sdk, "pv14").await;
+    let settings = PutSettings {
+        request_settings: RequestSettings {
+            ban_failed_address: Some(false),
+            ..once()
+        },
+        ..Default::default()
+    };
+    let result = sdk
+        .private_document_create_from_shielded_pool(
+            Identifier::new([4; 32]),
+            "privateContactRequest".to_string(),
+            vec![BinaryData::new(vec![1; 589])],
+            114_140_000,
+            unbuilt_bundle(),
+            Some(settings),
+        )
+        .await;
+    assert!(
+        matches!(
+            &result,
+            Err(Error::ProtocolVersionNotActive { cause: Some(_), .. })
+        ),
+        "{result:?}"
+    );
+    assert!(result
+        .as_ref()
+        .is_err_and(Error::is_transient_protocol_version_refusal));
+    assert_eq!(probes(&sdk).await, 1, "no retries, as the caller asked");
+    assert!(
+        !sdk.address_list().is_banned(&node()),
+        "the caller asked not to ban failed nodes"
+    );
+}
+
+/// An unpinned SDK below protocol version 15 that asks for no proofs learns, from the gate's
+/// proved probe, that the network runs 15, and sends a private document: the send is
+/// broadcast, which the mock, answering no broadcast, fails, rather than refused for its
+/// version.
+#[tokio::test]
+async fn should_send_a_private_document_once_a_probe_proves_15_without_proofs() {
+    let sdk = sdk_with_proofs(V14, false, 0, false);
+    answer_probe(&sdk, "pv15").await;
+    let action = SerializedAction {
+        nullifier: [1; 32],
+        rk: [2; 32],
+        cmx: [3; 32],
+        encrypted_note: vec![4; 216],
+        cv_net: [5; 32],
+        spend_auth_sig: [6; 64],
+    };
+    let result = sdk
+        .private_document_create_from_shielded_pool(
+            Identifier::new([4; 32]),
+            "privateContactRequest".to_string(),
+            vec![BinaryData::new(vec![1; 589])],
+            114_140_000,
+            OrchardBundleParams {
+                actions: vec![action.clone(), action],
+                anchor: [7; 32],
+                proof: vec![8; 64],
+                binding_signature: [9; 64],
+            },
+            None,
+        )
+        .await;
+    let error = result.expect_err("the mock answers no broadcast");
+    assert!(
+        format!("{error:?}").contains("BroadcastStateTransitionRequest"),
+        "broadcast: {error:?}"
+    );
+    assert_eq!(probes(&sdk).await, 1);
+    assert_eq!(sdk.protocol_version_number(), PROTOCOL_VERSION_15);
+}
+
+/// DashPay's private contact requests, read or sealed, establish the network's protocol
+/// version as the send does: an unpinned SDK below 15 that asks for no proofs learns from the
+/// gate's proved probe that the network runs 15 and goes on to resolve DashPay at it, which
+/// it then fetches, and, asking for no proofs, refuses to fetch unproved, where it was refused
+/// for its version before. An SDK pinned below 15 is refused without asking.
+#[tokio::test]
+async fn should_resolve_dashpay_for_private_contact_requests_once_a_probe_proves_15() {
+    let sdk = sdk_with_proofs(V14, false, 0, false);
+    answer_probe(&sdk, "pv15").await;
+    let error = sdk
+        .scan_private_contact_requests(0, &PrivateDocumentScanKeys::new())
+        .await
+        .expect_err("DashPay is not fetched unproved");
+    assert!(
+        matches!(&error, Error::Config(message) if message.contains("enable proofs")),
+        "DashPay is resolved: {error:?}"
+    );
+    assert_eq!(probes(&sdk).await, 1);
+    assert_eq!(sdk.protocol_version_number(), PROTOCOL_VERSION_15);
+
+    let pinned = sdk_with_proofs(V14, true, 0, false);
+    let refused = pinned
+        .scan_private_contact_requests(0, &PrivateDocumentScanKeys::new())
+        .await;
+    assert!(
+        matches!(
+            refused,
+            Err(Error::ProtocolVersionNotActive {
+                required: PROTOCOL_VERSION_15,
+                pinned: true,
+                ..
+            })
+        ),
+        "{refused:?}"
+    );
+    assert_eq!(probes(&pinned).await, 0);
+}
+
+/// A private document transition built elsewhere and sent through the generic broadcast is
+/// gated as the dedicated send is: from an SDK at protocol version 15, seeded or pinned, on a
+/// network a verified answer shows at 14, it is refused locally instead of broadcast to be
+/// rejected.
+#[tokio::test]
+async fn should_refuse_a_generic_broadcast_of_a_private_document_transition_until_15() {
+    let action = SerializedAction {
+        nullifier: [1; 32],
+        rk: [2; 32],
+        cmx: [3; 32],
+        encrypted_note: vec![4; 216],
+        cv_net: [5; 32],
+        spend_auth_sig: [6; 64],
+    };
+    let transition = PrivateDocumentCreateFromShieldedPoolTransition::try_from_bundle(
+        Identifier::new([4; 32]),
+        "privateContactRequest".to_string(),
+        vec![BinaryData::new(vec![1; 589])],
+        vec![action.clone(), action],
+        114_140_000,
+        [7; 32],
+        vec![8; 64],
+        [9; 64],
+        PlatformVersion::latest(),
+    )
+    .expect("a type 29 transition");
+    for pinned in [false, true] {
+        let sdk = mock_sdk(PROTOCOL_VERSION_15, pinned, V14);
+        answer_probe(&sdk, "pv14").await;
+        match transition.broadcast(&sdk, None).await {
+            Err(Error::ProtocolVersionNotActive {
+                method: "broadcast_state_transition",
+                required: PROTOCOL_VERSION_15,
+                network: V14,
+                cause: None,
+                ..
+            }) => {}
+            other => panic!("pinned {pinned}: expected a local refusal, got {other:?}"),
+        }
+        assert_eq!(probes(&sdk).await, 1, "pinned {pinned}");
     }
 }

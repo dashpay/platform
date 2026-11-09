@@ -170,6 +170,8 @@ pub struct DriveAbciStateTransitionValidationVersions {
         DriveAbciStateTransitionValidationVersion,
     pub token_purchase_from_shielded_pool_state_transition:
         DriveAbciStateTransitionValidationVersion,
+    pub private_document_create_from_shielded_pool_state_transition:
+        DriveAbciStateTransitionValidationVersion,
 }
 
 #[derive(Clone, Debug, Default)]

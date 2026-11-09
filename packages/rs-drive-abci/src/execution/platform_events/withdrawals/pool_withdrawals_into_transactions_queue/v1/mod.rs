@@ -213,7 +213,6 @@ where
             block_info,
             transaction,
             platform_version,
-            None,
         )?;
 
         Ok(())

@@ -1536,7 +1536,7 @@ mod tests {
         assert_eq!(store.role, LayoutRole::PrimaryKey);
         assert_eq!(
             store.element.kind,
-            LayoutElementKind::Tree(TreeType::PrivateDocumentStore(9))
+            LayoutElementKind::Tree(TreeType::PrivateDocumentStore(10))
         );
         assert!(store.children.is_empty());
         assert_eq!(
@@ -1544,7 +1544,7 @@ mod tests {
             vec![LayoutNote::PrivateDocumentStore {
                 entry_size: 585,
                 stored_entry_size: 601,
-                chunk_power: 9,
+                chunk_power: 10,
             }]
         );
 

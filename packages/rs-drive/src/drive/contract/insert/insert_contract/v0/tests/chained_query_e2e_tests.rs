@@ -123,7 +123,6 @@ fn insert_post(
             true,
             None,
             pv,
-            None,
         )
         .expect("insert post");
 }
@@ -346,7 +345,6 @@ fn should_verify_liked_posts_that_carry_a_sum() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("insert post");
         let like = build_like(&contract, id, OWNER_1, seed);
@@ -758,7 +756,6 @@ fn delete_post(drive: &Drive, contract: &DataContract, id: [u8; 32]) {
             true,
             None,
             platform_version(),
-            None,
         )
         .expect("expected to delete the post");
 }
@@ -1022,7 +1019,6 @@ pub(super) fn remove_post(
             &BlockInfo::default(),
             None,
             platform_version(),
-            None,
         )
         .expect("expected to remove the post");
 }

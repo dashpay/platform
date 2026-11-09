@@ -9,7 +9,6 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::Credits;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -40,7 +39,6 @@ where
     /// * `transaction`: The GroveDB transaction.
     /// * `block_credit_mints`: Accumulates the credits the applied operations mint into Platform.
     /// * `platform_version`: The platform version.
-    /// * `previous_fee_versions`: The fee versions of earlier epochs, used to price the fees.
     ///
     /// # Returns
     ///
@@ -59,7 +57,6 @@ where
         transaction: &Transaction,
         block_credit_mints: &mut Credits,
         platform_version: &PlatformVersion,
-        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<StateTransitionExecutionResult, StateTransitionAwareError<'a>> {
         match platform_version
             .drive_abci
@@ -75,7 +72,6 @@ where
                 transaction,
                 block_credit_mints,
                 platform_version,
-                previous_fee_versions,
             ),
             1 => self.process_validation_result_v1(
                 raw_state_transition,
@@ -85,7 +81,6 @@ where
                 transaction,
                 block_credit_mints,
                 platform_version,
-                previous_fee_versions,
             ),
             version => Err(StateTransitionAwareError {
                 error: Error::Execution(ExecutionError::UnknownVersionMismatch {
@@ -136,7 +131,6 @@ mod tests {
             .build_with_mock_rpc()
             .set_genesis_state();
         let transaction = platform.drive.grove.start_transaction();
-        let fee_versions = CachedEpochIndexFeeVersions::new();
 
         let validation_result = ConsensusValidationResult::new_with_data_and_errors(
             event,
@@ -152,7 +146,6 @@ mod tests {
                 &transaction,
                 &mut 0,
                 platform_version,
-                &fee_versions,
             )
         } else {
             platform.platform.process_validation_result_v0(
@@ -163,7 +156,6 @@ mod tests {
                 &transaction,
                 &mut 0,
                 platform_version,
-                &fee_versions,
             )
         }
         .expect("process_validation_result should not error");

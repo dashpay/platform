@@ -41,7 +41,9 @@ pub trait ContractSource: Send + Sync {
         token_id: &Identifier,
     ) -> Result<Option<TokenConfiguration>, ContextProviderError>;
 
-    /// Keep `contract` so later proofs over it can be verified.
+    /// Keep `contract` so later proofs over it can be verified, unless the
+    /// source holds one of a higher version under its id, as
+    /// [`ContextProvider::register_data_contract`] asks.
     fn register_data_contract(&self, contract: Arc<DataContract>);
 }
 
