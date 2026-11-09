@@ -627,7 +627,9 @@ fn bounds_problem(
 /// `AUTHENTICATION` key at one of `levels`, of a signing key type, bound to no other contract or
 /// document type, enabled then and not expired then (the expiry instant itself is expired, as
 /// dpp's `is_expired_at` says). The reader checks it at the entry's block time, which decides;
-/// the seal and the key list check it now, so a key about to be refused is not offered.
+/// the seal and the key list check it now, so a key about to be refused is not offered. The
+/// expiry is `key`'s as given: its identity's current limit, which an extension since the entry
+/// may have moved past it ([`private_contact_requests_from_scan`]).
 fn signing_key_problem(
     key: &IdentityPublicKey,
     levels: &[SecurityLevel],
@@ -983,6 +985,12 @@ pub fn private_contact_request_identities(scan: &PrivateDocumentScan) -> BTreeMa
 /// was already the identity's when the entry was appended is not established: Platform records
 /// when a key was disabled, not when it was added. Adding a key takes the identity's master key,
 /// so a key added later still speaks for the identity's owner.
+///
+/// Likewise, a key's expiry is the limit the identity given carries now, compared with the
+/// entry's block time, not the limit the key had when the entry was appended. An identity may
+/// extend a key's expiry, which revives an expired key: an entry its key signed after the key's
+/// first expiry is refused against an identity read before the extension, and read against one
+/// read after it, once the new expiry is past the entry's block time.
 ///
 /// The first request from a sender to a recipient for an account reference is kept. A wallet
 /// keeps the requests it already holds from earlier scans, and drops a later one from the same
@@ -3201,35 +3209,37 @@ mod tests {
         );
     }
 
+    /// The sender, its signing key expiring at `expires_at`.
+    fn sender_signing_until(expires_at: u64) -> Identity {
+        with_key(
+            sender_identity(None),
+            IdentityPublicKey::V1(
+                dpp::identity::identity_public_key::v1::IdentityPublicKeyV1 {
+                    id: 0,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::HIGH,
+                    contract_bounds: None,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    read_only: false,
+                    data: BinaryData::new(
+                        PublicKey::from_secret_key(&secret_key(9))
+                            .serialize()
+                            .to_vec(),
+                    ),
+                    disabled_at: None,
+                    total_budget: None,
+                    expires_at: Some(expires_at),
+                },
+            ),
+        )
+    }
+
     /// A signing key with an expiry signs entries appended before it, not at or after it, and
     /// is not offered once expired.
     #[test]
     fn should_refuse_a_signing_key_expired_when_the_entry_was_appended() {
         let contract = dashpay();
         let entry = seal(&contract, &sender_identity(None), &smallest_request(1), 1);
-        let expiring = |expires_at| {
-            with_key(
-                sender_identity(None),
-                IdentityPublicKey::V1(
-                    dpp::identity::identity_public_key::v1::IdentityPublicKeyV1 {
-                        id: 0,
-                        purpose: Purpose::AUTHENTICATION,
-                        security_level: SecurityLevel::HIGH,
-                        contract_bounds: None,
-                        key_type: KeyType::ECDSA_SECP256K1,
-                        read_only: false,
-                        data: BinaryData::new(
-                            PublicKey::from_secret_key(&secret_key(9))
-                                .serialize()
-                                .to_vec(),
-                        ),
-                        disabled_at: None,
-                        total_budget: None,
-                        expires_at: Some(expires_at),
-                    },
-                ),
-            )
-        };
         for (case, expires_at, accepted) in [
             ("after the entry", BLOCK_TIME_MS + 1, true),
             ("at the entry", BLOCK_TIME_MS, false),
@@ -3239,7 +3249,7 @@ mod tests {
                 &contract,
                 vec![entry.clone()],
                 &recipient_keys(),
-                &[expiring(expires_at), recipient_identity()],
+                &[sender_signing_until(expires_at), recipient_identity()],
             ));
             if accepted {
                 assert_eq!(reasons, vec![], "{case}");
@@ -3254,11 +3264,49 @@ mod tests {
             }
         }
         assert!(
-            private_contact_request_signing_keys(&contract, &expiring(1))
+            private_contact_request_signing_keys(&contract, &sender_signing_until(1))
                 .expect("DashPay v3")
                 .is_empty(),
             "an expired key is not offered"
         );
+    }
+
+    /// The expiry checked is the sender's key's limit as the identity given carries it, not the
+    /// one it had when the entry was appended: an entry the key signed after it expired is
+    /// refused against the identity as it was then, and read once the identity has extended
+    /// the key's expiry past the entry and is read again.
+    #[test]
+    fn should_read_an_entry_signed_after_an_expiry_once_the_expiry_is_extended_past_it() {
+        let contract = dashpay();
+        let entry = seal(&contract, &sender_identity(None), &smallest_request(1), 1);
+
+        let expired = reasons(read(
+            &contract,
+            vec![entry.clone()],
+            &recipient_keys(),
+            &[
+                sender_signing_until(BLOCK_TIME_MS - 1),
+                recipient_identity(),
+            ],
+        ));
+        assert!(
+            matches!(
+                expired.as_slice(),
+                [PrivateContactRequestRejection::SenderKeyNotUsable(_)]
+            ),
+            "{expired:?}"
+        );
+
+        let extended = reasons(read(
+            &contract,
+            vec![entry],
+            &recipient_keys(),
+            &[
+                sender_signing_until(BLOCK_TIME_MS + 1),
+                recipient_identity(),
+            ],
+        ));
+        assert_eq!(extended, vec![], "read with the extended expiry");
     }
 
     /// The recipient key an entry names must be the one it is encrypted to, whether it is a
