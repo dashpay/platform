@@ -666,7 +666,6 @@ mod execution {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .unwrap_or_else(|e| {
                     panic!("expected to insert a {document_type_name} document: {e}")
@@ -1369,7 +1368,6 @@ mod identifier_group_keys {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert a grade document");
         }
@@ -1658,7 +1656,6 @@ mod pinned_prefix {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert a grade document");
         }
@@ -2083,7 +2080,6 @@ mod pinned_prefix {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert a tagged grade document");
         }
@@ -2236,7 +2232,6 @@ mod pinned_prefix {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert a tagged grade document");
         }
@@ -2463,7 +2458,6 @@ mod prefix_level {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert a like");
         }

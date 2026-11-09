@@ -859,6 +859,69 @@ mod batch_transition_tests {
     }
 
     // -----------------------------------------------------------------------
+    // combined_security_level_requirement
+    // -----------------------------------------------------------------------
+
+    /// The levels a batch may be signed at, pinned for each document requirement, for the
+    /// strongest of two requirements, for a token transition and for an empty batch: they
+    /// come from `SecurityLevel::document_signing_levels` and must not change.
+    #[test]
+    fn should_keep_the_levels_a_batch_may_be_signed_at() {
+        use SecurityLevel::*;
+        let documents = make_batch_v1(vec![
+            BatchedTransition::Document(make_delete_transition(1)),
+            BatchedTransition::Document(make_delete_transition(2)),
+        ]);
+        for (requirement, expected) in [
+            (MASTER, vec![MASTER]),
+            (CRITICAL, vec![CRITICAL]),
+            (HIGH, vec![CRITICAL, HIGH]),
+            (MEDIUM, vec![CRITICAL, HIGH, MEDIUM]),
+        ] {
+            let levels = documents
+                .combined_security_level_requirement(Some(
+                    move |_: Identifier, _: String| -> Result<SecurityLevel, ProtocolError> {
+                        Ok(requirement)
+                    },
+                ))
+                .expect("the levels");
+            assert_eq!(levels, expected, "{requirement}");
+        }
+
+        // The strongest requirement among the batch's documents wins.
+        let calls = std::cell::Cell::new(0);
+        let mixed = documents
+            .combined_security_level_requirement(Some(
+                |_: Identifier, _: String| -> Result<SecurityLevel, ProtocolError> {
+                    calls.set(calls.get() + 1);
+                    Ok(if calls.get() == 1 { MEDIUM } else { HIGH })
+                },
+            ))
+            .expect("the levels");
+        assert_eq!(mixed, vec![CRITICAL, HIGH]);
+
+        let token = make_batch_v1(vec![BatchedTransition::Token(make_token_burn_transition(
+            1, 10,
+        ))]);
+        assert_eq!(
+            token
+                .combined_security_level_requirement(
+                    None::<fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>>
+                )
+                .expect("the levels"),
+            vec![CRITICAL]
+        );
+        assert_eq!(
+            make_batch_v1(vec![])
+                .combined_security_level_requirement(
+                    None::<fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>>
+                )
+                .expect("the levels"),
+            vec![CRITICAL, HIGH, MEDIUM]
+        );
+    }
+
+    // -----------------------------------------------------------------------
     // get_security_level_requirement function
     // -----------------------------------------------------------------------
 

@@ -96,15 +96,8 @@ impl Drive {
                     platform_version,
                 )?;
                 let cost = if let Some(epoch) = epoch {
-                    Drive::calculate_fee(
-                        None,
-                        Some(drive_operations),
-                        epoch,
-                        self.config.epochs_per_era,
-                        platform_version,
-                        None,
-                    )?
-                    .processing_fee
+                    self.calculate_fee(None, Some(drive_operations), epoch, platform_version)?
+                        .processing_fee
                 } else {
                     0
                 };
@@ -139,14 +132,8 @@ impl Drive {
             })
             .collect::<Result<Vec<Document>, Error>>()?;
         let cost = if let Some(epoch) = epoch {
-            let fee_result = Drive::calculate_fee(
-                None,
-                Some(drive_operations),
-                epoch,
-                self.config.epochs_per_era,
-                platform_version,
-                None,
-            )?;
+            let fee_result =
+                self.calculate_fee(None, Some(drive_operations), epoch, platform_version)?;
             fee_result.processing_fee
         } else {
             0
@@ -271,7 +258,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("insert");
 

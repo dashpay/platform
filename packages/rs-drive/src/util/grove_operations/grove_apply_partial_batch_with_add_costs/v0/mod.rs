@@ -35,8 +35,11 @@ impl Drive {
         }
         // println!("batch {:#?}", ops);
         if self.config.batching_consistency_verification {
-            let consistency_results =
-                QualifiedGroveDbOp::verify_consistency_of_operations(&ops.operations);
+            let consistency_results = QualifiedGroveDbOp::verify_consistency_of_operations(
+                &ops.operations,
+                &drive_version.grove_version,
+            )
+            .map_err(Error::from)?;
             if !consistency_results.is_empty() {
                 // println!("consistency_results {:#?}", consistency_results);
                 return Err(Error::Drive(DriveError::GroveDBInsertion(

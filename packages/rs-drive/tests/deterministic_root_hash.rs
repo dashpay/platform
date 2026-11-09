@@ -312,8 +312,11 @@ mod tests {
             // and ships DashPay contract v2 with the optional `shieldedAddress` profile field.
             14 => "c25bc863d30a4185311546d51bacfdc030ee57671dbae774775d0efd4474220c",
             // From protocol version 15 the contract is stored compiled (format version 2), its
-            // document types beside its schemas.
-            _ => "d14106885e8c88fdc1c26e13cabe4965e79deca70e9cd293071a9523eefb6a50",
+            // document types beside its schemas, and is DashPay v3, which declares the checks of
+            // its data triggers and adds the private `privateContactRequest` type, whose store
+            // the insert creates, at chunk power 10 (605-byte stored entries under the 1 MiB
+            // chunk target of `SYSTEM_LIMITS_V5`).
+            _ => "adb6a2e6be5a67bb2730c27ca9a63cc4cacf485b634ec4a0ad998b0da508a7e2",
         };
 
         assert_eq!(

@@ -210,7 +210,6 @@ fn create_in(
             apply,
             transaction,
             PlatformVersion::latest(),
-            None,
         )
         .expect("add document")
 }
@@ -246,7 +245,6 @@ fn replace_in(
             None,
             transaction,
             PlatformVersion::latest(),
-            None,
         )
         .expect("update document")
 }
@@ -281,7 +279,6 @@ fn delete_in(
             apply,
             transaction,
             PlatformVersion::latest(),
-            None,
         )
         .expect("delete document")
 }

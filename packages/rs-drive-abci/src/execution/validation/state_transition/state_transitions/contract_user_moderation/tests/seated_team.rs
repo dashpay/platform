@@ -334,7 +334,6 @@ fn write_reason(
             true,
             None,
             platform_version,
-            None,
         )
         .expect("expected to write the reason");
 }
@@ -626,7 +625,6 @@ impl Team {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to write the join request");
     }

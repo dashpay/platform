@@ -17,7 +17,6 @@ use crate::util::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
 use crate::util::estimated_layers::EstimatedLayers;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 use std::collections::HashSet;
@@ -105,7 +104,6 @@ impl Drive {
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         DriveOperation::refuse_repeated_token_balance_writes(&operations)?;
         self.refuse_repeated_counter_moves(&operations, block_info, transaction, platform_version)?;
@@ -286,13 +284,11 @@ impl Drive {
             }
         }
 
-        Drive::calculate_fee(
+        self.calculate_fee(
             None,
             Some(cost_operations),
             &block_info.epoch,
-            self.config.epochs_per_era,
             platform_version,
-            previous_fee_versions,
         )
     }
 }

@@ -22,6 +22,7 @@ use grovedb::batch::{
 };
 use grovedb::operations::proof::util::hex_to_ascii;
 use grovedb::{Element, TreeType};
+use grovedb_version::version::GroveVersion;
 use std::borrow::Cow;
 use std::fmt;
 
@@ -457,8 +458,11 @@ pub trait GroveDbOpBatchV0Methods {
     /// Adds an `Insert` operation with an element to a list of GroveDB ops.
     fn add_insert(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>, element: Element);
 
-    /// Verify consistency of operations
-    fn verify_consistency_of_operations(&self) -> GroveDbOpConsistencyResults;
+    /// Verify consistency of operations, by the rules of `grove_version`
+    fn verify_consistency_of_operations(
+        &self,
+        grove_version: &GroveVersion,
+    ) -> Result<GroveDbOpConsistencyResults, grovedb::Error>;
 
     /// Check if the batch contains a specific path and key.
     ///
@@ -626,9 +630,12 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
         )
     }
 
-    /// Verify consistency of operations
-    fn verify_consistency_of_operations(&self) -> GroveDbOpConsistencyResults {
-        QualifiedGroveDbOp::verify_consistency_of_operations(&self.operations)
+    /// Verify consistency of operations, by the rules of `grove_version`
+    fn verify_consistency_of_operations(
+        &self,
+        grove_version: &GroveVersion,
+    ) -> Result<GroveDbOpConsistencyResults, grovedb::Error> {
+        QualifiedGroveDbOp::verify_consistency_of_operations(&self.operations, grove_version)
     }
 
     /// Check if the batch contains a specific path and key.

@@ -47,7 +47,6 @@ impl<C> Platform<C> {
             block_info,
             transaction,
             platform_version,
-            None,
         )?;
 
         Ok(())
