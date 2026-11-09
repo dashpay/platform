@@ -3146,10 +3146,11 @@ mod tests {
             }
         }
 
-        /// A chain proof carries only an outpoint and a height, so from protocol 15 check_tx,
-        /// reading the protocol version from platform state, no longer holds the transaction
-        /// Core returns for it to the input cap that keeps an instant proof's transition small.
-        /// Protocol 14 keeps refusing it unpaid.
+        /// A chain proof carries only an outpoint and a height, so from protocol 15 check_tx
+        /// and a block, reading the protocol version from platform state, no longer hold the
+        /// transaction Core returns for it to the input cap that keeps an instant proof's
+        /// transition small: the identity is created and the asset lock consumed. Protocol 14
+        /// keeps refusing it unpaid, leaving the asset lock untouched.
         #[tokio::test]
         async fn should_admit_at_check_tx_an_identity_create_with_a_chain_asset_lock_over_the_input_cap_only_from_protocol_15(
         ) {
@@ -3198,6 +3199,7 @@ mod tests {
                     &registration.transition,
                     CheckTxLevel::FirstTimeCheck,
                 );
+                let block = process_block(&platform, &[&registration.transition]);
                 if protocol_version < 15 {
                     assert_matches!(
                         errors.as_slice(),
@@ -3206,8 +3208,36 @@ mod tests {
                         )],
                         "at protocol version {protocol_version}: {errors:?}"
                     );
+                    assert_matches!(
+                        block.as_slice(),
+                        [StateTransitionExecutionResult::UnpaidConsensusError(
+                            ConsensusError::BasicError(
+                                BasicError::IdentityAssetLockTransactionTooManyInputsError(_)
+                            )
+                        )],
+                        "at protocol version {protocol_version}: {block:?}"
+                    );
+                    assert_eq!(
+                        asset_lock_info(&platform, &registration, platform_version),
+                        StoredAssetLockInfo::NotPresent
+                    );
+                    assert_eq!(
+                        identity_balance(&platform, &registration, platform_version),
+                        None
+                    );
                 } else {
                     assert_eq!(errors, vec![], "at protocol version {protocol_version}");
+                    assert_matches!(
+                        block.as_slice(),
+                        [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                        "at protocol version {protocol_version}: {block:?}"
+                    );
+                    assert_eq!(
+                        asset_lock_info(&platform, &registration, platform_version),
+                        StoredAssetLockInfo::FullyConsumed
+                    );
+                    assert!(identity_balance(&platform, &registration, platform_version)
+                        .is_some_and(|balance| balance > 0));
                 }
             }
         }

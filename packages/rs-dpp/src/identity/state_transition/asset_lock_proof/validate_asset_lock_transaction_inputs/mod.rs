@@ -73,6 +73,20 @@ mod tests {
         assert_eq!(too_many_inputs(&result), (101, 100));
     }
 
+    /// The bound is the protocol version's table value: before protocol 11 it is `u16::MAX`,
+    /// so a transaction over today's cap of 100 passes there.
+    #[test]
+    fn should_accept_a_transaction_over_100_inputs_where_the_table_does_not_cap_them() {
+        let transaction = instant_asset_lock_proof_transaction_fixture_with_inputs(None, None, 101);
+
+        let result = validate_asset_lock_transaction_inputs(
+            &transaction,
+            PlatformVersion::get(10).expect("protocol 10 exists"),
+        );
+
+        assert!(result.is_valid(), "got {:?}", result.errors);
+    }
+
     /// The error carries the input count as a `u16`, so a count past it reports `u16::MAX`.
     #[test]
     fn should_report_an_input_count_past_u16_max_as_u16_max() {
