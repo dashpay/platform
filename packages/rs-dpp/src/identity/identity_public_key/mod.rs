@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 
 mod key_type;
 mod purpose;
+#[cfg(feature = "redpallas")]
+pub mod redpallas_hecate;
 mod security_level;
 pub use key_type::KeyType;
 pub use purpose::Purpose;

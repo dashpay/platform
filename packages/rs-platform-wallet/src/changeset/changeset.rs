@@ -1022,7 +1022,10 @@ pub type KeyDerivationBreadcrumb = ([u8; 32], u32, u32);
 /// The scalar itself is never carried out — the client derives the key on
 /// demand from the Keychain seed at the breadcrumb path. A `None`
 /// `breadcrumb` gives no coordinates (see
-/// [`IdentityKeyEntry::derivation_indices`]).
+/// [`IdentityKeyEntry::derivation_indices`]), and neither does a key of a
+/// type the wallet does not derive
+/// ([`crate::wallet::identity::network::identity_key_derivation_type`]),
+/// whatever breadcrumb it carries.
 pub struct KeyWithBreadcrumb {
     /// The DPP public-key record.
     pub key: dpp::identity::IdentityPublicKey,

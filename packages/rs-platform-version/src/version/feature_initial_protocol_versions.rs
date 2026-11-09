@@ -50,3 +50,8 @@ pub const DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION: ProtocolVersion 
 /// store paying from the credit shielded pool, is not active before it, as software that
 /// predates it cannot decode one.
 pub const PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 15;
+
+/// Hecate signer keys (`KeyType::REDPALLAS_HECATE`, `Purpose::HECATE_SIGNER`) activate with
+/// protocol version 15: a transition adding one is not active before it, as software that
+/// predates the key type cannot decode one.
+pub const HECATE_SIGNER_KEY_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 15;

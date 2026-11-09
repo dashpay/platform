@@ -26,10 +26,10 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 ///   the same as NULL). Any other name is asked for exactly as given.
 /// - `purposes`: Comma-separated list of key purposes, as dpp's `Purpose` numbers it:
 ///   0 (authentication), 1 (encryption), 2 (decryption), 3 (transfer), 4 (system), 5 (voting),
-///   6 (owner). A malformed member or an unknown number is refused, also when `identity_ids` is
-///   empty. A blank string is no purposes: the SDK answers that with `{}` when there are no
-///   identity ids and refuses it otherwise (`InvalidParameter`). A repeated purpose is asked for
-///   once.
+///   6 (owner), 7 (hecate_signer). A malformed member or an unknown number is refused, also when
+///   `identity_ids` is empty. A blank string is no purposes: the SDK answers that with `{}` when
+///   there are no identity ids and refuses it otherwise (`InvalidParameter`). A repeated purpose is
+///   asked for once.
 ///
 /// # Returns
 /// A JSON object read from a proved `getIdentitiesContractKeys` response: for each identity and
@@ -39,9 +39,9 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 ///
 /// Every requested identity ID is a top-level key, in its Base58 form with any whitespace around it
 /// dropped, and every requested purpose (`"authentication"`, `"encryption"`, `"decryption"`,
-/// `"transfer"`, `"system"`, `"voting"`, `"owner"`) is a key under it. A purpose the proof shows no
-/// current-key reference for is `null`. A missing identity or purpose is never a valid answer, so
-/// a caller can treat one as malformed:
+/// `"transfer"`, `"system"`, `"voting"`, `"owner"`, `"hecate_signer"`) is a key under it. A purpose
+/// the proof shows no current-key reference for is `null`. A missing identity or purpose is never a
+/// valid answer, so a caller can treat one as malformed:
 ///
 /// ```json
 /// { "<identity id>": {
@@ -492,7 +492,7 @@ mod tests {
     #[test]
     fn should_refuse_a_purpose_it_does_not_take() {
         let handle = create_mock_sdk_handle_with_keys(Some(proved_keys()));
-        for purposes in ["7", "256", "-1", "1,x", "1,"] {
+        for purposes in ["8", "256", "-1", "1,x", "1,"] {
             let code = unsafe {
                 error_code_of(fetch_with(
                     handle,
@@ -538,6 +538,7 @@ mod tests {
             Purpose::SYSTEM,
             Purpose::VOTING,
             Purpose::OWNER,
+            Purpose::HECATE_SIGNER,
         ];
         let query = IdentitiesContractKeysQuery::new(
             vec![Identifier::new(IDENTITY_A)],
@@ -553,7 +554,7 @@ mod tests {
                 &base58(IDENTITY_A),
                 CONTRACT,
                 None,
-                "0,1,2,3,4,5,6",
+                "0,1,2,3,4,5,6,7",
             ))
         };
         destroy_mock_sdk_handle(handle);
@@ -571,6 +572,7 @@ mod tests {
                 "authentication",
                 "decryption",
                 "encryption",
+                "hecate_signer",
                 "owner",
                 "system",
                 "transfer",

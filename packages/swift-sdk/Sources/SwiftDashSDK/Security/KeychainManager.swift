@@ -992,10 +992,9 @@ extension KeychainManager {
     /// Delete every `identity_privkey.*` keychain row whose
     /// `IdentityPrivateKeyMetadata.identityId` matches
     /// `identityIdBase58` — the base58 identity id Swift uses
-    /// throughout the persistence layer. Used by the key-health
-    /// sheet's "Delete orphan identity" action so cascading the
-    /// SwiftData row doesn't leave its keys' private bytes behind
-    /// in Keychain.
+    /// throughout the persistence layer, whichever wallet wrote it.
+    /// To remove only one wallet's keys for an identity, use
+    /// `deleteAllIdentityPrivateKeys(forIdentityIdBase58:walletId:)`.
     ///
     /// Scans the metadata blob (`kSecAttrGeneric`) on every
     /// matching keychain item — handles both new-format
@@ -1003,6 +1002,32 @@ extension KeychainManager {
     /// (`identity_privkey.<path>`) accounts uniformly. Idempotent;
     /// no-op when nothing matches.
     public nonisolated func deleteAllIdentityPrivateKeys(forIdentityIdBase58 identityIdBase58: String) throws {
+        try deleteIdentityPrivateKeys { $0.identityId == identityIdBase58 }
+    }
+
+    /// Delete every `identity_privkey.*` keychain row whose metadata
+    /// names both `identityIdBase58` and `walletId`: one wallet's keys
+    /// for one identity. The key-health sheet's "Delete orphan
+    /// identity" action uses this, so keys another wallet holds for the
+    /// same identity stay. `walletId` is compared the way
+    /// `deleteAllIdentityPrivateKeys(forWalletId:)` compares it.
+    /// Idempotent; no-op when nothing matches.
+    public nonisolated func deleteAllIdentityPrivateKeys(
+        forIdentityIdBase58 identityIdBase58: String,
+        walletId: Data
+    ) throws {
+        let walletIdHex = walletId.toHexString()
+        try deleteIdentityPrivateKeys { metadata in
+            metadata.identityId == identityIdBase58
+                && metadata.walletId.caseInsensitiveCompare(walletIdHex) == .orderedSame
+        }
+    }
+
+    /// Delete every `identity_privkey.*` keychain row whose metadata
+    /// `matches`: the scan the identity sweeps share.
+    private nonisolated func deleteIdentityPrivateKeys(
+        where matches: (IdentityPrivateKeyMetadata) -> Bool
+    ) throws {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
@@ -1031,14 +1056,13 @@ extension KeychainManager {
             }
             // Surface undecodable-metadata rows via os_log rather
             // than silently skipping them. The caller has asked
-            // for a wholesale identity-scoped wipe, so the safest
-            // action is still to NOT delete a row we can't prove
-            // we own — but the developer needs to know that an
-            // `identity_privkey.*` row exists whose metadata we
-            // can't read (likely a partial / aborted write, a
-            // legacy pre-metadata row, or a future schema rename),
-            // because the user is being told the orphan was
-            // cleaned up. Visible in Console.app under the
+            // for a wholesale sweep, so the safest action is still
+            // to NOT delete a row we can't prove we own, but the
+            // developer needs to know that an `identity_privkey.*`
+            // row exists whose metadata we can't read (likely a
+            // partial / aborted write, a legacy pre-metadata row,
+            // or a future schema rename), because the user is being
+            // told the cleanup ran. Visible in Console.app under the
             // `dashpay.SwiftDashSDK` subsystem.
             guard let metadataData = item[kSecAttrGeneric as String] as? Data else {
                 Self.log.error(
@@ -1055,7 +1079,7 @@ extension KeychainManager {
                 )
                 continue
             }
-            guard metadata.identityId == identityIdBase58 else {
+            guard matches(metadata) else {
                 continue
             }
             try deleteGenericPassword(account: account)
@@ -1081,56 +1105,8 @@ extension KeychainManager {
     /// `IdentityPrivateKeyMetadata.walletId` matches `walletId`.
     public nonisolated func deleteAllIdentityPrivateKeys(forWalletId walletId: Data) throws {
         let walletIdHex = walletId.toHexString()
-        var query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
-            kSecMatchLimit as String: kSecMatchLimitAll,
-            kSecReturnAttributes as String: true,
-        ]
-        if let accessGroup = accessGroup {
-            query[kSecAttrAccessGroup as String] = accessGroup
-        }
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        if status == errSecItemNotFound {
-            return
-        }
-        guard status == errSecSuccess, let items = result as? [[String: Any]] else {
-            throw KeychainError.retrieveFailed(status)
-        }
-
-        let decoder = JSONDecoder()
-        for item in items {
-            guard let account = item[kSecAttrAccount as String] as? String,
-                  account.hasPrefix("identity_privkey.")
-            else {
-                continue
-            }
-            // Same logging-on-skip rationale as
-            // `deleteAllIdentityPrivateKeys(forIdentityIdBase58:)`
-            // above — see that helper's doc comment for why we
-            // refuse to delete rows we can't prove we own.
-            guard let metadataData = item[kSecAttrGeneric as String] as? Data else {
-                Self.log.error(
-                    "Skipping identity_privkey row at account \(account, privacy: .public) — missing kSecAttrGeneric metadata blob; private bytes remain"
-                )
-                continue
-            }
-            let metadata: IdentityPrivateKeyMetadata
-            do {
-                metadata = try decoder.decode(IdentityPrivateKeyMetadata.self, from: metadataData)
-            } catch {
-                Self.log.error(
-                    "Skipping identity_privkey row at account \(account, privacy: .public) — metadata JSON decode failed (\(String(describing: error), privacy: .public)); private bytes remain"
-                )
-                continue
-            }
-            guard metadata.walletId.caseInsensitiveCompare(walletIdHex) == .orderedSame else {
-                continue
-            }
-
-            try deleteGenericPassword(account: account)
+        try deleteIdentityPrivateKeys {
+            $0.walletId.caseInsensitiveCompare(walletIdHex) == .orderedSame
         }
     }
 }

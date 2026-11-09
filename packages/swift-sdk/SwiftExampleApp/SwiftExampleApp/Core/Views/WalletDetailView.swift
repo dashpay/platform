@@ -651,8 +651,7 @@ struct WalletInfoView: View {
                     WalletKeyHealthSheet(
                         wallet: managed,
                         walletId: wallet.walletId,
-                        identities: walletIdentities,
-                        network: wallet.network ?? .testnet
+                        identities: walletIdentities
                     )
                 } else {
                     // Wallet manager hasn't loaded this wallet —

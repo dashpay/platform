@@ -86,6 +86,7 @@ use crate::consensus::state::document::referenced_document_type_index_only_error
 use crate::consensus::state::document::referenced_document_type_private_error::ReferencedDocumentTypePrivateError;
 use crate::consensus::state::document::document_type_not_private_error::DocumentTypeNotPrivateError;
 use crate::consensus::state::document::private_document_entry_size_mismatch_error::PrivateDocumentEntrySizeMismatchError;
+use crate::consensus::state::identity::identity_already_has_hecate_signer_key_error::IdentityAlreadyHasHecateSignerKeyError;
 use crate::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
 use crate::consensus::state::document::referenced_document_rule_read_invalid_error::ReferencedDocumentRuleReadInvalidError;
 use crate::consensus::state::document::referenced_document_preceded_error::ReferencedDocumentPrecededError;
@@ -771,6 +772,10 @@ pub enum StateError {
 
     #[error(transparent)]
     PrivateDocumentEntrySizeMismatchError(PrivateDocumentEntrySizeMismatchError),
+
+    // An identity holds at most one enabled Hecate signer key (protocol version 15).
+    #[error(transparent)]
+    IdentityAlreadyHasHecateSignerKeyError(IdentityAlreadyHasHecateSignerKeyError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1719,8 +1724,7 @@ mod tests {
             )),
             177
         );
-        // A document reference to a private document type (protocol version 15): the tail of
-        // the enum.
+        // A document reference to a private document type (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::ReferencedDocumentTypePrivateError(
                 ReferencedDocumentTypePrivateError::new(
@@ -1731,8 +1735,7 @@ mod tests {
             )),
             178
         );
-        // A `PrivateDocumentCreateFromShieldedPool`'s target (protocol version 15): the tail of
-        // the enum.
+        // A `PrivateDocumentCreateFromShieldedPool`'s target (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::DocumentTypeNotPrivateError(
                 DocumentTypeNotPrivateError::new(identity_id, "contactRequest".to_string())
@@ -1749,6 +1752,13 @@ mod tests {
                 )
             )),
             180
+        );
+        // Hecate signer keys (protocol version 15): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::IdentityAlreadyHasHecateSignerKeyError(
+                IdentityAlreadyHasHecateSignerKeyError::new(identity_id, 1)
+            )),
+            181
         );
     }
 }

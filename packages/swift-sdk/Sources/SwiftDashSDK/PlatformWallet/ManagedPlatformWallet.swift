@@ -1474,6 +1474,350 @@ extension ManagedPlatformWallet {
         return ok ? out : nil
     }
 
+    /// What `checkIdentityKey(...)` found for one identity key. Rust's
+    /// `check_identity_key_from_master` decides which.
+    public enum IdentityKeyWalletCheck: Sendable, Equatable {
+        /// The wallet derives no key at the key's slot (it doesn't derive
+        /// keys of this type, or the key's id is past the last hardened
+        /// index), so there is nothing to compare the key with.
+        case notDerived
+        /// The key is in an encoding the check doesn't compare (an ECDSA
+        /// secp256k1 key that isn't 33 bytes), so it can't say whether
+        /// the key is the wallet's.
+        case notCompared
+        /// The wallet's key at the slot is this key. `privateKeyData` is
+        /// its 32-byte private key: hand it to the Keychain and drop this
+        /// value as soon as possible. `publicKeyHashHex` is the key's DPP
+        /// public key hash.
+        case matches(derivationPath: String, privateKeyData: Data, publicKeyHashHex: String)
+        /// The wallet derives a different key at the slot.
+        /// `derivedPublicKeyData` is that key in the key type's on-chain
+        /// form.
+        case mismatch(derivationPath: String, derivedPublicKeyData: Data)
+    }
+
+    /// Check one identity key against the key this wallet derives at
+    /// the key's slot `(identityIndex, keyId)` for the key's type. Pure
+    /// bridge to `platform_wallet_check_identity_key_with_resolver`;
+    /// Rust's `PlatformWallet::check_identity_key` decides, with the
+    /// derivation signing uses. Rust reads the mnemonic through the
+    /// `MnemonicResolver` only when the key needs comparing, and refuses
+    /// one that isn't this wallet's.
+    ///
+    /// - Parameters:
+    ///   - identityIndex: the identity's index in the HD tree.
+    ///   - keyId, keyType, purpose, securityLevel, publicKeyData: the
+    ///     identity key as registered (`publicKeyData` in its on-chain
+    ///     form; `purpose` and `securityLevel` are DPP discriminants).
+    ///   - storage: defaults to a fresh `WalletStorage()`, overridable
+    ///     for tests. Used by the resolver vtable.
+    ///
+    /// - Throws: `PlatformWalletError` when the FFI refuses the key's
+    ///   fields, the mnemonic can't be read, or the stored mnemonic isn't
+    ///   this wallet's. An error says nothing about whether the key
+    ///   belongs to the wallet.
+    @MainActor
+    public func checkIdentityKey(
+        identityIndex: UInt32,
+        keyId: UInt32,
+        keyType: KeyType,
+        purpose: UInt8,
+        securityLevel: UInt8,
+        publicKeyData: Data,
+        storage: WalletStorage = WalletStorage()
+    ) throws -> IdentityKeyWalletCheck {
+        let resolver = MnemonicResolver(storage: storage)
+
+        var out = IdentityKeyWalletCheckFFI()
+        defer { platform_wallet_check_identity_key_free(&out) }
+
+        // `withExtendedLifetime` pins the resolver across the synchronous
+        // FFI call so ARC cannot deallocate its `passUnretained` ctx while
+        // Rust is still calling back into it.
+        let result = withExtendedLifetime(resolver) {
+            publicKeyData.withUnsafeBytes { keyBytes -> PlatformWalletFFIResult in
+                platform_wallet_check_identity_key_with_resolver(
+                    handle,
+                    resolver.handle,
+                    identityIndex,
+                    keyId,
+                    keyType.ffiValue,
+                    purpose,
+                    securityLevel,
+                    keyBytes.bindMemory(to: UInt8.self).baseAddress,
+                    UInt(keyBytes.count),
+                    &out
+                )
+            }
+        }
+        try result.check()
+
+        // Copy out before the deferred free wipes and releases the result.
+        return try Self.identityKeyWalletCheck(from: out)
+    }
+
+    /// Copy one key check out of its FFI form: every string and byte is
+    /// copied into Swift values, so the result stays valid after the
+    /// Rust free wipes and releases `out`. Pure decoding. `internal` so
+    /// tests can decode hand-built C values.
+    static func identityKeyWalletCheck(
+        from out: IdentityKeyWalletCheckFFI
+    ) throws -> IdentityKeyWalletCheck {
+        let path = out.derivation_path.map { String(cString: $0) } ?? ""
+        switch out.outcome {
+        case IDENTITY_KEY_WALLET_CHECK_OUTCOME_FFI_NOT_DERIVED:
+            return .notDerived
+        case IDENTITY_KEY_WALLET_CHECK_OUTCOME_FFI_NOT_COMPARED:
+            return .notCompared
+        case IDENTITY_KEY_WALLET_CHECK_OUTCOME_FFI_MATCHES:
+            return .matches(
+                derivationPath: path,
+                privateKeyData: Self.tupleData(out.private_key_bytes),
+                publicKeyHashHex: Self.tupleData(out.public_key_hash).toHexString()
+            )
+        case IDENTITY_KEY_WALLET_CHECK_OUTCOME_FFI_MISMATCH:
+            let derived: Data
+            if let data = out.derived_public_key_data, out.derived_public_key_data_len > 0 {
+                derived = Data(bytes: data, count: Int(out.derived_public_key_data_len))
+            } else {
+                derived = Data()
+            }
+            return .mismatch(derivationPath: path, derivedPublicKeyData: derived)
+        default:
+            throw PlatformWalletError.deserialization("Unknown identity key check outcome")
+        }
+    }
+
+    /// One identity key for `checkIdentityKeys(...)`, as registered.
+    public struct IdentityKeyCheckInput: Sendable, Equatable {
+        public let keyId: UInt32
+        public let keyType: KeyType
+        /// DPP purpose discriminant.
+        public let purpose: UInt8
+        /// DPP security level discriminant.
+        public let securityLevel: UInt8
+        /// The key in its on-chain form.
+        public let publicKeyData: Data
+        /// When the key was disabled (milliseconds), or `nil` while it is
+        /// enabled.
+        public let disabledAt: UInt64?
+
+        public init(
+            keyId: UInt32,
+            keyType: KeyType,
+            purpose: UInt8,
+            securityLevel: UInt8,
+            publicKeyData: Data,
+            disabledAt: UInt64?
+        ) {
+            self.keyId = keyId
+            self.keyType = keyType
+            self.purpose = purpose
+            self.securityLevel = securityLevel
+            self.publicKeyData = publicKeyData
+            self.disabledAt = disabledAt
+        }
+    }
+
+    /// Whether an identity is this wallet's. Rust's
+    /// `check_identity_keys` decides from the identity's enabled master
+    /// key; only `.notOwned` is a reason to offer to remove it.
+    public enum IdentityWalletOwnership: Sendable, Equatable {
+        /// An enabled master key is the wallet's key at its slot.
+        case owned
+        /// Every enabled master key is foreign and no key is or could be
+        /// the wallet's: the identity is not this wallet's.
+        case notOwned
+        /// Neither; not a reason to remove the identity.
+        case undetermined
+    }
+
+    /// What `checkIdentityKeys(...)` found for an identity.
+    public struct IdentityWalletCheck: Sendable, Equatable {
+        /// One check per key, in the order the keys were given.
+        public let keys: [IdentityKeyWalletCheck]
+        public let ownership: IdentityWalletOwnership
+    }
+
+    /// Check every key of the identity at `identityIndex` against the
+    /// keys this wallet derives at their slots, and whether the identity
+    /// is this wallet's. Pure bridge to
+    /// `platform_wallet_check_identity_keys_with_resolver`; Rust's
+    /// `PlatformWallet::check_identity_keys` decides both. Rust reads the
+    /// mnemonic through the `MnemonicResolver` only when a key needs
+    /// comparing, and refuses one that isn't this wallet's, so another
+    /// wallet's seed can't make an identity look foreign.
+    ///
+    /// - Parameters:
+    ///   - identityIndex: the identity's index in the HD tree.
+    ///   - keys: every key the identity has that the caller can
+    ///     describe, disabled ones included.
+    ///   - unreadableKeyCount: how many more keys the identity has that
+    ///     the caller can't describe (enabled or not). Any of them could
+    ///     be the wallet's, so they rule out `.notOwned`.
+    ///   - storage: defaults to a fresh `WalletStorage()`, overridable
+    ///     for tests. Used by the resolver vtable.
+    ///
+    /// - Throws: `PlatformWalletError` when the FFI refuses a key's
+    ///   fields, the mnemonic can't be read, or the stored mnemonic isn't
+    ///   this wallet's. An error says nothing about whether the identity
+    ///   is the wallet's.
+    @MainActor
+    public func checkIdentityKeys(
+        identityIndex: UInt32,
+        keys: [IdentityKeyCheckInput],
+        unreadableKeyCount: Int,
+        storage: WalletStorage = WalletStorage()
+    ) throws -> IdentityWalletCheck {
+        guard unreadableKeyCount >= 0 else {
+            throw PlatformWalletError.invalidParameter(
+                "unreadableKeyCount must not be negative, got \(unreadableKeyCount)"
+            )
+        }
+        let resolver = MnemonicResolver(storage: storage)
+
+        // One buffer holds every key's data for the whole call; the
+        // inputs point into it. At least one byte, so its address is
+        // never null.
+        let totalLength = keys.reduce(0) { $0 + $1.publicKeyData.count }
+        let keyData = UnsafeMutablePointer<UInt8>.allocate(capacity: max(totalLength, 1))
+        defer { keyData.deallocate() }
+        var inputs: [IdentityKeyCheckInputFFI] = []
+        inputs.reserveCapacity(keys.count)
+        var offset = 0
+        for key in keys {
+            let start = keyData + offset
+            key.publicKeyData.copyBytes(to: start, count: key.publicKeyData.count)
+            offset += key.publicKeyData.count
+            inputs.append(
+                IdentityKeyCheckInputFFI(
+                    key_id: key.keyId,
+                    key_type: key.keyType.ffiValue,
+                    purpose: key.purpose,
+                    security_level: key.securityLevel,
+                    public_key_data: UnsafePointer(start),
+                    public_key_data_len: UInt(key.publicKeyData.count),
+                    is_disabled: key.disabledAt != nil,
+                    disabled_at: key.disabledAt ?? 0
+                )
+            )
+        }
+
+        var out = IdentityWalletCheckFFI()
+        defer { platform_wallet_check_identity_keys_free(&out) }
+
+        // `withExtendedLifetime` pins the resolver across the synchronous
+        // FFI call so ARC cannot deallocate its `passUnretained` ctx while
+        // Rust is still calling back into it.
+        let result = withExtendedLifetime(resolver) {
+            inputs.withUnsafeBufferPointer { inputBuffer -> PlatformWalletFFIResult in
+                platform_wallet_check_identity_keys_with_resolver(
+                    handle,
+                    resolver.handle,
+                    identityIndex,
+                    inputBuffer.baseAddress,
+                    UInt(inputBuffer.count),
+                    UInt(unreadableKeyCount),
+                    &out
+                )
+            }
+        }
+        try result.check()
+
+        // Copy out before the deferred free wipes and releases the result.
+        return try Self.identityWalletCheck(from: out, keyCount: keys.count)
+    }
+
+    /// Copy an identity check out of its FFI form, keys in the order
+    /// Rust returned them. Throws when it holds a different number of
+    /// results than `keyCount` (the keys sent, or the count Rust reported
+    /// when the caller sent none), or an unknown value. Pure decoding, like
+    /// `identityKeyWalletCheck(from:)`; `internal` so tests can decode
+    /// hand-built C values.
+    static func identityWalletCheck(
+        from out: IdentityWalletCheckFFI,
+        keyCount: Int
+    ) throws -> IdentityWalletCheck {
+        var checks: [IdentityKeyWalletCheck] = []
+        if let results = out.keys {
+            for index in 0..<Int(out.keys_len) {
+                checks.append(try Self.identityKeyWalletCheck(from: results[index]))
+            }
+        }
+        guard checks.count == keyCount else {
+            throw PlatformWalletError.deserialization(
+                "Identity key check returned \(checks.count) results for \(keyCount) keys"
+            )
+        }
+        let ownership: IdentityWalletOwnership
+        switch out.ownership {
+        case IDENTITY_WALLET_OWNERSHIP_FFI_OWNED:
+            ownership = .owned
+        case IDENTITY_WALLET_OWNERSHIP_FFI_NOT_OWNED:
+            ownership = .notOwned
+        case IDENTITY_WALLET_OWNERSHIP_FFI_UNDETERMINED:
+            ownership = .undetermined
+        default:
+            throw PlatformWalletError.deserialization("Unknown identity ownership")
+        }
+        return IdentityWalletCheck(keys: checks, ownership: ownership)
+    }
+
+    /// Re-fetch an identity from Platform and check every key it holds
+    /// afterwards against the keys this wallet derives at their slots,
+    /// and whether the identity is this wallet's. Pure bridge to
+    /// `platform_wallet_check_identity_keys_on_platform_with_resolver`;
+    /// Rust's `PlatformWallet::check_identity_keys_on_platform` decides.
+    /// The refresh stores the identity's key rows through the persister,
+    /// so ask this before removing an identity: the stored rows can be
+    /// stale. Rust checks at the identity's own slot in this wallet. The
+    /// keys come back in the refreshed identity's key id order.
+    ///
+    /// - Parameters:
+    ///   - identityId: the 32-byte identity id.
+    ///   - storage: defaults to a fresh `WalletStorage()`, overridable
+    ///     for tests. Used by the resolver vtable.
+    ///
+    /// - Throws: `PlatformWalletError` when the wallet doesn't hold the
+    ///   identity or holds it with no slot in this wallet, Platform
+    ///   doesn't return it, or the mnemonic can't be read or isn't this
+    ///   wallet's. An error says nothing about whether the identity is
+    ///   the wallet's.
+    public func checkIdentityKeysOnPlatform(
+        identityId: Identifier,
+        storage: WalletStorage = WalletStorage()
+    ) async throws -> IdentityWalletCheck {
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "identityId must be 32 bytes, got \(identityId.count)"
+            )
+        }
+        let resolver = MnemonicResolver(storage: storage)
+        // Off the main actor: the call fetches from Platform and stores
+        // through the persister. `withExtendedLifetime` keeps this wallet
+        // (its handle) and the resolver (its `passUnretained` ctx) alive
+        // for the synchronous FFI call.
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            try withExtendedLifetime((self, resolver)) {
+                var out = IdentityWalletCheckFFI()
+                defer { platform_wallet_check_identity_keys_free(&out) }
+                let result = identityId.withUnsafeBytes { idBytes -> PlatformWalletFFIResult in
+                    platform_wallet_check_identity_keys_on_platform_with_resolver(
+                        handle,
+                        resolver.handle,
+                        idBytes.bindMemory(to: UInt8.self).baseAddress!,
+                        &out
+                    )
+                }
+                try result.check()
+                // Copy out before the deferred free wipes and releases the
+                // result. No keys were sent, so the count Rust reported is
+                // the one to hold the result to.
+                return try Self.identityWalletCheck(from: out, keyCount: Int(out.keys_len))
+            }
+        }.value
+    }
+
     /// Derive a single ECDSA identity-authentication keypair at an
     /// arbitrary `(identityIndex, keyId)` slot — the building block
     /// the "add key to existing identity" flow runs on.

@@ -119,6 +119,45 @@ pub unsafe extern "C" fn dash_sdk_validate_private_key_for_public_key(
     }
 }
 
+/// Write the size in bytes of a private key of `key_type` to `out_size`, as DPP's
+/// `KeyType::private_key_size` defines it, so callers compare a key's length against DPP's size
+/// instead of keeping their own.
+///
+/// # Returns
+/// A result with no data on success. An `InvalidParameter` error when `out_size` is null or
+/// `key_type` is not a known key type, and `out_size` is left untouched.
+///
+/// # Safety
+/// - `out_size` must be null or a valid, aligned pointer to writable memory for one `usize`.
+/// - `key_type` is passed by value; no references are retained.
+/// - On error, the returned `DashSDKResult` holds a heap-allocated error which must be freed with
+///   `dash_sdk_error_free`.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_private_key_size_for_key_type(
+    key_type: u8,
+    out_size: *mut usize,
+) -> DashSDKResult {
+    if out_size.is_null() {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "Output size pointer is null".to_string(),
+        ));
+    }
+
+    let key_type = match KeyType::try_from(key_type) {
+        Ok(kt) => kt,
+        Err(_) => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                format!("Invalid key type: {}", key_type),
+            ))
+        }
+    };
+
+    *out_size = key_type.private_key_size();
+    DashSDKResult::success(std::ptr::null_mut())
+}
+
 /// Convert private key to WIF format
 ///
 /// # Safety
@@ -268,5 +307,55 @@ pub unsafe extern "C" fn dash_sdk_public_key_data_from_private_key_data(
             DashSDKErrorCode::CryptoError,
             format!("Failed to derive public key: {}", e),
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dash_sdk_error_free;
+
+    #[test]
+    fn should_report_dpps_private_key_size_for_each_key_type() {
+        for key_type in KeyType::all_key_types() {
+            let mut size = 0usize;
+            let result =
+                unsafe { dash_sdk_private_key_size_for_key_type(key_type as u8, &mut size) };
+            assert!(result.error.is_null(), "{key_type} was refused");
+            assert!(result.data.is_null(), "{key_type} returned data");
+            assert_eq!(size, key_type.private_key_size(), "{key_type}");
+        }
+    }
+
+    #[test]
+    fn should_refuse_an_unknown_key_type_and_leave_the_size_untouched() {
+        for unknown in [6u8, 255] {
+            let mut size = usize::MAX;
+            let result = unsafe { dash_sdk_private_key_size_for_key_type(unknown, &mut size) };
+            assert!(result.data.is_null(), "key type {unknown} returned data");
+            assert!(!result.error.is_null(), "key type {unknown} was accepted");
+            let code = unsafe { (*result.error).code };
+            unsafe { dash_sdk_error_free(result.error) };
+            assert_eq!(
+                code,
+                DashSDKErrorCode::InvalidParameter,
+                "key type {unknown}"
+            );
+            assert_eq!(size, usize::MAX, "key type {unknown} wrote a size");
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_null_size_pointer() {
+        let result = unsafe {
+            dash_sdk_private_key_size_for_key_type(
+                KeyType::REDPALLAS_HECATE as u8,
+                std::ptr::null_mut(),
+            )
+        };
+        assert!(!result.error.is_null(), "a null size pointer was accepted");
+        let code = unsafe { (*result.error).code };
+        unsafe { dash_sdk_error_free(result.error) };
+        assert_eq!(code, DashSDKErrorCode::InvalidParameter);
     }
 }

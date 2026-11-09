@@ -3,7 +3,7 @@ use crate::version::drive_versions::drive_contract_method_versions::{
     DriveContractFeePotMethodVersions, DriveContractMethodVersions,
 };
 use crate::version::drive_versions::drive_document_method_versions::v5::DRIVE_DOCUMENT_METHOD_VERSIONS_V5;
-use crate::version::drive_versions::drive_identity_method_versions::v2::DRIVE_IDENTITY_METHOD_VERSIONS_V2;
+use crate::version::drive_versions::drive_identity_method_versions::v3::DRIVE_IDENTITY_METHOD_VERSIONS_V3;
 use crate::version::drive_versions::drive_identity_method_versions::{
     DriveIdentityCostEstimationMethodVersions, DriveIdentityMethodVersions,
 };
@@ -80,6 +80,10 @@ use grovedb_version::version::v5::GROVE_V5;
 /// * **Core fork activations**: `platform_system.fetch_core_fork_activation_height` and
 ///   `store_core_fork_activation_height` are `Some(0)` (`None` before): Drive keeps, in `Misc`,
 ///   the chain locked Core height at which Platform first saw each tracked Core fork active.
+/// * **The Hecate signer index** (protocol v15 note 27): `DRIVE_IDENTITY_METHOD_VERSIONS_V3`
+///   sets `keys.fetch.fetch_identity_hecate_signer_key_ids` to `Some(0)` (`None` before): the
+///   identity update adding a Hecate signer key reads the identity's enabled signer keys from
+///   the index under its key references.
 ///
 /// * **GroveDB V5** (protocol v15 note 26): `grove_version` is `GROVE_V5` (`GROVE_V4` before).
 ///   GroveDB reads and proves a private document store's entries by position range only under
@@ -105,9 +109,9 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             cost_estimation: DriveIdentityCostEstimationMethodVersions {
                 for_balances: 1,       // changed in v10: keeps a deeper root description
                 for_token_balances: 1, // changed in v10: keeps a deeper root and Tokens layer description
-                ..DRIVE_IDENTITY_METHOD_VERSIONS_V2.cost_estimation
+                ..DRIVE_IDENTITY_METHOD_VERSIONS_V3.cost_estimation
             },
-            ..DRIVE_IDENTITY_METHOD_VERSIONS_V2
+            ..DRIVE_IDENTITY_METHOD_VERSIONS_V3 // changed in v10: the Hecate signer index read
         },
         document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores, delete estimates
         batch_operations: DriveBatchOperationsMethodVersion {

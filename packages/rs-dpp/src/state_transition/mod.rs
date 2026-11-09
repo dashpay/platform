@@ -20,6 +20,7 @@ use platform_serialization_derive::{
     PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
 };
 use platform_version::version::feature_initial_protocol_versions::{
+    HECATE_SIGNER_KEY_INITIAL_PROTOCOL_VERSION,
     PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
     YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION,
 };
@@ -1105,14 +1106,17 @@ pub struct StateTransitionSigningOptions {
     pub allow_signing_with_any_purpose: bool,
 }
 
-/// The active range of a transition carrying `keys`: from protocol version 14 when one of them
+/// The active range of a transition carrying `keys`: from protocol version 15 when one of them
+/// is a Hecate signer key, by its type or its purpose; from protocol version 14 when one of them
 /// is bound to a contract group or is a version 1 key (the format that can carry a budget or an
-/// expiry), `otherwise` when none is.
+/// expiry); `otherwise` when none is.
 fn active_version_range_for_keys_in_creation(
     keys: &[IdentityPublicKeyInCreation],
     otherwise: RangeInclusive<ProtocolVersion>,
 ) -> RangeInclusive<ProtocolVersion> {
-    if IdentityPublicKeyInCreation::first_bound_to_a_contract_group(keys).is_some()
+    if IdentityPublicKeyInCreation::first_hecate_signer_key(keys).is_some() {
+        (*otherwise.start()).max(HECATE_SIGNER_KEY_INITIAL_PROTOCOL_VERSION)..=LATEST_VERSION
+    } else if IdentityPublicKeyInCreation::first_bound_to_a_contract_group(keys).is_some()
         || IdentityPublicKeyInCreation::first_in_version_1_format(keys).is_some()
     {
         14..=LATEST_VERSION
@@ -1260,8 +1264,9 @@ impl StateTransition {
                 }
             }
             // A key bound to a contract group, and a version 1 key, exist from protocol version
-            // 14, so a transition carrying one is inactive before that: an earlier version
-            // rejects it without charging, exactly as a binary that cannot decode it does.
+            // 14, and a Hecate signer key from 15, so a transition carrying one is inactive
+            // before that: an earlier version rejects it without charging, exactly as a binary
+            // that cannot decode it does.
             StateTransition::IdentityCreate(st) => {
                 active_version_range_for_keys_in_creation(st.public_keys(), ALL_VERSIONS)
             }
@@ -2177,12 +2182,13 @@ impl StateTransition {
 
             // the default behavior from
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransitionIdentitySigned.js#L108
-            // is to return the error for the BIP13_SCRIPT_HASH
-            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
-                Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
-                    InvalidIdentityPublicKeyTypeError::new(identity_public_key.key_type()),
-                ))
-            }
+            // is to return the error for the BIP13_SCRIPT_HASH. A Hecate signer key signs only
+            // its proof of possession, never a state transition.
+            KeyType::BIP13_SCRIPT_HASH
+            | KeyType::EDDSA_25519_HASH160
+            | KeyType::REDPALLAS_HECATE => Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
+                InvalidIdentityPublicKeyTypeError::new(identity_public_key.key_type()),
+            )),
         }?;
 
         self.set_signature_public_key_id(identity_public_key.id());
@@ -2224,8 +2230,11 @@ impl StateTransition {
 
             // the default behavior from
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
-            // is to return the error for the BIP13_SCRIPT_HASH
-            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
+            // is to return the error for the BIP13_SCRIPT_HASH. A Hecate signer key never signs a
+            // state transition.
+            KeyType::BIP13_SCRIPT_HASH
+            | KeyType::EDDSA_25519_HASH160
+            | KeyType::REDPALLAS_HECATE => {
                 return Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
                     InvalidIdentityPublicKeyTypeError::new(key_type),
                 ))
@@ -2920,6 +2929,76 @@ mod tests {
                 state_transition
             );
         }
+    }
+
+    /// A Hecate signer key exists from protocol version 15, named by its type or by its purpose.
+    /// Before 15 a transition adding one does not decode, so the key structure checks selected
+    /// there never meet one.
+    #[test]
+    fn should_make_a_transition_adding_a_hecate_signer_key_active_from_protocol_version_15() {
+        use crate::serialization::PlatformSerializable;
+        use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+
+        let key = |key_type: KeyType, purpose: Purpose| -> IdentityPublicKeyInCreation {
+            IdentityPublicKeyInCreationV0 {
+                id: 3,
+                key_type,
+                purpose,
+                security_level: SecurityLevel::MEDIUM,
+                contract_bounds: None,
+                read_only: false,
+                data: BinaryData::new(vec![1u8; 64]),
+                signature: BinaryData::new(vec![2u8; 64]),
+            }
+            .into()
+        };
+        let version_14 = PlatformVersion::get(14).expect("protocol version 14");
+        let version_15 = PlatformVersion::get(15).expect("protocol version 15");
+
+        for added in [
+            key(KeyType::REDPALLAS_HECATE, Purpose::HECATE_SIGNER),
+            key(KeyType::REDPALLAS_HECATE, Purpose::AUTHENTICATION),
+            key(KeyType::ECDSA_SECP256K1, Purpose::HECATE_SIGNER),
+        ] {
+            let state_transition = StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(
+                IdentityUpdateTransitionV0 {
+                    identity_id: Identifier::from([4u8; 32]),
+                    revision: 1,
+                    nonce: 1,
+                    add_public_keys: vec![added],
+                    signature_public_key_id: 0,
+                    signature: BinaryData::new(vec![9u8; 65]),
+                    ..Default::default()
+                },
+            ));
+            assert_eq!(
+                state_transition.active_version_range(),
+                HECATE_SIGNER_KEY_INITIAL_PROTOCOL_VERSION..=LATEST_VERSION
+            );
+            let bytes = state_transition
+                .serialize_to_bytes()
+                .expect("expected to serialize the update");
+            assert!(matches!(
+                StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_14),
+                Err(ProtocolError::StateTransitionError(
+                    StateTransitionIsNotActiveError { .. }
+                ))
+            ));
+            assert_eq!(
+                StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_15)
+                    .expect("expected the update to be active at 15"),
+                state_transition
+            );
+        }
+
+        // An update adding an ordinary key keeps its range.
+        let ordinary = StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(
+            IdentityUpdateTransitionV0 {
+                add_public_keys: vec![key(KeyType::ECDSA_SECP256K1, Purpose::ENCRYPTION)],
+                ..Default::default()
+            },
+        ));
+        assert_eq!(ordinary.active_version_range(), ALL_VERSIONS);
     }
 
     #[test]

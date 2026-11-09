@@ -13,7 +13,9 @@ use crate::version::fee::private_document::FeePrivateDocumentVersion;
 use crate::version::fee::processing::{
     FeeProcessingVersion, FeeProcessingVersionFieldsBeforeVersion1Point4,
 };
-use crate::version::fee::signature::FeeSignatureVersion;
+use crate::version::fee::signature::{
+    FeeSignatureVersion, FeeSignatureVersionFieldsBeforeVersion4,
+};
 use crate::version::fee::state_transition_min_fees::{
     StateTransitionMinFees, StateTransitionMinFeesBeforeProtocolVersion11,
 };
@@ -53,6 +55,8 @@ pub type FeeVersionNumber = u32;
 /// processing, hashing or signature costs), because saved state keeps only the number and
 /// reloads the entry registered here. Schedules that change other groups keep the previous
 /// number, which is why `FEE_VERSION2` to `FEE_VERSION4` all carry 1 and are not listed.
+/// `FEE_VERSION4` also adds a signature cost, `verify_signature_redpallas`, but the fee history
+/// serves no cost that reads it (verification reads the active schedule), so it keeps 1 too.
 /// Registering different storage rates also requires refunds priced at the rate active when the
 /// bytes were stored; `calculate_fee` generation 0 prices them at the removal epoch's rate
 /// (dashpay/platform#4703 has a version of that rule).
@@ -161,7 +165,7 @@ pub struct FeeVersionFieldsBeforeVersion4 {
     // Permille means devise by 1000
     pub uses_version_fee_multiplier_permille: Option<u64>,
     pub storage: FeeStorageVersionFieldsBeforeVersion4,
-    pub signature: FeeSignatureVersion,
+    pub signature: FeeSignatureVersionFieldsBeforeVersion4,
     pub hashing: FeeHashingVersionBeforeVersion11,
     pub processing: FeeProcessingVersionFieldsBeforeVersion1Point4,
     pub data_contract: FeeDataContractValidationVersion,
@@ -175,7 +179,7 @@ impl From<FeeVersionFieldsBeforeVersion4> for FeeVersion {
             fee_version_number: 1,
             uses_version_fee_multiplier_permille: value.uses_version_fee_multiplier_permille,
             storage: value.storage.into(),
-            signature: value.signature,
+            signature: value.signature.into(),
             hashing: FEE_HASHING_VERSION1,
             processing: FeeProcessingVersion::from(value.processing),
             data_contract_validation: value.data_contract,

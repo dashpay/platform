@@ -547,7 +547,7 @@ class PlatformWalletManager(
      * [publicKeyData] from this wallet's mnemonic and re-encrypt it into
      * [walletStorage] under its hex — the repair action behind
      * `WalletKeyHealthSheet` (port of the iOS re-derive path in
-     * `WalletKeyHealthSheet.swift`, which calls `deriveIdentityAuthKeyAtSlot`).
+     * `WalletKeyHealthSheet.swift`, which calls `checkIdentityKey`).
      *
      * The derivation slot is read from the PERSISTED `public_keys` row's
      * derivation breadcrumbs — NEVER from a caller-supplied key id

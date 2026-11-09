@@ -1,5 +1,10 @@
 #[cfg(feature = "bls-signatures")]
 use crate::bls::{self, Signature};
+#[cfg(any(
+    feature = "message-signing",
+    feature = "message-signature-verification"
+))]
+use crate::identity::identity_public_key::redpallas_hecate;
 use crate::identity::KeyType;
 use crate::serialization::PlatformMessageSignable;
 #[cfg(feature = "message-signature-verification")]
@@ -7,7 +12,8 @@ use crate::util::ecdsa;
 #[cfg(feature = "message-signature-verification")]
 use crate::{
     consensus::signature::{
-        BasicBLSError, BasicECDSAError, SignatureError, SignatureShouldNotBePresentError,
+        BasicBLSError, BasicECDSAError, BasicRedPallasError, SignatureError,
+        SignatureShouldNotBePresentError,
     },
     validation::SimpleConsensusValidationResult,
 };
@@ -117,6 +123,16 @@ impl PlatformMessageSignable for &[u8] {
                     SimpleConsensusValidationResult::default()
                 }
             }
+            KeyType::REDPALLAS_HECATE => {
+                match redpallas_hecate::verify_signature(public_key_data, signable_data, signature)
+                {
+                    Ok(()) => SimpleConsensusValidationResult::default(),
+                    Err(message) => SimpleConsensusValidationResult::new_with_error(
+                        SignatureError::BasicRedPallasError(BasicRedPallasError::new(message))
+                            .into(),
+                    ),
+                }
+            }
         }
     }
     #[cfg(feature = "message-signing")]
@@ -144,6 +160,66 @@ impl PlatformMessageSignable for &[u8] {
                     key_type
                 )))
             }
+
+            // The private key is the key's secret, from which the RedPallas signing key derives.
+            // Its length comes from `KeyType::private_key_size`; `from_secret` takes `[u8; 32]`,
+            // so this arm stops compiling if the two ever disagree. The secret is borrowed, not
+            // copied: an owned copy here would outlive the call unwiped.
+            KeyType::REDPALLAS_HECATE => {
+                const SECRET_SIZE: usize = KeyType::REDPALLAS_HECATE.private_key_size();
+                let secret: &[u8; SECRET_SIZE] = private_key.try_into().map_err(|_| {
+                    ProtocolError::InvalidSigningKeyTypeError(format!(
+                        "a REDPALLAS_HECATE private key is {SECRET_SIZE} bytes, got {}",
+                        private_key.len()
+                    ))
+                })?;
+                Ok(
+                    redpallas_hecate::RedPallasHecateSecretKey::from_secret(secret)?
+                        .sign(self)?
+                        .to_vec(),
+                )
+            }
+        }
+    }
+}
+
+#[cfg(all(test, feature = "message-signing", feature = "bls-signatures"))]
+mod tests {
+    use crate::bls::native_bls::NativeBlsModule;
+    use crate::identity::KeyType;
+    use crate::serialization::PlatformMessageSignable;
+    use crate::ProtocolError;
+
+    const HECATE_PRIVATE_KEY_SIZE: usize = KeyType::REDPALLAS_HECATE.private_key_size();
+
+    #[test]
+    fn should_sign_with_a_hecate_private_key_only_of_its_key_types_private_key_size() {
+        let message: &[u8] = b"Hecate private key size";
+
+        assert!(message
+            .sign_by_private_key(
+                &[1; HECATE_PRIVATE_KEY_SIZE],
+                KeyType::REDPALLAS_HECATE,
+                &NativeBlsModule
+            )
+            .is_ok());
+
+        let wrong_sizes: [&[u8]; 2] = [
+            &[1; HECATE_PRIVATE_KEY_SIZE - 1],
+            &[1; HECATE_PRIVATE_KEY_SIZE + 1],
+        ];
+        for private_key in wrong_sizes {
+            let error = message
+                .sign_by_private_key(private_key, KeyType::REDPALLAS_HECATE, &NativeBlsModule)
+                .expect_err("a private key of another size is refused");
+            let expected = format!(
+                "a REDPALLAS_HECATE private key is {HECATE_PRIVATE_KEY_SIZE} bytes, got {}",
+                private_key.len()
+            );
+            assert!(
+                matches!(&error, ProtocolError::InvalidSigningKeyTypeError(m) if *m == expected),
+                "{error}"
+            );
         }
     }
 }

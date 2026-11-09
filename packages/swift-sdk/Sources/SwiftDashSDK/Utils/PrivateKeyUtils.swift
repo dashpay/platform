@@ -1,4 +1,5 @@
 import Foundation
+import DashSDKFFI
 
 // MARK: - Key Format
 
@@ -230,34 +231,40 @@ public enum KeyValidator {
 
 // MARK: - Key Size Validator
 
-/// Validates key sizes for different key types.
+/// Validates key sizes for different key types. The sizes are DPP's
+/// (`KeyType::private_key_size`), read through
+/// `dash_sdk_private_key_size_for_key_type`; Swift keeps none of its own.
 public enum KeySizeValidator {
 
     /// Expected private key size for a given key type.
     /// - Parameter keyType: The type of key.
-    /// - Returns: Expected size in bytes.
+    /// - Returns: Expected size in bytes, or 0 when the linked DashSDKFFI does
+    ///   not know `keyType` (a SwiftDashSDK built against a newer one).
     public static func expectedPrivateKeySize(for keyType: KeyType) -> Int {
-        switch keyType {
-        case .ecdsaSecp256k1:
-            return 32  // 256 bits
-        case .bls12_381:
-            return 32  // 256 bits
-        case .ecdsaHash160:
-            return 32  // 256 bits for the actual key
-        case .bip13ScriptHash:
-            return 32  // 256 bits
-        case .eddsa25519Hash160:
-            return 32  // 256 bits
-        }
+        privateKeySize(for: keyType) ?? 0
     }
 
     /// Validates that a private key has the correct size for its type.
     /// - Parameters:
     ///   - privateKey: The private key data.
     ///   - keyType: The type of key.
-    /// - Returns: True if the size is correct.
+    /// - Returns: True if the size is correct, false as well when the linked
+    ///   DashSDKFFI does not know `keyType`.
     public static func isValidSize(_ privateKey: Data, for keyType: KeyType) -> Bool {
-        privateKey.count == expectedPrivateKeySize(for: keyType)
+        guard let expected = privateKeySize(for: keyType) else { return false }
+        return privateKey.count == expected
+    }
+
+    /// DPP's private key size for `keyType`, or nil when the FFI refuses the
+    /// key type.
+    private static func privateKeySize(for keyType: KeyType) -> Int? {
+        var size: UInt = 0
+        let result = dash_sdk_private_key_size_for_key_type(keyType.ffiValue, &size)
+        if let error = result.error {
+            dash_sdk_error_free(error)
+            return nil
+        }
+        return Int(size)
     }
 }
 

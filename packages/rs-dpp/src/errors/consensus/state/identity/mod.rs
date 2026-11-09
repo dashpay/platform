@@ -27,3 +27,4 @@ pub mod identity_to_freeze_does_not_exist_error;
 mod recipient_identity_does_not_exist_error;
 
 pub use recipient_identity_does_not_exist_error::*;
+pub mod identity_already_has_hecate_signer_key_error;

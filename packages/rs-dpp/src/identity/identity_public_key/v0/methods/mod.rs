@@ -3,6 +3,8 @@ use crate::bls;
 #[cfg(feature = "ed25519-dalek")]
 use crate::ed25519_dalek;
 use crate::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
+#[cfg(feature = "redpallas")]
+use crate::identity::identity_public_key::redpallas_hecate::RedPallasHecateSecretKey;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::identity::KeyType;
 use crate::util::hash::ripemd160_sha256;
@@ -68,6 +70,17 @@ pub(in crate::identity::identity_public_key) fn public_key_hash_for_key_data(
         KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
             Ok(Bytes20::from_vec(data.to_vec())?.into_buffer())
         }
+        KeyType::REDPALLAS_HECATE => {
+            if data.len() != key_type.default_size() {
+                Err(ProtocolError::ParsingError(format!(
+                    "the key length is invalid: {} Allowed sizes: {} bytes for a REDPALLAS_HECATE key",
+                    data.len(),
+                    key_type.default_size()
+                )))
+            } else {
+                Ok(ripemd160_sha256(data.as_slice()))
+            }
+        }
     }
 }
 
@@ -132,6 +145,21 @@ pub(in crate::identity::identity_public_key) fn validate_private_key_bytes_for_k
         KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::NotSupported(
             "Converting a private key to a script hash is not supported".to_string(),
         )),
+        KeyType::REDPALLAS_HECATE => {
+            #[cfg(feature = "redpallas")]
+            {
+                match RedPallasHecateSecretKey::from_secret(private_key_bytes)
+                    .and_then(|key| key.public_key_data())
+                {
+                    Ok(derived) => Ok(derived.as_slice() == data.as_slice()),
+                    Err(_) => Ok(false),
+                }
+            }
+            #[cfg(not(feature = "redpallas"))]
+            return Err(ProtocolError::NotSupported(
+                "Converting a private key to a REDPALLAS_HECATE key is not supported without the redpallas feature".to_string(),
+            ));
+        }
     }
 }
 

@@ -14,11 +14,11 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
 pub struct DashSDKPublicKeyData {
     /// Key ID (0-255)
     pub id: u8,
-    /// Key purpose (0-6)
+    /// Key purpose (0-7)
     pub purpose: u8,
     /// Security level (0-3)
     pub security_level: u8,
-    /// Key type (0-4)
+    /// Key type (0-5)
     pub key_type: u8,
     /// Whether key is read-only
     pub read_only: bool,
@@ -116,6 +116,7 @@ pub unsafe extern "C" fn dash_sdk_identity_create_from_components(
                 4 => Purpose::SYSTEM,
                 5 => Purpose::VOTING,
                 6 => Purpose::OWNER,
+                7 => Purpose::HECATE_SIGNER,
                 _ => {
                     return DashSDKResult::error(DashSDKError::new(
                         DashSDKErrorCode::InvalidParameter,
@@ -143,6 +144,7 @@ pub unsafe extern "C" fn dash_sdk_identity_create_from_components(
                 2 => KeyType::ECDSA_HASH160,
                 3 => KeyType::BIP13_SCRIPT_HASH,
                 4 => KeyType::EDDSA_25519_HASH160,
+                5 => KeyType::REDPALLAS_HECATE,
                 _ => {
                     return DashSDKResult::error(DashSDKError::new(
                         DashSDKErrorCode::InvalidParameter,
