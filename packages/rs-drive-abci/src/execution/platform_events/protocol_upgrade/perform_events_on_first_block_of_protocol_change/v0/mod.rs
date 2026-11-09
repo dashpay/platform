@@ -2710,7 +2710,7 @@ mod tests {
         }
 
         // v3's new private type gets its store with the upgrade, as a contract update adding a
-        // private type creates one: 589-byte entries, 1024 to a chunk.
+        // private type creates one: 589-byte entries, 1024 to a chunk under the 1 MiB target.
         assert_eq!(
             platform
                 .drive
