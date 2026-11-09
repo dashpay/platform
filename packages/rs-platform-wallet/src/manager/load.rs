@@ -1956,12 +1956,25 @@ mod private_payment_hold_tests {
     };
     use crate::events::PlatformEventHandler;
     use crate::test_support::NoopTestEventHandler;
+    use crate::wallet::identity::ManagedIdentity;
     use crate::wallet::platform_wallet::WalletId;
-    use crate::wallet::shielded::SubwalletId;
+    use crate::wallet::shielded::store::PendingRedrive;
+    use crate::wallet::shielded::{
+        FileBackedShieldedStore, PrivateContactPayment, ShieldedStore, SubwalletId,
+    };
     use crate::PlatformWalletManager;
+    use dpp::identity::v0::IdentityV0;
+    use dpp::prelude::Identifier;
+
+    /// The identity the bound wallet manages, which paid for a private
+    /// contact request to [`RECIPIENT`] in an earlier process.
+    const SENDER: [u8; 32] = [0xB1; 32];
+    /// The identity that private request is to.
+    const RECIPIENT: [u8; 32] = [0xA1; 32];
 
     /// Two wallets, of which only `bound` has a persisted shielded viewing
-    /// key: it bound a shielded account in an earlier process.
+    /// key: it bound a shielded account in an earlier process, and manages
+    /// [`SENDER`].
     struct ShieldedTracePersister {
         wallets: Vec<(Wallet, ManagedWalletInfo)>,
         bound: WalletId,
@@ -1985,12 +1998,28 @@ mod private_payment_hold_tests {
                 .wallets
                 .iter()
                 .map(|(wallet, managed)| {
+                    let wallet_id = wallet.compute_wallet_id();
+                    let mut identity_manager = IdentityManagerStartState::default();
+                    if wallet_id == self.bound {
+                        let sender = ManagedIdentity::new(
+                            dpp::identity::Identity::V0(IdentityV0 {
+                                id: Identifier::from(SENDER),
+                                public_keys: BTreeMap::new(),
+                                balance: 0,
+                                revision: 1,
+                            }),
+                            0,
+                        );
+                        identity_manager
+                            .wallet_identities
+                            .insert(wallet_id, BTreeMap::from([(0, sender)]));
+                    }
                     (
-                        wallet.compute_wallet_id(),
+                        wallet_id,
                         ClientWalletStartState {
                             wallet: wallet.clone(),
                             wallet_info: managed.clone(),
-                            identity_manager: IdentityManagerStartState::default(),
+                            identity_manager,
                             unused_asset_locks: BTreeMap::new(),
                             unconfirmed_outgoing_txs: Vec::new(),
                             dashpay_backfill: Default::default(),
@@ -2052,42 +2081,91 @@ mod private_payment_hold_tests {
             .private_payments_unrestored()
     }
 
+    /// Save, in the shielded store at `path`, the bound wallet's payment for a
+    /// private contact request from [`SENDER`] to [`RECIPIENT`] that may
+    /// still execute, as an earlier process left it: its redrive record and
+    /// its journal record.
+    fn save_payment(path: &std::path::Path, bound: WalletId) {
+        let mut store = FileBackedShieldedStore::open_path(path, 100).expect("the store");
+        store
+            .arm_private_contact_payment(
+                SubwalletId::new(bound, 0),
+                PendingRedrive {
+                    activity_id: [0x21; 32],
+                    anchor: [0x22; 32],
+                    nullifiers: vec![[0x23; 32]],
+                    st_bytes: vec![0xAB; 96],
+                    attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                },
+                PrivateContactPayment {
+                    sender: SENDER,
+                    recipient: RECIPIENT,
+                    account_reference: 0,
+                },
+                &[[0xC1; 32]],
+            )
+            .expect("the payment saved");
+    }
+
+    /// Whether `wallet_id`'s [`SENDER`] holds its pair with [`RECIPIENT`],
+    /// which refuses every request to it, public or private.
+    async fn pair_held(
+        manager: &PlatformWalletManager<ShieldedTracePersister>,
+        wallet_id: WalletId,
+    ) -> bool {
+        let wallet = manager.get_wallet(&wallet_id).await.expect("loaded");
+        let wm = wallet.wallet_manager().read().await;
+        wm.get_wallet_info(&wallet_id)
+            .and_then(|info| {
+                info.identity_manager
+                    .managed_identity(&Identifier::from(SENDER))
+            })
+            .is_some_and(|sender| {
+                sender
+                    .dashpay()
+                    .private_reply_pending(&Identifier::from(RECIPIENT))
+            })
+    }
+
     /// A loaded wallet that bound a shielded account before holds its public
     /// contact requests until the shielded store is configured, which
-    /// restores its private payments with no keys; one that never bound a
-    /// shielded account is never held.
+    /// restores its private payment's pair with no keys and releases the
+    /// wallet; one that never bound a shielded account is never held.
     #[tokio::test]
     async fn should_hold_a_loaded_wallet_that_bound_a_shielded_account_until_the_store_opens() {
         let (manager, bound, unbound) = manager();
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("tree.sqlite");
+        save_payment(&path, bound);
         manager.load_from_persistor().await.expect("loaded");
         assert!(
             held(&manager, bound).await,
             "may have an unrestored payment"
         );
+        assert!(!pair_held(&manager, bound).await, "not restored yet");
         assert!(
             !held(&manager, unbound).await,
             "never bound a shielded account"
         );
 
-        let dir = tempfile::tempdir().expect("a directory");
-        manager
-            .configure_shielded(dir.path().join("tree.sqlite"))
-            .await
-            .expect("configured");
+        manager.configure_shielded(&path).await.expect("configured");
         assert!(!held(&manager, bound).await, "restored from the store");
+        assert!(pair_held(&manager, bound).await, "the pair is held");
     }
 
     /// A wallet loaded once the shielded store is configured is restored by
-    /// the load itself.
+    /// the load itself, its private payment's pair held.
     #[tokio::test]
     async fn should_restore_a_wallet_loaded_once_the_store_is_configured() {
         let (manager, bound, _) = manager();
         let dir = tempfile::tempdir().expect("a directory");
-        manager
-            .configure_shielded(dir.path().join("tree.sqlite"))
-            .await
-            .expect("configured");
+        let path = dir.path().join("tree.sqlite");
+        save_payment(&path, bound);
+        manager.configure_shielded(&path).await.expect("configured");
         manager.load_from_persistor().await.expect("loaded");
         assert!(!held(&manager, bound).await, "restored by the load");
+        assert!(pair_held(&manager, bound).await, "the pair is held");
     }
 }
