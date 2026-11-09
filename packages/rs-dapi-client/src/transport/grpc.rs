@@ -774,9 +774,12 @@ impl_transport_request_grpc!(
     platform_proto::GetOwnerTransactionsInBlockRequest,
     platform_proto::GetOwnerTransactionsInBlockResponse,
     PlatformGrpcClient,
-    // A block can hold 2 MiB, and every transition in it can belong to the one owner.
     RequestSettings {
+        // A block can hold 2 MiB, and every transition in it can belong to the one owner.
         timeout: Some(LARGE_RESPONSE_TIMEOUT),
+        // rs-dapi refuses this method when too many are in progress. A busy node is not a
+        // failed one, and a ban would take it away from the client's other requests too.
+        ban_failed_address: Some(false),
         ..RequestSettings::default()
     },
     get_owner_transactions_in_block
