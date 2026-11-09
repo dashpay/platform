@@ -281,7 +281,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     system field; no elected moderation), and registration holds `entrySize` to
 ///     `max_private_document_entry_size`, 4096 bytes in `SYSTEM_LIMITS_V5`. The compiled
 ///     stored form of note 8 records the declaration. A contract update cannot add, remove or
-///     change it (`DocumentTypeUpdateError`). No reference may name a private type: a
+///     change it (`DocumentTypeUpdateError`), and may only add properties after a private type's
+///     existing ones, at the end of the type and of each object, since its immutable entries are
+///     read with the type as it is now (`DocumentTypeUpdateError` too). No reference may name a private type: a
 ///     `findBy`, an `inList` list, a `countOf` or a `sumOf` naming one of the same contract is
 ///     refused by the contract parse (`InvalidContractStructure`), and every other reference,
 ///     to a type of the same contract or another, by contract registration
