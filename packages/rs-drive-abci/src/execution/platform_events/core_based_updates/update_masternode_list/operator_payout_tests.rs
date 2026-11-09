@@ -833,6 +833,7 @@ fn should_not_ask_core_about_a_masternode_platform_does_not_list() {
     )
     .expect("expected a platform state");
     state.insert_masternode(listed);
+    let listed_before = state.full_masternode_list().clone();
     let transaction = platform.drive.grove.start_transaction();
 
     let outcome = platform
@@ -846,4 +847,5 @@ fn should_not_ask_core_about_a_masternode_platform_does_not_list() {
         .expect("expected to update the masternode list");
 
     assert_eq!(outcome.masternode_list_diff.updated_mns, vec![entry]);
+    assert_eq!(state.full_masternode_list(), &listed_before);
 }
