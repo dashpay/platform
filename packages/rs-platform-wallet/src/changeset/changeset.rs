@@ -1298,9 +1298,11 @@ pub struct ReceivedContactRequestKey {
 /// (a `sent_requests` insert clears a prior `removed_sent`, an un-ignore
 /// clears a prior ignore, and vice versa), keeping the two sets
 /// disjoint. This covers `sent_requests` vs `removed_sent`,
-/// `incoming_requests` vs `removed_incoming`, and `ignored` vs
-/// `unignored`. `established` has no opposing tombstone set and rides
-/// plain last-write-wins.
+/// `incoming_requests` vs `removed_incoming`, `ignored` vs
+/// `unignored`, and `private_shielded_addresses` vs
+/// `removed_private_shielded_addresses`. `established` and
+/// `private_contact_requests_positions` have no opposing tombstone set
+/// and ride plain last-write-wins.
 #[derive(Debug, Clone, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ContactChangeSet {
@@ -1330,6 +1332,53 @@ pub struct ContactChangeSet {
     /// sweep. Kept as a separate set (rather than a shrinking `ignored`
     /// snapshot) so the changeset's insert-XOR-tombstone discipline holds.
     pub unignored: BTreeSet<(Identifier, Identifier)>,
+    /// The position of DashPay's private contact request store each owner
+    /// identity reads from next, keyed by owner, with the fingerprint of the
+    /// scanning keys it holds for: every entry before it was read with those
+    /// keys and what it held for the owner stored. Written only for a backend
+    /// attesting
+    /// [`PRIVATE_CONTACT_REQUEST_SCAN_STATE`](crate::changeset::PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE),
+    /// and only after the stores of what the entries before it held, so a
+    /// restored position never covers a request that did not reach disk. A
+    /// rewind (un-ignoring a sender, or the scanning keys changing) writes
+    /// the lower position. Last write wins.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub private_contact_requests_positions: BTreeMap<Identifier, PrivateContactRequestsPosition>,
+    /// The Orchard address each contact's tracked private request to the
+    /// owner carries, keyed by `(owner, contact)`: 43 bytes, an 11-byte
+    /// diversifier and a 32-byte transmission key. Written only for a
+    /// backend attesting
+    /// [`PRIVATE_CONTACT_REQUEST_SCAN_STATE`](crate::changeset::PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE).
+    /// Reconciled last-write-wins against
+    /// [`Self::removed_private_shielded_addresses`] on merge.
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            default,
+            with = "crate::changeset::serde_adapters::private_shielded_addresses"
+        )
+    )]
+    pub private_shielded_addresses: BTreeMap<(Identifier, Identifier), [u8; 43]>,
+    /// `(owner, contact)` pairs whose tracked private request carries no
+    /// shielded address any more: the removal tombstone for
+    /// [`Self::private_shielded_addresses`].
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub removed_private_shielded_addresses: BTreeSet<(Identifier, Identifier)>,
+}
+
+/// Where an identity reads DashPay's private contact request store from
+/// next, and the scanning keys that position holds for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PrivateContactRequestsPosition {
+    /// The store position read from next.
+    pub position: u64,
+    /// SHA-256 over the identity's HD index and each `ECDSA_SECP256K1`
+    /// `ENCRYPTION` or `DECRYPTION` key (id, purpose and data, in key id
+    /// order) the entries before `position` were scanned with
+    /// (`ManagedIdentity::private_scan_key_fingerprint`). A loaded position
+    /// whose fingerprint is not the identity's is read again from 0.
+    pub key_fingerprint: [u8; 32],
 }
 
 impl Merge for ContactChangeSet {
@@ -1370,6 +1419,20 @@ impl Merge for ContactChangeSet {
         }
         self.ignored.extend(other.ignored);
         self.unignored.extend(other.unignored);
+
+        self.private_contact_requests_positions
+            .extend(other.private_contact_requests_positions);
+
+        for key in other.removed_private_shielded_addresses.iter() {
+            self.private_shielded_addresses.remove(key);
+        }
+        for key in other.private_shielded_addresses.keys() {
+            self.removed_private_shielded_addresses.remove(key);
+        }
+        self.private_shielded_addresses
+            .extend(other.private_shielded_addresses);
+        self.removed_private_shielded_addresses
+            .extend(other.removed_private_shielded_addresses);
     }
 
     fn is_empty(&self) -> bool {
@@ -1380,6 +1443,9 @@ impl Merge for ContactChangeSet {
             && self.established.is_empty()
             && self.ignored.is_empty()
             && self.unignored.is_empty()
+            && self.private_contact_requests_positions.is_empty()
+            && self.private_shielded_addresses.is_empty()
+            && self.removed_private_shielded_addresses.is_empty()
     }
 }
 

@@ -22,7 +22,12 @@ use crate::wallet::identity::types::dashpay::contact_request::ContactRequest;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
 use crate::wallet::identity::ManagedIdentity;
 use crate::wallet::persister::WalletPersister;
-use crate::wallet::platform_wallet::PlatformWalletInfo;
+use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+use key_wallet_manager::WalletManager;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
+use super::private_contact_requests::apply_detached;
 use dash_sdk::platform::dashpay::PrivateContactRequest;
 use dash_sdk::platform::private_document_entries::PrivateDocumentEntries;
 use dash_sdk::platform::private_document_scan::PrivateDocumentScan;
@@ -170,6 +175,35 @@ pub trait ContactCryptoProvider {
         Err(private_documents_unsupported())
     }
 
+    /// Sorts each of `pages`, each read from its start position of the same store, as
+    /// [`Self::scan_private_document_page`] sorts one: one scan per page, in their order. A
+    /// provider derives the keys at `keys` once for all of them, rather than once a page.
+    ///
+    /// Defaulted to one [`Self::scan_private_document_page`] call per page, so a provider that
+    /// only implements that one keeps working.
+    async fn scan_private_document_pages(
+        &self,
+        keys: &PrivateDocumentKeyPaths,
+        data_contract_id: Identifier,
+        document_type_name: &str,
+        pages: &[(u64, &PrivateDocumentEntries)],
+    ) -> Result<Vec<PrivateDocumentScan>, PlatformWalletError> {
+        let mut scans = Vec::with_capacity(pages.len());
+        for (start_position, page) in pages {
+            scans.push(
+                self.scan_private_document_page(
+                    keys,
+                    data_contract_id,
+                    document_type_name,
+                    *start_position,
+                    page,
+                )
+                .await?,
+            );
+        }
+        Ok(scans)
+    }
+
     /// Seals `request` from `sender`, whose encryption key is the one at
     /// `sender_encryption_key_path`, to the key `recipient_key_id` of `recipient`, with
     /// `signature`, the signature of the request by the sender's key `signing_key_id`
@@ -233,6 +267,9 @@ pub struct ContactInfoOpened {
 #[cfg(test)]
 pub(crate) struct SeedCryptoProvider {
     wallet: key_wallet::wallet::Wallet,
+    /// How many times the private document scan keys were derived: once per scan call, a
+    /// page's or a batch's.
+    pub(crate) scan_key_derivations: std::sync::atomic::AtomicUsize,
 }
 
 #[cfg(test)]
@@ -243,6 +280,7 @@ impl SeedCryptoProvider {
         Self {
             wallet: Wallet::from_seed_bytes(seed, network, WalletAccountCreationOptions::None)
                 .expect("test seed wallet"),
+            scan_key_derivations: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 }
@@ -379,15 +417,36 @@ impl ContactCryptoProvider for SeedCryptoProvider {
         start_position: u64,
         page: &PrivateDocumentEntries,
     ) -> Result<PrivateDocumentScan, PlatformWalletError> {
+        self.scan_private_document_pages(
+            keys,
+            data_contract_id,
+            document_type_name,
+            &[(start_position, page)],
+        )
+        .await?
+        .pop()
+        .ok_or_else(|| PlatformWalletError::InvalidIdentityData("no scan".to_string()))
+    }
+
+    async fn scan_private_document_pages(
+        &self,
+        keys: &PrivateDocumentKeyPaths,
+        data_contract_id: Identifier,
+        document_type_name: &str,
+        pages: &[(u64, &PrivateDocumentEntries)],
+    ) -> Result<Vec<PrivateDocumentScan>, PlatformWalletError> {
+        // Once for the batch, as a signer-backed provider resolves its seed once.
+        self.scan_key_derivations
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let keys = keys.scan_keys(|path| self.secret_key_at(path))?;
-        Ok(keys.scan_page(
-            &platform_encryption::PrivateDocumentTarget {
-                contract_id: data_contract_id.to_buffer(),
-                document_type_name,
-            },
-            start_position,
-            page,
-        ))
+        let target = platform_encryption::PrivateDocumentTarget {
+            contract_id: data_contract_id.to_buffer(),
+            document_type_name,
+        };
+        Ok(pages
+            .iter()
+            .map(|(start_position, page)| keys.scan_page(&target, *start_position, page))
+            .collect())
     }
 
     async fn seal_private_contact_request(
@@ -505,6 +564,77 @@ pub enum AutoAcceptProofSource {
     },
 }
 
+/// What sending a reply to a contact request came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ReplyOutcome {
+    /// The reply was sent.
+    Sent,
+    /// A reply to the request's sender was already tracked by the time the
+    /// pair was claimed or reserved: nothing was sent, and it is adopted.
+    AlreadyReplied,
+}
+
+/// The claim a public request holds on its pair from before its channel is
+/// decided until it is submitted and recorded
+/// (`DashPayView::claim_public_pair`): while it is held no private request to
+/// the recipient is reserved. Released by [`Self::release`] or on drop.
+pub(super) struct PublicContactClaim {
+    wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: WalletId,
+    sender: Identifier,
+    recipient: Identifier,
+    /// The attempt the claim was taken under: only it releases the claim.
+    attempt: u64,
+    held: bool,
+}
+
+impl PublicContactClaim {
+    /// Release the claim now. Dropped while it waits for the wallet lock,
+    /// the guard releases it.
+    pub(super) async fn release(mut self) {
+        let mut wm = self.wallet_manager.write().await;
+        release_public_claim(
+            &mut wm,
+            &self.wallet_id,
+            &self.sender,
+            &self.recipient,
+            self.attempt,
+        );
+        self.held = false;
+    }
+}
+
+impl Drop for PublicContactClaim {
+    fn drop(&mut self) {
+        if !self.held {
+            return;
+        }
+        let (wallet_id, sender, recipient, attempt) =
+            (self.wallet_id, self.sender, self.recipient, self.attempt);
+        apply_detached(
+            &self.wallet_manager,
+            "a dropped public contact request's claim",
+            move |wm| release_public_claim(wm, &wallet_id, &sender, &recipient, attempt),
+        );
+    }
+}
+
+/// Release the claim `attempt` holds on `sender`'s pair with `recipient`.
+fn release_public_claim(
+    wm: &mut WalletManager<PlatformWalletInfo>,
+    wallet_id: &WalletId,
+    sender: &Identifier,
+    recipient: &Identifier,
+    attempt: u64,
+) {
+    if let Some(managed) = wm
+        .get_wallet_info_mut(wallet_id)
+        .and_then(|info| info.identity_manager.managed_identity_mut(sender))
+    {
+        managed.release_public_contact_request(recipient, attempt);
+    }
+}
+
 /// What a contact request to send is built from, whether it is published as a
 /// `contactRequest` document or sealed privately: see
 /// `DashPayView::prepare_contact_request`.
@@ -569,12 +699,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// So is one a private request is pending to
     /// ([`PlatformWalletError::PrivateContactRequestPending`]), until its
     /// payment fails for good or a private sync reads it back: it may already
-    /// be on chain. The refusal reads what the wallet tracks, so on a restored
-    /// or second device it holds once the private sync
-    /// (`sync_private_contact_requests`) has read the store. A pending request
-    /// is tracked in memory only: after a restart it holds once the host
-    /// restores it (`PlatformWallet::restore_pending_private_contact_requests`)
-    /// or that read reads it back.
+    /// be on chain. Before the pair is claimed, DashPay's private store is
+    /// read to its end when it was not since load, so a request sent
+    /// privately in an earlier process or on another device is tracked first;
+    /// while that read cannot finish the send is refused with
+    /// [`PlatformWalletError::PrivateContactRequestPending`], and on a network
+    /// that serves no private documents yet nothing is read. A request whose
+    /// payment is unconfirmed since before a restart holds the pair from the
+    /// moment the wallet binds to its shielded coordinator
+    /// (`PlatformWallet::restore_private_contact_payments`).
     #[allow(clippy::type_complexity)]
     pub async fn send_contact_request_with_external_signer<S, C>(
         &self,
@@ -589,35 +722,129 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
     {
-        // A contact whose requests came or went privately is kept off chain: a
-        // `contactRequest` document would publish the relationship. Replies
-        // and rotations go privately instead. A private request still pending
-        // counts too, as it may already be on chain. This reads what the
-        // wallet tracks, so on a restored or second device it holds only once
-        // the private sync has read the store.
-        let (private, private_pending) = {
-            let wm = self.wallet_manager.read().await;
-            wm.get_wallet_info(&self.wallet_id)
-                .and_then(|info| info.identity_manager.managed_identity(sender_identity_id))
-                .map_or((false, false), |managed| {
-                    let dashpay = managed.dashpay();
-                    (
-                        dashpay.private_contact(recipient_identity_id).is_some(),
-                        dashpay.private_reply_pending(recipient_identity_id),
-                    )
-                })
-        };
-        if private_pending {
-            return Err(PlatformWalletError::PrivateContactRequestPending(
-                *recipient_identity_id,
-            ));
-        }
-        if private {
-            return Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(
-                *recipient_identity_id,
-            ));
-        }
+        // The pair is claimed before its channel is decided and held until
+        // the request is submitted and recorded, so a private request cannot
+        // be reserved and paid for in between; the claim is released when
+        // the send ends, however it ends.
+        self.send_public_contact_request(
+            sender_identity_id,
+            recipient_identity_id,
+            account_label,
+            auto_accept_proof,
+            signer,
+            crypto,
+            false,
+        )
+        .await?
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidParameter(
+                "no contact request was sent: only a reply adopts one already sent".to_string(),
+            )
+        })
+    }
 
+    /// [`Self::send_contact_request_with_external_signer`], for a reply when
+    /// `adopt_reply`: then a request to the recipient tracked by the time
+    /// the pair is claimed (another accept's reply) is adopted rather than
+    /// rotated past, and `None` comes back with nothing sent.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) async fn send_public_contact_request<S, C>(
+        &self,
+        sender_identity_id: &Identifier,
+        recipient_identity_id: &Identifier,
+        account_label: Option<String>,
+        auto_accept_proof: AutoAcceptProofSource,
+        signer: &S,
+        crypto: &C,
+        adopt_reply: bool,
+    ) -> Result<Option<ContactRequest>, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+        C: ContactCryptoProvider + Sync,
+    {
+        self.read_private_store_before_deciding(sender_identity_id, recipient_identity_id, crypto)
+            .await?;
+        self.release_rejected_private_requests().await?;
+        let Some(claim) = self
+            .claim_public_pair(sender_identity_id, recipient_identity_id, adopt_reply)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let sent = self
+            .send_claimed_contact_request(
+                sender_identity_id,
+                recipient_identity_id,
+                account_label,
+                auto_accept_proof,
+                signer,
+                crypto,
+            )
+            .await;
+        claim.release().await;
+        sent.map(Some)
+    }
+
+    /// Claim the pair `sender`, `recipient` for a public request: refused,
+    /// in the same lock, while a private request to the recipient is
+    /// reserved, or once their requests came or went privately, as a
+    /// `contactRequest` document would publish the relationship (replies and
+    /// rotations go privately instead). The refusal reads what the wallet
+    /// tracks, so on a restored or second device it holds only once the
+    /// private sync has read the store.
+    pub(super) async fn claim_public_pair(
+        &self,
+        sender: &Identifier,
+        recipient: &Identifier,
+        adopt_reply: bool,
+    ) -> Result<Option<PublicContactClaim>, PlatformWalletError> {
+        let mut wm = self.wallet_manager.write().await;
+        let managed = wm
+            .get_wallet_info_mut(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?
+            .identity_manager
+            .managed_identity_mut(sender)
+            .ok_or(PlatformWalletError::IdentityNotFound(*sender))?;
+        // A reply finds the one another accept recorded, in the same lock.
+        if adopt_reply && managed.dashpay().outgoing_request(recipient).is_some() {
+            return Ok(None);
+        }
+        if managed.dashpay().private_reply_pending(recipient) {
+            return Err(PlatformWalletError::PrivateContactRequestPending(
+                *recipient,
+            ));
+        }
+        if managed.dashpay().private_contact(recipient).is_some() {
+            return Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(
+                *recipient,
+            ));
+        }
+        let attempt = managed.claim_public_contact_request(*recipient);
+        Ok(Some(PublicContactClaim {
+            wallet_manager: Arc::clone(&self.wallet_manager),
+            wallet_id: self.wallet_id,
+            sender: *sender,
+            recipient: *recipient,
+            attempt,
+            held: true,
+        }))
+    }
+
+    /// The body of [`Self::send_contact_request_with_external_signer`], once
+    /// the pair is claimed.
+    async fn send_claimed_contact_request<S, C>(
+        &self,
+        sender_identity_id: &Identifier,
+        recipient_identity_id: &Identifier,
+        account_label: Option<String>,
+        auto_accept_proof: AutoAcceptProofSource,
+        signer: &S,
+        crypto: &C,
+    ) -> Result<ContactRequest, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+        C: ContactCryptoProvider + Sync,
+    {
         // 1-4c. The keys, the receiving xpub, the masked account reference and
         //       the auto-accept proof, as a private request is built from them too.
         let PreparedContactRequest {
@@ -3812,7 +4039,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// [`PlatformWalletError::PrivateContactRequestNeedsPrivateReply`]: a
     /// `contactRequest` document in reply would publish the relationship the
     /// sender kept off chain. It is accepted with
-    /// `accept_private_contact_request`.
+    /// `accept_private_contact_request`. The store is read first as the send
+    /// reads it, so the refusal and the reply it adopts see a private reply
+    /// sent in an earlier process.
     pub async fn accept_contact_request_with_external_signer<S, C>(
         &self,
         request: &ContactRequest,
@@ -3823,22 +4052,31 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
     {
+        self.read_private_store_before_deciding(&request.recipient_id, &request.sender_id, crypto)
+            .await?;
         if self.needs_private_reply(request).await {
             return Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(
                 request.sender_id,
             ));
         }
         self.accept_contact_request_replying_with(request, crypto, || async {
-            self.send_contact_request_with_external_signer(
-                &request.recipient_id,
-                &request.sender_id,
-                None,
-                AutoAcceptProofSource::None,
-                signer,
-                crypto,
+            Ok(
+                match self
+                    .send_public_contact_request(
+                        &request.recipient_id,
+                        &request.sender_id,
+                        None,
+                        AutoAcceptProofSource::None,
+                        signer,
+                        crypto,
+                        true,
+                    )
+                    .await?
+                {
+                    Some(_) => ReplyOutcome::Sent,
+                    None => ReplyOutcome::AlreadyReplied,
+                },
             )
-            .await
-            .map(|_| ())
         })
         .await
     }
@@ -3867,7 +4105,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Accept `request`, with `send_reply` sending our reciprocal request to
     /// its sender unless one already exists: the body of
     /// [`Self::accept_contact_request_with_external_signer`], shared with the
-    /// private accept, which replies privately.
+    /// private accept, which replies privately. `send_reply` reports a reply
+    /// tracked by the time it claimed or reserved the pair (another accept's,
+    /// recorded in between) as [`ReplyOutcome::AlreadyReplied`], and that
+    /// reply is adopted as one found here first is: nothing is sent or paid.
     pub(super) async fn accept_contact_request_replying_with<C, R, Fut>(
         &self,
         request: &ContactRequest,
@@ -3877,14 +4118,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     where
         C: ContactCryptoProvider + Sync,
         R: FnOnce() -> Fut,
-        Fut: std::future::Future<Output = Result<(), PlatformWalletError>>,
+        Fut: std::future::Future<Output = Result<ReplyOutcome, PlatformWalletError>>,
     {
         let our_identity_id = request.recipient_id;
         let sender_id = request.sender_id;
 
         // 1. Verify the incoming request is known, and detect whether an
         //    on-platform reciprocal already exists for this pair.
-        let (already_established, already_reciprocated) = {
+        let (_, already_reciprocated) = {
             let wm = self.wallet_manager.read().await;
             let info = wm
                 .get_wallet_info(&self.wallet_id)
@@ -3932,7 +4173,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         //    fresh-send local registrations below (receiving account +
         //    validate→decrypt→register external), so the contact becomes
         //    payable without a duplicate broadcast.
-        if already_reciprocated {
+        let adopt =
+            already_reciprocated || matches!(send_reply().await?, ReplyOutcome::AlreadyReplied);
+        if adopt {
             tracing::info!(
                 our_identity = %our_identity_id,
                 contact = %sender_id,
@@ -3952,19 +4195,27 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // path the normal flow and the sync sweep use), so the final lookup
             // is guaranteed non-`None`. Idempotent: `add_incoming_contact_request`
             // preserves metadata on an already-established pair.
-            if !already_established {
+            {
                 let mut wm = self.wallet_manager.write().await;
                 let managed = wm
                     .get_wallet_info_mut(&self.wallet_id)
                     .and_then(|info| info.identity_manager.managed_identity_mut(&our_identity_id))
                     .ok_or(PlatformWalletError::IdentityNotFound(our_identity_id))?;
-                managed
-                    .add_incoming_contact_request(request.clone(), &self.persister)
-                    .map_err(|e| {
-                        PlatformWalletError::Persistence(format!(
-                            "accept-adopt: incoming request not persisted: {e}"
-                        ))
-                    })?;
+                // Read now: a reply adopted after `send_reply` may have
+                // established the pair since step 1.
+                if !managed
+                    .dashpay()
+                    .established_contacts()
+                    .contains_key(&sender_id)
+                {
+                    managed
+                        .add_incoming_contact_request(request.clone(), &self.persister)
+                        .map_err(|e| {
+                            PlatformWalletError::Persistence(format!(
+                                "accept-adopt: incoming request not persisted: {e}"
+                            ))
+                        })?;
+                }
             }
             // Adopt: register the receiving (friendship) account, derived via
             // the signer (no resident seed), matching the fresh-send path.
@@ -3992,8 +4243,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     "Accept-adopt: failed to derive receiving xpub via signer; will retry on next sweep"
                 ),
             }
-        } else {
-            send_reply().await?;
         }
 
         // 4. Validate key indices (same gate as the sync sweep and the
@@ -4408,10 +4657,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // `unignore_sender` removes the sender + rewinds the cursor and
         // returns the removal changeset (empty if the sender wasn't
         // ignored). Persist it so the ignored-sender row is deleted.
-        let cs = managed.unignore_sender(contact_identity_id);
+        let mut cs = managed.unignore_sender(contact_identity_id);
         if <crate::changeset::ContactChangeSet as crate::changeset::Merge>::is_empty(&cs) {
             // Not ignored — nothing to persist, but not an error.
             return Ok(());
+        }
+        // The private read position was rewound with the received cursor: a
+        // backend that keeps it stores the rewind, so a relaunch reads the
+        // un-ignored sender's private requests again too.
+        if self.persister.persists_private_contact_scan_state() {
+            cs.private_contact_requests_positions.insert(
+                *identity_id,
+                managed.private_contact_requests_position_record(),
+            );
         }
         self.persister.store(cs.into()).map_err(|e| {
             PlatformWalletError::Persistence(format!("un-ignore not persisted: {e}"))

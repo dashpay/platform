@@ -45,8 +45,10 @@ struct ContactRequestsView: View {
     /// back, as the wallet records it (`privateRepliesPending`): the row stays
     /// pending, without its buttons, until a private sync settles it. Read
     /// from the wallet on appear, after an accept and after each sync pass,
-    /// so leaving and reopening the screen keeps it.
-    @State private var walletPendingIds: Set<Data> = []
+    /// so leaving and reopening the screen keeps it. A failed read keeps the
+    /// last snapshot and leaves every row without its buttons until a read
+    /// succeeds.
+    @State private var walletPending = PrivateRepliesPendingSnapshot()
 
     /// What the last private-store refresh has to tell the user, if anything.
     @State private var privateRefreshNotice: String?
@@ -139,9 +141,10 @@ struct ContactRequestsView: View {
                                     avatarUrl: nil,
                                     createdAtMillis: row.createdAtMillis,
                                     isInFlight: inFlightIds.contains(row.contactIdentityId)
-                                        || walletPendingIds.contains(row.contactIdentityId),
+                                        || !walletPending.allowsSubmission(to: row.contactIdentityId),
                                     errorMessage: ContactRequestSubmissionOutcome.rowMessage(
-                                        pending: walletPendingIds.contains(row.contactIdentityId),
+                                        pending: walletPending.isPending(row.contactIdentityId),
+                                        unavailable: walletPending.isUnavailable,
                                         error: rowErrors[row.contactIdentityId]
                                     ),
                                     onAccept: { accept(contactId: row.contactIdentityId) },
@@ -220,11 +223,14 @@ struct ContactRequestsView: View {
     /// Re-read which incoming rows have a private reply pending, from the
     /// wallet.
     private func reloadPendingReplies() {
-        guard let wallet = try? requireWallet() else { return }
-        walletPendingIds = privateRepliesPending(
-            wallet: wallet,
-            identityId: identity.identityId,
-            contactIds: incomingPending.map(\.contactIdentityId)
+        let contactIds = incomingPending.map(\.contactIdentityId)
+        walletPending.record(
+            privateRepliesPending(
+                wallet: try? requireWallet(),
+                identityId: identity.identityId,
+                contactIds: contactIds
+            ),
+            for: contactIds
         )
     }
 
@@ -286,10 +292,11 @@ struct ContactRequestsView: View {
                 kickDashPaySync(walletManager)
             } catch {
                 switch ContactRequestSubmissionOutcome.of(error) {
-                case .mayHaveGoneThrough:
+                case .mayHaveGoneThrough, .privateRequestPending:
                     // As `SendViewModel` treats an unconfirmed spend: not a
                     // failure to retry. The wallet keeps the reply pending,
-                    // and the row reads that; the next sync settles it.
+                    // and the row reads that; a sync (pull to refresh reads
+                    // the private store) settles it.
                     kickDashPaySync(walletManager)
                 case .failed(let message):
                     rowErrors[contactId] = "Accept failed: \(message)"

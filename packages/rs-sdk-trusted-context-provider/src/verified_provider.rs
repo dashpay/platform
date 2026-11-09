@@ -669,8 +669,17 @@ impl ContextProvider for VerifiedHttpContextProvider {
         system_data_contract(id, platform_version)
     }
 
+    /// Keeps a held contract of a higher version: a registration that waited
+    /// on a fetch must not replace one another operation promoted meanwhile.
     fn register_data_contract(&self, contract: Arc<DataContract>) {
-        lock(&self.inner.known_contracts).insert(contract.id(), contract);
+        let mut known = lock(&self.inner.known_contracts);
+        if known
+            .get(&contract.id())
+            .is_some_and(|held| held.version() > contract.version())
+        {
+            return;
+        }
+        known.insert(contract.id(), contract);
     }
 
     fn get_token_configuration(
@@ -1068,6 +1077,28 @@ mod tests {
     fn refused_url() -> String {
         let closed = TcpListener::bind("127.0.0.1:0").expect("bind");
         format!("http://{}", closed.local_addr().expect("address"))
+    }
+
+    /// A registered contract replaces a held one of a lower version, and
+    /// leaves one of a higher version, which another operation promoted while
+    /// the registration waited on its fetch.
+    #[test]
+    fn should_keep_a_newer_contract_over_a_registered_older_one() {
+        use crate::provider::tests::contract_at_version;
+
+        let provider =
+            VerifiedHttpContextProvider::new(Network::Testnet, cache_size()).expect("a provider");
+        let id = Identifier::from([0x72; 32]);
+        let held = |provider: &VerifiedHttpContextProvider| {
+            provider
+                .get_known_contract(&id)
+                .map(|contract| contract.version())
+        };
+        provider.register_data_contract(Arc::new(contract_at_version([0x72; 32], 2)));
+        provider.register_data_contract(Arc::new(contract_at_version([0x72; 32], 3)));
+        assert_eq!(held(&provider), Some(3), "a newer one replaces");
+        provider.register_data_contract(Arc::new(contract_at_version([0x72; 32], 2)));
+        assert_eq!(held(&provider), Some(3), "an older one does not");
     }
 
     fn cache_size() -> NonZeroUsize {

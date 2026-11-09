@@ -32,9 +32,10 @@ use platform_wallet::changeset::provider_key_account::{
 };
 use platform_wallet::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, ClientStartState, ClientWalletStartState,
-    ListedCoreTxid, PersistenceCapabilities, PersistenceError, PersistenceErrorKind,
-    PlatformWalletChangeSet, PlatformWalletPersistence, ProviderKeyAccountEntry,
-    ProviderKeyExtendedPubKey, PERSISTENCE_CAPABILITIES_VERSION,
+    ContactChangeSet, ListedCoreTxid, PersistenceCapabilities, PersistenceError,
+    PersistenceErrorKind, PlatformWalletChangeSet, PlatformWalletPersistence,
+    PrivateContactRequestsPosition, ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
+    PERSISTENCE_CAPABILITIES_VERSION,
 };
 use platform_wallet::wallet::asset_lock::restored_record::held_output_details;
 use platform_wallet::wallet::core::stored_coin::{reconcile_with_parent, StoredParentState};
@@ -53,7 +54,8 @@ use crate::asset_lock_persistence::{
     build_asset_lock_entries, outpoint_to_bytes, AssetLockEntryFFI,
 };
 use crate::contact_persistence::{
-    free_contact_requests_ffi, ContactIgnoredSenderFFI, ContactRequestFFI, ContactRequestRemovalFFI,
+    free_contact_requests_ffi, ContactIgnoredSenderFFI, ContactRequestFFI,
+    ContactRequestRemovalFFI, PrivateContactRequestsPositionFFI, PrivateShieldedAddressFFI,
 };
 use crate::core_address_types::{AddressPoolTypeTagFFI, CoreAddressEntryFFI, KeyTypeTagFFI};
 use crate::core_wallet_types::{
@@ -161,6 +163,14 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_TRACKED_MASTERNODES: u64 = 1 <<
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_CORE_SWEEP_REMOVAL: u64 = 1 << 11;
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DASHPAY_PAYMENTS: u64 = 1 << 12;
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_OPERATION_IDS: u64 = 1 << 13;
+/// The private contact request sync's scan state (each identity's read
+/// position and its private contacts' shielded addresses) is persisted AND
+/// restored across restarts. Requires the extension trio
+/// `on_persist_private_contact_scan_state_fn` +
+/// `on_load_private_contact_scan_state_fn` +
+/// `on_load_private_contact_scan_state_free_fn`, the wallet-list restore
+/// callbacks, and the host declaring the bit.
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: u64 = 1 << 14;
 
 /// Version of [`PersistenceCallbacksExtension`]. The extension is deliberately
 /// separate from [`PersistenceCallbacks`]: existing hosts pass the latter by
@@ -322,6 +332,57 @@ pub type LoadAssetLockOperationIdFn = unsafe extern "C" fn(
     out_found: *mut bool,
     out_operation_id: *mut u8,
 ) -> i32;
+
+/// Store a round's private contact request scan state for `wallet_id`
+/// (see [`PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE`]),
+/// inside the round's begin/end bracket, after the contacts callback:
+///
+/// - `positions`: replace the identity's stored read position.
+/// - `addresses`: replace the stored address for `(owner_id, contact_id)`.
+/// - `removed_addresses`: delete the stored address for `(owner_id,
+///   contact_id)` (`ContactRequestRemovalFFI::contact_id` names the contact).
+/// - `cleared_identities`: 32-byte ids of identities the round removed from
+///   the wallet. Delete each one's position and every address it owns, so
+///   an identity added back later reads the store from its start.
+///
+/// Every pointer is null when its count is 0 and valid only for the
+/// duration of the call. A host without the slot never has the state
+/// written, and each launch reads the store from its start.
+pub type PersistPrivateContactScanStateFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    positions: *const PrivateContactRequestsPositionFFI,
+    positions_count: usize,
+    addresses: *const PrivateShieldedAddressFFI,
+    addresses_count: usize,
+    removed_addresses: *const ContactRequestRemovalFFI,
+    removed_addresses_count: usize,
+    cleared_identities: *const [u8; 32],
+    cleared_identities_count: usize,
+) -> i32;
+
+/// Return every stored private contact request read position and shielded
+/// address for `wallet_id`. The host allocates both arrays and keeps them
+/// valid until Rust hands them back through
+/// [`FreePrivateContactScanStateFn`]; a null array with a zero count is an
+/// empty one. An unreadable store must return an error, not empty arrays.
+pub type LoadPrivateContactScanStateFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    out_positions: *mut *const PrivateContactRequestsPositionFFI,
+    out_positions_count: *mut usize,
+    out_addresses: *mut *const PrivateShieldedAddressFFI,
+    out_addresses_count: *mut usize,
+) -> i32;
+
+/// Release the arrays a [`LoadPrivateContactScanStateFn`] returned.
+pub type FreePrivateContactScanStateFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    positions: *const PrivateContactRequestsPositionFFI,
+    positions_count: usize,
+    addresses: *const PrivateShieldedAddressFFI,
+    addresses_count: usize,
+);
 
 /// Size- and version-tagged additive persistence callbacks.
 ///
@@ -489,6 +550,48 @@ pub struct PersistenceCallbacksExtension {
             out_operation_id: *mut u8,
         ) -> i32,
     >,
+    /// The private contact request scan state a round writes (see
+    /// [`PersistPrivateContactScanStateFn`]). Appended under the same
+    /// version for the same reason as the slots above. Wired together with
+    /// the load + free pair below: `PRIVATE_CONTACT_REQUEST_SCAN_STATE` is
+    /// attested only when all three are present (and declared).
+    #[allow(clippy::type_complexity)]
+    pub on_persist_private_contact_scan_state_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            positions: *const PrivateContactRequestsPositionFFI,
+            positions_count: usize,
+            addresses: *const PrivateShieldedAddressFFI,
+            addresses_count: usize,
+            removed_addresses: *const ContactRequestRemovalFFI,
+            removed_addresses_count: usize,
+            cleared_identities: *const [u8; 32],
+            cleared_identities_count: usize,
+        ) -> i32,
+    >,
+    /// Return the stored scan state for a wallet (see
+    /// [`LoadPrivateContactScanStateFn`]).
+    pub on_load_private_contact_scan_state_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            out_positions: *mut *const PrivateContactRequestsPositionFFI,
+            out_positions_count: *mut usize,
+            out_addresses: *mut *const PrivateShieldedAddressFFI,
+            out_addresses_count: *mut usize,
+        ) -> i32,
+    >,
+    /// Release the arrays `on_load_private_contact_scan_state_fn` returned.
+    pub on_load_private_contact_scan_state_free_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            positions: *const PrivateContactRequestsPositionFFI,
+            positions_count: usize,
+            addresses: *const PrivateShieldedAddressFFI,
+            addresses_count: usize,
+        ),
+    >,
 }
 
 impl Default for PersistenceCallbacksExtension {
@@ -509,6 +612,9 @@ impl Default for PersistenceCallbacksExtension {
             on_persist_wallet_dashpay_backfill_fn: None,
             on_persist_asset_lock_operation_id_fn: None,
             on_load_asset_lock_operation_id_fn: None,
+            on_persist_private_contact_scan_state_fn: None,
+            on_load_private_contact_scan_state_fn: None,
+            on_load_private_contact_scan_state_free_fn: None,
         }
     }
 }
@@ -530,6 +636,9 @@ pub struct PersistenceExtensionCallbacks {
     pub wallet_dashpay_backfill: Option<PersistWalletDashPayBackfillFn>,
     pub persist_asset_lock_operation_id: Option<PersistAssetLockOperationIdFn>,
     pub load_asset_lock_operation_id: Option<LoadAssetLockOperationIdFn>,
+    pub persist_private_contact_scan_state: Option<PersistPrivateContactScanStateFn>,
+    pub load_private_contact_scan_state: Option<LoadPrivateContactScanStateFn>,
+    pub load_private_contact_scan_state_free: Option<FreePrivateContactScanStateFn>,
 }
 
 /// Return value by which a persistence callback reports a **retryable**
@@ -1684,6 +1793,25 @@ impl FFIPersister {
         }
         if self.callbacks.on_persist_token_balances_fn.is_some() {
             capabilities = capabilities.union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE);
+        }
+        // The scan state is restored per wallet during the wallet-list load,
+        // so that load is required alongside the extension trio.
+        if wallet_restore
+            && self
+                .tracked_masternodes_callbacks
+                .persist_private_contact_scan_state
+                .is_some()
+            && self
+                .tracked_masternodes_callbacks
+                .load_private_contact_scan_state
+                .is_some()
+            && self
+                .tracked_masternodes_callbacks
+                .load_private_contact_scan_state_free
+                .is_some()
+        {
+            capabilities =
+                capabilities.union(PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE);
         }
         // The dashpay-payments slot is what the sweep's Failed flip rides
         // (`dashpay_payments_overlay` on the store round). A host that
@@ -2942,6 +3070,28 @@ impl PlatformWalletPersistence for FFIPersister {
             }
         }
 
+        // The private contact request scan state, after the contacts it was
+        // read with. Identities the round removed take theirs with them.
+        if let Some(cb) = self
+            .tracked_masternodes_callbacks
+            .persist_private_contact_scan_state
+        {
+            let rows = PrivateContactScanStateRows::new(
+                changeset.contacts.as_ref(),
+                changeset.identities.as_ref().map(|id_cs| &id_cs.removed),
+            );
+            if !rows.is_empty() {
+                let rc = unsafe { rows.persist(cb, self.callbacks.context, &wallet_id) };
+                if rc != 0 {
+                    eprintln!(
+                        "Private contact request scan state persistence callback returned error code {}",
+                        rc
+                    );
+                    outcome.record(rc);
+                }
+            }
+        }
+
         // Send sync state updates.
         if let Some(ref addr_cs) = changeset.platform_addresses {
             if let Some(cb) = self.callbacks.on_persist_sync_state_fn {
@@ -3479,6 +3629,27 @@ impl PlatformWalletPersistence for FFIPersister {
                     &entry.wallet_id,
                     &mut wallet_state.unused_asset_locks,
                 )?;
+            }
+            if let (Some(load), Some(free)) = (
+                self.tracked_masternodes_callbacks
+                    .load_private_contact_scan_state,
+                self.tracked_masternodes_callbacks
+                    .load_private_contact_scan_state_free,
+            ) {
+                // Read only for a host that attests the state: the manager
+                // drops any other host's copy at load.
+                if self
+                    .persistence_capabilities()
+                    .contains(PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE)
+                {
+                    load_private_contact_scan_state(
+                        load,
+                        free,
+                        self.callbacks.context,
+                        &entry.wallet_id,
+                        &mut wallet_state.identity_manager,
+                    )?;
+                }
             }
             if let Some(cb) = self.load_identity_balance_block_time_callback {
                 for identities in wallet_state.identity_manager.wallet_identities.values_mut() {
@@ -6243,6 +6414,202 @@ fn load_asset_lock_operation_ids(
     Ok(())
 }
 
+/// One round's private contact request scan state in its FFI shape (see
+/// [`PersistPrivateContactScanStateFn`]).
+struct PrivateContactScanStateRows {
+    positions: Vec<PrivateContactRequestsPositionFFI>,
+    addresses: Vec<PrivateShieldedAddressFFI>,
+    removed_addresses: Vec<ContactRequestRemovalFFI>,
+    cleared_identities: Vec<[u8; 32]>,
+}
+
+impl PrivateContactScanStateRows {
+    fn new(
+        contacts: Option<&ContactChangeSet>,
+        removed_identities: Option<&BTreeSet<Identifier>>,
+    ) -> Self {
+        let mut rows = Self {
+            positions: Vec::new(),
+            addresses: Vec::new(),
+            removed_addresses: Vec::new(),
+            cleared_identities: removed_identities
+                .into_iter()
+                .flatten()
+                .map(|id| id.to_buffer())
+                .collect(),
+        };
+        if let Some(contacts) = contacts {
+            rows.positions = contacts
+                .private_contact_requests_positions
+                .iter()
+                .map(
+                    |(identity_id, position)| PrivateContactRequestsPositionFFI {
+                        identity_id: identity_id.to_buffer(),
+                        position: position.position,
+                        key_fingerprint: position.key_fingerprint,
+                    },
+                )
+                .collect();
+            rows.addresses = contacts
+                .private_shielded_addresses
+                .iter()
+                .map(
+                    |((owner_id, contact_id), address)| PrivateShieldedAddressFFI {
+                        owner_id: owner_id.to_buffer(),
+                        contact_id: contact_id.to_buffer(),
+                        address: *address,
+                    },
+                )
+                .collect();
+            rows.removed_addresses = contacts
+                .removed_private_shielded_addresses
+                .iter()
+                .map(|(owner_id, contact_id)| ContactRequestRemovalFFI {
+                    owner_id: owner_id.to_buffer(),
+                    contact_id: contact_id.to_buffer(),
+                })
+                .collect();
+        }
+        rows
+    }
+
+    fn is_empty(&self) -> bool {
+        self.positions.is_empty()
+            && self.addresses.is_empty()
+            && self.removed_addresses.is_empty()
+            && self.cleared_identities.is_empty()
+    }
+
+    /// # Safety
+    /// `callback` must be a valid [`PersistPrivateContactScanStateFn`] for
+    /// `context`.
+    unsafe fn persist(
+        &self,
+        callback: PersistPrivateContactScanStateFn,
+        context: *mut c_void,
+        wallet_id: &WalletId,
+    ) -> i32 {
+        fn ptr<T>(rows: &[T]) -> *const T {
+            if rows.is_empty() {
+                std::ptr::null()
+            } else {
+                rows.as_ptr()
+            }
+        }
+        callback(
+            context,
+            wallet_id.as_ptr(),
+            ptr(&self.positions),
+            self.positions.len(),
+            ptr(&self.addresses),
+            self.addresses.len(),
+            ptr(&self.removed_addresses),
+            self.removed_addresses.len(),
+            ptr(&self.cleared_identities),
+            self.cleared_identities.len(),
+        )
+    }
+}
+
+/// Restore a wallet's private contact request scan state onto the identities
+/// its load restored. Rows for an identity the load did not restore are
+/// passed over. An error from the host, or a missing buffer, fails the load.
+fn load_private_contact_scan_state(
+    load: LoadPrivateContactScanStateFn,
+    free: FreePrivateContactScanStateFn,
+    context: *mut c_void,
+    wallet_id: &WalletId,
+    identity_manager: &mut IdentityManagerStartState,
+) -> Result<(), PersistenceError> {
+    struct Guard {
+        free: FreePrivateContactScanStateFn,
+        context: *mut c_void,
+        positions: *const PrivateContactRequestsPositionFFI,
+        positions_count: usize,
+        addresses: *const PrivateShieldedAddressFFI,
+        addresses_count: usize,
+    }
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            if self.positions.is_null() && self.addresses.is_null() {
+                return;
+            }
+            unsafe {
+                (self.free)(
+                    self.context,
+                    self.positions,
+                    self.positions_count,
+                    self.addresses,
+                    self.addresses_count,
+                )
+            };
+        }
+    }
+
+    let mut guard = Guard {
+        free,
+        context,
+        positions: std::ptr::null(),
+        positions_count: 0,
+        addresses: std::ptr::null(),
+        addresses_count: 0,
+    };
+    let rc = unsafe {
+        load(
+            context,
+            wallet_id.as_ptr(),
+            &mut guard.positions,
+            &mut guard.positions_count,
+            &mut guard.addresses,
+            &mut guard.addresses_count,
+        )
+    };
+    if rc != 0 {
+        return Err(persist_callback_error(
+            rc,
+            format!("on_load_private_contact_scan_state_fn returned error code {rc}"),
+        ));
+    }
+    if (guard.positions.is_null() && guard.positions_count != 0)
+        || (guard.addresses.is_null() && guard.addresses_count != 0)
+    {
+        return Err(PersistenceError::backend(
+            "private contact request scan state: missing row buffer",
+        ));
+    }
+    let positions: &[PrivateContactRequestsPositionFFI] = if guard.positions_count == 0 {
+        &[]
+    } else {
+        unsafe { slice::from_raw_parts(guard.positions, guard.positions_count) }
+    };
+    let addresses: &[PrivateShieldedAddressFFI] = if guard.addresses_count == 0 {
+        &[]
+    } else {
+        unsafe { slice::from_raw_parts(guard.addresses, guard.addresses_count) }
+    };
+
+    let mut identities: BTreeMap<Identifier, &mut ManagedIdentity> = identity_manager
+        .wallet_identities
+        .values_mut()
+        .flat_map(BTreeMap::values_mut)
+        .map(|managed| (managed.id(), managed))
+        .collect();
+    for row in positions {
+        if let Some(managed) = identities.get_mut(&Identifier::new(row.identity_id)) {
+            managed.apply_private_contact_requests_position(PrivateContactRequestsPosition {
+                position: row.position,
+                key_fingerprint: row.key_fingerprint,
+            });
+        }
+    }
+    for row in addresses {
+        if let Some(managed) = identities.get_mut(&Identifier::new(row.owner_id)) {
+            managed.apply_private_shielded_address(Identifier::new(row.contact_id), row.address);
+        }
+    }
+    Ok(())
+}
+
 /// Rebuild tracked locks from the host's frozen `AssetLockEntryFFI` rows.
 /// Transactions use consensus encoding, proofs use DPP bincode, and outpoints
 /// are raw txid bytes followed by a little-endian vout. Malformed or duplicate
@@ -7676,6 +8043,389 @@ mod tests {
                 .last_updated_balance_block_time
                 .is_none()
         );
+    }
+
+    /// What a scan-state host received, by callback.
+    #[derive(Default)]
+    struct ScanStateHost {
+        positions: std::sync::Mutex<Vec<PrivateContactRequestsPositionFFI>>,
+        addresses: std::sync::Mutex<Vec<PrivateShieldedAddressFFI>>,
+        removed: std::sync::Mutex<Vec<([u8; 32], [u8; 32])>>,
+        cleared: std::sync::Mutex<Vec<[u8; 32]>>,
+        /// What `load_scan_state` answers: 0 rows as stored, 1 an error,
+        /// 2 a count without a buffer.
+        load_mode: u8,
+        loads: std::sync::atomic::AtomicUsize,
+        frees: std::sync::atomic::AtomicUsize,
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe extern "C" fn persist_scan_state(
+        ctx: *mut c_void,
+        wallet: *const u8,
+        positions: *const PrivateContactRequestsPositionFFI,
+        positions_count: usize,
+        addresses: *const PrivateShieldedAddressFFI,
+        addresses_count: usize,
+        removed: *const ContactRequestRemovalFFI,
+        removed_count: usize,
+        cleared: *const [u8; 32],
+        cleared_count: usize,
+    ) -> i32 {
+        unsafe fn rows<'a, T>(ptr: *const T, count: usize) -> &'a [T] {
+            if count == 0 {
+                assert!(ptr.is_null(), "an empty array crosses as null");
+                &[]
+            } else {
+                std::slice::from_raw_parts(ptr, count)
+            }
+        }
+        assert_eq!(std::slice::from_raw_parts(wallet, 32), &[42; 32]);
+        let host = &*(ctx as *const ScanStateHost);
+        host.positions
+            .lock()
+            .unwrap()
+            .extend_from_slice(rows(positions, positions_count));
+        host.addresses
+            .lock()
+            .unwrap()
+            .extend_from_slice(rows(addresses, addresses_count));
+        host.removed.lock().unwrap().extend(
+            rows(removed, removed_count)
+                .iter()
+                .map(|row| (row.owner_id, row.contact_id)),
+        );
+        host.cleared
+            .lock()
+            .unwrap()
+            .extend_from_slice(rows(cleared, cleared_count));
+        0
+    }
+
+    unsafe extern "C" fn load_scan_state(
+        ctx: *mut c_void,
+        wallet: *const u8,
+        out_positions: *mut *const PrivateContactRequestsPositionFFI,
+        out_positions_count: *mut usize,
+        out_addresses: *mut *const PrivateShieldedAddressFFI,
+        out_addresses_count: *mut usize,
+    ) -> i32 {
+        assert_eq!(std::slice::from_raw_parts(wallet, 32), &[42; 32]);
+        let host = &*(ctx as *const ScanStateHost);
+        host.loads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        match host.load_mode {
+            1 => return -1,
+            2 => {
+                *out_positions = std::ptr::null();
+                *out_positions_count = 1;
+                return 0;
+            }
+            _ => {}
+        }
+        let positions = host.positions.lock().unwrap().clone();
+        let addresses = host.addresses.lock().unwrap().clone();
+        *out_positions_count = positions.len();
+        *out_positions = Box::into_raw(positions.into_boxed_slice()).cast();
+        *out_addresses_count = addresses.len();
+        *out_addresses = Box::into_raw(addresses.into_boxed_slice()).cast();
+        0
+    }
+
+    unsafe extern "C" fn free_scan_state(
+        ctx: *mut c_void,
+        positions: *const PrivateContactRequestsPositionFFI,
+        positions_count: usize,
+        addresses: *const PrivateShieldedAddressFFI,
+        addresses_count: usize,
+    ) {
+        let host = &*(ctx as *const ScanStateHost);
+        host.frees.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if !positions.is_null() {
+            drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                positions.cast_mut(),
+                positions_count,
+            )));
+        }
+        if !addresses.is_null() {
+            drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                addresses.cast_mut(),
+                addresses_count,
+            )));
+        }
+    }
+
+    unsafe extern "C" fn load_one_identity(
+        _: *mut c_void,
+        entries: *mut *const WalletRestoreEntryFFI,
+        count: *mut usize,
+    ) -> i32 {
+        let mut identity: IdentityRestoreEntryFFI = std::mem::zeroed();
+        identity.identity_id = [7; 32];
+        *entries = Box::into_raw(Box::new(WalletRestoreEntryFFI {
+            wallet_id: [42; 32],
+            identities: Box::into_raw(Box::new(identity)),
+            identities_count: 1,
+            ..Default::default()
+        }));
+        *count = 1;
+        0
+    }
+
+    unsafe extern "C" fn free_one_identity(
+        _: *mut c_void,
+        entries: *const WalletRestoreEntryFFI,
+        _: usize,
+    ) {
+        let row = Box::from_raw(entries.cast_mut());
+        drop(Box::from_raw(row.identities.cast_mut()));
+    }
+
+    fn scan_state_persister(
+        host: &ScanStateHost,
+        declared: PersistenceCapabilities,
+        extensions: PersistenceExtensionCallbacks,
+    ) -> FFIPersister {
+        FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks {
+                context: (host as *const ScanStateHost).cast_mut().cast(),
+                on_changeset_begin_fn: Some(noop_begin),
+                on_changeset_end_fn: Some(noop_end),
+                on_load_wallet_list_fn: Some(load_one_identity),
+                on_load_wallet_list_free_fn: Some(free_one_identity),
+                ..Default::default()
+            },
+            declared,
+            extensions,
+        )
+    }
+
+    fn scan_state_trio() -> PersistenceExtensionCallbacks {
+        PersistenceExtensionCallbacks {
+            persist_private_contact_scan_state: Some(persist_scan_state),
+            load_private_contact_scan_state: Some(load_scan_state),
+            load_private_contact_scan_state_free: Some(free_scan_state),
+            ..Default::default()
+        }
+    }
+
+    /// A round carrying a read position, an address, an address removal and
+    /// a removed identity reaches the host as those four arrays.
+    #[test]
+    fn should_persist_the_private_contact_request_scan_state_of_a_round() {
+        use platform_wallet::changeset::IdentityChangeSet;
+
+        let host = ScanStateHost::default();
+        let persister = scan_state_persister(
+            &host,
+            PersistenceCapabilities::ATOMIC_CHANGESETS
+                .union(PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE),
+            scan_state_trio(),
+        );
+        assert!(persister
+            .persistence_capabilities()
+            .contains(PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE));
+
+        let owner = Identifier::from([7; 32]);
+        let mut contacts = ContactChangeSet::default();
+        contacts.private_contact_requests_positions.insert(
+            owner,
+            PrivateContactRequestsPosition {
+                position: 12,
+                key_fingerprint: [3; 32],
+            },
+        );
+        contacts
+            .private_shielded_addresses
+            .insert((owner, Identifier::from([5; 32])), [9; 43]);
+        contacts
+            .removed_private_shielded_addresses
+            .insert((owner, Identifier::from([6; 32])));
+        let identities = IdentityChangeSet {
+            removed: BTreeSet::from([Identifier::from([8; 32])]),
+            ..Default::default()
+        };
+        persister
+            .store(
+                [42; 32],
+                PlatformWalletChangeSet {
+                    contacts: Some(contacts),
+                    identities: Some(identities),
+                    ..Default::default()
+                },
+            )
+            .expect("store the scan state");
+
+        assert_eq!(
+            *host.positions.lock().unwrap(),
+            vec![PrivateContactRequestsPositionFFI {
+                identity_id: [7; 32],
+                position: 12,
+                key_fingerprint: [3; 32],
+            }]
+        );
+        assert_eq!(
+            *host.addresses.lock().unwrap(),
+            vec![PrivateShieldedAddressFFI {
+                owner_id: [7; 32],
+                contact_id: [5; 32],
+                address: [9; 43],
+            }]
+        );
+        assert_eq!(*host.removed.lock().unwrap(), vec![([7; 32], [6; 32])]);
+        assert_eq!(*host.cleared.lock().unwrap(), vec![[8; 32]]);
+    }
+
+    /// A load hands the stored position and address back to the identity
+    /// they belong to, passes over rows of an identity it did not restore,
+    /// returns the host's arrays, and fails on a host error or a count
+    /// without a buffer.
+    #[test]
+    fn should_restore_the_private_contact_request_scan_state_onto_its_identity() {
+        use platform_wallet::wallet::identity::ContactRequest;
+
+        let declared = PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE;
+        let host = ScanStateHost::default();
+        host.positions.lock().unwrap().extend([
+            PrivateContactRequestsPositionFFI {
+                identity_id: [7; 32],
+                position: 12,
+                key_fingerprint: [3; 32],
+            },
+            PrivateContactRequestsPositionFFI {
+                identity_id: [8; 32],
+                position: 99,
+                key_fingerprint: [4; 32],
+            },
+        ]);
+        host.addresses.lock().unwrap().extend([
+            PrivateShieldedAddressFFI {
+                owner_id: [7; 32],
+                contact_id: [5; 32],
+                address: [9; 43],
+            },
+            PrivateShieldedAddressFFI {
+                owner_id: [8; 32],
+                contact_id: [5; 32],
+                address: [1; 43],
+            },
+        ]);
+        let mut restored = scan_state_persister(&host, declared, scan_state_trio())
+            .load()
+            .expect("restore the scan state");
+        assert_eq!(host.loads.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(host.frees.load(std::sync::atomic::Ordering::SeqCst), 1);
+        let wallet = restored.wallets.get_mut(&[42; 32]).expect("wallet");
+        let identities = &mut wallet.identity_manager.wallet_identities;
+        assert_eq!(identities[&[42; 32]].len(), 1, "no identity is invented");
+        let managed = identities
+            .get_mut(&[42; 32])
+            .and_then(|identities| identities.get_mut(&0))
+            .expect("identity");
+        assert_eq!(managed.dashpay().private_contact_requests_position(), 12);
+        // The address shows once the contact's request to us came privately
+        // (a private request carries no core height).
+        let owner = Identifier::from([7; 32]);
+        let contact = Identifier::from([5; 32]);
+        managed.apply_incoming_contact_request(ContactRequest::new(
+            contact,
+            owner,
+            0,
+            0,
+            0,
+            vec![0; 96],
+            0,
+            0,
+        ));
+        assert_eq!(
+            managed
+                .dashpay()
+                .private_contact(&contact)
+                .and_then(|private| private.shielded_address),
+            Some([9; 43])
+        );
+
+        for (mode, what) in [(1, "a host error"), (2, "a count without a buffer")] {
+            let failing = ScanStateHost {
+                load_mode: mode,
+                ..Default::default()
+            };
+            assert!(
+                scan_state_persister(&failing, declared, scan_state_trio())
+                    .load()
+                    .is_err(),
+                "{what} fails the load"
+            );
+        }
+    }
+
+    /// A host that does not declare the capability, or wires only part of
+    /// the trio, is not attested, has nothing read at load, and still
+    /// stores and loads everything else. A host without the slots stores a
+    /// round carrying scan state without error.
+    #[test]
+    fn should_leave_hosts_without_the_scan_state_capability_unchanged() {
+        let host = ScanStateHost::default();
+        host.positions
+            .lock()
+            .unwrap()
+            .push(PrivateContactRequestsPositionFFI {
+                identity_id: [7; 32],
+                position: 12,
+                key_fingerprint: [3; 32],
+            });
+        let undeclared =
+            scan_state_persister(&host, PersistenceCapabilities::NONE, scan_state_trio());
+        let half_wired = scan_state_persister(
+            &host,
+            PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE,
+            PersistenceExtensionCallbacks {
+                persist_private_contact_scan_state: Some(persist_scan_state),
+                load_private_contact_scan_state: Some(load_scan_state),
+                ..Default::default()
+            },
+        );
+        let unwired = scan_state_persister(
+            &host,
+            PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE,
+            PersistenceExtensionCallbacks::default(),
+        );
+        for persister in [&undeclared, &half_wired, &unwired] {
+            assert!(!persister
+                .persistence_capabilities()
+                .contains(PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE));
+            let restored = persister.load().expect("the rest still restores");
+            assert_eq!(
+                restored.wallets[&[42; 32]]
+                    .identity_manager
+                    .wallet_identities[&[42; 32]][&0]
+                    .dashpay()
+                    .private_contact_requests_position(),
+                0
+            );
+        }
+        assert_eq!(
+            host.loads.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "nothing is read from a host that does not attest the state"
+        );
+
+        let mut contacts = ContactChangeSet::default();
+        contacts.private_contact_requests_positions.insert(
+            Identifier::from([7; 32]),
+            PrivateContactRequestsPosition {
+                position: 1,
+                key_fingerprint: [0; 32],
+            },
+        );
+        unwired
+            .store(
+                [42; 32],
+                PlatformWalletChangeSet {
+                    contacts: Some(contacts),
+                    ..Default::default()
+                },
+            )
+            .expect("a host without the slots stores the round");
     }
 
     #[test]
@@ -10268,6 +11018,36 @@ mod tests {
                 PersistenceCallbacksExtension,
                 on_load_asset_lock_operation_id_fn
             ) + std::mem::size_of::<Option<LoadAssetLockOperationIdFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_private_contact_scan_state_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_private_contact_scan_state_fn
+            ) + std::mem::size_of::<Option<PersistPrivateContactScanStateFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_private_contact_scan_state_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_private_contact_scan_state_fn
+            ) + std::mem::size_of::<Option<LoadPrivateContactScanStateFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_private_contact_scan_state_free_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_private_contact_scan_state_free_fn
+            ) + std::mem::size_of::<Option<FreePrivateContactScanStateFn>>(),
             std::mem::size_of::<PersistenceCallbacksExtension>()
         );
         assert_eq!(
@@ -10329,6 +11109,10 @@ mod tests {
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_OPERATION_IDS,
             PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE,
+            PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE.bits()
         );
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ACCOUNT_ADDRESS_POOLS,

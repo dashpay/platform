@@ -6,35 +6,93 @@ import SwiftDashSDK
 /// confirmed may already be on chain (Rust keeps its notes reserved), so the
 /// view keeps it pending and never offers a fresh submission; the next sync
 /// settles it. A private request Rust reports as pending (one to the same
-/// contact in flight, or paid and not yet read back) is the same outcome:
-/// nothing new was paid, and the next private sync settles it. Every other
-/// error is an ordinary failure the user may retry.
+/// contact in flight, or paid and not yet read back), which a public send or
+/// accept can also meet, sent nothing new: the view shows it as pending and
+/// offers a private sync, which settles it, after which the user may try
+/// again. Every other error is an ordinary failure the user may retry.
 enum ContactRequestSubmissionOutcome: Equatable {
     /// The private send or reply may have gone through: do not submit again.
     case mayHaveGoneThrough
+    /// A private request to the contact is pending in the wallet; nothing
+    /// was sent. A private sync settles it.
+    case privateRequestPending
     /// It failed; the message is the error's.
     case failed(String)
 
     static let mayHaveGoneThroughMessage = "This may have gone through. It shows up "
         + "after the next sync confirms it; do not submit it again."
 
+    static let privateRequestPendingMessage = "A private request to this contact is "
+        + "pending. Sync private requests to settle it, then try again if it did not "
+        + "go through."
+
     /// The message a request row shows: the pending notice while the wallet
-    /// has a private reply to the contact pending, whatever error an earlier
-    /// attempt left, and that error otherwise.
-    static func rowMessage(pending: Bool, error: String?) -> String? {
-        pending ? mayHaveGoneThroughMessage : error
+    /// has a private request to the contact pending, the unavailable notice
+    /// while the wallet could not be read, whatever error an earlier attempt
+    /// left, and that error otherwise.
+    static func rowMessage(pending: Bool, unavailable: Bool = false, error: String?) -> String? {
+        if pending { return privateRequestPendingMessage }
+        if unavailable { return PrivateRepliesPendingSnapshot.unavailableMessage }
+        return error
     }
 
     static func of(_ error: Error) -> ContactRequestSubmissionOutcome {
         if let walletError = error as? PlatformWalletError {
             switch walletError {
-            case .shieldedSpendUnconfirmed, .privateContactRequestPending:
+            case .shieldedSpendUnconfirmed:
                 return .mayHaveGoneThrough
+            case .privateContactRequestPending:
+                return .privateRequestPending
             default:
                 break
             }
         }
         return .failed(error.localizedDescription)
+    }
+}
+
+/// Which contacts have a private request pending in the wallet, as the views
+/// last read it (`privateRepliesPending`). While one is, Rust refuses another
+/// send or reply to that contact, so the views turn off what would submit one
+/// (Accept, Ignore, Send). A failed read is not "nothing pending": the last
+/// successful snapshot stays, and those controls stay off for every contact
+/// until a read covering it succeeds.
+struct PrivateRepliesPendingSnapshot: Equatable {
+    static let unavailableMessage = "Could not read whether a private request to "
+        + "this contact is pending. Sync private requests to check again."
+
+    /// The pending contacts the last successful read found.
+    private(set) var pending: Set<Data> = []
+    /// The contacts the last successful read covered.
+    private(set) var covered: Set<Data> = []
+    /// False after a failed read, until a read succeeds.
+    private(set) var available = true
+
+    /// Record a read of `contactIds`: the pending ones, or nil when the read
+    /// failed.
+    mutating func record(_ read: Set<Data>?, for contactIds: [Data]) {
+        guard let read else {
+            available = false
+            return
+        }
+        pending = read
+        covered = Set(contactIds)
+        available = true
+    }
+
+    /// Whether the last successful read found a private request to
+    /// `contactId` pending.
+    func isPending(_ contactId: Data) -> Bool {
+        pending.contains(contactId)
+    }
+
+    /// Whether the last read failed.
+    var isUnavailable: Bool { !available }
+
+    /// Whether a send or reply to `contactId` may be offered: a successful
+    /// read covered it and found nothing pending.
+    func allowsSubmission(to contactId: Data) -> Bool {
+        available && covered.contains(contactId) && !pending.contains(contactId)
     }
 }
 

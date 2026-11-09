@@ -77,7 +77,7 @@ pub use wallet::core_address_key::{CoreAddressKeyError, CoreAddressPrivateKey};
 pub use wallet::identity::network::{
     derive_identity_auth_keypair, fetch_identity_public_keys, AutoAcceptProofSource,
     ContactCryptoProvider, ContactInfoOpened, ContactInfoPublishOutcome, ContactInfoSealed,
-    FetchedIdentityPublicKeys, PreparedDashPayPayment, PrivateContactSyncReport,
+    FetchedIdentityPublicKeys, PaymentStarted, PreparedDashPayPayment, PrivateContactSyncReport,
     PrivateDocumentKeyPaths, SeedBindingVerification, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
 };
 pub use wallet::identity::{

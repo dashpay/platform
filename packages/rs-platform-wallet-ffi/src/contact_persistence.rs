@@ -214,6 +214,46 @@ pub struct ContactIgnoredSenderFFI {
     pub is_ignored: bool,
 }
 
+/// One identity's read position in DashPay's private contact request store
+/// ([`ContactChangeSet::private_contact_requests_positions`]), for the
+/// private contact request scan state callbacks on
+/// [`PersistenceCallbacksExtension`](crate::persistence::PersistenceCallbacksExtension).
+///
+/// Flat POD. The host stores one row per `(wallet_id, identity_id)`,
+/// replacing the previous one, and hands it back unchanged at load: a lower
+/// `position` than the stored one is a rewind, not a stale write.
+///
+/// [`ContactChangeSet::private_contact_requests_positions`]: platform_wallet::changeset::ContactChangeSet::private_contact_requests_positions
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrivateContactRequestsPositionFFI {
+    /// The wallet-owned identity reading the store.
+    pub identity_id: [u8; 32],
+    /// The store position the identity reads from next.
+    pub position: u64,
+    /// The fingerprint of the scanning keys `position` holds for. Opaque
+    /// to the host: store it and return it as it came.
+    pub key_fingerprint: [u8; 32],
+}
+
+/// The shielded address `contact_id`'s tracked private request to
+/// `owner_id` carries ([`ContactChangeSet::private_shielded_addresses`]).
+///
+/// Flat POD. The host stores one row per `(wallet_id, owner_id,
+/// contact_id)`, replacing the previous one.
+///
+/// [`ContactChangeSet::private_shielded_addresses`]: platform_wallet::changeset::ContactChangeSet::private_shielded_addresses
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrivateShieldedAddressFFI {
+    /// The wallet-owned identity the request is to.
+    pub owner_id: [u8; 32],
+    /// The contact who sent the request.
+    pub contact_id: [u8; 32],
+    /// The raw 43-byte Orchard payment address.
+    pub address: [u8; 43],
+}
+
 // Compile-time guards. Pin the expected layouts so any reshape on
 // the Rust side fails the cargo build before it can ship a dylib
 // the Swift side will mis-parse at runtime.

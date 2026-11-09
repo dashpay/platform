@@ -6,6 +6,7 @@ use crate::sync::block_on;
 use crate::{Error, Sdk};
 use arc_swap::ArcSwapAny;
 use dash_context_provider::{ContextProvider, ContextProviderError};
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
@@ -212,22 +213,30 @@ impl ContextProvider for GrpcContextProvider {
             block_on(async move { DataContract::fetch(&sdk_cloned, contract_id).await })?
                 .map_err(|e| ContextProviderError::DataContractFailure(e.to_string()))?;
 
-        if let Some(ref dc) = data_contract {
-            self.data_contracts_cache.put(*data_contract_id, dc.clone());
-        };
-
         #[cfg(feature = "mocks")]
         if let Some(ref dc) = data_contract {
             self.dump_data_contract(dc);
         }
 
-        Ok(data_contract.map(Arc::new))
+        // A newer contract registered while this one was fetched stays, and is the answer.
+        Ok(data_contract.map(|dc| {
+            let fetched_version = dc.version();
+            self.data_contracts_cache
+                .put_unless(*data_contract_id, dc, |held| {
+                    held.version() > fetched_version
+                })
+        }))
     }
 
+    /// Keeps a held contract of a higher version, deciding under the cache's lock: a
+    /// registration that waited on a fetch does not replace a newer contract registered
+    /// meanwhile.
     fn register_data_contract(&self, contract: Arc<DataContract>) {
-        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        let version = contract.version();
         self.data_contracts_cache
-            .put(contract.id(), (*contract).clone());
+            .put_unless(contract.id(), (*contract).clone(), |held| {
+                held.version() > version
+            });
     }
 
     fn get_token_configuration(
@@ -275,5 +284,77 @@ impl<K: Hash + Eq, V> Cache<K, V> {
     pub fn put(&self, k: K, v: V) {
         let mut guard = self.inner.write().expect("cache lock poisoned");
         guard.put(k, Arc::new(v));
+    }
+
+    /// Insert `v` under `k` unless `keep_held` says the value held there stays, deciding
+    /// under the cache's lock, and return the value the cache holds after.
+    pub fn put_unless(&self, k: K, v: V, keep_held: impl FnOnce(&V) -> bool) -> Arc<V> {
+        let mut guard = self.inner.write().expect("cache lock poisoned");
+        if let Some(held) = guard.get(&k).filter(|held| keep_held(held)) {
+            return Arc::clone(held);
+        }
+        let value = Arc::new(v);
+        guard.put(k, Arc::clone(&value));
+        value
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+    use dpp::platform_value::platform_value;
+    use dpp::platform_value::string_encoding::Encoding;
+
+    /// A one-type contract `id` at `version`.
+    fn contract_at_version(id: [u8; 32], version: u32) -> DataContract {
+        DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Identifier::from(id).to_string(Encoding::Base58),
+                "ownerId": Identifier::from([8; 32]).to_string(Encoding::Base58),
+                "version": version,
+                "documentSchemas": {
+                    "note": {
+                        "type": "object",
+                        "properties": {
+                            "text": { "type": "string", "maxLength": 10, "position": 0 }
+                        },
+                        "additionalProperties": false
+                    }
+                }
+            }),
+            false,
+            PlatformVersion::latest(),
+        )
+        .expect("the contract parses")
+    }
+
+    /// A registration that waited on its fetch while a newer contract was registered, as a
+    /// reader does between its last lookup and its registration, leaves the newer one: an
+    /// older registration never replaces it, a newer one does.
+    #[test]
+    fn should_keep_a_newer_contract_registered_while_an_older_one_was_fetched() {
+        let size = NonZeroUsize::new(8).expect("non-zero");
+        let provider =
+            GrpcContextProvider::new(None, "127.0.0.1", 1, "user", "password", size, size, size)
+                .expect("a provider");
+        let id = Identifier::from([0x73; 32]);
+        let held = |provider: &GrpcContextProvider| {
+            provider
+                .get_data_contract(&id, PlatformVersion::latest())
+                .expect("the provider answers")
+                .map(|contract| contract.version())
+        };
+
+        provider.register_data_contract(Arc::new(contract_at_version([0x73; 32], 3)));
+        provider.register_data_contract(Arc::new(contract_at_version([0x73; 32], 2)));
+        assert_eq!(
+            held(&provider),
+            Some(3),
+            "the older registration keeps the newer"
+        );
+        provider.register_data_contract(Arc::new(contract_at_version([0x73; 32], 4)));
+        assert_eq!(held(&provider), Some(4), "a newer registration replaces");
     }
 }

@@ -693,8 +693,15 @@ impl DataContractWasm {
         #[wasm_bindgen(unchecked_param_type = "Record<number, TokenConfiguration>")]
         tokens: &JsValue,
     ) -> WasmDppResult<()> {
-        self.0
-            .set_tokens(tokens_configuration_from_js_value(tokens)?);
+        let tokens = tokens_configuration_from_js_value(tokens)?;
+        // A contract of structure version 0 holds no tokens: refuse them rather than drop them,
+        // as the constructor does. An empty map leaves such a contract as it is.
+        if !tokens.is_empty() && matches!(self.0, DataContract::V0(_)) {
+            return Err(WasmDppError::invalid_argument(
+                "a data contract of structure version 0 holds no tokens",
+            ));
+        }
+        self.0.set_tokens(tokens);
         Ok(())
     }
 

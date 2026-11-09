@@ -649,6 +649,36 @@ impl MnemonicResolverCoreSigner {
         })
     }
 
+    /// [`Self::scan_private_document_page`] for several pages of one store,
+    /// each with the position it was read from: the mnemonic is resolved once
+    /// for the batch and the scan keys are derived once, then each page is
+    /// sorted with them, in order. A wallet scanning many pages at once reads
+    /// the Keychain once per batch, not once per page.
+    pub fn scan_private_document_pages(
+        &self,
+        recipients: &[(Identifier, Vec<(KeyID, DerivationPath)>)],
+        senders: &[(Identifier, KeyID, DerivationPath)],
+        data_contract_id: Identifier,
+        document_type_name: &str,
+        pages: &[(u64, &PrivateDocumentEntries)],
+    ) -> Result<Vec<PrivateDocumentScan>, MnemonicResolverSignerError> {
+        let target = PrivateDocumentTarget {
+            contract_id: data_contract_id.to_buffer(),
+            document_type_name,
+        };
+        self.resolve_master(|master| {
+            // As for one page: `derive` wipes each copy `secret_key_at`
+            // yields once used.
+            let keys = PrivateDocumentScanKeys::derive(recipients, senders, |path| {
+                secret_key_at(master, path).map(|secret| secret.0)
+            })?;
+            Ok(pages
+                .iter()
+                .map(|(start_position, page)| keys.scan_page(&target, *start_position, page))
+                .collect())
+        })
+    }
+
     /// Seal `request` from `sender`, whose encryption key
     /// `sender_encryption_key_id` is the one at `sender_encryption_key_path`,
     /// to the key `recipient_key_id` of `recipient`, with `signature`, the
@@ -1971,6 +2001,55 @@ mod tests {
                 err.to_string().contains("signature"),
                 "refused for the signature, got: {err}"
             );
+
+            unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+        }
+
+        /// A batch of pages scanned through the signer reads the Keychain once
+        /// and sorts each page as scanning it alone does.
+        #[tokio::test]
+        async fn should_resolve_the_mnemonic_once_per_batch_of_pages() {
+            let contract = dashpay();
+            let first = page(vec![
+                sent_to_carol(&contract, 5).await,
+                sent_to_recipient(&contract, 6).await,
+            ]);
+            let mut second = page(vec![sent_to_recipient(&contract, 8).await]);
+            for entry in &mut second.entries {
+                entry.position += 2;
+            }
+            second.total_count = 3;
+            let resolves = AtomicUsize::new(0);
+            let resolver = unsafe {
+                dash_sdk_mnemonic_resolver_create(
+                    &resolves as *const AtomicUsize as *mut c_void,
+                    counting_resolve,
+                    noop_destroy,
+                )
+            };
+            let signer =
+                unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
+
+            let scans = signer
+                .scan_private_document_pages(
+                    &recipient_paths(),
+                    &sender_paths(),
+                    contract.id(),
+                    PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+                    &[(0, &first), (2, &second)],
+                )
+                .expect("the signer scans the batch");
+            assert_eq!(resolves.load(Ordering::SeqCst), 1, "one Keychain read");
+            let target = target(&contract);
+            assert_eq!(
+                scans,
+                vec![
+                    seed_scan_keys().scan_page(&target, 0, &first),
+                    seed_scan_keys().scan_page(&target, 2, &second),
+                ]
+            );
+            assert_eq!(scans[1].received.len(), 1);
+            assert_eq!(scans[1].next_position, 3);
 
             unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
         }

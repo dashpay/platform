@@ -15,23 +15,69 @@ final class ContactRequestOutcomesTests: XCTestCase {
         XCTAssertEqual(outcome, .mayHaveGoneThrough)
     }
 
+    /// A pending private request (code 71), which a public send or accept
+    /// can meet too, sent nothing: it is shown as pending, with a private
+    /// sync to settle it, rather than as a submission that may have gone
+    /// through.
     func testShouldKeepAPendingPrivateRequestPending() {
         let outcome = ContactRequestSubmissionOutcome.of(
             PlatformWalletError.privateContactRequestPending("not yet read back from the store")
         )
-        XCTAssertEqual(outcome, .mayHaveGoneThrough)
+        XCTAssertEqual(outcome, .privateRequestPending)
     }
 
     func testShouldShowAWalletPendingReplyOverAnEarlierError() {
         XCTAssertEqual(
             ContactRequestSubmissionOutcome.rowMessage(pending: true, error: "Accept failed: boom"),
-            ContactRequestSubmissionOutcome.mayHaveGoneThroughMessage
+            ContactRequestSubmissionOutcome.privateRequestPendingMessage
         )
         XCTAssertEqual(
             ContactRequestSubmissionOutcome.rowMessage(pending: false, error: "Accept failed: boom"),
             "Accept failed: boom"
         )
+        XCTAssertEqual(
+            ContactRequestSubmissionOutcome.rowMessage(
+                pending: false, unavailable: true, error: "Accept failed: boom"),
+            PrivateRepliesPendingSnapshot.unavailableMessage
+        )
         XCTAssertNil(ContactRequestSubmissionOutcome.rowMessage(pending: false, error: nil))
+    }
+
+    /// A read that found a private request pending, followed by a failed
+    /// read: the contact stays pending and nothing is offered for any
+    /// contact, until a read succeeds again.
+    func testShouldKeepThePendingSnapshotAndOfferNothingAfterAFailedRead() {
+        let pendingContact = Data(repeating: 1, count: 32)
+        let otherContact = Data(repeating: 2, count: 32)
+        var snapshot = PrivateRepliesPendingSnapshot()
+        snapshot.record([pendingContact], for: [pendingContact, otherContact])
+        XCTAssertTrue(snapshot.isPending(pendingContact))
+        XCTAssertFalse(snapshot.allowsSubmission(to: pendingContact))
+        XCTAssertTrue(snapshot.allowsSubmission(to: otherContact))
+
+        snapshot.record(nil, for: [pendingContact, otherContact])
+        XCTAssertTrue(snapshot.isUnavailable)
+        XCTAssertTrue(snapshot.isPending(pendingContact), "the last snapshot stays")
+        XCTAssertFalse(snapshot.allowsSubmission(to: pendingContact))
+        XCTAssertFalse(snapshot.allowsSubmission(to: otherContact))
+
+        snapshot.record([], for: [pendingContact, otherContact])
+        XCTAssertFalse(snapshot.isUnavailable)
+        XCTAssertTrue(snapshot.allowsSubmission(to: pendingContact))
+    }
+
+    /// A successful read that found nothing pending offers every contact it
+    /// covered, and nothing it did not.
+    func testShouldOfferEveryContactASuccessfulEmptyReadCovered() {
+        let contact = Data(repeating: 1, count: 32)
+        var snapshot = PrivateRepliesPendingSnapshot()
+        snapshot.record([], for: [contact])
+        XCTAssertFalse(snapshot.isUnavailable)
+        XCTAssertFalse(snapshot.isPending(contact))
+        XCTAssertTrue(snapshot.allowsSubmission(to: contact))
+        XCTAssertFalse(
+            snapshot.allowsSubmission(to: Data(repeating: 2, count: 32)),
+            "a contact the read did not cover is not offered yet")
     }
 
     func testShouldAcceptACollisionPrivatelyWhenSendPrivatelyIsOn() {

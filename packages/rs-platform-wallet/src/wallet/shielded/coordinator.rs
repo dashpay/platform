@@ -1797,6 +1797,25 @@ impl NetworkShieldedCoordinator {
                     );
                     continue;
                 }
+                // A private document the stranded spend paid for can never be
+                // appended: the wallet releases what it holds for it.
+                if let Some(entry_id) = activity_id {
+                    let rejected = store
+                        .pending_redrives(id)
+                        .ok()
+                        .into_iter()
+                        .flatten()
+                        .filter(|redrive| redrive.activity_id == entry_id)
+                        .filter_map(|redrive| {
+                            StateTransition::deserialize_from_bytes_trusted(&redrive.st_bytes).ok()
+                        });
+                    for transition in rejected {
+                        super::operations::note_rejected_private_documents(
+                            &transition,
+                            persisters.get(&id.wallet_id),
+                        );
+                    }
+                }
                 match store.clear_pending(id, &nullifier) {
                     // `still_same` held under this same guard, so the clear
                     // removes exactly the snapshot's reservation.
