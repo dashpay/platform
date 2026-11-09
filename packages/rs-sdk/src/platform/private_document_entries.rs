@@ -198,8 +198,9 @@ pub(crate) mod held_contract_provider {
 
     /// A context provider holding `held`, or nothing, whatever version it is asked for, as a
     /// provider's known contracts do. A `writable` one puts a registered contract in its
-    /// place, whatever its version; a read-only one keeps what it holds. Its clones share
-    /// what it holds.
+    /// place, whatever its version, unlike a provider keeping the newer one as
+    /// `ContextProvider::register_data_contract` asks: so a test shows a reader does not rely
+    /// on that. A read-only one keeps what it holds. Its clones share what it holds.
     #[derive(Clone)]
     pub(crate) struct HeldContractProvider {
         held: Arc<Mutex<Option<Arc<DataContract>>>>,
