@@ -5,6 +5,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.Dispatchers
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.DashpayNative
+import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.SdkNative
 import org.dashfoundation.dashsdk.ffi.SignerNative
@@ -12,6 +13,7 @@ import org.dashfoundation.dashsdk.ffi.WalletManagerNative
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -88,22 +90,17 @@ class FfiSmokeTest {
     }
 
     /**
-     * The #4069 watermark-freeze fault latch surfaced by PR #4314: the
-     * `syncFaultDetected` JNI symbol binds, and an invalid manager handle
-     * surfaces as the mapped [DashSDKException] rather than a crash. The
-     * latch behavior itself (freeze on dropped events / rejected store) is
-     * covered by the shared Rust tests in
-     * `packages/rs-platform-wallet/src/changeset/core_bridge.rs`.
-     */
-    /**
-     * DashPay private contact requests (protocol version 15): the six
+     * DashPay private contact requests (protocol version 15): the
      * `DashpayNative` symbols bind with the descriptors Kotlin declares, and
      * bad input surfaces as a mapped [DashSDKException] rather than a crash.
      * A null resolver is refused before any wallet lookup, and a shielded
      * address that is not 43 bytes never reaches the FFI (which reads
-     * exactly 43). The flows themselves need a protocol version 15 network
-     * with shielded funds; their Rust side is covered by the
-     * platform-wallet and platform-wallet-ffi tests.
+     * exactly 43). The explicit private send and private-reply accept are
+     * exported only by a shielded build, so they are probed only there; the
+     * sync, the reads and the in-kind accept are exported by every build.
+     * The flows themselves need a protocol version 15 network with shielded
+     * funds; their Rust side is covered by the platform-wallet and
+     * platform-wallet-ffi tests.
      */
     @Test
     fun privateContactRequestSymbolsBindAndRejectInvalidInput() {
@@ -111,16 +108,22 @@ class FfiSmokeTest {
         assertThrows(DashSDKException::class.java) {
             DashpayNative.syncPrivateContactRequests(0L, 0L, 1)
         }
-        assertThrows(DashSDKException::class.java) {
-            DashpayNative.sendPrivateContactRequest(
-                0L, ByteArray(32), 0L, 0, ByteArray(32), ByteArray(32),
-                null, null, null, 0L,
-            )
+        if (Sdk.hasShielded()) {
+            assertThrows(DashSDKException::class.java) {
+                DashpayNative.sendPrivateContactRequest(
+                    0L, ByteArray(32), 0L, 0, ByteArray(32), ByteArray(32),
+                    null, null, null, 0L,
+                )
+            }
+            assertThrows(DashSDKException::class.java) {
+                DashpayNative.acceptPrivateContactRequest(
+                    0L, ByteArray(32), 0L, 0, 0L, ByteArray(42), 0L,
+                )
+            }
         }
+        // An unknown wallet handle is NotFound.
         assertThrows(DashSDKException::class.java) {
-            DashpayNative.acceptPrivateContactRequest(
-                0L, ByteArray(32), 0L, 0, 0L, ByteArray(42), 0L,
-            )
+            DashpayNative.privateContactReadiness(0L, ByteArray(32))
         }
         assertThrows(DashSDKException::class.java) {
             DashpayNative.acceptContactRequestReplyingInKind(
@@ -135,6 +138,14 @@ class FfiSmokeTest {
         }
     }
 
+    /**
+     * The #4069 watermark-freeze fault latch surfaced by PR #4314: the
+     * `syncFaultDetected` JNI symbol binds, and an invalid manager handle
+     * surfaces as the mapped [DashSDKException] rather than a crash. The
+     * latch behavior itself (freeze on dropped events / rejected store) is
+     * covered by the shared Rust tests in
+     * `packages/rs-platform-wallet/src/changeset/core_bridge.rs`.
+     */
     @Test
     fun syncFaultDetectedSymbolBindsAndRejectsInvalidHandle() {
         NativeLoader.ensureLoaded()
@@ -150,6 +161,44 @@ class FfiSmokeTest {
      * live, funded `create_invitation`. Resolving the whole table up front
      * turns a descriptor typo into a CI failure instead.
      */
+    /**
+     * The private contact request scan state needs every override it
+     * depends on: JNI wires its slots only for a bridge that overrides the
+     * contact upsert native calls, the scan-state store and the scan-state
+     * load (a read position vouches for the requests an inherited no-op
+     * contact writer never stored). A bridge declaring the capability but
+     * leaving any one of them inherited is not attested; one implementing
+     * all three, and the Room handler, keep it.
+     */
+    @Test
+    fun privateContactScanStateCapabilityNeedsEveryOverride() {
+        NativeLoader.ensureLoaded()
+        val bit = NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
+        fun effective(bridge: NativePersistenceBridge): Boolean =
+            WalletManagerNative.nativeEffectivePersistenceCapabilityBits(bridge) and bit != 0L
+
+        assertTrue("every override", effective(ScanStateBridge.Full()))
+        assertFalse("no contact upsert", effective(ScanStateBridge.WithoutContactUpsert()))
+        assertFalse("no scan-state store", effective(ScanStateBridge.WithoutScanStateStore()))
+        assertFalse("no scan-state load", effective(ScanStateBridge.WithoutScanStateLoad()))
+        assertFalse(
+            "every override, not declared",
+            effective(object : ScanStateBridge.Full() {
+                override fun persistenceCapabilitiesBits(): Long = 0L
+            }),
+        )
+
+        val db = DashDatabase.createInMemory(ApplicationProvider.getApplicationContext())
+        try {
+            assertTrue(
+                "the Room handler",
+                effective(PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)),
+            )
+        } finally {
+            db.close()
+        }
+    }
+
     @Test
     fun persistenceBridgeDescriptorsAllResolve() {
         NativeLoader.ensureLoaded()
@@ -166,5 +215,131 @@ class FfiSmokeTest {
         } finally {
             db.close()
         }
+    }
+}
+
+/**
+ * Bridges declaring the private contact request scan state with some of the
+ * overrides it depends on, for
+ * [FfiSmokeTest.privateContactScanStateCapabilityNeedsEveryOverride]. Each
+ * concrete class declares exactly the overrides its name says.
+ */
+private abstract class ScanStateBridge : NativePersistenceBridge() {
+    override fun persistenceCapabilitiesVersion(): Int = 1
+
+    override fun persistenceCapabilitiesBits(): Long =
+        CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
+
+    open class Full : ScanStateBridge() {
+        @Suppress("LongParameterList")
+        override fun onPersistContactUpsert(
+            walletId: ByteArray,
+            ownerId: ByteArray,
+            contactId: ByteArray,
+            isOutgoing: Boolean,
+            senderKeyIndex: Int,
+            recipientKeyIndex: Int,
+            accountReference: Int,
+            encryptedPublicKey: ByteArray,
+            encryptedAccountLabel: ByteArray?,
+            autoAcceptProof: ByteArray?,
+            coreHeightCreatedAt: Int,
+            createdAt: Long,
+            paymentChannelBroken: Boolean,
+            alias: String?,
+            note: String?,
+            isHidden: Boolean,
+            contactAccountLabel: String?,
+            acceptedAccounts: IntArray,
+            hasExternalAccountReference: Boolean,
+            externalAccountReference: Int,
+        ): Int = 0
+
+        override fun onPersistPrivateContactScanState(
+            walletId: ByteArray,
+            positions: ByteArray,
+            addresses: ByteArray,
+            removedAddresses: ByteArray,
+            clearedIdentities: ByteArray,
+        ): Int = 0
+
+        override fun onLoadPrivateContactScanState(walletId: ByteArray): Array<ByteArray> =
+            arrayOf(ByteArray(0), ByteArray(0))
+    }
+
+    class WithoutContactUpsert : ScanStateBridge() {
+        override fun onPersistPrivateContactScanState(
+            walletId: ByteArray,
+            positions: ByteArray,
+            addresses: ByteArray,
+            removedAddresses: ByteArray,
+            clearedIdentities: ByteArray,
+        ): Int = 0
+
+        override fun onLoadPrivateContactScanState(walletId: ByteArray): Array<ByteArray> =
+            arrayOf(ByteArray(0), ByteArray(0))
+    }
+
+    class WithoutScanStateStore : ScanStateBridge() {
+        @Suppress("LongParameterList")
+        override fun onPersistContactUpsert(
+            walletId: ByteArray,
+            ownerId: ByteArray,
+            contactId: ByteArray,
+            isOutgoing: Boolean,
+            senderKeyIndex: Int,
+            recipientKeyIndex: Int,
+            accountReference: Int,
+            encryptedPublicKey: ByteArray,
+            encryptedAccountLabel: ByteArray?,
+            autoAcceptProof: ByteArray?,
+            coreHeightCreatedAt: Int,
+            createdAt: Long,
+            paymentChannelBroken: Boolean,
+            alias: String?,
+            note: String?,
+            isHidden: Boolean,
+            contactAccountLabel: String?,
+            acceptedAccounts: IntArray,
+            hasExternalAccountReference: Boolean,
+            externalAccountReference: Int,
+        ): Int = 0
+
+        override fun onLoadPrivateContactScanState(walletId: ByteArray): Array<ByteArray> =
+            arrayOf(ByteArray(0), ByteArray(0))
+    }
+
+    class WithoutScanStateLoad : ScanStateBridge() {
+        @Suppress("LongParameterList")
+        override fun onPersistContactUpsert(
+            walletId: ByteArray,
+            ownerId: ByteArray,
+            contactId: ByteArray,
+            isOutgoing: Boolean,
+            senderKeyIndex: Int,
+            recipientKeyIndex: Int,
+            accountReference: Int,
+            encryptedPublicKey: ByteArray,
+            encryptedAccountLabel: ByteArray?,
+            autoAcceptProof: ByteArray?,
+            coreHeightCreatedAt: Int,
+            createdAt: Long,
+            paymentChannelBroken: Boolean,
+            alias: String?,
+            note: String?,
+            isHidden: Boolean,
+            contactAccountLabel: String?,
+            acceptedAccounts: IntArray,
+            hasExternalAccountReference: Boolean,
+            externalAccountReference: Int,
+        ): Int = 0
+
+        override fun onPersistPrivateContactScanState(
+            walletId: ByteArray,
+            positions: ByteArray,
+            addresses: ByteArray,
+            removedAddresses: ByteArray,
+            clearedIdentities: ByteArray,
+        ): Int = 0
     }
 }

@@ -56,6 +56,7 @@ use platform_wallet_ffi::error::{
 };
 use platform_wallet_ffi::event_handler::{EventHandlerCallbacks, EventHandlerCallbacksExtension};
 use platform_wallet_ffi::handle::Handle;
+use platform_wallet_ffi::manager::effective_persistence_capabilities;
 use platform_wallet_ffi::persistence::{PersistenceCallbacks, PersistenceCapabilitiesFFI};
 use platform_wallet_ffi::types::IdentifierArray;
 use std::ffi::{c_void, CStr};
@@ -208,6 +209,76 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
 
         let bundle = Box::new(ManagerBundle { manager_handle });
         Box::into_raw(bundle) as jlong
+    })
+}
+
+/// `WalletManagerNative.nativeEffectivePersistenceCapabilityBits`: the
+/// persistence capabilities a manager created with `persistence_bridge`
+/// would attest, without creating one. The declaration, the vtable, the
+/// account-writer restriction and the extension (with its `bridge_overrides`
+/// probes) are built exactly as `nativeCreate` builds them, so an
+/// instrumented test can check which bridge overrides keep a capability.
+/// Throws and returns 0 when the declaration cannot be read.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_nativeEffectivePersistenceCapabilityBits(
+    mut env: JNIEnv,
+    _class: JClass,
+    persistence_bridge: JObject,
+) -> jlong {
+    guard(&mut env, 0, |env| {
+        let version = match env
+            .call_method(
+                &persistence_bridge,
+                "persistenceCapabilitiesVersion",
+                "()I",
+                &[],
+            )
+            .and_then(|value| value.i())
+        {
+            Ok(value) => value as u32,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 99, "reading persistence capability version failed");
+                return 0;
+            }
+        };
+        let bits = match env
+            .call_method(
+                &persistence_bridge,
+                "persistenceCapabilitiesBits",
+                "()J",
+                &[],
+            )
+            .and_then(|value| value.j())
+        {
+            Ok(value) => value as u64,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 99, "reading persistence capability mask failed");
+                return 0;
+            }
+        };
+        let global = match env.new_global_ref(&persistence_bridge) {
+            Ok(global) => global,
+            Err(_) => {
+                throw_sdk_exception(env, 99, "NewGlobalRef(persistence bridge) failed");
+                return 0;
+            }
+        };
+        let context = Box::into_raw(Box::new(KotlinPersistenceCtx::new(global)));
+        let mut persistence: PersistenceCallbacks = build_vtable(context as *mut c_void);
+        restrict_account_writers(env, &persistence_bridge, &mut persistence);
+        let extension = build_extension(env, &persistence_bridge);
+        let declared = PersistenceCapabilitiesFFI {
+            version,
+            reserved: 0,
+            bits,
+        };
+        // SAFETY: `extension` is a live, fully sized extension; the vtable's
+        // `release_fn` frees `context` before this returns.
+        let effective =
+            unsafe { effective_persistence_capabilities(persistence, &declared, &extension) };
+        effective.bits() as jlong
     })
 }
 
