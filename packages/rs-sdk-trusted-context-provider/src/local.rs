@@ -353,4 +353,35 @@ mod tests {
             "a later, older copy in the same batch must not win"
         );
     }
+
+    /// The SPV and adaptive providers register contracts only through the
+    /// resolver. A registration that waited on its fetch must not replace a
+    /// newer contract another operation registered meanwhile, or proofs over
+    /// the newer version would be checked against the older one.
+    #[test]
+    fn should_keep_a_newer_contract_over_a_registered_older_one() {
+        let resolver = LocalContextResolver::new();
+        let at_version = |version| {
+            let mut contract = app_contract();
+            contract.set_version(version);
+            contract
+        };
+        let register = |version| {
+            ContractSource::register_data_contract(&resolver, Arc::new(at_version(version)))
+        };
+        let id = app_contract().id();
+        let held = || {
+            resolver
+                .get_known_contract(&id)
+                .map(|contract| contract.version())
+        };
+
+        register(2);
+        register(3);
+        assert_eq!(held(), Some(3), "a newer registration replaces");
+        register(2);
+        assert_eq!(held(), Some(3), "an older registration does not");
+        resolver.replace_known_contract(at_version(1));
+        assert_eq!(held(), Some(1), "an explicit replacement replaces");
+    }
 }
