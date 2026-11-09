@@ -567,6 +567,32 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
 }
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+    /// This handle's wallet in `wm`, the wallet manager under its write lock,
+    /// while it is still this handle's generation: refused, as not found, once
+    /// the wallet was removed, or re-created under its id, since the handle
+    /// was taken. Work that ran without the wallet's lifecycle gate (network
+    /// reads, host key resolution) applies its results through this, so a
+    /// replacement never receives a stale handle's state: the check and the
+    /// write are under the one lock a removal takes.
+    pub(crate) fn current_wallet_info_mut<'w>(
+        &self,
+        wm: &'w mut WalletManager<PlatformWalletInfo>,
+    ) -> Result<&'w mut PlatformWalletInfo, PlatformWalletError> {
+        wm.get_wallet_info_mut(&self.wallet_id)
+            .filter(|info| Arc::ptr_eq(&info.generation, &self.generation))
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))
+    }
+
+    /// [`Self::current_wallet_info_mut`], with the wallet itself.
+    pub(crate) fn current_wallet_and_info_mut<'w>(
+        &self,
+        wm: &'w mut WalletManager<PlatformWalletInfo>,
+    ) -> Result<(&'w mut Wallet, &'w mut PlatformWalletInfo), PlatformWalletError> {
+        wm.get_wallet_mut_and_info_mut(&self.wallet_id)
+            .filter(|(_, info)| Arc::ptr_eq(&info.generation, &self.generation))
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))
+    }
+
     /// Build the DIP-9 identity authentication derivation path.
     ///
     /// Path format: `m/9'/coin_type'/5'/0'/key_type'/identity_index'/key_id'`

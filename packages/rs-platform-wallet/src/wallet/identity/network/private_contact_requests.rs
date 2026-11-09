@@ -1073,9 +1073,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     pub(crate) async fn reconcile_private_scan_keys(&self) -> Result<(), PlatformWalletError> {
         let persists_scan_state = self.persister.persists_private_contact_scan_state();
         let mut wm = self.wallet_manager.write().await;
-        let info = wm
-            .get_wallet_info_mut(&self.wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let info = self.current_wallet_info_mut(&mut wm)?;
         let identity_ids: Vec<Identifier> = info
             .identity_manager
             .all_identities()
@@ -1198,12 +1196,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         if !self.persister.has_unreleased_discharged_private_entries() {
             return Ok(());
         }
-        // Taken only once the wallet is locked and found, and applied with
-        // nothing awaited in between.
+        // Taken only once the wallet is locked and found, this handle's
+        // generation, and applied with nothing awaited in between.
         let mut wm = self.wallet_manager.write().await;
-        let info = wm
-            .get_wallet_info_mut(&self.wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let info = self.current_wallet_info_mut(&mut wm)?;
         let discharged = self.persister.take_unreleased_discharged_private_entries();
         let identity_ids: Vec<Identifier> = info
             .identity_manager
@@ -1887,12 +1883,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 // cursor past the page if that reached disk.
                 let mut candidates = Vec::new();
                 {
+                    // Fenced to this handle's generation: what the pass read
+                    // never lands on a wallet re-created under its id.
                     let mut wm = self.wallet_manager.write().await;
-                    let (wallet, info) = wm
-                        .get_wallet_mut_and_info_mut(&self.wallet_id)
-                        .ok_or_else(|| {
-                            PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id))
-                        })?;
+                    let (wallet, info) = self.current_wallet_and_info_mut(&mut wm)?;
                     for identity in identities.iter_mut() {
                         let identity_id = identity.identity_id;
                         let Some(managed) =
@@ -4524,12 +4518,12 @@ mod tests {
         .await
     }
 
-    /// A public request is bound to its wallet's generation: while one is on
-    /// its way, paused here at its signature after claiming the pair, the
-    /// wallet cannot be removed; once the wallet is removed and re-created
-    /// under the same id, a send through the old handle is refused before it
-    /// decides anything, publishing nothing and changing nothing on the
-    /// replacement.
+    /// A public request is bound to its wallet's generation: while one claims
+    /// its pair under the wallet's lifecycle gate, paused here at its check
+    /// that the wallet is still live, the wallet cannot be removed; once the
+    /// wallet is removed and re-created under the same id, a send through the
+    /// old handle is refused before it claims anything, publishing nothing
+    /// and changing nothing on the replacement.
     #[tokio::test]
     async fn should_not_let_a_public_request_outlive_its_wallet() {
         use std::future::Future;
@@ -4543,9 +4537,10 @@ mod tests {
         let wallet_id = old.wallet_id();
         let (alice_id, bob_id) = (alice.id(), bob.id());
         {
-            // Paused right after it takes the wallet's lifecycle gate, at its
-            // check that the wallet is still live.
-            let held = old.wallet_manager().write().await;
+            // Stepped one wallet-lock section at a time: the private store read
+            // runs without the lifecycle gate, a removal free to take it; then
+            // the send takes the gate and waits under it, at its check that the
+            // wallet is still live, for the wallet lock this test holds.
             let view = old.identity().dashpay();
             let mut send = Box::pin(view.send_contact_request_with_external_signer(
                 &alice_id,
@@ -4556,18 +4551,33 @@ mod tests {
                 &alice_crypto,
             ));
             let mut cx = Context::from_waker(Waker::noop());
-            assert!(send.as_mut().poll(&mut cx).is_pending());
-            // In flight, it holds the wallet's lifecycle gate, which a removal
-            // takes exclusively before anything else: no removal can complete.
-            assert!(
-                tokio::time::timeout(
-                    Duration::from_millis(100),
-                    old.generation().teardown_guard()
+            let wallet_manager = old.wallet_manager();
+            let mut held = wallet_manager.write().await;
+            let mut gated = false;
+            for _ in 0..200 {
+                assert!(send.as_mut().poll(&mut cx).is_pending());
+                // In flight under the gate, which a removal takes exclusively
+                // before anything else: no removal can complete.
+                if tokio::time::timeout(
+                    Duration::from_millis(20),
+                    old.generation().teardown_guard(),
                 )
                 .await
-                .is_err(),
-                "a removal waits for the public request"
-            );
+                .is_err()
+                {
+                    gated = true;
+                    break;
+                }
+                let mut next = Box::pin(wallet_manager.write());
+                assert!(next.as_mut().poll(&mut cx).is_pending());
+                drop(held);
+                assert!(send.as_mut().poll(&mut cx).is_pending());
+                held = match next.as_mut().poll(&mut cx) {
+                    std::task::Poll::Ready(guard) => guard,
+                    std::task::Poll::Pending => panic!("the test's write is next"),
+                };
+            }
+            assert!(gated, "a removal waits for the public request's claim");
             // Dropped, the send gives the wallet up.
             drop(send);
             drop(held);
@@ -4615,6 +4625,93 @@ mod tests {
         managed(&replacement, ALICE, |managed| {
             assert!(managed.dashpay().outgoing_request(&bob.id()).is_none());
             assert!(!managed.dashpay().private_reply_pending(&bob.id()));
+        })
+        .await;
+    }
+
+    /// A public request's private store read, with its network reads and the
+    /// host's key resolution, does not hold the wallet's lifecycle gate:
+    /// parked at its scan, the send leaves a removal free to complete. The
+    /// wallet re-created meanwhile under its id, the old read's results never
+    /// reach the replacement, as they are applied only to the read's own
+    /// generation, and the old send is refused.
+    #[tokio::test]
+    async fn should_not_hold_a_removal_while_a_public_request_reads_the_private_store() {
+        use std::sync::Arc as StdArc;
+        use tokio::sync::Notify;
+
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let (manager, old) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let wallet_id = old.wallet_id();
+        let called = StdArc::new(Notify::new());
+        let release = StdArc::new(Notify::new());
+        let send = {
+            let wallet = Arc::clone(&old);
+            let mut crypto = HookedCrypto::new(ALICE_PHRASE);
+            let (called, release) = (StdArc::clone(&called), StdArc::clone(&release));
+            crypto.before_scan = Some(Arc::new(move || {
+                let (called, release) = (StdArc::clone(&called), StdArc::clone(&release));
+                Box::pin(async move {
+                    called.notify_one();
+                    release.notified().await;
+                })
+            }));
+            let signer = signer(ALICE_PHRASE, &alice);
+            let (alice_id, bob_id) = (alice.id(), bob.id());
+            tokio::spawn(async move {
+                wallet
+                    .identity()
+                    .dashpay()
+                    .send_contact_request_with_external_signer(
+                        &alice_id,
+                        &bob_id,
+                        None,
+                        AutoAcceptProofSource::None,
+                        &signer,
+                        &crypto,
+                    )
+                    .await
+            })
+        };
+        tokio::time::timeout(Duration::from_secs(5), called.notified())
+            .await
+            .expect("the send reads the private store");
+        tokio::time::timeout(Duration::from_secs(5), manager.remove_wallet(&wallet_id))
+            .await
+            .expect("a removal is not held behind the read")
+            .expect("removed");
+        let replacement = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed(ALICE_PHRASE),
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("re-created");
+        {
+            let iw = replacement.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet_id)
+                .expect("the replacement's info")
+                .identity_manager
+                .add_identity(alice.clone(), 0, wallet_id, &iw.persister)
+                .expect("alice");
+        }
+        release.notify_one();
+        let sent = send.await.expect("send task");
+        assert!(
+            matches!(sent, Err(PlatformWalletError::WalletRemovedBeforeSend(_))),
+            "{sent:?}"
+        );
+        managed(&replacement, ALICE, |managed| {
+            assert!(
+                !managed.dashpay().private_contact_requests_read(),
+                "the old read's results do not reach the replacement"
+            );
+            assert!(!managed.dashpay().public_contact_request_claimed(&bob.id()));
+            assert!(managed.dashpay().outgoing_request(&bob.id()).is_none());
         })
         .await;
     }

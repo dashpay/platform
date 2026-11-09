@@ -763,13 +763,26 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         C: ContactCryptoProvider + Sync,
     {
         // Bound to this handle's wallet generation, under its lifecycle gate
-        // while the channel is decided and the pair claimed, and again from
-        // the moment the host's signature returns through the submission and
-        // its bookkeeping (`GatedSigner`): a removal cannot complete in either
-        // section, and a send started on a wallet since removed and re-created
-        // under the same id publishes nothing and records nothing on the
-        // replacement. The gate is not held while the host signs, so a
-        // signing prompt never holds a removal back.
+        // while the pair is claimed, and again from the moment the host's
+        // signature returns through the submission and its bookkeeping
+        // (`GatedSigner`): a removal cannot complete in either section, and a
+        // send started on a wallet since removed and re-created under the same
+        // id publishes nothing and records nothing on the replacement.
+        //
+        // The private store read runs before the gate: its network reads and
+        // the host's key resolution (a keychain or biometric prompt) never hold
+        // a removal back. It writes the wallet's state only through steps
+        // fenced to this handle's generation (`current_wallet_info_mut`), so a
+        // replacement never receives it, and a read that ran on a wallet
+        // removed meanwhile is refused at the gate.
+        // Boxed: the read's future (a private sync) is large, and the send's
+        // callers nest it in their own.
+        let read = Box::pin(self.read_private_store_before_deciding(
+            sender_identity_id,
+            recipient_identity_id,
+            crypto,
+        ))
+        .await;
         let claim = {
             let _lifecycle = self.generation.payment_guard().await;
             if !self.is_current_generation().await {
@@ -777,12 +790,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     self.wallet_id,
                 )));
             }
-            self.read_private_store_before_deciding(
-                sender_identity_id,
-                recipient_identity_id,
-                crypto,
-            )
-            .await?;
+            read?;
             self.release_discharged_private_requests().await?;
             match self
                 .claim_public_pair(sender_identity_id, recipient_identity_id, adopt_reply)
@@ -2477,9 +2485,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             })
             .collect();
 
-        // Serialize the queue write with identity removal under the same guard.
+        // Serialize the queue write with identity removal under the same guard,
+        // and fence it to this handle's generation.
         let mut wm = self.wallet_manager.write().await;
-        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+        let Ok(info) = self.current_wallet_info_mut(&mut wm) else {
             return;
         };
         let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
@@ -2675,9 +2684,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             });
         }
 
-        // Serialize the queue write with identity removal under the same guard.
+        // Serialize the queue write with identity removal under the same guard,
+        // and fence it to this handle's generation.
         let mut wm = self.wallet_manager.write().await;
-        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+        let Ok(info) = self.current_wallet_info_mut(&mut wm) else {
             return;
         };
         let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
