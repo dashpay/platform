@@ -318,6 +318,17 @@ class DashSdkErrorTest {
         assertFalse("held, not a failure to retry", mapped.isRetryable)
     }
 
+    /** A store that cannot keep a private payment's recovery state has its own code. */
+    @Test
+    fun shouldReportUnsupportedPrivateContactRecoveryByItsOwnCode() {
+        val detail = "the persister does not keep the private contact request scan state atomically"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 73, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.PrivateContactRecoveryUnsupported)
+        assertEquals(detail, mapped.message)
+        assertFalse("a configuration error, not a retry", mapped.isRetryable)
+    }
+
     @Test
     fun platformShieldCapacityCode41MapsTyped() {
         val message =

@@ -42,10 +42,19 @@ sealed interface ContactRequestSubmissionOutcome {
         const val RESTORING_PRIVATE_PAYMENTS_MESSAGE = "Restoring this wallet's private " +
             "payments. Contact requests wait until they are restored."
 
+        /**
+         * Code 73 is a configuration error of the app's storage, which
+         * declares what a private payment needs; shown as such.
+         */
+        const val RECOVERY_UNSUPPORTED_MESSAGE = "This storage backend can't protect " +
+            "private payments, so private contact requests are off."
+
         fun of(error: Throwable): ContactRequestSubmissionOutcome = when (error) {
             is DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed -> MayHaveGoneThrough
             is DashSdkError.PlatformWallet.PrivateContactRequestPending -> PrivateRequestPending
             is DashSdkError.PlatformWallet.PrivateContactPaymentsNotRestored -> PrivatePaymentsNotRestored
+            is DashSdkError.PlatformWallet.PrivateContactRecoveryUnsupported ->
+                Failed(RECOVERY_UNSUPPORTED_MESSAGE)
             else -> Failed(error.message ?: "unknown error")
         }
 

@@ -117,6 +117,17 @@ class ContactRequestOutcomesTest {
             unresolvedPrivatePayment = unresolved,
         )
 
+    /** A store that cannot protect private payments (code 73) is a configuration error, shown as such. */
+    @Test
+    fun shouldShowUnsupportedPrivateRecoveryAsAStorageError() {
+        assertEquals(
+            ContactRequestSubmissionOutcome.Failed(ContactRequestSubmissionOutcome.RECOVERY_UNSUPPORTED_MESSAGE),
+            ContactRequestSubmissionOutcome.of(
+                DashSdkError.PlatformWallet.PrivateContactRecoveryUnsupported("no atomic scan state"),
+            ),
+        )
+    }
+
     /** Unrestored private payments (code 72) are their own outcome, apart from a pending request (71). */
     @Test
     fun shouldTellUnrestoredPrivatePaymentsFromAPendingRequest() {

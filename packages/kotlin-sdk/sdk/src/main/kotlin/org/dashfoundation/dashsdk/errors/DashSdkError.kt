@@ -714,6 +714,18 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorPrivateContactRecoveryUnsupported` (native code 73). The
+         * wallet's storage cannot keep a private payment's recovery state
+         * across a restart (it does not declare the private contact request
+         * scan state together with atomic changesets), so a private send or
+         * reply is refused before anything is sealed or paid. A
+         * configuration error of the store, not something a retry fixes.
+         * ← Swift `PlatformWalletError.privateContactRecoveryUnsupported`.
+         */
+        class PrivateContactRecoveryUnsupported(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -916,6 +928,7 @@ sealed class DashSdkError(
             70 -> PlatformWallet.ProtocolVersionNotActive(message, cause) // ErrorProtocolVersionNotActive
             71 -> PlatformWallet.PrivateContactRequestPending(message, cause) // ErrorPrivateContactRequestPending
             72 -> PlatformWallet.PrivateContactPaymentsNotRestored(message, cause) // ErrorPrivateContactPaymentsNotRestored
+            73 -> PlatformWallet.PrivateContactRecoveryUnsupported(message, cause) // ErrorPrivateContactRecoveryUnsupported
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.
