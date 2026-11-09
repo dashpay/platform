@@ -15,7 +15,10 @@ import XCTest
 ///   managers would run against the same wallets;
 /// - a replacement that fails to configure leaves the current manager cached,
 ///   active and running, so the app keeps working on the SDK it keeps, and a
-///   later retry still replaces it.
+///   later retry still replaces it;
+/// - a replaced manager whose teardown left a worker running keeps its
+///   replacement from loading the network's wallets until the app restarts,
+///   because that worker may still write them.
 ///
 /// Real regtest SDKs and native managers: building either needs no network,
 /// and nothing here starts a sync.
@@ -101,5 +104,64 @@ final class WalletManagerStoreActivateTests: XCTestCase {
         XCTAssertNotIdentical(store.activeManager, current)
         XCTAssertFalse(current.isConfigured)
         await store.activeManager.shutdown()
+    }
+
+    func testShouldRefuseTheReplacementWhileTheReplacedManagerHasLiveWorkers() async throws {
+        let store = WalletManagerStore(modelContainer: try DashModelContainer.createInMemory())
+        try await store.activate(
+            network: .regtest, sdk: try SDK(network: .regtest, contextProvider: .spv))
+        let replaced = store.activeManager
+
+        // The replaced manager's native destroy runs, then reports a worker
+        // that outlived its join budget, as Rust does when a sync pass is
+        // stuck in a slow network call.
+        let calls = replaced.nativeTeardownCalls
+        replaced.nativeTeardownCalls = PlatformWalletNativeTeardownCalls(
+            spvStop: calls.spvStop,
+            platformAddressSyncStop: calls.platformAddressSyncStop,
+            shieldedSyncStop: calls.shieldedSyncStop,
+            dashPaySyncStop: calls.dashPaySyncStop,
+            dpnsSyncStop: calls.dpnsSyncStop,
+            destroy: { handle in
+                _ = PlatformWalletResult(calls.destroy(handle))
+                return PlatformWalletFFIResult(
+                    code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHUTDOWN_INCOMPLETE,
+                    message: nil)
+            },
+            spvStart: calls.spvStart)
+
+        let rebuilt = try SDK(network: .regtest, contextProvider: .spv)
+        do {
+            try await store.activate(network: .regtest, sdk: rebuilt)
+            XCTFail("a replacement must not load wallets a straggling worker may still write")
+        } catch {
+            XCTAssertTrue(
+                error.localizedDescription.contains("Restart the app"),
+                error.localizedDescription)
+        }
+        XCTAssertIdentical(store.activeManager, replaced)
+        XCTAssertIdentical(store.manager(for: .regtest), replaced)
+        XCTAssertFalse(replaced.isConfigured)
+        // The refused replacement was shut down, not left running for
+        // `deinit`: it no longer holds the rebuilt SDK's quorum source slot.
+        let probe = try PlatformWalletManager(sdk: rebuilt)
+        await probe.shutdown()
+
+        // The straggler may outlive any later rebuild too, so the network
+        // stays refused until the app restarts, before a replacement is even
+        // configured: this SDK's quorum source slot is already held, so
+        // configuring one would fail with a different error.
+        let held = try SDK(network: .regtest, contextProvider: .spv)
+        let slotHolder = try PlatformWalletManager(sdk: held)
+        do {
+            try await store.activate(network: .regtest, sdk: held)
+            XCTFail("the network must stay refused until the app restarts")
+        } catch {
+            XCTAssertTrue(
+                error.localizedDescription.contains("Restart the app"),
+                error.localizedDescription)
+        }
+        XCTAssertIdentical(store.activeManager, replaced)
+        await slotHolder.shutdown()
     }
 }
