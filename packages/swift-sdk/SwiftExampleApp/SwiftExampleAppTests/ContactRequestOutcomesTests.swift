@@ -108,6 +108,15 @@ final class ContactRequestOutcomesTests: XCTestCase {
             ContactRequestSubmissionOutcome.privateRequestPendingMessage)
     }
 
+    /// A store that cannot protect private payments (code 73) is a
+    /// configuration error, shown as such.
+    func testShouldShowUnsupportedPrivateRecoveryAsAStorageError() {
+        XCTAssertEqual(
+            ContactRequestSubmissionOutcome.of(
+                PlatformWalletError.privateContactRecoveryUnsupported("no atomic scan state")),
+            .failed(ContactRequestSubmissionOutcome.recoveryUnsupportedMessage))
+    }
+
     /// A code 72 hold survives a successful pending read that finds nothing,
     /// and a readiness read after a private sync that still says not
     /// restored; only a readiness read that says restored lifts it.

@@ -288,6 +288,12 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// store or binding the wallet's shielded account restores them; a
     /// private sync does not.
     case errorPrivateContactPaymentsNotRestored = 72
+    /// The persister cannot keep a private payment's recovery state across
+    /// a restart (it does not declare the private contact request scan
+    /// state with atomic changesets), so a private send or reply is refused
+    /// before anything is sealed or paid. A configuration error, not
+    /// retryable as it is.
+    case errorPrivateContactRecoveryUnsupported = 73
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -429,6 +435,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorPrivateContactRequestPending
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_PAYMENTS_NOT_RESTORED:
             self = .errorPrivateContactPaymentsNotRestored
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_RECOVERY_UNSUPPORTED:
+            self = .errorPrivateContactRecoveryUnsupported
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -655,6 +663,12 @@ public enum PlatformWalletError: LocalizedError {
     /// `ManagedPlatformWallet.privateContactReadiness(identityId:)` reads
     /// whether they are restored.
     case privateContactPaymentsNotRestored(String)
+    /// The wallet's storage cannot keep a private payment's recovery state
+    /// across a restart (code 73): it does not declare the private contact
+    /// request scan state together with atomic changesets. A private send
+    /// or reply is refused before anything is sealed or paid. A
+    /// configuration error of the store, not something a retry fixes.
+    case privateContactRecoveryUnsupported(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition
     /// (identity-create or a spend — unshield / transfer / withdrawal) was
@@ -883,6 +897,7 @@ public enum PlatformWalletError: LocalizedError {
              .privateContactRequestNeedsPrivateReply(let m),
              .shieldedBuildRequired(let m), .protocolVersionNotActive(let m),
              .privateContactRequestPending(let m), .privateContactPaymentsNotRestored(let m),
+             .privateContactRecoveryUnsupported(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
@@ -1011,6 +1026,8 @@ public enum PlatformWalletError: LocalizedError {
             self = .privateContactRequestPending(detail)
         case .errorPrivateContactPaymentsNotRestored:
             self = .privateContactPaymentsNotRestored(detail)
+        case .errorPrivateContactRecoveryUnsupported:
+            self = .privateContactRecoveryUnsupported(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)

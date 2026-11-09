@@ -537,6 +537,22 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    /// A store that cannot keep a private payment's recovery state has its
+    /// own code and typed case.
+    func testShouldReportUnsupportedPrivateContactRecoveryByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_RECOVERY_UNSUPPORTED
+        )
+        XCTAssertEqual(code, .errorPrivateContactRecoveryUnsupported)
+        XCTAssertEqual(code.rawValue, 73)
+        let detail = "the persister does not keep the private contact request scan state atomically"
+        guard case .privateContactRecoveryUnsupported(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed recovery-unsupported error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     func testShouldReadEveryFieldOfThePrivateContactReadiness() {
         var ffi = PrivateContactReadinessFFI()
         ffi.private_payments_restored = false
