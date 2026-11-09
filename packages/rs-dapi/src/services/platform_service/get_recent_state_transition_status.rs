@@ -25,9 +25,16 @@ use dapi_grpc::platform::v0::{
     GetStatusRequest, ResponseMetadata, get_recent_state_transition_status_request,
 };
 use dapi_grpc::tonic::Request;
+use std::future::Future;
+use std::time::Duration;
 use tracing::debug;
 
 use crate::clients::tenderdash_client::TxResponse;
+
+/// How long the answer waits for the node's status to fill its metadata. The status is
+/// already known by then, so a slow status read leaves the metadata out rather than delaying
+/// the answer.
+const NODE_VIEW_METADATA_TIMEOUT: Duration = Duration::from_secs(2);
 
 impl PlatformServiceImpl {
     /// Report what this node knows of a state transition, by hash, without waiting.
@@ -67,19 +74,17 @@ impl PlatformServiceImpl {
         &self,
         hash_base64: &str,
     ) -> Result<TransitionStatus, DapiError> {
-        if let Some(committed) = self.committed_state_transition(hash_base64).await? {
-            return Ok(committed);
-        }
-        match self.tenderdash_client.unconfirmed_tx(hash_base64).await {
-            Ok(_) => return Ok(TransitionStatus::Pending(Pending {})),
-            Err(error) if is_not_found(&error) => {}
-            Err(error) => return Err(error),
-        }
-        // It may have left the mempool for a block since the first read.
-        if let Some(committed) = self.committed_state_transition(hash_base64).await? {
-            return Ok(committed);
-        }
-        Ok(TransitionStatus::Unknown(Unknown {}))
+        lookup_sequence(
+            || self.committed_state_transition(hash_base64),
+            || async move {
+                match self.tenderdash_client.unconfirmed_tx(hash_base64).await {
+                    Ok(_) => Ok(true),
+                    Err(error) if is_not_found(&error) => Ok(false),
+                    Err(error) => Err(error),
+                }
+            },
+        )
+        .await
     }
 
     /// The transition as this node's transaction index holds it, or `None` when it does not.
@@ -101,15 +106,28 @@ impl PlatformServiceImpl {
         let request = Request::new(GetStatusRequest {
             version: Some(StatusVersion::V0(GetStatusRequestV0 {})),
         });
-        let status = match self.get_status_impl(request).await {
-            Ok(response) => response.into_inner(),
-            Err(error) => {
+        let status = match tokio::time::timeout(
+            NODE_VIEW_METADATA_TIMEOUT,
+            self.get_status_impl(request),
+        )
+        .await
+        {
+            Ok(Ok(response)) => response.into_inner(),
+            Ok(Err(error)) => {
                 debug!(%error, "get_recent_state_transition_status: node status unavailable");
+                return None;
+            }
+            Err(_) => {
+                debug!(
+                    "get_recent_state_transition_status: node status too slow; answering without it"
+                );
                 return None;
             }
         };
         let StatusResponseVersion::V0(status) = status.version?;
-        let chain = status.chain.unwrap_or_default();
+        // A status without the chain has no height to report: leave the metadata out rather
+        // than report height 0.
+        let chain = status.chain?;
         let time = status.time.unwrap_or_default();
         let protocol_version = status
             .version
@@ -129,6 +147,32 @@ impl PlatformServiceImpl {
                 .unwrap_or_default(),
         })
     }
+}
+
+/// The order of the lookups: the transaction index, then the mempool, then the transaction
+/// index again, so a transition that leaves the mempool for a block between the first two reads
+/// is found by the third instead of being reported unknown. `committed` reads the index (`None`
+/// when it does not have the hash); `in_mempool` reads the mempool.
+async fn lookup_sequence<C, CF, M, MF>(
+    mut committed: C,
+    in_mempool: M,
+) -> Result<TransitionStatus, DapiError>
+where
+    C: FnMut() -> CF,
+    CF: Future<Output = Result<Option<TransitionStatus>, DapiError>>,
+    M: FnOnce() -> MF,
+    MF: Future<Output = Result<bool, DapiError>>,
+{
+    if let Some(status) = committed().await? {
+        return Ok(status);
+    }
+    if in_mempool().await? {
+        return Ok(TransitionStatus::Pending(Pending {}));
+    }
+    if let Some(status) = committed().await? {
+        return Ok(status);
+    }
+    Ok(TransitionStatus::Unknown(Unknown {}))
 }
 
 /// What a transaction-index answer says: committed at its height, with its error when its code
@@ -174,6 +218,91 @@ fn is_not_found(error: &DapiError) -> bool {
 mod tests {
     use super::*;
     use crate::clients::tenderdash_client::ExecTxResult;
+    use std::cell::RefCell;
+    use std::collections::VecDeque;
+
+    fn committed_at(height: u64) -> TransitionStatus {
+        TransitionStatus::Committed(Committed {
+            height,
+            error: None,
+        })
+    }
+
+    /// Run the lookup order against index answers given in order and one mempool answer, and
+    /// report the status with how many index reads it took.
+    async fn run_sequence(
+        index_answers: Vec<Result<Option<TransitionStatus>, DapiError>>,
+        mempool_answer: Result<bool, DapiError>,
+    ) -> (Result<TransitionStatus, DapiError>, usize) {
+        let answers = RefCell::new(VecDeque::from(index_answers));
+        let reads = RefCell::new(0usize);
+        let status = lookup_sequence(
+            || {
+                *reads.borrow_mut() += 1;
+                let answer = answers
+                    .borrow_mut()
+                    .pop_front()
+                    .expect("the test gives an answer for every index read");
+                async move { answer }
+            },
+            || async move { mempool_answer },
+        )
+        .await;
+        let reads = *reads.borrow();
+        (status, reads)
+    }
+
+    #[tokio::test]
+    async fn should_answer_committed_from_the_first_index_read() {
+        let (status, reads) = run_sequence(vec![Ok(Some(committed_at(10)))], Ok(false)).await;
+        assert_eq!(status.expect("an answer"), committed_at(10));
+        assert_eq!(reads, 1);
+    }
+
+    #[tokio::test]
+    async fn should_answer_pending_when_the_mempool_holds_it() {
+        let (status, reads) = run_sequence(vec![Ok(None)], Ok(true)).await;
+        assert_eq!(
+            status.expect("an answer"),
+            TransitionStatus::Pending(Pending {})
+        );
+        assert_eq!(reads, 1);
+    }
+
+    #[tokio::test]
+    async fn should_find_a_transition_that_reached_a_block_between_the_reads() {
+        let (status, reads) =
+            run_sequence(vec![Ok(None), Ok(Some(committed_at(11)))], Ok(false)).await;
+        assert_eq!(status.expect("an answer"), committed_at(11));
+        assert_eq!(reads, 2);
+    }
+
+    #[tokio::test]
+    async fn should_answer_unknown_when_neither_index_nor_mempool_has_it() {
+        let (status, reads) = run_sequence(vec![Ok(None), Ok(None)], Ok(false)).await;
+        assert_eq!(
+            status.expect("an answer"),
+            TransitionStatus::Unknown(Unknown {})
+        );
+        assert_eq!(reads, 2);
+    }
+
+    #[tokio::test]
+    async fn should_fail_rather_than_answer_unknown_when_a_lookup_fails() {
+        let (status, _) = run_sequence(
+            vec![Ok(None)],
+            Err(DapiError::Unavailable("tenderdash down".to_string())),
+        )
+        .await;
+        assert!(matches!(status, Err(DapiError::Unavailable(_))));
+
+        let (status, _) = run_sequence(
+            vec![Err(DapiError::Unavailable("tenderdash down".to_string()))],
+            Ok(false),
+        )
+        .await;
+        assert!(matches!(status, Err(DapiError::Unavailable(_))));
+    }
 
     #[test]
     fn should_report_a_transaction_with_code_zero_as_committed_without_an_error() {
