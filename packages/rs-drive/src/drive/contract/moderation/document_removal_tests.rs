@@ -1320,7 +1320,8 @@ fn should_price_a_forfeiting_deletion_as_one_batch_when_it_rewrites_no_record() 
     let contract = contract_with(true, false, &[POST]);
     // A moderator's deletion with a fresh record, with or without the forfeiture: nothing but
     // the document frees bytes, so the forfeiting batch is applied as one, as the other is,
-    // and costs the same, estimated and applied; only the refund differs.
+    // and costs the same, estimated and applied, apart from the refund and the read of the
+    // storing epoch's record that pricing the refund takes.
     let fees = |forfeiting: bool| {
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         insert(&drive, &contract);
@@ -1359,7 +1360,30 @@ fn should_price_a_forfeiting_deletion_as_one_batch_when_it_rewrites_no_record() 
         estimated.processing_fee
     );
     assert_eq!(estimated_forfeiting.storage_fee, estimated.storage_fee);
-    assert_eq!(forfeiting.processing_fee, refunding.processing_fee);
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let mut record_read = vec![];
+    drive
+        .get_epoch_protocol_version_operations(
+            &Epoch::new(0).expect("epoch"),
+            None,
+            &mut record_read,
+            platform_version,
+        )
+        .expect("expected the storing epoch's record");
+    let record_read_fee = drive
+        .calculate_fee(
+            None,
+            Some(record_read),
+            &Epoch::new(3).expect("epoch"),
+            platform_version,
+        )
+        .expect("expected to price the read")
+        .processing_fee;
+    assert!(record_read_fee > 0);
+    assert_eq!(
+        forfeiting.processing_fee + record_read_fee,
+        refunding.processing_fee
+    );
     assert_eq!(forfeiting.storage_fee, refunding.storage_fee);
     assert!(forfeiting.fee_refunds.0.is_empty());
     assert!(refunding.fee_refunds.get(author.as_bytes()).is_some());
