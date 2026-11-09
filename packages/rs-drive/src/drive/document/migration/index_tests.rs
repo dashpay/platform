@@ -1,12 +1,16 @@
 use super::*;
 use crate::config::DriveConfig;
+use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
 use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::query::document_history_drive_query::{
     DocumentHistoryDriveQuery, DocumentHistoryFilter,
 };
 use crate::query::{resolve_integer_range_bucket_clause, DriveDocumentQuery};
+use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use crate::util::batch::GroveDbOpBatch;
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
 use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::data_contract::DataContractFactory;
 use dpp::document::document_factory::DocumentFactory;
 use dpp::document::DocumentV0Setters;
@@ -27,6 +31,18 @@ fn read_and_prove_index_matrix(countable: bool) {
         let directory = tempfile::TempDir::new().unwrap();
         let (drive, _) = Drive::open(directory.path(), None).unwrap();
         drive.create_initial_state_structure(None, old).unwrap();
+        // Refund pricing reads the protocol versions of the epochs in the storage flags.
+        let mut epoch_versions = GroveDbOpBatch::new();
+        for index in [2, 3] {
+            epoch_versions.push(
+                Epoch::new(index)
+                    .unwrap()
+                    .update_protocol_version_operation(old.protocol_version),
+            );
+        }
+        drive
+            .grove_apply_batch(epoch_versions, false, None, &old.drive)
+            .unwrap();
         let schemas = platform_value!({
             "tip": {
                 "type":"object", "documentsKeepHistory":true, "documentsMutable":true, "canBeDeleted":false,
