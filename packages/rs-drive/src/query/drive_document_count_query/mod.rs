@@ -7,6 +7,9 @@
 //! - [`path_query`] — the load-bearing prover/verifier-agreement
 //!   path-query builders (`aggregate_count_path_query`,
 //!   `distinct_count_path_query`, `range_clause_to_query_item`).
+//! - [`proof_plan`] — [`CountProofPlan`]: what a proved count reads and
+//!   the limit its path query carries, decided from the request alone by
+//!   the server's dispatcher and the SDK's verifier alike.
 //! - [`execute_point_lookup`] — Equal/In point-lookup execution
 //!   (`execute_no_proof`, `execute_with_proof`).
 //! - [`execute_range_count`] — range-mode execution + `RangeCountOptions`.
@@ -39,6 +42,10 @@ pub mod mode_detection;
 // match.
 pub mod index_picker;
 pub mod path_query;
+// The request-only plan of a proved count, shared by the server's dispatcher
+// and the SDK's verifier.
+pub mod proof_plan;
+pub use proof_plan::CountProofPlan;
 
 // Server-side execution paths.
 #[cfg(feature = "server")]

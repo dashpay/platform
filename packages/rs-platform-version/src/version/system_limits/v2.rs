@@ -19,6 +19,7 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     private_document_store_target_chunk_bytes: None,
     private_document_store_min_chunk_power: None,
     private_document_store_max_chunk_power: None,
+    max_private_document_entries_per_transition: None,
     max_references_per_document: 256,
     max_reference_operands: 4,
     max_reference_expression_depth: 4,

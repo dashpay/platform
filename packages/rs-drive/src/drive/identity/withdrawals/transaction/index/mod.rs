@@ -46,7 +46,6 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("to apply drive ops");
 

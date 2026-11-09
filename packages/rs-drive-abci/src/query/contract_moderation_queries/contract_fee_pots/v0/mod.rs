@@ -142,7 +142,6 @@ mod tests {
                 &BlockInfo::default(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to write the fee pots");
     }

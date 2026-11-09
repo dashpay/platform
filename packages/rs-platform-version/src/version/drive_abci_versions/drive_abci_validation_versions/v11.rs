@@ -23,9 +23,11 @@ use super::{
 /// - `create_domain_data_trigger` 2, which keeps only the parent domain checks of a DPNS domain
 ///   create: the DPNS contract v3 (`SYSTEM_DATA_CONTRACT_VERSIONS_V4`) checks the normalized
 ///   names, the preorder and the identity record with schema keywords.
-/// - the data trigger `bindings` 3, which refuse a document transition's replace or delete of a
-///   token market contract order (`ask` and `bid`): only the token marketplace transitions write
-///   them.
+/// - the data trigger `bindings` 3: v2 without the DashPay bindings, the contact request create
+///   and the profile create and replace triggers, as the DashPay contract v3
+///   (`SYSTEM_DATA_CONTRACT_VERSIONS_V4`) declares their checks as schema keywords; and with a
+///   refusal of a document transition's replace or delete of a token market contract order
+///   (`ask` and `bid`), as only the token marketplace transitions write them.
 /// - the batch `advanced_structure` 2: v1, then the structure checks of token actions protocol
 ///   v15 introduces, which read only the contract the action carries and so run in check_tx too.
 ///   A `TokenConfigUpdate` can make a token tradeable only if it is transferable.
@@ -52,6 +54,10 @@ use super::{
 ///   (`query_documents_with_flags`) and keeps that read in the `ConsumedDocument`, so the create
 ///   conversion 1 deletes the commitment from it without reading it again. Any other lookup reads
 ///   as v0's does.
+///
+/// - the `PrivateDocumentCreateFromShieldedPool` (type 29) `basic_structure`, `Some(0)` rather
+///   than `None`: the transition, new at protocol version 15, has its entries, value balance,
+///   proof and anchor checked.
 ///
 /// v10 remains unchanged for `PROTOCOL_VERSION_14` chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
@@ -88,7 +94,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                 document_create_transition_structure_validation: 2, // a decision proposal states its fund, a rule within the limits and an end date one to four weeks away
                 document_create_transition_state_validation: 3, // a non-contested create cannot take the values of a live contest its index values do not decide
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
-                    bindings: 3, // the token market contract's orders are written by the marketplace transitions only
+                    bindings: 3, // no DashPay bindings (DashPay v3 declares their checks); the token market contract's orders are written by the marketplace transitions only
                     triggers: DriveAbciValidationDataTriggerVersions {
                         create_domain_data_trigger: 2,
                         ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
@@ -102,6 +108,13 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                     .state_transitions
                     .batch_state_transition
             },
+            private_document_create_from_shielded_pool_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: Some(0), // a private document create (new in v15) has a basic structure
+                    ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
+                        .state_transitions
+                        .private_document_create_from_shielded_pool_state_transition
+                },
             ..DRIVE_ABCI_VALIDATION_VERSIONS_V10.state_transitions
         },
         ..DRIVE_ABCI_VALIDATION_VERSIONS_V10

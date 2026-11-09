@@ -226,7 +226,6 @@ fn insert_doc(drive: &Drive, contract: &DataContract, document_type_name: &str, 
             true,
             None,
             pv,
-            None,
         )
         .unwrap_or_else(|e| panic!("expected to insert {document_type_name} document: {e}"));
 }
@@ -589,7 +588,6 @@ fn updating_a_grade_reorders_the_avg_ranking() {
             StorageFlags::optional_default_as_cow(),
             None,
             pv,
-            None,
         )
         .expect("expected to update the review document");
 
@@ -637,7 +635,6 @@ fn draining_a_group_removes_it_from_the_avg_axis() {
             true,
             None,
             pv,
-            None,
         )
         .expect("expected to delete the second beta review");
 
@@ -659,7 +656,6 @@ fn draining_a_group_removes_it_from_the_avg_axis() {
             true,
             None,
             pv,
-            None,
         )
         .expect("expected to delete the first beta review");
 
@@ -1271,7 +1267,6 @@ fn estimated_and_actual_insert_fees(
                 apply,
                 None,
                 pv,
-                None,
             )
             .unwrap_or_else(|e| {
                 panic!("expected the {document_type_name} insert (apply={apply}) to succeed: {e}")
@@ -1368,7 +1363,6 @@ fn estimated_and_actual_update_fees(
                 storage_flags.clone(),
                 None,
                 pv,
-                None,
             )
             .unwrap_or_else(|e| {
                 panic!("expected the {document_type_name} update (apply={apply}) to succeed: {e}")
@@ -1981,7 +1975,6 @@ fn ranked_index_ranks_correctly_next_to_a_compound_index_sharing_its_property() 
             StorageFlags::optional_default_as_cow(),
             None,
             platform_version(),
-            None,
         )
         .expect("expected to update the dish document across the compound index");
 
@@ -2003,7 +1996,6 @@ fn ranked_index_ranks_correctly_next_to_a_compound_index_sharing_its_property() 
                 true,
                 None,
                 platform_version(),
-                None,
             )
             .expect("expected to delete an alpha dish");
     }

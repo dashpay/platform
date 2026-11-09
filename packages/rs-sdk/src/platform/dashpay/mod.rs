@@ -2,11 +2,13 @@
 //!
 //! This module provides helper functions for creating and sending DashPay contact requests
 //! according to DIP-15 specification, for creating, updating and fetching DashPay profiles,
-//! and the DashPay invitation link codec and claim.
+//! the DashPay invitation link codec and claim, and private contact requests (protocol
+//! version 15).
 
 mod contact_request;
 mod contact_request_queries;
 mod invitation;
+mod private_contact_request;
 mod profile;
 
 pub use contact_request::{
@@ -19,6 +21,18 @@ pub use invitation::{
     encode_invitation_uri, parse_invitation_uri, voucher_credit_output, voucher_output_index,
     wif_network_matches, InvitationClaimStatus, InvitationError, InviterInfo, ParsedInvitation,
     MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS, MIN_INVITATION_DUFFS,
+};
+pub use private_contact_request::{
+    private_contact_request_identities, private_contact_request_outgoing_viewing_key,
+    private_contact_request_signature, private_contact_request_signing_data,
+    private_contact_request_signing_keys, private_contact_request_signing_security_levels,
+    private_contact_requests_from_scan, seal_private_contact_request, PrivateContactRequest,
+    PrivateContactRequestRejection, PrivateContactRequestScan, PrivateContactRequestSender,
+    ProvedIdentity, ReceivedPrivateContactRequest, RejectedPrivateContactRequest,
+    SentPrivateContactRequest, PRIVATE_CONTACT_REQUEST_ACCOUNT_LABEL_MAX_BYTES,
+    PRIVATE_CONTACT_REQUEST_AUTO_ACCEPT_PROOF_MAX_LEN,
+    PRIVATE_CONTACT_REQUEST_AUTO_ACCEPT_PROOF_MIN_LEN, PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+    PRIVATE_CONTACT_REQUEST_SHIELDED_ADDRESS_LEN, PRIVATE_CONTACT_REQUEST_SIGNING_KEY_TYPES,
 };
 pub use profile::ProfileFields;
 
