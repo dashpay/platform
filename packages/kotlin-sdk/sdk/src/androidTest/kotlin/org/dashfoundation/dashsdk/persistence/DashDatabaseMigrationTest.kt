@@ -725,10 +725,13 @@ class DashDatabaseMigrationTest {
             "INSERT INTO private_shielded_addresses (walletId, ownerId, contactId, address) " +
                 "VALUES (x'01', x'0A', x'0B', x'09')",
         )
-        db.query("SELECT position, keyFingerprint FROM private_contact_requests_positions").use { c ->
+        db.query(
+            "SELECT position, keyFingerprint, privatePaymentsUnresolved FROM private_contact_requests_positions",
+        ).use { c ->
             assertTrue(c.moveToFirst())
             assertEquals("the u64 bit pattern survives", -1L, c.getLong(0))
             assertTrue(byteArrayOf(3).contentEquals(c.getBlob(1)))
+            assertEquals("the unresolved marker defaults to clear", 0, c.getInt(2))
         }
         db.query("SELECT address FROM private_shielded_addresses WHERE contactId = x'0B'").use { c ->
             assertTrue(c.moveToFirst())

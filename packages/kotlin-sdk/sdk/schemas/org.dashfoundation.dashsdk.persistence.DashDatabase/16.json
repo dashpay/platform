@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 16,
-    "identityHash": "cfad080e6fde9c3bc142ef0829b3af4b",
+    "identityHash": "df09e705e8b63a04af564a1257b4a2cd",
     "entities": [
       {
         "tableName": "wallets",
@@ -4195,7 +4195,7 @@
       },
       {
         "tableName": "private_contact_requests_positions",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`walletId` BLOB NOT NULL, `identityId` BLOB NOT NULL, `position` INTEGER NOT NULL, `keyFingerprint` BLOB NOT NULL, PRIMARY KEY(`walletId`, `identityId`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`walletId` BLOB NOT NULL, `identityId` BLOB NOT NULL, `position` INTEGER NOT NULL, `keyFingerprint` BLOB NOT NULL, `privatePaymentsUnresolved` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`walletId`, `identityId`))",
         "fields": [
           {
             "fieldPath": "walletId",
@@ -4220,6 +4220,13 @@
             "columnName": "keyFingerprint",
             "affinity": "BLOB",
             "notNull": true
+          },
+          {
+            "fieldPath": "privatePaymentsUnresolved",
+            "columnName": "privatePaymentsUnresolved",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
           }
         ],
         "primaryKey": {
@@ -4271,7 +4278,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'cfad080e6fde9c3bc142ef0829b3af4b')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'df09e705e8b63a04af564a1257b4a2cd')"
     ]
   }
 }

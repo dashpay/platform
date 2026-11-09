@@ -4627,6 +4627,11 @@ internal fun unpackPrivatePositions(
             position = java.nio.ByteBuffer.wrap(row, 32, 8)
                 .order(java.nio.ByteOrder.LITTLE_ENDIAN).long,
             keyFingerprint = row.copyOfRange(40, 72),
+            privatePaymentsUnresolved = when (row[72].toInt()) {
+                0 -> false
+                1 -> true
+                else -> throw IllegalArgumentException("the unresolved private payment marker must be 0 or 1")
+            },
         )
     }
 
@@ -4660,6 +4665,7 @@ internal fun packPrivatePositions(rows: List<PrivateContactRequestsPositionEntit
         .order(java.nio.ByteOrder.LITTLE_ENDIAN)
     for (row in rows) {
         buffer.put(row.identityId).putLong(row.position).put(row.keyFingerprint)
+            .put(if (row.privatePaymentsUnresolved) 1.toByte() else 0.toByte())
     }
     return buffer.array()
 }

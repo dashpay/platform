@@ -7,6 +7,7 @@ import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -45,10 +46,11 @@ class PrivateContactScanStatePersistenceTest {
         db.close()
     }
 
-    private fun position(identityId: ByteArray, position: Long): ByteArray =
+    private fun position(identityId: ByteArray, position: Long, unresolved: Boolean = false): ByteArray =
         java.nio.ByteBuffer.allocate(NativePersistenceBridge.PRIVATE_POSITION_ENTRY_SIZE)
             .order(java.nio.ByteOrder.LITTLE_ENDIAN)
             .put(identityId).putLong(position).put(fingerprint)
+            .put(if (unresolved) 1.toByte() else 0.toByte())
             .array()
 
     private fun address(ownerId: ByteArray, contactId: ByteArray, fill: Int): ByteArray =
@@ -97,6 +99,18 @@ class PrivateContactScanStatePersistenceTest {
         // A rolled-back round leaves the stored state as it was.
         round(positions = position(owner, 40), success = false)
         assertEquals(listOf(owner.toHex() to 0L), loaded().first)
+
+        // The unresolved private payment marker is stored with the position,
+        // handed back as it came, and cleared by a later round.
+        round(positions = position(owner, 0, unresolved = true))
+        assertArrayEquals(position(owner, 0, unresolved = true), handler.onLoadPrivateContactScanState(walletId)[0])
+        assertTrue(unpackPrivatePositions(walletId, handler.onLoadPrivateContactScanState(walletId)[0]).single().privatePaymentsUnresolved)
+        round(positions = position(owner, 0))
+        assertFalse(unpackPrivatePositions(walletId, handler.onLoadPrivateContactScanState(walletId)[0]).single().privatePaymentsUnresolved)
+        // A marker byte other than 0 or 1 is not a row.
+        assertThrows(IllegalArgumentException::class.java) {
+            unpackPrivatePositions(walletId, position(owner, 0).also { it[72] = 2 })
+        }
 
         // A full-width position survives the signed column.
         round(positions = position(owner, -1L))

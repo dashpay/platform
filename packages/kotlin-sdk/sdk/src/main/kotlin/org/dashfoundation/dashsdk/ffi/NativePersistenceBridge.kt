@@ -111,12 +111,13 @@ abstract class NativePersistenceBridge {
         /**
          * Packed row widths of [onPersistPrivateContactScanState] and
          * [onLoadPrivateContactScanState]: a read position is the identity
-         * id (32), the position (u64, little-endian) and the key
-         * fingerprint (32); a shielded address the owner id (32), the
-         * contact id (32) and the address (43); an address removal the
-         * owner and contact ids; a cleared identity its id.
+         * id (32), the position (u64, little-endian), the key fingerprint
+         * (32) and the unresolved private payment marker (1: 0 or 1); a
+         * shielded address the owner id (32), the contact id (32) and the
+         * address (43); an address removal the owner and contact ids; a
+         * cleared identity its id.
          */
-        const val PRIVATE_POSITION_ENTRY_SIZE: Int = 32 + 8 + 32
+        const val PRIVATE_POSITION_ENTRY_SIZE: Int = 32 + 8 + 32 + 1
         const val PRIVATE_ADDRESS_ENTRY_SIZE: Int = 32 + 32 + 43
         const val PRIVATE_ADDRESS_REMOVAL_ENTRY_SIZE: Int = 32 + 32
         const val PRIVATE_CLEARED_IDENTITY_ENTRY_SIZE: Int = 32

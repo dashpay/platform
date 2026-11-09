@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.persistence.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 
 /**
@@ -24,6 +25,14 @@ data class PrivateContactRequestsPositionEntity(
     val position: Long,
     /** Fingerprint of the scanning keys [position] holds for; opaque here. */
     val keyFingerprint: ByteArray,
+    /**
+     * Whether a private contact request the identity paid for may still be
+     * unresolved; handed back as it came. Loaded set, native holds the
+     * identity's public contact requests until its private payments are
+     * restored from the shielded store.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val privatePaymentsUnresolved: Boolean = false,
 )
 
 /**

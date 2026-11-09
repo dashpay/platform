@@ -1117,10 +1117,11 @@ unsafe extern "C" fn tramp_persist_wallet_dashpay_backfill(
 
 /// Packed `byte[]` row widths of the private contact request scan state, the
 /// same flat packing the backfill cover set uses: a read position is
-/// `identityId ‖ position (u64 LE) ‖ keyFingerprint`, a shielded address
+/// `identityId ‖ position (u64 LE) ‖ keyFingerprint ‖ unresolved (0 or 1)`,
+/// a shielded address
 /// `ownerId ‖ contactId ‖ address`, an address removal `ownerId ‖
 /// contactId`, a cleared identity its id.
-pub(crate) const PRIVATE_POSITION_ENTRY_LEN: usize = 32 + 8 + 32;
+pub(crate) const PRIVATE_POSITION_ENTRY_LEN: usize = 32 + 8 + 32 + 1;
 pub(crate) const PRIVATE_ADDRESS_ENTRY_LEN: usize = 32 + 32 + 43;
 pub(crate) const PRIVATE_ADDRESS_REMOVAL_ENTRY_LEN: usize = 32 + 32;
 
@@ -1138,6 +1139,7 @@ fn pack_private_positions(rows: &[PrivateContactRequestsPositionFFI]) -> Vec<u8>
         packed.extend_from_slice(&row.identity_id);
         packed.extend_from_slice(&row.position.to_le_bytes());
         packed.extend_from_slice(&row.key_fingerprint);
+        packed.push(u8::from(row.private_payments_unresolved));
     }
     packed
 }
@@ -1164,7 +1166,12 @@ fn unpack_private_positions(packed: &[u8]) -> Option<Vec<PrivateContactRequestsP
             Some(PrivateContactRequestsPositionFFI {
                 identity_id: row[..32].try_into().ok()?,
                 position: u64::from_le_bytes(row[32..40].try_into().ok()?),
-                key_fingerprint: row[40..].try_into().ok()?,
+                key_fingerprint: row[40..72].try_into().ok()?,
+                private_payments_unresolved: match row[72] {
+                    0 => false,
+                    1 => true,
+                    _ => return None,
+                },
             })
         })
         .collect()
@@ -5454,11 +5461,13 @@ mod tests {
                 identity_id: [7; 32],
                 position: u64::MAX,
                 key_fingerprint: [3; 32],
+                private_payments_unresolved: true,
             },
             PrivateContactRequestsPositionFFI {
                 identity_id: [8; 32],
                 position: 12,
                 key_fingerprint: [4; 32],
+                private_payments_unresolved: false,
             },
         ];
         let addresses = [PrivateShieldedAddressFFI {
@@ -5480,6 +5489,12 @@ mod tests {
         );
         assert_eq!(unpack_private_positions(&[]).as_deref(), Some(&[][..]));
         assert!(unpack_private_positions(&[0; PRIVATE_POSITION_ENTRY_LEN + 1]).is_none());
+        let mut bad_marker = pack_private_positions(&positions[..1]);
+        bad_marker[72] = 2;
+        assert!(
+            unpack_private_positions(&bad_marker).is_none(),
+            "a marker byte other than 0 or 1 is not a row"
+        );
         assert!(unpack_private_addresses(&[0; PRIVATE_ADDRESS_ENTRY_LEN - 1]).is_none());
     }
 

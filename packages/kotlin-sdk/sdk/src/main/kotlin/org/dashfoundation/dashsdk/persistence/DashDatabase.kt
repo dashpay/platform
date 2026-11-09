@@ -740,6 +740,7 @@ abstract class DashDatabase : RoomDatabase() {
                     "CREATE TABLE IF NOT EXISTS `private_contact_requests_positions` (" +
                         "`walletId` BLOB NOT NULL, `identityId` BLOB NOT NULL, " +
                         "`position` INTEGER NOT NULL, `keyFingerprint` BLOB NOT NULL, " +
+                        "`privatePaymentsUnresolved` INTEGER NOT NULL DEFAULT 0, " +
                         "PRIMARY KEY(`walletId`, `identityId`))",
                 )
                 db.execSQL(
