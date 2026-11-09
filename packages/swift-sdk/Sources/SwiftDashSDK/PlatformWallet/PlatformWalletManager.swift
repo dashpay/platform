@@ -127,10 +127,10 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
 /// [`PlatformWalletManager/shutdown()`] so the host can log it (the SDK has
 /// no dependency on any app-side logger).
 ///
-/// Reports each native stop result, including an incomplete drain, and
-/// whether native destroy confirmed that every worker stopped
-/// ([`allWorkersStopped`]). These metrics record the result code and wall
-/// time Swift observes for each FFI call.
+/// Reports each native stop result, including an incomplete drain. This is
+/// not a worker-level shutdown report: native destroy can still succeed
+/// while logging a worker that missed its join budget. These metrics record
+/// the result code and wall time Swift observes for each FFI call.
 public struct PlatformWalletShutdownMetrics: Sendable {
     public struct Step: Sendable {
         /// FFI entry point, e.g. "spv_stop", "destroy".
@@ -154,18 +154,6 @@ public struct PlatformWalletShutdownMetrics: Sendable {
     /// Whether the blocking native teardown ran off the main thread. The
     /// whole point of `shutdown()` is that this is `true`.
     public let ranOffMainThread: Bool
-
-    /// Whether native destroy confirmed that every worker stopped: `true`
-    /// only when the "destroy" step succeeded, or when there was no native
-    /// manager to tear down. `false` means destroy did not confirm that
-    /// every worker stopped; one may still write this manager's persisted
-    /// state, so no other manager may open that state until the process
-    /// exits.
-    public var allWorkersStopped: Bool {
-        steps.isEmpty || steps.contains {
-            $0.name == "destroy" && $0.ffiCode == PlatformWalletResultCode.success.rawValue
-        }
-    }
 
     public init(steps: [Step], totalMilliseconds: Int, ranOffMainThread: Bool) {
         self.steps = steps
@@ -950,13 +938,11 @@ public class PlatformWalletManager: ObservableObject {
     /// is a non-throwing await), so the native teardown always runs to
     /// completion once started.
     ///
-    /// Never throws: the native handle is consumed even when a worker misses
-    /// its join budget, so there is nothing to retry. Per-step FFI codes
-    /// travel in the returned metrics for the host to log. Check
-    /// [`PlatformWalletShutdownMetrics/allWorkersStopped`] before another
-    /// manager opens the persisted state this one used: when it is `false`,
-    /// a straggling worker may still write that state until the process
-    /// exits.
+    /// Never throws by design: `platform_wallet_manager_destroy` returns
+    /// `Success` for a live handle even when a worker misses its join budget
+    /// (a Rust-side WARN, not an error), so a thrown error would carry no
+    /// actionable signal. Per-step FFI codes travel in the returned metrics
+    /// for the host to log.
     @discardableResult
     public func shutdown() async -> PlatformWalletShutdownMetrics {
         if let task = shutdownTask {
@@ -1031,7 +1017,6 @@ public class PlatformWalletManager: ObservableObject {
             "manager_shutdown_completed",
             category: .lifecycle,
             fields: [
-                "all_workers_stopped": .boolean(metrics.allWorkersStopped),
                 "duration_ms": .integer(Int64(metrics.totalMilliseconds)),
                 "off_main_thread": .boolean(metrics.ranOffMainThread),
                 "step_count": .integer(Int64(metrics.steps.count)),
@@ -1303,7 +1288,7 @@ public class PlatformWalletManager: ObservableObject {
                 &effectiveCapabilities
             ).check()
         } catch {
-            _ = PlatformWalletResult(platform_wallet_manager_destroy(handle))
+            _ = platform_wallet_manager_destroy(handle)
             SDKLogger.event(
                 "manager_configuration_failed",
                 category: .lifecycle,

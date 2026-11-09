@@ -5505,7 +5505,6 @@ dependencies = [
  "async-trait",
  "bs58",
  "cbindgen",
- "dash-async",
  "dash-context-provider",
  "dash-sdk",
  "dashcore",

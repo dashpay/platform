@@ -86,11 +86,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// in-flight sync pass was still running when a Clear / reset /
     /// sync-stop needed it provably drained. The operation failed closed —
     /// no state was wiped — and the caller should retry once sync is idle.
+    /// (Not returned by `destroy`: Rust owns the callback contexts, so a
+    /// straggling worker is memory-safe and merely logged there.)
     /// Also returned by SPV start, stop and storage clear while an SPV
     /// teardown is still running: stop SPV again.
-    /// Also returned by `destroy` when its shutdown report is not clean.
-    /// Destroy removes the handle anyway, so that one is not retried; see
-    /// `PlatformWalletShutdownMetrics.allWorkersStopped`.
     case errorShutdownIncomplete = 27
     /// Asset-lock coin selection came up short over the *permitted* funding
     /// set (dashpay/platform#4073). Nothing was built or broadcast and no

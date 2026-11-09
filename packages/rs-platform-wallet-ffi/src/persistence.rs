@@ -1235,8 +1235,8 @@ pub struct PersistenceCallbacks {
     ///
     /// **Required whenever `context` is non-null** —
     /// `platform_wallet_manager_create` rejects a context-carrying vtable
-    /// without a destructor, because `destroy` removes the handle without
-    /// proving every worker joined and only ownership keeps a straggler's
+    /// without a destructor, because `destroy` returns without proving
+    /// every worker joined and only ownership keeps a straggler's
     /// callbacks memory-safe. A context needing no cleanup takes a no-op
     /// `release_fn`; `None` is valid only alongside a null `context`.
     pub release_fn: Option<unsafe extern "C" fn(context: *mut c_void)>,

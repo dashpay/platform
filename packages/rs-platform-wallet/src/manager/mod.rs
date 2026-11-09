@@ -1175,9 +1175,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// [`WalletWorker::EventAdapter`], so no callback-capable background
     /// work is excluded from the verdict. Inspect
     /// [`ShutdownReport::all_clean`] before freeing the host callback
-    /// context. A non-clean status flags a still-live worker or orphan,
-    /// which may still write this manager's persisted state: no other
-    /// manager may open that state before the process exits.
+    /// context. A non-clean status flags a still-live worker or orphan.
     ///
     /// [`WorkerStatus`]: dash_async::WorkerStatus
     pub async fn shutdown(&self) -> ShutdownReport<WalletWorker> {
