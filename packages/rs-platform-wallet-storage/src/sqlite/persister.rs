@@ -431,7 +431,9 @@ impl SqlitePersister {
         &self,
         operation: &'static str,
     ) -> Result<(), WalletStorageError> {
-        if self.config.load_policy == LoadPolicy::Recovery {
+        // One predicate for enforcement and for the capability the manager
+        // reads before its own housekeeping writes.
+        if self.refuses_writes() {
             return Err(WalletStorageError::ReadOnlyRecoveryMode { operation });
         }
         Ok(())
