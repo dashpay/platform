@@ -17,6 +17,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
+use crate::error::StaleNodeError;
 use crate::platform::private_document_entries::{
     PrivateDocumentEntries, PrivateDocumentEntriesQuery, PrivateDocumentEntry,
 };
@@ -36,6 +37,8 @@ use zeroize::{Zeroize, Zeroizing};
 struct ScanRecipient {
     identity_id: Identifier,
     key_ids: Vec<KeyID>,
+    /// The public key of each of `keys`, by the same index as `key_ids`.
+    public_keys: Vec<PublicKey>,
     keys: PrivateDocumentRecipientKeys,
 }
 
@@ -73,8 +76,14 @@ pub struct ReceivedPrivateDocumentEntry {
     pub block_time_ms: u64,
     /// The identity it is to.
     pub recipient_identity_id: Identifier,
-    /// The key of that identity it is encrypted to.
+    /// The key of that identity it is encrypted to: the first of [`Self::recipient_key_ids`].
     pub recipient_key_id: KeyID,
+    /// Every key id the wallet's keys were given under for that identity whose key is the point
+    /// the entry is encrypted to, in the order they were given. One point may be held under
+    /// several ids, such as a compressed and an uncompressed encoding of it, or two
+    /// registrations of the identity: a reader takes the first one its key policy accepts at
+    /// the entry's time, rather than refusing the entry for an ineligible alias.
+    pub recipient_key_ids: Vec<KeyID>,
     /// The opened entry. Its sender is what it claims, until
     /// [`PrivateDocumentScanKeys::verify_sender`] checks it.
     pub entry: OpenedPrivateDocumentEntry,
@@ -162,6 +171,7 @@ impl PrivateDocumentScanKeys {
         self.recipients.push(ScanRecipient {
             identity_id,
             key_ids: keys.iter().map(|(key_id, _)| *key_id).collect(),
+            public_keys: secret_keys.iter().map(PublicKey::from_secret_key).collect(),
             keys: PrivateDocumentRecipientKeys::new(&secret_keys),
         });
         for secret_key in &mut secret_keys {
@@ -324,16 +334,37 @@ impl PrivateDocumentScanKeys {
             }
         }
         let received = opened_for.and_then(|(recipient, opened)| {
-            let recipient_key_id = opened
+            let opening_key_id = opened
                 .recipient_key_index()
                 .and_then(|index| recipient.key_ids.get(index))
                 .copied()?;
+            // Every id the point the entry is encrypted to was given under for the identity,
+            // across its registrations: the reader picks one its key policy accepts.
+            let point = opened.recipient_public_key();
+            let mut recipient_key_ids = Vec::new();
+            for registration in self
+                .recipients
+                .iter()
+                .filter(|registration| registration.identity_id == recipient.identity_id)
+            {
+                for (key_id, public_key) in
+                    registration.key_ids.iter().zip(&registration.public_keys)
+                {
+                    if public_key == point && !recipient_key_ids.contains(key_id) {
+                        recipient_key_ids.push(*key_id);
+                    }
+                }
+            }
+            if recipient_key_ids.is_empty() {
+                recipient_key_ids.push(opening_key_id);
+            }
             Some(ReceivedPrivateDocumentEntry {
                 position: entry.position,
                 block_height: entry.block_height,
                 block_time_ms: entry.block_time_ms,
                 recipient_identity_id: recipient.identity_id,
-                recipient_key_id,
+                recipient_key_id: recipient_key_ids[0],
+                recipient_key_ids,
                 entry: opened,
             })
         });
@@ -455,7 +486,13 @@ where
                         total,
                         aligned,
                     } => {
-                        let entries = match fetch(start).await {
+                        // Past the first page, a page from a snapshot that ends at or before
+                        // `start` is fetched again (`fetch_ahead_of`).
+                        let fetched = match total {
+                            None => fetch(start).await,
+                            Some(_) => fetch_ahead_of(&fetch, start).await,
+                        };
+                        let entries = match fetched {
                             Ok(entries) => entries,
                             Err(error) => return Some((Err(error), PageWalk::Done)),
                         };
@@ -467,6 +504,12 @@ where
                         // partway through a chunk: it sets no chunk size, and the next page
                         // is read from where it stopped.
                         let ended_its_snapshot = end >= entries.total_count;
+                        // The chunk size a proof bound, from the store element: the page
+                        // geometry, rather than learning it from page lengths.
+                        let proved_chunk_size = entries
+                            .chunk_power
+                            .and_then(|power| 1u64.checked_shl(u32::from(power)))
+                            .filter(|chunk_size| *chunk_size > 0);
                         let page = PrivateDocumentPage {
                             start_position: start,
                             entries,
@@ -483,9 +526,26 @@ where
                                 PageWalk::Done,
                             ));
                         }
-                        // A page from a chunk boundary that stops short of the end of the store
-                        // it was read from is one whole chunk, a power of two, and so is every
-                        // page after it.
+                        // A page that stops short of the end of the store it was read from ends at
+                        // a chunk boundary: with the chunk size its proof binds, every page after
+                        // it is a whole chunk from there.
+                        if let Some(chunk_size) = proved_chunk_size
+                            .filter(|chunk_size| !ended_its_snapshot && end % chunk_size == 0)
+                        {
+                            return Some((
+                                Ok(page),
+                                PageWalk::Concurrent(Box::pin(whole_chunk_pages(
+                                    fetch,
+                                    end,
+                                    chunk_size,
+                                    total,
+                                    max_concurrent,
+                                ))),
+                            ));
+                        }
+                        // Without it, as a page read without a proof is: a page from a chunk
+                        // boundary that stops short of the end of the store it was read from is
+                        // one whole chunk, a power of two, and so is every page after it.
                         let next = if aligned
                             && !ended_its_snapshot
                             && len.is_power_of_two()
@@ -513,6 +573,41 @@ where
     )
 }
 
+/// How many more times a page whose snapshot of the store ends at or before its start is
+/// fetched before the walk gives up on it ([`fetch_ahead_of`]).
+const BEHIND_PAGE_REFETCHES: usize = 2;
+
+/// The page `fetch` reads from `start`, a position an earlier page showed the store holds,
+/// fetched again while it comes from a snapshot that ends at or before `start`: a node behind,
+/// within the SDK's tolerance, proves an older store, which says nothing about the entries
+/// from `start`. Still behind after [`BEHIND_PAGE_REFETCHES`] more fetches, it fails with the
+/// retryable [`StaleNodeError::PrivateDocumentStoreBehind`]. An empty page from a snapshot
+/// that holds `start` is returned as it is, for the walk to refuse.
+async fn fetch_ahead_of<F>(fetch: &F, start: u64) -> Result<PrivateDocumentEntries, Error>
+where
+    F: Fn(u64) -> PageFuture,
+{
+    let behind = |entries: &PrivateDocumentEntries| {
+        entries.entries.is_empty() && entries.total_count <= start
+    };
+    let mut entries = fetch(start).await?;
+    for _ in 0..BEHIND_PAGE_REFETCHES {
+        if !behind(&entries) {
+            return Ok(entries);
+        }
+        entries = fetch(start).await?;
+    }
+    if behind(&entries) {
+        return Err(Error::StaleNode(
+            StaleNodeError::PrivateDocumentStoreBehind {
+                position: start,
+                total_count: entries.total_count,
+            },
+        ));
+    }
+    Ok(entries)
+}
+
 /// The pages of `chunk_size` entries from `first`, a chunk boundary, to `total`, fetched up to
 /// `max_concurrent` at once and yielded in store order. A page that ends at the end of an older
 /// snapshot of the store, partway through its chunk, is completed with the rest of the chunk
@@ -536,7 +631,7 @@ where
         .map(move |start| {
             let fetch = fetch.clone();
             async move {
-                let mut entries = fetch(start).await?;
+                let mut entries = fetch_ahead_of(&fetch, start).await?;
                 // A page read from an older snapshot than the first page's (a node behind,
                 // within the SDK's tolerance) may end at that snapshot's end, partway through
                 // its chunk: the rest of the chunk is read from where it stopped, into the same
@@ -551,7 +646,15 @@ where
                              of {chunk_size} the store's earlier pages set"
                         ))
                     };
-                    if len > chunk_size || first_position.is_some_and(|p| p != start) {
+                    // A page whose proof binds another chunk size than the walk's is not of
+                    // the store the walk reads.
+                    let other_chunks = entries.chunk_power.is_some_and(|power| {
+                        1u64.checked_shl(u32::from(power)) != Some(chunk_size)
+                    });
+                    if len > chunk_size
+                        || other_chunks
+                        || first_position.is_some_and(|p| p != start)
+                    {
                         return Err(refused());
                     }
                     if len == chunk_size || end >= total {
@@ -562,7 +665,7 @@ where
                     if end < entries.total_count {
                         return Err(refused());
                     }
-                    let rest = fetch(end).await?;
+                    let rest = fetch_ahead_of(&fetch, end).await?;
                     if rest.entries.first().map(|entry| entry.position) != Some(end) {
                         return Err(refused());
                     }
@@ -586,9 +689,12 @@ impl Sdk {
     /// appended while the pages are read are left for the next read, unless the last page's
     /// chunk holds them.
     ///
-    /// A page reads to the end of the chunk holding its start, which the client does not
-    /// learn from the node: so the first page, and the next one from the chunk boundary it
-    /// ends at, are read one at a time. That second page, short of the store's end, is a whole
+    /// A page reads to the end of the chunk holding its start. A proved page carries the
+    /// store's chunk size, from the store element its proof binds
+    /// ([`PrivateDocumentEntries::chunk_power`]): every page after the first is then fetched at
+    /// once from the first's end. A page without it, as one read without a proof is, leaves
+    /// the walk to learn it: the first page, and the next one from the chunk boundary it ends
+    /// at, are read one at a time. That second page, short of the store's end, is a whole
     /// chunk, which sets the size of every page after it; those are then fetched at once. A
     /// page that ends at the end of the store it was read from, an older snapshot than the
     /// first page's, sets no size: the pages after it are read one at a time until one does. A
@@ -746,6 +852,7 @@ mod tests {
 
     fn page(start: u64, entries: Vec<Vec<u8>>, total_count: u64) -> PrivateDocumentEntries {
         PrivateDocumentEntries {
+            chunk_power: None,
             entries: entries
                 .into_iter()
                 .zip(start..)
@@ -992,6 +1099,7 @@ mod tests {
             (start - start % chunk_size + chunk_size).min(total)
         };
         PrivateDocumentEntries {
+            chunk_power: None,
             entries: (start..end)
                 .map(|position| PrivateDocumentEntry {
                     position,
@@ -1328,6 +1436,190 @@ mod tests {
             positions.extend(page.entries.entries.iter().map(|entry| entry.position));
         }
         assert_eq!(positions, (0..30).collect::<Vec<_>>());
+    }
+
+    /// A fetch of Drive's pages of a store of 30 entries in chunks of 4 where the fetch from
+    /// `behind` is answered, its first `times` times, by a node whose store held `behind`
+    /// entries: no entry from there.
+    fn behind_at(
+        behind: u64,
+        times: usize,
+    ) -> impl Fn(u64) -> PageFuture + Clone + Send + Sync + 'static {
+        let left = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(times));
+        move |start| {
+            let left = std::sync::Arc::clone(&left);
+            Box::pin(async move {
+                use std::sync::atomic::Ordering::SeqCst;
+                if start == behind
+                    && left
+                        .fetch_update(SeqCst, SeqCst, |left| left.checked_sub(1))
+                        .is_ok()
+                {
+                    return Ok(drive_page(4, behind, start));
+                }
+                Ok(drive_page(4, 30, start))
+            })
+        }
+    }
+
+    /// The positions of `pages`, in order, each read.
+    fn positions(pages: Vec<Result<PrivateDocumentPage, Error>>) -> Vec<u64> {
+        pages
+            .into_iter()
+            .flat_map(|page| {
+                page.expect("every page reads")
+                    .entries
+                    .entries
+                    .into_iter()
+                    .map(|entry| entry.position)
+            })
+            .collect()
+    }
+
+    /// An empty page from a node behind, whose store ended at the page's start, is fetched
+    /// again rather than refused: in the walk's first pages, read one at a time, and once
+    /// pages are fetched at once, as a page and as a chunk's continuation. Every entry comes
+    /// once, in order.
+    #[tokio::test]
+    async fn should_fetch_again_an_empty_page_from_a_node_behind() {
+        // The second page, read one at a time; a page fetched at once; the continuation of
+        // the chunk from 12, which a node behind ended at 14.
+        for behind in [4, 12] {
+            let pages = walk(
+                behind_at(behind, 1),
+                0,
+                MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
+            )
+            .await;
+            assert_eq!(
+                positions(pages),
+                (0..30).collect::<Vec<_>>(),
+                "behind at {behind}"
+            );
+        }
+        let continuation = {
+            let continued = behind_at(14, 1);
+            move |start: u64| -> PageFuture {
+                if start == 12 {
+                    return Box::pin(async move { Ok(drive_page(4, 14, start)) });
+                }
+                continued(start)
+            }
+        };
+        let pages = walk(
+            continuation,
+            0,
+            MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
+        )
+        .await;
+        assert_eq!(
+            positions(pages),
+            (0..30).collect::<Vec<_>>(),
+            "continuation"
+        );
+    }
+
+    /// A page from a node that stays behind, past the refetches, ends the walk with a
+    /// retryable stale-node error, after the pages before it, in both the walk's phases.
+    #[tokio::test]
+    async fn should_end_with_a_retryable_error_on_a_node_that_stays_behind() {
+        use rs_dapi_client::CanRetry;
+
+        for (behind, before) in [(4, vec![0]), (12, vec![0, 4, 8])] {
+            let pages = walk(
+                behind_at(behind, usize::MAX),
+                0,
+                MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
+            )
+            .await;
+            let starts: Vec<u64> = pages
+                .iter()
+                .take_while(|page| page.is_ok())
+                .flatten()
+                .map(|page| page.start_position)
+                .collect();
+            assert_eq!(starts, before, "behind at {behind}");
+            let error = pages
+                .last()
+                .and_then(|page| page.as_ref().err())
+                .expect("the walk ends with an error");
+            assert!(
+                matches!(
+                    error,
+                    Error::StaleNode(StaleNodeError::PrivateDocumentStoreBehind {
+                        position,
+                        total_count,
+                    }) if *position == behind && *total_count == behind
+                ),
+                "{error:?}"
+            );
+            assert!(error.can_retry(), "behind at {behind}");
+        }
+    }
+
+    /// `fetch`, its pages carrying the chunk power `power`, as proved pages do.
+    fn proved(
+        power: u8,
+        fetch: impl Fn(u64) -> PageFuture + Clone + Send + Sync + 'static,
+    ) -> impl Fn(u64) -> PageFuture + Clone + Send + Sync + 'static {
+        move |start| {
+            let page = fetch(start);
+            Box::pin(async move {
+                let mut page = page.await?;
+                page.chunk_power = Some(power);
+                Ok(page)
+            })
+        }
+    }
+
+    /// Proved pages carry the store's chunk size: every page after the first is fetched at
+    /// once from the first's end, where pages without it read the second one alone to learn
+    /// it, and the pages still come in order.
+    #[tokio::test]
+    async fn should_fetch_at_once_every_page_after_a_proved_first_one() {
+        let delay = std::time::Duration::from_millis(10);
+        let learning = InFlight::default();
+        let pages = walk(learning.fetch(4, 12, delay, None), 0, 4).await;
+        assert_eq!(positions(pages), (0..12).collect::<Vec<_>>());
+        assert_eq!(learning.most(), 1, "the second page alone, then the third");
+
+        let geometry = InFlight::default();
+        let pages = walk(proved(2, geometry.fetch(4, 12, delay, None)), 0, 4).await;
+        assert_eq!(positions(pages), (0..12).collect::<Vec<_>>());
+        assert_eq!(geometry.most(), 2, "the second and third pages at once");
+
+        // From inside a chunk: the first page ends at its chunk's boundary.
+        let geometry = InFlight::default();
+        let pages = walk(proved(2, geometry.fetch(4, 30, delay, None)), 6, 16).await;
+        assert_eq!(positions(pages), (6..30).collect::<Vec<_>>());
+        assert_eq!(geometry.most(), 6, "every page after the first at once");
+    }
+
+    /// A page fetched at once whose proof binds another chunk size than the first page's is
+    /// not of the store the walk reads: it ends the walk with an error.
+    #[tokio::test]
+    async fn should_refuse_a_page_proved_with_another_chunk_size() {
+        let fetch = proved(2, |start: u64| -> PageFuture {
+            Box::pin(async move { Ok(drive_page(4, 16, start)) })
+        });
+        let other = move |start: u64| -> PageFuture {
+            let page = fetch(start);
+            Box::pin(async move {
+                let mut page = page.await?;
+                if start == 8 {
+                    page.chunk_power = Some(3);
+                }
+                Ok(page)
+            })
+        };
+        let pages = walk(other, 0, 4).await;
+        assert!(pages[..2].iter().all(Result::is_ok));
+        let error = pages[2]
+            .as_ref()
+            .expect_err("another chunk size")
+            .to_string();
+        assert!(error.contains("not the chunk of 4"), "{error}");
+        assert_eq!(pages.len(), 3);
     }
 
     /// A page short of its chunk, before the store's end, is an error rather than a gap.
