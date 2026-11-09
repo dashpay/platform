@@ -170,7 +170,13 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_OPERATION_IDS: u64 =
 /// `on_load_private_contact_scan_state_fn` +
 /// `on_load_private_contact_scan_state_free_fn`, the wallet-list restore
 /// callbacks, `on_persist_contacts_fn` (a read position vouches for the
-/// contact requests read before it), and the host declaring the bit.
+/// contact requests read before it), and the host declaring the bit. The
+/// wallet keeps the state only together with
+/// [`PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ATOMIC_CHANGESETS`]
+/// (`PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART`), which
+/// needs the declaration and the changeset begin and end callbacks: an
+/// un-ignore stores the sender's removal and the read-position rewind it
+/// brings in one changeset.
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: u64 = 1 << 14;
 
 /// Version of [`PersistenceCallbacksExtension`]. The extension is deliberately
@@ -3642,11 +3648,13 @@ impl PlatformWalletPersistence for FFIPersister {
                 self.tracked_masternodes_callbacks
                     .load_private_contact_scan_state_free,
             ) {
-                // Read only for a host that attests the state: the manager
-                // drops any other host's copy at load.
+                // Read only for a host whose capabilities meet the wallet's
+                // rule for keeping the state (`PRIVATE_CONTACT_SCAN_STATE_RESTART`:
+                // the state with atomic changesets); the manager drops any
+                // other host's copy at load.
                 if self
                     .persistence_capabilities()
-                    .contains(PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE)
+                    .contains(PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART)
                 {
                     load_private_contact_scan_state(
                         load,
@@ -8218,11 +8226,21 @@ mod tests {
         extensions: PersistenceExtensionCallbacks,
         persists_contacts: bool,
     ) -> FFIPersister {
+        scan_state_persister_with(host, declared, extensions, persists_contacts, true)
+    }
+
+    fn scan_state_persister_with(
+        host: &ScanStateHost,
+        declared: PersistenceCapabilities,
+        extensions: PersistenceExtensionCallbacks,
+        persists_contacts: bool,
+        brackets_rounds: bool,
+    ) -> FFIPersister {
         FFIPersister::new_with_persistence_capabilities_and_extensions(
             PersistenceCallbacks {
                 context: (host as *const ScanStateHost).cast_mut().cast(),
-                on_changeset_begin_fn: Some(noop_begin),
-                on_changeset_end_fn: Some(noop_end),
+                on_changeset_begin_fn: brackets_rounds.then_some(noop_begin),
+                on_changeset_end_fn: brackets_rounds.then_some(noop_end),
                 on_load_wallet_list_fn: Some(load_one_identity),
                 on_load_wallet_list_free_fn: Some(free_one_identity),
                 on_persist_contacts_fn: persists_contacts.then_some(keep_scan_state_contacts),
@@ -8257,7 +8275,7 @@ mod tests {
         );
         assert!(persister
             .persistence_capabilities()
-            .contains(PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE));
+            .contains(PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART));
 
         let owner = Identifier::from([7; 32]);
         let mut contacts = ContactChangeSet::default();
@@ -8311,6 +8329,87 @@ mod tests {
         assert_eq!(*host.cleared.lock().unwrap(), vec![[8; 32]]);
     }
 
+    /// A contact request the host cannot stage fails the whole round: the
+    /// round carrying it and the read position read past it ends
+    /// unsuccessfully, so an atomic host keeps neither and the wallet's
+    /// ingest, which advances only once its round reached disk, leaves the
+    /// position where it was.
+    #[test]
+    fn should_fail_the_round_when_the_host_cannot_stage_a_contact_request() {
+        use platform_wallet::changeset::SentContactRequestKey;
+        use platform_wallet::wallet::identity::ContactRequest;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        static ENDED_SUCCESSFULLY: AtomicBool = AtomicBool::new(true);
+        unsafe extern "C" fn record_end(_: *mut c_void, _: *const u8, success: bool) -> i32 {
+            ENDED_SUCCESSFULLY.store(success, Ordering::SeqCst);
+            0
+        }
+        #[allow(clippy::too_many_arguments)]
+        unsafe extern "C" fn refuse_contacts(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const ContactRequestFFI,
+            _: usize,
+            _: *const ContactRequestRemovalFFI,
+            _: usize,
+            _: *const ContactRequestRemovalFFI,
+            _: usize,
+            _: *const ContactIgnoredSenderFFI,
+            _: usize,
+        ) -> i32 {
+            -1
+        }
+
+        let host = ScanStateHost::default();
+        let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks {
+                context: (&host as *const ScanStateHost).cast_mut().cast(),
+                on_changeset_begin_fn: Some(noop_begin),
+                on_changeset_end_fn: Some(record_end),
+                on_load_wallet_list_fn: Some(load_one_identity),
+                on_load_wallet_list_free_fn: Some(free_one_identity),
+                on_persist_contacts_fn: Some(refuse_contacts),
+                ..Default::default()
+            },
+            PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+            scan_state_trio(),
+        );
+        let owner = Identifier::from([7; 32]);
+        let sender = Identifier::from([5; 32]);
+        let mut contacts = ContactChangeSet::default();
+        contacts.sent_requests.insert(
+            SentContactRequestKey {
+                owner_id: owner,
+                recipient_id: sender,
+            },
+            platform_wallet::changeset::ContactRequestEntry {
+                request: ContactRequest::new(owner, sender, 0, 0, 0, vec![0u8; 96], 0, 0),
+            },
+        );
+        contacts.private_contact_requests_positions.insert(
+            owner,
+            PrivateContactRequestsPosition {
+                position: 12,
+                key_fingerprint: [3; 32],
+                private_payments_unresolved: false,
+            },
+        );
+        assert!(persister
+            .store(
+                [42; 32],
+                PlatformWalletChangeSet {
+                    contacts: Some(contacts),
+                    ..Default::default()
+                },
+            )
+            .is_err());
+        assert!(
+            !ENDED_SUCCESSFULLY.load(Ordering::SeqCst),
+            "the round ends unsuccessfully, so an atomic host keeps none of it"
+        );
+    }
+
     /// A load hands the stored position and address back to the identity
     /// they belong to, passes over rows of an identity it did not restore,
     /// returns the host's arrays, and fails on a host error or a count
@@ -8319,7 +8418,7 @@ mod tests {
     fn should_restore_the_private_contact_request_scan_state_onto_its_identity() {
         use platform_wallet::wallet::identity::ContactRequest;
 
-        let declared = PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE;
+        let declared = PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART;
         let host = ScanStateHost::default();
         host.positions.lock().unwrap().extend([
             PrivateContactRequestsPositionFFI {
@@ -8401,9 +8500,11 @@ mod tests {
     }
 
     /// A host that does not declare the capability, wires only part of the
-    /// trio, or keeps no contact requests, is not attested, has nothing read
-    /// at load, and still stores and loads everything else. A host without
-    /// the slots stores a round carrying scan state without error.
+    /// trio, keeps no contact requests, or has no atomic changesets (no
+    /// begin and end callbacks, or no declaration) does not meet the
+    /// wallet's rule for keeping the scan state, has nothing read at load,
+    /// and still stores and loads everything else. A host without the slots
+    /// stores a round carrying scan state without error.
     #[test]
     fn should_leave_hosts_without_the_scan_state_capability_unchanged() {
         let host = ScanStateHost::default();
@@ -8436,14 +8537,36 @@ mod tests {
         // host without the contacts callback never keeps.
         let without_contacts = scan_state_persister_with_contacts(
             &host,
-            PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE,
+            PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
             scan_state_trio(),
             false,
         );
-        for persister in [&undeclared, &half_wired, &unwired, &without_contacts] {
+        // The state is kept only with atomic changesets: a host declaring
+        // both, with the trio, but no changeset begin and end callbacks, and
+        // a host bracketing its rounds but not declaring them atomic.
+        let without_brackets = scan_state_persister_with(
+            &host,
+            PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+            scan_state_trio(),
+            true,
+            false,
+        );
+        let not_atomic = scan_state_persister(
+            &host,
+            PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE,
+            scan_state_trio(),
+        );
+        for persister in [
+            &undeclared,
+            &half_wired,
+            &unwired,
+            &without_contacts,
+            &without_brackets,
+            &not_atomic,
+        ] {
             assert!(!persister
                 .persistence_capabilities()
-                .contains(PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE));
+                .contains(PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART));
             let restored = persister.load().expect("the rest still restores");
             assert_eq!(
                 restored.wallets[&[42; 32]]
