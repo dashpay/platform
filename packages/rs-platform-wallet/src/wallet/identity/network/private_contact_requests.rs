@@ -4619,6 +4619,101 @@ mod tests {
         .await;
     }
 
+    /// A public request's host signing does not hold the wallet's lifecycle
+    /// gate: parked at its signature, the send leaves a removal free to take
+    /// the gate and complete. Its signature, returning after the removal,
+    /// takes the gate, finds the wallet gone and publishes nothing.
+    #[tokio::test]
+    async fn should_not_hold_a_removal_while_a_public_request_is_signed() {
+        use dash_sdk::query_types::IdentityContractNonceFetcher;
+        use std::sync::Arc as StdArc;
+        use tokio::sync::Notify;
+
+        #[derive(Debug)]
+        struct ParkedSigner {
+            inner: simple_signer::signer::SimpleSigner,
+            called: StdArc<Notify>,
+            release: StdArc<Notify>,
+        }
+        #[async_trait::async_trait]
+        impl Signer<IdentityPublicKey> for ParkedSigner {
+            async fn sign(
+                &self,
+                key: &IdentityPublicKey,
+                data: &[u8],
+            ) -> Result<BinaryData, ProtocolError> {
+                self.called.notify_one();
+                self.release.notified().await;
+                self.inner.sign(key, data).await
+            }
+            async fn sign_create_witness(
+                &self,
+                key: &IdentityPublicKey,
+                data: &[u8],
+            ) -> Result<AddressWitness, ProtocolError> {
+                self.inner.sign_create_witness(key, data).await
+            }
+            fn can_sign_with(&self, key: &IdentityPublicKey) -> bool {
+                self.inner.can_sign_with(key)
+            }
+        }
+
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let (manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let wallet_id = alice_wallet.wallet_id();
+        let mut sdk = (*alice_wallet.identity().sdk).clone();
+        sdk.mock()
+            .expect_fetch(
+                (
+                    alice.id(),
+                    dashpay_contract().expect("bundled DashPay").id(),
+                ),
+                Some(IdentityContractNonceFetcher(3)),
+            )
+            .await
+            .expect("the nonce read");
+        let called = StdArc::new(Notify::new());
+        let release = StdArc::new(Notify::new());
+        let send = {
+            let wallet = Arc::clone(&alice_wallet);
+            let signer = ParkedSigner {
+                inner: signer(ALICE_PHRASE, &alice),
+                called: StdArc::clone(&called),
+                release: StdArc::clone(&release),
+            };
+            let (alice_id, bob_id) = (alice.id(), bob.id());
+            tokio::spawn(async move {
+                let crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+                wallet
+                    .identity()
+                    .dashpay()
+                    .send_contact_request_with_external_signer(
+                        &alice_id,
+                        &bob_id,
+                        None,
+                        AutoAcceptProofSource::None,
+                        &signer,
+                        &crypto,
+                    )
+                    .await
+            })
+        };
+        tokio::time::timeout(Duration::from_secs(5), called.notified())
+            .await
+            .expect("the send reaches its signature");
+        tokio::time::timeout(Duration::from_secs(5), manager.remove_wallet(&wallet_id))
+            .await
+            .expect("a removal is not held behind the signing")
+            .expect("removed");
+        release.notify_one();
+        let sent = send.await.expect("send task");
+        assert!(
+            matches!(sent, Err(PlatformWalletError::WalletRemovedBeforeSend(_))),
+            "{sent:?}"
+        );
+    }
+
     /// A send dropped before it pays, here while its signer never answers,
     /// leaves no reservation behind: nothing was paid, and no sync could
     /// settle one. The recipient is free for the next send.
