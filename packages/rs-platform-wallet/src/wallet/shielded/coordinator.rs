@@ -1907,20 +1907,22 @@ impl NetworkShieldedCoordinator {
     ///    the set: a pruned root never re-enters it, so the transition cannot
     ///    execute above H (`shielded_anchor_retention_blocks` 1000, pruned
     ///    every `shielded_anchor_pruning_interval` 100 blocks);
-    /// 3. one of its input notes is still unspent after this pass's note scan,
-    ///    which covers H (`scan_covered_height`,
-    ///    `MultiSyncNotesResult::covered_height`): had it executed at or below
-    ///    H, the scan would have seen its nullifiers spent;
+    /// 3. this pass's note scan covers H (`scan_covered_height`,
+    ///    `MultiSyncNotesResult::covered_height`);
     /// 4. its entry is absent from DashPay's private contact request store,
     ///    read raw through its end with every page proved at or above H
     ///    ([`Self::private_contact_requests_held`]): an entry starts with its
-    ///    commitment, so none needs opening.
+    ///    commitment, so none needs opening. The transition appends its entry
+    ///    in the block that spends its inputs, so an entry absent at or above
+    ///    H, the transition unable to execute above H, shows it never
+    ///    executed. Whether its inputs are spent does not matter: a competing
+    ///    spend that consumed them does not keep its pair held.
     ///
     /// Anything short of that discharges nothing this pass, and the next pass
     /// retries: a scan or a store read below H, a read that fails, a record
     /// changed since. A relay refusal or a missing redrive record is never
-    /// taken as proof. Points 1 and 3 are checked again under the store write
-    /// guard that discharges the record.
+    /// taken as proof. Point 1 is checked again under the store write guard
+    /// that discharges the record.
     pub(crate) async fn discharge_expired_private_payments(
         &self,
         journal: &[(WalletId, PrivatePaymentRecord)],
@@ -1950,7 +1952,7 @@ impl NetworkShieldedCoordinator {
             let store = self.store.read().await;
             pruned
                 .into_iter()
-                .filter(|(wallet_id, record)| expirable(&*store, *wallet_id, record))
+                .filter(|(wallet_id, record)| unchanged(&*store, *wallet_id, record))
                 .cloned()
                 .collect()
         };
@@ -1978,7 +1980,7 @@ impl NetworkShieldedCoordinator {
         let persisters = self.persisters.read().await;
         let mut store = self.store.write().await;
         for (wallet_id, record) in candidates {
-            if held.contains(&record.commitment) || !expirable(&*store, wallet_id, &record) {
+            if held.contains(&record.commitment) || !unchanged(&*store, wallet_id, &record) {
                 continue;
             }
             match store.discharge_private_payment(wallet_id, &record.commitment) {
@@ -1986,8 +1988,8 @@ impl NetworkShieldedCoordinator {
                     tracing::info!(
                         wallet_id = %hex::encode(wallet_id),
                         commitment = %hex::encode(record.commitment),
-                        "a private payment's anchor was pruned with an input unspent and its \
-                         entry absent from the store: it can never execute, its pair is freed"
+                        "a private payment's anchor was pruned and its entry is absent from the \
+                         store: it never executed and never can, its pair is freed"
                     );
                     if let Some(persister) = persisters.get(&wallet_id) {
                         persister.note_discharged_private_entries([record.commitment]);
@@ -2491,27 +2493,15 @@ pub(crate) fn private_payment_journal_snapshot<S: ShieldedStore>(
 }
 
 /// Whether `wallet_id`'s journal still holds `record` exactly as a pass's
-/// snapshot read it, with one of its input notes unspent. A store read that
-/// fails says no.
-fn expirable<S: ShieldedStore>(
+/// snapshot read it. A store read that fails says no.
+fn unchanged<S: ShieldedStore>(
     store: &S,
     wallet_id: WalletId,
     record: &PrivatePaymentRecord,
 ) -> bool {
-    let unchanged = store
+    store
         .private_payment_journal(wallet_id)
-        .is_ok_and(|records| records.contains(record));
-    if !unchanged {
-        return false;
-    }
-    let Ok(notes) = store.get_all_notes(SubwalletId::new(wallet_id, record.account_index)) else {
-        return false;
-    };
-    record.nullifiers.iter().any(|nullifier| {
-        notes
-            .iter()
-            .any(|note| note.nullifier == *nullifier && !note.is_spent)
-    })
+        .is_ok_and(|records| records.contains(record))
 }
 
 #[cfg(test)]

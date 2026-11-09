@@ -6945,11 +6945,12 @@ mod tests {
     }
 
     /// A private payment that never executes is proven expired once its
-    /// anchor is pruned, one of its input notes still unspent and its entry
-    /// absent from the store: the coordinator discharges its journal record,
-    /// the pair is freed, a retry to it pays, and a reopened store restores
-    /// no hold. A still-recorded anchor, a spent input or an entry in the
-    /// store each keep the record and the hold.
+    /// anchor is pruned and its entry is absent from the store: the
+    /// coordinator discharges its journal record, the pair is freed, a retry
+    /// to it pays, and a reopened store restores no hold. So it is when a
+    /// competing spend consumed its input first: the absent entry shows it
+    /// never executed. A still-recorded anchor or an entry in the store each
+    /// keep the record and the hold.
     #[cfg(feature = "shielded")]
     #[tokio::test]
     async fn should_free_a_pair_once_its_private_payment_provably_expired() {
@@ -6989,7 +6990,7 @@ mod tests {
             };
             let journal = fixture.journal_snapshot().await;
             fixture.discharge(&journal, &recorded, Some(height)).await;
-            if case == Case::Expired {
+            if matches!(case, Case::Expired | Case::InputSpent) {
                 fixture.assert_discharged(&format!("{case:?}")).await;
             } else {
                 fixture.assert_kept(&format!("{case:?}")).await;
