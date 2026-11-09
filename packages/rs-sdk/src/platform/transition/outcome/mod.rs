@@ -1,5 +1,5 @@
-//! The proven outcome of a state transition: it executed, it can never execute, or it may still
-//! execute and until when.
+//! The proven outcome of a state transition: it can no longer execute, it never executed and
+//! never will, or it may still execute and until when.
 //!
 //! [`Sdk::state_transition_outcome`] reads the transition's inputs with proofs the SDK verifies:
 //! the shielded pools' anchors and nullifiers for a shielded spend, the nonces for a transition
@@ -27,13 +27,12 @@ use crate::platform::{Fetch, FetchMany};
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::address_funds::PlatformAddress;
-use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::identifier::Identifier;
 use dpp::identity::identity_nonce::{validate_identity_nonce_update, MergeIdentityNonceResult};
 use dpp::prelude::IdentityNonce;
-use dpp::state_transition::{StateTransition, StateTransitionStructureValidation};
+use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use drive_proof_verifier::types::{
     AddressInfo, IdentityContractNonceFetcher, IdentityNonceFetcher, MostRecentShieldedAnchor,
@@ -54,9 +53,9 @@ const NULLIFIER_REREADS: usize = 2;
 ///
 /// Free a reservation, unlock a held contact pair or retry a payment only on
 /// [`TransitionOutcome::CannotExecute`]: it is the one answer that proves the transition did not
-/// execute and never will. Treat [`TransitionOutcome::Executed`] and
-/// [`TransitionOutcome::ExecutedOrSuperseded`] as done, and never retry on either: the second
-/// may be this very transition. [`TransitionOutcome::StillPossible`] means keep waiting.
+/// execute and never will. Treat [`TransitionOutcome::ExecutedOrSuperseded`] as settled and never
+/// retry on it: it may be this very transition. [`TransitionOutcome::StillPossible`] means keep
+/// waiting.
 ///
 /// A node's own view
 /// ([`NodeTransitionStatus`](super::node_status::NodeTransitionStatus), from
@@ -65,22 +64,22 @@ const NULLIFIER_REREADS: usize = 2;
 ///
 /// # What is not here
 ///
-/// A transition that executed with a paid error is not told apart from one whose input another
-/// transition took: the node reports a committed error without a proof, and a consumed nonce does
-/// not say which transition consumed it. Both are reported as
-/// [`TransitionOutcome::ExecutedOrSuperseded`].
+/// No answer says this transition executed. The reads show which inputs are taken, not who took
+/// them: every note a shielded spend uses can be spent by other transitions (one replacing it,
+/// or several spending the notes separately), a nonce is taken by whichever transition carries
+/// it, and the node reports a committed error without a proof. All of these are reported as
+/// [`TransitionOutcome::ExecutedOrSuperseded`]; a wallet that knows it spent the notes or used
+/// the nonce nowhere else can read that answer as executed.
+///
+/// No answer says a transition is invalid either. One that fails today's structure checks may
+/// pass a later protocol version's, so it stays [`TransitionOutcome::StillPossible`] while its
+/// inputs are free; a shielded spend is still bounded by its anchor's deadline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransitionOutcome {
-    /// It executed: every nullifier of the shielded spend is spent.
-    ///
-    /// A pool-paid shielded spend has no paid failure path, so its nullifiers are recorded only
-    /// when it executes. Another spend of exactly the same notes proves the same, which is how
-    /// Platform's own proof of an executed shielded spend reads it too.
-    Executed,
     /// It can no longer execute, and the proofs do not show whether it did: every input it takes
-    /// is consumed, by this transition (executed, or failed with a paid error) or by another one
-    /// signed with the same nonce. A transition that takes nonces reports this once they are
-    /// used.
+    /// is consumed, by this transition (executed, or failed with a paid error) or by others.
+    /// For a shielded spend every nullifier is spent; for a transition that takes nonces every
+    /// nonce is used.
     ///
     /// Never retry or release anything on this answer: it may be this very transition.
     ExecutedOrSuperseded,
@@ -90,6 +89,11 @@ pub enum TransitionOutcome {
     StillPossible {
         /// The height of the latest read showing every input still free.
         checked_at_height: u64,
+        /// For a shielded spend whose anchors these reads found recorded: a height by which every
+        /// one of them was recorded. Pass it back as [`OutcomeEvidence::anchors_recorded_by`] on
+        /// a later call, so that an anchor missing then can be told pruned rather than not yet
+        /// reached by the answering node. `None` otherwise.
+        anchors_recorded_at: Option<u64>,
         /// The last height at which it can execute, under the anchor retention rules of the
         /// protocol version the reads were proven at, or `None` when nothing bounds it: a
         /// transition that takes nonces, or a shielded spend whose anchor is its pool's newest
@@ -118,44 +122,65 @@ impl TransitionOutcome {
 /// Why a transition can never execute.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CannotExecuteReason {
-    /// A shielded spend's anchor is gone from its pool's anchor set, and the spend's nullifiers
-    /// were unspent at or after the read that showed it gone.
+    /// A shielded spend's anchor is gone from its pool's anchor set, at a height at or above one
+    /// by which the caller's evidence ([`OutcomeEvidence::anchors_recorded_by`]) shows it was
+    /// recorded, and the spend's nullifiers were unspent at or after that read.
     ///
     /// Platform accepts a spend only while its anchor is kept
     /// (`shielded_anchor_retention_blocks`, pruned every `shielded_anchor_pruning_interval`
     /// blocks), and a pruned anchor never returns, so the spend could only have executed before
-    /// the anchor was pruned, which the unspent nullifiers rule out. This holds for an anchor
-    /// Platform recorded, as is every anchor a wallet takes from the commitment tree it synced;
-    /// an anchor of a tree state Platform has not reached yet is not recorded either, and could
-    /// still be.
+    /// the anchor was pruned, which the unspent nullifiers rule out. Without the evidence an
+    /// anchor missing from the set proves nothing: the answering node may simply not have
+    /// reached the block that records it.
     AnchorExpired,
     /// Another transition took one of its inputs while another input was still free: a nullifier
     /// spent while another was unspent, or one nonce used while another was free. A transition
     /// takes all of its inputs at once, so this one did not take that input, and cannot execute
     /// without it.
     InputUsed,
-    /// It fails the structure checks every node runs before reading state, at every protocol
-    /// version from the one the network runs (as proven by the reads) to the newest this SDK
-    /// knows, and its inputs show it never executed.
-    Invalid,
+}
+
+/// What the caller already knows, from proofs it verified, that the reads alone cannot show.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OutcomeEvidence {
+    /// A height by which every anchor a shielded spend uses was recorded: for a wallet, the
+    /// height of the synced commitment tree it took the anchor from (the anchor is that tree's
+    /// root, which Platform records at the end of that block at the latest), or the
+    /// `anchors_recorded_at` of an earlier [`TransitionOutcome::StillPossible`] for the same
+    /// transition.
+    ///
+    /// Without it a shielded spend is never reported [`CannotExecuteReason::AnchorExpired`].
+    pub anchors_recorded_by: Option<u64>,
+}
+
+impl OutcomeEvidence {
+    /// Evidence that every anchor the spend uses was recorded by `height`.
+    pub fn anchors_recorded_by(height: u64) -> Self {
+        Self {
+            anchors_recorded_by: Some(height),
+        }
+    }
 }
 
 impl Sdk {
-    /// The proven outcome of `transition`: whether it executed, can never execute, or may still
-    /// execute and until when. See [`TransitionOutcome`] for which answers may drive which
-    /// decisions.
+    /// The proven outcome of `transition`: whether it can no longer execute, never executed and
+    /// never will, or may still execute and until when. See [`TransitionOutcome`] for which
+    /// answers may drive which decisions.
     ///
     /// Takes the whole transition, not its hash: the answer comes from its inputs. A shielded
     /// spend is judged by its pools' anchor sets, read first, then its nullifiers, read after:
     /// an anchor set read after the nullifiers could miss a spend that executed just before its
-    /// anchor was pruned. A transition that takes nonces is judged by them. A transition funded
-    /// by an asset lock, and a masternode vote, are refused with [`Error::InvalidRequest`].
+    /// anchor was pruned. `evidence` says by which height its anchors were recorded, without
+    /// which a missing anchor proves nothing (see [`OutcomeEvidence`]). A transition that takes
+    /// nonces is judged by them. A transition funded by an asset lock, and a masternode vote,
+    /// are refused with [`Error::InvalidRequest`].
     ///
     /// Needs an SDK that verifies proofs. Ask only the node the transition was broadcast to for
     /// a shielded or private document transition (see the module documentation).
     pub async fn state_transition_outcome(
         &self,
         transition: &StateTransition,
+        evidence: OutcomeEvidence,
     ) -> Result<TransitionOutcome, Error> {
         if !self.prove() {
             return Err(Error::Config(
@@ -163,11 +188,13 @@ impl Sdk {
             ));
         }
         let reads = match TransitionInputs::of(transition)? {
-            TransitionInputs::Shielded(spends) => self.read_shielded_spend(&spends).await?,
+            TransitionInputs::Shielded(spends) => {
+                self.read_shielded_spend(&spends, evidence.anchors_recorded_by)
+                    .await?
+            }
             TransitionInputs::Nonces(nonces) => self.read_nonces(&nonces).await?,
         };
         Ok(match reads.verdict {
-            InputsVerdict::Spent => TransitionOutcome::Executed,
             InputsVerdict::ConsumedUnattributed => TransitionOutcome::ExecutedOrSuperseded,
             InputsVerdict::InputUsed => {
                 TransitionOutcome::CannotExecute(CannotExecuteReason::InputUsed)
@@ -175,16 +202,11 @@ impl Sdk {
             InputsVerdict::AnchorExpired => {
                 TransitionOutcome::CannotExecute(CannotExecuteReason::AnchorExpired)
             }
-            InputsVerdict::NotYet { checked_at } => {
-                if fails_structure_from(transition, reads.protocol_version) {
-                    TransitionOutcome::CannotExecute(CannotExecuteReason::Invalid)
-                } else {
-                    TransitionOutcome::StillPossible {
-                        checked_at_height: checked_at,
-                        until_height: reads.until_height,
-                    }
-                }
-            }
+            InputsVerdict::NotYet { checked_at } => TransitionOutcome::StillPossible {
+                checked_at_height: checked_at,
+                anchors_recorded_at: reads.anchors_recorded_at,
+                until_height: reads.until_height,
+            },
             InputsVerdict::Unordered => {
                 return Err(Error::InvalidProvedResponse(
                     "the nullifier reads could not be ordered after the anchor reads".to_string(),
@@ -195,12 +217,14 @@ impl Sdk {
 
     /// Read a shielded spend: every pool's anchor set first, then the nullifiers, then, while
     /// it may still execute, each pool's newest anchor for the deadline.
-    async fn read_shielded_spend(&self, spends: &[PoolSpend]) -> Result<Reads, Error> {
-        let mut protocol_version = 0;
+    async fn read_shielded_spend(
+        &self,
+        spends: &[PoolSpend],
+        anchors_recorded_by: Option<u64>,
+    ) -> Result<Reads, Error> {
         let mut anchors = Vec::with_capacity(spends.len());
         for spend in spends {
             let (set, metadata) = self.fetch_pool_anchors(spend.pool).await?;
-            protocol_version = protocol_version.max(metadata.protocol_version);
             anchors.push(AnchorRead {
                 recorded: set.contains(&spend.anchor),
                 height: metadata.height,
@@ -214,13 +238,12 @@ impl Sdk {
                 let (spent, metadata) = self
                     .fetch_pool_nullifiers(spend.pool, &spend.nullifiers)
                     .await?;
-                protocol_version = protocol_version.max(metadata.protocol_version);
                 nullifiers.extend(spent.into_iter().map(|consumed| InputRead {
                     consumed,
                     height: metadata.height,
                 }));
             }
-            match judge_shielded(&nullifiers, &anchors) {
+            match judge_shielded(&nullifiers, &anchors, anchors_recorded_by) {
                 InputsVerdict::Unordered if rereads < NULLIFIER_REREADS => rereads += 1,
                 InputsVerdict::Unordered => {
                     return Err(StaleNodeError::Height {
@@ -234,22 +257,29 @@ impl Sdk {
             }
         };
 
-        let until_height = if matches!(verdict, InputsVerdict::NotYet { .. }) {
-            let mut until_height: Option<u64> = None;
-            for (spend, anchor) in spends.iter().zip(&anchors) {
-                if let Some(deadline) = self.anchor_deadline(spend, anchor).await? {
-                    until_height = Some(until_height.map_or(deadline, |u| u.min(deadline)));
+        // A deadline, and evidence for a later call, only when every anchor was found recorded:
+        // a missing anchor not proven pruned may belong to a block the node has not reached.
+        let all_recorded = anchors.iter().all(|anchor| anchor.recorded);
+        let (until_height, anchors_recorded_at) =
+            if matches!(verdict, InputsVerdict::NotYet { .. }) && all_recorded {
+                let mut until_height: Option<u64> = None;
+                for (spend, anchor) in spends.iter().zip(&anchors) {
+                    if let Some(deadline) = self.anchor_deadline(spend, anchor).await? {
+                        until_height = Some(until_height.map_or(deadline, |u| u.min(deadline)));
+                    }
                 }
-            }
-            until_height
-        } else {
-            None
-        };
+                // Each anchor was recorded by the height of the read that found it, so all of
+                // them by the highest such height.
+                let recorded_at = anchors.iter().map(|anchor| anchor.height).max();
+                (until_height, recorded_at)
+            } else {
+                (None, None)
+            };
 
         Ok(Reads {
             verdict,
-            protocol_version,
             until_height,
+            anchors_recorded_at,
         })
     }
 
@@ -381,7 +411,6 @@ impl Sdk {
     /// Read every nonce a transition takes, each as its own proven read: the address nonces
     /// in one read, each identity and identity-contract nonce in one read of its own.
     async fn read_nonces(&self, nonces: &[NonceInput]) -> Result<Reads, Error> {
-        let mut protocol_version = 0;
         let mut reads = Vec::with_capacity(nonces.len());
 
         let addresses: BTreeSet<PlatformAddress> = nonces
@@ -396,7 +425,6 @@ impl Sdk {
         } else {
             let (infos, metadata) =
                 AddressInfo::fetch_many_with_metadata(self, addresses, None).await?;
-            protocol_version = protocol_version.max(metadata.protocol_version);
             Some((infos, metadata.height))
         };
 
@@ -433,7 +461,6 @@ impl Sdk {
                             let (stored, metadata) =
                                 IdentityNonceFetcher::fetch_with_metadata(self, identity_id, None)
                                     .await?;
-                            protocol_version = protocol_version.max(metadata.protocol_version);
                             let read = (stored.map(|stored| stored.0), metadata.height);
                             identity_nonces.insert(identity_id, read);
                             read
@@ -456,7 +483,6 @@ impl Sdk {
                             let (stored, metadata) =
                                 IdentityContractNonceFetcher::fetch_with_metadata(self, key, None)
                                     .await?;
-                            protocol_version = protocol_version.max(metadata.protocol_version);
                             let read = (stored.map(|stored| stored.0), metadata.height);
                             contract_nonces.insert(key, read);
                             read
@@ -473,19 +499,20 @@ impl Sdk {
 
         Ok(Reads {
             verdict: judge_nonces(&reads),
-            protocol_version,
             until_height: None,
+            anchors_recorded_at: None,
         })
     }
 }
 
-/// What the reads of one transition showed, and the protocol version they were proven at.
+/// What the reads of one transition showed.
 struct Reads {
     verdict: InputsVerdict,
-    /// The highest protocol version among the reads' proofs.
-    protocol_version: u32,
     /// The shielded spend's deadline, when it may still execute and one is proven.
     until_height: Option<u64>,
+    /// A height by which every anchor of the shielded spend was recorded, when the reads found
+    /// them all.
+    anchors_recorded_at: Option<u64>,
 }
 
 /// Whether an identity or identity-contract nonce can no longer be used: the network refuses it
@@ -515,42 +542,16 @@ fn identity_nonce_taken(
         })
 }
 
-/// Whether `transition` fails the structure checks every node runs before reading state, at
-/// every protocol version from `network_protocol_version` to the newest this SDK knows. A version
-/// this SDK does not know, and a type whose structure is only checked against state, prove
-/// nothing, so they answer `false`.
-fn fails_structure_from(transition: &StateTransition, network_protocol_version: u32) -> bool {
-    let latest = PlatformVersion::latest().protocol_version;
-    if network_protocol_version == 0 || network_protocol_version > latest {
-        return false;
-    }
-    (network_protocol_version..=latest).all(|protocol_version| {
-        let Ok(platform_version) = PlatformVersion::get(protocol_version) else {
-            return false;
-        };
-        let result = transition.validate_structure(platform_version);
-        !result.is_valid()
-            && result.errors.iter().all(|error| {
-                !matches!(
-                    error,
-                    ConsensusError::BasicError(BasicError::UnsupportedFeatureError(_))
-                )
-            })
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use dpp::identity::identity_nonce::MISSING_IDENTITY_REVISIONS_MAX_BYTES;
-    use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
-    use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
     use dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
     use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
     use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
     use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
 
-    /// A shielded transfer with no actions: every node refuses it before reading state.
+    /// A shielded transfer with no actions, so no nullifier to read.
     fn shielded_transfer_without_actions() -> StateTransition {
         StateTransition::ShieldedTransfer(ShieldedTransferTransition::V0(
             ShieldedTransferTransitionV0 {
@@ -610,34 +611,6 @@ mod tests {
         ));
         // Nonce 8 is not marked missing, so it was used.
         assert!(identity_nonce_taken(Some(stored), 8, Identifier::default()));
-    }
-
-    #[test]
-    fn should_only_call_a_transition_invalid_from_versions_this_sdk_knows() {
-        let transition = shielded_transfer_without_actions();
-        let latest = PlatformVersion::latest().protocol_version;
-        assert!(!fails_structure_from(&transition, latest + 1));
-        assert!(!fails_structure_from(&transition, 0));
-    }
-
-    #[test]
-    fn should_call_a_shielded_transfer_without_actions_invalid() {
-        // No actions: every node refuses it before reading state, at every version that admits
-        // shielded transfers.
-        let transition = shielded_transfer_without_actions();
-        let latest = PlatformVersion::latest().protocol_version;
-        assert!(fails_structure_from(&transition, latest));
-    }
-
-    #[test]
-    fn should_not_call_an_identity_signed_transition_invalid_from_its_structure() {
-        // Its structure is checked against state (the signing key), so nothing local proves it
-        // invalid.
-        let transition = StateTransition::IdentityCreditTransfer(
-            IdentityCreditTransferTransition::V0(IdentityCreditTransferTransitionV0::default()),
-        );
-        let latest = PlatformVersion::latest().protocol_version;
-        assert!(!fails_structure_from(&transition, latest));
     }
 
     #[test]
@@ -737,27 +710,34 @@ mod sdk_tests {
     }
 
     #[tokio::test]
-    async fn should_report_a_shielded_spend_with_spent_nullifiers_as_executed() {
+    async fn should_not_attribute_a_shielded_spend_whose_nullifiers_are_all_spent() {
+        // Other transitions can spend the same notes, together or one by one.
         let mut sdk = mock_sdk();
         expect_anchors(&mut sdk, vec![]).await;
         expect_nullifiers(&mut sdk, [true, true]).await;
 
         let outcome = sdk
-            .state_transition_outcome(&shielded_transfer())
+            .state_transition_outcome(&shielded_transfer(), OutcomeEvidence::default())
             .await
             .expect("expected an outcome");
-        assert_eq!(outcome, TransitionOutcome::Executed);
+        assert_eq!(outcome, TransitionOutcome::ExecutedOrSuperseded);
+        assert!(outcome.is_final());
         assert!(!outcome.proves_not_executed());
     }
 
     #[tokio::test]
-    async fn should_report_a_shielded_spend_whose_anchor_is_gone_as_expired() {
+    async fn should_report_a_shielded_spend_whose_recorded_anchor_is_gone_as_expired() {
         let mut sdk = mock_sdk();
         expect_anchors(&mut sdk, vec![NEWER_ANCHOR]).await;
         expect_nullifiers(&mut sdk, [false, false]).await;
 
+        // The wallet took the anchor from its tree synced to height 0, which the mock's reads
+        // are at too.
         let outcome = sdk
-            .state_transition_outcome(&shielded_transfer())
+            .state_transition_outcome(
+                &shielded_transfer(),
+                OutcomeEvidence::anchors_recorded_by(0),
+            )
             .await
             .expect("expected an outcome");
         assert_eq!(
@@ -768,13 +748,52 @@ mod sdk_tests {
     }
 
     #[tokio::test]
+    async fn should_not_report_a_missing_anchor_expired_without_evidence_it_was_recorded() {
+        // The answering node may not have reached the block that records the anchor yet.
+        let mut sdk = mock_sdk();
+        expect_anchors(&mut sdk, vec![NEWER_ANCHOR]).await;
+        expect_nullifiers(&mut sdk, [false, false]).await;
+
+        let outcome = sdk
+            .state_transition_outcome(&shielded_transfer(), OutcomeEvidence::default())
+            .await
+            .expect("expected an outcome");
+        assert_eq!(
+            outcome,
+            TransitionOutcome::StillPossible {
+                checked_at_height: 0,
+                anchors_recorded_at: None,
+                until_height: None,
+            }
+        );
+        assert!(!outcome.proves_not_executed());
+    }
+
+    #[tokio::test]
+    async fn should_not_report_a_missing_anchor_expired_from_a_node_behind_the_evidence() {
+        // The wallet saw its anchor recorded by height 5; this node answers from height 0.
+        let mut sdk = mock_sdk();
+        expect_anchors(&mut sdk, vec![NEWER_ANCHOR]).await;
+        expect_nullifiers(&mut sdk, [false, false]).await;
+
+        let outcome = sdk
+            .state_transition_outcome(
+                &shielded_transfer(),
+                OutcomeEvidence::anchors_recorded_by(5),
+            )
+            .await
+            .expect("expected an outcome");
+        assert!(!outcome.proves_not_executed(), "{outcome:?}");
+    }
+
+    #[tokio::test]
     async fn should_report_a_shielded_spend_with_one_nullifier_taken_as_input_used() {
         let mut sdk = mock_sdk();
         expect_anchors(&mut sdk, vec![ANCHOR]).await;
         expect_nullifiers(&mut sdk, [true, false]).await;
 
         let outcome = sdk
-            .state_transition_outcome(&shielded_transfer())
+            .state_transition_outcome(&shielded_transfer(), OutcomeEvidence::default())
             .await
             .expect("expected an outcome");
         assert_eq!(
@@ -791,7 +810,7 @@ mod sdk_tests {
         expect_newest_anchor(&mut sdk, NEWER_ANCHOR).await;
 
         let outcome = sdk
-            .state_transition_outcome(&shielded_transfer())
+            .state_transition_outcome(&shielded_transfer(), OutcomeEvidence::default())
             .await
             .expect("expected an outcome");
         // Read at height 0 with 1000 blocks kept and pruning every 100: the prune at the end of
@@ -810,6 +829,7 @@ mod sdk_tests {
             outcome,
             TransitionOutcome::StillPossible {
                 checked_at_height: 0,
+                anchors_recorded_at: Some(0),
                 until_height: expected,
             }
         );
@@ -824,13 +844,14 @@ mod sdk_tests {
         expect_newest_anchor(&mut sdk, ANCHOR).await;
 
         let outcome = sdk
-            .state_transition_outcome(&shielded_transfer())
+            .state_transition_outcome(&shielded_transfer(), OutcomeEvidence::default())
             .await
             .expect("expected an outcome");
         assert_eq!(
             outcome,
             TransitionOutcome::StillPossible {
                 checked_at_height: 0,
+                anchors_recorded_at: Some(0),
                 until_height: None,
             }
         );
@@ -857,7 +878,7 @@ mod sdk_tests {
             .expect("expected to register the nonce");
 
         let outcome = sdk
-            .state_transition_outcome(&credit_transfer(5))
+            .state_transition_outcome(&credit_transfer(5), OutcomeEvidence::default())
             .await
             .expect("expected an outcome");
         assert_eq!(outcome, TransitionOutcome::ExecutedOrSuperseded);
@@ -874,13 +895,14 @@ mod sdk_tests {
             .expect("expected to register the nonce");
 
         let outcome = sdk
-            .state_transition_outcome(&credit_transfer(5))
+            .state_transition_outcome(&credit_transfer(5), OutcomeEvidence::default())
             .await
             .expect("expected an outcome");
         assert_eq!(
             outcome,
             TransitionOutcome::StillPossible {
                 checked_at_height: 0,
+                anchors_recorded_at: None,
                 until_height: None,
             }
         );

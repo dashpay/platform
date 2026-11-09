@@ -11,7 +11,8 @@
 //!   grows and so never has the same root twice.
 //!
 //! So a free input read at height `h` proves the transition had not executed by `h`, and a
-//! consumed one read at `h` proves it cannot execute after `h`.
+//! consumed one read at `h` proves it cannot execute after `h`. No read says which transition
+//! took a consumed input, so none proves this one executed.
 
 /// One proven read of one input: whether it is consumed, and the height the proof was signed at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,24 +69,22 @@ pub(super) fn consumption(reads: &[InputRead]) -> Consumption {
 /// What the reads prove about a transition's inputs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum InputsVerdict {
-    /// Every nullifier of a shielded spend is spent.
-    Spent,
-    /// Every nonce is consumed, or the inputs are consumed in an order the reads cannot place:
+    /// Every input is consumed, or the inputs are consumed in an order the reads cannot place:
     /// it can no longer execute, and the reads do not show whether it did.
     ConsumedUnattributed,
     /// An input another transition took: it never executed and never will.
     InputUsed,
-    /// A shielded spend's anchor is gone from its pool and its nullifiers were unspent at or
-    /// after that: it never executed and never will.
+    /// A shielded spend's anchor, proven recorded by an earlier height, is gone from its pool,
+    /// and its nullifiers were unspent at or after that: it never executed and never will.
     AnchorExpired,
     /// Not executed by `checked_at`, and it may still execute.
     NotYet {
         /// The highest height among the reads that showed every input free.
         checked_at: u64,
     },
-    /// An anchor is gone, but every nullifier read is older than the anchor read, so the reads
-    /// cannot say whether the spend landed before the anchor was pruned. Read the nullifiers
-    /// again.
+    /// An anchor proven recorded is gone, but every nullifier read is older than the anchor
+    /// read, so the reads cannot say whether the spend landed before the anchor was pruned.
+    /// Read the nullifiers again.
     Unordered,
 }
 
@@ -99,20 +98,33 @@ pub(super) struct AnchorRead {
 }
 
 /// Judge a pool-paid shielded spend from its nullifier reads (every bundle's, in every pool)
-/// and its anchor reads (one per bundle).
+/// and its anchor reads (one per bundle). `anchors_recorded_by` is the caller's evidence of a
+/// height by which every anchor was recorded.
 ///
 /// `nullifiers` must not be empty.
-pub(super) fn judge_shielded(nullifiers: &[InputRead], anchors: &[AnchorRead]) -> InputsVerdict {
+pub(super) fn judge_shielded(
+    nullifiers: &[InputRead],
+    anchors: &[AnchorRead],
+    anchors_recorded_by: Option<u64>,
+) -> InputsVerdict {
     match consumption(nullifiers) {
-        // A pool-paid shielded spend has no paid failure path: its nullifiers are recorded only
-        // when it executes. Another spend of exactly the same notes would show the same, which is
-        // how Platform's own proof of an executed shielded spend reads it too.
-        Consumption::All => InputsVerdict::Spent,
+        // Every note it spends is spent, but other transitions can spend the same notes, all
+        // together or each on its own, so the reads do not say this one executed.
+        Consumption::All => InputsVerdict::ConsumedUnattributed,
         Consumption::Partial => InputsVerdict::InputUsed,
         Consumption::Unordered => InputsVerdict::ConsumedUnattributed,
         Consumption::None { free_at } => {
-            let missing: Vec<&AnchorRead> = anchors.iter().filter(|a| !a.recorded).collect();
-            if missing.is_empty() {
+            // A missing anchor proves pruned only from a read at or above a height by which the
+            // anchor was recorded: a node below that height may simply not have recorded it yet,
+            // and then the spend can still execute.
+            let pruned: Vec<&AnchorRead> = anchors
+                .iter()
+                .filter(|anchor| {
+                    !anchor.recorded
+                        && anchors_recorded_by.is_some_and(|recorded| recorded <= anchor.height)
+                })
+                .collect();
+            if pruned.is_empty() {
                 return InputsVerdict::NotYet {
                     checked_at: free_at,
                 };
@@ -120,7 +132,7 @@ pub(super) fn judge_shielded(nullifiers: &[InputRead], anchors: &[AnchorRead]) -
             // The anchor was pruned by the height of the read that misses it, so the spend could
             // only have executed below that height. Its nullifiers unspent at or above it prove
             // it did not. A nullifier read below it leaves a window where it could have.
-            if missing.iter().any(|anchor| anchor.height <= free_at) {
+            if pruned.iter().any(|anchor| anchor.height <= free_at) {
                 InputsVerdict::AnchorExpired
             } else {
                 InputsVerdict::Unordered
@@ -238,17 +250,18 @@ mod tests {
     }
 
     #[test]
-    fn should_report_a_spend_whose_nullifiers_are_all_spent_as_spent() {
+    fn should_not_attribute_a_spend_whose_nullifiers_are_all_spent() {
+        // Other transitions may have spent the same notes, together or one by one.
         assert_eq!(
-            judge_shielded(&[consumed(20), consumed(20)], &[pruned(30)]),
-            InputsVerdict::Spent
+            judge_shielded(&[consumed(20), consumed(20)], &[pruned(30)], Some(10)),
+            InputsVerdict::ConsumedUnattributed
         );
     }
 
     #[test]
     fn should_report_input_used_when_some_nullifiers_are_spent_and_others_not() {
         assert_eq!(
-            judge_shielded(&[consumed(20), free(20)], &[recorded(19)]),
+            judge_shielded(&[consumed(20), free(20)], &[recorded(19)], None),
             InputsVerdict::InputUsed
         );
     }
@@ -256,7 +269,11 @@ mod tests {
     #[test]
     fn should_not_attribute_nullifiers_spent_after_a_free_read_in_another_pool() {
         assert_eq!(
-            judge_shielded(&[free(20), consumed(21)], &[recorded(19), recorded(19)]),
+            judge_shielded(
+                &[free(20), consumed(21)],
+                &[recorded(19), recorded(19)],
+                None
+            ),
             InputsVerdict::ConsumedUnattributed
         );
     }
@@ -264,12 +281,30 @@ mod tests {
     #[test]
     fn should_report_anchor_expired_when_unspent_nullifiers_are_read_after_the_anchor() {
         assert_eq!(
-            judge_shielded(&[free(30), free(30)], &[pruned(30)]),
+            judge_shielded(&[free(30), free(30)], &[pruned(30)], Some(20)),
             InputsVerdict::AnchorExpired
         );
         assert_eq!(
-            judge_shielded(&[free(31)], &[pruned(30)]),
+            judge_shielded(&[free(31)], &[pruned(30)], Some(30)),
             InputsVerdict::AnchorExpired
+        );
+    }
+
+    #[test]
+    fn should_not_report_anchor_expired_without_evidence_the_anchor_was_recorded() {
+        // The node answering may be behind the block that records the wallet's anchor.
+        assert_eq!(
+            judge_shielded(&[free(30)], &[pruned(30)], None),
+            InputsVerdict::NotYet { checked_at: 30 }
+        );
+    }
+
+    #[test]
+    fn should_not_report_anchor_expired_from_a_node_below_the_recording_height() {
+        // Recorded by 35, read at 30: the node has not reached the block that records it.
+        assert_eq!(
+            judge_shielded(&[free(30)], &[pruned(30)], Some(35)),
+            InputsVerdict::NotYet { checked_at: 30 }
         );
     }
 
@@ -278,7 +313,7 @@ mod tests {
         // The spend may have executed at 29, before the anchor was pruned by 30, and a node
         // answering the nullifiers from 28 would not show it.
         assert_eq!(
-            judge_shielded(&[free(28)], &[pruned(30)]),
+            judge_shielded(&[free(28)], &[pruned(30)], Some(20)),
             InputsVerdict::Unordered
         );
     }
@@ -287,7 +322,7 @@ mod tests {
     fn should_report_anchor_expired_when_one_of_two_pools_lost_its_anchor() {
         // A token pool transition needs both bundles' anchors; losing either one ends it.
         assert_eq!(
-            judge_shielded(&[free(40), free(41)], &[recorded(39), pruned(40)]),
+            judge_shielded(&[free(40), free(41)], &[recorded(39), pruned(40)], Some(39)),
             InputsVerdict::AnchorExpired
         );
     }
@@ -295,7 +330,7 @@ mod tests {
     #[test]
     fn should_report_not_yet_while_every_anchor_is_kept_and_no_nullifier_spent() {
         assert_eq!(
-            judge_shielded(&[free(50), free(51)], &[recorded(49)]),
+            judge_shielded(&[free(50), free(51)], &[recorded(49)], None),
             InputsVerdict::NotYet { checked_at: 51 }
         );
     }
