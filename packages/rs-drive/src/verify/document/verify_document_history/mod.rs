@@ -19,22 +19,22 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
 
 impl Drive {
-    /// Verifies timestamp-keyed history with an exclusive time bound and an optional offset.
+    /// Verifies the per-document timestamp-keyed history used through protocol version 14.
     ///
     /// # Parameters
-    /// `start_at_ms` excludes matching timestamps; `offset` skips entries after
-    /// that bound. The platform version must select the timestamp-keyed reader.
+    /// `start_after_ms` excludes matching timestamps; `offset` optionally skips entries after
+    /// that bound for unproved queries. The platform version must select the timestamp-keyed reader.
     ///
     /// # Returns
     /// The history result, or an error for an unsupported reader generation.
     #[allow(clippy::too_many_arguments)]
-    pub fn verify_document_history_legacy(
+    pub fn verify_document_history_after_time(
         proof: &[u8],
         contract_id: [u8; 32],
         document_type_name: &str,
         document_type: DocumentTypeRef,
         document_id: [u8; 32],
-        start_at_ms: u64,
+        start_after_ms: u64,
         limit: Option<u16>,
         offset: Option<u16>,
         platform_version: &PlatformVersion,
@@ -53,13 +53,13 @@ impl Drive {
                 document_type_name,
                 document_type,
                 document_id,
-                start_at_ms,
+                start_after_ms,
                 limit,
                 offset,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "verify_document_history_legacy".to_owned(),
+                method: "verify_document_history_after_time".to_owned(),
                 known_versions: vec![0],
                 received: version,
             })),

@@ -12,7 +12,7 @@ impl Drive {
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
         document_id: [u8; 32],
-        start_at_ms: u64,
+        start_after_ms: u64,
         limit: Option<u16>,
         offset: Option<u16>,
     ) -> Result<PathQuery, Error> {
@@ -22,7 +22,7 @@ impl Drive {
             contract_id,
             document_type.name(),
             document_id,
-            start_at_ms,
+            start_after_ms,
             limit,
             offset,
         )
@@ -33,12 +33,12 @@ impl Drive {
         contract_id: [u8; 32],
         document_type_name: &str,
         document_id: [u8; 32],
-        start_at_ms: u64,
+        start_after_ms: u64,
         limit: Option<u16>,
         offset: Option<u16>,
     ) -> Result<PathQuery, Error> {
         let limit = Self::validate_document_history_limit(limit)?;
-        let encoded_start = DocumentPropertyType::encode_date_timestamp(start_at_ms);
+        let encoded_start = DocumentPropertyType::encode_date_timestamp(start_after_ms);
         let query = Query::new_single_query_item_with_direction(
             QueryItem::RangeAfter(std::ops::RangeFrom {
                 start: encoded_start,

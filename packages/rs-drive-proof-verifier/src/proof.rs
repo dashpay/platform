@@ -1552,7 +1552,7 @@ fn verify_document_history_response_v0(
             error: error.to_string(),
         })?;
     let query_version = proof_query_platform_version(metadata)?;
-    let (root, history) = Drive::verify_document_history_legacy(
+    let (root, history) = Drive::verify_document_history_after_time(
         supported_grovedb_proof_bytes(proof)?,
         contract_id.to_buffer(),
         &request.document_type_name,

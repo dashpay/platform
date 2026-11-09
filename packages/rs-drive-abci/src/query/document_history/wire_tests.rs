@@ -177,6 +177,12 @@ fn should_serve_released_document_history_wire_requests_before_activation() {
             .unwrap();
         assert!(result.errors.is_empty(), "{:?}", result.errors);
         let response = result.data.unwrap();
+        let expected_wire: &[u8] = match (prove, offset.unwrap_or(0)) {
+            (true, _) => include_bytes!("fixtures/wire-v0-proof.bin"),
+            (false, 0) => include_bytes!("fixtures/wire-v0-unproved.bin"),
+            (false, _) => include_bytes!("fixtures/wire-v0-offset.bin"),
+        };
+        assert_eq!(response.encode_to_vec(), expected_wire);
         let released = ReleasedResponse::decode(response.encode_to_vec().as_slice())
             .unwrap()
             .v0
@@ -189,7 +195,7 @@ fn should_serve_released_document_history_wire_requests_before_activation() {
             .collect::<Vec<_>>();
         if prove {
             let proof = released.proof.expect("a version 0 proof response");
-            let (_, verified) = Drive::verify_document_history_legacy(
+            let (_, verified) = Drive::verify_document_history_after_time(
                 &proof.grovedb_proof,
                 contract.id().to_buffer(),
                 "profile",

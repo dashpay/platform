@@ -461,7 +461,7 @@ async fn should_preserve_supported_offset_pages_and_original_proof_roots() {
                     assert!(prove);
                     let proof = proof.expect("proved history");
                     let (root, documents) = if legacy {
-                        let (root, documents) = Drive::verify_document_history_legacy(
+                        let (root, documents) = Drive::verify_document_history_after_time(
                             &proof.grovedb_proof,
                             history_contract.id().to_buffer(),
                             "profile",
