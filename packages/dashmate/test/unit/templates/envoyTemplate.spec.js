@@ -47,6 +47,7 @@ describe('gateway rate limit of getBlocks', () => {
 
     expect(routeIndex).to.be.at.least(0);
     expect(routeIndex).to.be.below(prefixIndex);
+    expect(routes[routeIndex].route.cluster).to.equal('rs_dapi');
     expect(routes[routeIndex].route.rate_limits).to.deep.equal([{
       actions: [
         { generic_key: { descriptor_key: 'method', descriptor_value: 'getBlocks' } },
