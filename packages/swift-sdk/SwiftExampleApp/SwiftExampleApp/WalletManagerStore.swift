@@ -249,6 +249,23 @@ final class WalletManagerStore: ObservableObject {
                 error: error
             )
         }
+        // Open the shielded store right after the load: Rust then restores,
+        // with no keys, the unconfirmed private contact request payments of
+        // every wallet that bound a shielded account in an earlier process.
+        // Until it does, those wallets' public contact requests are refused
+        // (code 71), and a later bind may never come (no mnemonic, shielded
+        // off). The same path the bind opens, so the bind's call is a no-op.
+        do {
+            try manager.configureShielded(dbPath: ShieldedService.dbPath(for: network))
+        } catch {
+            SDKLogger.event(
+                "manager_shielded_configure_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: ["network": .publicText(network.displayName)],
+                error: error
+            )
+        }
         managers[network] = manager
         managerSdkHandles[network] = sdk.handle
         if makeActive {
