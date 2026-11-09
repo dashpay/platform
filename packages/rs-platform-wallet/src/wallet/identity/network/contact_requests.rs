@@ -804,11 +804,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
     /// Claim the pair `sender`, `recipient` for a public request: refused,
     /// in the same lock, while a private request to the recipient is
-    /// reserved, or once their requests came or went privately, as a
-    /// `contactRequest` document would publish the relationship (replies and
-    /// rotations go privately instead). The refusal reads what the wallet
-    /// tracks, so on a restored or second device it holds only once the
-    /// private sync has read the store.
+    /// reserved, or a private payment the shielded store's journal keeps
+    /// unresolved holds the pair, whether or not the sender identity was
+    /// removed and added again since
+    /// (`WalletPersister::private_pair_journaled`), or once their requests
+    /// came or went privately, as a `contactRequest` document would publish
+    /// the relationship (replies and rotations go privately instead). The
+    /// refusal reads what the wallet tracks, so on a restored or second device
+    /// it holds only once the private sync has read the store.
     pub(super) async fn claim_public_pair(
         &self,
         sender: &Identifier,
@@ -830,6 +833,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             || self
                 .persister
                 .absent_sender_private_pair_held(sender, recipient)
+            || self.persister.private_pair_journaled(sender, recipient)
         {
             return Err(PlatformWalletError::PrivateContactRequestPending(
                 *recipient,

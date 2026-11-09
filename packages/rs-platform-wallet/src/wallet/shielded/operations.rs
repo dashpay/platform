@@ -1800,6 +1800,9 @@ where
         journaled,
         payment_started,
     } = submission;
+    // The wallet holds the pair before the payment is journaled, beyond its
+    // sender identity, until the journal records are discharged.
+    let mut pair_hold = JournaledPairHold::note(persister, private_contact, journaled);
     let result = async {
         let anchored = arm_pending_release(
             store,
@@ -1823,6 +1826,7 @@ where
             anchor_height,
         )
         .await?;
+        pair_hold.saved();
         if anchored {
             // Each reservation carries its anchor: a pruned anchor releases it.
             reservation.hand_over();
@@ -1832,6 +1836,7 @@ where
     }
     .await;
 
+    drop(pair_hold);
     settle_private_document_payment(
         store,
         persister,
@@ -1845,6 +1850,68 @@ where
         result.map(|(_proof, metadata)| metadata),
     )
     .await
+}
+
+/// The wallet's hold on a private contact request payment's pair, noted
+/// before the payment's journal records are saved
+/// ([`WalletPersister::note_journaled_private_payments`]), so the pairs held
+/// cover every record the journal keeps. Dropped before [`Self::saved`], the
+/// records were not saved and nothing was paid: the hold is forgotten.
+struct JournaledPairHold<'a> {
+    persister: Option<&'a WalletPersister>,
+    commitments: &'a [[u8; 32]],
+    saved: bool,
+}
+
+impl<'a> JournaledPairHold<'a> {
+    /// Hold `payment`'s pair for `commitments`, the entries it appends, on
+    /// `persister`. Holds nothing for a payment that is not for a private
+    /// contact request.
+    fn note(
+        persister: Option<&'a WalletPersister>,
+        payment: Option<PrivateContactPayment>,
+        commitments: Option<&'a [[u8; 32]]>,
+    ) -> Self {
+        let (Some(persister), Some(payment), Some(commitments)) = (persister, payment, commitments)
+        else {
+            return Self {
+                persister: None,
+                commitments: &[],
+                saved: true,
+            };
+        };
+        let (sender, recipient) = (
+            Identifier::from(payment.sender),
+            Identifier::from(payment.recipient),
+        );
+        persister.note_journaled_private_payments(
+            commitments
+                .iter()
+                .map(|commitment| (*commitment, sender, recipient)),
+        );
+        Self {
+            persister: Some(persister),
+            commitments,
+            saved: false,
+        }
+    }
+
+    /// The journal records were saved: the hold stays until they are
+    /// discharged.
+    fn saved(&mut self) {
+        self.saved = true;
+    }
+}
+
+impl Drop for JournaledPairHold<'_> {
+    fn drop(&mut self) {
+        if self.saved {
+            return;
+        }
+        if let Some(persister) = self.persister {
+            persister.forget_journaled_private_payments(self.commitments);
+        }
+    }
 }
 
 /// Settle a private document payment's notes and saved record once its
@@ -1992,13 +2059,23 @@ async fn settle_private_document_payment<S: ShieldedStore>(
     }
 }
 
-/// A private document payment from `notes` whose broadcast is refused before
-/// anything was delivered, saved and settled as the private flow does
+/// How the broadcast of [`pay_private_document_with_outcome`]'s payment ends.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum TestBroadcastOutcome {
+    /// Refused before anything was delivered.
+    RefusedBeforeDelivery,
+    /// Delivered, its result wait timed out.
+    Unconfirmed,
+}
+
+/// A private document payment from `notes` whose broadcast ends as `outcome`,
+/// saved and settled as the private flow does
 /// ([`submit_private_document_payment`]): for tests outside this module that
 /// drive a settlement through a contact request's pair.
 #[cfg(test)]
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn pay_private_document_refused_before_delivery<S: ShieldedStore>(
+pub(crate) async fn pay_private_document_with_outcome<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
@@ -2008,6 +2085,7 @@ pub(crate) async fn pay_private_document_refused_before_delivery<S: ShieldedStor
     state_transition: StateTransition,
     private_contact: PrivateContactPayment,
     payment_started: &PaymentStarted,
+    outcome: TestBroadcastOutcome,
 ) -> Result<ResponseMetadata, PlatformWalletError> {
     // Reserved and recorded pending, as the private flow does before it
     // submits.
@@ -2037,12 +2115,21 @@ pub(crate) async fn pay_private_document_refused_before_delivery<S: ShieldedStor
             journaled: Some(&journaled),
             payment_started,
         },
-        |_| {
-            std::future::ready(Err(SpendFailure {
-                error: PlatformWalletError::ShieldedBroadcastFailed(
-                    "refused before delivery".to_string(),
-                ),
-                never_delivered: true,
+        move |_| {
+            std::future::ready(Err(match outcome {
+                TestBroadcastOutcome::RefusedBeforeDelivery => SpendFailure {
+                    error: PlatformWalletError::ShieldedBroadcastFailed(
+                        "refused before delivery".to_string(),
+                    ),
+                    never_delivered: true,
+                },
+                TestBroadcastOutcome::Unconfirmed => SpendFailure {
+                    error: PlatformWalletError::ShieldedSpendUnconfirmed {
+                        operation: "private document create from shielded pool",
+                        reason: "the result wait timed out".to_string(),
+                    },
+                    never_delivered: false,
+                },
             }))
         },
     )

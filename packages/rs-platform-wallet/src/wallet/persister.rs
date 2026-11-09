@@ -4,7 +4,7 @@
 //! - [`WalletPersister`] — wraps the shared [`PlatformWalletPersistence`] with
 //!   a fixed `wallet_id` so callers don't need to pass the ID on every call.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -88,7 +88,8 @@ pub struct WalletPersister {
 }
 
 /// The commitments [`WalletPersister::note_discharged_private_entries`] noted,
-/// both sets updated under one lock.
+/// and the pairs the journal's unresolved payments hold, all updated under one
+/// lock.
 #[derive(Default)]
 struct DischargedPrivateEntries {
     /// Noted since the last take, for the wallet to release the reservations
@@ -100,6 +101,14 @@ struct DischargedPrivateEntries {
     /// ([`WalletPersister::private_entry_discharged`]). Only a shielded build
     /// keeps a journal to discharge: empty otherwise.
     session: BTreeSet<[u8; 32]>,
+    /// The (sender, recipient) pair of each private contact request payment
+    /// the shielded store's journal keeps, by its entry's commitment
+    /// ([`WalletPersister::note_journaled_private_payments`]): the wallet's
+    /// hold on the pair, which no identity's removal drops. A commitment in
+    /// `session` is never added, and one noted there is removed, so a
+    /// discharged payment holds nothing. Only a shielded build journals:
+    /// empty otherwise.
+    journaled: BTreeMap<[u8; 32], (Identifier, Identifier)>,
 }
 
 impl WalletPersister {
@@ -174,7 +183,54 @@ impl WalletPersister {
         for commitment in commitments {
             discharged.unreleased.insert(commitment);
             discharged.session.insert(commitment);
+            discharged.journaled.remove(&commitment);
         }
+    }
+
+    /// Note `payments`, each a private contact request payment's entry
+    /// commitment with its (sender, recipient) pair, as kept, or about to be
+    /// kept, by the shielded store's private payment journal: until each is
+    /// discharged ([`Self::note_discharged_private_entries`]) the wallet holds
+    /// its pair ([`Self::private_pair_journaled`]), whatever happens to the
+    /// sender identity. A payment discharged in this session is not noted.
+    /// Noted before a payment is journaled, and by every restoration from the
+    /// journal, so the pairs held cover every record the journal keeps.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn note_journaled_private_payments(
+        &self,
+        payments: impl IntoIterator<Item = ([u8; 32], Identifier, Identifier)>,
+    ) {
+        let mut entries = self.discharged_entries();
+        for (commitment, sender, recipient) in payments {
+            if !entries.session.contains(&commitment) {
+                entries.journaled.insert(commitment, (sender, recipient));
+            }
+        }
+    }
+
+    /// Forget `commitments`, noted by [`Self::note_journaled_private_payments`]
+    /// for a payment whose journal records were then not saved: nothing was
+    /// paid, so its pair is not held for it.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn forget_journaled_private_payments(&self, commitments: &[[u8; 32]]) {
+        let mut entries = self.discharged_entries();
+        for commitment in commitments {
+            entries.journaled.remove(commitment);
+        }
+    }
+
+    /// Whether a private payment the journal keeps unresolved holds the pair
+    /// `sender`, `recipient` ([`Self::note_journaled_private_payments`]): then
+    /// neither a public request nor another private one is sent for it.
+    pub(crate) fn private_pair_journaled(
+        &self,
+        sender: &Identifier,
+        recipient: &Identifier,
+    ) -> bool {
+        self.discharged_entries()
+            .journaled
+            .values()
+            .any(|pair| *pair == (*sender, *recipient))
     }
 
     /// Whether the journal record of `commitment` was discharged in this
