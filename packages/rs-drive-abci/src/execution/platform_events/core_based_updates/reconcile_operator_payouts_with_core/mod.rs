@@ -33,7 +33,7 @@ where
     /// platform node id keys by their data alone, so an evonode whose node id once had its
     /// payout's bytes can have its payout key disabled while the stored payout and Core's agree.
     /// An identity a masternode already left is reconciled only if the masternode switches back
-    /// to it.
+    /// to it with a payout.
     ///
     /// `block_platform_state` must hold Platform's copy of Core's list at `core_height`, a chain
     /// locked height every node agrees on, so every node reads the same list from its Core. A
