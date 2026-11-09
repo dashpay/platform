@@ -253,7 +253,7 @@ pub const CORE_RPC_METHOD_NOT_FOUND: i32 = -32601;
 const HTTP_FORBIDDEN: u16 = 403;
 
 /// Whether Core refused the request with HTTP 403 and no JSON-RPC answer
-pub(crate) fn is_http_forbidden(error: &Error) -> bool {
+fn is_http_forbidden(error: &Error) -> bool {
     let Error::JsonRpc(JsonRpcError::Transport(transport)) = error else {
         return false;
     };
