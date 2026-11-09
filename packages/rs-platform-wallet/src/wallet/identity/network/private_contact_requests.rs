@@ -6023,6 +6023,124 @@ mod tests {
         assert_eq!(reply.lock().expect("reply").len(), 1, "the retry pays");
     }
 
+    /// An endpoint that kept the submitted payment and answered with a
+    /// consensus verdict proves nothing, so the payment settles unconfirmed
+    /// with its journal record saved: a public request to the pair, which
+    /// would disclose it, and a replacement private payment, which would fund
+    /// a second request, are both refused while the original may execute.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_keep_a_pair_held_when_an_endpoint_refuses_its_payment() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (_manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let store = Arc::new(tokio::sync::RwLock::new(
+            FileBackedShieldedStore::open_path(dir.path().join("tree.sqlite"), 100)
+                .expect("the store"),
+        ));
+        let subwallet = SubwalletId::new(alice_wallet.wallet_id(), 0);
+        let pay = {
+            let store = Arc::clone(&store);
+            let (sender, recipient) = (alice.id(), bob.id());
+            move |entry: BinaryData, started: PaymentStarted| async move {
+                let transition = private_contact_request_payment(entry);
+                arm_redrive_before_broadcast(
+                    &store,
+                    subwallet,
+                    Some([0x7A; 32]),
+                    [7; 32],
+                    vec![[1; 32]],
+                    &transition,
+                    "private document create from shielded pool",
+                    Some(PrivateContactPayment {
+                        sender: sender.to_buffer(),
+                        recipient: recipient.to_buffer(),
+                        account_reference: started
+                            .account_reference()
+                            .expect("the send names its request"),
+                    }),
+                    Some(&started),
+                )
+                .await?;
+                // What the payment returns once the endpoint answered with a
+                // serialized consensus verdict: unconfirmed.
+                Err::<ResponseMetadata, _>(PlatformWalletError::ShieldedSpendUnconfirmed {
+                    operation: "private document create from shielded pool",
+                    reason: "the endpoint answered with a consensus verdict".to_string(),
+                })
+            }
+        };
+        let view = alice_wallet.identity().dashpay();
+        let sent = view
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                pay,
+            )
+            .await;
+        assert!(
+            matches!(
+                sent,
+                Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+            ),
+            "{sent:?}"
+        );
+        assert_eq!(
+            store
+                .read()
+                .await
+                .private_payment_journal(alice_wallet.wallet_id())
+                .expect("the journal")
+                .len(),
+            1,
+            "the journal record stays"
+        );
+        let public = view
+            .send_contact_request_with_external_signer(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &alice_signer,
+                &alice_crypto,
+            )
+            .await;
+        assert!(
+            matches!(
+                public,
+                Err(PlatformWalletError::PrivateContactRequestPending(_))
+            ),
+            "no disclosure: {public:?}"
+        );
+        let replacement = view
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                no_payment,
+            )
+            .await;
+        assert!(
+            matches!(
+                replacement,
+                Err(PlatformWalletError::PrivateContactRequestPending(_))
+            ),
+            "no replacement funding: {replacement:?}"
+        );
+    }
+
     /// A payment that may have reached the network keeps its pair pending
     /// whatever error it returns, as its transition may still execute; one
     /// whose transition provably never left the wallet releases it.

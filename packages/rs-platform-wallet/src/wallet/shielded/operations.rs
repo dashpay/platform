@@ -2662,8 +2662,8 @@ where
             .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
         // Broadcast (relay-ACK only). Only a transition that never left the wallet
-        // (`BroadcastDelivery::NeverDelivered`: a consensus verdict with no dispatch that could
-        // have delivered it before, or nowhere to send it) maps to `ShieldedBroadcastFailed`,
+        // (`BroadcastDelivery::NeverDelivered`: refused before anything was sent) maps to
+        // `ShieldedBroadcastFailed`,
         // which lets the outer match release the reservation. Every other failure may have
         // delivered it and falls through to the result wait below, whose ambiguous arm owns the
         // fetch-by-derived-id fallback — so the in-flight tx gets confirmed (or held as
@@ -2683,18 +2683,14 @@ where
             }
         }
 
-        // Wait for proven execution. Classify the failure:
-        //   - `StateTransitionBroadcastError` WITH a consensus `cause` = Platform DEFINITIVELY
-        //     reported the transition's own execution error (it ran and was rejected on its
-        //     merits; the serialized consensus error is the verdict). The identity does not
-        //     exist; keep today's behavior (release the reservation via
-        //     `ShieldedBroadcastFailed`).
-        //   - any other error (DriveProofError / Proof / InvalidProvedResponse / TimeoutReached /
-        //     DapiClientError / …) = AMBIGUOUS: the broadcast was accepted and the transition may
-        //     have executed even though we couldn't fetch/verify its result proof. That includes
-        //     cause-less `StateTransitionBroadcastError`s — DAPI encodes its own wait-side failures
-        //     (timeouts, internal errors) that way, with empty consensus data. Fall back to
-        //     fetching the identity by its pre-derived id before deciding it doesn't exist.
+        // Wait for proven execution. Every failure is AMBIGUOUS: the broadcast reached an
+        //   endpoint and the transition may have executed even though we couldn't fetch or
+        //   verify its result proof. That includes a `StateTransitionBroadcastError` with a
+        //   consensus `cause`: the endpoint that reports it is unauthenticated, no proof or quorum
+        //   signature backs it, and one that kept or forwarded the transition can answer with any
+        //   verdict. It also includes cause-less ones, as DAPI encodes its own wait-side failures
+        //   (timeouts, internal errors) that way. Fall back to fetching the identity by its
+        //   pre-derived id before deciding it is unconfirmed.
         // An identity-create-from-shielded-pool proof authenticates the spent
         // nullifiers and resulting identity as a snapshot; it cannot bind the
         // complete Orchard request, so accept the affected-state outcome.
@@ -2703,9 +2699,6 @@ where
             .await
         {
             Ok(result) => result,
-            Err(dash_sdk::Error::StateTransitionBroadcastError(e)) if e.cause.is_some() => {
-                return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
-            }
             Err(wait_err) => {
                 warn!(
                     derived_id = %identity_id,
@@ -4143,48 +4136,42 @@ async fn broadcast_shielded_spend_classified(
 }
 
 /// The error a spend whose transition never left the wallet
-/// ([`BroadcastDelivery::NeverDelivered`]) is reported as: a promoted
-/// address-nonce error, or a failed broadcast. Its notes are released. Every
-/// broadcast that may have been delivered waits for its result instead, and
+/// ([`BroadcastDelivery::NeverDelivered`], refused before anything was sent)
+/// is reported as: a failed broadcast. Its notes are released. Every
+/// broadcast that reached an endpoint waits for its result instead, and
 /// reads as unconfirmed when that wait fails.
 fn definite_broadcast_failure(e: &dash_sdk::Error) -> PlatformWalletError {
-    crate::error::promote_address_nonce_error(e)
-        .unwrap_or_else(|| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))
+    PlatformWalletError::ShieldedBroadcastFailed(e.to_string())
 }
 
 /// Classify a `wait_for_response` failure for an already-broadcast
-/// shielded spend (see [`broadcast_shielded_spend`]).
+/// shielded spend (see [`broadcast_shielded_spend`]): unconfirmed, whatever
+/// it is, the notes staying reserved.
 ///
-/// Only a consensus verdict ([`carries_consensus_rejection`]) proves
-/// Platform executed the transition and rejected it on its merits — the
-/// serialized consensus error is the verdict. DAPI encodes its own
+/// A consensus verdict on the wait ([`carries_consensus_rejection`]) is no
+/// proof either: the endpoint that sends it is unauthenticated, no proof or
+/// quorum signature backs it, and one that kept or forwarded the signed
+/// transition can answer with any verdict. DAPI also encodes its own
 /// wait-side failures (timeouts, internal errors; see
 /// `build_wait_for_state_transition_error_response` in rs-dapi) as
-/// `StateTransitionBroadcastError`s with EMPTY consensus data, which
-/// the SDK surfaces as `cause: None` — those are ambiguous, not
-/// rejections, and must keep the note reservations. Erring this way is
-/// the safe direction: misreading a rejection as ambiguous only delays
-/// note release until the next sync or restart, while misreading a
-/// timeout as a rejection re-frees notes whose nullifiers may already
-/// be consumed on chain.
+/// `StateTransitionBroadcastError`s with EMPTY consensus data. A spend
+/// reported failed while it may still execute could be paid again with other
+/// notes; one that never executes is released by the redrive and prune
+/// passes once its anchor is pruned.
 fn classify_spend_wait_failure(
     operation: &'static str,
     wait_err: &dash_sdk::Error,
 ) -> PlatformWalletError {
-    if carries_consensus_rejection(wait_err) {
-        crate::error::promote_address_nonce_error(wait_err)
-            .unwrap_or_else(|| PlatformWalletError::ShieldedBroadcastFailed(wait_err.to_string()))
-    } else {
-        warn!(
-            operation,
-            error = %wait_err,
-            "Shielded spend broadcast accepted but result confirmation failed; \
-             leaving the note reservations in place"
-        );
-        PlatformWalletError::ShieldedSpendUnconfirmed {
-            operation,
-            reason: wait_err.to_string(),
-        }
+    warn!(
+        operation,
+        error = %wait_err,
+        rejected = carries_consensus_rejection(wait_err),
+        "Shielded spend broadcast but its result is unconfirmed; leaving the note reservations \
+         in place"
+    );
+    PlatformWalletError::ShieldedSpendUnconfirmed {
+        operation,
+        reason: wait_err.to_string(),
     }
 }
 
@@ -5747,16 +5734,18 @@ mod classify_spend_wait_failure_tests {
         })
     }
 
+    /// A broadcast error carrying a consensus cause comes from an
+    /// unauthenticated endpoint, with no proof behind it: the spend stays
+    /// unconfirmed and its reservation stays.
     #[test]
-    fn consensus_cause_is_a_definitive_rejection() {
+    fn should_read_a_wait_stage_consensus_verdict_as_unconfirmed() {
         let cause = ConsensusError::BasicError(BasicError::ProtocolVersionParsingError(
             ProtocolVersionParsingError::new("bad version".to_string()),
         ));
         let err = classify_spend_wait_failure("unshield", &broadcast_err(Some(cause)));
         assert!(
-            matches!(err, PlatformWalletError::ShieldedBroadcastFailed(_)),
-            "a broadcast error carrying a consensus cause means Platform ran and \
-             rejected the transition; the caller may release the reservation"
+            matches!(err, PlatformWalletError::ShieldedSpendUnconfirmed { .. }),
+            "{err:?}"
         );
     }
 
@@ -5808,18 +5797,19 @@ mod classify_spend_wait_failure_tests {
         dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(cause)))
     }
 
-    /// A CheckTx consensus rejection surfacing from `broadcast()` IS
-    /// definitive: the transition was evaluated and refused, it sits in no
-    /// mempool, and the caller may release the reservations and retry.
+    /// A consensus rejection surfacing from `broadcast()` stays definitive
+    /// for the shields into the pool that classify with
+    /// `broadcast_definitely_failed`, which move funds to the wallet's own
+    /// notes. On a note spend's wait the same verdict reads as unconfirmed:
+    /// no proof backs it.
     #[test]
-    fn broadcast_consensus_rejection_is_definitive() {
+    fn should_read_a_consensus_rejection_as_definitive_only_for_shields_into_the_pool() {
         assert!(broadcast_definitely_failed(&consensus_metadata_rejection()));
-        // The same verdict shape is definitive on the wait stage too.
         let err = classify_spend_wait_failure("transfer", &consensus_metadata_rejection());
-        assert!(matches!(
-            err,
-            PlatformWalletError::ShieldedBroadcastFailed(_)
-        ));
+        assert!(
+            matches!(err, PlatformWalletError::ShieldedSpendUnconfirmed { .. }),
+            "{err:?}"
+        );
     }
 
     fn grpc_err(code: dash_sdk::dapi_grpc::tonic::Code) -> dash_sdk::Error {
@@ -5912,11 +5902,11 @@ mod classify_spend_wait_failure_tests {
         assert!(!carries_consensus_rejection(&wrapped));
     }
 
-    /// A nonce rejection wrapped in the retry envelope must reach
-    /// `promote_address_nonce_error` and surface as the typed
-    /// `AddressNonceMismatch`, not fall through to `ShieldedSpendUnconfirmed`.
+    /// A nonce rejection on a note spend's wait, wrapped in the retry
+    /// envelope, is an unauthenticated verdict too: unconfirmed, the notes
+    /// kept, never a typed refusal a host could retry on.
     #[test]
-    fn wrapped_nonce_rejection_promotes_to_typed_mismatch() {
+    fn should_read_a_wrapped_nonce_rejection_on_the_wait_as_unconfirmed() {
         use dpp::address_funds::PlatformAddress;
         use dpp::consensus::state::address_funds::AddressInvalidNonceError;
         use dpp::consensus::state::state_error::StateError;
@@ -5928,18 +5918,11 @@ mod classify_spend_wait_failure_tests {
         let inner = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(cause)));
         let wrapped = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(inner));
 
-        match classify_spend_wait_failure("withdraw", &wrapped) {
-            PlatformWalletError::AddressNonceMismatch {
-                address: got,
-                provided_nonce,
-                expected_nonce,
-            } => {
-                assert_eq!(got, address);
-                assert_eq!(provided_nonce, 7);
-                assert_eq!(expected_nonce, 8);
-            }
-            other => panic!("expected AddressNonceMismatch, got {other:?}"),
-        }
+        let err = classify_spend_wait_failure("withdraw", &wrapped);
+        assert!(
+            matches!(err, PlatformWalletError::ShieldedSpendUnconfirmed { .. }),
+            "{err:?}"
+        );
     }
 }
 

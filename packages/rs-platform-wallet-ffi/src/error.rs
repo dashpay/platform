@@ -136,12 +136,14 @@ pub enum PlatformWalletFFIResultCode {
     ErrorWalletAlreadyExists = 15,
     /// Maps `PlatformWalletError::ShieldedBroadcastFailed`. The shielded
     /// transition (identity-create, unshield, transfer, or withdrawal) was
-    /// DEFINITIVELY not executed — either it never left the wallet (CheckTx
-    /// refused it with no earlier attempt that could have delivered it, or
-    /// there was nowhere to send it), or Platform reported the transition's
-    /// own execution error. A broadcast that may have been delivered is never
-    /// reported here: it is [`Self::ErrorShieldedSpendUnconfirmed`]. Any note
-    /// reservations were released and the caller is free to retry.
+    /// DEFINITIVELY not executed. For a shielded spend that consumes notes, it
+    /// never left the wallet: it was refused before anything was sent (no
+    /// address to send it to, or the SDK's own refusal). An endpoint's verdict
+    /// proves nothing for such a spend, as no proof backs it: that is
+    /// [`Self::ErrorShieldedSpendUnconfirmed`], as is any broadcast that may
+    /// have been delivered. A shield into the pool also reports here a CheckTx
+    /// or execution verdict. Any note reservations were released and the
+    /// caller is free to retry.
     /// For identity-create, the new identity does NOT exist and
     /// `out_identity_id` is left untouched (still zeroed).
     ErrorShieldedBroadcastFailed = 16,

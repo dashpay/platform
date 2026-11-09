@@ -649,10 +649,9 @@ pub(crate) fn map_spend_result(
             PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
             format!("Wallet is still syncing to a confirmed state — try again shortly. ({e})"),
         ),
-        // Definitive failure: the transition never left the wallet, or Platform
-        // executed and rejected it; the notes were released and the host may
-        // retry. A private contact request it paid for may stay pending (71
-        // on a retry, `managed_identity_get_private_reply_pending`).
+        // Definitive failure: the transition never left the wallet (for a note
+        // spend, refused before anything was sent); the notes were released
+        // and the host may retry.
         Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
             format!("{operation} failed: {e}"),
