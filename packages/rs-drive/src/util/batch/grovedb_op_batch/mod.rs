@@ -33,10 +33,12 @@ use std::fmt;
 pub struct GroveDbOpBatch {
     /// Operations
     pub(crate) operations: Vec<QualifiedGroveDbOp>,
-    /// Identities for which an owner change is a full handover rather than a change of the
-    /// stored bytes' owner: the owners of the contracts offering gas sponsorship on what the
-    /// batch updates. Empty before protocol version 15.
-    pub(crate) full_handover_owners: BTreeSet<[u8; 32]>,
+    /// How the batch's flags update treats a new owner, set on a batch that updates documents
+    /// from protocol version 15. `None` merges flags as they always were. Otherwise the owner
+    /// a write names owns the element afterwards, and an owner change involving one of these
+    /// identities, the owners of contracts offering gas sponsorship on what the batch
+    /// updates, is a full handover.
+    pub(crate) owner_handover: Option<BTreeSet<[u8; 32]>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]

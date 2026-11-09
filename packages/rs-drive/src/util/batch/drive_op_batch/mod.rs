@@ -282,16 +282,21 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
 }
 
 impl DriveOperation<'_> {
-    /// The identities for which an owner change in this batch is a full handover: the owners
-    /// of the contracts offering gas sponsorship on the documents the batch updates (protocol
-    /// version 15). A batch naming none is estimated and applied as it always was.
-    pub(crate) fn full_handover_owners(
+    /// The batch's owner handover (protocol version 15): `None` for a batch that updates no
+    /// document, and otherwise the owners of the contracts offering gas sponsorship on the
+    /// documents it updates, for whom an owner change is a full handover.
+    pub(crate) fn owner_handover(
         operations: &[DriveOperation],
-    ) -> Result<BTreeSet<[u8; 32]>, Error> {
-        let mut owners = BTreeSet::new();
+    ) -> Result<Option<BTreeSet<[u8; 32]>>, Error> {
+        let mut owners = None;
         for operation in operations {
-            if let DriveOperation::DocumentOperation(document_operation) = operation {
-                owners.extend(document_operation.storage_sponsor_of_updated_document()?);
+            if let DriveOperation::DocumentOperation(
+                document_operation @ DocumentOperationType::UpdateDocument { .. },
+            ) = operation
+            {
+                owners
+                    .get_or_insert_with(BTreeSet::new)
+                    .extend(document_operation.storage_sponsor_of_updated_document()?);
             }
         }
         Ok(owners)

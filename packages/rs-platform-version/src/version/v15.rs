@@ -568,8 +568,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     removal from an earlier epoch pays once per such epoch for reading its record, the only
 ///     fee this changes; generation 0 reads nothing.
 ///
-/// 28. **Storage handover**: when a write names a new owner on a stored element, the owner it
-///     names owns the element afterwards at any size (`DRIVE_VERSION_V10`,
+/// 28. **Storage handover**: when a batch updating documents names a new owner on a stored
+///     element, the owner it names owns the element afterwards at any size (`DRIVE_VERSION_V10`,
 ///     `DRIVE_GROVE_METHOD_VERSIONS_V2`). A transfer or a purchase keeps the stored bytes and
 ///     moves them to the new owner, the references of the indexes it leaves unchanged included
 ///     (`update_document_for_contract_operations` 2). A gas sponsor who pays is named as the

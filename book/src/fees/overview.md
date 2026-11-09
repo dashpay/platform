@@ -252,8 +252,10 @@ back only the part not yet paid out to past epochs, so a document type that
 offers sponsorship should bound its documents' size (`maxLength`, `maxItems`,
 `maxBytes`) and price the action accordingly.
 
-From protocol version 15 the owner a write names owns the element afterwards,
-at any size. What happens to the bytes depends on who is involved:
+From protocol version 15 the owner a document update names owns the element
+afterwards, at any size. Other writes, such as a moderator replacing a contract
+suspension, keep the old rules. What happens to the bytes depends on who is
+involved:
 
 - When the old or new owner is the owner of a contract whose document type the
   batch updates offers sponsorship, the handover is full: the old owner is

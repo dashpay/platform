@@ -21,7 +21,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: Option<EstimatedLayers>,
         transaction: TransactionArg,
         mut batch_operations: Vec<LowLevelDriveOperation>,
-        full_handover_owners: BTreeSet<[u8; 32]>,
+        owner_handover: Option<BTreeSet<[u8; 32]>>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
@@ -31,7 +31,7 @@ impl Drive {
                 batch_operations,
             );
         // Ephemeral operations carry no storage flags, so only the ordinary batch needs them.
-        grove_db_operations.full_handover_owners = full_handover_owners;
+        grove_db_operations.owner_handover = owner_handover;
         // Ephemeral operations (a `timeRange` index's TTL'd sub-levels, the
         // writes of a document whose type declares a `ttl`) apply as their
         // own batch per pricing rule, so each batch's cost is known

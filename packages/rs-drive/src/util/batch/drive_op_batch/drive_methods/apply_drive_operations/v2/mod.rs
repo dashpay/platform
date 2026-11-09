@@ -132,7 +132,7 @@ impl Drive {
         let forfeits_storage_refunds = operations
             .iter()
             .any(DriveOperation::forfeits_storage_refunds);
-        let full_handover_owners = DriveOperation::full_handover_owners(&operations)?;
+        let owner_handover = DriveOperation::owner_handover(&operations)?;
         // The document operations of a moderator's deletion go in a batch of their own only
         // when something else in the batch may free bytes someone is owed.
         let separates_forfeited_operations = forfeits_storage_refunds
@@ -219,11 +219,11 @@ impl Drive {
             } else {
                 Some(estimated_costs_only_with_layer_info.clone())
             };
-        self.apply_batch_low_level_drive_operations_with_full_handover_owners(
+        self.apply_batch_low_level_drive_operations_with_owner_handover(
             estimated_costs_only_with_layer_info,
             transaction,
             low_level_operations,
-            full_handover_owners,
+            owner_handover,
             &mut cost_operations,
             &platform_version.drive,
         )?;

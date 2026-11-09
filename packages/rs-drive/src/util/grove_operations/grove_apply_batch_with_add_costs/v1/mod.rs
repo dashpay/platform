@@ -12,8 +12,9 @@ use platform_version::version::drive_versions::DriveVersion;
 use std::collections::BTreeSet;
 
 impl Drive {
-    /// Generation 0 with a flags update that follows the owner the written flags name: see
-    /// [`update_element_flags_for_owner_change`].
+    /// Generation 0, except that a batch with an owner handover follows the owner the written
+    /// flags name: see [`update_element_flags_for_owner_change`]. Any other batch merges flags
+    /// as generation 0 does.
     pub(super) fn grove_apply_batch_with_add_costs_v1(
         &self,
         ops: GroveDbOpBatch,
@@ -22,17 +23,21 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        let full_handover_owners = ops.full_handover_owners.clone();
+        let owner_handover = ops.owner_handover.clone();
         self.grove_apply_batch_with_flags_update(
             ops,
             validate,
             |cost, old_flags, new_flags| {
-                update_element_flags_for_owner_change(
-                    cost,
-                    old_flags,
-                    new_flags,
-                    &full_handover_owners,
-                )
+                match &owner_handover {
+                    Some(full_handover_owners) => update_element_flags_for_owner_change(
+                        cost,
+                        old_flags,
+                        new_flags,
+                        full_handover_owners,
+                    ),
+                    None => StorageFlags::update_element_flags(cost, old_flags, new_flags)
+                        .map(ElementFlagsUpdate::from),
+                }
                 .map_err(|e| GroveError::JustInTimeElementFlagsClientError(e.to_string()))
             },
             transaction,

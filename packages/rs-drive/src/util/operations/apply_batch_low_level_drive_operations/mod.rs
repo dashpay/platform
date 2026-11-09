@@ -40,24 +40,24 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        self.apply_batch_low_level_drive_operations_with_full_handover_owners(
+        self.apply_batch_low_level_drive_operations_with_owner_handover(
             estimated_costs_only_with_layer_info,
             transaction,
             batch_operations,
-            BTreeSet::new(),
+            None,
             drive_operations,
             drive_version,
         )
     }
 
-    /// [`Self::apply_batch_low_level_drive_operations`], for a batch where an owner change
-    /// involving one of `full_handover_owners` is a full handover (protocol version 15).
-    pub(crate) fn apply_batch_low_level_drive_operations_with_full_handover_owners(
+    /// [`Self::apply_batch_low_level_drive_operations`], with the batch's `owner_handover`
+    /// (see [`GroveDbOpBatch`](crate::util::batch::GroveDbOpBatch)).
+    pub(crate) fn apply_batch_low_level_drive_operations_with_owner_handover(
         &self,
         estimated_costs_only_with_layer_info: Option<EstimatedLayers>,
         transaction: TransactionArg,
         batch_operations: Vec<LowLevelDriveOperation>,
-        full_handover_owners: BTreeSet<[u8; 32]>,
+        owner_handover: Option<BTreeSet<[u8; 32]>>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
@@ -87,7 +87,7 @@ impl Drive {
                     estimated_costs_only_with_layer_info,
                     transaction,
                     batch_operations,
-                    full_handover_owners,
+                    owner_handover,
                     drive_operations,
                     drive_version,
                 )
