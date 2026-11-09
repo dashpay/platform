@@ -506,6 +506,19 @@ pub trait ShieldedStore: Send + Sync + 'static {
         height: u64,
     ) -> Result<(), Self::Error>;
 
+    /// An upper bound on the size of the commitment tree any record this store
+    /// loaded at open without an anchor height took its anchor from: the
+    /// largest tree the store has held, kept durably across resets. Such a
+    /// record was saved by an earlier process, whose spends were built on
+    /// roots of its local tree, which only holds proved commitments. So once
+    /// a proved pool count at or below an anchor set's height reaches this
+    /// bound, the anchor was recorded by then, and the set's lack of it shows
+    /// it pruned rather than newer (`PrunedAnchorEvidence::proves_pruned`).
+    /// `None` when the store keeps no such bound: such records stay held.
+    fn legacy_anchor_tree_bound(&self) -> Option<u64> {
+        None
+    }
+
     /// Pending reservations for `id` that carry a recorded anchor —
     /// `(nullifier, anchor, activity_id, anchor_height)` per
     /// built-but-unconfirmed spend. Empty when `id` has no anchored reservations (the common

@@ -142,6 +142,9 @@ pub struct FileBackedShieldedStore {
     /// whose wallet does not read either. The row stays, and reading a
     /// covered wallet's journal fails, so its holds stay.
     unreadable_private_payment_journal: BTreeSet<Option<WalletId>>,
+    /// The largest commitment tree the store had held when it was opened
+    /// ([`ShieldedStore::legacy_anchor_tree_bound`]); `None` for none.
+    legacy_anchor_tree_bound: Option<u64>,
 }
 
 /// The private contact request association a saved record carries.
@@ -500,6 +503,17 @@ impl FileBackedShieldedStore {
             .map_err(|e| {
                 FileShieldedStoreError::Storage(format!("create private payment journal: {e}"))
             })?;
+        // The largest commitment tree the store has held, raised at every open
+        // and before every reset: never purged.
+        pending_conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS shielded_store_meta (
+                    key   TEXT    NOT NULL PRIMARY KEY,
+                    value INTEGER NOT NULL
+                )",
+                [],
+            )
+            .map_err(|e| FileShieldedStoreError::Storage(format!("create store meta: {e}")))?;
         let mut store = Self {
             tree: Mutex::new(tree),
             path,
@@ -511,10 +525,47 @@ impl FileBackedShieldedStore {
             private_payment_journal: BTreeMap::new(),
             private_payment_journals: BTreeSet::new(),
             unreadable_private_payment_journal: BTreeSet::new(),
+            legacy_anchor_tree_bound: None,
         };
+        // Every record loaded below without an anchor height was saved by an
+        // earlier process, from a tree no larger than the largest the store
+        // has held: the tree as it is now, or one a reset cleared, whose size
+        // the reset kept.
+        let size = store.tree_size()?;
+        let largest = store.raise_largest_tree_size(size)?;
+        store.legacy_anchor_tree_bound = (largest > 0).then_some(largest);
         store.rehydrate_pending_spends()?;
         store.load_private_payment_journal()?;
         Ok(store)
+    }
+
+    /// Raise the largest commitment tree size the store keeps durably to
+    /// `size`, returning the largest it keeps now.
+    fn raise_largest_tree_size(&self, size: u64) -> Result<u64, FileShieldedStoreError> {
+        let size = i64::try_from(size).map_err(|_| {
+            FileShieldedStoreError::Storage(format!("tree size {size} past SQLite's integers"))
+        })?;
+        let conn = self
+            .pending_conn
+            .lock()
+            .map_err(|e| FileShieldedStoreError::Storage(format!("pending_conn mutex: {e}")))?;
+        conn.execute(
+            "INSERT INTO shielded_store_meta (key, value) VALUES ('largest_tree_size', ?1) \
+             ON CONFLICT(key) DO UPDATE SET value = MAX(value, excluded.value)",
+            rusqlite::params![size],
+        )
+        .map_err(|e| FileShieldedStoreError::Storage(format!("raise largest tree size: {e}")))?;
+        let largest: i64 = conn
+            .query_row(
+                "SELECT value FROM shielded_store_meta WHERE key = 'largest_tree_size'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| FileShieldedStoreError::Storage(format!("read largest tree size: {e}")))?;
+        u64::try_from(largest).map_err(|_| FileShieldedStoreError::RecoveryCorrupted {
+            account_index: None,
+            reason: format!("a negative largest tree size {largest}"),
+        })
     }
 
     /// Reload every persisted [`PendingRedrive`] into the in-memory
@@ -1628,7 +1679,16 @@ impl ShieldedStore for FileBackedShieldedStore {
         Ok(())
     }
 
+    fn legacy_anchor_tree_bound(&self) -> Option<u64> {
+        self.legacy_anchor_tree_bound
+    }
+
     fn reset_commitment_tree(&mut self) -> Result<(), Self::Error> {
+        // Its size kept first: a record saved before the reset, without an
+        // anchor height, took its anchor from a tree no larger than this one.
+        // A failure resets nothing.
+        let size = self.tree_size()?;
+        self.raise_largest_tree_size(size)?;
         // The `ClientPersistentCommitmentTree` wrapper owns its
         // `Connection` and exposes no public truncate (only the inner
         // `SqliteShardStore` has `truncate_shards`). A full reset
@@ -3049,6 +3109,46 @@ mod tests {
             .private_payment_journal(wallet_id)
             .expect("journal")
             .is_empty());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// The bound on the trees that anchors named without their heights came
+    /// from is the largest tree the store has held: none for a store that
+    /// held no tree when it was opened, kept as it was at open while the tree
+    /// grows, and after a reset emptied the tree and a smaller one grew, the
+    /// size the reset kept first.
+    #[test]
+    fn should_bound_heightless_anchors_by_the_largest_tree_the_store_held() {
+        let path = temp_tree_path("largest_tree");
+        let append = |store: &mut FileBackedShieldedStore, leaves: u8| {
+            for leaf in 0..leaves {
+                store
+                    .append_commitment(&[leaf + 1; 32], true)
+                    .expect("appended");
+            }
+        };
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+        assert_eq!(store.legacy_anchor_tree_bound(), None, "no tree at open");
+        append(&mut store, 3);
+        assert_eq!(store.legacy_anchor_tree_bound(), None, "as it was at open");
+        store.reset_commitment_tree().expect("reset");
+        append(&mut store, 1);
+        drop(store);
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("reopened");
+        assert_eq!(store.tree_size().expect("size"), 1);
+        assert_eq!(
+            store.legacy_anchor_tree_bound(),
+            Some(3),
+            "the tree the reset emptied"
+        );
+        append(&mut store, 4);
+        drop(store);
+        let store = FileBackedShieldedStore::open_path(&path, 100).expect("reopened again");
+        assert_eq!(
+            store.legacy_anchor_tree_bound(),
+            Some(5),
+            "the tree as reopened"
+        );
         let _ = std::fs::remove_file(&path);
     }
 
