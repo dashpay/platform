@@ -16,15 +16,15 @@ use dpp::platform_value::Identifier;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use sha2::{Digest, Sha256};
-use tokio::sync::OwnedSemaphorePermit;
+use std::sync::Arc;
 
 use super::block_proof::{build_block_proof, transaction_proofs};
 use super::error_mapping::base64_decode;
 use super::get_blocks::MAX_RESPONSE_BYTES;
 use crate::cache::make_cache_key;
-use crate::clients::tenderdash_client::{BlockTxResult, MAX_TENDERDASH_HEIGHT};
+use crate::clients::tenderdash_client::{BlockTxResult, MAX_TENDERDASH_HEIGHT, TenderdashClient};
 use crate::error::{DAPIResult, DapiError};
-use crate::services::platform_service::PlatformServiceImpl;
+use crate::services::platform_service::{PlatformServiceImpl, run_holding_permit};
 
 impl PlatformServiceImpl {
     /// Read the block at the requested height from Tenderdash and return the state
@@ -42,7 +42,6 @@ impl PlatformServiceImpl {
         }
         let generation = self.platform_cache.generation();
 
-        // Held until the block is read and decoded
         let permit = self
             .get_owner_transactions_permits
             .clone()
@@ -52,62 +51,80 @@ impl PlatformServiceImpl {
                     "too many getOwnerTransactionsInBlock requests in progress".to_string(),
                 )
             })?;
+        let tenderdash_client = Arc::clone(&self.tenderdash_client);
+        let cache = self.platform_cache.clone();
 
-        let result = self.tenderdash_client.block(height).await?;
-        let block_id = result.block_id;
-        let block = result
-            .block
-            .ok_or_else(|| DapiError::NotFound(format!("no block at height {height}")))?;
-        let platform_version = block_platform_version(block.header.version.app, height)?;
-        let (block_txs, owned, _permit) =
-            select_owned_transactions_blocking(block.data.txs, owner_id, platform_version, permit)
-                .await?;
-        let indexes = owned.iter().map(|tx| tx.index).collect::<Vec<_>>();
-        // Most blocks hold nothing of a given owner, so the results are read only when needed
-        let results = if owned.is_empty() {
-            Vec::new()
-        } else {
-            self.tenderdash_client
-                .block_results(height)
-                .await?
-                .txs_results
-        };
-        let mut transactions = if owned.is_empty() {
-            Vec::new()
-        } else {
-            attach_results(owned, &results, block_txs.len())?
-        };
-
-        let proof = if prove {
-            let commit = self.tenderdash_client.commit(height).await?;
-            let quorum_type = self.tenderdash_client.validator_quorum_type().await?;
-            let proof = build_block_proof(height, &block_id, commit, quorum_type)?;
-            let proofs = transaction_proofs(&proof, &block_txs, &results, &indexes)?;
-            for (transaction, transaction_proof) in transactions.iter_mut().zip(proofs) {
-                transaction.proof = Some(transaction_proof);
-            }
-            Some(proof)
-        } else {
-            None
-        };
-
-        let response = GetOwnerTransactionsInBlockResponse {
-            version: Some(get_owner_transactions_in_block_response::Version::V0(
-                GetOwnerTransactionsInBlockResponseV0 {
-                    transactions,
-                    proof,
-                },
-            )),
-        };
-        let response_bytes = dapi_grpc::Message::encoded_len(&response);
-        if prove {
-            check_proved_response_size(response_bytes)?;
-        }
-        self.platform_cache
-            .put_from_generation(key, &response, response_bytes, generation);
+        let response = run_holding_permit(permit, async move {
+            let response =
+                read_owner_transactions(&tenderdash_client, height, owner_id, prove).await?;
+            cache.put_from_generation(
+                key,
+                &response,
+                dapi_grpc::Message::encoded_len(&response),
+                generation,
+            );
+            Ok(response)
+        })
+        .await?;
 
         Ok(Response::new(response))
     }
+}
+
+/// Read the block from Tenderdash and build the answer for one owner.
+async fn read_owner_transactions(
+    tenderdash_client: &TenderdashClient,
+    height: u64,
+    owner_id: Identifier,
+    prove: bool,
+) -> DAPIResult<GetOwnerTransactionsInBlockResponse> {
+    let result = tenderdash_client.block(height).await?;
+    let block_id = result.block_id;
+    let block = result
+        .block
+        .ok_or_else(|| DapiError::NotFound(format!("no block at height {height}")))?;
+    let platform_version = block_platform_version(block.header.version.app, height)?;
+    let (block_txs, owned) =
+        select_owned_transactions_blocking(block.data.txs, owner_id, platform_version).await?;
+    let indexes = owned.iter().map(|tx| tx.index).collect::<Vec<_>>();
+    // Most blocks hold nothing of a given owner, so the results are read only when needed
+    let results = if owned.is_empty() {
+        Vec::new()
+    } else {
+        tenderdash_client.block_results(height).await?.txs_results
+    };
+    let mut transactions = if owned.is_empty() {
+        Vec::new()
+    } else {
+        attach_results(owned, &results, block_txs.len())?
+    };
+
+    let proof = if prove {
+        let commit = tenderdash_client.commit(height).await?;
+        let quorum_type = tenderdash_client.validator_quorum_type().await?;
+        let proof = build_block_proof(height, &block_id, commit, quorum_type)?;
+        let proofs = transaction_proofs(&proof, &block_txs, &results, &indexes)?;
+        for (transaction, transaction_proof) in transactions.iter_mut().zip(proofs) {
+            transaction.proof = Some(transaction_proof);
+        }
+        Some(proof)
+    } else {
+        None
+    };
+
+    let response = GetOwnerTransactionsInBlockResponse {
+        version: Some(get_owner_transactions_in_block_response::Version::V0(
+            GetOwnerTransactionsInBlockResponseV0 {
+                transactions,
+                proof,
+            },
+        )),
+    };
+    if prove {
+        check_proved_response_size(dapi_grpc::Message::encoded_len(&response))?;
+    }
+
+    Ok(response)
 }
 
 /// The protocol version a block executed under, which decides what decodes in that block.
@@ -200,20 +217,18 @@ fn select_owned_transactions(
 }
 
 /// Run [`select_owned_transactions`] on the blocking pool, handing the block's transactions
-/// and the permit back with the selection.
+/// back with the selection.
 ///
 /// Decoding a full block takes long enough to hold up every other request if it runs on
-/// the async threads. A blocking task cannot be cancelled, so it carries the permit: a
-/// request whose caller went away still counts against the limit until its decode ends.
+/// the async threads.
 async fn select_owned_transactions_blocking(
     block_txs: Vec<String>,
     owner_id: Identifier,
     platform_version: &'static PlatformVersion,
-    permit: OwnedSemaphorePermit,
-) -> DAPIResult<(Vec<String>, Vec<OwnedTransaction>, OwnedSemaphorePermit)> {
+) -> DAPIResult<(Vec<String>, Vec<OwnedTransaction>)> {
     tokio::task::spawn_blocking(move || {
         let owned = select_owned_transactions(&block_txs, owner_id, platform_version)?;
-        Ok((block_txs, owned, permit))
+        Ok((block_txs, owned))
     })
     .await?
 }
@@ -262,6 +277,7 @@ mod tests {
     use super::*;
     use crate::clients::tenderdash_client::{ResultBlock, ResultBlockResults};
     use crate::services::platform_service::MAX_CONCURRENT_GET_OWNER_TRANSACTIONS;
+    use crate::services::platform_service::protobuf_request_errors::StalledTenderdash;
     use base64::Engine;
     use base64::engine::general_purpose::STANDARD;
     use dapi_grpc::platform::v0::get_owner_transactions_in_block_request::GetOwnerTransactionsInBlockRequestV0;
@@ -280,8 +296,7 @@ mod tests {
     use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
     use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
     use std::collections::BTreeMap;
-    use std::sync::Arc;
-    use tokio::sync::Semaphore;
+    use std::time::Duration;
 
     const ALICE: Identifier = Identifier::new([1; 32]);
     const BOB: Identifier = Identifier::new([2; 32]);
@@ -379,6 +394,52 @@ mod tests {
         assert_eq!(response.into_inner(), cached);
     }
 
+    #[tokio::test]
+    async fn should_count_a_request_against_the_limit_until_tenderdash_is_done_with_it() {
+        let tenderdash = StalledTenderdash::start().await;
+        let service = tenderdash.service();
+        let mut handlers = (1..=MAX_CONCURRENT_GET_OWNER_TRANSACTIONS as u64)
+            .map(|height| {
+                Box::pin(
+                    service.get_owner_transactions_in_block_impl(Request::new(request(
+                        height,
+                        ALICE.to_vec(),
+                    ))),
+                )
+            })
+            .collect::<Vec<_>>();
+        for handler in &mut handlers {
+            assert!(futures::poll!(handler).is_pending());
+        }
+        tenderdash
+            .wait_for_requests(MAX_CONCURRENT_GET_OWNER_TRANSACTIONS)
+            .await;
+
+        // Every caller goes away while Tenderdash is still busy with its request
+        drop(handlers);
+
+        assert_eq!(
+            service.get_owner_transactions_permits.available_permits(),
+            0
+        );
+        let error = service
+            .get_owner_transactions_in_block_impl(Request::new(request(100, ALICE.to_vec())))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, DapiError::ResourceExhausted(_)));
+        assert_eq!(tenderdash.requests(), MAX_CONCURRENT_GET_OWNER_TRANSACTIONS);
+
+        tenderdash.hang_up();
+        let freed = tokio::time::timeout(
+            Duration::from_secs(10),
+            service
+                .get_owner_transactions_permits
+                .acquire_many(MAX_CONCURRENT_GET_OWNER_TRANSACTIONS as u32),
+        )
+        .await;
+        assert!(freed.is_ok());
+    }
+
     #[test]
     fn should_select_only_the_owners_transactions_in_block_order() {
         let txs = [
@@ -430,42 +491,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn should_hand_back_the_permit_with_the_selection_decoded_off_the_async_threads() {
-        let permits = Arc::new(Semaphore::new(1));
-        let permit = permits.clone().try_acquire_owned().unwrap();
+    async fn should_hand_back_the_block_with_the_selection_decoded_off_the_async_threads() {
         let txs = vec![transfer(BOB, ALICE, 1), transfer(ALICE, BOB, 2)];
 
-        let (block_txs, owned, permit) = select_owned_transactions_blocking(
-            txs.clone(),
-            ALICE,
-            PlatformVersion::latest(),
-            permit,
-        )
-        .await
-        .unwrap();
+        let (block_txs, owned) =
+            select_owned_transactions_blocking(txs.clone(), ALICE, PlatformVersion::latest())
+                .await
+                .unwrap();
 
         assert_eq!(block_txs, txs);
         assert_eq!(owned.iter().map(|tx| tx.index).collect::<Vec<_>>(), [1]);
-        assert_eq!(permits.available_permits(), 0);
-        drop(permit);
-        assert_eq!(permits.available_permits(), 1);
     }
 
     #[tokio::test]
-    async fn should_release_the_permit_when_the_block_does_not_decode() {
-        let permits = Arc::new(Semaphore::new(1));
-        let permit = permits.clone().try_acquire_owned().unwrap();
-
+    async fn should_fail_off_the_async_threads_when_the_block_does_not_decode() {
         let result = select_owned_transactions_blocking(
             vec!["not base64!".to_string()],
             ALICE,
             PlatformVersion::latest(),
-            permit,
         )
         .await;
 
         assert!(matches!(result, Err(DapiError::Internal(_))));
-        assert_eq!(permits.available_permits(), 1);
     }
 
     #[test]

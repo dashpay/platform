@@ -29,7 +29,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::sleep;
 use tracing::{info, trace, warn};
 
@@ -46,6 +46,24 @@ const MAX_CONCURRENT_GET_BLOCKS: usize = 4;
 /// `getBlocks`, since each reads one block, but no response cache can absorb them: the
 /// answer differs per owner.
 const MAX_CONCURRENT_GET_OWNER_TRANSACTIONS: usize = 16;
+
+/// Run backend work in a task of its own, which keeps `permit` until the work ends.
+///
+/// A handler is dropped when its caller goes away or its deadline passes, while the request
+/// it sent to Tenderdash carries on there. Work run here is not dropped with its handler, so
+/// it counts against its limit for as long as the backend is busy with it, and what it read
+/// can still be cached.
+async fn run_holding_permit<T, F>(permit: OwnedSemaphorePermit, work: F) -> DAPIResult<T>
+where
+    T: Send + 'static,
+    F: Future<Output = DAPIResult<T>> + Send + 'static,
+{
+    tokio::spawn(async move {
+        let _permit = permit;
+        work.await
+    })
+    .await?
+}
 
 const MAX_PATH_COMPONENTS: usize = 256;
 const MAX_GROVEDB_KEY_BYTES: usize = 255;
@@ -163,6 +181,7 @@ use crate::DapiError;
 use crate::clients::tenderdash_client::TenderdashClient;
 use crate::clients::tenderdash_websocket::TenderdashWebSocketClient;
 use crate::config::Config;
+use crate::error::DAPIResult;
 use crate::services::streaming_service::FilterType;
 use crate::sync::Workers;
 

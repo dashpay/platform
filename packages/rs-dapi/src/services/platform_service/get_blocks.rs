@@ -5,6 +5,7 @@
 //! together with a much lower per-IP request limit in the gateway's rate limiter.
 
 use std::ops::RangeInclusive;
+use std::sync::Arc;
 
 use chrono::DateTime;
 use dapi_grpc::platform::v0::get_blocks_response::get_blocks_response_v0::{Block, Transaction};
@@ -18,10 +19,10 @@ use super::error_mapping::base64_decode;
 use crate::cache::make_cache_key;
 use crate::clients::tenderdash_client::{
     Block as TenderdashBlock, BlockTxResult, MAX_TENDERDASH_HEIGHT, ResultBlock,
-    ResultBlockResults, ResultCommit,
+    ResultBlockResults, ResultCommit, TenderdashClient,
 };
 use crate::error::{DAPIResult, DapiError};
-use crate::services::platform_service::PlatformServiceImpl;
+use crate::services::platform_service::{PlatformServiceImpl, run_holding_permit};
 
 const MAX_BLOCKS_PER_REQUEST: u32 = 10;
 
@@ -44,57 +45,64 @@ impl PlatformServiceImpl {
         }
         let generation = self.platform_cache.generation();
 
-        // Held until the blocks are read and converted
-        let _permit = self.get_blocks_permits.try_acquire().map_err(|_| {
-            DapiError::ResourceExhausted("too many getBlocks requests in progress".to_string())
-        })?;
+        let permit = self
+            .get_blocks_permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| {
+                DapiError::ResourceExhausted("too many getBlocks requests in progress".to_string())
+            })?;
+        let tenderdash_client = Arc::clone(&self.tenderdash_client);
+        let cache = self.platform_cache.clone();
 
-        let blocks = self.fetch_blocks(heights, prove).await?;
-
-        let response = GetBlocksResponse {
-            version: Some(get_blocks_response::Version::V0(GetBlocksResponseV0 {
-                blocks,
-            })),
-        };
-        self.platform_cache.put_from_generation(
-            key,
-            &response,
-            dapi_grpc::Message::encoded_len(&response),
-            generation,
-        );
+        let response = run_holding_permit(permit, async move {
+            let blocks = fetch_blocks(&tenderdash_client, heights, prove).await?;
+            let response = GetBlocksResponse {
+                version: Some(get_blocks_response::Version::V0(GetBlocksResponseV0 {
+                    blocks,
+                })),
+            };
+            cache.put_from_generation(
+                key,
+                &response,
+                dapi_grpc::Message::encoded_len(&response),
+                generation,
+            );
+            Ok(response)
+        })
+        .await?;
 
         Ok(Response::new(response))
     }
+}
 
-    /// Read the whole range from Tenderdash in one batched request.
-    async fn fetch_blocks(
-        &self,
-        heights: RangeInclusive<u64>,
-        prove: bool,
-    ) -> DAPIResult<Vec<Block>> {
-        let quorum_type = if prove {
-            Some(self.tenderdash_client.validator_quorum_type().await?)
-        } else {
-            None
-        };
-        let mut entries = self
-            .tenderdash_client
-            .block_batch(heights.clone(), prove)
-            .await?
-            .into_iter();
+/// Read the whole range from Tenderdash in one batched request.
+async fn fetch_blocks(
+    tenderdash_client: &TenderdashClient,
+    heights: RangeInclusive<u64>,
+    prove: bool,
+) -> DAPIResult<Vec<Block>> {
+    let quorum_type = if prove {
+        Some(tenderdash_client.validator_quorum_type().await?)
+    } else {
+        None
+    };
+    let mut entries = tenderdash_client
+        .block_batch(heights.clone(), prove)
+        .await?
+        .into_iter();
 
-        collect_blocks(heights, |height| {
-            let entry = entries.next().ok_or_else(|| {
-                DapiError::Internal(format!("no batch entry for height {height}"))
-            })?;
-            read_block(
-                height,
-                entry.block,
-                entry.results,
-                entry.commit.zip(quorum_type),
-            )
-        })
-    }
+    collect_blocks(heights, |height| {
+        let entry = entries
+            .next()
+            .ok_or_else(|| DapiError::Internal(format!("no batch entry for height {height}")))?;
+        read_block(
+            height,
+            entry.block,
+            entry.results,
+            entry.commit.zip(quorum_type),
+        )
+    })
 }
 
 /// Turn the Tenderdash answers for one height into a block. `results` is only looked at
@@ -261,9 +269,11 @@ mod tests {
     use super::*;
     use crate::services::platform_service::MAX_CONCURRENT_GET_BLOCKS;
     use crate::services::platform_service::block_proof::tenderdash_commit;
+    use crate::services::platform_service::protobuf_request_errors::StalledTenderdash;
     use dapi_grpc::platform::v0::TenderdashBlockProof;
     use dapi_grpc::platform::v0::get_blocks_request::GetBlocksRequestV0;
     use serde_json::json;
+    use std::time::Duration;
 
     fn request(start_height: u64, count: u32) -> GetBlocksRequest {
         GetBlocksRequest {
@@ -337,6 +347,42 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.into_inner(), cached);
+    }
+
+    #[tokio::test]
+    async fn should_count_a_request_against_the_limit_until_tenderdash_is_done_with_it() {
+        let tenderdash = StalledTenderdash::start().await;
+        let service = tenderdash.service();
+        let mut handlers = (1..=MAX_CONCURRENT_GET_BLOCKS as u64)
+            .map(|height| Box::pin(service.get_blocks_impl(Request::new(request(height, 1)))))
+            .collect::<Vec<_>>();
+        for handler in &mut handlers {
+            assert!(futures::poll!(handler).is_pending());
+        }
+        tenderdash
+            .wait_for_requests(MAX_CONCURRENT_GET_BLOCKS)
+            .await;
+
+        // Every caller goes away while Tenderdash is still busy with its request
+        drop(handlers);
+
+        assert_eq!(service.get_blocks_permits.available_permits(), 0);
+        let error = service
+            .get_blocks_impl(Request::new(request(100, 1)))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, DapiError::ResourceExhausted(_)));
+        assert_eq!(tenderdash.requests(), MAX_CONCURRENT_GET_BLOCKS);
+
+        tenderdash.hang_up();
+        let freed = tokio::time::timeout(
+            Duration::from_secs(10),
+            service
+                .get_blocks_permits
+                .acquire_many(MAX_CONCURRENT_GET_BLOCKS as u32),
+        )
+        .await;
+        assert!(freed.is_ok());
     }
 
     #[test]

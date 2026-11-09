@@ -55,6 +55,14 @@ impl TenderdashClient {
             validator_quorum_type: OnceCell::new(),
         }
     }
+
+    /// Construct a fixture client whose HTTP requests go to `base_url`.
+    pub(crate) fn with_test_base_url(base_url: String) -> Self {
+        Self {
+            base_url,
+            ..Self::without_test_connection()
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

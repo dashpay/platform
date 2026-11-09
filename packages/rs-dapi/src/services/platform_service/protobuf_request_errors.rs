@@ -38,8 +38,10 @@ use rs_dapi_client::{
     RequestSettings, Uri,
 };
 use std::marker::PhantomData;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
@@ -100,6 +102,65 @@ impl PlatformServiceImpl {
             .layer(TraceLayer::new_for_http())
             .service(Endpoint::from_static("http://drive.invalid").connect_lazy());
         Self::with_test_drive(DriveClient::from_test_channel(channel))
+    }
+}
+
+/// A Tenderdash stand-in that takes requests and leaves them unanswered.
+pub(super) struct StalledTenderdash {
+    url: String,
+    requests: Arc<AtomicUsize>,
+    server: JoinHandle<()>,
+}
+
+impl StalledTenderdash {
+    pub(super) async fn start() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("stalled Tenderdash listener");
+        let address = listener.local_addr().expect("stalled Tenderdash address");
+        let requests = Arc::new(AtomicUsize::new(0));
+        let seen = Arc::clone(&requests);
+        let server = tokio::spawn(async move {
+            let mut connections = Vec::new();
+            while let Ok((connection, _)) = listener.accept().await {
+                seen.fetch_add(1, Ordering::SeqCst);
+                connections.push(connection);
+            }
+        });
+        Self {
+            url: format!("http://{address}"),
+            requests,
+            server,
+        }
+    }
+
+    /// A service whose Tenderdash requests come here.
+    pub(super) fn service(&self) -> PlatformServiceImpl {
+        let mut service = PlatformServiceImpl::without_backends();
+        service.tenderdash_client =
+            Arc::new(TenderdashClient::with_test_base_url(self.url.clone()));
+        service
+    }
+
+    /// The requests taken so far, none of them answered.
+    pub(super) fn requests(&self) -> usize {
+        self.requests.load(Ordering::SeqCst)
+    }
+
+    /// Wait until `count` requests have arrived.
+    pub(super) async fn wait_for_requests(&self, count: usize) {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while self.requests() < count {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("requests reach the stalled Tenderdash");
+    }
+
+    /// Close every connection, failing the requests still waiting on them.
+    pub(super) fn hang_up(self) {
+        self.server.abort();
     }
 }
 
