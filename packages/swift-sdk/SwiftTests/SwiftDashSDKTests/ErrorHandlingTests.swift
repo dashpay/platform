@@ -521,6 +521,33 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    /// Unrestored private payments are the wallet's hold, not one contact's
+    /// pending request: their own code and typed case, apart from 71.
+    func testShouldReportUnrestoredPrivatePaymentsByTheirOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_PAYMENTS_NOT_RESTORED
+        )
+        XCTAssertEqual(code, .errorPrivateContactPaymentsNotRestored)
+        XCTAssertEqual(code.rawValue, 72)
+        let detail = "the wallet's private payments are not restored from the shielded store yet"
+        let error = PlatformWalletError(code: code, message: detail)
+        guard case .privateContactPaymentsNotRestored(let message) = error else {
+            return XCTFail("lost typed not-restored error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    func testShouldReadEveryFieldOfThePrivateContactReadiness() {
+        var ffi = PrivateContactReadinessFFI()
+        ffi.private_payments_restored = false
+        ffi.private_store_read = true
+        ffi.unresolved_private_payment = true
+        XCTAssertEqual(
+            PrivateContactReadiness(ffi: ffi),
+            PrivateContactReadiness(
+                privatePaymentsRestored: false, privateStoreRead: true, unresolvedPrivatePayment: true))
+    }
+
     func testShouldReadEveryFieldOfAPrivateContact() {
         var ffi = PrivateContactFFI()
         ffi.received_privately = true
