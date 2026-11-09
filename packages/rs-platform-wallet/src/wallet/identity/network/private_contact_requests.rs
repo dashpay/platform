@@ -1192,6 +1192,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// wallet: accepting it replies privately, which pays from the shielded
     /// pool, so it is accepted by hand
     /// ([`Self::accept_private_contact_request`]).
+    ///
+    /// Refused with [`PlatformWalletError::SeedMismatch`], before any page
+    /// is read and with no position moved, when `crypto` does not resolve
+    /// this wallet's seed ([`IdentityWallet::verify_seed_binds`]): another
+    /// seed derives valid but unrelated keys, which open nothing, so its pass
+    /// would record as read pages holding requests it never saw, and nothing
+    /// rewinds them once the provider is fixed.
     pub async fn sync_private_contact_requests<C>(
         &self,
         crypto: &C,
@@ -1207,6 +1214,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             report.complete = true;
             return Ok(report);
         };
+        // Before anything is read or recorded: once a pass, as the keys it
+        // scans with all come from the same provider.
+        self.verify_seed_binds(crypto).await?;
         let identity_indexes: BTreeMap<Identifier, u32> = identities
             .iter()
             .map(|identity| (identity.identity_id, identity.identity_index))
@@ -1870,7 +1880,7 @@ mod tests {
     use platform_encryption::{
         account_reference_version, decrypt_account_label, decrypt_extended_public_key,
     };
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Mutex;
     use std::time::Duration;
 
@@ -4224,18 +4234,22 @@ mod tests {
         }
     }
 
-    /// A hook that, the first time it runs, says so on `reached` and waits
-    /// for `release`.
-    fn pause_once(reached: Arc<tokio::sync::Notify>, release: Arc<tokio::sync::Notify>) -> Hook {
-        let first = Arc::new(AtomicBool::new(true));
+    /// A hook that, the `call`th time it runs (from 1), says so on `reached`
+    /// and waits for `release`.
+    fn pause_on_call(
+        call: usize,
+        reached: Arc<tokio::sync::Notify>,
+        release: Arc<tokio::sync::Notify>,
+    ) -> Hook {
+        let runs = Arc::new(AtomicUsize::new(0));
         Arc::new(move || {
-            let (reached, release, first) = (
+            let (reached, release, runs) = (
                 Arc::clone(&reached),
                 Arc::clone(&release),
-                Arc::clone(&first),
+                Arc::clone(&runs),
             );
             Box::pin(async move {
-                if first.swap(false, Ordering::SeqCst) {
+                if runs.fetch_add(1, Ordering::SeqCst) + 1 == call {
                     reached.notify_one();
                     release.notified().await;
                 }
@@ -4257,9 +4271,11 @@ mod tests {
         let view = alice_wallet.identity().dashpay();
         let reached = Arc::new(tokio::sync::Notify::new());
         let release = Arc::new(tokio::sync::Notify::new());
+        // The second derivation: the first checks the provider's seed before
+        // the store is read.
         let mut pausing = HookedCrypto::new(ALICE_PHRASE);
         pausing.before_receiving_xpub =
-            Some(pause_once(Arc::clone(&reached), Arc::clone(&release)));
+            Some(pause_on_call(2, Arc::clone(&reached), Arc::clone(&release)));
         let paid = Arc::new(Mutex::new(Vec::new()));
 
         let (alice_id, bob_id) = (alice.id(), bob.id());
@@ -4410,6 +4426,46 @@ mod tests {
         assert_eq!(report.requests.len(), 1, "{:?}", report.requests);
         managed(&bob_wallet, BOB, |managed| {
             assert!(managed.dashpay().incoming_request(&alice.id()).is_some());
+        })
+        .await;
+    }
+
+    /// A pass whose provider resolves another wallet's seed, valid but
+    /// deriving unrelated keys that open nothing, is refused with nothing
+    /// read or recorded; the pass with the wallet's own seed then reads the
+    /// request the refused one would have passed over.
+    #[tokio::test]
+    async fn should_refuse_a_pass_with_another_seed_and_leave_its_position_unmoved() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let (entry, _) = alice_to_bob([0x55; 43]).await;
+        let (_manager, bob_wallet) = wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![entry]).await;
+        let view = bob_wallet.identity().dashpay();
+
+        let another_seed = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let refused = view.sync_private_contact_requests(&another_seed, 4).await;
+        assert!(
+            matches!(refused, Err(PlatformWalletError::SeedMismatch { .. })),
+            "{refused:?}"
+        );
+        managed(&bob_wallet, BOB, |managed| {
+            assert_eq!(
+                managed.dashpay().private_contact_requests_position(),
+                0,
+                "nothing recorded as read"
+            );
+            assert!(!managed.dashpay().private_contact_requests_read());
+            assert!(managed.dashpay().incoming_request(&alice.id()).is_none());
+        })
+        .await;
+
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        view.sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("the pass with Bob's seed");
+        managed(&bob_wallet, BOB, |managed| {
+            assert!(managed.dashpay().incoming_request(&alice.id()).is_some());
+            assert_eq!(managed.dashpay().private_contact_requests_position(), 1);
         })
         .await;
     }
