@@ -51,6 +51,10 @@ describe('migrateConfigFileFactory', () => {
         whitelist.splice(whitelist.indexOf(method), 1);
       };
 
+      if (semver.lt(release, '5.0.4')) {
+        options.core.docker.image = 'dashpay/dashd:23';
+      }
+
       if (semver.lt(release, '5.0.0-rc.2')) {
         removeFromWhitelist('getdeploymentinfo');
       }

@@ -6,7 +6,7 @@ The `core` section contains options for configuring the Dash Core node. The conf
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
-| `core.docker.image` | Docker image for Dash Core | `dashpay/dashd:22` | `dashpay/dashd:latest` |
+| `core.docker.image` | Docker image for Dash Core | `dashpay/dashd:24` | `dashpay/dashd:24.0.0` |
 | `core.docker.commandArgs` | Additional command arguments for Core | `[]` | `["--reindex"]` |
 
 With `core.docker.commandArgs` you can pass additional command-line arguments to the Dash Core Docker container. This is useful for customizing the behavior of the Core node.
