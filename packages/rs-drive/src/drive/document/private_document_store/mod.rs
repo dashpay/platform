@@ -125,12 +125,20 @@ impl PrivateDocumentEntry {
 
 /// A page of a private type's store: its entries in append order, and how many entries the
 /// store holds, so a page shorter than asked for ends at the store's last entry.
+///
+/// A client-side read result, not consensus data.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PrivateDocumentEntries {
     /// The page's entries, in append order.
     pub entries: Vec<PrivateDocumentEntry>,
     /// How many entries the store holds.
     pub total_count: u64,
+    /// The power of two the store's chunks are sized by, as the store committed it at
+    /// creation: a page reads from its first position to the end of the chunk holding it
+    /// (`private_document_entries_page_limit`). Drive's read and a verified proof give it,
+    /// from the store element the proof binds; `None` for a page read without a proof, whose
+    /// response does not carry it.
+    pub chunk_power: Option<u8>,
 }
 
 /// The private document declaration of `document_type`, which the entries of a store are read
@@ -454,8 +462,8 @@ mod tests {
     fn assert_holds_an_empty_store_of_585_byte_entries(drive: &Drive) {
         let element = element_at_key_zero(drive, "secret");
         assert!(
-            matches!(element, Element::PrivateDocumentStore(0, 601, 9, _)),
-            "expected an empty store of 16 + 585 byte entries at chunk power 9, got {element:?}"
+            matches!(element, Element::PrivateDocumentStore(0, 601, 10, _)),
+            "expected an empty store of 16 + 585 byte entries at chunk power 10, got {element:?}"
         );
     }
 
@@ -688,9 +696,10 @@ mod tests {
     }
 
     /// A drive holding the contract with the private `secret` type of 4096-byte entries,
-    /// whose store keeps 64 entries to a chunk, and `count` entries appended to it, entry `i`
-    /// behind the header of block `100 + i` at time `1_000 * i` and filled with byte `i`.
-    fn drive_with_private_entries(count: u8) -> (Drive, DataContract) {
+    /// whose store keeps 128 entries to a chunk, and `count` entries appended to it, entry `i`
+    /// behind the header of block `100 + i` at time `1_000 * i` and filled with byte `i` (its
+    /// low byte past 255: the header keeps the entries distinct).
+    fn drive_with_private_entries(count: u16) -> (Drive, DataContract) {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
         let contract = contract_with_entry_size(1, true, 4096);
@@ -719,7 +728,7 @@ mod tests {
                     encode_stored_private_document_entry(
                         100 + u64::from(i),
                         1_000 * u64::from(i),
-                        &[i; 4096],
+                        &[entry_byte(i); 4096],
                     ),
                     None,
                     &platform_version.drive.grove_version,
@@ -730,13 +739,18 @@ mod tests {
         (drive, contract)
     }
 
-    fn expected_entries(positions: Range<u8>) -> Vec<PrivateDocumentEntry> {
+    /// The byte entry `i` of [`drive_with_private_entries`] is filled with: its low byte.
+    fn entry_byte(i: u16) -> u8 {
+        i.to_le_bytes()[0]
+    }
+
+    fn expected_entries(positions: Range<u16>) -> Vec<PrivateDocumentEntry> {
         positions
             .map(|i| PrivateDocumentEntry {
                 position: u64::from(i),
                 block_height: 100 + u64::from(i),
                 block_time_ms: 1_000 * u64::from(i),
-                data: vec![i; 4096],
+                data: vec![entry_byte(i); 4096],
             })
             .collect()
     }
@@ -774,32 +788,34 @@ mod tests {
             .expect("the root hash");
         assert_eq!(proved_root_hash, root_hash, "proved from {start}");
         assert_eq!(proved_page, page, "proved from {start}");
+        // Both carry the chunk power the store committed: 128 entries to a chunk.
+        assert_eq!(proved_page.chunk_power, Some(7), "proved from {start}");
         page
     }
 
-    /// Pages of a store of 140 entries, 64 to a chunk (two compacted chunks and 12 buffered
+    /// Pages of a store of 268 entries, 128 to a chunk (two compacted chunks and 12 buffered
     /// entries): each reads from its start to the end of its chunk, in a compacted chunk, in
     /// the second one, in the buffered tail, and past the end; each read and each proof agree,
     /// and a proof derives the drive's root hash.
     #[test]
     fn should_read_and_prove_pages_of_a_private_type_store() {
-        let (drive, contract) = drive_with_private_entries(140);
+        let (drive, contract) = drive_with_private_entries(268);
         let platform_version = PlatformVersion::latest();
 
         for (start, expected) in [
-            (0u64, expected_entries(0..64)),
-            (10, expected_entries(10..64)),
-            (63, expected_entries(63..64)),
-            (64, expected_entries(64..128)),
-            (100, expected_entries(100..128)),
-            (128, expected_entries(128..140)),
-            (133, expected_entries(133..140)),
-            (140, vec![]),
-            (200, vec![]),
+            (0u64, expected_entries(0..128)),
+            (10, expected_entries(10..128)),
+            (127, expected_entries(127..128)),
+            (128, expected_entries(128..256)),
+            (200, expected_entries(200..256)),
+            (256, expected_entries(256..268)),
+            (261, expected_entries(261..268)),
+            (268, vec![]),
+            (300, vec![]),
         ] {
             let page = read_and_prove(&drive, &contract, start, platform_version);
             assert_eq!(page.entries, expected, "read from {start}");
-            assert_eq!(page.total_count, 140);
+            assert_eq!(page.total_count, 268);
         }
     }
 
@@ -809,41 +825,48 @@ mod tests {
     fn should_read_and_prove_an_empty_store() {
         let (drive, contract) = drive_with_private_entries(0);
         let platform_version = PlatformVersion::latest();
-        for start in [0, 5, 64] {
+        for start in [0, 5, 128] {
             let page = read_and_prove(&drive, &contract, start, platform_version);
-            assert_eq!(page, PrivateDocumentEntries::default(), "from {start}");
+            assert_eq!(
+                page,
+                PrivateDocumentEntries {
+                    chunk_power: Some(7),
+                    ..Default::default()
+                },
+                "from {start}"
+            );
         }
     }
 
     /// A store keeps the chunks its contract created it with. Under limits that would size a
-    /// new store of the same entries at 128 entries to a chunk, a store of 64 to a chunk still
+    /// new store of the same entries at 256 entries to a chunk, a store of 128 to a chunk still
     /// pages to its own chunk ends, and a proof made under either limits verifies under the
     /// other.
     #[test]
     fn should_page_a_store_by_its_committed_chunk_power_under_changed_limits() {
-        let (drive, contract) = drive_with_private_entries(70);
+        let (drive, contract) = drive_with_private_entries(140);
         let platform_version = PlatformVersion::latest();
         let mut changed_limits = platform_version.clone();
         changed_limits
             .system_limits
-            .private_document_store_target_chunk_bytes = Some(1024 * 1024);
-        // 16 + 4096 = 4112 bytes: 255 entries fit 1 MiB, 2^7 = 128
+            .private_document_store_target_chunk_bytes = Some(2 * 1024 * 1024);
+        // 16 + 4096 = 4112 bytes: 510 entries fit 2 MiB, 2^8 = 256
         assert_eq!(
             private_document_store_chunk_power(4112, &changed_limits).unwrap(),
-            7
+            8
         );
         let secret = contract
             .document_type_for_name("secret")
             .expect("the secret type");
 
         for (start, expected) in [
-            (0u64, expected_entries(0..64)),
-            (32, expected_entries(32..64)),
-            (64, expected_entries(64..70)),
+            (0u64, expected_entries(0..128)),
+            (32, expected_entries(32..128)),
+            (128, expected_entries(128..140)),
         ] {
             let page = read_and_prove(&drive, &contract, start, &changed_limits);
             assert_eq!(page.entries, expected, "read from {start}");
-            assert_eq!(page.total_count, 70);
+            assert_eq!(page.total_count, 140);
 
             for (prover, verifier) in [
                 (&changed_limits, platform_version),
@@ -992,15 +1015,15 @@ mod tests {
     #[test]
     fn should_keep_a_compacted_chunk_near_the_target() {
         let platform_version = PlatformVersion::latest();
-        // 16 + 585 = 601 bytes: 872 entries fit, 2^9 = 512 is the largest power below
+        // 16 + 585 = 601 bytes: 1744 entries fit, 2^10 = 1024 is the largest power below
         assert_eq!(
             private_document_store_chunk_power(601, platform_version).unwrap(),
-            9
+            10
         );
-        // 16 + 4096 = 4112 bytes: 127 entries fit, 2^6 = 64
+        // 16 + 4096 = 4112 bytes: 255 entries fit, 2^7 = 128
         assert_eq!(
             private_document_store_chunk_power(4112, platform_version).unwrap(),
-            6
+            7
         );
     }
 

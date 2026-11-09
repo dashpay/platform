@@ -183,13 +183,11 @@ impl Drive {
             &mut drive_operations,
             &platform_version.drive,
         )?;
-        Drive::calculate_fee(
+        self.calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
-            self.config.epochs_per_era,
             platform_version,
-            None,
         )
     }
 
@@ -487,7 +485,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("the card inserts");
         document.id()
@@ -638,7 +635,6 @@ mod tests {
                 true,
                 None,
                 &platform_version,
-                None,
             )
             .expect("the card deletes");
 
@@ -723,7 +719,6 @@ mod tests {
                         true,
                         None,
                         platform_version,
-                        None,
                     )
                     .expect("the document inserts")
             };

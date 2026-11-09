@@ -219,7 +219,6 @@ impl Fixture {
                     &BlockInfo::default(),
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("expected the block to execute the fixed transition");
             return Fixture {
@@ -289,7 +288,6 @@ impl Fixture {
                 &BlockInfo::default(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected the block to execute the random transition");
 

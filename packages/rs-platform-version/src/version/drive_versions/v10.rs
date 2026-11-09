@@ -13,9 +13,10 @@ use crate::version::drive_versions::drive_verify_method_versions::v4::DRIVE_VERI
 use crate::version::drive_versions::drive_vote_method_versions::v4::DRIVE_VOTE_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
 use crate::version::drive_versions::{
-    DriveBatchOperationsMethodVersion, DriveInitializationMethodVersions, DriveMethodVersions,
-    DrivePlatformSystemMethodVersions, DrivePrefundedSpecializedMethodVersions,
-    DriveSystemEstimationCostsMethodVersions, DriveVersion,
+    DriveBatchOperationsMethodVersion, DriveFeesMethodVersions, DriveInitializationMethodVersions,
+    DriveMethodVersions, DrivePlatformSystemMethodVersions,
+    DrivePrefundedSpecializedMethodVersions, DriveSystemEstimationCostsMethodVersions,
+    DriveVersion,
 };
 use grovedb_version::version::v5::GROVE_V5;
 
@@ -83,6 +84,9 @@ use grovedb_version::version::v5::GROVE_V5;
 /// * **Core fork activations**: `platform_system.fetch_core_fork_activation_height` and
 ///   `store_core_fork_activation_height` are `Some(0)` (`None` before): Drive keeps, in `Misc`,
 ///   the chain locked Core height at which Platform first saw each tracked Core fork active.
+/// * **Refunds at the storing epoch's rate** (protocol v15 note 27): `fees.calculate_fee` 1
+///   prices the bytes a refund returns at the storage rate of the protocol version that ran the
+///   epoch that stored them, which that epoch's tree records.
 ///
 /// * **GroveDB V5** (protocol v15 note 26): `grove_version` is `GROVE_V5` (`GROVE_V4` before).
 ///   GroveDB reads and proves a private document store's entries by position range only under
@@ -131,6 +135,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             fetch_core_fork_activation_height: Some(0), // changed in v10: the Core fork activations
             store_core_fork_activation_height: Some(0), // changed in v10: the Core fork activations
         },
+        fees: DriveFeesMethodVersions { calculate_fee: 1 }, // changed in v10: refunds at the storing epoch's rate (note 27)
         ..DRIVE_VERSION_V9.methods
     },
     // changed in v10: GROVE_V5 (protocol v15 note 26), whose gates protocol v15 needs: a private

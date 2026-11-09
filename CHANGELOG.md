@@ -47,6 +47,19 @@
     a required `random_minimum_amount` method, and `TokenTransitionV0Methods` a required
     `random_amount_range` method. An implementation outside these crates returns `None` for a
     fixed amount.
+
+- **drive, dpp (Rust API):** `Drive::calculate_fee` is now a method and no longer takes
+  `epochs_per_era` or `previous_fee_versions`:
+  `drive.calculate_fee(base_operations, drive_operations, &epoch, platform_version)`.
+  `apply_drive_operations`, `update_contract` and the document, identity and token balance
+  methods that forwarded `previous_fee_versions` no longer take it.
+  `FeeRefunds::from_storage_removal` takes a closure giving the storage rate of a storing
+  epoch instead of the map. `dpp::fee::default_costs::{KnownCostItem, EpochCosts}` are
+  removed; read the rate from `FeeVersion`'s `storage.storage_disk_usage_credit_per_byte`.
+  Platform state still saves `previous_fee_versions` in the same format. From protocol
+  version 15 a refund is priced at the storing epoch's rate, and reading that epoch's record
+  adds to the processing fee (protocol v15 note 27).
+
 - **drive (Rust API):** Drive's cost estimators write their layer descriptions into
   `drive::util::estimated_layers::EstimatedLayers` instead of
   `HashMap<KeyInfoPath, EstimatedLayerInformation>`, in `DriveLowLevelOperationConverter`

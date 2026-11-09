@@ -4542,7 +4542,6 @@ mod token_pool_paid_transitions_tests {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("credit a token balance")
         };

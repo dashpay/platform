@@ -89,13 +89,11 @@ impl TokenMintTransitionActionV0 {
                 platform_version,
             )?;
 
-        let fee_result = Drive::calculate_fee(
+        let fee_result = drive.calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
-            drive.config.epochs_per_era,
             platform_version,
-            None,
         )?;
 
         let (base_action, change_note) = match base_action_validation_result.is_valid() {
@@ -267,13 +265,11 @@ impl TokenMintTransitionActionV0 {
                 platform_version,
             )?;
 
-        let fee_result = Drive::calculate_fee(
+        let fee_result = drive.calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
-            drive.config.epochs_per_era,
             platform_version,
-            None,
         )?;
 
         let (base_action, change_note) = match base_action_validation_result.is_valid() {

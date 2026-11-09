@@ -77,7 +77,6 @@ fn insert_at(
         true,
         None,
         PlatformVersion::latest(),
-        None,
     )
 }
 
