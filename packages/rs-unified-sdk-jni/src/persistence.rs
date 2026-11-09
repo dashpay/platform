@@ -254,6 +254,11 @@ pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> Persistence
             bridge,
             "onLoadPrivateContactScanState",
             LOAD_PRIVATE_CONTACT_SCAN_STATE_DESCRIPTOR,
+        ) && bridge_overrides(
+            env,
+            bridge,
+            "onPersistContactUpsert",
+            CONTACT_UPSERT_DESCRIPTOR,
         ),
     })
 }
@@ -311,9 +316,11 @@ struct BridgeOverrides {
     header: bool,
     /// `onWalletChangesetDashPayBackfill`, which stores the record.
     backfill: bool,
-    /// Both `onPersistPrivateContactScanState` and
-    /// `onLoadPrivateContactScanState`: an inherited no-op store would
-    /// acknowledge a read position it never kept.
+    /// `onPersistPrivateContactScanState`, `onLoadPrivateContactScanState`
+    /// and `onPersistContactUpsert`: an inherited no-op store would
+    /// acknowledge a read position it never kept, and a read position
+    /// vouches for the contact requests read before it, which an inherited
+    /// no-op contact upsert never keeps.
     private_contact_scan_state: bool,
 }
 
@@ -5147,6 +5154,16 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
     (
         "onWalletChangesetDashPayBackfill",
         WALLET_CHANGESET_DASHPAY_BACKFILL_DESCRIPTOR,
+    ),
+    // Wired only for a bridge that overrides both (`bridge_overrides`), so a
+    // drifted descriptor would silently drop the slots and the capability.
+    (
+        "onPersistPrivateContactScanState",
+        PERSIST_PRIVATE_CONTACT_SCAN_STATE_DESCRIPTOR,
+    ),
+    (
+        "onLoadPrivateContactScanState",
+        LOAD_PRIVATE_CONTACT_SCAN_STATE_DESCRIPTOR,
     ),
     (
         "onPersistIdentityUpsert",
