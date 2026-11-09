@@ -101,6 +101,7 @@ struct PrivateContactRequestsPositionStorageDetailView: View {
             Section("Private Contact Request Store") {
                 FieldRow(label: "Read Position", value: String(UInt64(bitPattern: record.position)))
                 FieldRow(label: "Key Fingerprint", value: hexString(record.keyFingerprint))
+                FieldRow(label: "Private Payments Unresolved", value: record.privatePaymentsUnresolved ? "Yes" : "No")
             }
         }
         .navigationTitle("Private Position")

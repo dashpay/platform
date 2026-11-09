@@ -71,6 +71,18 @@ final class PrivateContactScanStatePersistenceTests: XCTestCase {
             success: false)
         XCTAssertEqual(try handler.loadPrivateContactScanState(walletId: walletId).positions.map(\.position), [0])
 
+        // The unresolved-payment marker is stored with the position and
+        // cleared by a later round.
+        try round(handler, positions: [.init(
+            identityId: owner, position: 0, keyFingerprint: fingerprint, privatePaymentsUnresolved: true)])
+        XCTAssertEqual(
+            try handler.loadPrivateContactScanState(walletId: walletId).positions.map(\.privatePaymentsUnresolved),
+            [true])
+        try round(handler, positions: [.init(identityId: owner, position: 0, keyFingerprint: fingerprint)])
+        XCTAssertEqual(
+            try handler.loadPrivateContactScanState(walletId: walletId).positions.map(\.privatePaymentsUnresolved),
+            [false])
+
         // A full-width position survives the signed SQLite column.
         try round(handler, positions: [.init(identityId: owner, position: .max, keyFingerprint: fingerprint)])
         XCTAssertEqual(try handler.loadPrivateContactScanState(walletId: walletId).positions.map(\.position), [.max])
@@ -169,6 +181,7 @@ final class PrivateContactScanStatePersistenceTests: XCTestCase {
         var position = PrivateContactRequestsPositionFFI()
         Swift.withUnsafeMutableBytes(of: &position.identity_id) { _ = owner.copyBytes(to: $0) }
         position.position = 77
+        position.private_payments_unresolved = true
         Swift.withUnsafeMutableBytes(of: &position.key_fingerprint) {
             _ = Data(repeating: 3, count: 32).copyBytes(to: $0)
         }
@@ -198,6 +211,7 @@ final class PrivateContactScanStatePersistenceTests: XCTestCase {
         XCTAssertEqual(addressesCount, 1)
         let loadedPosition = try XCTUnwrap(positions).pointee
         XCTAssertEqual(loadedPosition.position, 77)
+        XCTAssertTrue(loadedPosition.private_payments_unresolved, "the unresolved marker round-trips")
         var loadedOwner = loadedPosition.identity_id
         XCTAssertEqual(Swift.withUnsafeBytes(of: &loadedOwner) { Data($0) }, owner)
         var loadedAddress = try XCTUnwrap(addresses).pointee.address

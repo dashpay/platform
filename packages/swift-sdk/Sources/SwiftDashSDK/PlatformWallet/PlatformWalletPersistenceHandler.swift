@@ -5127,6 +5127,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let position: UInt64
         /// Opaque to this side: stored and handed back as it came.
         let keyFingerprint: Data
+        /// Stored and handed back as it came.
+        var privatePaymentsUnresolved: Bool = false
     }
 
     /// The shielded address `contactId`'s private request to `ownerId` carries.
@@ -5186,10 +5188,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 if let existing {
                     existing.position = Int64(bitPattern: row.position)
                     existing.keyFingerprint = row.keyFingerprint
+                    existing.privatePaymentsUnresolved = row.privatePaymentsUnresolved
                 } else {
                     backgroundContext.insert(PersistentPrivateContactRequestsPosition(
                         networkRaw: networkRaw, walletId: walletId, identityId: identityId,
-                        position: row.position, keyFingerprint: row.keyFingerprint))
+                        position: row.position, keyFingerprint: row.keyFingerprint,
+                        privatePaymentsUnresolved: row.privatePaymentsUnresolved))
                 }
             }
             for row in addresses {
@@ -5237,7 +5241,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 positions.map {
                     PrivateContactRequestsPositionRow(
                         identityId: $0.identityId, position: UInt64(bitPattern: $0.position),
-                        keyFingerprint: $0.keyFingerprint)
+                        keyFingerprint: $0.keyFingerprint,
+                        privatePaymentsUnresolved: $0.privatePaymentsUnresolved)
                 },
                 addresses.map {
                     PrivateShieldedAddressRow(ownerId: $0.ownerId, contactId: $0.contactId, address: $0.address)
@@ -12092,7 +12097,8 @@ private func persistPrivateContactScanStateCallback(
             walletId: Data(bytes: walletId, count: 32),
             positions: positionRows.map {
                 .init(identityId: dataFromTuple32($0.identity_id), position: $0.position,
-                      keyFingerprint: dataFromTuple32($0.key_fingerprint))
+                      keyFingerprint: dataFromTuple32($0.key_fingerprint),
+                      privatePaymentsUnresolved: $0.private_payments_unresolved)
             },
             addresses: addressRows.map {
                 var address = $0.address
@@ -12144,6 +12150,7 @@ private func loadPrivateContactScanStateCallback(
             Swift.withUnsafeMutableBytes(of: &entry.identity_id) { _ = row.identityId.copyBytes(to: $0) }
             entry.position = row.position
             Swift.withUnsafeMutableBytes(of: &entry.key_fingerprint) { _ = row.keyFingerprint.copyBytes(to: $0) }
+            entry.private_payments_unresolved = row.privatePaymentsUnresolved
             (buffer + index).initialize(to: entry)
         }
         outPositions.pointee = UnsafePointer(buffer)
