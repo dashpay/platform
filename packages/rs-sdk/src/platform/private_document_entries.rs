@@ -10,14 +10,25 @@
 //!
 //! [`PrivateDocumentEntries::fetch`] verifies the page against the platform's root hash, with
 //! the contract the context provider supplies, so a node can neither leave entries out of it
-//! nor change their header times. [`FetchUnproved`] reads it without a proof.
+//! nor change their header times. [`FetchUnproved`] reads it without a proof. A provider that
+//! holds the contract from before its private type was declared fails that verification;
+//! [`Sdk::fetch_private_document_contract`] gives it the contract with the type first.
 
-use crate::platform::{Fetch, FetchUnproved, Identifier, Query, QuerySettings};
-use crate::Error;
+use std::sync::Arc;
+
+use crate::platform::{
+    Fetch, FetchUnproved, Identifier, ProtocolRequirement, Query, QuerySettings,
+};
+use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::get_private_document_entries_request::GetPrivateDocumentEntriesRequestV0;
 use dapi_grpc::platform::v0::{
     get_private_document_entries_request, GetPrivateDocumentEntriesRequest,
 };
+use dash_context_provider::ContextProvider;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use dpp::data_contract::DataContract;
+use dpp::version::feature_initial_protocol_versions::PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION;
 pub use drive_proof_verifier::types::private_document_entries::{
     PrivateDocumentEntries, PrivateDocumentEntry,
 };
@@ -74,6 +85,159 @@ impl Fetch for PrivateDocumentEntries {
 
 impl FetchUnproved for PrivateDocumentEntries {
     type Request = GetPrivateDocumentEntriesRequest;
+}
+
+/// The gRPC method a page of a private document type's store is read with.
+const PRIVATE_DOCUMENT_ENTRIES_METHOD: &str = "get_private_document_entries";
+
+/// Whether `contract` declares `document_type_name` as a private type.
+fn declares_private_type(contract: &DataContract, document_type_name: &str) -> bool {
+    contract
+        .document_type_for_name(document_type_name)
+        .is_ok_and(|document_type| document_type.is_private())
+}
+
+impl Sdk {
+    /// The contract `data_contract_id`, with its private type `document_type_name`, as the
+    /// context provider holds it: a page of the type's store is verified against the contract
+    /// the provider gives, and one kept from before the type was declared, as a client
+    /// hydrated across the protocol version that declared it may hold, fails every page.
+    ///
+    /// A held contract that declares the type is used as it is and never replaced, so a newer
+    /// one the provider proved stays. Otherwise the contract is fetched from the network,
+    /// refused when it does not declare the type, given to the provider and read back; the
+    /// call fails when the provider then still holds none that declares it. Without a context
+    /// provider the fetched contract is returned.
+    ///
+    /// Private types exist from protocol version 15. Below it, as the page fetch is, the call
+    /// is refused with [`Error::ProtocolVersionNotActive`], before anything is fetched on a
+    /// network that has not reached it, and when the contract declares no such type while
+    /// this SDK runs below it: a reader takes that as no store to read yet.
+    pub async fn fetch_private_document_contract(
+        &self,
+        data_contract_id: Identifier,
+        document_type_name: &str,
+    ) -> Result<Arc<DataContract>, Error> {
+        self.ensure_network_serves(
+            Some(ProtocolRequirement {
+                protocol_version:
+                    PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+                method: PRIVATE_DOCUMENT_ENTRIES_METHOD,
+                feature: None,
+            }),
+            None,
+        )
+        .await?;
+        let provider = self.context_provider();
+        if let Some(provider) = &provider {
+            if let Some(held) = provider.get_data_contract(&data_contract_id, self.version())? {
+                if declares_private_type(&held, document_type_name) {
+                    return Ok(held);
+                }
+            }
+        }
+        let contract = DataContract::fetch(self, data_contract_id)
+            .await?
+            .map(Arc::new)
+            .ok_or_else(|| Error::Generic(format!("the contract {data_contract_id} is gone")))?;
+        if !declares_private_type(&contract, document_type_name) {
+            if self.protocol_version_number()
+                < PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION
+            {
+                return Err(self.protocol_version_not_active(
+                    PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+                    PRIVATE_DOCUMENT_ENTRIES_METHOD,
+                    None,
+                ));
+            }
+            return Err(Error::Generic(format!(
+                "the contract {data_contract_id} declares no private type \"{document_type_name}\""
+            )));
+        }
+        let Some(provider) = provider else {
+            return Ok(contract);
+        };
+        provider.register_data_contract(contract);
+        match provider.get_data_contract(&data_contract_id, self.version())? {
+            Some(held) if declares_private_type(&held, document_type_name) => Ok(held),
+            _ => Err(Error::Generic(format!(
+                "the context provider does not hold the contract {data_contract_id} with its \
+                 private type \"{document_type_name}\" once given it, so the type's pages cannot \
+                 be verified"
+            ))),
+        }
+    }
+}
+
+/// A context provider for tests reading private document pages.
+#[cfg(all(test, feature = "mocks"))]
+pub(crate) mod held_contract_provider {
+    use std::sync::{Arc, Mutex};
+
+    use dash_context_provider::{ContextProvider, ContextProviderError};
+    use dpp::data_contract::{DataContract, TokenConfiguration};
+    use dpp::prelude::{CoreBlockHeight, Identifier};
+    use dpp::version::PlatformVersion;
+
+    /// A context provider holding `held`, or nothing, whatever version it is asked for, as a
+    /// provider's known contracts do. A `writable` one puts a registered contract in its
+    /// place; a read-only one keeps what it holds. Its clones share what it holds.
+    #[derive(Clone)]
+    pub(crate) struct HeldContractProvider {
+        held: Arc<Mutex<Option<Arc<DataContract>>>>,
+        writable: bool,
+    }
+
+    impl HeldContractProvider {
+        pub(crate) fn new(held: Option<DataContract>, writable: bool) -> Self {
+            Self {
+                held: Arc::new(Mutex::new(held.map(Arc::new))),
+                writable,
+            }
+        }
+
+        pub(crate) fn held(&self) -> Option<Arc<DataContract>> {
+            self.held.lock().expect("the lock").clone()
+        }
+    }
+
+    impl ContextProvider for HeldContractProvider {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(self.held())
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Err(ContextProviderError::InvalidQuorum(
+                "no quorum in this test".to_string(),
+            ))
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
+
+        fn register_data_contract(&self, contract: Arc<DataContract>) {
+            if self.writable {
+                *self.held.lock().expect("the lock") = Some(contract);
+            }
+        }
+    }
 }
 
 #[cfg(all(test, feature = "mocks"))]
