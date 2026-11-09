@@ -1462,8 +1462,8 @@ fn test_count_request_with_duplicate_equality_clauses_is_rejected() {
 /// the reconstructed path query bytes differ and `verify_query`
 /// returns an error.
 ///
-/// Without the fix in `drive_dispatcher.rs`'s `RangeDistinctProof`
-/// arm this test fails. The "fix" is the one-line change from
+/// Without the compile-time fallback in the count proof plan's
+/// `RangeDistinctProof` arm this test fails. The "fix" is the one-line change from
 /// `request.drive_config.default_query_limit` to
 /// `crate::config::DEFAULT_QUERY_LIMIT` on the prove path — see
 /// the comment in that arm for the symmetric reasoning.
