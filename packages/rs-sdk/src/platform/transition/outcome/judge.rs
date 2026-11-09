@@ -154,31 +154,41 @@ pub(super) fn judge_nonces(reads: &[InputRead]) -> InputsVerdict {
     }
 }
 
-/// The last height at which a spend built on a credit pool anchor read at `anchors_height` can
-/// execute, under the retention rules `retention_blocks` and `pruning_interval`. A token pool
-/// prunes only when a block writes to it, so this schedule does not apply to its anchors.
+/// The last height at which a spend built on a credit pool anchor can execute, under the
+/// retention rules `retention_blocks` and `pruning_interval`. A token pool prunes only when a
+/// block writes to it, so this schedule does not apply to its anchors.
 ///
-/// The anchor was recorded at or below `anchors_height`. Pruning runs at the end of each block
-/// whose height is a multiple of `pruning_interval` and removes the anchors recorded below that
-/// height minus `retention_blocks`, after the block's own transitions ran. So the last block that
-/// accepts an anchor recorded at `h` is the first multiple of `pruning_interval` above
-/// `h + retention_blocks`, and taking `anchors_height` for `h` gives a height no earlier than the
-/// real deadline.
+/// Pruning runs at the end of each block whose height is a multiple of `pruning_interval`,
+/// after the block's own transitions ran, and removes the anchors recorded below that height
+/// minus `retention_blocks`, except the pool's newest. So the anchor is gone after the first
+/// pruning block that is both far enough past its recording and at which it is no longer the
+/// newest; until then a spend built on it can still execute.
 ///
-/// Pruning always keeps the newest anchor, so the deadline holds only for an anchor that is not
-/// its pool's newest: `newer_anchor_exists` must be proven, and `None` is returned otherwise, as
-/// it is when the rules prune nothing.
+/// - The anchor was recorded at or below `anchor_read_height`, the height of the read that
+///   found it, so the first pruning block above `anchor_read_height + retention_blocks` is
+///   far enough past it.
+/// - `newer_anchor_proven_at` is the height of a read, at or above `anchor_read_height`, that
+///   shows a newer anchor. The anchor may have stayed the newest up to that height (the newer
+///   one recorded at the end of that very block), so only a pruning block above it is known
+///   to find the newer one. `None` when no read shows one: pruning keeps the newest anchor,
+///   and nothing bounds the spend.
+///
+/// Both heights stand in for later or equal real ones, so the deadline is never earlier than
+/// the real one.
 pub(super) fn anchor_deadline(
-    anchors_height: u64,
-    newer_anchor_exists: bool,
+    anchor_read_height: u64,
+    newer_anchor_proven_at: Option<u64>,
     retention_blocks: u64,
     pruning_interval: u64,
 ) -> Option<u64> {
-    if !newer_anchor_exists || pruning_interval == 0 {
+    let newer_anchor_proven_at = newer_anchor_proven_at?;
+    if pruning_interval == 0 {
         return None;
     }
-    let last_recorded_below = anchors_height.checked_add(retention_blocks)?;
-    (last_recorded_below / pruning_interval)
+    let past = anchor_read_height
+        .checked_add(retention_blocks)?
+        .max(newer_anchor_proven_at);
+    (past / pruning_interval)
         .checked_add(1)?
         .checked_mul(pruning_interval)
 }
@@ -365,21 +375,34 @@ mod tests {
         // Read at 1050 with 1000 blocks kept and pruning every 100: the anchor was recorded at
         // or below 1050, so the prune at the end of block 2100 removes it at the latest, and a
         // spend can still execute in block 2100 itself.
-        assert_eq!(anchor_deadline(1050, true, 1000, 100), Some(2100));
+        assert_eq!(anchor_deadline(1050, Some(1050), 1000, 100), Some(2100));
         // Recorded at 1100 at the latest: pruning at 2100 removes only anchors below 1100, so
         // the next prune, at 2200, is the one that removes it.
-        assert_eq!(anchor_deadline(1100, true, 1000, 100), Some(2200));
+        assert_eq!(anchor_deadline(1100, Some(1100), 1000, 100), Some(2200));
+    }
+
+    #[test]
+    fn should_not_place_the_deadline_before_a_newer_anchor_is_proven() {
+        // Found at 200 and still the newest, so kept by every prune, until a newer anchor is
+        // proven at 1501: the prune at 1600 is the first known to find the newer one.
+        assert_eq!(anchor_deadline(200, Some(1501), 1000, 100), Some(1600));
+        // The newer anchor may have been recorded at the end of block 1300 itself, so the
+        // prune at 1300 may still have kept this one as the newest.
+        assert_eq!(anchor_deadline(200, Some(1300), 1000, 100), Some(1400));
+        // Proven early enough, retention alone decides.
+        assert_eq!(anchor_deadline(200, Some(1199), 1000, 100), Some(1300));
     }
 
     #[test]
     fn should_give_no_deadline_to_a_pool_s_newest_anchor() {
         // Pruning keeps the newest anchor while the pool is idle, for as long as it stays idle.
-        assert_eq!(anchor_deadline(1050, false, 1000, 100), None);
+        assert_eq!(anchor_deadline(1050, None, 1000, 100), None);
     }
 
     #[test]
     fn should_give_no_deadline_when_nothing_is_pruned_or_the_height_overflows() {
-        assert_eq!(anchor_deadline(1050, true, 1000, 0), None);
-        assert_eq!(anchor_deadline(u64::MAX, true, 1000, 100), None);
+        assert_eq!(anchor_deadline(1050, Some(1050), 1000, 0), None);
+        assert_eq!(anchor_deadline(u64::MAX, Some(u64::MAX), 1000, 100), None);
+        assert_eq!(anchor_deadline(1050, Some(u64::MAX), 1000, 100), None);
     }
 }

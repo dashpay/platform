@@ -560,11 +560,12 @@ async fn read_shielded_spend<R: PoolReads + ?Sized>(
 /// when nothing proves one.
 ///
 /// Only the credit pool has one. It prunes every `shielded_anchor_pruning_interval` blocks
-/// whatever else happens, always keeping its newest anchor, so an anchor that is not the newest
-/// (proven by a newest anchor read at or after `read`, so this one was already recorded when
-/// the newer one was the newest) is gone by a height known in advance. A token pool prunes only
-/// at the end of a block that writes to it: while it stays idle it keeps every anchor it holds,
-/// and no height bounds a spend from it.
+/// whatever else happens, always keeping its newest anchor, so an anchor shown not to be the
+/// newest (by a newest anchor read at or after `read`, so this one was already recorded when
+/// the newer one was the newest) is gone by a height known in advance, counted from that read
+/// as well as from `read` (see [`anchor_deadline`]). A token pool prunes only at the end of a
+/// block that writes to it: while it stays idle it keeps every anchor it holds, and no height
+/// bounds a spend from it.
 async fn read_anchor_deadline<R: PoolReads + ?Sized>(
     reader: &R,
     pool: ShieldedPool,
@@ -575,8 +576,9 @@ async fn read_anchor_deadline<R: PoolReads + ?Sized>(
         return Ok(None);
     }
     let (newest, metadata) = reader.pool_newest_anchor(pool).await?;
-    let newer_anchor_exists =
-        metadata.height >= read.height && newest.is_some_and(|newest| newest != anchor);
+    let newer_anchor_proven_at = (metadata.height >= read.height
+        && newest.is_some_and(|newest| newest != anchor))
+    .then_some(metadata.height);
     let Ok(platform_version) = PlatformVersion::get(metadata.protocol_version) else {
         return Ok(None);
     };
@@ -586,7 +588,7 @@ async fn read_anchor_deadline<R: PoolReads + ?Sized>(
         .event_constants;
     Ok(anchor_deadline(
         read.height,
-        newer_anchor_exists,
+        newer_anchor_proven_at,
         constants.shielded_anchor_retention_blocks,
         constants.shielded_anchor_pruning_interval,
     ))
@@ -714,9 +716,15 @@ mod sdk_tests {
     use super::fixtures::{shielded_transfer, ANCHOR, NEWER_ANCHOR, NULLIFIERS};
     use super::*;
     use crate::SdkBuilder;
+    use dpp::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
+    use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
+    use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+    use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use dpp::state_transition::batch_transition::document_delete_transition::DocumentDeleteTransitionV0;
+    use dpp::state_transition::batch_transition::BatchTransitionV0;
     use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
     use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
-    use drive_proof_verifier::types::ShieldedNullifierStatus;
+    use drive_proof_verifier::types::{AddressInfos, ShieldedNullifierStatus};
 
     fn mock_sdk() -> Sdk {
         SdkBuilder::new_mock()
@@ -869,7 +877,7 @@ mod sdk_tests {
             .event_constants;
         let expected = anchor_deadline(
             0,
-            true,
+            Some(0),
             constants.shielded_anchor_retention_blocks,
             constants.shielded_anchor_pruning_interval,
         );
@@ -954,6 +962,187 @@ mod sdk_tests {
                 until_height: None,
             }
         );
+    }
+
+    const FIRST_INPUT: PlatformAddress = PlatformAddress::P2pkh([0x10; 20]);
+    const SECOND_INPUT: PlatformAddress = PlatformAddress::P2pkh([0x20; 20]);
+
+    /// A transfer from two addresses, carrying nonce 3 for the first and 5 for the second.
+    fn address_transfer() -> StateTransition {
+        StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
+            AddressFundsTransferTransitionV0 {
+                inputs: BTreeMap::from([(FIRST_INPUT, (3, 1_000)), (SECOND_INPUT, (5, 2_000))]),
+                outputs: BTreeMap::from([(PlatformAddress::P2pkh([0x30; 20]), 2_500)]),
+                ..AddressFundsTransferTransitionV0::default()
+            },
+        ))
+    }
+
+    /// Register the proven address infos for both inputs: each address's stored nonce, or
+    /// `None` for an address Platform does not know. An address left out of `stored` is left
+    /// out of the answer.
+    async fn expect_address_nonces(sdk: &mut Sdk, stored: Vec<(PlatformAddress, Option<u32>)>) {
+        let infos: AddressInfos = stored
+            .into_iter()
+            .map(|(address, nonce)| {
+                let info = nonce.map(|nonce| AddressInfo {
+                    address,
+                    nonce,
+                    balance: 10_000,
+                });
+                (address, info)
+            })
+            .collect();
+        sdk.mock()
+            .expect_fetch_many::<PlatformAddress, AddressInfo, _, AddressInfos>(
+                BTreeSet::from([FIRST_INPUT, SECOND_INPUT]),
+                Some(infos),
+            )
+            .await
+            .expect("expected to register the address infos");
+    }
+
+    #[tokio::test]
+    async fn should_report_an_address_transfer_with_one_input_nonce_used_as_input_used() {
+        // The first input's nonce 3 is stored, so taken; the second is still at 4, so its
+        // nonce 5 is free. A transition takes all its inputs at once, so this one did not.
+        let mut sdk = mock_sdk();
+        expect_address_nonces(
+            &mut sdk,
+            vec![(FIRST_INPUT, Some(3)), (SECOND_INPUT, Some(4))],
+        )
+        .await;
+
+        let outcome = sdk
+            .state_transition_outcome(&address_transfer(), OutcomeEvidence::default())
+            .await
+            .expect("expected an outcome");
+        assert_eq!(
+            outcome,
+            TransitionOutcome::CannotExecute(CannotExecuteReason::InputUsed)
+        );
+    }
+
+    #[tokio::test]
+    async fn should_not_attribute_an_address_transfer_whose_input_nonces_are_all_used() {
+        // A stored nonce past the carried one counts as taken too.
+        let mut sdk = mock_sdk();
+        expect_address_nonces(
+            &mut sdk,
+            vec![(FIRST_INPUT, Some(7)), (SECOND_INPUT, Some(5))],
+        )
+        .await;
+
+        let outcome = sdk
+            .state_transition_outcome(&address_transfer(), OutcomeEvidence::default())
+            .await
+            .expect("expected an outcome");
+        assert_eq!(outcome, TransitionOutcome::ExecutedOrSuperseded);
+    }
+
+    #[tokio::test]
+    async fn should_read_an_input_address_platform_does_not_know_as_free() {
+        let mut sdk = mock_sdk();
+        expect_address_nonces(&mut sdk, vec![(FIRST_INPUT, None), (SECOND_INPUT, Some(4))]).await;
+
+        let outcome = sdk
+            .state_transition_outcome(&address_transfer(), OutcomeEvidence::default())
+            .await
+            .expect("expected an outcome");
+        assert_eq!(
+            outcome,
+            TransitionOutcome::StillPossible {
+                checked_at_height: 0,
+                anchors_recorded_at: None,
+                until_height: None,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_refuse_address_infos_that_leave_out_an_input() {
+        // Proven absence is an entry with no info; a missing entry is no answer at all.
+        let mut sdk = mock_sdk();
+        expect_address_nonces(&mut sdk, vec![(FIRST_INPUT, Some(2))]).await;
+
+        let error = sdk
+            .state_transition_outcome(&address_transfer(), OutcomeEvidence::default())
+            .await
+            .expect_err("an input without an answer proves nothing");
+        assert!(
+            matches!(error, Error::InvalidProvedResponse(_)),
+            "{error:?}"
+        );
+    }
+
+    const BATCH_OWNER: Identifier = Identifier::new([0x41; 32]);
+    const BATCH_CONTRACT: Identifier = Identifier::new([0x42; 32]);
+
+    /// A batch of one document delete, carrying identity-contract nonce 17.
+    fn document_batch() -> StateTransition {
+        StateTransition::Batch(
+            BatchTransitionV0 {
+                owner_id: BATCH_OWNER,
+                transitions: vec![DocumentTransition::Delete(
+                    DocumentDeleteTransitionV0 {
+                        base: DocumentBaseTransitionV0 {
+                            id: Identifier::new([0x43; 32]),
+                            identity_contract_nonce: 17,
+                            document_type_name: "note".to_string(),
+                            data_contract_id: BATCH_CONTRACT,
+                        }
+                        .into(),
+                    }
+                    .into(),
+                )],
+                signature: vec![4; 65].into(),
+                ..Default::default()
+            }
+            .into(),
+        )
+    }
+
+    /// Register the batch owner's stored nonce for the batch's contract. A read under any
+    /// other identity or contract finds no expectation and fails.
+    async fn expect_contract_nonce(sdk: &mut Sdk, stored: IdentityNonce) {
+        sdk.mock()
+            .expect_fetch(
+                (BATCH_OWNER, BATCH_CONTRACT),
+                Some(IdentityContractNonceFetcher(stored)),
+            )
+            .await
+            .expect("expected to register the contract nonce");
+    }
+
+    #[tokio::test]
+    async fn should_read_a_document_batch_s_nonce_for_its_owner_and_contract() {
+        let mut sdk = mock_sdk();
+        expect_contract_nonce(&mut sdk, 16).await;
+
+        let outcome = sdk
+            .state_transition_outcome(&document_batch(), OutcomeEvidence::default())
+            .await
+            .expect("expected an outcome");
+        assert_eq!(
+            outcome,
+            TransitionOutcome::StillPossible {
+                checked_at_height: 0,
+                anchors_recorded_at: None,
+                until_height: None,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_not_attribute_a_document_batch_whose_contract_nonce_is_used() {
+        let mut sdk = mock_sdk();
+        expect_contract_nonce(&mut sdk, 17).await;
+
+        let outcome = sdk
+            .state_transition_outcome(&document_batch(), OutcomeEvidence::default())
+            .await
+            .expect("expected an outcome");
+        assert_eq!(outcome, TransitionOutcome::ExecutedOrSuperseded);
     }
 }
 
@@ -1106,14 +1295,14 @@ mod read_sequence_tests {
         outcome_from(reads)
     }
 
-    fn credit_deadline(anchors_height: u64) -> Option<u64> {
+    fn credit_deadline(anchors_height: u64, newer_anchor_proven_at: u64) -> Option<u64> {
         let constants = &PlatformVersion::latest()
             .drive_abci
             .validation_and_processing
             .event_constants;
         anchor_deadline(
             anchors_height,
-            true,
+            Some(newer_anchor_proven_at),
             constants.shielded_anchor_retention_blocks,
             constants.shielded_anchor_pruning_interval,
         )
@@ -1235,6 +1424,36 @@ mod read_sequence_tests {
         assert_eq!(pools.nullifier_reads(), 1);
     }
 
+    #[tokio::test]
+    async fn should_count_the_deadline_from_when_a_newer_anchor_is_proven() {
+        // The anchor is found at 200 and may have stayed the pool's newest, kept by every
+        // prune, until the newer one is proven at 1501. The prune at 1600 is the first known to
+        // remove it, not the one at 1300 that retention alone would give.
+        let pools = ScriptedPools::default().with(
+            ShieldedPool::Credit,
+            PoolScript {
+                anchors: vec![ANCHOR],
+                anchors_height: 200,
+                nullifier_heights: vec![1501],
+                newest_anchor: Some(NEWER_ANCHOR),
+                newest_anchor_height: 1501,
+                ..Default::default()
+            },
+        );
+
+        let outcome = outcome(&pools, &shielded_transfer(), None)
+            .await
+            .expect("expected an outcome");
+        assert_eq!(
+            outcome,
+            TransitionOutcome::StillPossible {
+                checked_at_height: 1501,
+                anchors_recorded_at: Some(200),
+                until_height: Some(1600),
+            }
+        );
+    }
+
     /// Both pools of a fee-paid token spend, each holding only its own bundle's anchor.
     fn two_pools(credit: PoolScript, token: PoolScript) -> ScriptedPools {
         ScriptedPools::default()
@@ -1337,7 +1556,7 @@ mod read_sequence_tests {
             TransitionOutcome::StillPossible {
                 checked_at_height: 200,
                 anchors_recorded_at: Some(200),
-                until_height: credit_deadline(200),
+                until_height: credit_deadline(200, 200),
             }
         );
     }
