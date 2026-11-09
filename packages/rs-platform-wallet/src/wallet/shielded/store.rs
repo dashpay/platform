@@ -242,9 +242,11 @@ pub struct PrivatePaymentRecord {
     pub anchor: [u8; 32],
     /// The proved height of the recorded-anchor set `anchor` was chosen from:
     /// the anchor was recorded then, so only its absence from a set proved at
-    /// or above this height shows it pruned. `u64::MAX` for a payment saved
-    /// before the journal kept it, whose expiry is never proven.
-    pub anchor_height: u64,
+    /// or above this height shows it pruned. `None` when not known, as for a
+    /// payment saved before the journal or the redrive record kept it, whose
+    /// expiry is then never proven. Kept as `u64::MAX` in the record's bytes
+    /// ([`Self::to_bytes`]).
+    pub anchor_height: Option<u64>,
     /// The commitment of the entry it appends, which keys the record.
     pub commitment: [u8; 32],
     /// The request it pays for.
@@ -254,6 +256,10 @@ pub struct PrivatePaymentRecord {
 }
 
 impl PrivatePaymentRecord {
+    /// How an unknown [`Self::anchor_height`] is kept in the record's bytes:
+    /// no proved height reaches it.
+    const UNKNOWN_ANCHOR_HEIGHT: u64 = u64::MAX;
+
     /// The format version [`Self::to_bytes`] writes. Versions 1 and 2, written
     /// before the anchor and its height were kept, do not read back: their
     /// wallet's holds stay.
@@ -279,7 +285,12 @@ impl PrivatePaymentRecord {
         bytes.extend_from_slice(&self.account_index.to_le_bytes());
         bytes.extend_from_slice(&self.activity_id);
         bytes.extend_from_slice(&self.anchor);
-        bytes.extend_from_slice(&self.anchor_height.to_le_bytes());
+        bytes.extend_from_slice(
+            &self
+                .anchor_height
+                .unwrap_or(Self::UNKNOWN_ANCHOR_HEIGHT)
+                .to_le_bytes(),
+        );
         bytes.extend_from_slice(&self.commitment);
         bytes.extend_from_slice(&self.payment.sender);
         bytes.extend_from_slice(&self.payment.recipient);
@@ -317,7 +328,8 @@ impl PrivatePaymentRecord {
             account_index: u32::from_le_bytes(*account_index),
             activity_id: *activity_id,
             anchor: *anchor,
-            anchor_height: u64::from_le_bytes(*anchor_height),
+            anchor_height: Some(u64::from_le_bytes(*anchor_height))
+                .filter(|height| *height != Self::UNKNOWN_ANCHOR_HEIGHT),
             commitment: *commitment,
             payment: PrivateContactPayment {
                 sender: *sender,
@@ -1386,7 +1398,7 @@ impl ShieldedStore for InMemoryShieldedStore {
                     account_index: id.account_index,
                     activity_id: redrive.activity_id,
                     anchor: redrive.anchor,
-                    anchor_height,
+                    anchor_height: Some(anchor_height),
                     commitment: *commitment,
                     payment,
                     nullifiers: redrive.nullifiers.clone(),
@@ -2118,6 +2130,40 @@ mod tests {
             store.get_unspent_notes(id).unwrap().is_empty(),
             "the retained note stays excluded from selection candidates"
         );
+    }
+
+    /// A journal record's unknown anchor height is `None` in memory and
+    /// `u64::MAX` only in its bytes, as format 3 keeps it; a known one reads
+    /// back as it was.
+    #[test]
+    fn should_keep_an_unknown_journal_anchor_height_as_none_across_its_bytes() {
+        let record = |anchor_height| PrivatePaymentRecord {
+            account_index: 2,
+            activity_id: [0x61; 32],
+            anchor: [0x62; 32],
+            anchor_height,
+            commitment: [0x63; 32],
+            payment: PrivateContactPayment {
+                sender: [0x64; 32],
+                recipient: [0x65; 32],
+                account_reference: 3,
+            },
+            nullifiers: vec![[0x66; 32]],
+        };
+        for anchor_height in [None, Some(0), Some(41)] {
+            let bytes = record(anchor_height).to_bytes().expect("encodes");
+            let height_at = 1 + 4 + 32 + 32;
+            assert_eq!(
+                bytes[height_at..height_at + 8],
+                anchor_height.unwrap_or(u64::MAX).to_le_bytes(),
+                "{anchor_height:?}"
+            );
+            assert_eq!(
+                PrivatePaymentRecord::from_bytes(&bytes),
+                Some(record(anchor_height)),
+                "{anchor_height:?}"
+            );
+        }
     }
 
     /// The fund-safe release: once the anchor is pruned (absent from the

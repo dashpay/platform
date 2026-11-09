@@ -1964,9 +1964,7 @@ impl NetworkShieldedCoordinator {
         let recorded_height = evidence.height;
         let pruned: Vec<&(WalletId, PrivatePaymentRecord)> = journal
             .iter()
-            .filter(|(_, record)| {
-                evidence.proves_pruned(&record.anchor, Some(record.anchor_height))
-            })
+            .filter(|(_, record)| evidence.proves_pruned(&record.anchor, record.anchor_height))
             .collect();
         if pruned.is_empty() {
             return;

@@ -3098,9 +3098,10 @@ where
                     account_index: id.account_index,
                     activity_id: redrive.activity_id,
                     anchor: redrive.anchor,
-                    // Unknown for a payment saved before the journal: its
-                    // expiry is never proven, so its pair stays held.
-                    anchor_height: u64::MAX,
+                    // As the record keeps it: unknown for one saved before
+                    // heights were kept, whose expiry is then never proven,
+                    // so its pair stays held.
+                    anchor_height: redrive.anchor_height,
                     commitment,
                     payment: *payment,
                     nullifiers: redrive.nullifiers.clone(),
