@@ -167,6 +167,48 @@ class PrivateContactScanStatePersistenceTest {
         }
     }
 
+    private fun upsertContact(ownerId: ByteArray): Int = handler.onPersistContactUpsert(
+        walletId, ownerId, contact, false, 0, 0, 0, ByteArray(96), null, null, 0, 0L,
+        false, null, null, false, null, IntArray(0), false, 0,
+    )
+
+    /**
+     * A contact request whose owner identity is not persisted fails the
+     * round instead of being skipped: this store declares the private
+     * contact request scan state, so an acknowledged round without the row
+     * would let native store a read position past it. The rolled-back round
+     * leaves nothing, and once the owner is persisted the same upsert (the
+     * next scan's) lands.
+     */
+    @Test
+    fun shouldFailTheRoundOnAContactRequestWhoseOwnerIsNotPersisted() = runTest {
+        val unknownOwner = ByteArray(32) { 0x77 }
+        assertEquals(0, handler.onChangesetBegin(walletId))
+        assertEquals(0, upsertContact(unknownOwner))
+        assertNotEquals("the round fails", 0, handler.onChangesetEnd(walletId, true))
+        assertTrue(db.dashpayDao().getContactRequestsByOwner(unknownOwner).isEmpty())
+
+        // Outside a round the callback itself fails.
+        assertNotEquals(0, upsertContact(unknownOwner))
+
+        // An ignore for an unknown owner fails its round too.
+        assertEquals(0, handler.onChangesetBegin(walletId))
+        assertEquals(0, handler.onPersistContactIgnored(walletId, unknownOwner, contact, true))
+        assertNotEquals(0, handler.onChangesetEnd(walletId, true))
+
+        db.identityDao().upsert(
+            org.dashfoundation.dashsdk.persistence.entities.IdentityEntity(
+                identityId = unknownOwner,
+                networkRaw = 1,
+                walletId = walletId,
+            ),
+        )
+        assertEquals(0, handler.onChangesetBegin(walletId))
+        assertEquals(0, upsertContact(unknownOwner))
+        assertEquals(0, handler.onChangesetEnd(walletId, true))
+        assertEquals(1, db.dashpayDao().getContactRequestsByOwner(unknownOwner).size)
+    }
+
     /** A partial row fails the callback instead of storing a misread row. */
     @Test
     fun shouldRefuseARoundWithAPartialRow() {

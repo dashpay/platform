@@ -2231,9 +2231,16 @@ class PlatformWalletPersistenceHandler(
         externalAccountReference: Int,
     ): Int = guarded {
         stage(walletId) { db ->
-            // Owner identity must exist; skip silently otherwise (replayed
-            // next round), reading networkRaw off the owner.
-            val owner = db.identityDao().getByIdentityId(ownerId) ?: return@stage
+            // The owner identity must exist (networkRaw is read off it).
+            // Within a round identities apply before contacts, and native
+            // stores contact requests only of identities it manages, so it
+            // is there; when it is not, the round fails rather than being
+            // acknowledged without the row: this store declares the private
+            // contact request scan state, so an acknowledged round would let
+            // native store a read position past a request that was never
+            // saved, and no later scan would read it again.
+            val owner = db.identityDao().getByIdentityId(ownerId)
+                ?: throw IllegalStateException("contact request owner identity is not persisted")
             db.dashpayDao().upsertContactRequest(
                 DashpayContactRequestEntity(
                     networkRaw = owner.networkRaw,
@@ -2282,9 +2289,10 @@ class PlatformWalletPersistenceHandler(
         stage(walletId) { db ->
             if (isIgnored) {
                 db.dashpayDao().deleteContactRequest(ownerId, senderId, isOutgoing = false)
-                // Owner identity must exist (networkRaw is read off it);
-                // skip silently otherwise — replayed next round.
-                val owner = db.identityDao().getByIdentityId(ownerId) ?: return@stage
+                // The owner identity must exist (networkRaw is read off it);
+                // the round fails otherwise, as for a contact upsert.
+                val owner = db.identityDao().getByIdentityId(ownerId)
+                    ?: throw IllegalStateException("ignored sender owner identity is not persisted")
                 db.dashpayDao().upsertIgnoredSender(
                     DashpayIgnoredSenderEntity(
                         networkRaw = owner.networkRaw,
