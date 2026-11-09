@@ -1663,13 +1663,15 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
         arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await;
 
         trace!("PrivateDocumentCreateFromShieldedPool: state transition built, broadcasting...");
-        // From here the payment may reach the network.
-        payment_started.mark();
         // Saved before the broadcast, not after an unconfirmed wait: a
         // process that exits once the node admitted the transition, before
         // the wait returns, still leaves the record a restart restores the
         // request's reservation from, and the redrive resolves. The record
-        // is dropped with the notes' reservation on either outcome.
+        // is dropped with the notes' reservation on either outcome. The
+        // payment is marked started once the record is saved, with nothing
+        // awaited in between: a send dropped while the save waits for the
+        // store has saved and broadcast nothing, and releases its
+        // reservation.
         arm_redrive_before_broadcast(
             store,
             id,
@@ -1679,6 +1681,7 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
             &state_transition,
             "private document create from shielded pool",
             private_contact,
+            Some(payment_started),
         )
         .await?;
         // Type 29 proves its spent nullifiers as a snapshot, which a competing
@@ -3196,7 +3199,10 @@ async fn broadcast_shielded_spend_with_redrive_with_metadata<S: ShieldedStore>(
 /// is keyed by the spend's `activity_id` and carries its `nullifiers`, and
 /// the private contact request the spend pays for when it does. A spend
 /// whose record cannot be saved is refused before anything is broadcast, as
-/// the unknown outcome could then not be recovered.
+/// the unknown outcome could then not be recovered. `payment_started`, when
+/// given, is marked right after the record is saved, under the same store
+/// lock: dropped while it waits for the lock, the spend leaves neither a
+/// record nor a mark.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn arm_redrive_before_broadcast<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
@@ -3207,6 +3213,7 @@ pub(crate) async fn arm_redrive_before_broadcast<S: ShieldedStore>(
     state_transition: &StateTransition,
     operation: &'static str,
     private_contact: Option<PrivateContactPayment>,
+    payment_started: Option<&PaymentStarted>,
 ) -> Result<(), PlatformWalletError> {
     use dpp::serialization::PlatformSerializable;
 
@@ -3241,7 +3248,11 @@ pub(crate) async fn arm_redrive_before_broadcast<S: ShieldedStore>(
             "{operation}: the record of this spend could not be saved, so it is not broadcast: \
              {e}"
         ))
-    })
+    })?;
+    if let Some(payment_started) = payment_started {
+        payment_started.mark();
+    }
+    Ok(())
 }
 
 /// Persist the re-drivable record for an ambiguous spend. Best-effort:
@@ -4237,6 +4248,73 @@ mod redrive_tests {
         );
     }
 
+    /// A private payment is marked started only once its record is saved:
+    /// dropped while the save waits for the store, the spend has saved
+    /// nothing and is not marked, so its contact request's reservation is
+    /// released rather than kept for a payment that never left. Once the
+    /// lock frees, a save marks it.
+    #[tokio::test]
+    async fn should_mark_a_payment_started_only_once_its_record_is_saved() {
+        use crate::wallet::identity::network::PaymentStarted;
+        use futures::FutureExt;
+
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = SubwalletId::new([0x62; 32], 0);
+        let transition = identity_shield_transition([0xBB; 32], 4);
+        let started = PaymentStarted::default();
+
+        let held = store.write().await;
+        let save = arm_redrive_before_broadcast(
+            &store,
+            id,
+            Some([0x78; 32]),
+            [7; 32],
+            vec![[2; 32]],
+            &transition,
+            "test spend",
+            None,
+            Some(&started),
+        );
+        let mut save = Box::pin(save);
+        assert!(
+            (&mut save).now_or_never().is_none(),
+            "the save waits for the store"
+        );
+        drop(save);
+        drop(held);
+        assert!(!started.is_marked(), "dropped before its record was saved");
+        assert!(store
+            .read()
+            .await
+            .pending_redrives(id)
+            .expect("redrives")
+            .is_empty());
+
+        arm_redrive_before_broadcast(
+            &store,
+            id,
+            Some([0x78; 32]),
+            [7; 32],
+            vec![[2; 32]],
+            &transition,
+            "test spend",
+            None,
+            Some(&started),
+        )
+        .await
+        .expect("saved");
+        assert!(started.is_marked());
+        assert_eq!(
+            store
+                .read()
+                .await
+                .pending_redrives(id)
+                .expect("redrives")
+                .len(),
+            1
+        );
+    }
+
     /// A spend's record is saved before its broadcast, keyed by its
     /// activity entry; one with no entry to key it by is refused, nothing
     /// saved.
@@ -4254,6 +4332,7 @@ mod redrive_tests {
             vec![[1; 32]],
             &transition,
             "test spend",
+            None,
             None,
         )
         .await;
@@ -4276,6 +4355,7 @@ mod redrive_tests {
             vec![[1; 32]],
             &transition,
             "test spend",
+            None,
             None,
         )
         .await

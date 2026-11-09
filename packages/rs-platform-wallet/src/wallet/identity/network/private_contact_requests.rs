@@ -4504,10 +4504,9 @@ mod tests {
         let pay = {
             let store = Arc::clone(before.store());
             move |entry: BinaryData, started: PaymentStarted| async move {
-                // As the shielded payment does: marked, the record saved,
+                // As the shielded payment does: the record saved, marked,
                 // broadcast and admitted; then the result never comes.
                 let transition = private_contact_request_payment(entry);
-                started.mark();
                 arm_redrive_before_broadcast(
                     &store,
                     subwallet,
@@ -4517,6 +4516,7 @@ mod tests {
                     &transition,
                     "private document create from shielded pool",
                     None,
+                    Some(&started),
                 )
                 .await?;
                 std::future::pending::<()>().await;
@@ -4964,10 +4964,9 @@ mod tests {
             let store = Arc::clone(before_coordinator.store());
             let (sender, recipient) = (bob.id(), alice.id());
             move |entry: BinaryData, started: PaymentStarted| async move {
-                // As the shielded payment does: marked, the record saved with
-                // the request it pays for, broadcast; its result unknown.
+                // As the shielded payment does: the record saved with the
+                // request it pays for, marked, broadcast; its result unknown.
                 let transition = private_contact_request_payment(entry);
-                started.mark();
                 let payment = PrivateContactPayment {
                     sender: sender.to_buffer(),
                     recipient: recipient.to_buffer(),
@@ -4984,6 +4983,7 @@ mod tests {
                     &transition,
                     "private document create from shielded pool",
                     Some(payment),
+                    Some(&started),
                 )
                 .await?;
                 Err::<ResponseMetadata, _>(PlatformWalletError::ShieldedSpendUnconfirmed {
