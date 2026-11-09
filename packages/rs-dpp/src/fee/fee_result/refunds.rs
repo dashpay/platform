@@ -3,7 +3,7 @@
 //! Fee refunds are calculated based on removed bytes per epoch.
 //!
 
-use crate::block::epoch::EpochIndex;
+use crate::block::epoch::{Epoch, EpochIndex};
 use crate::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
 use crate::fee::epoch::{BytesPerEpoch, CreditsPerEpoch};
 use crate::fee::Credits;
@@ -39,13 +39,13 @@ impl FeeRefunds {
         storage_removal: I,
         current_epoch_index: EpochIndex,
         epochs_per_era: u16,
-        storage_rate_of_epoch: F,
+        mut storage_rate_of_epoch: F,
     ) -> Result<Self, Err>
     where
         I: IntoIterator<Item = ([u8; 32], C)>,
         C: IntoIterator<Item = (E, u32)>,
         E: TryInto<u16>,
-        F: Fn(EpochIndex) -> Result<Credits, Err>,
+        F: FnMut(EpochIndex) -> Result<Credits, Err>,
         Err: From<ProtocolError>,
     {
         let refunds_per_epoch_by_identifier = storage_removal
@@ -56,6 +56,8 @@ impl FeeRefunds {
                     .filter(|(_, bytes)| bytes >= &MIN_REFUND_LIMIT_BYTES)
                     .map(|(encoded_epoch_index, bytes)| {
                         let epoch_index : u16 = encoded_epoch_index.try_into().map_err(|_| ProtocolError::Overflow("can't fit u64 epoch index from StorageRemovalPerEpochByIdentifier to u16 EpochIndex"))?;
+
+                        Epoch::new(current_epoch_index)?;
 
                         // TODO Add in multipliers once they have been made
 
@@ -182,6 +184,7 @@ mod tests {
 
     mod from_storage_removal {
         use super::*;
+        use crate::block::epoch::MAX_EPOCH;
         use nohash_hasher::IntMap;
         use platform_version::version::fee::FeeVersion;
         use std::iter::FromIterator;
@@ -208,6 +211,30 @@ mod tests {
 
             assert!(credits_per_epoch.get(&0).is_none());
             assert!(credits_per_epoch.get(&1).is_some());
+        }
+
+        #[test]
+        fn should_refuse_a_current_epoch_above_the_maximum() {
+            let bytes_per_epoch = IntMap::from_iter([(1, 100)]);
+            let storage_removal =
+                BytesPerEpochByIdentifier::from_iter([([0; 32], bytes_per_epoch)]);
+
+            assert!(FeeRefunds::from_storage_removal(
+                storage_removal.clone(),
+                MAX_EPOCH,
+                20,
+                first_schedule_rate
+            )
+            .is_ok());
+            assert!(matches!(
+                FeeRefunds::from_storage_removal(
+                    storage_removal,
+                    MAX_EPOCH + 1,
+                    20,
+                    first_schedule_rate
+                ),
+                Err(ProtocolError::Overflow(_))
+            ));
         }
 
         #[test]

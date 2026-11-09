@@ -7,10 +7,13 @@ use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use enum_map::EnumMap;
+use std::collections::btree_map::Entry;
+use std::collections::BTreeMap;
 
 impl Drive {
     /// Calculates fees for the given operations, pricing each refund at the storage rate of the
-    /// epoch that stored the bytes. Generation 0 prices every refund at the block's rate.
+    /// epoch that stored the bytes and charging for reading each earlier storing epoch's record
+    /// once. Generation 0 prices every refund at the block's rate and reads nothing.
     #[inline(always)]
     pub(super) fn calculate_fee_v1(
         &self,
@@ -28,15 +31,34 @@ impl Drive {
         )?;
 
         if let Some(drive_operations) = drive_operations {
+            let mut storage_rates = BTreeMap::new();
+            let mut record_reads = vec![];
+
             for drive_fee_result in LowLevelDriveOperation::consume_to_fees_v1(
                 drive_operations,
                 epoch,
                 self.config.epochs_per_era,
                 &platform_version.fee_version,
-                |storing_epoch| self.storage_rate_of_epoch(storing_epoch, epoch, platform_version),
+                |storing_epoch| match storage_rates.entry(storing_epoch) {
+                    Entry::Occupied(rate) => Ok(*rate.get()),
+                    Entry::Vacant(rate) => Ok(*rate.insert(self.storage_rate_of_epoch(
+                        storing_epoch,
+                        epoch,
+                        &mut record_reads,
+                        platform_version,
+                    )?)),
+                },
             )? {
                 aggregate_fee_result.checked_add_assign(drive_fee_result)?;
             }
+
+            aggregate_fee_result.checked_add_assign(Self::calculate_fee_v0(
+                None,
+                Some(record_reads),
+                epoch,
+                self.config.epochs_per_era,
+                &platform_version.fee_version,
+            )?)?;
         }
 
         Ok(aggregate_fee_result)
@@ -48,11 +70,12 @@ impl Drive {
     /// protocol version is the block's, and it is only recorded at the end of the epoch's first
     /// block. An earlier epoch that stored bytes had a block, so its first block recorded its
     /// protocol version, nothing removes that record, and it was committed before this block
-    /// started, so it is read without a transaction.
+    /// started, so it is read without a transaction. The cost of that read goes to `record_reads`.
     fn storage_rate_of_epoch(
         &self,
         storing_epoch: EpochIndex,
         epoch: &Epoch,
+        record_reads: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Credits, Error> {
         if storing_epoch == epoch.index {
@@ -61,8 +84,12 @@ impl Drive {
                 .storage
                 .storage_disk_usage_credit_per_byte);
         }
-        let protocol_version =
-            self.get_epoch_protocol_version(&Epoch::new(storing_epoch)?, None, platform_version)?;
+        let protocol_version = self.get_epoch_protocol_version_operations(
+            &Epoch::new(storing_epoch)?,
+            None,
+            record_reads,
+            platform_version,
+        )?;
         let storing_platform_version =
             PlatformVersion::get(protocol_version).map_err(ProtocolError::from)?;
         Ok(storing_platform_version

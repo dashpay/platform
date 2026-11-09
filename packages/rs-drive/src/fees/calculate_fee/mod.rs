@@ -99,13 +99,9 @@ mod tests {
         drive
     }
 
-    /// Prices the removal of one element holding `REMOVED_BYTES` of the owner's from each of
-    /// `storing_epochs`, and `REMOVED_SYSTEM_BYTES` of the system's, in `REMOVING_EPOCH`.
-    fn price_removal(
-        drive: &Drive,
-        storing_epochs: &[u16],
-        platform_version: &PlatformVersion,
-    ) -> Result<FeeResult, Error> {
+    /// The removal of one element holding `REMOVED_BYTES` of the owner's from each of
+    /// `storing_epochs`, and `REMOVED_SYSTEM_BYTES` of the system's.
+    fn removal_operation(storing_epochs: &[u16]) -> LowLevelDriveOperation {
         let mut removal = StorageRemovalPerEpochByIdentifier::default();
         for storing_epoch in storing_epochs {
             removal
@@ -117,17 +113,24 @@ mod tests {
             .entry([0; 32])
             .or_default()
             .insert(REMOVING_EPOCH, REMOVED_SYSTEM_BYTES);
-        let removed_bytes = LowLevelDriveOperation::CalculatedCostOperation(OperationCost {
+        LowLevelDriveOperation::CalculatedCostOperation(OperationCost {
             storage_cost: StorageCost {
                 removed_bytes: StorageRemovedBytes::SectionedStorageRemoval(removal),
                 ..Default::default()
             },
             ..Default::default()
-        });
+        })
+    }
 
+    /// Prices `removal_operation(storing_epochs)` in `REMOVING_EPOCH`.
+    fn price_removal(
+        drive: &Drive,
+        storing_epochs: &[u16],
+        platform_version: &PlatformVersion,
+    ) -> Result<FeeResult, Error> {
         drive.calculate_fee(
             None,
-            Some(vec![removed_bytes]),
+            Some(vec![removal_operation(storing_epochs)]),
             &Epoch::new(REMOVING_EPOCH).expect("expected an epoch"),
             platform_version,
         )
@@ -217,6 +220,41 @@ mod tests {
         assert_eq!(
             owner_refund(&fee_result, 14),
             Some(refund_at_rate(&drive, 14, rate))
+        );
+    }
+
+    /// One element's bytes cost the same to remove whichever epoch stored them, so what an
+    /// earlier epoch adds is the read of its record, which one calculation pays for once.
+    #[test]
+    fn should_charge_the_read_of_an_earlier_epochs_record_once() {
+        let latest = PlatformVersion::latest();
+        let drive = drive_with_epoch_protocol_versions(&[(12, latest.protocol_version)]);
+        let processing_fee = |storing_epoch, platform_version| {
+            price_removal(&drive, &[storing_epoch], platform_version)
+                .expect("expected to calculate the fee")
+                .processing_fee
+        };
+
+        let fee_without_a_read = processing_fee(REMOVING_EPOCH, latest);
+        let read_fee = processing_fee(12, latest) - fee_without_a_read;
+        assert!(read_fee > 0);
+
+        let fee_of_two_removals = drive
+            .calculate_fee(
+                None,
+                Some(vec![removal_operation(&[12]), removal_operation(&[12])]),
+                &Epoch::new(REMOVING_EPOCH).expect("expected an epoch"),
+                latest,
+            )
+            .expect("expected to calculate the fee")
+            .processing_fee;
+        assert_eq!(fee_of_two_removals, 2 * fee_without_a_read + read_fee);
+
+        // Generation 0 reads nothing.
+        let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+        assert_eq!(
+            processing_fee(12, protocol_version_14),
+            processing_fee(REMOVING_EPOCH, protocol_version_14)
         );
     }
 

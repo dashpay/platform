@@ -485,8 +485,9 @@ out to proposers.
 From protocol version 15 a refund is priced at the storage rate the bytes were
 paid at. The storage flags say which epoch stored them, the first block of every
 epoch records the epoch's protocol version in its epoch tree, and that version's
-fee schedule has the rate, so `Drive::calculate_fee` reads it from there. Bytes
-stored in the current epoch use the current block's rate, which is the same
+fee schedule has the rate, so `Drive::calculate_fee` reads it from there and adds
+the read to the processing fee, once per earlier storing epoch in a calculation.
+Bytes stored in the current epoch use the current block's rate, which is the same
 schedule. Earlier protocol versions price every refund at the current block's
 rate. Every schedule so far has the same storage rate, so the two agree.
 

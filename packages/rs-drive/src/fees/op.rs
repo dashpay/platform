@@ -465,7 +465,7 @@ impl LowLevelDriveOperation {
         epoch: &Epoch,
         epochs_per_era: u16,
         fee_version: &FeeVersion,
-        storage_rate_of_epoch: impl Fn(EpochIndex) -> Result<Credits, Error>,
+        mut storage_rate_of_epoch: impl FnMut(EpochIndex) -> Result<Credits, Error>,
     ) -> Result<Vec<FeeResult>, Error> {
         let mut sectioned_removals = Vec::new();
         let drive_operations = drive_operations
@@ -504,7 +504,7 @@ impl LowLevelDriveOperation {
                 removal,
                 epoch.index,
                 epochs_per_era,
-                &storage_rate_of_epoch,
+                &mut storage_rate_of_epoch,
             )?;
         }
         Ok(fee_results)

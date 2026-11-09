@@ -13,7 +13,10 @@ use crate::test::helpers::setup::TempPlatform;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
+use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
 use drive::drive::credit_pools::operations::update_unpaid_epoch_index_operation;
+use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use drive::util::batch::GroveDbOpBatch;
 use platform_version::version::PlatformVersion;
 use std::sync::Arc;
 
@@ -68,6 +71,19 @@ pub(crate) fn fast_forward_to_block(
             core_block_height,
             epoch_index,
         )
+    } else {
+        // Bytes stored in this epoch are refunded at the rate of the protocol version it
+        // recorded, which the epoch's first block writes and this jump skips.
+        let mut batch = GroveDbOpBatch::new();
+        batch.push(
+            block_info
+                .epoch
+                .update_protocol_version_operation(protocol_version),
+        );
+        platform
+            .drive
+            .grove_apply_batch(batch, false, None, &platform_version.drive)
+            .expect("expected to record the epoch's protocol version");
     }
 }
 

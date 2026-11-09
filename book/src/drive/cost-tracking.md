@@ -206,7 +206,9 @@ Generation 0 prices every refund at the current block's storage rate. From proto
 `consume_to_fees_v1` hands generation 0 each sectioned removal as a basic removal of as many
 bytes, so everything else is priced the same, and then prices the refunds itself at the storage
 rate of the protocol version that ran each storing epoch. `Drive::calculate_fee` reads that
-version from the epoch's tree, so it is a method on `Drive`.
+version from the epoch's tree, so it is a method on `Drive`. The read is charged to the
+processing fee, once per earlier storing epoch in a calculation; bytes stored in the block's own
+epoch need no read. Estimated costs carry no storing epochs, so an estimate has no such read.
 
 ## Ephemeral Cost Calculation
 
