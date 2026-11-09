@@ -504,6 +504,12 @@ where
                         // partway through a chunk: it sets no chunk size, and the next page
                         // is read from where it stopped.
                         let ended_its_snapshot = end >= entries.total_count;
+                        // The chunk size a proof bound, from the store element: the page
+                        // geometry, rather than learning it from page lengths.
+                        let proved_chunk_size = entries
+                            .chunk_power
+                            .and_then(|power| 1u64.checked_shl(u32::from(power)))
+                            .filter(|chunk_size| *chunk_size > 0);
                         let page = PrivateDocumentPage {
                             start_position: start,
                             entries,
@@ -520,9 +526,26 @@ where
                                 PageWalk::Done,
                             ));
                         }
-                        // A page from a chunk boundary that stops short of the end of the store
-                        // it was read from is one whole chunk, a power of two, and so is every
-                        // page after it.
+                        // A page that stops short of the end of the store it was read from ends at
+                        // a chunk boundary: with the chunk size its proof binds, every page after
+                        // it is a whole chunk from there.
+                        if let Some(chunk_size) = proved_chunk_size
+                            .filter(|chunk_size| !ended_its_snapshot && end % chunk_size == 0)
+                        {
+                            return Some((
+                                Ok(page),
+                                PageWalk::Concurrent(Box::pin(whole_chunk_pages(
+                                    fetch,
+                                    end,
+                                    chunk_size,
+                                    total,
+                                    max_concurrent,
+                                ))),
+                            ));
+                        }
+                        // Without it, as a page read without a proof is: a page from a chunk
+                        // boundary that stops short of the end of the store it was read from is
+                        // one whole chunk, a power of two, and so is every page after it.
                         let next = if aligned
                             && !ended_its_snapshot
                             && len.is_power_of_two()
@@ -623,7 +646,15 @@ where
                              of {chunk_size} the store's earlier pages set"
                         ))
                     };
-                    if len > chunk_size || first_position.is_some_and(|p| p != start) {
+                    // A page whose proof binds another chunk size than the walk's is not of
+                    // the store the walk reads.
+                    let other_chunks = entries.chunk_power.is_some_and(|power| {
+                        1u64.checked_shl(u32::from(power)) != Some(chunk_size)
+                    });
+                    if len > chunk_size
+                        || other_chunks
+                        || first_position.is_some_and(|p| p != start)
+                    {
                         return Err(refused());
                     }
                     if len == chunk_size || end >= total {
@@ -658,9 +689,12 @@ impl Sdk {
     /// appended while the pages are read are left for the next read, unless the last page's
     /// chunk holds them.
     ///
-    /// A page reads to the end of the chunk holding its start, which the client does not
-    /// learn from the node: so the first page, and the next one from the chunk boundary it
-    /// ends at, are read one at a time. That second page, short of the store's end, is a whole
+    /// A page reads to the end of the chunk holding its start. A proved page carries the
+    /// store's chunk size, from the store element its proof binds
+    /// ([`PrivateDocumentEntries::chunk_power`]): every page after the first is then fetched at
+    /// once from the first's end. A page without it, as one read without a proof is, leaves
+    /// the walk to learn it: the first page, and the next one from the chunk boundary it ends
+    /// at, are read one at a time. That second page, short of the store's end, is a whole
     /// chunk, which sets the size of every page after it; those are then fetched at once. A
     /// page that ends at the end of the store it was read from, an older snapshot than the
     /// first page's, sets no size: the pages after it are read one at a time until one does. A
@@ -818,6 +852,7 @@ mod tests {
 
     fn page(start: u64, entries: Vec<Vec<u8>>, total_count: u64) -> PrivateDocumentEntries {
         PrivateDocumentEntries {
+            chunk_power: None,
             entries: entries
                 .into_iter()
                 .zip(start..)
@@ -1064,6 +1099,7 @@ mod tests {
             (start - start % chunk_size + chunk_size).min(total)
         };
         PrivateDocumentEntries {
+            chunk_power: None,
             entries: (start..end)
                 .map(|position| PrivateDocumentEntry {
                     position,
@@ -1519,6 +1555,71 @@ mod tests {
             );
             assert!(error.can_retry(), "behind at {behind}");
         }
+    }
+
+    /// `fetch`, its pages carrying the chunk power `power`, as proved pages do.
+    fn proved(
+        power: u8,
+        fetch: impl Fn(u64) -> PageFuture + Clone + Send + Sync + 'static,
+    ) -> impl Fn(u64) -> PageFuture + Clone + Send + Sync + 'static {
+        move |start| {
+            let page = fetch(start);
+            Box::pin(async move {
+                let mut page = page.await?;
+                page.chunk_power = Some(power);
+                Ok(page)
+            })
+        }
+    }
+
+    /// Proved pages carry the store's chunk size: every page after the first is fetched at
+    /// once from the first's end, where pages without it read the second one alone to learn
+    /// it, and the pages still come in order.
+    #[tokio::test]
+    async fn should_fetch_at_once_every_page_after_a_proved_first_one() {
+        let delay = std::time::Duration::from_millis(10);
+        let learning = InFlight::default();
+        let pages = walk(learning.fetch(4, 12, delay, None), 0, 4).await;
+        assert_eq!(positions(pages), (0..12).collect::<Vec<_>>());
+        assert_eq!(learning.most(), 1, "the second page alone, then the third");
+
+        let geometry = InFlight::default();
+        let pages = walk(proved(2, geometry.fetch(4, 12, delay, None)), 0, 4).await;
+        assert_eq!(positions(pages), (0..12).collect::<Vec<_>>());
+        assert_eq!(geometry.most(), 2, "the second and third pages at once");
+
+        // From inside a chunk: the first page ends at its chunk's boundary.
+        let geometry = InFlight::default();
+        let pages = walk(proved(2, geometry.fetch(4, 30, delay, None)), 6, 16).await;
+        assert_eq!(positions(pages), (6..30).collect::<Vec<_>>());
+        assert_eq!(geometry.most(), 6, "every page after the first at once");
+    }
+
+    /// A page fetched at once whose proof binds another chunk size than the first page's is
+    /// not of the store the walk reads: it ends the walk with an error.
+    #[tokio::test]
+    async fn should_refuse_a_page_proved_with_another_chunk_size() {
+        let fetch = proved(2, |start: u64| -> PageFuture {
+            Box::pin(async move { Ok(drive_page(4, 16, start)) })
+        });
+        let other = move |start: u64| -> PageFuture {
+            let page = fetch(start);
+            Box::pin(async move {
+                let mut page = page.await?;
+                if start == 8 {
+                    page.chunk_power = Some(3);
+                }
+                Ok(page)
+            })
+        };
+        let pages = walk(other, 0, 4).await;
+        assert!(pages[..2].iter().all(Result::is_ok));
+        let error = pages[2]
+            .as_ref()
+            .expect_err("another chunk size")
+            .to_string();
+        assert!(error.contains("not the chunk of 4"), "{error}");
+        assert_eq!(pages.len(), 3);
     }
 
     /// A page short of its chunk, before the store's end, is an error rather than a gap.

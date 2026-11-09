@@ -1708,6 +1708,7 @@ mod tests {
 
     fn page(entries: Vec<Vec<u8>>) -> PrivateDocumentEntries {
         PrivateDocumentEntries {
+            chunk_power: None,
             total_count: entries.len() as u64,
             entries: entries
                 .into_iter()
@@ -3619,6 +3620,7 @@ mod tests {
                     0,
                 ),
                 Some(PrivateDocumentEntries {
+                    chunk_power: None,
                     entries: vec![],
                     total_count: 0,
                 }),
@@ -3678,6 +3680,7 @@ mod tests {
                     0,
                 ),
                 Some(PrivateDocumentEntries {
+                    chunk_power: None,
                     entries: vec![],
                     total_count: 0,
                 }),
