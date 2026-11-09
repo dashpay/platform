@@ -1905,7 +1905,7 @@ async fn settle_private_document_payment<S: ShieldedStore>(
             .await;
             if never_delivered {
                 if let Some(commitments) = journaled {
-                    if discharge_journal_records(store, wallet_id, commitments).await {
+                    if discharge_journal_records(store, persister, wallet_id, commitments).await {
                         payment_started.note_never_delivered();
                     }
                 }
@@ -1917,26 +1917,33 @@ async fn settle_private_document_payment<S: ShieldedStore>(
 }
 
 /// Discharge `wallet_id`'s journal records of `commitments`, whose payment's
-/// transition never left the wallet. Returns whether every one is gone; a
-/// failure leaves the records, which over-holds their pairs.
+/// transition never left the wallet, noting each one discharged on
+/// `persister` so a restoration that read it before skips it. Returns whether
+/// every one is gone; a failure leaves the records, which over-holds their
+/// pairs.
 async fn discharge_journal_records<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     commitments: &[[u8; 32]],
 ) -> bool {
     let mut store = store.write().await;
-    let mut discharged = true;
+    let mut discharged = Vec::with_capacity(commitments.len());
     for commitment in commitments {
-        if let Err(e) = store.discharge_private_payment(wallet_id, commitment) {
-            discharged = false;
-            warn!(
+        match store.discharge_private_payment(wallet_id, commitment) {
+            Ok(_) => discharged.push(*commitment),
+            Err(e) => warn!(
                 error = %e,
                 "a never-delivered private payment's journal record was not discharged; its \
                  pair stays held"
-            );
+            ),
         }
     }
-    discharged
+    let every_one = discharged.len() == commitments.len();
+    if let Some(persister) = persister {
+        persister.note_discharged_private_entries(discharged);
+    }
+    every_one
 }
 
 // -------------------------------------------------------------------------
@@ -3624,15 +3631,21 @@ pub(crate) fn discharge_read_back_private_payments<S: ShieldedStore>(
     wallet_id: WalletId,
 ) {
     let mut kept = Vec::new();
+    let mut discharged = Vec::new();
     for commitment in persister.take_read_back_private_entries() {
-        if let Err(e) = store.discharge_private_payment(wallet_id, &commitment) {
-            warn!(
-                error = %e,
-                "a read-back private payment's journal record was not discharged; retried later"
-            );
-            kept.push(commitment);
+        match store.discharge_private_payment(wallet_id, &commitment) {
+            Ok(_) => discharged.push(commitment),
+            Err(e) => {
+                warn!(
+                    error = %e,
+                    "a read-back private payment's journal record was not discharged; retried \
+                     later"
+                );
+                kept.push(commitment);
+            }
         }
     }
+    persister.note_discharged_private_entries(discharged);
     if !kept.is_empty() {
         persister.note_read_back_private_entries(kept);
     }

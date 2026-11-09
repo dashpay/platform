@@ -441,6 +441,10 @@ pub(crate) async fn restore_journaled_private_payments(
     let mut restored = Vec::new();
     let mut absent = BTreeSet::new();
     for &(sender, recipient, account_reference, commitment) in payments {
+        // Discharged since the snapshot was read: nothing will settle it.
+        if persister.private_entry_discharged(&commitment) {
+            continue;
+        }
         let Some(managed) = info.identity_manager.managed_identity_mut(&sender) else {
             absent.insert((sender, recipient));
             continue;
@@ -804,6 +808,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         }
         self.read_private_store_before_sending(sender_identity_id, recipient_identity_id, crypto)
             .await?;
+        self.release_discharged_private_requests().await?;
         let absent_sender_held = self
             .persister
             .absent_sender_private_pair_held(sender_identity_id, recipient_identity_id);
@@ -1102,6 +1107,47 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .filter_map(|identity| info.identity_manager.managed_identity(&identity.id()))
                 .any(|managed| managed.dashpay().private_payments_unrestored())
         })
+    }
+
+    /// Release the pending private requests whose payment's journal record
+    /// was discharged (`WalletPersister::note_discharged_private_entries`):
+    /// one proven expired, its anchor pruned with an input still unspent, can
+    /// never be read back. Run before a private request is reserved, before a
+    /// public one claims its pair, and by the private sync, so a retry needs
+    /// no restart. An identity's marker is stored again when it changed.
+    pub(crate) async fn release_discharged_private_requests(
+        &self,
+    ) -> Result<(), PlatformWalletError> {
+        if !self.persister.has_unreleased_discharged_private_entries() {
+            return Ok(());
+        }
+        // Taken only once the wallet is locked and found, and applied with
+        // nothing awaited in between.
+        let mut wm = self.wallet_manager.write().await;
+        let info = wm
+            .get_wallet_info_mut(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let discharged = self.persister.take_unreleased_discharged_private_entries();
+        let identity_ids: Vec<Identifier> = info
+            .identity_manager
+            .all_identities()
+            .iter()
+            .map(|identity| identity.id())
+            .collect();
+        let mut changed = Vec::new();
+        for identity_id in identity_ids {
+            if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
+                let unresolved = managed.dashpay().private_payments_unresolved();
+                managed.release_discharged_private_replies(&discharged);
+                if managed.dashpay().private_payments_unresolved() != unresolved {
+                    changed.push(identity_id);
+                }
+            }
+        }
+        for identity_id in changed {
+            store_private_payment_marker(&self.persister, &wm, &self.wallet_id, &identity_id);
+        }
+        Ok(())
     }
 
     /// Whether a private sync read DashPay's private contact request store
@@ -1508,6 +1554,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     where
         C: ContactCryptoProvider + Sync,
     {
+        self.release_discharged_private_requests().await?;
         self.reconcile_private_scan_keys().await?;
         let (mut identities, paths) = self.private_scan_identities().await?;
         let mut report = PrivateContactSyncReport::default();
@@ -6139,6 +6186,147 @@ mod tests {
             ),
             "no replacement funding: {replacement:?}"
         );
+    }
+
+    /// A restoration that read a payment's journal record before the record
+    /// was discharged and its reservation released, as a never-delivered
+    /// payment does, and applies only after, does not reserve the pair again:
+    /// no entry would ever settle that reservation. A retry to the pair pays.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_not_restore_a_payment_discharged_while_the_restore_waited() {
+        use std::future::Future;
+        use std::task::{Context, Waker};
+
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (_manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let db_path = dir.path().join("tree.sqlite");
+        let coordinator = Arc::new(NetworkShieldedCoordinator::new(
+            Arc::new(dash_sdk::Sdk::new_mock()),
+            Network::Testnet,
+            db_path.clone(),
+            FileBackedShieldedStore::open_path(&db_path, 100).expect("the store"),
+        ));
+        let subwallet = SubwalletId::new(alice_wallet.wallet_id(), 0);
+        let paid = Arc::new(Mutex::new(Vec::new()));
+        let pay = {
+            let store = Arc::clone(coordinator.store());
+            let paid = Arc::clone(&paid);
+            let (sender, recipient) = (alice.id(), bob.id());
+            move |entry: BinaryData, started: PaymentStarted| async move {
+                paid.lock().expect("paid").push(entry.clone());
+                let transition = private_contact_request_payment(entry);
+                arm_redrive_before_broadcast(
+                    &store,
+                    subwallet,
+                    Some([0x7B; 32]),
+                    [7; 32],
+                    vec![[1; 32]],
+                    &transition,
+                    "private document create from shielded pool",
+                    Some(PrivateContactPayment {
+                        sender: sender.to_buffer(),
+                        recipient: recipient.to_buffer(),
+                        account_reference: started
+                            .account_reference()
+                            .expect("the send names its request"),
+                    }),
+                    Some(&started),
+                )
+                .await?;
+                Err::<ResponseMetadata, _>(PlatformWalletError::ShieldedSpendUnconfirmed {
+                    operation: "private document create from shielded pool",
+                    reason: "the result wait timed out".to_string(),
+                })
+            }
+        };
+        let view = alice_wallet.identity().dashpay();
+        let sent = view
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                pay,
+            )
+            .await;
+        assert!(
+            matches!(
+                sent,
+                Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+            ),
+            "{sent:?}"
+        );
+        let commitment: [u8; 32] = paid.lock().expect("paid")[0].as_slice()[..32]
+            .try_into()
+            .expect("an entry starts with its commitment");
+
+        let mut cx = Context::from_waker(Waker::noop());
+        let held_store = coordinator.store().write().await;
+        let mut restore = Box::pin(alice_wallet.restore_private_contact_payments(&coordinator));
+        assert!(
+            restore.as_mut().poll(&mut cx).is_pending(),
+            "waits for the store"
+        );
+        let mut held_wallet = alice_wallet.wallet_manager().write().await;
+        drop(held_store);
+        // The restoration reads its journal snapshot, then waits for the wallet.
+        assert!(
+            restore.as_mut().poll(&mut cx).is_pending(),
+            "waits for the wallet"
+        );
+        // Meanwhile the record is discharged and the reservation released.
+        coordinator
+            .store()
+            .write()
+            .await
+            .discharge_private_payment(alice_wallet.wallet_id(), &commitment)
+            .expect("discharged");
+        alice_wallet
+            .persister()
+            .note_discharged_private_entries([commitment]);
+        held_wallet
+            .get_wallet_info_mut(&alice_wallet.wallet_id())
+            .expect("the wallet")
+            .identity_manager
+            .managed_identity_mut(&alice.id())
+            .expect("alice")
+            .release_discharged_private_replies(&BTreeSet::from([commitment]));
+        drop(held_wallet);
+        restore.await.expect("the restoration");
+        assert!(
+            !pending_to(&alice_wallet, ALICE, &bob).await,
+            "not reserved again"
+        );
+
+        let retry = Arc::new(Mutex::new(Vec::new()));
+        let retried = view
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                keep_entry(&retry),
+            )
+            .await;
+        assert!(
+            matches!(
+                retried,
+                Err(PlatformWalletError::PrivateContactRequestPending(_))
+            ),
+            "paid, not read back: {retried:?}"
+        );
+        assert_eq!(retry.lock().expect("retry").len(), 1, "the retry pays");
     }
 
     /// A payment that may have reached the network keeps its pair pending

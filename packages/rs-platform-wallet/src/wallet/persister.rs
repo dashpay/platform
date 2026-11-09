@@ -73,6 +73,11 @@ pub struct WalletPersister {
     /// identity added since holds them until the next restoration reserves
     /// them. Replaced by every restoration. In memory only.
     absent_sender_private_pairs: Arc<std::sync::Mutex<BTreeSet<(Identifier, Identifier)>>>,
+    /// The commitments of the private contact request payments whose journal
+    /// records were discharged in this session (read back, never delivered,
+    /// or proven expired). Shared by the clones the wallet and the
+    /// coordinator hold. In memory only, as are the reservations they guard.
+    discharged_private_entries: Arc<std::sync::Mutex<DischargedPrivateEntries>>,
     /// Whether the reservations of this wallet's unconfirmed private contact
     /// request payments from an earlier process may still be unrestored:
     /// raised at load for a wallet that bound a shielded account before, and
@@ -80,6 +85,22 @@ pub struct WalletPersister {
     /// is up, public contact requests are neither sent nor accepted. Shared by
     /// the clones the wallet and its views hold. In memory only.
     private_payments_unrestored: Arc<AtomicBool>,
+}
+
+/// The commitments [`WalletPersister::note_discharged_private_entries`] noted,
+/// both sets updated under one lock.
+#[derive(Default)]
+struct DischargedPrivateEntries {
+    /// Noted since the last take, for the wallet to release the reservations
+    /// it holds for them ([`WalletPersister::take_unreleased_discharged_private_entries`]).
+    unreleased: BTreeSet<[u8; 32]>,
+    /// Every one noted in this session, kept after the take: a restoration
+    /// that read a record before it was discharged, and reserves its pair
+    /// after, checks it here first under the wallet lock
+    /// ([`WalletPersister::private_entry_discharged`]). Only a shielded build
+    /// keeps a journal to discharge.
+    #[cfg_attr(not(feature = "shielded"), allow(dead_code))]
+    session: BTreeSet<[u8; 32]>,
 }
 
 impl WalletPersister {
@@ -90,6 +111,7 @@ impl WalletPersister {
             contact_payment_gate: Arc::new(tokio::sync::Mutex::new(())),
             read_back_private_entries: Arc::default(),
             absent_sender_private_pairs: Arc::default(),
+            discharged_private_entries: Arc::default(),
             private_payments_unrestored: Arc::default(),
         }
     }
@@ -137,6 +159,49 @@ impl WalletPersister {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .contains(&(*sender, *recipient))
+    }
+
+    /// Note `commitments`, whose private payments' journal records were just
+    /// discharged: a restoration that read them before skips them
+    /// ([`Self::private_entry_discharged`]), and the wallet releases what it
+    /// still reserves for them
+    /// ([`Self::take_unreleased_discharged_private_entries`]).
+    #[cfg(feature = "shielded")]
+    pub(crate) fn note_discharged_private_entries(
+        &self,
+        commitments: impl IntoIterator<Item = [u8; 32]>,
+    ) {
+        let mut discharged = self.discharged_entries();
+        for commitment in commitments {
+            discharged.unreleased.insert(commitment);
+            discharged.session.insert(commitment);
+        }
+    }
+
+    /// Whether the journal record of `commitment` was discharged in this
+    /// session, its reservation released or not.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn private_entry_discharged(&self, commitment: &[u8; 32]) -> bool {
+        self.discharged_entries().session.contains(commitment)
+    }
+
+    /// Whether [`Self::note_discharged_private_entries`] noted any commitment
+    /// since the last take.
+    pub(crate) fn has_unreleased_discharged_private_entries(&self) -> bool {
+        !self.discharged_entries().unreleased.is_empty()
+    }
+
+    /// Take the commitments [`Self::note_discharged_private_entries`] noted
+    /// since the last take. Take them only where they are applied with
+    /// nothing awaited in between.
+    pub(crate) fn take_unreleased_discharged_private_entries(&self) -> BTreeSet<[u8; 32]> {
+        std::mem::take(&mut self.discharged_entries().unreleased)
+    }
+
+    fn discharged_entries(&self) -> std::sync::MutexGuard<'_, DischargedPrivateEntries> {
+        self.discharged_private_entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Whether [`Self::note_read_back_private_entries`] noted any commitment
