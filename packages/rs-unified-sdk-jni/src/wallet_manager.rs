@@ -317,7 +317,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
         let mut result =
             unsafe { platform_wallet_ffi::platform_wallet_manager_destroy(b.manager_handle) };
         if result.code != PlatformWalletFFIResultCode::Success {
-            log::error!("manager destroy failed with code {:?}", result.code);
+            let message = if result.message.is_null() {
+                String::new()
+            } else {
+                // SAFETY: non-null message is a valid CString produced by the FFI.
+                unsafe { CStr::from_ptr(result.message) }
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            // The handle is gone either way; the message names any worker
+            // the teardown could not stop.
+            log::error!("manager destroy reported {:?}: {message}", result.code);
         }
         unsafe { platform_wallet_ffi_result_free(&mut result) };
     })
