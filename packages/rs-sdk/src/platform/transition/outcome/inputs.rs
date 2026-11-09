@@ -2,7 +2,8 @@
 //!
 //! The rule for a type names the inputs the network takes when it executes the transition, or
 //! when it fails with a paid error, and nothing else. A pool-paid shielded spend takes its
-//! nullifiers and needs its anchor kept; an identity-signed transition takes its identity or
+//! nullifiers and needs its anchor kept (an outputs-only bundle records its dummy nullifiers
+//! and needs no anchor); an identity-signed transition takes its identity or
 //! identity-contract nonce, read with the identity and contract its nonce validator reads; a
 //! transition paid from addresses takes each input address's next nonce.
 //!
@@ -37,7 +38,7 @@ use dpp::state_transition::unshield_transition::accessors::UnshieldTransitionAcc
 use dpp::state_transition::{StateTransition, StateTransitionOwned};
 
 /// The shielded pool a bundle spends from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum ShieldedPool {
     /// The credit shielded pool.
     Credit,
@@ -45,13 +46,16 @@ pub(super) enum ShieldedPool {
     Token(Identifier),
 }
 
-/// One bundle of a pool-paid shielded spend: the pool it spends from, the nullifiers it records
-/// there when it executes, and the anchor that pool has to keep for it to execute.
+/// One bundle of a pool-paid shielded spend: the pool it records nullifiers in when it
+/// executes, those nullifiers, and the anchor that pool has to keep for it to execute.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct PoolSpend {
     pub pool: ShieldedPool,
     pub nullifiers: Vec<[u8; 32]>,
-    pub anchor: [u8; 32],
+    /// `None` for an outputs-only bundle, which spends no note and so needs no anchor. It still
+    /// records its dummy nullifiers, and validation refuses a bundle whose nullifiers are
+    /// recorded already, so they decide the outcome like spent ones.
+    pub anchor: Option<[u8; 32]>,
 }
 
 /// A nonce a transition takes.
@@ -108,12 +112,12 @@ impl TransitionInputs {
                     PoolSpend {
                         pool: ShieldedPool::Credit,
                         nullifiers: st.fee_nullifiers(),
-                        anchor: st.fee_anchor(),
+                        anchor: Some(st.fee_anchor()),
                     },
                     PoolSpend {
                         pool: ShieldedPool::Token(st.token_id()),
                         nullifiers: st.token_nullifiers(),
-                        anchor: st.token_anchor(),
+                        anchor: Some(st.token_anchor()),
                     },
                 ])
             }
@@ -121,19 +125,31 @@ impl TransitionInputs {
                 PoolSpend {
                     pool: ShieldedPool::Credit,
                     nullifiers: st.fee_nullifiers(),
-                    anchor: st.fee_anchor(),
+                    anchor: Some(st.fee_anchor()),
                 },
                 PoolSpend {
                     pool: ShieldedPool::Token(st.token_id()),
                     nullifiers: st.token_nullifiers(),
-                    anchor: st.token_anchor(),
+                    anchor: Some(st.token_anchor()),
                 },
             ]),
-            // A purchase mints its token bundle's notes into the pool and records no token pool
-            // nullifier, so only the fee bundle decides it.
-            StateTransition::TokenPurchaseFromShieldedPool(st) => {
-                credit_spend(st.fee_nullifiers(), st.fee_anchor())
-            }
+            // A purchase's token bundle is outputs-only: it mints notes into the token pool and
+            // spends none, so validation checks no token anchor. The pool records the bundle's
+            // dummy nullifiers all the same, and refuses a bundle whose nullifiers it holds, so
+            // the same bundle put into another purchase with another fee bundle takes them from
+            // this one.
+            StateTransition::TokenPurchaseFromShieldedPool(st) => TransitionInputs::Shielded(vec![
+                PoolSpend {
+                    pool: ShieldedPool::Credit,
+                    nullifiers: st.fee_nullifiers(),
+                    anchor: Some(st.fee_anchor()),
+                },
+                PoolSpend {
+                    pool: ShieldedPool::Token(st.token_id()),
+                    nullifiers: st.token_nullifiers(),
+                    anchor: None,
+                },
+            ]),
 
             // Identity nonces, read for the identity each nonce validator reads.
             StateTransition::DataContractCreate(st) => {
@@ -249,7 +265,7 @@ fn credit_spend(nullifiers: Vec<[u8; 32]>, anchor: [u8; 32]) -> TransitionInputs
     TransitionInputs::Shielded(vec![PoolSpend {
         pool: ShieldedPool::Credit,
         nullifiers,
-        anchor,
+        anchor: Some(anchor),
     }])
 }
 
@@ -262,4 +278,73 @@ fn unsupported(transition: &StateTransition, why: &str) -> Error {
         "no proven outcome for {}: {why}",
         transition.name()
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::fixtures::{
+        token_purchase, token_transfer, token_unshield, FEE_ANCHOR, FEE_NULLIFIERS, TOKEN_ANCHOR,
+        TOKEN_ID, TOKEN_NULLIFIERS,
+    };
+    use super::*;
+
+    fn fee_bundle() -> PoolSpend {
+        PoolSpend {
+            pool: ShieldedPool::Credit,
+            nullifiers: FEE_NULLIFIERS.to_vec(),
+            anchor: Some(FEE_ANCHOR),
+        }
+    }
+
+    #[test]
+    fn should_read_a_token_transfer_s_fee_bundle_in_the_credit_pool_and_its_token_bundle_in_the_token_pool(
+    ) {
+        let inputs = TransitionInputs::of(&token_transfer()).expect("expected inputs");
+        assert_eq!(
+            inputs,
+            TransitionInputs::Shielded(vec![
+                fee_bundle(),
+                PoolSpend {
+                    pool: ShieldedPool::Token(TOKEN_ID),
+                    nullifiers: TOKEN_NULLIFIERS.to_vec(),
+                    anchor: Some(TOKEN_ANCHOR),
+                },
+            ])
+        );
+    }
+
+    #[test]
+    fn should_read_a_token_unshield_s_fee_bundle_in_the_credit_pool_and_its_token_bundle_in_the_token_pool(
+    ) {
+        let inputs = TransitionInputs::of(&token_unshield()).expect("expected inputs");
+        assert_eq!(
+            inputs,
+            TransitionInputs::Shielded(vec![
+                fee_bundle(),
+                PoolSpend {
+                    pool: ShieldedPool::Token(TOKEN_ID),
+                    nullifiers: TOKEN_NULLIFIERS.to_vec(),
+                    anchor: Some(TOKEN_ANCHOR),
+                },
+            ])
+        );
+    }
+
+    #[test]
+    fn should_read_a_purchase_s_token_nullifiers_without_requiring_its_token_anchor() {
+        // The token bundle is outputs-only: validation records its dummy nullifiers and checks no
+        // token anchor.
+        let inputs = TransitionInputs::of(&token_purchase()).expect("expected inputs");
+        assert_eq!(
+            inputs,
+            TransitionInputs::Shielded(vec![
+                fee_bundle(),
+                PoolSpend {
+                    pool: ShieldedPool::Token(TOKEN_ID),
+                    nullifiers: TOKEN_NULLIFIERS.to_vec(),
+                    anchor: None,
+                },
+            ])
+        );
+    }
 }

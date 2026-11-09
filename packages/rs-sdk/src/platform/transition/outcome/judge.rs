@@ -117,25 +117,24 @@ pub(super) fn judge_shielded(
             // A missing anchor proves pruned only from a read at or above a height by which the
             // anchor was recorded: a node below that height may simply not have recorded it yet,
             // and then the spend can still execute.
-            let pruned: Vec<&AnchorRead> = anchors
+            let lowest_pruned = anchors
                 .iter()
                 .filter(|anchor| {
                     !anchor.recorded
                         && anchors_recorded_by.is_some_and(|recorded| recorded <= anchor.height)
                 })
-                .collect();
-            if pruned.is_empty() {
-                return InputsVerdict::NotYet {
+                .map(|anchor| anchor.height)
+                .min();
+            match lowest_pruned {
+                None => InputsVerdict::NotYet {
                     checked_at: free_at,
-                };
-            }
-            // The anchor was pruned by the height of the read that misses it, so the spend could
-            // only have executed below that height. Its nullifiers unspent at or above it prove
-            // it did not. A nullifier read below it leaves a window where it could have.
-            if pruned.iter().any(|anchor| anchor.height <= free_at) {
-                InputsVerdict::AnchorExpired
-            } else {
-                InputsVerdict::Unordered
+                },
+                // The anchor was pruned by the height of the read that misses it, so the spend
+                // could only have executed below that height. Its nullifiers unspent at or above
+                // it prove it did not. A nullifier read below every such read leaves a window
+                // where it could have.
+                Some(pruned_by) if pruned_by <= free_at => InputsVerdict::AnchorExpired,
+                Some(_) => InputsVerdict::Unordered,
             }
         }
     }
@@ -155,8 +154,9 @@ pub(super) fn judge_nonces(reads: &[InputRead]) -> InputsVerdict {
     }
 }
 
-/// The last height at which a spend built on an anchor read at `anchors_height` can execute,
-/// under the retention rules `retention_blocks` and `pruning_interval`.
+/// The last height at which a spend built on a credit pool anchor read at `anchors_height` can
+/// execute, under the retention rules `retention_blocks` and `pruning_interval`. A token pool
+/// prunes only when a block writes to it, so this schedule does not apply to its anchors.
 ///
 /// The anchor was recorded at or below `anchors_height`. Pruning runs at the end of each block
 /// whose height is a multiple of `pruning_interval` and removes the anchors recorded below that

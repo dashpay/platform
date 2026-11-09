@@ -19,12 +19,15 @@
 //! node): it already holds the transition, and asking several nodes spreads the link between the
 //! client's network address and the transition.
 
+#[cfg(test)]
+mod fixtures;
 mod inputs;
 mod judge;
 
 use crate::error::StaleNodeError;
 use crate::platform::{Fetch, FetchMany};
 use crate::{Error, Sdk};
+use async_trait::async_trait;
 use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::address_funds::PlatformAddress;
 use dpp::consensus::state::state_error::StateError;
@@ -39,6 +42,7 @@ use drive_proof_verifier::types::{
     NoParamQuery, ShieldedAnchors, ShieldedNullifierStatuses, ShieldedNullifiersQuery,
     TokenShieldedNullifiersQuery, TokenShieldedPoolQuery,
 };
+use futures::future::try_join_all;
 use inputs::{NonceInput, PoolSpend, ShieldedPool, TransitionInputs};
 use judge::{anchor_deadline, judge_nonces, judge_shielded, AnchorRead, InputRead, InputsVerdict};
 use std::collections::{BTreeMap, BTreeSet};
@@ -95,9 +99,14 @@ pub enum TransitionOutcome {
         /// reached by the answering node. `None` otherwise.
         anchors_recorded_at: Option<u64>,
         /// The last height at which it can execute, under the anchor retention rules of the
-        /// protocol version the reads were proven at, or `None` when nothing bounds it: a
-        /// transition that takes nonces, or a shielded spend whose anchor is its pool's newest
-        /// (pruning keeps the newest anchor while the pool is idle).
+        /// protocol version the reads were proven at, or `None` when nothing bounds it.
+        ///
+        /// Only a credit pool anchor gives one: the credit pool prunes on a fixed schedule and
+        /// keeps its newest anchor, so an anchor that is not the newest is gone by a known
+        /// height. A token pool prunes only at the end of a block that writes to it, so an idle
+        /// token pool keeps its anchors for as long as it stays idle. So this is `None` for a
+        /// transition that takes nonces, and for a shielded spend whose credit pool anchor, if
+        /// it has one, is the pool's newest.
         ///
         /// A later protocol version may keep anchors longer, so past this height ask again for
         /// [`TransitionOutcome::CannotExecute`] rather than assuming it.
@@ -126,9 +135,10 @@ pub enum CannotExecuteReason {
     /// by which the caller's evidence ([`OutcomeEvidence::anchors_recorded_by`]) shows it was
     /// recorded, and the spend's nullifiers were unspent at or after that read.
     ///
-    /// Platform accepts a spend only while its anchor is kept
-    /// (`shielded_anchor_retention_blocks`, pruned every `shielded_anchor_pruning_interval`
-    /// blocks), and a pruned anchor never returns, so the spend could only have executed before
+    /// Platform accepts a spend only while its anchor is kept (for
+    /// `shielded_anchor_retention_blocks`; the credit pool prunes every
+    /// `shielded_anchor_pruning_interval` blocks, a token pool at the end of a block that writes
+    /// to it), and a pruned anchor never returns, so the spend could only have executed before
     /// the anchor was pruned, which the unspent nullifiers rule out. Without the evidence an
     /// anchor missing from the set proves nothing: the answering node may simply not have
     /// reached the block that records it.
@@ -189,223 +199,11 @@ impl Sdk {
         }
         let reads = match TransitionInputs::of(transition)? {
             TransitionInputs::Shielded(spends) => {
-                self.read_shielded_spend(&spends, evidence.anchors_recorded_by)
-                    .await?
+                read_shielded_spend(self, &spends, evidence.anchors_recorded_by).await?
             }
             TransitionInputs::Nonces(nonces) => self.read_nonces(&nonces).await?,
         };
-        Ok(match reads.verdict {
-            InputsVerdict::ConsumedUnattributed => TransitionOutcome::ExecutedOrSuperseded,
-            InputsVerdict::InputUsed => {
-                TransitionOutcome::CannotExecute(CannotExecuteReason::InputUsed)
-            }
-            InputsVerdict::AnchorExpired => {
-                TransitionOutcome::CannotExecute(CannotExecuteReason::AnchorExpired)
-            }
-            InputsVerdict::NotYet { checked_at } => TransitionOutcome::StillPossible {
-                checked_at_height: checked_at,
-                anchors_recorded_at: reads.anchors_recorded_at,
-                until_height: reads.until_height,
-            },
-            InputsVerdict::Unordered => {
-                return Err(Error::InvalidProvedResponse(
-                    "the nullifier reads could not be ordered after the anchor reads".to_string(),
-                ));
-            }
-        })
-    }
-
-    /// Read a shielded spend: every pool's anchor set first, then the nullifiers, then, while
-    /// it may still execute, each pool's newest anchor for the deadline.
-    async fn read_shielded_spend(
-        &self,
-        spends: &[PoolSpend],
-        anchors_recorded_by: Option<u64>,
-    ) -> Result<Reads, Error> {
-        let mut anchors = Vec::with_capacity(spends.len());
-        for spend in spends {
-            let (set, metadata) = self.fetch_pool_anchors(spend.pool).await?;
-            anchors.push(AnchorRead {
-                recorded: set.contains(&spend.anchor),
-                height: metadata.height,
-            });
-        }
-
-        let mut rereads = 0;
-        let verdict = loop {
-            let mut nullifiers = Vec::new();
-            for spend in spends {
-                let (spent, metadata) = self
-                    .fetch_pool_nullifiers(spend.pool, &spend.nullifiers)
-                    .await?;
-                nullifiers.extend(spent.into_iter().map(|consumed| InputRead {
-                    consumed,
-                    height: metadata.height,
-                }));
-            }
-            match judge_shielded(&nullifiers, &anchors, anchors_recorded_by) {
-                InputsVerdict::Unordered if rereads < NULLIFIER_REREADS => rereads += 1,
-                InputsVerdict::Unordered => {
-                    return Err(StaleNodeError::Height {
-                        expected_height: anchors.iter().map(|a| a.height).max().unwrap_or(0),
-                        received_height: nullifiers.iter().map(|n| n.height).max().unwrap_or(0),
-                        tolerance_blocks: 0,
-                    }
-                    .into());
-                }
-                verdict => break verdict,
-            }
-        };
-
-        // A deadline, and evidence for a later call, only when every anchor was found recorded:
-        // a missing anchor not proven pruned may belong to a block the node has not reached.
-        let all_recorded = anchors.iter().all(|anchor| anchor.recorded);
-        let (until_height, anchors_recorded_at) =
-            if matches!(verdict, InputsVerdict::NotYet { .. }) && all_recorded {
-                let mut until_height: Option<u64> = None;
-                for (spend, anchor) in spends.iter().zip(&anchors) {
-                    if let Some(deadline) = self.anchor_deadline(spend, anchor).await? {
-                        until_height = Some(until_height.map_or(deadline, |u| u.min(deadline)));
-                    }
-                }
-                // Each anchor was recorded by the height of the read that found it, so all of
-                // them by the highest such height.
-                let recorded_at = anchors.iter().map(|anchor| anchor.height).max();
-                (until_height, recorded_at)
-            } else {
-                (None, None)
-            };
-
-        Ok(Reads {
-            verdict,
-            until_height,
-            anchors_recorded_at,
-        })
-    }
-
-    /// The last height at which `spend`'s anchor is kept, or `None` when nothing proves one.
-    ///
-    /// The deadline holds only for an anchor that is not its pool's newest, proven by a newest
-    /// anchor read at or after the read that showed this anchor recorded, so this anchor was
-    /// already recorded when the newer one was the newest.
-    async fn anchor_deadline(
-        &self,
-        spend: &PoolSpend,
-        anchor: &AnchorRead,
-    ) -> Result<Option<u64>, Error> {
-        let (newest, metadata) = self.fetch_pool_newest_anchor(spend.pool).await?;
-        let newer_anchor_exists =
-            metadata.height >= anchor.height && newest.is_some_and(|newest| newest != spend.anchor);
-        let Ok(platform_version) = PlatformVersion::get(metadata.protocol_version) else {
-            return Ok(None);
-        };
-        let constants = &platform_version
-            .drive_abci
-            .validation_and_processing
-            .event_constants;
-        Ok(anchor_deadline(
-            anchor.height,
-            newer_anchor_exists,
-            constants.shielded_anchor_retention_blocks,
-            constants.shielded_anchor_pruning_interval,
-        ))
-    }
-
-    /// The anchors `pool` keeps, as a proven set. A pool with no anchor set keeps none.
-    async fn fetch_pool_anchors(
-        &self,
-        pool: ShieldedPool,
-    ) -> Result<(BTreeSet<[u8; 32]>, ResponseMetadata), Error> {
-        let (anchors, metadata) = match pool {
-            ShieldedPool::Credit => {
-                ShieldedAnchors::fetch_with_metadata(self, NoParamQuery {}, None).await?
-            }
-            ShieldedPool::Token(token_id) => {
-                ShieldedAnchors::fetch_with_metadata(
-                    self,
-                    TokenShieldedPoolQuery { token_id },
-                    None,
-                )
-                .await?
-            }
-        };
-        let anchors = anchors
-            .map(|ShieldedAnchors(anchors)| anchors.into_iter().collect())
-            .unwrap_or_default();
-        Ok((anchors, metadata))
-    }
-
-    /// Whether each of `nullifiers` is spent in `pool`, in the order given.
-    async fn fetch_pool_nullifiers(
-        &self,
-        pool: ShieldedPool,
-        nullifiers: &[[u8; 32]],
-    ) -> Result<(Vec<bool>, ResponseMetadata), Error> {
-        let (statuses, metadata) = match pool {
-            ShieldedPool::Credit => {
-                ShieldedNullifierStatuses::fetch_with_metadata(
-                    self,
-                    ShieldedNullifiersQuery(nullifiers.to_vec()),
-                    None,
-                )
-                .await?
-            }
-            ShieldedPool::Token(token_id) => {
-                ShieldedNullifierStatuses::fetch_with_metadata(
-                    self,
-                    TokenShieldedNullifiersQuery {
-                        token_id,
-                        nullifiers: nullifiers.to_vec(),
-                    },
-                    None,
-                )
-                .await?
-            }
-        };
-        let spent: BTreeMap<[u8; 32], bool> = statuses
-            .map(|ShieldedNullifierStatuses(statuses)| {
-                statuses
-                    .into_iter()
-                    .map(|status| (status.nullifier, status.is_spent))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let spent = nullifiers
-            .iter()
-            .map(|nullifier| {
-                spent.get(nullifier).copied().ok_or_else(|| {
-                    Error::InvalidProvedResponse(format!(
-                        "the proven nullifier statuses leave out nullifier {}",
-                        hex::encode(nullifier)
-                    ))
-                })
-            })
-            .collect::<Result<Vec<bool>, Error>>()?;
-        Ok((spent, metadata))
-    }
-
-    /// `pool`'s newest anchor, proven, or `None` when it has none.
-    async fn fetch_pool_newest_anchor(
-        &self,
-        pool: ShieldedPool,
-    ) -> Result<(Option<[u8; 32]>, ResponseMetadata), Error> {
-        let (newest, metadata) = match pool {
-            ShieldedPool::Credit => {
-                MostRecentShieldedAnchor::fetch_with_metadata(self, NoParamQuery {}, None).await?
-            }
-            ShieldedPool::Token(token_id) => {
-                MostRecentShieldedAnchor::fetch_with_metadata(
-                    self,
-                    TokenShieldedPoolQuery { token_id },
-                    None,
-                )
-                .await?
-            }
-        };
-        Ok((
-            newest.map(|MostRecentShieldedAnchor(anchor)| anchor),
-            metadata,
-        ))
+        outcome_from(reads)
     }
 
     /// Read every nonce a transition takes, each as its own proven read: the address nonces
@@ -513,6 +311,275 @@ struct Reads {
     /// A height by which every anchor of the shielded spend was recorded, when the reads found
     /// them all.
     anchors_recorded_at: Option<u64>,
+}
+
+/// The answer the reads of one transition give.
+fn outcome_from(reads: Reads) -> Result<TransitionOutcome, Error> {
+    Ok(match reads.verdict {
+        InputsVerdict::ConsumedUnattributed => TransitionOutcome::ExecutedOrSuperseded,
+        InputsVerdict::InputUsed => {
+            TransitionOutcome::CannotExecute(CannotExecuteReason::InputUsed)
+        }
+        InputsVerdict::AnchorExpired => {
+            TransitionOutcome::CannotExecute(CannotExecuteReason::AnchorExpired)
+        }
+        InputsVerdict::NotYet { checked_at } => TransitionOutcome::StillPossible {
+            checked_at_height: checked_at,
+            anchors_recorded_at: reads.anchors_recorded_at,
+            until_height: reads.until_height,
+        },
+        InputsVerdict::Unordered => {
+            return Err(Error::InvalidProvedResponse(
+                "the nullifier reads could not be ordered after the anchor reads".to_string(),
+            ));
+        }
+    })
+}
+
+/// The proven reads of one shielded pool that a shielded spend is judged from. [`Sdk`] answers
+/// them with proofs it verifies; the tests answer them at heights they choose.
+#[async_trait]
+trait PoolReads: Sync {
+    /// The anchors `pool` keeps, as a proven set. A pool with no anchor set keeps none.
+    async fn pool_anchors(
+        &self,
+        pool: ShieldedPool,
+    ) -> Result<(BTreeSet<[u8; 32]>, ResponseMetadata), Error>;
+
+    /// Whether each of `nullifiers` is recorded in `pool`, in the order given.
+    async fn pool_nullifiers(
+        &self,
+        pool: ShieldedPool,
+        nullifiers: &[[u8; 32]],
+    ) -> Result<(Vec<bool>, ResponseMetadata), Error>;
+
+    /// `pool`'s newest anchor, proven, or `None` when it has none.
+    async fn pool_newest_anchor(
+        &self,
+        pool: ShieldedPool,
+    ) -> Result<(Option<[u8; 32]>, ResponseMetadata), Error>;
+}
+
+#[async_trait]
+impl PoolReads for Sdk {
+    async fn pool_anchors(
+        &self,
+        pool: ShieldedPool,
+    ) -> Result<(BTreeSet<[u8; 32]>, ResponseMetadata), Error> {
+        let (anchors, metadata) = match pool {
+            ShieldedPool::Credit => {
+                ShieldedAnchors::fetch_with_metadata(self, NoParamQuery {}, None).await?
+            }
+            ShieldedPool::Token(token_id) => {
+                ShieldedAnchors::fetch_with_metadata(
+                    self,
+                    TokenShieldedPoolQuery { token_id },
+                    None,
+                )
+                .await?
+            }
+        };
+        let anchors = anchors
+            .map(|ShieldedAnchors(anchors)| anchors.into_iter().collect())
+            .unwrap_or_default();
+        Ok((anchors, metadata))
+    }
+
+    async fn pool_nullifiers(
+        &self,
+        pool: ShieldedPool,
+        nullifiers: &[[u8; 32]],
+    ) -> Result<(Vec<bool>, ResponseMetadata), Error> {
+        let (statuses, metadata) = match pool {
+            ShieldedPool::Credit => {
+                ShieldedNullifierStatuses::fetch_with_metadata(
+                    self,
+                    ShieldedNullifiersQuery(nullifiers.to_vec()),
+                    None,
+                )
+                .await?
+            }
+            ShieldedPool::Token(token_id) => {
+                ShieldedNullifierStatuses::fetch_with_metadata(
+                    self,
+                    TokenShieldedNullifiersQuery {
+                        token_id,
+                        nullifiers: nullifiers.to_vec(),
+                    },
+                    None,
+                )
+                .await?
+            }
+        };
+        let spent: BTreeMap<[u8; 32], bool> = statuses
+            .map(|ShieldedNullifierStatuses(statuses)| {
+                statuses
+                    .into_iter()
+                    .map(|status| (status.nullifier, status.is_spent))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let spent = nullifiers
+            .iter()
+            .map(|nullifier| {
+                spent.get(nullifier).copied().ok_or_else(|| {
+                    Error::InvalidProvedResponse(format!(
+                        "the proven nullifier statuses leave out nullifier {}",
+                        hex::encode(nullifier)
+                    ))
+                })
+            })
+            .collect::<Result<Vec<bool>, Error>>()?;
+        Ok((spent, metadata))
+    }
+
+    async fn pool_newest_anchor(
+        &self,
+        pool: ShieldedPool,
+    ) -> Result<(Option<[u8; 32]>, ResponseMetadata), Error> {
+        let (newest, metadata) = match pool {
+            ShieldedPool::Credit => {
+                MostRecentShieldedAnchor::fetch_with_metadata(self, NoParamQuery {}, None).await?
+            }
+            ShieldedPool::Token(token_id) => {
+                MostRecentShieldedAnchor::fetch_with_metadata(
+                    self,
+                    TokenShieldedPoolQuery { token_id },
+                    None,
+                )
+                .await?
+            }
+        };
+        Ok((
+            newest.map(|MostRecentShieldedAnchor(anchor)| anchor),
+            metadata,
+        ))
+    }
+}
+
+/// Read a shielded spend in three steps: the anchor set of every pool a bundle needs an anchor
+/// kept in, then every bundle's nullifiers, then, while it may still execute, what bounds it.
+///
+/// The pools are read at once within a step, and each step starts once the one before has
+/// answered, so the nullifiers are usually proven at or above the anchor sets. The judgment
+/// does not rely on that: it orders the reads by the heights their proofs were signed at, and
+/// reads the nullifiers again when they come back older than an anchor set that misses an
+/// anchor.
+async fn read_shielded_spend<R: PoolReads + ?Sized>(
+    reader: &R,
+    spends: &[PoolSpend],
+    anchors_recorded_by: Option<u64>,
+) -> Result<Reads, Error> {
+    let anchored: Vec<(ShieldedPool, [u8; 32])> = spends
+        .iter()
+        .filter_map(|spend| spend.anchor.map(|anchor| (spend.pool, anchor)))
+        .collect();
+    let anchors = try_join_all(anchored.iter().map(|&(pool, anchor)| async move {
+        let (set, metadata) = reader.pool_anchors(pool).await?;
+        Ok::<_, Error>(AnchorRead {
+            recorded: set.contains(&anchor),
+            height: metadata.height,
+        })
+    }))
+    .await?;
+
+    let mut rereads = 0;
+    let verdict = loop {
+        let per_pool = try_join_all(spends.iter().map(|spend| async move {
+            let (spent, metadata) = reader
+                .pool_nullifiers(spend.pool, &spend.nullifiers)
+                .await?;
+            Ok::<_, Error>(
+                spent
+                    .into_iter()
+                    .map(|consumed| InputRead {
+                        consumed,
+                        height: metadata.height,
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        }))
+        .await?;
+        let nullifiers: Vec<InputRead> = per_pool.into_iter().flatten().collect();
+        match judge_shielded(&nullifiers, &anchors, anchors_recorded_by) {
+            InputsVerdict::Unordered if rereads < NULLIFIER_REREADS => rereads += 1,
+            InputsVerdict::Unordered => {
+                return Err(StaleNodeError::Height {
+                    expected_height: anchors.iter().map(|a| a.height).max().unwrap_or(0),
+                    received_height: nullifiers.iter().map(|n| n.height).max().unwrap_or(0),
+                    tolerance_blocks: 0,
+                }
+                .into());
+            }
+            verdict => break verdict,
+        }
+    };
+
+    // A deadline, and evidence for a later call, only when every anchor was found recorded:
+    // a missing anchor not proven pruned may belong to a block the node has not reached.
+    let all_recorded = anchors.iter().all(|anchor| anchor.recorded);
+    let (until_height, anchors_recorded_at) = if matches!(verdict, InputsVerdict::NotYet { .. })
+        && all_recorded
+    {
+        let deadlines = try_join_all(
+            anchored
+                .iter()
+                .zip(&anchors)
+                .map(|(&(pool, anchor), read)| read_anchor_deadline(reader, pool, anchor, read)),
+        )
+        .await?;
+        // The spend needs every anchor kept, so the earliest deadline bounds it; a bundle
+        // whose anchor nothing bounds does not lift it.
+        let until_height = deadlines.into_iter().flatten().min();
+        // Each anchor was recorded by the height of the read that found it, so all of them
+        // by the highest such height.
+        let recorded_at = anchors.iter().map(|anchor| anchor.height).max();
+        (until_height, recorded_at)
+    } else {
+        (None, None)
+    };
+
+    Ok(Reads {
+        verdict,
+        until_height,
+        anchors_recorded_at,
+    })
+}
+
+/// The last height at which `anchor`, found recorded in `pool` by `read`, is kept, or `None`
+/// when nothing proves one.
+///
+/// Only the credit pool has one. It prunes every `shielded_anchor_pruning_interval` blocks
+/// whatever else happens, always keeping its newest anchor, so an anchor that is not the newest
+/// (proven by a newest anchor read at or after `read`, so this one was already recorded when
+/// the newer one was the newest) is gone by a height known in advance. A token pool prunes only
+/// at the end of a block that writes to it: while it stays idle it keeps every anchor it holds,
+/// and no height bounds a spend from it.
+async fn read_anchor_deadline<R: PoolReads + ?Sized>(
+    reader: &R,
+    pool: ShieldedPool,
+    anchor: [u8; 32],
+    read: &AnchorRead,
+) -> Result<Option<u64>, Error> {
+    if pool != ShieldedPool::Credit {
+        return Ok(None);
+    }
+    let (newest, metadata) = reader.pool_newest_anchor(pool).await?;
+    let newer_anchor_exists =
+        metadata.height >= read.height && newest.is_some_and(|newest| newest != anchor);
+    let Ok(platform_version) = PlatformVersion::get(metadata.protocol_version) else {
+        return Ok(None);
+    };
+    let constants = &platform_version
+        .drive_abci
+        .validation_and_processing
+        .event_constants;
+    Ok(anchor_deadline(
+        read.height,
+        newer_anchor_exists,
+        constants.shielded_anchor_retention_blocks,
+        constants.shielded_anchor_pruning_interval,
+    ))
 }
 
 /// Whether an identity or identity-contract nonce can no longer be used: the network refuses it
@@ -634,41 +701,12 @@ mod tests {
 /// version.
 #[cfg(all(test, feature = "mocks"))]
 mod sdk_tests {
+    use super::fixtures::{shielded_transfer, ANCHOR, NEWER_ANCHOR, NULLIFIERS};
     use super::*;
     use crate::SdkBuilder;
-    use dpp::shielded::SerializedAction;
     use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
     use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
-    use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
-    use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
     use drive_proof_verifier::types::ShieldedNullifierStatus;
-
-    const ANCHOR: [u8; 32] = [0xA1; 32];
-    const NEWER_ANCHOR: [u8; 32] = [0xB2; 32];
-    const NULLIFIERS: [[u8; 32]; 2] = [[1; 32], [2; 32]];
-
-    fn action(nullifier: [u8; 32]) -> SerializedAction {
-        SerializedAction {
-            nullifier,
-            rk: [2; 32],
-            cmx: [3; 32],
-            encrypted_note: vec![4; 216],
-            cv_net: [5; 32],
-            spend_auth_sig: [6; 64],
-        }
-    }
-
-    fn shielded_transfer() -> StateTransition {
-        StateTransition::ShieldedTransfer(ShieldedTransferTransition::V0(
-            ShieldedTransferTransitionV0 {
-                actions: NULLIFIERS.iter().copied().map(action).collect(),
-                value_balance: 1_000,
-                anchor: ANCHOR,
-                proof: vec![8; 100],
-                binding_signature: [9; 64],
-            },
-        ))
-    }
 
     fn mock_sdk() -> Sdk {
         SdkBuilder::new_mock()
@@ -906,5 +944,421 @@ mod sdk_tests {
                 until_height: None,
             }
         );
+    }
+}
+
+/// The shielded read sequence against scripted pools, whose answers carry the heights each test
+/// chooses, so the order of the reads and the rereads show.
+#[cfg(test)]
+mod read_sequence_tests {
+    use super::fixtures::{
+        shielded_transfer, token_purchase, token_transfer, token_unshield, ANCHOR, FEE_ANCHOR,
+        FEE_NULLIFIERS, NEWER_ANCHOR, TOKEN_ANCHOR, TOKEN_ID, TOKEN_NULLIFIERS,
+    };
+    use super::*;
+    use dpp::version::LATEST_VERSION;
+    use std::sync::Mutex;
+
+    const TOKEN: ShieldedPool = ShieldedPool::Token(TOKEN_ID);
+
+    /// One pool's answers.
+    #[derive(Default)]
+    struct PoolScript {
+        anchors: Vec<[u8; 32]>,
+        anchors_height: u64,
+        recorded_nullifiers: Vec<[u8; 32]>,
+        /// The height of this pool's first nullifier read, then of each reread; the last one
+        /// repeats.
+        nullifier_heights: Vec<u64>,
+        newest_anchor: Option<[u8; 32]>,
+        newest_anchor_height: u64,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+    enum Read {
+        Anchors(ShieldedPool),
+        Nullifiers(ShieldedPool, Vec<[u8; 32]>),
+        NewestAnchor(ShieldedPool),
+    }
+
+    #[derive(Default)]
+    struct ScriptedPools {
+        pools: BTreeMap<ShieldedPool, PoolScript>,
+        reads: Mutex<Vec<Read>>,
+    }
+
+    impl ScriptedPools {
+        fn with(mut self, pool: ShieldedPool, script: PoolScript) -> Self {
+            self.pools.insert(pool, script);
+            self
+        }
+
+        fn script(&self, pool: ShieldedPool) -> Result<&PoolScript, Error> {
+            self.pools
+                .get(&pool)
+                .ok_or_else(|| Error::Generic(format!("no script for {pool:?}")))
+        }
+
+        /// Record `read` and say how many reads of the same kind were made before it.
+        fn record(&self, read: Read) -> usize {
+            let mut reads = self.reads.lock().expect("reads lock");
+            let earlier = reads
+                .iter()
+                .filter(|earlier| std::mem::discriminant(*earlier) == std::mem::discriminant(&read))
+                .filter(|earlier| match (earlier, &read) {
+                    (Read::Nullifiers(a, _), Read::Nullifiers(b, _)) => a == b,
+                    _ => true,
+                })
+                .count();
+            reads.push(read);
+            earlier
+        }
+
+        fn reads(&self) -> Vec<Read> {
+            let mut reads = self.reads.lock().expect("reads lock").clone();
+            reads.sort();
+            reads
+        }
+
+        fn nullifier_reads(&self) -> usize {
+            self.reads()
+                .iter()
+                .filter(|read| matches!(read, Read::Nullifiers(..)))
+                .count()
+        }
+    }
+
+    fn metadata(height: u64) -> ResponseMetadata {
+        ResponseMetadata {
+            height,
+            protocol_version: LATEST_VERSION,
+            ..Default::default()
+        }
+    }
+
+    #[async_trait]
+    impl PoolReads for ScriptedPools {
+        async fn pool_anchors(
+            &self,
+            pool: ShieldedPool,
+        ) -> Result<(BTreeSet<[u8; 32]>, ResponseMetadata), Error> {
+            self.record(Read::Anchors(pool));
+            let script = self.script(pool)?;
+            Ok((
+                script.anchors.iter().copied().collect(),
+                metadata(script.anchors_height),
+            ))
+        }
+
+        async fn pool_nullifiers(
+            &self,
+            pool: ShieldedPool,
+            nullifiers: &[[u8; 32]],
+        ) -> Result<(Vec<bool>, ResponseMetadata), Error> {
+            let nth = self.record(Read::Nullifiers(pool, nullifiers.to_vec()));
+            let script = self.script(pool)?;
+            let height = script
+                .nullifier_heights
+                .get(nth)
+                .or(script.nullifier_heights.last())
+                .copied()
+                .unwrap_or_default();
+            let recorded = nullifiers
+                .iter()
+                .map(|nullifier| script.recorded_nullifiers.contains(nullifier))
+                .collect();
+            Ok((recorded, metadata(height)))
+        }
+
+        async fn pool_newest_anchor(
+            &self,
+            pool: ShieldedPool,
+        ) -> Result<(Option<[u8; 32]>, ResponseMetadata), Error> {
+            self.record(Read::NewestAnchor(pool));
+            let script = self.script(pool)?;
+            Ok((script.newest_anchor, metadata(script.newest_anchor_height)))
+        }
+    }
+
+    fn spends_of(transition: &StateTransition) -> Vec<PoolSpend> {
+        match TransitionInputs::of(transition).expect("expected inputs") {
+            TransitionInputs::Shielded(spends) => spends,
+            inputs => panic!("expected a shielded spend, got {inputs:?}"),
+        }
+    }
+
+    async fn outcome(
+        pools: &ScriptedPools,
+        transition: &StateTransition,
+        anchors_recorded_by: Option<u64>,
+    ) -> Result<TransitionOutcome, Error> {
+        let reads = read_shielded_spend(pools, &spends_of(transition), anchors_recorded_by).await?;
+        outcome_from(reads)
+    }
+
+    fn credit_deadline(anchors_height: u64) -> Option<u64> {
+        let constants = &PlatformVersion::latest()
+            .drive_abci
+            .validation_and_processing
+            .event_constants;
+        anchor_deadline(
+            anchors_height,
+            true,
+            constants.shielded_anchor_retention_blocks,
+            constants.shielded_anchor_pruning_interval,
+        )
+    }
+
+    #[tokio::test]
+    async fn should_read_the_nullifiers_again_when_they_are_older_than_the_anchor_set_missing_the_anchor(
+    ) {
+        // The anchor set at 30 misses the anchor the wallet saw recorded by 10. The first
+        // nullifier read comes from a node at 28, which leaves blocks 29 and 30 open; the reread
+        // at 30 closes them.
+        let pools = ScriptedPools::default().with(
+            ShieldedPool::Credit,
+            PoolScript {
+                anchors: vec![NEWER_ANCHOR],
+                anchors_height: 30,
+                nullifier_heights: vec![28, 30],
+                ..Default::default()
+            },
+        );
+
+        let outcome = outcome(&pools, &shielded_transfer(), Some(10))
+            .await
+            .expect("expected an outcome");
+        assert_eq!(
+            outcome,
+            TransitionOutcome::CannotExecute(CannotExecuteReason::AnchorExpired)
+        );
+        assert_eq!(pools.nullifier_reads(), 2);
+    }
+
+    #[tokio::test]
+    async fn should_give_up_with_a_stale_node_error_when_every_nullifier_read_stays_older() {
+        let pools = ScriptedPools::default().with(
+            ShieldedPool::Credit,
+            PoolScript {
+                anchors: vec![NEWER_ANCHOR],
+                anchors_height: 30,
+                nullifier_heights: vec![28],
+                ..Default::default()
+            },
+        );
+
+        let error = outcome(&pools, &shielded_transfer(), Some(10))
+            .await
+            .expect_err("expected the reads to stay unordered");
+        assert!(
+            matches!(
+                error,
+                Error::StaleNode(StaleNodeError::Height {
+                    expected_height: 30,
+                    received_height: 28,
+                    tolerance_blocks: 0,
+                })
+            ),
+            "{error:?}"
+        );
+        // The first read and every reread.
+        assert_eq!(pools.nullifier_reads(), 1 + NULLIFIER_REREADS);
+    }
+
+    #[tokio::test]
+    async fn should_not_read_the_nullifiers_again_when_the_anchor_is_recorded() {
+        // Nothing missing to order against, so an older nullifier read is enough.
+        let pools = ScriptedPools::default().with(
+            ShieldedPool::Credit,
+            PoolScript {
+                anchors: vec![ANCHOR],
+                anchors_height: 30,
+                nullifier_heights: vec![28],
+                newest_anchor: Some(ANCHOR),
+                newest_anchor_height: 30,
+                ..Default::default()
+            },
+        );
+
+        let outcome = outcome(&pools, &shielded_transfer(), Some(10))
+            .await
+            .expect("expected an outcome");
+        assert_eq!(
+            outcome,
+            TransitionOutcome::StillPossible {
+                checked_at_height: 28,
+                anchors_recorded_at: Some(30),
+                until_height: None,
+            }
+        );
+        assert_eq!(pools.nullifier_reads(), 1);
+    }
+
+    /// Both pools of a fee-paid token spend, each holding only its own bundle's anchor.
+    fn two_pools(credit: PoolScript, token: PoolScript) -> ScriptedPools {
+        ScriptedPools::default()
+            .with(ShieldedPool::Credit, credit)
+            .with(TOKEN, token)
+    }
+
+    fn fee_pool(anchors: Vec<[u8; 32]>, newest: [u8; 32]) -> PoolScript {
+        PoolScript {
+            anchors,
+            anchors_height: 200,
+            nullifier_heights: vec![200],
+            newest_anchor: Some(newest),
+            newest_anchor_height: 200,
+            ..Default::default()
+        }
+    }
+
+    /// An idle token pool that kept several anchors, the bundle's not the newest.
+    fn idle_token_pool() -> PoolScript {
+        PoolScript {
+            anchors: vec![[0x7B; 32], TOKEN_ANCHOR, [0x7C; 32]],
+            anchors_height: 200,
+            nullifier_heights: vec![200],
+            newest_anchor: Some([0x7C; 32]),
+            newest_anchor_height: 200,
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn should_read_each_bundle_of_a_fee_paid_token_spend_in_its_own_pool() {
+        for transition in [token_transfer(), token_unshield()] {
+            let pools = two_pools(
+                fee_pool(vec![FEE_ANCHOR], FEE_ANCHOR),
+                PoolScript {
+                    anchors: vec![TOKEN_ANCHOR],
+                    newest_anchor: Some(TOKEN_ANCHOR),
+                    ..idle_token_pool()
+                },
+            );
+
+            // Each pool holds only its own bundle's anchor, so a swapped anchor would read as
+            // missing, and with the evidence as expired.
+            let outcome = outcome(&pools, &transition, Some(100))
+                .await
+                .expect("expected an outcome");
+            assert!(
+                matches!(outcome, TransitionOutcome::StillPossible { .. }),
+                "{outcome:?}"
+            );
+            assert_eq!(
+                pools.reads(),
+                vec![
+                    Read::Anchors(ShieldedPool::Credit),
+                    Read::Anchors(TOKEN),
+                    Read::Nullifiers(ShieldedPool::Credit, FEE_NULLIFIERS.to_vec()),
+                    Read::Nullifiers(TOKEN, TOKEN_NULLIFIERS.to_vec()),
+                    Read::NewestAnchor(ShieldedPool::Credit),
+                ]
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_take_no_deadline_from_the_anchors_an_idle_token_pool_keeps() {
+        // The token pool prunes only when a block writes to it, so its older anchor stays valid
+        // while it is idle; the fee anchor is the credit pool's newest, which pruning keeps.
+        let pools = two_pools(fee_pool(vec![FEE_ANCHOR], FEE_ANCHOR), idle_token_pool());
+
+        let outcome = outcome(&pools, &token_transfer(), None)
+            .await
+            .expect("expected an outcome");
+        assert_eq!(
+            outcome,
+            TransitionOutcome::StillPossible {
+                checked_at_height: 200,
+                anchors_recorded_at: Some(200),
+                until_height: None,
+            }
+        );
+        assert!(
+            !pools.reads().contains(&Read::NewestAnchor(TOKEN)),
+            "a token pool's newest anchor bounds nothing"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_bound_a_fee_paid_token_spend_by_its_credit_anchor_alone() {
+        let pools = two_pools(
+            fee_pool(vec![FEE_ANCHOR, NEWER_ANCHOR], NEWER_ANCHOR),
+            idle_token_pool(),
+        );
+
+        let outcome = outcome(&pools, &token_transfer(), None)
+            .await
+            .expect("expected an outcome");
+        assert_eq!(
+            outcome,
+            TransitionOutcome::StillPossible {
+                checked_at_height: 200,
+                anchors_recorded_at: Some(200),
+                until_height: credit_deadline(200),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_report_a_purchase_whose_token_bundle_landed_in_another_purchase_as_input_used()
+    {
+        // The same outputs-only token bundle went into a purchase with another fee bundle: its
+        // dummy nullifiers are recorded, this purchase's fee nullifiers are not.
+        let pools = two_pools(
+            fee_pool(vec![FEE_ANCHOR], FEE_ANCHOR),
+            PoolScript {
+                recorded_nullifiers: TOKEN_NULLIFIERS.to_vec(),
+                nullifier_heights: vec![200],
+                ..Default::default()
+            },
+        );
+
+        let outcome = outcome(&pools, &token_purchase(), None)
+            .await
+            .expect("expected an outcome");
+        assert_eq!(
+            outcome,
+            TransitionOutcome::CannotExecute(CannotExecuteReason::InputUsed)
+        );
+        assert!(
+            !pools.reads().contains(&Read::Anchors(TOKEN)),
+            "a purchase needs no token pool anchor"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_judge_a_pending_purchase_by_its_fee_anchor_only() {
+        // The token pool holds no anchor at all: the purchase's token anchor is not checked.
+        let pools = two_pools(
+            fee_pool(vec![FEE_ANCHOR], FEE_ANCHOR),
+            PoolScript {
+                nullifier_heights: vec![200],
+                ..Default::default()
+            },
+        );
+
+        let outcome = outcome(&pools, &token_purchase(), Some(100))
+            .await
+            .expect("expected an outcome");
+        assert_eq!(
+            outcome,
+            TransitionOutcome::StillPossible {
+                checked_at_height: 200,
+                anchors_recorded_at: Some(200),
+                until_height: None,
+            }
+        );
+    }
+
+    #[test]
+    fn should_keep_the_outcome_future_sendable() {
+        fn assert_send<T: Send>(_: &T) {}
+        fn check(sdk: &Sdk, transition: &StateTransition) {
+            let future = sdk.state_transition_outcome(transition, OutcomeEvidence::default());
+            assert_send(&future);
+        }
+        let _ = check;
     }
 }
