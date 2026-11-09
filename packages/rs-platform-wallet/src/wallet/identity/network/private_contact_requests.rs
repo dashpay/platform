@@ -7436,18 +7436,42 @@ mod tests {
         );
         assert!(retry.lock().expect("retry").is_empty(), "nothing paid");
 
-        // Resolved: its entry is read back and its record discharged.
-        fixture
-            .coordinator
-            .store()
-            .write()
-            .await
-            .discharge_private_payment(wallet_id, &commitment)
-            .expect("discharged");
+        // Resolved, with no notice given by hand: its entry lands and a
+        // private sync reads it back, then a restoration discharges its
+        // journal record from that read-back. The wallet-level hold clears,
+        // and a private rotation to the pair reaches its payment.
+        let entry = paid.lock().expect("paid")[0].clone();
+        publish(&fixture.wallet, 0, vec![entry.to_vec()]).await;
         fixture
             .wallet
-            .persister()
-            .note_discharged_private_entries([commitment]);
+            .identity()
+            .dashpay()
+            .sync_private_contact_requests(&alice_crypto, 4)
+            .await
+            .expect("the entry is read back");
+        let persister = fixture.wallet.persister();
+        assert!(
+            persister.private_pair_journaled(&alice.id(), &bob.id()),
+            "held until its record is discharged"
+        );
+        fixture
+            .wallet
+            .restore_private_contact_payments(&fixture.coordinator)
+            .await
+            .expect("restored");
+        assert!(fixture
+            .coordinator
+            .store()
+            .read()
+            .await
+            .private_payment_journal(wallet_id)
+            .expect("journal")
+            .iter()
+            .all(|record| record.commitment != commitment));
+        assert!(
+            !persister.private_pair_journaled(&alice.id(), &bob.id()),
+            "the read-back discharge clears the wallet-level hold"
+        );
         let private = fixture.send_again(keep_entry(&retry)).await;
         assert!(
             matches!(
@@ -7456,7 +7480,11 @@ mod tests {
             ),
             "paid, not read back: {private:?}"
         );
-        assert_eq!(retry.lock().expect("retry").len(), 1, "the retry pays");
+        assert_eq!(
+            retry.lock().expect("retry").len(),
+            1,
+            "the rotation reaches its payment"
+        );
     }
 
     /// The wallet holds a private payment's pair from just before its journal
