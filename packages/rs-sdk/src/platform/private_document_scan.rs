@@ -462,6 +462,11 @@ where
                         let total = total.unwrap_or(entries.total_count);
                         let len = entries.entries.len() as u64;
                         let end = start.saturating_add(len);
+                        // A page read from an older snapshot than the first page's (a node
+                        // behind, within the SDK's tolerance) may end at that snapshot's end,
+                        // partway through a chunk: it sets no chunk size, and the next page
+                        // is read from where it stopped.
+                        let ended_its_snapshot = end >= entries.total_count;
                         let page = PrivateDocumentPage {
                             start_position: start,
                             entries,
@@ -478,9 +483,14 @@ where
                                 PageWalk::Done,
                             ));
                         }
-                        // A page from a chunk boundary that stops short of the store's end is
-                        // one whole chunk, a power of two, and so is every page after it.
-                        let next = if aligned && len.is_power_of_two() && start % len == 0 {
+                        // A page from a chunk boundary that stops short of the end of the store
+                        // it was read from is one whole chunk, a power of two, and so is every
+                        // page after it.
+                        let next = if aligned
+                            && !ended_its_snapshot
+                            && len.is_power_of_two()
+                            && start % len == 0
+                        {
                             PageWalk::Concurrent(Box::pin(whole_chunk_pages(
                                 fetch,
                                 end,
@@ -492,7 +502,7 @@ where
                             PageWalk::Sequential {
                                 start: end,
                                 total: Some(total),
-                                aligned: true,
+                                aligned: !ended_its_snapshot,
                             }
                         };
                         Some((Ok(page), next))
@@ -555,6 +565,8 @@ impl Sdk {
     /// learn from the node: so the first page, and the next one from the chunk boundary it
     /// ends at, are read one at a time. That second page, short of the store's end, is a whole
     /// chunk, which sets the size of every page after it; those are then fetched at once. A
+    /// page that ends at the end of the store it was read from, an older snapshot than the
+    /// first page's, sets no size: the pages after it are read one at a time until one does. A
     /// store with two chunks or fewer past `start_position` is read one page at a time.
     ///
     /// The context provider is given the contract with the type first when it lacks it
@@ -1242,6 +1254,31 @@ mod tests {
 
         let rest = walk(fetch, cursor, MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES).await;
         assert_eq!(positions(&rest), (32..35).collect::<Vec<_>>());
+    }
+
+    /// A page from an older snapshot than the first page's, here the second page from a node
+    /// whose store ended partway through its chunk, is no whole chunk: the walk reads on from
+    /// where it stopped, learns the chunk size from a later page, and yields every page in
+    /// order.
+    #[tokio::test]
+    async fn should_read_on_past_a_page_from_an_older_snapshot_that_ends_mid_chunk() {
+        let fetch = |start: u64| -> PageFuture {
+            Box::pin(async move {
+                // The node answering the page from 4 is behind: its store held 6 entries.
+                let total = if start == 4 { 6 } else { 30 };
+                Ok(drive_page(4, total, start))
+            })
+        };
+        let pages = walk(fetch, 0, MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES).await;
+        let mut expected_start = 0;
+        let mut positions = Vec::new();
+        for page in pages {
+            let page = page.expect("every page reads");
+            assert_eq!(page.start_position, expected_start);
+            expected_start += page.entries.entries.len() as u64;
+            positions.extend(page.entries.entries.iter().map(|entry| entry.position));
+        }
+        assert_eq!(positions, (0..30).collect::<Vec<_>>());
     }
 
     /// A page short of its chunk, before the store's end, is an error rather than a gap.
