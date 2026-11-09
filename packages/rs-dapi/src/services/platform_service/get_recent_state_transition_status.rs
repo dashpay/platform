@@ -58,7 +58,10 @@ impl PlatformServiceImpl {
         let hash_base64 = BASE64_STANDARD.encode(&v0.state_transition_hash);
 
         let status = self.recent_state_transition_status(&hash_base64).await?;
-        let metadata = self.node_view_metadata().await;
+        let metadata = self
+            .node_view_metadata()
+            .await
+            .filter(|metadata| metadata_reaches(&status, metadata));
 
         Ok(GetRecentStateTransitionStatusResponse {
             version: Some(ResponseVersion::V0(
@@ -79,7 +82,7 @@ impl PlatformServiceImpl {
             || async move {
                 match self.tenderdash_client.unconfirmed_tx(hash_base64).await {
                     Ok(_) => Ok(true),
-                    Err(error) if is_not_found(&error) => Ok(false),
+                    Err(error) if is_missing_from_mempool(&error) => Ok(false),
                     Err(error) => Err(error),
                 }
             },
@@ -94,7 +97,7 @@ impl PlatformServiceImpl {
     ) -> Result<Option<TransitionStatus>, DapiError> {
         match self.tenderdash_client.tx(hash_base64.to_string()).await {
             Ok(tx) => Ok(committed_status(tx)),
-            Err(error) if is_not_found(&error) => Ok(None),
+            Err(error) if is_missing_from_index(&error) => Ok(None),
             Err(error) => Err(error),
         }
     }
@@ -202,16 +205,48 @@ fn committed_status(tx: TxResponse) -> Option<TransitionStatus> {
     }))
 }
 
-/// Whether a Tenderdash lookup failed because it does not have the hash, as opposed to failing.
-fn is_not_found(error: &DapiError) -> bool {
-    match error {
-        DapiError::NotFound(_) => true,
-        DapiError::TenderdashClientError(status) => status
-            .message
-            .as_deref()
-            .is_some_and(|message| message.contains("not found")),
-        _ => false,
+/// Whether `metadata` is from at or above the block a committed answer names.
+///
+/// The node's status is cached until a new block's event clears it, and that event can reach
+/// DAPI after Tenderdash's transaction index already holds the block. A status read before
+/// then is a block behind the answer, so it is left out rather than report the node below the
+/// block the answer names.
+fn metadata_reaches(status: &TransitionStatus, metadata: &ResponseMetadata) -> bool {
+    match status {
+        TransitionStatus::Committed(committed) => metadata.height >= committed.height,
+        TransitionStatus::Pending(_) | TransitionStatus::Unknown(_) => true,
     }
+}
+
+/// JSON-RPC's "internal error" code, which Tenderdash gives every error one of its RPC
+/// methods returns, a lookup that found nothing among them. A call it could not route
+/// ("Method not found", -32601) or refused as malformed carries another code, and fails the
+/// lookup.
+const TENDERDASH_METHOD_ERROR_CODE: i64 = -32603;
+
+/// The message of an error a Tenderdash RPC method itself returned.
+fn tenderdash_method_error(error: &DapiError) -> Option<&str> {
+    match error {
+        DapiError::TenderdashClientError(status) if status.code == TENDERDASH_METHOD_ERROR_CODE => {
+            status.message.as_deref().map(str::trim)
+        }
+        _ => None,
+    }
+}
+
+/// Whether Tenderdash's `tx` failed because its transaction index does not have the hash:
+/// `tx (<HASH>) not found, err: ...`.
+fn is_missing_from_index(error: &DapiError) -> bool {
+    tenderdash_method_error(error)
+        .is_some_and(|message| message.starts_with("tx (") && message.contains(") not found"))
+}
+
+/// Whether Tenderdash's `unconfirmed_tx` failed because its mempool does not have the hash:
+/// `transaction <HASH> not found`.
+fn is_missing_from_mempool(error: &DapiError) -> bool {
+    tenderdash_method_error(error).is_some_and(|message| {
+        message.starts_with("transaction ") && message.ends_with(" not found")
+    })
 }
 
 #[cfg(test)]
@@ -347,22 +382,82 @@ mod tests {
         assert_eq!(committed_status(TxResponse::default()), None);
     }
 
-    #[test]
-    fn should_read_only_missing_hashes_as_not_found() {
-        let not_found = DapiError::TenderdashClientError(TenderdashStatus::new(
-            -32603,
-            Some("tx (ABCD) not found".to_string()),
+    fn tenderdash_error(code: i64, message: &str) -> DapiError {
+        DapiError::TenderdashClientError(TenderdashStatus::new(
+            code,
+            Some(message.to_string()),
             None,
-        ));
-        assert!(is_not_found(&not_found));
-        assert!(is_not_found(&DapiError::NotFound("missing".to_string())));
+        ))
+    }
 
-        let unavailable = DapiError::TenderdashClientError(TenderdashStatus::new(
+    #[test]
+    fn should_read_only_a_missing_hash_as_absent_from_the_transaction_index() {
+        assert!(is_missing_from_index(&tenderdash_error(
             -32603,
-            Some("connection refused".to_string()),
-            None,
+            "tx (ABCD) not found, err: <nil>"
+        )));
+
+        // The mempool's message, a failure and an unrouted method are not a missing hash.
+        assert!(!is_missing_from_index(&tenderdash_error(
+            -32603,
+            "transaction ABCD not found"
+        )));
+        assert!(!is_missing_from_index(&tenderdash_error(
+            -32603,
+            "transaction querying is disabled on this node due to the KV event sink being disabled"
+        )));
+        assert!(!is_missing_from_index(&tenderdash_error(
+            -32601,
+            "Method not found"
+        )));
+        assert!(!is_missing_from_index(&DapiError::Unavailable(
+            "down".to_string()
+        )));
+    }
+
+    #[test]
+    fn should_read_only_a_missing_hash_as_absent_from_the_mempool() {
+        assert!(is_missing_from_mempool(&tenderdash_error(
+            -32603,
+            "transaction ABCD not found"
+        )));
+
+        assert!(!is_missing_from_mempool(&tenderdash_error(
+            -32603,
+            "tx (ABCD) not found, err: <nil>"
+        )));
+        assert!(!is_missing_from_mempool(&tenderdash_error(
+            -32603,
+            "connection refused"
+        )));
+        // A node whose Tenderdash does not serve `unconfirmed_tx` must not answer unknown for a
+        // transition that may be pending.
+        assert!(!is_missing_from_mempool(&tenderdash_error(
+            -32601,
+            "Method not found"
+        )));
+        assert!(!is_missing_from_mempool(&DapiError::NotFound(
+            "missing".to_string()
+        )));
+    }
+
+    #[test]
+    fn should_leave_out_metadata_below_the_block_a_committed_answer_names() {
+        let at = |height| ResponseMetadata {
+            height,
+            ..ResponseMetadata::default()
+        };
+        assert!(!metadata_reaches(&committed_at(100), &at(99)));
+        assert!(metadata_reaches(&committed_at(100), &at(100)));
+        assert!(metadata_reaches(&committed_at(100), &at(101)));
+        // Nothing to fall behind for an answer that names no block.
+        assert!(metadata_reaches(
+            &TransitionStatus::Pending(Pending {}),
+            &at(0)
         ));
-        assert!(!is_not_found(&unavailable));
-        assert!(!is_not_found(&DapiError::Unavailable("down".to_string())));
+        assert!(metadata_reaches(
+            &TransitionStatus::Unknown(Unknown {}),
+            &at(0)
+        ));
     }
 }
