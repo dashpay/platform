@@ -122,6 +122,11 @@ impl PersistenceCapabilities {
     /// reads the store from where it stopped. Without this bit nothing of
     /// it is written, a restored value is dropped, and each launch reads the
     /// store from its start.
+    ///
+    /// Honoured only together with [`Self::ATOMIC_CHANGESETS`]
+    /// ([`Self::PRIVATE_CONTACT_SCAN_STATE_RESTART`]): the scan state is written
+    /// in changesets that must commit whole, so a backend declaring this bit
+    /// alone is treated as keeping none of it.
     pub const PRIVATE_CONTACT_REQUEST_SCAN_STATE: Self = Self(1 << 14);
 
     /// Index of the highest bit declared above. It lives here, beside the
@@ -143,6 +148,16 @@ impl PersistenceCapabilities {
     /// Capabilities required for seed-backed FVK persistence and seedless rebind.
     pub const SHIELDED_FVK_RESTART: Self =
         Self(Self::ATOMIC_CHANGESETS.0 | Self::SHIELDED_VIEWING_KEYS.0);
+
+    /// Capabilities required for the private contact request scan state to
+    /// round-trip, and so for a private contact request to be paid for: the
+    /// state itself, and atomic changesets. An un-ignore stores the sender's
+    /// removal and the read-position rewind it brings in one changeset; a
+    /// backend committing the removal without the rewind would, after a
+    /// restart, read on past the requests passed over while the sender was
+    /// ignored, and nothing would read them again.
+    pub const PRIVATE_CONTACT_SCAN_STATE_RESTART: Self =
+        Self(Self::ATOMIC_CHANGESETS.0 | Self::PRIVATE_CONTACT_REQUEST_SCAN_STATE.0);
 
     /// Capabilities required to durably reconcile an asset-lock status and
     /// restore that exact row after process restart.

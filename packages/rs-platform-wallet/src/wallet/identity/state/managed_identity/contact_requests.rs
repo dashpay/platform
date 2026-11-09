@@ -947,12 +947,17 @@ impl ManagedIdentity {
     /// Drop the private contact request scan state a load restored, for a
     /// backend that does not attest it persists it: the store is read from
     /// its start, and the addresses come back with the requests that carry
-    /// them.
+    /// them. A restored hold on an unresolved private payment
+    /// ([`DashPayState::private_payments_unrestored`]) is kept: a backend that
+    /// handed one back kept it when it attested the capability, and dropping
+    /// it would let the identity publish the pair while the payment may still
+    /// execute. Kept, it holds until a restoration clears it.
+    ///
+    /// [`DashPayState::private_payments_unrestored`]: super::DashPayState::private_payments_unrestored
     pub(crate) fn forget_private_contact_scan_state(&mut self) {
         self.dashpay.private_contact_requests_position = 0;
         self.dashpay.private_scan_keys = None;
         self.dashpay.private_shielded_addresses.clear();
-        self.dashpay.private_payments_unrestored = false;
     }
 
     /// Record the shielded address `request`, a private request from

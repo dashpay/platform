@@ -31,7 +31,9 @@ use super::note_selection::{
 use super::store::{
     PendingRedrive, PrivateContactPayment, ShieldedNote, ShieldedStore, SubwalletId,
 };
-use crate::broadcast_outcome::{broadcast_definitely_failed, carries_consensus_rejection};
+use crate::broadcast_outcome::{
+    broadcast_definitely_failed, broadcast_may_have_been_delivered, carries_consensus_rejection,
+};
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
 use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
 use crate::wallet::identity::network::PaymentStarted;
@@ -3870,9 +3872,18 @@ async fn broadcast_shielded_spend(
 ) -> Result<(StateTransitionProofResult, ResponseMetadata), PlatformWalletError> {
     match state_transition.broadcast(sdk, None).await {
         Ok(()) => {}
+        // The notes are released either way; whether the transition may
+        // still have been delivered is kept for what it pays for.
         Err(e) if broadcast_definitely_failed(&e) => {
-            return Err(crate::error::promote_address_nonce_error(&e)
-                .unwrap_or_else(|| PlatformWalletError::ShieldedBroadcastFailed(e.to_string())));
+            return Err(
+                crate::error::promote_address_nonce_error(&e).unwrap_or_else(|| {
+                    if broadcast_may_have_been_delivered(&e) {
+                        PlatformWalletError::ShieldedBroadcastMaybeDelivered(e.to_string())
+                    } else {
+                        PlatformWalletError::ShieldedBroadcastFailed(e.to_string())
+                    }
+                }),
+            );
         }
         Err(e) => {
             warn!(
@@ -5018,6 +5029,31 @@ mod classify_spend_wait_failure_tests {
         assert!(broadcast_definitely_failed(&grpc_err(
             Code::InvalidArgument
         )));
+    }
+
+    /// Of the failures counted as definite, only `Unavailable` may still have
+    /// been delivered: a consensus verdict, a rejection code and an empty
+    /// address list prove the transition was not admitted. The notes are
+    /// released for all of them alike.
+    #[test]
+    fn should_tell_a_broadcast_that_may_have_been_delivered_from_a_refused_one() {
+        use dash_sdk::dapi_client::DapiClientError;
+        use dash_sdk::dapi_grpc::tonic::Code;
+        assert!(broadcast_may_have_been_delivered(&grpc_err(
+            Code::Unavailable
+        )));
+        assert!(broadcast_may_have_been_delivered(
+            &dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(grpc_err(Code::Unavailable)))
+        ));
+        for refused in [
+            grpc_err(Code::InvalidArgument),
+            grpc_err(Code::ResourceExhausted),
+            consensus_metadata_rejection(),
+            dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses),
+        ] {
+            assert!(broadcast_definitely_failed(&refused), "{refused:?}");
+            assert!(!broadcast_may_have_been_delivered(&refused), "{refused:?}");
+        }
     }
 
     /// No-response shapes of the `broadcast()` call itself are NOT
