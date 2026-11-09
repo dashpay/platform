@@ -106,8 +106,10 @@ impl Sdk {
     /// A held contract that declares the type is used as it is and never replaced, so a newer
     /// one the provider proved stays. Otherwise the contract is fetched from the network,
     /// refused when it does not declare the type, given to the provider and read back; the
-    /// call fails when the provider then still holds none that declares it. Without a context
-    /// provider the fetched contract is returned.
+    /// call fails when the provider then still holds none that declares it. A newer contract
+    /// the provider was given while the fetch ran, by another operation, is kept and used
+    /// rather than replaced by the fetched one. Without a context provider the fetched
+    /// contract is returned.
     ///
     /// Private types exist from protocol version 15. Below it, as the page fetch is, the call
     /// is refused with [`Error::ProtocolVersionNotActive`], before anything is fetched on a
@@ -157,6 +159,21 @@ impl Sdk {
         let Some(provider) = provider else {
             return Ok(contract);
         };
+        // Another operation may have given the provider a newer contract while this one was
+        // fetched: it stays, as a provider whose registration replaces would put the older
+        // fetched one in its place.
+        if let Some(held) = provider.get_data_contract(&data_contract_id, self.version())? {
+            if held.version() > contract.version() {
+                return if declares_private_type(&held, document_type_name) {
+                    Ok(held)
+                } else {
+                    Err(Error::Generic(format!(
+                        "the context provider holds a newer contract {data_contract_id} that \
+                         declares no private type \"{document_type_name}\""
+                    )))
+                };
+            }
+        }
         provider.register_data_contract(contract);
         match provider.get_data_contract(&data_contract_id, self.version())? {
             Some(held) if declares_private_type(&held, document_type_name) => Ok(held),
@@ -181,11 +198,15 @@ pub(crate) mod held_contract_provider {
 
     /// A context provider holding `held`, or nothing, whatever version it is asked for, as a
     /// provider's known contracts do. A `writable` one puts a registered contract in its
-    /// place; a read-only one keeps what it holds. Its clones share what it holds.
+    /// place, whatever its version; a read-only one keeps what it holds. Its clones share
+    /// what it holds.
     #[derive(Clone)]
     pub(crate) struct HeldContractProvider {
         held: Arc<Mutex<Option<Arc<DataContract>>>>,
         writable: bool,
+        /// Held from the first read on, as if another operation gave it to the provider
+        /// while the reader's fetch ran.
+        promoted: Arc<Mutex<Option<Arc<DataContract>>>>,
     }
 
     impl HeldContractProvider {
@@ -193,7 +214,15 @@ pub(crate) mod held_contract_provider {
             Self {
                 held: Arc::new(Mutex::new(held.map(Arc::new))),
                 writable,
+                promoted: Arc::new(Mutex::new(None)),
             }
+        }
+
+        /// A writable provider holding `held` until it is first read, then `promoted`.
+        pub(crate) fn promoting(held: DataContract, promoted: DataContract) -> Self {
+            let provider = Self::new(Some(held), true);
+            *provider.promoted.lock().expect("the lock") = Some(Arc::new(promoted));
+            provider
         }
 
         pub(crate) fn held(&self) -> Option<Arc<DataContract>> {
@@ -207,7 +236,11 @@ pub(crate) mod held_contract_provider {
             _id: &Identifier,
             _platform_version: &PlatformVersion,
         ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-            Ok(self.held())
+            let held = self.held();
+            if let Some(promoted) = self.promoted.lock().expect("the lock").take() {
+                *self.held.lock().expect("the lock") = Some(promoted);
+            }
+            Ok(held)
         }
 
         fn get_token_configuration(
