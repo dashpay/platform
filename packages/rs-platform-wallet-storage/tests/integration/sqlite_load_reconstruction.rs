@@ -1488,19 +1488,24 @@ fn tc_p4_012_load_query_count_bounded() {
         // Hold the conn briefly to install the trace, then drop the
         // guard before calling load() (load takes its own lock).
         {
-            let conn = persister.lock_conn_for_test();
+            let mut conn = persister.lock_conn_for_test();
             conn.trace_v2(
                 rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT,
                 Some(cb),
-            );
+            )
+            .expect("install trace");
         }
         COUNTER.store(0, Ordering::Relaxed);
         persister.load().expect("load");
         let n = COUNTER.load(Ordering::Relaxed);
         // Disable trace so other tests don't accidentally inherit it.
         {
-            let conn = persister.lock_conn_for_test();
-            conn.trace_v2(rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT, None);
+            let mut conn = persister.lock_conn_for_test();
+            conn.trace_v2(
+                rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT,
+                None::<fn(rusqlite::trace::TraceEvent<'_>)>,
+            )
+            .expect("remove trace");
         }
         n
     }

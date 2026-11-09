@@ -58,8 +58,8 @@ grovedb-commitment-tree = { workspace = true, optional = true }
 # Direct `rusqlite` access so `FileBackedShieldedStore::open_path` can set
 # WAL + synchronous=NORMAL pragmas before handing the connection to
 # `ClientPersistentCommitmentTree`. Version locked to match the rev grovedb
-# is built against (its `Cargo.lock` resolves rusqlite at this major).
-rusqlite = { version = "0.38", optional = true }
+# is built against (its `Cargo.lock` resolves rusqlite at this major, 0.41).
+rusqlite = { version = "0.41", optional = true }
 zip32 = { version = "0.2.0", default-features = false, optional = true }
 # `StreamExt`/`pin_mut!` to consume the SDK's `sync_shielded_notes_stream`
 # in the interleaved fetch/tree-append consumer (shielded sync only).
@@ -108,7 +108,7 @@ rayon = "1.10"
 # Used by `shielded_tree_append_bench.rs` to open SQLite with tuned PRAGMAs
 # (WAL vs DELETE, sync mode) — confirms whether journal mode is what's
 # making the simulator path so slow.
-rusqlite = "0.38"
+rusqlite = "0.41"
 static_assertions = "1.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # `test-util` brings `tokio::time::pause` / `tokio::test(start_paused = true)`
