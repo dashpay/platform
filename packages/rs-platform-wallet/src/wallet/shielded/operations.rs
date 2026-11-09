@@ -2572,6 +2572,23 @@ where
             "identity-create-from-one-time-key requires at least one public key".to_string(),
         ));
     }
+    // The wallet loads the identity's signing key at `MASTER_KEY_INDEX`, so
+    // that key must be the MASTER authentication key. Checked here, before
+    // anything is scanned or spent, because the bindings only marshal rows.
+    {
+        use dpp::identity::{Purpose, SecurityLevel};
+        let master_ok = public_keys.iter().any(|(key, _)| {
+            key.id() == crate::MASTER_KEY_INDEX
+                && key.purpose() == Purpose::AUTHENTICATION
+                && key.security_level() == SecurityLevel::MASTER
+        });
+        if !master_ok {
+            return Err(PlatformWalletError::ShieldedBuildError(format!(
+                "identity-create-from-one-time-key requires key ID {} to be MASTER + AUTHENTICATION",
+                crate::MASTER_KEY_INDEX
+            )));
+        }
+    }
 
     // Derive the Orchard key material from the one-time spending key. `from_bytes`
     // returns a `CtOption`; an invalid scalar means the caller handed us a
@@ -8781,6 +8798,53 @@ mod claim_removal_fence_tests {
             .expect("derive the claimer's key set");
         OrchardAddress::from_raw_bytes(&keys.default_address.to_raw_address_bytes())
             .expect("the derived default address is a valid Orchard address")
+    }
+
+    /// The claim operation owns the key-role rule the bindings no longer
+    /// check: key ID 0 must be MASTER + AUTHENTICATION, and a claim without it
+    /// is refused before anything is scanned or armed.
+    #[tokio::test]
+    async fn a_claim_whose_key_zero_is_not_master_auth_is_refused() {
+        let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let wallet_id: WalletId = [0x11; 32];
+
+        let (mut key, _) = master_auth_key();
+        if let IdentityPublicKey::V0(ref mut v0) = key {
+            v0.security_level = SecurityLevel::HIGH;
+        }
+        let in_creation: IdentityPublicKeyInCreation = (&key).into();
+
+        let result = identity_create_from_one_time_key(
+            &sdk,
+            &store,
+            &ForeignClaimGuards::default(),
+            &super::super::sync::ForeignScanCheckpointCache::default(),
+            &AtomicBool::new(false),
+            wallet_id,
+            zeroize::Zeroizing::new([0x01u8; 32]),
+            None,
+            &change_address(),
+            3,
+            vec![(key, in_creation)],
+            DENOMINATION,
+            PlatformAddress::P2pkh([0x07; 20]),
+            &NeverSigner,
+            &NeverProver,
+        )
+        .await;
+
+        assert!(
+            matches!(result, Err(PlatformWalletError::ShieldedBuildError(ref m)) if m.contains("MASTER + AUTHENTICATION")),
+            "got {result:?}"
+        );
+        let record_id = SubwalletId::new(wallet_id, ONE_TIME_CLAIM_RECORDS_ACCOUNT);
+        assert!(store
+            .read()
+            .await
+            .pending_redrives(record_id)
+            .expect("records readable")
+            .is_empty());
     }
 
     /// A claim that begins AFTER its wallet's removal has committed must be

@@ -42,7 +42,7 @@
 #![allow(clippy::missing_safety_doc)]
 #![cfg(feature = "shielded")]
 
-use crate::pubkey_rows::decode_registration_pubkeys_blob;
+use crate::pubkey_rows::{decode_registration_pubkeys_blob, decode_structural_pubkeys_blob};
 use crate::support::{guard, take_pwffi_error, throw_sdk_exception, JVM};
 use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JString, JValue};
 use jni::sys::{jboolean, jint, jlong, jobjectArray, JNI_FALSE, JNI_TRUE};
@@ -1141,7 +1141,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
             return ptr::null_mut();
         };
 
-        let Some(decoded) = decode_registration_pubkeys_blob(env, &pubkeys_blob) else {
+        // Structural decode only: the claim operation owns the key-count and
+        // key-role rules.
+        let Some(decoded) = decode_structural_pubkeys_blob(env, &pubkeys_blob) else {
             return ptr::null_mut();
         };
 
