@@ -5,6 +5,7 @@
 //!   a fixed `wallet_id` so callers don't need to pass the ID on every call.
 
 use std::collections::BTreeSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use dashcore::Txid;
@@ -64,6 +65,13 @@ pub struct WalletPersister {
     /// private contact request reservations held for them. Shared by the
     /// clones the wallet and the coordinator hold. In memory only.
     rejected_private_entries: Arc<std::sync::Mutex<RejectedPrivateEntries>>,
+    /// Whether the reservations of this wallet's unconfirmed private contact
+    /// request payments from an earlier process may still be unrestored:
+    /// raised at load for a wallet that bound a shielded account before, and
+    /// lowered once a restoration from the shielded store succeeds. While it
+    /// is up, public contact requests are neither sent nor accepted. Shared by
+    /// the clones the wallet and its views hold. In memory only.
+    private_payments_unrestored: Arc<AtomicBool>,
 }
 
 /// The commitments [`WalletPersister::note_rejected_private_entries`] noted,
@@ -89,6 +97,7 @@ impl WalletPersister {
             inner,
             contact_payment_gate: Arc::new(tokio::sync::Mutex::new(())),
             rejected_private_entries: Arc::default(),
+            private_payments_unrestored: Arc::default(),
         }
     }
 
@@ -126,6 +135,32 @@ impl WalletPersister {
     /// applied while the restoration read its entries still holds.
     pub(crate) fn private_entry_rejected(&self, commitment: &[u8; 32]) -> bool {
         self.rejected_entries().session.contains(commitment)
+    }
+
+    /// Hold this wallet's public contact requests, sent or accepted, until
+    /// [`Self::private_payments_restored`]: its shielded store may hold an
+    /// unconfirmed private payment from an earlier process whose pair no
+    /// reservation holds yet.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn hold_until_private_payments_restored(&self) {
+        self.private_payments_unrestored
+            .store(true, Ordering::Release);
+    }
+
+    /// The reservations of this wallet's unconfirmed private payments are
+    /// restored: release the hold [`Self::hold_until_private_payments_restored`]
+    /// raised. Called after the restored reservations are in place, so a send
+    /// that sees the hold gone sees them.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn private_payments_restored(&self) {
+        self.private_payments_unrestored
+            .store(false, Ordering::Release);
+    }
+
+    /// Whether [`Self::hold_until_private_payments_restored`] holds this
+    /// wallet's public contact requests.
+    pub(crate) fn private_payments_unrestored(&self) -> bool {
+        self.private_payments_unrestored.load(Ordering::Acquire)
     }
 
     fn rejected_entries(&self) -> std::sync::MutexGuard<'_, RejectedPrivateEntries> {

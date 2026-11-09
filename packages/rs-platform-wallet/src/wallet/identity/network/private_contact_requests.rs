@@ -706,6 +706,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// say whether the network or this SDK is below it, and an SDK pinned
     /// below it refuses a store the network has. Without that evidence the
     /// refusal comes back as it is, and nothing is sent.
+    ///
+    /// Refused first, with nothing read, while the wallet's unconfirmed
+    /// private payments from an earlier process may be unrestored
+    /// ([`PlatformWalletError::PrivateContactPaymentsNotRestored`]): such a
+    /// payment's entry is not in the store until it executes, so no read
+    /// shows the pair it holds; only the shielded store's record of it does.
     pub(super) async fn read_private_store_before_deciding<C>(
         &self,
         identity_id: &Identifier,
@@ -715,6 +721,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     where
         C: ContactCryptoProvider + Sync,
     {
+        if self.persister.private_payments_unrestored() {
+            return Err(PlatformWalletError::PrivateContactPaymentsNotRestored);
+        }
         match self
             .read_private_store_before_sending(identity_id, recipient, crypto)
             .await
@@ -1825,12 +1834,21 @@ mod tests {
         ClientStartState, IdentityManagerStartState, PersistenceCapabilities, PersistenceError,
         PlatformWalletChangeSet, PlatformWalletPersistence,
     };
+    #[cfg(feature = "shielded")]
+    use crate::changeset::{ClientWalletStartState, ShieldedSyncStartState};
     use crate::events::{EventHandler, PlatformEventHandler};
     use crate::wallet::identity::network::identity_auth_derivation_path_for_type;
     use crate::wallet::identity::network::SeedCryptoProvider;
     use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
     #[cfg(feature = "shielded")]
-    use crate::wallet::shielded::operations::note_rejected_private_documents;
+    use crate::wallet::shielded::operations::{
+        arm_redrive_before_broadcast, note_rejected_private_documents,
+    };
+    #[cfg(feature = "shielded")]
+    use crate::wallet::shielded::{
+        FileBackedShieldedStore, NetworkShieldedCoordinator, OrchardKeySet, PrivateContactPayment,
+        SubwalletId,
+    };
     use crate::PlatformWalletManager;
     use dash_sdk::error::ContextProviderError;
     use dash_sdk::platform::private_document_entries::{
@@ -2108,6 +2126,40 @@ mod tests {
         platform_version: &'static PlatformVersion,
         verified_network: Option<u32>,
     ) -> (PlatformWalletManager<P>, Arc<PlatformWallet>) {
+        let sdk = dashpay_sdk(known, entries, platform_version, verified_network).await;
+        let manager =
+            PlatformWalletManager::new(Arc::new(sdk), persistence, Arc::new(NoopEventHandler));
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed(phrase),
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("wallet");
+        {
+            let iw = wallet.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&wallet.wallet_id())
+                .expect("wallet info");
+            info.identity_manager
+                .add_identity(own.clone(), 0, wallet.wallet_id(), &iw.persister)
+                .expect("own identity");
+        }
+        (manager, wallet)
+    }
+
+    /// The mock SDK of [`wallet_at`]: pinned to `platform_version`, holding
+    /// DashPay as that version bundles it, answering fetches of `known` and
+    /// of the private store's first page, holding `entries`.
+    async fn dashpay_sdk(
+        known: &[&Identity],
+        entries: Vec<Vec<u8>>,
+        platform_version: &'static PlatformVersion,
+        verified_network: Option<u32>,
+    ) -> dash_sdk::Sdk {
         let contract = Arc::new(
             dpp::system_data_contracts::load_system_data_contract(
                 dpp::data_contracts::SystemDataContract::Dashpay,
@@ -2163,29 +2215,99 @@ mod tests {
             )
             .await
             .expect("page expectation");
+        sdk
+    }
 
-        let manager =
-            PlatformWalletManager::new(Arc::new(sdk), persistence, Arc::new(NoopEventHandler));
-        let wallet = manager
-            .create_wallet_from_seed_bytes(
-                Network::Testnet,
-                &seed(phrase),
-                WalletAccountCreationOptions::Default,
-                Some(0),
-            )
-            .await
-            .expect("wallet");
-        {
-            let iw = wallet.identity();
-            let mut wm = iw.wallet_manager.write().await;
-            let info = wm
-                .get_wallet_info_mut(&wallet.wallet_id())
-                .expect("wallet info");
-            info.identity_manager
-                .add_identity(own.clone(), 0, wallet.wallet_id(), &iw.persister)
-                .expect("own identity");
+    /// A backend handing back, on every load, a wallet as [`snapshot`] took
+    /// it, with the viewing key its shielded account 0 bound with: the
+    /// relaunch of a wallet that bound a shielded account in an earlier
+    /// process.
+    #[cfg(feature = "shielded")]
+    struct SnapshotPersistence {
+        wallet: key_wallet::Wallet,
+        core: key_wallet::wallet::ManagedWalletInfo,
+        identities: BTreeMap<u32, ManagedIdentity>,
+        viewing_key: [u8; 96],
+    }
+
+    #[cfg(feature = "shielded")]
+    impl PlatformWalletPersistence for SnapshotPersistence {
+        fn persistence_capabilities(&self) -> PersistenceCapabilities {
+            PersistenceCapabilities::SHIELDED_FVK_RESTART
         }
-        (manager, wallet)
+
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            let wallet_id = self.wallet.compute_wallet_id();
+            let mut wallet_identities = BTreeMap::new();
+            wallet_identities.insert(wallet_id, self.identities.clone());
+            let mut wallets = BTreeMap::new();
+            wallets.insert(
+                wallet_id,
+                ClientWalletStartState {
+                    wallet: self.wallet.clone(),
+                    wallet_info: self.core.clone(),
+                    identity_manager: IdentityManagerStartState {
+                        wallet_identities,
+                        ..Default::default()
+                    },
+                    unused_asset_locks: BTreeMap::new(),
+                    unconfirmed_outgoing_txs: Vec::new(),
+                    dashpay_backfill: Default::default(),
+                },
+            );
+            let mut shielded = ShieldedSyncStartState::default();
+            shielded
+                .viewing_keys
+                .insert(SubwalletId::new(wallet_id, 0), self.viewing_key.to_vec());
+            Ok(ClientStartState {
+                wallets,
+                shielded,
+                ..Default::default()
+            })
+        }
+    }
+
+    /// `wallet`, from `phrase`, with its identity `owner`, as a backend keeps
+    /// it once its shielded account 0 is bound.
+    #[cfg(feature = "shielded")]
+    async fn snapshot(
+        wallet: &PlatformWallet,
+        owner: &Identifier,
+        phrase: &str,
+    ) -> SnapshotPersistence {
+        let iw = wallet.identity();
+        let wm = iw.wallet_manager.read().await;
+        let wallet_id = wallet.wallet_id();
+        let info = wm.get_wallet_info(&wallet_id).expect("wallet info");
+        let mut identities = BTreeMap::new();
+        identities.insert(
+            0,
+            info.identity_manager
+                .managed_identity(owner)
+                .expect("the owner")
+                .clone(),
+        );
+        SnapshotPersistence {
+            wallet: wm.get_wallet(&wallet_id).expect("the wallet").clone(),
+            core: info.core_wallet.clone(),
+            identities,
+            viewing_key: OrchardKeySet::from_seed(&seed(phrase), Network::Testnet, 0)
+                .expect("shielded keys")
+                .viewing_keys()
+                .to_fvk_bytes(),
+        }
     }
 
     /// The page of DashPay's private store from `start`, holding `entries`.
@@ -4685,11 +4807,6 @@ mod tests {
     #[cfg(feature = "shielded")]
     #[tokio::test]
     async fn should_restore_a_request_whose_process_exited_during_its_result_wait() {
-        use crate::wallet::shielded::operations::arm_redrive_before_broadcast;
-        use crate::wallet::shielded::{
-            FileBackedShieldedStore, NetworkShieldedCoordinator, SubwalletId,
-        };
-
         let alice = identity(ALICE_PHRASE, ALICE);
         let bob = identity(BOB_PHRASE, BOB);
         let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
@@ -5138,15 +5255,13 @@ mod tests {
     /// the process ends is saved with the request it pays for: binding the
     /// restarted wallet to its shielded coordinator reserves the pair again,
     /// with no host call and no keys. Before any sync, neither the accept a
-    /// host calls nor a public send then goes to the contact.
+    /// host calls nor a public send then goes to the contact. Before the
+    /// bind, the relaunched wallet, which bound its shielded account before,
+    /// refuses both too, with nothing sent: the reservation is not restored
+    /// yet.
     #[cfg(feature = "shielded")]
     #[tokio::test]
     async fn should_not_reply_publicly_after_a_restart_with_a_private_reply_unconfirmed() {
-        use crate::wallet::shielded::operations::arm_redrive_before_broadcast;
-        use crate::wallet::shielded::{
-            FileBackedShieldedStore, NetworkShieldedCoordinator, PrivateContactPayment, SubwalletId,
-        };
-
         let alice = identity(ALICE_PHRASE, ALICE);
         let bob = identity(BOB_PHRASE, BOB);
         let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
@@ -5167,6 +5282,8 @@ mod tests {
         let before_coordinator = coordinator_at(db_path.clone());
         let (_before_manager, before) = wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![]).await;
         add_incoming(&before, BOB, &incoming).await;
+        // What the backend keeps of the wallet, before the reply is paid.
+        let kept = Arc::new(snapshot(&before, &bob.id(), BOB_PHRASE).await);
         let subwallet = SubwalletId::new(before.wallet_id(), 0);
         let pay = {
             let store = Arc::clone(before_coordinator.store());
@@ -5217,16 +5334,60 @@ mod tests {
         // The restart: the reply is not in the store and the host restores
         // nothing; only the bind can.
         let after = coordinator_at(db_path);
-        let (_restarted_manager, restarted) = wallet_on(
-            RecordingPersistence::attesting(PersistenceCapabilities::SHIELDED_FVK_RESTART),
-            BOB_PHRASE,
-            &bob,
-            &[&alice, &bob],
-            vec![],
-        )
-        .await;
-        add_incoming(&restarted, BOB, &incoming).await;
+        let restarted_manager = PlatformWalletManager::new(
+            Arc::new(dashpay_sdk(&[&alice, &bob], vec![], PlatformVersion::latest(), None).await),
+            kept,
+            Arc::new(NoopEventHandler),
+        );
+        restarted_manager
+            .load_from_persistor()
+            .await
+            .expect("the relaunch loads");
+        let restarted = restarted_manager
+            .get_wallet(&before.wallet_id())
+            .await
+            .expect("the relaunched wallet");
         assert!(!pending_to(&restarted, BOB, &alice).await);
+
+        // Before the bind: refused, with nothing read or sent.
+        let accepted = restarted
+            .identity()
+            .dashpay()
+            .accept_contact_request_replying_in_kind(
+                &incoming,
+                None,
+                &bob_signer,
+                &bob_crypto,
+                no_payment,
+            )
+            .await;
+        assert!(
+            matches!(
+                accepted,
+                Err(PlatformWalletError::PrivateContactPaymentsNotRestored)
+            ),
+            "{accepted:?}"
+        );
+        let public = restarted
+            .identity()
+            .dashpay()
+            .send_contact_request_with_external_signer(
+                &bob.id(),
+                &alice.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &bob_signer,
+                &bob_crypto,
+            )
+            .await;
+        assert!(
+            matches!(
+                public,
+                Err(PlatformWalletError::PrivateContactPaymentsNotRestored)
+            ),
+            "{public:?}"
+        );
+
         restarted
             .bind_shielded(&seed(BOB_PHRASE), &[0], &after)
             .await

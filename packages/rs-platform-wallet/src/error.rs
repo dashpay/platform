@@ -678,6 +678,20 @@ pub enum PlatformWalletError {
     )]
     PrivateContactRequestPending(Identifier),
 
+    /// This wallet bound a shielded account before this process started, so
+    /// the shielded store may hold a private contact request payment from an
+    /// earlier process that is still unconfirmed, and its reservations are not
+    /// restored yet: no public contact request is sent or accepted, nothing
+    /// signed or broadcast, until they are. Opening the shielded store
+    /// (`PlatformWalletManager::configure_shielded`) restores them, with no
+    /// keys; so does binding the wallet's shielded account.
+    #[error(
+        "this wallet's unconfirmed private contact request payments from an earlier process are \
+         not restored yet; configure the shielded store or bind the wallet's shielded account, \
+         then try again"
+    )]
+    PrivateContactPaymentsNotRestored,
+
     /// No DPNS `domain` document exists for the requested name (exact
     /// normalized-label lookup came back empty). Distinct from
     /// [`Self::InvalidParameter`]: the input was well-formed, the name
