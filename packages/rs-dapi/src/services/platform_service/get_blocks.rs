@@ -463,9 +463,12 @@ mod tests {
 
     /// Read one block holding `[1, 2]` with the given commit as its proof.
     fn read_proved_block(commit: ResultCommit) -> DAPIResult<Option<Block>> {
+        let mut block = tenderdash_block(json!(["AQI="]));
+        block.block_id = commit.signed_header.commit.block_id.clone();
+
         read_block(
             7,
-            Ok(tenderdash_block(json!(["AQI="]))),
+            Ok(block),
             Ok(serde_json::from_value(json!({
                 "txs_results": [{ "code": 0, "gas_used": "9" }],
             }))
@@ -525,7 +528,6 @@ mod tests {
     fn should_attach_a_proof_when_asked_to_prove() {
         let commit = tenderdash_commit(
             7,
-            "ABCD",
             &[Sha256::digest([1, 2]).to_vec()],
             &results_of_the_proved_block(),
         );
@@ -542,7 +544,6 @@ mod tests {
     fn should_fail_rather_than_return_a_proof_the_block_does_not_satisfy() {
         let commit = tenderdash_commit(
             7,
-            "ABCD",
             &[Sha256::digest([3, 4]).to_vec()],
             &results_of_the_proved_block(),
         );

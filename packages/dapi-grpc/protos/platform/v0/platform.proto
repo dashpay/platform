@@ -4462,10 +4462,11 @@ message GetPrivateDocumentEntriesResponse {
 }
 
 // Ties a Tenderdash block to the signature of the quorum that committed it. To
-// check it, recompute the block hash from `header`, build the block id from that
-// hash and `block_id`, and verify `signature` over the precommit vote for them.
-// `header.data_hash` and `header.results_hash` then vouch for the block's
-// transactions and their results.
+// check it, recompute the block hash and the state id from `header`, compare
+// them with `block_id.hash` and `block_id.state_id`, and verify `signature`
+// over the precommit vote for `block_id`. `header.data_hash` and
+// `header.results_hash` then vouch for the block's transactions and their
+// results.
 message TenderdashBlockProof {
   message BlockId {
     bytes hash = 1;
@@ -4473,7 +4474,9 @@ message TenderdashBlockProof {
     bytes part_set_hash = 3;
     bytes state_id = 4;
   }
-  // Every field Tenderdash hashes into the block hash
+  // The signed block header. The block hash covers every field except
+  // `core_chain_locked_height`. The state id covers that one, with
+  // `app_version`, `height`, `app_hash` and the time in milliseconds.
   message Header {
     uint64 block_version = 1 [ jstype = JS_STRING ];
     uint64 app_version = 2 [ jstype = JS_STRING ];

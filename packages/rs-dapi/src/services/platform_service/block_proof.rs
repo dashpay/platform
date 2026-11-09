@@ -4,12 +4,16 @@
 //! are Merkle trees whose roots are in the block header, and the quorum signs the header.
 //! Nothing here is new consensus data, only what a client needs to follow that chain.
 //!
-//! Every tree is rebuilt here and compared with the root in the header, so a node never
-//! hands out a proof that its own data cannot satisfy.
+//! Every hash on that chain is recomputed here before a proof leaves: the header against
+//! the block id the quorum signed, and each tree against its root in the header. A node
+//! never hands out a proof that its own data cannot satisfy.
 
 use chrono::DateTime;
 use dapi_grpc::Message;
 use dapi_grpc::platform::proto::abci::ExecTxResult;
+use dapi_grpc::platform::proto::google::protobuf::Timestamp;
+use dapi_grpc::platform::proto::types::{BlockId as HashedBlockId, PartSetHeader, StateId};
+use dapi_grpc::platform::proto::version::Consensus;
 use dapi_grpc::platform::v0::tenderdash_block_proof::{BlockId, Header};
 use dapi_grpc::platform::v0::{TenderdashBlockProof, TenderdashTransactionProof};
 use sha2::{Digest, Sha256};
@@ -20,6 +24,9 @@ use crate::clients::tenderdash_client::{
     BlockHeader, BlockId as TenderdashBlockId, BlockTxResult, ResultCommit,
 };
 use crate::error::{DAPIResult, DapiError};
+
+/// Tenderdash hashes an absent app hash into a state id as this many zero bytes.
+const APP_HASH_SIZE: usize = 32;
 
 const LEAF_PREFIX: [u8; 1] = [0];
 const INNER_PREFIX: [u8; 1] = [1];
@@ -260,6 +267,100 @@ fn convert_header(header: BlockHeader) -> DAPIResult<Header> {
     })
 }
 
+/// The hash Tenderdash gives a block: the Merkle root of its header's fields, each in its
+/// protobuf encoding. A string, number or hash is wrapped in a one-field message first, so
+/// one that is empty or zero is an empty leaf.
+///
+/// The core chain locked height is an empty leaf whatever its value: the state id is what
+/// commits to it.
+fn header_hash(header: &Header) -> Vec<u8> {
+    let last_block_id = header.last_block_id.clone().unwrap_or_default();
+
+    merkle_root(&[
+        Consensus {
+            block: header.block_version,
+            app: header.app_version,
+        }
+        .encode_to_vec(),
+        header.chain_id.encode_to_vec(),
+        header.height.encode_to_vec(),
+        Vec::new(),
+        Timestamp {
+            seconds: header.time_seconds,
+            nanos: header.time_nanos,
+        }
+        .encode_to_vec(),
+        HashedBlockId {
+            hash: last_block_id.hash,
+            part_set_header: Some(PartSetHeader {
+                total: last_block_id.part_set_total,
+                hash: last_block_id.part_set_hash,
+            }),
+            state_id: last_block_id.state_id,
+        }
+        .encode_to_vec(),
+        header.last_commit_hash.encode_to_vec(),
+        header.data_hash.encode_to_vec(),
+        header.validators_hash.encode_to_vec(),
+        header.next_validators_hash.encode_to_vec(),
+        header.consensus_hash.encode_to_vec(),
+        header.next_consensus_hash.encode_to_vec(),
+        header.app_hash.encode_to_vec(),
+        header.results_hash.encode_to_vec(),
+        header.evidence_hash.encode_to_vec(),
+        header.proposer_pro_tx_hash.encode_to_vec(),
+        header.proposed_app_version.encode_to_vec(),
+    ])
+}
+
+/// The state id Tenderdash derives from a header, which the quorum signs next to the
+/// block hash: the SHA-256 of these fields as a length-prefixed `StateID` message.
+fn state_id_hash(header: &Header) -> DAPIResult<Vec<u8>> {
+    let time = header
+        .time_seconds
+        .checked_mul(1000)
+        .and_then(|ms| ms.checked_add(i64::from(header.time_nanos / 1_000_000)))
+        .and_then(|ms| u64::try_from(ms).ok())
+        .ok_or_else(|| {
+            DapiError::Internal(format!(
+                "block {} has a time outside the range of a state id",
+                header.height
+            ))
+        })?;
+    let app_hash = if header.app_hash.is_empty() {
+        vec![0; APP_HASH_SIZE]
+    } else {
+        header.app_hash.clone()
+    };
+
+    let state_id = StateId {
+        app_version: header.app_version,
+        height: header.height,
+        app_hash,
+        core_chain_locked_height: header.core_chain_locked_height,
+        time,
+    };
+    Ok(Sha256::digest(state_id.encode_length_delimited_to_vec()).to_vec())
+}
+
+/// Check that `header` is the one behind the signed `block_id`. A client repeats both
+/// comparisons, so a header that fails one here would be a proof no client accepts.
+fn check_header(header: &Header, block_id: &BlockId) -> DAPIResult<()> {
+    if header_hash(header) != block_id.hash {
+        return Err(DapiError::Internal(format!(
+            "the header of block {} does not hash to its block id",
+            header.height
+        )));
+    }
+    if state_id_hash(header)? != block_id.state_id {
+        return Err(DapiError::Internal(format!(
+            "the header of block {} does not hash to its state id",
+            header.height
+        )));
+    }
+    Ok(())
+}
+
 /// Build the proof of the block at `height`, whose id the node reported as `block_id`.
 pub(super) fn build_block_proof(
     height: u64,
@@ -282,27 +383,30 @@ pub(super) fn build_block_proof(
         DapiError::Internal(format!("the signature of block {height} is not base64"))
     })?;
 
+    let signed_block_id = convert_block_id(&signed.commit.block_id)?;
+    let header = convert_header(signed.header)?;
+    check_header(&header, &signed_block_id)?;
+
     Ok(TenderdashBlockProof {
-        block_id: Some(convert_block_id(&signed.commit.block_id)?),
+        block_id: Some(signed_block_id),
         round: signed.commit.round,
         quorum_hash: decode_hex("quorum_hash", &signed.commit.quorum_hash)?,
         quorum_type,
         signature,
-        header: Some(convert_header(signed.header)?),
+        header: Some(header),
     })
 }
 
-/// A `commit` result in the shape Tenderdash's RPC serves, whose header commits to these
-/// transaction hashes and results.
+/// A `commit` result in the shape Tenderdash's RPC serves: a header that commits to these
+/// transaction hashes and results, and the block id Tenderdash would sign for it.
 #[cfg(test)]
 pub(super) fn tenderdash_commit(
     height: u64,
-    block_hash: &str,
     transaction_hashes: &[Vec<u8>],
     results: &[BlockTxResult],
 ) -> ResultCommit {
     let results_root = merkle_root(&encode_results(results).unwrap());
-    serde_json::from_value(serde_json::json!({
+    let mut commit: ResultCommit = serde_json::from_value(serde_json::json!({
         "signed_header": {
             "header": {
                 "version": { "block": "14", "app": "11" },
@@ -330,11 +434,7 @@ pub(super) fn tenderdash_commit(
             "commit": {
                 "height": height,
                 "round": 3,
-                "block_id": {
-                    "hash": block_hash,
-                    "parts": { "total": 1, "hash": "DD" },
-                    "state_id": "EE",
-                },
+                "block_id": { "parts": { "total": 1, "hash": "DD" } },
                 "quorum_hash": "0B0C",
                 "threshold_block_signature": "AQID",
                 "threshold_vote_extensions": [],
@@ -342,7 +442,13 @@ pub(super) fn tenderdash_commit(
         },
         "canonical": true,
     }))
-    .unwrap()
+    .unwrap();
+
+    let header = convert_header(commit.signed_header.header.clone()).unwrap();
+    let block_id = &mut commit.signed_header.commit.block_id;
+    block_id.hash = hex::encode_upper(header_hash(&header));
+    block_id.state_id = hex::encode_upper(state_id_hash(&header).unwrap());
+    commit
 }
 
 #[cfg(test)]
@@ -414,11 +520,10 @@ mod tests {
         }
     }
 
-    fn block_id(hash: &str) -> TenderdashBlockId {
-        TenderdashBlockId {
-            hash: hash.to_string(),
-            ..Default::default()
-        }
+    /// Build the proof of `commit`'s block as the block Tenderdash served at `height`.
+    fn prove(height: u64, commit: ResultCommit) -> DAPIResult<TenderdashBlockProof> {
+        let block_id = commit.signed_header.commit.block_id.clone();
+        build_block_proof(height, &block_id, commit, 6)
     }
 
     fn sample_txs() -> Vec<String> {
@@ -442,8 +547,7 @@ mod tests {
     }
 
     fn sample_proof() -> TenderdashBlockProof {
-        let commit = tenderdash_commit(7, "ABCD", &sample_hashes(), &sample_results());
-        build_block_proof(7, &block_id("ABCD"), commit, 6).unwrap()
+        prove(7, tenderdash_commit(7, &sample_hashes(), &sample_results())).unwrap()
     }
 
     #[test]
@@ -570,10 +674,10 @@ mod tests {
         assert_eq!(header.proposer_pro_tx_hash, [10]);
         assert_eq!(header.proposed_app_version, 15);
 
-        assert_eq!(block_id.hash, [0xab, 0xcd]);
+        assert_eq!(block_id.hash, header_hash(header));
         assert_eq!(block_id.part_set_total, 1);
         assert_eq!(block_id.part_set_hash, [0xdd]);
-        assert_eq!(block_id.state_id, [0xee]);
+        assert_eq!(block_id.state_id, state_id_hash(header).unwrap());
         assert_eq!(proof.round, 3);
         assert_eq!(proof.quorum_hash, [0x0b, 0x0c]);
         assert_eq!(proof.quorum_type, 6);
@@ -582,17 +686,159 @@ mod tests {
 
     #[test]
     fn should_reject_a_commit_for_another_block() {
-        let commit = tenderdash_commit(7, "ABCD", &[], &[]);
+        let other_block = TenderdashBlockId {
+            hash: "ABCE".to_string(),
+            ..Default::default()
+        };
         assert!(matches!(
-            build_block_proof(7, &block_id("ABCE"), commit, 6),
+            build_block_proof(7, &other_block, tenderdash_commit(7, &[], &[]), 6),
             Err(DapiError::Internal(_))
         ));
 
-        let commit = tenderdash_commit(8, "ABCD", &[], &[]);
         assert!(matches!(
-            build_block_proof(7, &block_id("ABCD"), commit, 6),
+            prove(7, tenderdash_commit(8, &[], &[])),
             Err(DapiError::Internal(_))
         ));
+    }
+
+    /// The header of the "Generates expected hash" case of `TestHeaderHash` in Tenderdash's
+    /// `types/block_test.go`, which sets every field.
+    fn tenderdash_header() -> Header {
+        let hash_of = |seed: &str| Sha256::digest(seed).to_vec();
+        let last_block = Header {
+            app_version: 1,
+            height: 3,
+            core_chain_locked_height: 1,
+            // 2022-03-04T05:06:07.000000008Z
+            time_seconds: 1_646_370_367,
+            time_nanos: 8,
+            app_hash: hash_of("app_hash"),
+            ..Default::default()
+        };
+
+        Header {
+            block_version: 1,
+            app_version: 2,
+            chain_id: "chainId".to_string(),
+            height: 3,
+            core_chain_locked_height: 1,
+            // 2019-10-13T16:14:44Z
+            time_seconds: 1_570_983_284,
+            time_nanos: 0,
+            last_block_id: Some(BlockId {
+                hash: vec![0; 32],
+                part_set_total: 6,
+                part_set_hash: vec![0; 32],
+                state_id: state_id_hash(&last_block).unwrap(),
+            }),
+            last_commit_hash: hash_of("last_commit_hash"),
+            data_hash: hash_of("data_hash"),
+            validators_hash: hash_of("validators_hash"),
+            next_validators_hash: hash_of("next_validators_hash"),
+            consensus_hash: hash_of("consensus_hash"),
+            next_consensus_hash: hash_of("next_consensus_hash"),
+            app_hash: hash_of("app_hash"),
+            results_hash: hash_of("last_results_hash"),
+            evidence_hash: hash_of("evidence_hash"),
+            proposer_pro_tx_hash: hash_of("proposer_pro_tx_hash"),
+            proposed_app_version: 1,
+        }
+    }
+
+    #[test]
+    fn should_hash_a_header_as_tenderdash_does() {
+        assert_eq!(
+            hex_of(&header_hash(&tenderdash_header())),
+            "ff24ddab9e1550beb40ab7ad432a4d577560e9b87a80c7bb86e75263974b87e0"
+        );
+    }
+
+    /// `TestHeaderHashVector` of the same file: no last block, a time before 1970 with
+    /// nanoseconds, and hashes that are the text of a hex string.
+    #[test]
+    fn should_hash_a_header_with_empty_fields_as_tenderdash_does() {
+        let text = b"f2564c78071e26643ae9b3e2a19fa0dc10d4d9e873aa0be808660123f11a1e78".to_vec();
+        let header = Header {
+            block_version: 1,
+            app_version: 1,
+            chain_id: "test".to_string(),
+            height: 50,
+            // what Go's `time.Date(math.MaxInt64, 0, 0, 0, 0, 0, math.MaxInt64, time.UTC)`
+            // wraps around to: 0291-03-10T13:13:40.854775807Z
+            time_seconds: -52_978_185_980,
+            time_nanos: 854_775_807,
+            last_block_id: Some(BlockId::default()),
+            last_commit_hash: text.clone(),
+            data_hash: text.clone(),
+            validators_hash: text.clone(),
+            next_validators_hash: text.clone(),
+            consensus_hash: text.clone(),
+            next_consensus_hash: text.clone(),
+            app_hash: text.clone(),
+            results_hash: text.clone(),
+            evidence_hash: text.clone(),
+            proposer_pro_tx_hash: text,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            hex_of(&header_hash(&header)),
+            "1476e858bfe231d7cd767a9693f63fe6a8757e8c07aba432f338a5ecba2b0342"
+        );
+    }
+
+    #[test]
+    fn should_leave_the_core_chain_locked_height_to_the_state_id() {
+        let header = tenderdash_header();
+        let mut other = header.clone();
+        other.core_chain_locked_height += 1;
+
+        assert_eq!(header_hash(&other), header_hash(&header));
+        assert_ne!(
+            state_id_hash(&other).unwrap(),
+            state_id_hash(&header).unwrap()
+        );
+    }
+
+    #[test]
+    fn should_hash_an_absent_app_hash_into_the_state_id_as_zeros() {
+        let mut header = tenderdash_header();
+        header.app_hash = Vec::new();
+        let mut zeros = header.clone();
+        zeros.app_hash = vec![0; 32];
+
+        assert_eq!(
+            state_id_hash(&header).unwrap(),
+            state_id_hash(&zeros).unwrap()
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_state_id_for_a_time_before_1970() {
+        let mut header = tenderdash_header();
+        header.time_seconds = -1;
+
+        assert!(matches!(
+            state_id_hash(&header),
+            Err(DapiError::Internal(_))
+        ));
+    }
+
+    #[test]
+    fn should_reject_a_header_that_does_not_hash_to_the_signed_block_id() {
+        let mut commit = tenderdash_commit(7, &[], &[]);
+        commit.signed_header.header.validators_hash = "FF".to_string();
+
+        assert!(matches!(prove(7, commit), Err(DapiError::Internal(_))));
+    }
+
+    #[test]
+    fn should_reject_a_header_that_does_not_hash_to_the_signed_state_id() {
+        // The block hash leaves this field out, so only the state id catches it
+        let mut commit = tenderdash_commit(7, &[], &[]);
+        commit.signed_header.header.core_chain_locked_height += 1;
+
+        assert!(matches!(prove(7, commit), Err(DapiError::Internal(_))));
     }
 
     #[test]
@@ -664,8 +910,7 @@ mod tests {
 
     #[test]
     fn should_not_compare_results_of_a_block_without_transactions() {
-        let commit = tenderdash_commit(7, "ABCD", &[], &[]);
-        let proof = build_block_proof(7, &block_id("ABCD"), commit, 6).unwrap();
+        let proof = prove(7, tenderdash_commit(7, &[], &[])).unwrap();
 
         check_block_contents(&proof, &[], &[]).unwrap();
     }

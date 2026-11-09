@@ -15007,10 +15007,11 @@ typedef GPB_ENUM(TenderdashBlockProof_FieldNumber) {
 
 /**
  * Ties a Tenderdash block to the signature of the quorum that committed it. To
- * check it, recompute the block hash from `header`, build the block id from that
- * hash and `block_id`, and verify `signature` over the precommit vote for them.
- * `header.data_hash` and `header.results_hash` then vouch for the block's
- * transactions and their results.
+ * check it, recompute the block hash and the state id from `header`, compare
+ * them with `block_id.hash` and `block_id.state_id`, and verify `signature`
+ * over the precommit vote for `block_id`. `header.data_hash` and
+ * `header.results_hash` then vouch for the block's transactions and their
+ * results.
  **/
 GPB_FINAL @interface TenderdashBlockProof : GPBMessage
 
@@ -15082,7 +15083,9 @@ typedef GPB_ENUM(TenderdashBlockProof_Header_FieldNumber) {
 };
 
 /**
- * Every field Tenderdash hashes into the block hash
+ * The signed block header. The block hash covers every field except
+ * `core_chain_locked_height`. The state id covers that one, with
+ * `app_version`, `height`, `app_hash` and the time in milliseconds.
  **/
 GPB_FINAL @interface TenderdashBlockProof_Header : GPBMessage
 
