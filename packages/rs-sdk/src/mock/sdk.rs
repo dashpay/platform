@@ -48,6 +48,9 @@ pub struct MockDashPlatformSdk {
     /// The block time the metadata of a response answered from an expectation reports
     /// ([Self::set_response_time_ms]); 0 unless set.
     response_time_ms: u64,
+    /// The block height the metadata of a response answered from an expectation reports
+    /// ([Self::set_response_height]); 0 unless set.
+    response_height: u64,
 }
 
 impl MockDashPlatformSdk {
@@ -80,6 +83,7 @@ impl MockDashPlatformSdk {
             dapi,
             sdk: ArcSwapOption::new(None),
             response_time_ms: 0,
+            response_height: 0,
         }
     }
 
@@ -87,6 +91,13 @@ impl MockDashPlatformSdk {
     /// expectation reports, for code under test that reads the time a response was proved at.
     pub fn set_response_time_ms(&mut self, time_ms: u64) -> &mut Self {
         self.response_time_ms = time_ms;
+        self
+    }
+
+    /// Sets the block height the metadata of every response answered from an expectation
+    /// reports, for code under test that reads the height a response was proved at.
+    pub fn set_response_height(&mut self, height: u64) -> &mut Self {
+        self.response_height = height;
         self
     }
 
@@ -608,6 +619,7 @@ impl MockDashPlatformSdk {
                     ResponseMetadata {
                         protocol_version: dpp::version::LATEST_VERSION,
                         time_ms: self.response_time_ms,
+                        height: self.response_height,
                         ..Default::default()
                     },
                     Proof::default(),
