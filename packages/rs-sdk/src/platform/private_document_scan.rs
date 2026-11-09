@@ -14,8 +14,10 @@
 //! decode and validate. `crate::platform::dashpay` does both for DashPay's private contact
 //! requests.
 
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::error::StaleNodeError;
 use crate::platform::private_document_entries::{
@@ -752,6 +754,87 @@ impl Sdk {
                 }
             }
         })
+    }
+
+    /// [`Self::private_document_pages`], with the height each page's proof was made at, from
+    /// the response metadata verified with it: for a caller that must show every page, and
+    /// the store's end the first page reports, at or above a height. The pages and the walk
+    /// are those of [`Self::private_document_pages`].
+    pub fn private_document_pages_with_heights(
+        &self,
+        data_contract_id: Identifier,
+        document_type_name: &str,
+        start_position: u64,
+        max_concurrent: usize,
+    ) -> impl Stream<Item = Result<(PrivateDocumentPage, u64), Error>> + Send {
+        let sdk = self.clone();
+        let document_type_name = document_type_name.to_string();
+        // Each page is fetched once, from its own start: the height of the
+        // proof read from a start is kept under it until the page is yielded.
+        let heights: Arc<Mutex<BTreeMap<u64, u64>>> = Arc::default();
+        let resolve = {
+            let sdk = sdk.clone();
+            let document_type_name = document_type_name.clone();
+            async move {
+                sdk.fetch_private_document_contract(data_contract_id, &document_type_name)
+                    .await
+            }
+        };
+        let page_heights = Arc::clone(&heights);
+        stream::once(resolve)
+            .flat_map(move |resolved| -> PageStream {
+                match resolved {
+                    Err(error) => Box::pin(stream::once(async move { Err(error) })),
+                    Ok(_) => {
+                        let sdk = sdk.clone();
+                        let document_type_name = document_type_name.clone();
+                        let heights = Arc::clone(&page_heights);
+                        let fetch = move |start: u64| -> PageFuture {
+                            let sdk = sdk.clone();
+                            let heights = Arc::clone(&heights);
+                            let query = PrivateDocumentEntriesQuery::new(
+                                data_contract_id,
+                                document_type_name.clone(),
+                                start,
+                            );
+                            Box::pin(async move {
+                                let (entries, metadata) =
+                                    PrivateDocumentEntries::fetch_with_metadata(&sdk, query, None)
+                                        .await?;
+                                heights
+                                    .lock()
+                                    .unwrap_or_else(PoisonError::into_inner)
+                                    .insert(start, metadata.height);
+                                entries.ok_or_else(|| {
+                                    Error::Generic(format!(
+                                        "no page of the private document type of contract \
+                                         {data_contract_id} from position {start}"
+                                    ))
+                                })
+                            })
+                        };
+                        Box::pin(private_document_page_walk(
+                            fetch,
+                            start_position,
+                            max_concurrent,
+                        ))
+                    }
+                }
+            })
+            .map(move |page| {
+                let page = page?;
+                let height = heights
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .remove(&page.start_position)
+                    .ok_or_else(|| {
+                        Error::Generic(format!(
+                            "no proved height for the private document page from position {}",
+                            page.start_position
+                        ))
+                    })?;
+                Ok((page, height))
+            })
     }
 
     /// Fetches the proved page of the store of the private type `document_type_name` of
@@ -1685,6 +1768,59 @@ mod tests {
                 .flat_map(|page| page.entries.entries.iter().map(|entry| entry.position))
                 .collect::<Vec<_>>(),
             (2..14).collect::<Vec<_>>()
+        );
+    }
+
+    /// The pages read with their proved heights are those of the plain stream, in its order,
+    /// each with the height of the response its proof came with.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_stream_each_page_with_its_proved_height() {
+        use crate::platform::private_document_entries::held_contract_provider::HeldContractProvider;
+        use crate::SdkBuilder;
+        use dpp::version::PlatformVersion;
+
+        let mut sdk: Sdk = SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .with_context_provider(HeldContractProvider::new(
+                Some(contract_with_the_private_type()),
+                false,
+            ))
+            .build()
+            .expect("expected a mock sdk");
+        let contract_id = Identifier::from(CONTRACT_ID);
+        for start in [2, 4, 8, 12] {
+            sdk.mock()
+                .expect_fetch(
+                    PrivateDocumentEntriesQuery::new(contract_id, TYPE_NAME, start),
+                    Some(drive_page(4, 14, start)),
+                )
+                .await
+                .expect("expected to register the page");
+        }
+        let plain: Vec<PrivateDocumentPage> = sdk
+            .private_document_pages(contract_id, TYPE_NAME, 2, 3)
+            .map(|page| page.expect("every page reads"))
+            .collect()
+            .await;
+        let with_heights: Vec<(PrivateDocumentPage, u64)> = sdk
+            .private_document_pages_with_heights(contract_id, TYPE_NAME, 2, 3)
+            .map(|page| page.expect("every page reads"))
+            .collect()
+            .await;
+        assert_eq!(
+            with_heights
+                .iter()
+                .map(|(page, _)| page.clone())
+                .collect::<Vec<_>>(),
+            plain
+        );
+        // The mock answers every page with the same response metadata.
+        let heights: Vec<u64> = with_heights.iter().map(|(_, height)| *height).collect();
+        assert_eq!(heights.len(), 4);
+        assert!(
+            heights.windows(2).all(|pair| pair[0] == pair[1]),
+            "{heights:?}"
         );
     }
 
