@@ -167,11 +167,12 @@ class AppState: ObservableObject {
     }
 
     /// Apply the current policy to the SDK's fixed adaptive provider. Call when
-    /// `quorumMode` changes and when SPV progress changes so the active-source
-    /// indicator is refreshed as Auto becomes ready.
+    /// `quorumMode` changes and when SPV progress or running state changes, so
+    /// the active-source indicator follows Auto as SPV becomes ready or stops
+    /// being ready.
     ///
-    /// - `.auto`: SPV once the header + masternode lists are fully synced,
-    ///   trusted until then.
+    /// - `.auto`: SPV while it runs with the header + masternode lists fully
+    ///   synced, trusted otherwise.
     /// - `.spv`: SPV unconditionally — installed even before the SPV client
     ///   starts. The lookup fails closed ("SPV Client not started" / proofs
     ///   fail until synced) rather than falling back to trusted.
@@ -185,7 +186,13 @@ class AppState: ObservableObject {
 
         do {
             try sdk.setQuorumMode(sdkQuorumMode)
-            quorumSource = sdk.quorumSource
+            // Called on every SPV progress tick. Assigning an unchanged value
+            // still publishes, and every view observing this object, the
+            // root tab view among them, would re-render with each tick.
+            let source = sdk.quorumSource
+            if quorumSource != source {
+                quorumSource = source
+            }
         } catch {
             NSLog("⚠️ AppState: failed to apply quorum mode: \(error.localizedDescription)")
         }

@@ -182,8 +182,11 @@ struct SwiftExampleAppApp: App {
                 }
                 // Refresh adaptive-provider policy and the active-source
                 // indicator as SPV readiness changes.
-                .onChange(of: walletManager.spvProgress) { _, _ in
-                    platformState.applyQuorumMode()
+                .background {
+                    QuorumSourceRefresh(
+                        walletManager: walletManager,
+                        platformState: platformState
+                    )
                 }
                 // Apply the Quorum Source picker to the fixed adaptive provider.
                 .onChange(of: platformState.quorumMode) { _, _ in
@@ -532,5 +535,30 @@ struct SwiftExampleAppApp: App {
                 )
             }
         }
+    }
+}
+
+/// Leaf that applies the quorum mode again whenever SPV readiness may have
+/// changed, so the adaptive provider's policy and the active-source
+/// indicator follow it. Readiness needs SPV running as well as synced, and a
+/// failed sync loop stops SPV without changing its progress, so both are
+/// observed.
+///
+/// The scene does not observe the wallet manager, so an `.onChange` on its
+/// content would re-read these values only when one of the scene's own
+/// objects publishes. This view observes the manager instead, and as a leaf
+/// it is the only view that re-renders on every progress tick.
+private struct QuorumSourceRefresh: View {
+    @ObservedObject var walletManager: PlatformWalletManager
+    let platformState: AppState
+
+    var body: some View {
+        Color.clear
+            .onChange(of: walletManager.spvProgress) { _, _ in
+                platformState.applyQuorumMode()
+            }
+            .onChange(of: walletManager.spvIsRunning) { _, _ in
+                platformState.applyQuorumMode()
+            }
     }
 }
