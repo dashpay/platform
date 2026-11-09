@@ -26,7 +26,6 @@ impl Drive {
         self.grove_apply_batch_with_flags_update(
             ops,
             validate,
-            !full_handover_owners.is_empty(),
             |cost, old_flags, new_flags| {
                 update_element_flags_for_owner_change(
                     cost,

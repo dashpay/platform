@@ -26,7 +26,6 @@ impl Drive {
         self.grove_apply_batch_with_flags_update(
             ops,
             validate,
-            false,
             |cost, old_flags, new_flags| {
                 StorageFlags::update_element_flags(cost, old_flags, new_flags)
                     .map_err(|e| GroveError::JustInTimeElementFlagsClientError(e.to_string()))
@@ -39,12 +38,10 @@ impl Drive {
 
     /// Applies the batch with the given flags update and passes the costs to
     /// `push_drive_operation_result`.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn grove_apply_batch_with_flags_update<U: Into<ElementFlagsUpdate>>(
         &self,
         ops: GroveDbOpBatch,
         validate: bool,
-        allow_replacement_accounting: bool,
         update_element_flags: impl FnMut(
             &StorageCost,
             Option<ElementFlags>,
@@ -104,7 +101,6 @@ impl Drive {
                 disable_operation_consistency_check: !self.config.batching_consistency_verification,
                 base_root_storage_is_free: true,
                 batch_pause_height: None,
-                allow_replacement_accounting,
             }),
             update_element_flags,
             |flags, removed_key_bytes, removed_value_bytes| {
