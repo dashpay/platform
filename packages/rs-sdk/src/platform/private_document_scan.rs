@@ -36,6 +36,8 @@ use zeroize::{Zeroize, Zeroizing};
 struct ScanRecipient {
     identity_id: Identifier,
     key_ids: Vec<KeyID>,
+    /// The public key of each of `keys`, by the same index as `key_ids`.
+    public_keys: Vec<PublicKey>,
     keys: PrivateDocumentRecipientKeys,
 }
 
@@ -73,8 +75,14 @@ pub struct ReceivedPrivateDocumentEntry {
     pub block_time_ms: u64,
     /// The identity it is to.
     pub recipient_identity_id: Identifier,
-    /// The key of that identity it is encrypted to.
+    /// The key of that identity it is encrypted to: the first of [`Self::recipient_key_ids`].
     pub recipient_key_id: KeyID,
+    /// Every key id the wallet's keys were given under for that identity whose key is the point
+    /// the entry is encrypted to, in the order they were given. One point may be held under
+    /// several ids, such as a compressed and an uncompressed encoding of it, or two
+    /// registrations of the identity: a reader takes the first one its key policy accepts at
+    /// the entry's time, rather than refusing the entry for an ineligible alias.
+    pub recipient_key_ids: Vec<KeyID>,
     /// The opened entry. Its sender is what it claims, until
     /// [`PrivateDocumentScanKeys::verify_sender`] checks it.
     pub entry: OpenedPrivateDocumentEntry,
@@ -162,6 +170,7 @@ impl PrivateDocumentScanKeys {
         self.recipients.push(ScanRecipient {
             identity_id,
             key_ids: keys.iter().map(|(key_id, _)| *key_id).collect(),
+            public_keys: secret_keys.iter().map(PublicKey::from_secret_key).collect(),
             keys: PrivateDocumentRecipientKeys::new(&secret_keys),
         });
         for secret_key in &mut secret_keys {
@@ -324,16 +333,37 @@ impl PrivateDocumentScanKeys {
             }
         }
         let received = opened_for.and_then(|(recipient, opened)| {
-            let recipient_key_id = opened
+            let opening_key_id = opened
                 .recipient_key_index()
                 .and_then(|index| recipient.key_ids.get(index))
                 .copied()?;
+            // Every id the point the entry is encrypted to was given under for the identity,
+            // across its registrations: the reader picks one its key policy accepts.
+            let point = opened.recipient_public_key();
+            let mut recipient_key_ids = Vec::new();
+            for registration in self
+                .recipients
+                .iter()
+                .filter(|registration| registration.identity_id == recipient.identity_id)
+            {
+                for (key_id, public_key) in
+                    registration.key_ids.iter().zip(&registration.public_keys)
+                {
+                    if public_key == point && !recipient_key_ids.contains(key_id) {
+                        recipient_key_ids.push(*key_id);
+                    }
+                }
+            }
+            if recipient_key_ids.is_empty() {
+                recipient_key_ids.push(opening_key_id);
+            }
             Some(ReceivedPrivateDocumentEntry {
                 position: entry.position,
                 block_height: entry.block_height,
                 block_time_ms: entry.block_time_ms,
                 recipient_identity_id: recipient.identity_id,
-                recipient_key_id,
+                recipient_key_id: recipient_key_ids[0],
+                recipient_key_ids,
                 entry: opened,
             })
         });

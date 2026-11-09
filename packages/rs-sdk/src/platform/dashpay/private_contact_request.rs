@@ -1105,7 +1105,7 @@ pub fn private_contact_requests_from_scan(
             reason,
         };
         match reader.read_received(&received) {
-            Ok(request) => {
+            Ok((request, recipient_key_id)) => {
                 let sender_id = Identifier::from(*received.entry.sender_identity_id());
                 if !seen.insert((
                     received.recipient_identity_id,
@@ -1120,7 +1120,7 @@ pub fn private_contact_requests_from_scan(
                     block_height: received.block_height,
                     block_time_ms: received.block_time_ms,
                     recipient_id: received.recipient_identity_id,
-                    recipient_key_id: received.recipient_key_id,
+                    recipient_key_id,
                     sender_id,
                     sender_key_id: received.entry.sender_key_id(),
                     commitment: *received.entry.commitment(),
@@ -1188,37 +1188,50 @@ impl EntryReader<'_> {
             .and_then(|proved| proved.identity.as_ref())
     }
 
-    /// The request a received entry holds, once its sender and recipient key are checked.
+    /// The request a received entry holds, once its sender and recipient key are checked,
+    /// with the id of the recipient key it is read under: the first of the ids the entry's
+    /// point is held under (`ReceivedPrivateDocumentEntry::recipient_key_ids`) that sealing
+    /// would have encrypted to at the entry's time.
     fn read_received(
         &self,
         received: &ReceivedPrivateDocumentEntry,
-    ) -> Result<PrivateContactRequest, PrivateContactRequestRejection> {
+    ) -> Result<(PrivateContactRequest, KeyID), PrivateContactRequestRejection> {
         self.check_sender(&received.entry, received.block_time_ms)?;
-        // The key the entry opened with, checked as sealing checks it, at the entry's time.
-        let recipient_key_problem = match self.identity(&received.recipient_identity_id) {
-            None => Some("the recipient identity does not exist".to_string()),
-            Some(recipient) => match recipient_key(
+        let recipient = self
+            .identity(&received.recipient_identity_id)
+            .ok_or_else(|| {
+                PrivateContactRequestRejection::RecipientKeyNotUsable(
+                    "the recipient identity does not exist".to_string(),
+                )
+            })?;
+        let candidates: &[KeyID] = if received.recipient_key_ids.is_empty() {
+            std::slice::from_ref(&received.recipient_key_id)
+        } else {
+            &received.recipient_key_ids
+        };
+        // Each id the point is held under, checked as sealing checks it, at the entry's time.
+        let mut first_problem = None;
+        for &key_id in candidates {
+            let problem = match recipient_key(
                 recipient,
-                received.recipient_key_id,
+                key_id,
                 self.dashpay_id,
                 Some(received.block_time_ms),
             ) {
-                Err(problem) => Some(problem),
+                Err(problem) => problem,
                 Ok(public_key) if public_key != *received.entry.recipient_public_key() => {
-                    Some(format!(
-                        "the recipient key {} is not the key the entry is encrypted to",
-                        received.recipient_key_id
-                    ))
+                    format!("the recipient key {key_id} is not the key the entry is encrypted to")
                 }
-                Ok(_) => None,
-            },
-        };
-        if let Some(problem) = recipient_key_problem {
-            return Err(PrivateContactRequestRejection::RecipientKeyNotUsable(
-                problem,
-            ));
+                Ok(_) => {
+                    let request = (self.decode)(received.entry.payload())?;
+                    return Ok((request, key_id));
+                }
+            };
+            first_problem.get_or_insert(problem);
         }
-        (self.decode)(received.entry.payload())
+        Err(PrivateContactRequestRejection::RecipientKeyNotUsable(
+            first_problem.unwrap_or_else(|| "no recipient key is named".to_string()),
+        ))
     }
 
     /// The request a sent entry holds, once it is checked to be the identity's own: someone
@@ -2301,6 +2314,97 @@ mod tests {
             read_with(hash160).as_slice(),
             [PrivateContactRequestRejection::RecipientKeyNotUsable(_)]
         ));
+    }
+
+    /// One point held under two ids, a disabled compressed key 1 and an enabled uncompressed
+    /// encoding of it as key 2, opens under either: the request sealed to key 2 is read once,
+    /// under key 2, rather than refused for key 1. So it is when the identity's keys were given
+    /// in two registrations, and when key 1 comes first.
+    #[test]
+    fn should_read_a_request_under_an_eligible_alias_of_the_key_it_opened_with() {
+        let contract = dashpay();
+        let sender = sender_identity(None);
+        let request = smallest_request(1);
+        let uncompressed = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 2,
+            purpose: Purpose::DECRYPTION,
+            security_level: SecurityLevel::MEDIUM,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(
+                PublicKey::from_secret_key(&secret_key(2))
+                    .serialize_uncompressed()
+                    .to_vec(),
+            ),
+            disabled_at: None,
+        });
+        let recipient = with_key(
+            with_key(recipient_identity(), uncompressed),
+            key(
+                1,
+                Purpose::DECRYPTION,
+                KeyType::ECDSA_SECP256K1,
+                &secret_key(2),
+                Some(1),
+            ),
+        );
+        let signature = sign_private_document_signing_data(
+            &private_contact_request_signing_data(
+                &contract,
+                &sender,
+                1,
+                &recipient,
+                2,
+                &request,
+                PlatformVersion::latest(),
+            )
+            .expect("the keys check"),
+            &secret_key(9),
+        );
+        let entry = seal_private_contact_request(
+            &contract,
+            &PrivateContactRequestSender {
+                identity: &sender,
+                encryption_key_id: 1,
+                encryption_secret_key: &secret_key(1),
+                signing_key_id: 0,
+                signature: &signature,
+            },
+            &recipient,
+            2,
+            &request,
+            &[3; 32],
+            PlatformVersion::latest(),
+        )
+        .expect("the request seals to the enabled alias")
+        .to_vec();
+
+        let recipient_id = Identifier::from(RECIPIENT_ID);
+        for (case, keys) in [
+            (
+                "one registration",
+                PrivateDocumentScanKeys::new()
+                    .with_recipient(recipient_id, &[(1, secret_key(2)), (2, secret_key(2))]),
+            ),
+            (
+                "two registrations",
+                PrivateDocumentScanKeys::new()
+                    .with_recipient(recipient_id, &[(1, secret_key(2))])
+                    .with_recipient(recipient_id, &[(2, secret_key(2))]),
+            ),
+        ] {
+            let scan = read(
+                &contract,
+                vec![entry.clone()],
+                &keys,
+                &[sender.clone(), recipient.clone()],
+            );
+            assert_eq!(scan.rejected, vec![], "{case}");
+            assert_eq!(scan.received.len(), 1, "{case}: read once");
+            assert_eq!(scan.received[0].recipient_key_id, 2, "{case}");
+            assert_eq!(scan.received[0].request, request, "{case}");
+        }
     }
 
     /// An entry the sender's outgoing viewing key recovers is the sender's only when it names
