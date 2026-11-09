@@ -7552,40 +7552,30 @@ mod tests {
         let (_manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
         let wallet_id = alice_wallet.wallet_id();
         let commitment = [0x5C; 32];
-        let identities = |change: Box<
-            dyn FnOnce(&mut crate::wallet::identity::IdentityManager, &WalletPersister) + Send,
-        >| {
+        {
             let iw = alice_wallet.identity();
-            async move {
-                let mut wm = iw.wallet_manager.write().await;
-                change(
-                    &mut wm
-                        .get_wallet_info_mut(&wallet_id)
-                        .expect("the wallet")
-                        .identity_manager,
-                    &iw.persister,
-                );
-            }
-        };
-        identities(Box::new(|manager, persister| {
-            manager
-                .remove_identity(&alice.id(), persister)
+            let mut wm = iw.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet_id)
+                .expect("the wallet")
+                .identity_manager
+                .remove_identity(&alice.id(), &iw.persister)
                 .expect("removed");
-        }))
-        .await;
+        }
         let view = alice_wallet.identity().dashpay();
         let restored = view
             .restore_private_payments(&[(alice.id(), bob.id(), 1, commitment)], true)
             .await
             .expect("restored");
         assert!(restored.is_empty(), "the sender is not managed");
-        let loaded = alice.clone();
-        identities(Box::new(move |manager, persister| {
-            manager
-                .add_identity(loaded, 0, wallet_id, persister)
+        {
+            let iw = alice_wallet.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet_id)
+                .expect("the wallet")
+                .identity_manager
+                .add_identity(alice.clone(), 0, wallet_id, &iw.persister)
                 .expect("loaded");
-        }))
-        .await;
+        }
         let send = |kept: Arc<Mutex<Vec<BinaryData>>>| {
             let view = alice_wallet.identity().dashpay();
             let (alice_id, bob_id) = (alice.id(), bob.id());
