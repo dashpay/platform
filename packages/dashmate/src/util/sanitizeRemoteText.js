@@ -9,9 +9,11 @@ const MAX_LENGTH = 500;
  * Characters that must never reach a terminal: the C0 controls, which include
  * ESC and therefore every ANSI sequence, DEL, the C1 controls, and the
  * bidirectional overrides that let text reorder how it is displayed.
+ *
+ * Exported so that every place printing remote text strips the same set.
  */
 // eslint-disable-next-line no-control-regex
-const UNPRINTABLE = /[\u0000-\u001F\u007F-\u009F\u061C\u200B-\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069\uFEFF]/g;
+export const UNPRINTABLE = /[\u0000-\u001F\u007F-\u009F\u061C\u200B-\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069\uFEFF]/g;
 
 /**
  * Make text received from a remote service safe to print
