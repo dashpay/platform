@@ -23,6 +23,7 @@
 //! the requests it sent from the store alone.
 
 use super::contact_request::{recipient_key_purpose_is_valid, sender_key_purpose_is_valid};
+use crate::error::StaleNodeError;
 use crate::platform::private_document_scan::{
     PrivateDocumentScan, PrivateDocumentScanKeys, ReceivedPrivateDocumentEntry,
     SentPrivateDocumentEntry,
@@ -865,12 +866,25 @@ pub struct ProvedIdentity {
     pub proved_at_height: u64,
 }
 
+/// The error for an identity proved at `received_height`, before the block `expected_height` of
+/// an entry it checks: the node's snapshot is older than the entry, so fetching it again, from
+/// another node or later, may succeed ([`StaleNodeError::Height`], which `can_retry` takes as
+/// retryable).
+fn stale_identity(expected_height: u64, received_height: u64) -> Error {
+    Error::StaleNode(StaleNodeError::Height {
+        expected_height,
+        received_height,
+        tolerance_blocks: 0,
+    })
+}
+
 /// How many identities [`Sdk::fetch_private_contact_request_identities`] fetches at once.
 const PRIVATE_CONTACT_REQUEST_IDENTITY_FETCHES: usize = 4;
 
 /// [`Sdk::fetch_private_contact_request_identities`] with `fetch` proving one identity: each
 /// identity `needed` lists is fetched, a few at a time, until proved at or after its height,
-/// twice at most. A stale second proof or a failed fetch fails the whole fetch.
+/// twice at most. A stale second proof fails the whole fetch with the retryable
+/// `Error::StaleNode(StaleNodeError::Height)`, and a failed fetch with its own error.
 async fn fetch_proved_identities<F, Fut>(
     needed: &BTreeMap<Identifier, u64>,
     fetch: F,
@@ -893,11 +907,13 @@ where
                 proved = fetch(identity_id).await?;
             }
             if proved.proved_at_height < height {
-                return Err(Error::Generic(format!(
-                    "the identity {identity_id} was proved at block {}, before the block \
-                     {height} of an entry it checks",
-                    proved.proved_at_height
-                )));
+                tracing::debug!(
+                    identity = %identity_id,
+                    proved_at = proved.proved_at_height,
+                    needed = height,
+                    "an identity was proved twice before the block of an entry it checks"
+                );
+                return Err(stale_identity(height, proved.proved_at_height));
             }
             Ok((identity_id, proved))
         })
@@ -949,8 +965,9 @@ pub fn private_contact_request_identities(scan: &PrivateDocumentScan) -> BTreeMa
 /// Reads the private contact requests of a scan of DashPay's `privateContactRequest` store.
 ///
 /// `identities` holds the identities [`private_contact_request_identities`] lists, each proved
-/// at or after the height it lists: a missing one, or one proved earlier, fails the read, to be
-/// fetched again. Each entry, received or sent, is checked before its payload is read:
+/// at or after the height it lists. One proved earlier fails the read with the retryable
+/// `Error::StaleNode(StaleNodeError::Height)`, to be fetched again; a missing one, or one given
+/// under another id, is the caller's error, which fetching again does not lift. Each entry, received or sent, is checked before its payload is read:
 /// - it must be signed, and its sender identity must exist;
 /// - the encryption key it names must be the sender's `ECDSA_SECP256K1` `ENCRYPTION` key, not
 ///   disabled when the entry was appended, and bound, if at all, to DashPay or its contact
@@ -1036,11 +1053,13 @@ pub fn private_contact_requests_from_scan(
                 )))
             }
             Some(proved) if proved.proved_at_height < height => {
-                return Err(Error::Generic(format!(
-                    "the identity {identity_id} was proved at block {}, before the block {height} \
-                     of an entry it checks: fetch it again",
-                    proved.proved_at_height
-                )))
+                tracing::debug!(
+                    identity = %identity_id,
+                    proved_at = proved.proved_at_height,
+                    needed = height,
+                    "an identity was proved before the block of an entry it checks"
+                );
+                return Err(stale_identity(height, proved.proved_at_height));
             }
             Some(_) => {}
         }
@@ -1433,6 +1452,7 @@ mod tests {
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::ProtocolError;
     use platform_encryption::sign_private_document_signing_data;
+    use rs_dapi_client::CanRetry;
 
     const SENDER_ID: [u8; 32] = [0xA0; 32];
     const RECIPIENT_ID: [u8; 32] = [0xB0; 32];
@@ -3005,28 +3025,35 @@ mod tests {
             PlatformVersion::latest()
         )
         .is_ok());
+        let stale = private_contact_requests_from_scan(
+            &contract,
+            scan.clone(),
+            &proved(9),
+            PlatformVersion::latest(),
+        )
+        .expect_err("a sender proved a block before its entry");
         assert!(
-            private_contact_requests_from_scan(
-                &contract,
-                scan.clone(),
-                &proved(9),
-                PlatformVersion::latest()
-            )
-            .is_err(),
-            "a sender proved a block before its entry"
+            matches!(
+                stale,
+                Error::StaleNode(StaleNodeError::Height {
+                    expected_height: 10,
+                    received_height: 9,
+                    ..
+                })
+            ),
+            "{stale:?}"
         );
+        assert!(stale.can_retry(), "fetching it again may help");
         let mut without_recipient = proved(10);
         without_recipient.remove(&Identifier::from(RECIPIENT_ID));
-        assert!(
-            private_contact_requests_from_scan(
-                &contract,
-                scan,
-                &without_recipient,
-                PlatformVersion::latest()
-            )
-            .is_err(),
-            "an identity not given"
-        );
+        let missing = private_contact_requests_from_scan(
+            &contract,
+            scan,
+            &without_recipient,
+            PlatformVersion::latest(),
+        )
+        .expect_err("an identity not given");
+        assert!(!missing.can_retry(), "the caller's mistake: {missing:?}");
     }
 
     /// Below protocol version 15 the SDK refuses private contact requests before resolving
@@ -3251,7 +3278,7 @@ mod tests {
                 proved_at_height: 10,
             })
         );
-        assert!(fetch_proved_identities(
+        let twice_stale = fetch_proved_identities(
             &needed,
             scripted(vec![
                 proved(Some(sender_identity(None)), 9),
@@ -3259,7 +3286,22 @@ mod tests {
             ]),
         )
         .await
-        .is_err());
+        .expect_err("two stale proofs");
+        assert!(
+            matches!(
+                twice_stale,
+                Error::StaleNode(StaleNodeError::Height {
+                    expected_height: 10,
+                    received_height: 9,
+                    tolerance_blocks: 0,
+                })
+            ),
+            "{twice_stale:?}"
+        );
+        assert!(
+            twice_stale.can_retry(),
+            "a later fetch may be recent enough"
+        );
         assert!(fetch_proved_identities(
             &needed,
             scripted(vec![Err(Error::Generic("unreachable".to_string()))]),
