@@ -227,9 +227,11 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                 navController.popBackStack()
             } catch (e: Exception) {
                 when (val outcome = ContactRequestSubmissionOutcome.of(e)) {
-                    // Nothing was sent: the screen shows the pending request
-                    // and offers the private sync that settles it.
-                    ContactRequestSubmissionOutcome.PrivateRequestPending -> Unit
+                    // Nothing was sent, and the wallet may hold nothing for
+                    // it: the screen shows it as pending and offers the
+                    // private sync that settles it.
+                    ContactRequestSubmissionOutcome.PrivateRequestPending ->
+                        recipientPending = recipientPending.withRefusal(recipient.toHex())
                     ContactRequestSubmissionOutcome.MayHaveGoneThrough -> {
                         kickDashPaySync(scope, m)
                         unconfirmedNotice = ContactRequestSubmissionOutcome.MAY_HAVE_GONE_THROUGH_MESSAGE
@@ -254,7 +256,12 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
         isSyncingPrivate = true
         scope.launch {
             try {
-                syncPrivateContactRequests(w, m)?.let { errorMessage = it }
+                val notice = syncPrivateContactRequests(w, m)
+                if (notice == null) {
+                    recipientPending = recipientPending.afterPrivateSync()
+                } else {
+                    errorMessage = notice
+                }
             } finally {
                 isSyncingPrivate = false
                 pendingReadVersion++
@@ -292,7 +299,8 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                         unconfirmedNotice = ContactRequestSubmissionOutcome.MAY_HAVE_GONE_THROUGH_MESSAGE
                     }
                     // Nothing was sent: the screen offers the private sync.
-                    ContactRequestSubmissionOutcome.PrivateRequestPending -> Unit
+                    ContactRequestSubmissionOutcome.PrivateRequestPending ->
+                        recipientPending = recipientPending.withRefusal(recipient.toHex())
                     is ContactRequestSubmissionOutcome.Failed ->
                         errorMessage = "Accept failed: ${outcome.message}"
                 }

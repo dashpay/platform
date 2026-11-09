@@ -60,6 +60,12 @@ sealed interface ContactRequestSubmissionOutcome {
  * off what would submit one (Accept, Ignore, Send). A failed read is not
  * "nothing pending": the last successful snapshot stays, and those controls
  * stay off for every contact until a read covering it succeeds.
+ *
+ * A send or accept Rust refused as pending (code 71) is kept apart from the
+ * read: code 71 also means the private store could not be read to its end
+ * before the first send or accept since load, with nothing reserved, so the
+ * read may find nothing pending. That contact stays pending, with the
+ * private sync offered, until a private sync completes.
  * ← Swift `PrivateRepliesPendingSnapshot` (`ContactRequestOutcomes.swift`).
  */
 data class PrivateRepliesPendingSnapshot(
@@ -69,6 +75,8 @@ data class PrivateRepliesPendingSnapshot(
     val covered: Set<String> = emptySet(),
     /** False after a failed read, until a read succeeds. */
     val available: Boolean = true,
+    /** Contacts a send or accept was refused for as pending since the last completed private sync. */
+    val refused: Set<String> = emptySet(),
 ) {
     /** Whether the last read failed. */
     val isUnavailable: Boolean get() = !available
@@ -81,18 +89,28 @@ data class PrivateRepliesPendingSnapshot(
         if (read == null) {
             copy(available = false)
         } else {
-            PrivateRepliesPendingSnapshot(read, contactIds.toSet(), available = true)
+            copy(pending = read, covered = contactIds.toSet(), available = true)
         }
 
-    /** Whether the last successful read found a private request to [contactId] pending. */
-    fun isPending(contactId: String): Boolean = contactId in pending
+    /** This snapshot after a send or accept to [contactId] was refused as pending (code 71). */
+    fun withRefusal(contactId: String): PrivateRepliesPendingSnapshot = copy(refused = refused + contactId)
+
+    /** This snapshot after a completed private sync, which settles every refusal. */
+    fun afterPrivateSync(): PrivateRepliesPendingSnapshot = copy(refused = emptySet())
+
+    /**
+     * Whether [contactId] is pending: the last successful read found a
+     * private request to it, or a send or accept to it was refused as
+     * pending since the last completed private sync.
+     */
+    fun isPending(contactId: String): Boolean = contactId in pending || contactId in refused
 
     /**
      * Whether a send or reply to [contactId] may be offered: a successful
      * read covered it and found nothing pending.
      */
     fun allowsSubmission(contactId: String): Boolean =
-        available && contactId in covered && contactId !in pending
+        available && contactId in covered && !isPending(contactId)
 
     companion object {
         const val UNAVAILABLE_MESSAGE = "Could not read whether a private request to this " +

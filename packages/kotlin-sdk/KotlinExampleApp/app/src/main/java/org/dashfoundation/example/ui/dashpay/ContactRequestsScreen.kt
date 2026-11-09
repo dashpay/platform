@@ -194,13 +194,18 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
                 }
             } catch (e: Exception) {
                 when (val outcome = ContactRequestSubmissionOutcome.of(e)) {
-                    ContactRequestSubmissionOutcome.MayHaveGoneThrough,
-                    ContactRequestSubmissionOutcome.PrivateRequestPending,
-                    -> {
+                    ContactRequestSubmissionOutcome.MayHaveGoneThrough -> {
                         // As the send screen treats an unconfirmed spend: not
                         // a failure to retry. The wallet keeps the reply
-                        // pending, and the row reads that; a sync (pull to
-                        // refresh reads the private store) settles it.
+                        // pending, and the row reads that.
+                        kickDashPaySync(scope, m)
+                    }
+                    ContactRequestSubmissionOutcome.PrivateRequestPending -> {
+                        // Nothing was sent, and the wallet may hold nothing
+                        // for it (the store was not read to its end): the row
+                        // stays pending until a private sync (pull to
+                        // refresh) settles it.
+                        walletPending = walletPending.withRefusal(hex)
                         kickDashPaySync(scope, m)
                     }
                     is ContactRequestSubmissionOutcome.Failed ->
@@ -249,7 +254,10 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
                     isRefreshing = true
                     manager?.let { m ->
                         attachOrStartSync(m)
-                        wallet?.let { privateRefreshNotice = syncPrivateContactRequests(it, m) }
+                        wallet?.let {
+                            privateRefreshNotice = syncPrivateContactRequests(it, m)
+                            if (privateRefreshNotice == null) walletPending = walletPending.afterPrivateSync()
+                        }
                         pendingReadVersion++
                     }
                     isRefreshing = false

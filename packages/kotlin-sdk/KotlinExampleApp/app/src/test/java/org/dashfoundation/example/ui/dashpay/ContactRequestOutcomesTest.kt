@@ -83,6 +83,30 @@ class ContactRequestOutcomesTest {
     }
 
     /**
+     * A send refused as pending (code 71) when the wallet reserved nothing
+     * (its store was not read to its end): the following read finds nothing
+     * pending, yet the contact stays pending, with the private sync offered,
+     * until a private sync completes.
+     */
+    @Test
+    fun shouldKeepARefusedContactPendingAfterAnEmptyReadUntilAPrivateSync() {
+        var snapshot = PrivateRepliesPendingSnapshot()
+            .withRefusal("01")
+            .recorded(emptySet(), listOf("01"))
+        assertFalse(snapshot.isUnavailable)
+        assertTrue(snapshot.isPending("01"))
+        assertFalse(snapshot.allowsSubmission("01"))
+        assertEquals(
+            ContactRequestSubmissionOutcome.PRIVATE_REQUEST_PENDING_MESSAGE,
+            ContactRequestSubmissionOutcome.rowMessage(pending = snapshot.isPending("01"), error = null),
+        )
+
+        snapshot = snapshot.afterPrivateSync().recorded(emptySet(), listOf("01"))
+        assertFalse(snapshot.isPending("01"))
+        assertTrue(snapshot.allowsSubmission("01"))
+    }
+
+    /**
      * A successful read that found nothing pending offers every contact it
      * covered, and nothing it did not.
      */
