@@ -288,6 +288,7 @@ mod tests {
             .expect("expected a mock sdk");
         let query = PrivateDocumentEntriesQuery::new(Identifier::new([4; 32]), "secret", 64);
         let page = PrivateDocumentEntries {
+            chunk_power: None,
             entries: (64..67u64)
                 .map(|position| PrivateDocumentEntry {
                     position,

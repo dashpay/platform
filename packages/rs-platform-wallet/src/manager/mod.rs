@@ -47,6 +47,8 @@ use crate::wallet::asset_lock::LockNotifyHandler;
 use crate::wallet::core::{BalanceUpdateHandler, SpendObservationHandler};
 use crate::wallet::identity::network::DashPayPaymentHandler;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+#[cfg(feature = "shielded")]
+use crate::wallet::shielded::NetworkShieldedCoordinator;
 use crate::wallet::PlatformWallet;
 
 /// Registry key identifying each background worker the manager joins at
@@ -900,6 +902,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// per-wallet bind looks up the coordinator from the manager
     /// and errors out if it hasn't been configured.
     ///
+    /// Once the store is open, restores the reservations of the unconfirmed
+    /// private contact request payments of every wallet the manager holds
+    /// whose public contact requests a load held for them, with no keys
+    /// ([`Self::restore_held_private_contact_payments`]). Call it right after
+    /// [`Self::load_from_persistor`] for a wallet that bound a shielded
+    /// account before: until then, its public contact requests are refused
+    /// with [`PlatformWalletError::PrivateContactPaymentsNotRestored`].
+    ///
     /// Subsequent calls with the **same** `db_path` are a no-op
     /// (configuration is idempotent at the path level). A second
     /// call with a **different** path returns
@@ -918,6 +928,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let mut slot = self.shielded_coordinator.write().await;
         if let Some(existing) = slot.as_ref() {
             if existing.db_path() == db_path.as_path() {
+                let existing = Arc::clone(existing);
+                drop(slot);
+                self.restore_held_private_contact_payments(&existing).await;
                 return Ok(());
             }
             return Err(crate::error::PlatformWalletError::ShieldedStoreError(
@@ -969,8 +982,42 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .on_shielded_tree_progress(leaves_committed, total_target);
             },
         )));
-        *slot = Some(coordinator);
+        *slot = Some(Arc::clone(&coordinator));
+        drop(slot);
+        self.restore_held_private_contact_payments(&coordinator)
+            .await;
         Ok(())
+    }
+
+    /// Restore from `coordinator`'s store, with no keys, the reservations of
+    /// the unconfirmed private contact request payments of every wallet this
+    /// manager holds whose public contact requests wait for them
+    /// ([`PlatformWallet::restore_private_contact_payments`]): a wallet loaded
+    /// after binding a shielded account in an earlier process. A wallet whose
+    /// restoration fails stays held, until a bind or a later call restores it.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn restore_held_private_contact_payments(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+    ) {
+        let held: Vec<Arc<PlatformWallet>> = self
+            .wallets
+            .load()
+            .values()
+            .filter(|wallet| wallet.persister().private_payments_unrestored())
+            .cloned()
+            .collect();
+        for wallet in held {
+            if let Err(error) = wallet.restore_private_contact_payments(coordinator).await {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet.wallet_id()),
+                    %error,
+                    "unconfirmed private contact request payments not restored; the wallet's \
+                     public contact requests stay held until a bind or a later configure \
+                     restores them"
+                );
+            }
+        }
     }
 
     /// Snapshot of the currently-installed shielded coordinator,

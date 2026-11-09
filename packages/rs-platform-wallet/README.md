@@ -121,6 +121,12 @@ Recovery preserves the original signed record with an `Unknown` outcome across r
 
 Startup errors distinguish damaged recovery metadata or undecodable signed bytes (`ShieldedRecoveryCorrupted`) from missing/replaced viewing keys (`ShieldedRecoveryKeysRequired`). Failure to recover an output set can also mean damaged ciphertext or output metadata; restore the original keys or a known-good backup before choosing explicit recovery. Invalid SQLite identifiers, nullifiers, and state flags fail startup without deleting their rows. When signed bytes are damaged but the recovery key remains readable, listing retains its account/activity identifiers and leaves the undecodable identity, nonce, and amount absent.
 
+## Private contact request payments after a restart
+
+A private contact request's payment that is unconfirmed when the process ends stays in the shielded store with the request it pays for. Until its reservation is restored, nothing shows that the pair is taken: the request's entry is not in DashPay's store until the payment executes. So a wallet that `load_from_persistor` loads after it bound a shielded account (its persisted viewing key shows it) sends and accepts no public contact request until its payments are restored, and returns `PrivateContactPaymentsNotRestored` (FFI code 71, pending) with nothing signed or broadcast. A wallet with no persisted viewing key never bound a shielded account, since a bind persists the key before installing anything and refuses when it cannot, so it is never held.
+
+`PlatformWalletManager::configure_shielded` restores the payments of every held wallet from the store, with no keys, and a load after it restores those it loads. Binding a wallet's shielded account restores its own. Hosts that use shielded support call `configure_shielded` right after the load; a host that opens no shielded store this session leaves those wallets' public contact requests refused until it does.
+
 ## Shielded balance API migration
 
 The local shielded balance API introduces three Rust source compatibility changes:
@@ -145,6 +151,12 @@ The local shielded balance API introduces three Rust source compatibility change
   Set it from the presence of a persisted scan-state row, including a row whose
   index is zero. An absent row is different from a recorded empty scan; do not
   infer presence merely from `last_synced_index > 0`.
+
+## Shielded store lifetime migration
+
+`ShieldedStore` now requires `Send + Sync + 'static`: a spend dropped before it hands its reserved notes over releases them on a spawned task when the store is locked, and that task owns the store's `Arc`. This is a Rust source compatibility change, not a consensus one.
+
+A custom `ShieldedStore` that borrows from its embedding application (a `&'a` connection, configuration or buffer held in the store type) no longer satisfies the trait. Move the borrowed resource into the store, by value or behind an `Arc` (an `Arc<Mutex<_>>` or `Arc<RwLock<_>>` for one shared with the application), so the store type has no lifetime parameter. The in-repo [InMemoryShieldedStore](src/wallet/shielded/store.rs) and [FileBackedShieldedStore](src/wallet/shielded/file_store.rs) already own what they use and need no change.
 
 ## Dependencies
 

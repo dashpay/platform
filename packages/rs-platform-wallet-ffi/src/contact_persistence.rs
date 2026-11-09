@@ -308,6 +308,31 @@ const _: [u8; 1] = [0u8; std::mem::align_of::<ContactRequestRemovalFFI>()];
 const _: [u8; 65] = [0u8; std::mem::size_of::<ContactIgnoredSenderFFI>()];
 const _: [u8; 1] = [0u8; std::mem::align_of::<ContactIgnoredSenderFFI>()];
 
+// Expected `PrivateContactRequestsPositionFFI` layout on 64-bit targets:
+//
+//   0..=31    identity_id      [u8; 32]
+//   32..=39   position         u64
+//   40..=71   key_fingerprint  [u8; 32]
+//
+// Total size = 72, alignment = 8 (from the u64).
+const _: [u8; 72] = [0u8; std::mem::size_of::<PrivateContactRequestsPositionFFI>()];
+const _: [u8; 8] = [0u8; std::mem::align_of::<PrivateContactRequestsPositionFFI>()];
+const _: () = assert!(std::mem::offset_of!(PrivateContactRequestsPositionFFI, position) == 32);
+const _: () =
+    assert!(std::mem::offset_of!(PrivateContactRequestsPositionFFI, key_fingerprint) == 40);
+
+// Expected `PrivateShieldedAddressFFI` layout on all targets:
+//
+//   0..=31    owner_id    [u8; 32]
+//   32..=63   contact_id  [u8; 32]
+//   64..=106  address     [u8; 43]
+//
+// Total size = 107, alignment = 1 (all-byte fields).
+const _: [u8; 107] = [0u8; std::mem::size_of::<PrivateShieldedAddressFFI>()];
+const _: [u8; 1] = [0u8; std::mem::align_of::<PrivateShieldedAddressFFI>()];
+const _: () = assert!(std::mem::offset_of!(PrivateShieldedAddressFFI, contact_id) == 32);
+const _: () = assert!(std::mem::offset_of!(PrivateShieldedAddressFFI, address) == 64);
+
 impl ContactIgnoredSenderFFI {
     /// Project an `(owner, sender)` ignore key onto its flat C mirror.
     /// `is_ignored` distinguishes an ignore (persist the row) from an

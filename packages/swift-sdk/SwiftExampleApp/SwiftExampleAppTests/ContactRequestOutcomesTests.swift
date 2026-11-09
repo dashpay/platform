@@ -66,6 +66,29 @@ final class ContactRequestOutcomesTests: XCTestCase {
         XCTAssertTrue(snapshot.allowsSubmission(to: pendingContact))
     }
 
+    /// A send refused as pending (code 71) when the wallet reserved
+    /// nothing (its store was not read to its end): the following read finds
+    /// nothing pending, yet the contact stays pending, with the private sync
+    /// offered, until a private sync completes.
+    func testShouldKeepARefusedContactPendingAfterAnEmptyReadUntilAPrivateSync() {
+        let contact = Data(repeating: 1, count: 32)
+        var snapshot = PrivateRepliesPendingSnapshot()
+        snapshot.recordRefusal(of: contact)
+        snapshot.record([], for: [contact])
+        XCTAssertFalse(snapshot.isUnavailable)
+        XCTAssertTrue(snapshot.isPending(contact))
+        XCTAssertFalse(snapshot.allowsSubmission(to: contact))
+        XCTAssertEqual(
+            ContactRequestSubmissionOutcome.rowMessage(
+                pending: snapshot.isPending(contact), error: nil),
+            ContactRequestSubmissionOutcome.privateRequestPendingMessage)
+
+        snapshot.recordPrivateSync()
+        snapshot.record([], for: [contact])
+        XCTAssertFalse(snapshot.isPending(contact))
+        XCTAssertTrue(snapshot.allowsSubmission(to: contact))
+    }
+
     /// A successful read that found nothing pending offers every contact it
     /// covered, and nothing it did not.
     func testShouldOfferEveryContactASuccessfulEmptyReadCovered() {

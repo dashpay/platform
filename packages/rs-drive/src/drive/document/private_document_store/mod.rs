@@ -125,12 +125,20 @@ impl PrivateDocumentEntry {
 
 /// A page of a private type's store: its entries in append order, and how many entries the
 /// store holds, so a page shorter than asked for ends at the store's last entry.
+///
+/// A client-side read result, not consensus data.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PrivateDocumentEntries {
     /// The page's entries, in append order.
     pub entries: Vec<PrivateDocumentEntry>,
     /// How many entries the store holds.
     pub total_count: u64,
+    /// The power of two the store's chunks are sized by, as the store committed it at
+    /// creation: a page reads from its first position to the end of the chunk holding it
+    /// (`private_document_entries_page_limit`). Drive's read and a verified proof give it,
+    /// from the store element the proof binds; `None` for a page read without a proof, whose
+    /// response does not carry it.
+    pub chunk_power: Option<u8>,
 }
 
 /// The private document declaration of `document_type`, which the entries of a store are read
@@ -774,6 +782,8 @@ mod tests {
             .expect("the root hash");
         assert_eq!(proved_root_hash, root_hash, "proved from {start}");
         assert_eq!(proved_page, page, "proved from {start}");
+        // Both carry the chunk power the store committed: 64 entries to a chunk.
+        assert_eq!(proved_page.chunk_power, Some(6), "proved from {start}");
         page
     }
 
@@ -811,7 +821,14 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         for start in [0, 5, 64] {
             let page = read_and_prove(&drive, &contract, start, platform_version);
-            assert_eq!(page, PrivateDocumentEntries::default(), "from {start}");
+            assert_eq!(
+                page,
+                PrivateDocumentEntries {
+                    chunk_power: Some(6),
+                    ..Default::default()
+                },
+                "from {start}"
+            );
         }
     }
 

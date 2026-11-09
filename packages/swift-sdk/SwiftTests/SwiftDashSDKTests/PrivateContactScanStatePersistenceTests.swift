@@ -112,6 +112,37 @@ final class PrivateContactScanStatePersistenceTests: XCTestCase {
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<PersistentPrivateShieldedAddress>()), 0)
     }
 
+    /// A stored row that cannot cross the ABI fails the load instead of
+    /// handing back the rest without it: a valid position beside a 42-byte
+    /// address would otherwise resume past the entry that carried it.
+    func testShouldFailTheLoadOnAStoredRowThatCannotCrossTheABI() throws {
+        let (container, handler) = try makeHandler()
+        try round(
+            handler,
+            positions: [.init(identityId: owner, position: 12, keyFingerprint: Data(repeating: 3, count: 32))])
+        let context = ModelContext(container)
+        context.insert(PersistentPrivateShieldedAddress(
+            networkRaw: Network.testnet.rawValue, walletId: walletId, ownerId: owner,
+            contactId: contact, address: Data(repeating: 9, count: 42)))
+        try context.save()
+
+        let ext = handler.makePersistenceCallbacksExtension()
+        let load = try XCTUnwrap(ext.on_load_private_contact_scan_state_fn)
+        let context_ = Unmanaged.passUnretained(handler).toOpaque()
+        var positions: UnsafePointer<PrivateContactRequestsPositionFFI>?
+        var positionsCount: UInt = 0
+        var addresses: UnsafePointer<PrivateShieldedAddressFFI>?
+        var addressesCount: UInt = 0
+        let rc = walletId.withUnsafeBytes { wallet in
+            load(context_, wallet.bindMemory(to: UInt8.self).baseAddress,
+                 &positions, &positionsCount, &addresses, &addressesCount)
+        }
+        XCTAssertNotEqual(rc, 0)
+        XCTAssertNil(positions)
+        XCTAssertNil(addresses)
+        XCTAssertEqual(positionsCount + addressesCount, 0)
+    }
+
     func testShouldRefuseAScanStateWriteOutsideAChangeset() throws {
         let (_, handler) = try makeHandler()
         XCTAssertThrowsError(try handler.persistPrivateContactScanState(

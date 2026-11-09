@@ -472,6 +472,8 @@ struct AddContactView: View {
             if let wallet = try? requireWallet() {
                 if let notice = await syncPrivateContactRequests(wallet) {
                     errorMessage = notice
+                } else {
+                    recipientPending.recordPrivateSync()
                 }
             }
             reloadRecipientPending()
@@ -583,9 +585,10 @@ struct AddContactView: View {
                     kickDashPaySync(walletManager)
                     unconfirmedNotice = ContactRequestSubmissionOutcome.mayHaveGoneThroughMessage
                 case .privateRequestPending:
-                    // Nothing was sent: the footer shows the pending request
-                    // and offers the private sync that settles it.
-                    break
+                    // Nothing was sent, and the wallet may hold nothing for
+                    // it: the footer shows it as pending and offers the
+                    // private sync that settles it.
+                    recipientPending.recordRefusal(of: recipient)
                 case .failed(let message):
                     errorMessage = message
                 }
@@ -646,7 +649,7 @@ struct AddContactView: View {
                     unconfirmedNotice = ContactRequestSubmissionOutcome.mayHaveGoneThroughMessage
                 case .privateRequestPending:
                     // Nothing was sent: the footer offers the private sync.
-                    break
+                    recipientPending.recordRefusal(of: recipient)
                 case .failed(let message):
                     errorMessage = "Accept failed: \(message)"
                 }

@@ -622,11 +622,18 @@ pub(crate) fn map_spend_result(
         | Err(e @ PlatformWalletError::ShieldedRecoveryKeysRequired { .. }) => e.into(),
         // A private contact request in flight, or paid and not yet read back
         // from the store: nothing new was paid, and a later private sync
-        // settles it, so it keeps its own pending code. A wallet removed
-        // before the payment started keeps the lifecycle refusal code
-        // (`NotFound`) every other export gives it.
+        // settles it, so it keeps its own pending code, as do unrestored
+        // private payments. A wallet removed before the payment started keeps
+        // the lifecycle refusal code (`NotFound`) every other export gives
+        // it. A protocol-version refusal from the store read before any
+        // payment keeps the blanket conversion's split: a lasting refusal
+        // is `ErrorProtocolVersionNotActive`, a transient one the catch-all.
         Err(e @ PlatformWalletError::PrivateContactRequestPending(..))
-        | Err(e @ PlatformWalletError::WalletRemovedBeforeSend(..)) => e.into(),
+        | Err(e @ PlatformWalletError::PrivateContactPaymentsNotRestored)
+        | Err(e @ PlatformWalletError::WalletRemovedBeforeSend(..))
+        | Err(e @ PlatformWalletError::Sdk(dash_sdk::Error::ProtocolVersionNotActive { .. })) => {
+            e.into()
+        }
         // Retryable: the wallet couldn't build the spend against any
         // Platform-recorded anchor yet (its commitment tree is mid-block after
         // an index-chunk sync). Nothing was broadcast and the notes were
@@ -3021,6 +3028,46 @@ mod tests {
         );
         assert_eq!(message_of(&result), rendered);
         assert!(message_of(&result).contains("this request was not started"));
+    }
+
+    /// A protocol-version refusal from the store read a private send or
+    /// accept makes before paying keeps the blanket conversion's split: a
+    /// lasting refusal is code 70, a transient one the catch-all.
+    #[test]
+    fn map_spend_result_keeps_a_protocol_version_refusal_typed() {
+        let refused = |cause: Option<Box<dash_sdk::Error>>| {
+            map_spend_result(
+                Err(PlatformWalletError::Sdk(
+                    dash_sdk::Error::ProtocolVersionNotActive {
+                        method: "get_private_document_entries",
+                        required: 15,
+                        feature: None,
+                        network: 14,
+                        pinned: false,
+                        cause,
+                    },
+                )),
+                "private contact request",
+            )
+        };
+        let lasting = refused(None);
+        assert_eq!(
+            lasting.code,
+            PlatformWalletFFIResultCode::ErrorProtocolVersionNotActive
+        );
+        assert_eq!(lasting.code as i32, 70);
+        let transient = refused(Some(Box::new(dash_sdk::Error::Generic(
+            "no node answered".to_string(),
+        ))));
+        assert_eq!(transient.code, PlatformWalletFFIResultCode::ErrorUnknown);
+        assert_eq!(
+            map_spend_result(
+                Err(PlatformWalletError::PrivateContactPaymentsNotRestored),
+                "private contact request",
+            )
+            .code,
+            PlatformWalletFFIResultCode::ErrorPrivateContactRequestPending
+        );
     }
 
     /// A private payment refused because its wallet was removed first keeps
