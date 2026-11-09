@@ -23,7 +23,9 @@ use crate::identity::ManagedIdentityHandleGuard;
 use crate::pubkey_rows::decode_registration_pubkeys_blob;
 use crate::support::{guard, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JString, JValue};
-use jni::sys::{jboolean, jint, jlong, jlongArray, jobject, jstring, JNI_FALSE, JNI_TRUE};
+use jni::sys::{
+    jboolean, jbooleanArray, jint, jlong, jlongArray, jobject, jstring, JNI_FALSE, JNI_TRUE,
+};
 use jni::JNIEnv;
 use platform_wallet_ffi::core_wallet_types::OutPointFFI;
 use platform_wallet_ffi::dashpay_profile::DashPayProfileFFI;
@@ -31,6 +33,7 @@ use platform_wallet_ffi::error::{platform_wallet_ffi_result_free, PlatformWallet
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
 use platform_wallet_ffi::invitation::InvitationPreviewFFI;
+use platform_wallet_ffi::PrivateContactReadinessFFI;
 use platform_wallet_ffi::{
     ContactRequestHandleArray, PrivateContactFFI, PrivateContactSyncReportFFI,
 };
@@ -1411,6 +1414,61 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_managed
     })
 }
 
+/// `DashpayNative.privateContactReadiness`: the wallet's readiness for
+/// `identity_id`'s contact requests
+/// (`platform_wallet_get_private_contact_readiness`) as three flags,
+/// `[privatePaymentsRestored, privateStoreRead, unresolvedPrivatePayment]`.
+/// Throws on an unknown wallet or identity, returning null.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_privateContactReadiness(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    identity_id: JByteArray,
+) -> jbooleanArray {
+    guard(&mut env, std::ptr::null_mut(), |env| {
+        let Some(id) = read_id32(env, &identity_id, "identityId") else {
+            return std::ptr::null_mut();
+        };
+        let mut readiness = PrivateContactReadinessFFI::default();
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_get_private_contact_readiness(
+                wallet_handle as Handle,
+                id.as_ptr(),
+                &mut readiness,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return std::ptr::null_mut();
+        }
+        let flags = readiness_flags(&readiness);
+        let array = match env.new_boolean_array(flags.len() as i32) {
+            Ok(array) => array,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 99, "allocating the readiness flags failed");
+                return std::ptr::null_mut();
+            }
+        };
+        if env.set_boolean_array_region(&array, 0, &flags).is_err() {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 99, "writing the readiness flags failed");
+            return std::ptr::null_mut();
+        }
+        array.into_raw()
+    })
+}
+
+/// The readiness flags in the order Kotlin reads them.
+fn readiness_flags(readiness: &PrivateContactReadinessFFI) -> [jboolean; 3] {
+    let flag = |set: bool| if set { JNI_TRUE } else { JNI_FALSE };
+    [
+        flag(readiness.private_payments_restored),
+        flag(readiness.private_store_read),
+        flag(readiness.unresolved_private_payment),
+    ]
+}
+
 /// Copy an optional Java `byte[]`; JVM null is `None`. Throws and returns
 /// `Err` on a JNI error. `field` names the argument in the message.
 fn read_opt_bytes(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Result<Option<Vec<u8>>, ()> {
@@ -1701,6 +1759,20 @@ mod tests {
             ..report
         };
         assert_eq!(private_contact_sync_longs(0, &incomplete)[5], 0);
+    }
+
+    #[test]
+    fn should_lay_out_the_readiness_flags_in_the_order_kotlin_reads() {
+        let readiness = PrivateContactReadinessFFI {
+            private_payments_restored: true,
+            private_store_read: false,
+            unresolved_private_payment: true,
+        };
+        assert_eq!(readiness_flags(&readiness), [JNI_TRUE, JNI_FALSE, JNI_TRUE]);
+        assert_eq!(
+            readiness_flags(&PrivateContactReadinessFFI::default()),
+            [JNI_FALSE; 3]
+        );
     }
 
     #[test]

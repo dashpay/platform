@@ -346,6 +346,17 @@ internal object DashpayNative {
     external fun managedIdentityPrivateReplyPending(identityHandle: Long, contactId: ByteArray): Boolean
 
     /**
+     * What a contact request from [identityId], one of the wallet's
+     * identities, waits for, as the wallet decides it: three flags,
+     * `[privatePaymentsRestored, privateStoreRead, unresolvedPrivatePayment]`
+     * (`platform_wallet_get_private_contact_readiness`). An unknown wallet
+     * handle throws (NotFound), as does an identity the wallet does not
+     * hold.
+     * ← Swift `ManagedPlatformWallet.privateContactReadiness(identityId:)`.
+     */
+    external fun privateContactReadiness(walletHandle: Long, identityId: ByteArray): BooleanArray?
+
+    /**
      * Accept the incoming contact request [requestHandle] replying the way
      * it came: privately, paid from [account]'s shielded notes, when it came
      * privately and no reply exists yet; otherwise with a document, or by

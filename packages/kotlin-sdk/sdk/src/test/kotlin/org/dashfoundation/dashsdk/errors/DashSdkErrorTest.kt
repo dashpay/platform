@@ -307,6 +307,17 @@ class DashSdkErrorTest {
         assertFalse("pending, not a failure to retry", mapped.isRetryable)
     }
 
+    /** Unrestored private payments hold the wallet: their own code, apart from 71. */
+    @Test
+    fun shouldReportUnrestoredPrivatePaymentsByTheirOwnCode() {
+        val detail = "the wallet's private payments are not restored from the shielded store yet"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 72, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.PrivateContactPaymentsNotRestored)
+        assertEquals(detail, mapped.message)
+        assertFalse("held, not a failure to retry", mapped.isRetryable)
+    }
+
     @Test
     fun platformShieldCapacityCode41MapsTyped() {
         val message =

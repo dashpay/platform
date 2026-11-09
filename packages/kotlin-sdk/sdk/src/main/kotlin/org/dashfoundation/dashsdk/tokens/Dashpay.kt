@@ -326,6 +326,38 @@ class Dashpay internal constructor(private val walletHandle: Long,
         }
     }
 
+    /**
+     * What a contact request from one of the wallet's identities waits for,
+     * as the wallet decides it, so a host shows "restoring private payments"
+     * apart from "reading the private store" and from a contact's pending
+     * request rather than inferring them from the refusals it got.
+     * ← Swift `PrivateContactReadiness`.
+     */
+    data class PrivateContactReadiness(
+        /**
+         * Whether the wallet's private payments from an earlier process are
+         * restored for the identity. While false, its public sends and
+         * accepts are refused with
+         * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.PrivateContactPaymentsNotRestored]
+         * until the shielded store is configured or the wallet's shielded
+         * account bound; no private sync lifts it.
+         */
+        val privatePaymentsRestored: Boolean,
+        /**
+         * Whether a private sync read DashPay's private contact request store
+         * to its end for the identity since load. Until then its first send
+         * or accept reads it first, and is refused with
+         * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.PrivateContactRequestPending]
+         * while that read cannot finish.
+         */
+        val privateStoreRead: Boolean,
+        /**
+         * Whether a private contact request the identity paid for may still
+         * be unresolved. A contact's own pending request is [privateRepliesPending].
+         */
+        val unresolvedPrivatePayment: Boolean,
+    )
+
     /** What one pass over DashPay's private contact request store did. */
     data class PrivateContactSyncResult(
         /** The requests the pass ingested, received and sent, including ones already held. */
@@ -413,6 +445,26 @@ class Dashpay internal constructor(private val walletHandle: Long,
      * ← Swift `ManagedIdentity.privateReplyPending(contactId:)`
      * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift).
      */
+    /**
+     * What a contact request from [ourIdentityId] waits for, as the wallet
+     * decides it ([PrivateContactReadiness]). A pure read of live wallet
+     * state; read it again after the shielded store is configured or the
+     * wallet binds its shielded account to see the restore. Throws for an
+     * identity the wallet does not hold.
+     * ← Swift `ManagedPlatformWallet.privateContactReadiness(identityId:)`.
+     */
+    suspend fun privateContactReadiness(ourIdentityId: ByteArray): PrivateContactReadiness =
+        withContext(Dispatchers.IO) {
+            val flags = mapNativeErrors { DashpayNative.privateContactReadiness(walletHandle, ourIdentityId) }
+            checkNotNull(flags) { "native privateContactReadiness returned no flags" }
+            check(flags.size == 3) { "expected 3 readiness flags, got ${flags.size}" }
+            PrivateContactReadiness(
+                privatePaymentsRestored = flags[0],
+                privateStoreRead = flags[1],
+                unresolvedPrivatePayment = flags[2],
+            )
+        }
+
     suspend fun privateRepliesPending(
         ourIdentityId: ByteArray,
         contactIds: List<ByteArray>,

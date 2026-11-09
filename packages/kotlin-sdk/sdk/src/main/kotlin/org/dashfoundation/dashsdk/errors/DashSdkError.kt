@@ -701,6 +701,19 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorPrivateContactPaymentsNotRestored` (native code 72). The
+         * wallet, not one contact, is held: its private payments from an
+         * earlier process are not restored from the shielded store yet, so
+         * no public contact request is sent or accepted, nothing signed or
+         * broadcast. `PlatformWalletManager.configureShielded` or binding
+         * the wallet's shielded account restores them; a private sync does
+         * not. `Dashpay.privateContactReadiness` reads whether they are.
+         * ← Swift `PlatformWalletError.privateContactPaymentsNotRestored`.
+         */
+        class PrivateContactPaymentsNotRestored(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -902,6 +915,7 @@ sealed class DashSdkError(
             69 -> PlatformWallet.ShieldedBuildRequired(message, cause) // ErrorShieldedBuildRequired
             70 -> PlatformWallet.ProtocolVersionNotActive(message, cause) // ErrorProtocolVersionNotActive
             71 -> PlatformWallet.PrivateContactRequestPending(message, cause) // ErrorPrivateContactRequestPending
+            72 -> PlatformWallet.PrivateContactPaymentsNotRestored(message, cause) // ErrorPrivateContactPaymentsNotRestored
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.
