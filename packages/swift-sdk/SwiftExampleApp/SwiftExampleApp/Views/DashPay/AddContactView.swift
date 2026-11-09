@@ -64,9 +64,13 @@ struct AddContactView: View {
 
     /// Whether the wallet has a private request to the resolved recipient in
     /// flight, or paid and not yet read back (`privateRepliesPending`). While
-    /// it does, Send is off; a private sync settles it. Read from the wallet,
-    /// so reopening this sheet keeps it.
-    @State private var recipientPending = false
+    /// it does, Send is off and the footer offers a private sync, which
+    /// settles it. Read from the wallet, so reopening this sheet keeps it. A
+    /// failed read keeps Send off until a read succeeds.
+    @State private var recipientPending = PrivateRepliesPendingSnapshot()
+
+    /// A private sync the footer started is running.
+    @State private var isSyncingPrivate = false
 
     /// Send-collision flow.
     @State private var showCollisionAlert = false
@@ -106,7 +110,14 @@ struct AddContactView: View {
             && resolvedRecipient != identity.identityId
             && !isSending
             && unconfirmedNotice == nil
-            && !recipientPending
+            && resolvedRecipient.map(recipientPending.allowsSubmission(to:)) == true
+    }
+
+    /// Whether the footer shows the recipient's pending state: a private
+    /// request to them is pending, or the wallet could not be read.
+    private var recipientBlocked: Bool {
+        guard let recipient = resolvedRecipient else { return false }
+        return recipientPending.isPending(recipient) || recipientPending.isUnavailable
     }
 
     var body: some View {
@@ -413,9 +424,26 @@ struct AddContactView: View {
             .disabled(!canSend)
             .accessibilityIdentifier("dashpay.addContact.send")
         } footer: {
-            if recipientPending {
-                Text(ContactRequestSubmissionOutcome.mayHaveGoneThroughMessage)
+            if let recipient = resolvedRecipient, recipientBlocked {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(ContactRequestSubmissionOutcome.rowMessage(
+                        pending: recipientPending.isPending(recipient),
+                        unavailable: recipientPending.isUnavailable,
+                        error: nil
+                    ) ?? "")
                     .accessibilityIdentifier("dashpay.addContact.pending")
+                    Button {
+                        syncPrivateRequests()
+                    } label: {
+                        if isSyncingPrivate {
+                            ProgressView()
+                        } else {
+                            Text("Sync private requests")
+                        }
+                    }
+                    .disabled(isSyncingPrivate)
+                    .accessibilityIdentifier("dashpay.addContact.syncPrivate")
+                }
             }
         }
     }
@@ -423,15 +451,31 @@ struct AddContactView: View {
     /// Re-read from the wallet whether a private request to the resolved
     /// recipient is pending.
     private func reloadRecipientPending() {
-        guard let recipient = resolvedRecipient, let wallet = try? requireWallet() else {
-            recipientPending = false
-            return
+        let contactIds = resolvedRecipient.map { [$0] } ?? []
+        recipientPending.record(
+            privateRepliesPending(
+                wallet: try? requireWallet(),
+                identityId: identity.identityId,
+                contactIds: contactIds
+            ),
+            for: contactIds
+        )
+    }
+
+    /// Read the private store, which settles a pending private request, then
+    /// re-read the recipient's pending state: Send comes back once nothing
+    /// is pending, for the user to try again.
+    private func syncPrivateRequests() {
+        isSyncingPrivate = true
+        Task { @MainActor in
+            defer { isSyncingPrivate = false }
+            if let wallet = try? requireWallet() {
+                if let notice = await syncPrivateContactRequests(wallet) {
+                    errorMessage = notice
+                }
+            }
+            reloadRecipientPending()
         }
-        recipientPending = privateRepliesPending(
-            wallet: wallet,
-            identityId: identity.identityId,
-            contactIds: [recipient]
-        ).contains(recipient)
     }
 
     private func previewDisplayName(
@@ -538,6 +582,10 @@ struct AddContactView: View {
                     onSent(recipient, mode == .dpns ? selectedResult?.fullName : nil)
                     kickDashPaySync(walletManager)
                     unconfirmedNotice = ContactRequestSubmissionOutcome.mayHaveGoneThroughMessage
+                case .privateRequestPending:
+                    // Nothing was sent: the footer shows the pending request
+                    // and offers the private sync that settles it.
+                    break
                 case .failed(let message):
                     errorMessage = message
                 }
@@ -550,8 +598,8 @@ struct AddContactView: View {
     /// `ContactRequest` and accept it — establishing the contact
     /// directly instead of sending a redundant request.
     private func acceptIncoming(from recipient: Identifier) {
-        // A private request to this contact is already pending in the wallet.
-        guard !recipientPending else { return }
+        // A private request to this contact may be pending in the wallet.
+        guard recipientPending.allowsSubmission(to: recipient) else { return }
         // "Send privately" is the user's choice of a private request, so it
         // holds for the accept too (`CollisionAccept`).
         let accept = CollisionAccept.of(sendPrivately: sendPrivately)
@@ -596,6 +644,9 @@ struct AddContactView: View {
                 case .mayHaveGoneThrough:
                     kickDashPaySync(walletManager)
                     unconfirmedNotice = ContactRequestSubmissionOutcome.mayHaveGoneThroughMessage
+                case .privateRequestPending:
+                    // Nothing was sent: the footer offers the private sync.
+                    break
                 case .failed(let message):
                     errorMessage = "Accept failed: \(message)"
                 }
