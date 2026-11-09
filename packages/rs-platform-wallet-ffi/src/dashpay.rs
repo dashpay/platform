@@ -35,8 +35,19 @@
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
-use platform_wallet::ContactRequest;
-use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
+use dash_sdk::platform::dashpay::PrivateContactRequest;
+use dash_sdk::platform::private_document_entries::PrivateDocumentEntries;
+use dash_sdk::platform::private_document_scan::PrivateDocumentScan;
+use dpp::identity::{Identity, KeyID};
+use dpp::platform_value::BinaryData;
+use dpp::prelude::{DataContract, Identifier};
+use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
+use platform_wallet::{ContactRequest, PlatformWalletError, PrivateDocumentKeyPaths};
+use rs_sdk_ffi::{
+    MnemonicResolverCoreSigner, MnemonicResolverHandle, MnemonicResolverSignerError, SignerHandle,
+    VTableSigner,
+};
 
 use crate::contact_request::CONTACT_REQUEST_STORAGE;
 use crate::core_wallet::classify_broadcast_result;
@@ -1222,6 +1233,94 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
             private_data: opened.private_data,
         })
     }
+
+    async fn scan_private_document_page(
+        &self,
+        keys: &PrivateDocumentKeyPaths,
+        data_contract_id: Identifier,
+        document_type_name: &str,
+        start_position: u64,
+        page: &PrivateDocumentEntries,
+    ) -> Result<PrivateDocumentScan, PlatformWalletError> {
+        self.signer
+            .scan_private_document_page(
+                &keys.recipients,
+                &keys.senders,
+                data_contract_id,
+                document_type_name,
+                start_position,
+                page,
+            )
+            .map_err(private_document_signer_error)
+    }
+
+    async fn scan_private_document_pages(
+        &self,
+        keys: &PrivateDocumentKeyPaths,
+        data_contract_id: Identifier,
+        document_type_name: &str,
+        pages: &[(u64, &PrivateDocumentEntries)],
+    ) -> Result<Vec<PrivateDocumentScan>, PlatformWalletError> {
+        // One Keychain read for the batch, not one per page.
+        self.signer
+            .scan_private_document_pages(
+                &keys.recipients,
+                &keys.senders,
+                data_contract_id,
+                document_type_name,
+                pages,
+            )
+            .map_err(private_document_signer_error)
+    }
+
+    async fn seal_private_contact_request(
+        &self,
+        sender_encryption_key_path: &key_wallet::bip32::DerivationPath,
+        dashpay_contract: &DataContract,
+        sender: &Identity,
+        sender_encryption_key_id: KeyID,
+        signing_key_id: KeyID,
+        signature: &[u8; 65],
+        recipient: &Identity,
+        recipient_key_id: KeyID,
+        request: &PrivateContactRequest,
+        esk_seed: &[u8; 32],
+        platform_version: &PlatformVersion,
+    ) -> Result<BinaryData, PlatformWalletError> {
+        self.signer
+            .seal_private_contact_request(
+                sender_encryption_key_path,
+                dashpay_contract,
+                sender,
+                sender_encryption_key_id,
+                signing_key_id,
+                signature,
+                recipient,
+                recipient_key_id,
+                request,
+                esk_seed,
+                platform_version,
+            )
+            .map_err(private_document_signer_error)
+    }
+}
+
+/// A signer failure of a private document operation as a wallet error: the
+/// SDK's refusal stays typed; a missing mnemonic is the key-unavailable
+/// outcome (FFI code 31), carried as the signer's typed completion is, with
+/// the reserved marker at position 0 of a `ProtocolError::Generic` payload
+/// (`NotFound` renders it there), so the structural discriminator restores
+/// it; the rest are reported as the other provider methods report theirs.
+fn private_document_signer_error(error: MnemonicResolverSignerError) -> PlatformWalletError {
+    match error {
+        MnemonicResolverSignerError::PrivateContactRequest(error) => {
+            PlatformWalletError::Sdk(error)
+        }
+        error @ MnemonicResolverSignerError::NotFound => PlatformWalletError::Sdk(
+            dash_sdk::Error::Protocol(ProtocolError::Generic(error.to_string())),
+        ),
+        error => PlatformWalletError::InvalidIdentityData(error.to_string()),
+    }
 }
 
 /// Drain the persisted deferred-crypto queue using the Keychain signer for the
@@ -1652,6 +1751,148 @@ pub unsafe extern "C" fn platform_wallet_drainable_contact_crypto_count(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A test wallet's mnemonic, counting how often the resolver reads it.
+    unsafe extern "C" fn counting_resolve(
+        ctx: *const std::ffi::c_void,
+        _wallet_id_bytes: *const u8,
+        out_buf: *mut c_char,
+        out_capacity: usize,
+        out_len: *mut usize,
+    ) -> i32 {
+        const PHRASE: &str =
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon \
+             abandon about";
+        (*(ctx as *const std::sync::atomic::AtomicUsize))
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let phrase = PHRASE.as_bytes();
+        if phrase.len() + 1 > out_capacity {
+            return rs_sdk_ffi::mnemonic_resolver_result::BUFFER_TOO_SMALL;
+        }
+        std::ptr::copy_nonoverlapping(phrase.as_ptr() as *const c_char, out_buf, phrase.len());
+        *out_buf.add(phrase.len()) = 0;
+        *out_len = phrase.len();
+        rs_sdk_ffi::mnemonic_resolver_result::SUCCESS
+    }
+
+    unsafe extern "C" fn missing_resolve(
+        _ctx: *const std::ffi::c_void,
+        _wallet_id_bytes: *const u8,
+        _out_buf: *mut c_char,
+        _out_capacity: usize,
+        _out_len: *mut usize,
+    ) -> i32 {
+        rs_sdk_ffi::mnemonic_resolver_result::NOT_FOUND
+    }
+
+    unsafe extern "C" fn noop_destroy(_ctx: *mut std::ffi::c_void) {}
+
+    /// A page of entries no key of the wallet opens.
+    fn store_page(start: u64, len: u64, total_count: u64) -> PrivateDocumentEntries {
+        PrivateDocumentEntries {
+            entries: (start..start + len)
+                .map(|position| {
+                    dash_sdk::platform::private_document_entries::PrivateDocumentEntry {
+                        position,
+                        block_height: position,
+                        block_time_ms: position,
+                        data: vec![position as u8; 589],
+                    }
+                })
+                .collect(),
+            total_count,
+        }
+    }
+
+    /// The resolver-backed provider scans DashPay's private store, which a
+    /// public send or accept reads first: a page, and a batch of pages with
+    /// one Keychain read for the batch. A missing mnemonic is the
+    /// key-unavailable error, never an empty page.
+    #[test]
+    fn should_scan_a_page_and_a_batch_with_one_resolve_each() {
+        use platform_wallet::ContactCryptoProvider;
+        use std::str::FromStr;
+
+        let path =
+            |path: &str| key_wallet::bip32::DerivationPath::from_str(path).expect("a valid path");
+        let identity_id = Identifier::from([0xB0; 32]);
+        let keys = PrivateDocumentKeyPaths {
+            recipients: vec![(identity_id, vec![(2, path("m/9'/1'/5'/0'/0'/1'/2'"))])],
+            senders: vec![(identity_id, 1, path("m/9'/1'/5'/0'/0'/0'/1'"))],
+        };
+        let contract_id = Identifier::from([0x44; 32]);
+        let resolves = std::sync::atomic::AtomicUsize::new(0);
+        let resolver = unsafe {
+            rs_sdk_ffi::dash_sdk_mnemonic_resolver_create(
+                &resolves as *const std::sync::atomic::AtomicUsize as *mut std::ffi::c_void,
+                counting_resolve,
+                noop_destroy,
+            )
+        };
+        let provider = unsafe {
+            resolver_contact_crypto_provider(resolver, [0u8; 32], key_wallet::Network::Testnet)
+        };
+        let reads = || resolves.load(std::sync::atomic::Ordering::SeqCst);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("a runtime");
+
+        let first = store_page(0, 4, 6);
+        let page = runtime
+            .block_on(provider.scan_private_document_page(
+                &keys,
+                contract_id,
+                "privateContactRequest",
+                0,
+                &first,
+            ))
+            .expect("the provider scans a page");
+        assert_eq!(reads(), 1);
+        assert!(page.is_of_store(&contract_id, "privateContactRequest"));
+        assert_eq!(page.next_position, 4);
+        assert!(page.received.is_empty() && page.sent.is_empty() && page.rejected.is_empty());
+
+        let second = store_page(4, 2, 6);
+        let batch = runtime
+            .block_on(provider.scan_private_document_pages(
+                &keys,
+                contract_id,
+                "privateContactRequest",
+                &[(0, &first), (4, &second)],
+            ))
+            .expect("the provider scans a batch");
+        assert_eq!(reads(), 2, "one Keychain read for the batch");
+        assert_eq!(
+            batch
+                .iter()
+                .map(|scan| (scan.next_position, scan.is_complete()))
+                .collect::<Vec<_>>(),
+            vec![(4, false), (6, true)]
+        );
+        unsafe { rs_sdk_ffi::dash_sdk_mnemonic_resolver_destroy(resolver) };
+
+        let missing = unsafe {
+            rs_sdk_ffi::dash_sdk_mnemonic_resolver_create(
+                std::ptr::null_mut(),
+                missing_resolve,
+                noop_destroy,
+            )
+        };
+        let provider = unsafe {
+            resolver_contact_crypto_provider(missing, [0u8; 32], key_wallet::Network::Testnet)
+        };
+        let refused = runtime.block_on(provider.scan_private_document_pages(
+            &keys,
+            contract_id,
+            "privateContactRequest",
+            &[(0, &first)],
+        ));
+        assert!(
+            matches!(refused, Err(PlatformWalletError::Sdk(_))),
+            "the key is unavailable: {refused:?}"
+        );
+        unsafe { rs_sdk_ffi::dash_sdk_mnemonic_resolver_destroy(missing) };
+    }
 
     // Marshalling-boundary coverage for the verify entry point, replacing what
     // the removed attach FFI's input-validation tests upheld. The crypto
