@@ -59,7 +59,7 @@ use key_wallet::bip32::{DerivationPath, KeyDerivationType};
 use key_wallet_manager::WalletManager;
 use platform_encryption::{encrypt_account_label, encrypt_extended_public_key, COMPACT_XPUB_LEN};
 use tokio::sync::RwLock;
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 use super::contact_requests::{
     ingest_received_requests, ingest_sent_requests, newest_received_per_sender,
@@ -706,6 +706,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// say whether the network or this SDK is below it, and an SDK pinned
     /// below it refuses a store the network has. Without that evidence the
     /// refusal comes back as it is, and nothing is sent.
+    ///
+    /// Refused first, with nothing read, while the wallet's unconfirmed
+    /// private payments from an earlier process may be unrestored
+    /// ([`PlatformWalletError::PrivateContactPaymentsNotRestored`]): such a
+    /// payment's entry is not in the store until it executes, so no read
+    /// shows the pair it holds; only the shielded store's record of it does.
     pub(super) async fn read_private_store_before_deciding<C>(
         &self,
         identity_id: &Identifier,
@@ -715,6 +721,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     where
         C: ContactCryptoProvider + Sync,
     {
+        if self.persister.private_payments_unrestored() {
+            return Err(PlatformWalletError::PrivateContactPaymentsNotRestored);
+        }
         match self
             .read_private_store_before_sending(identity_id, recipient, crypto)
             .await
@@ -920,14 +929,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let signature =
             private_contact_request_signature(signer, &signing_key, &signing_data).await?;
 
-        let mut esk_seed = [0u8; 32];
+        // Wiped on drop, so a send dropped while the seal is awaited wipes it too.
+        let mut esk_seed = Zeroizing::new([0u8; 32]);
         StdRng::try_from_os_rng()
             .map_err(|error| {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "the OS RNG failed while sealing a private contact request: {error}"
                 ))
             })?
-            .fill_bytes(&mut esk_seed);
+            .fill_bytes(&mut *esk_seed);
         let sealed = crypto
             .seal_private_contact_request(
                 &sender_enc_path,
@@ -943,7 +953,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 self.sdk.version(),
             )
             .await;
-        esk_seed.zeroize();
+        drop(esk_seed);
         let entry = sealed?;
         // An entry starts with its 32-byte commitment.
         let commitment: [u8; 32] = entry
@@ -1182,6 +1192,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// wallet: accepting it replies privately, which pays from the shielded
     /// pool, so it is accepted by hand
     /// ([`Self::accept_private_contact_request`]).
+    ///
+    /// Refused with [`PlatformWalletError::SeedMismatch`], before any page
+    /// is read and with no position moved, when `crypto` does not resolve
+    /// this wallet's seed ([`IdentityWallet::verify_seed_binds`]): another
+    /// seed derives valid but unrelated keys, which open nothing, so its pass
+    /// would record as read pages holding requests it never saw, and nothing
+    /// rewinds them once the provider is fixed.
     pub async fn sync_private_contact_requests<C>(
         &self,
         crypto: &C,
@@ -1197,6 +1214,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             report.complete = true;
             return Ok(report);
         };
+        // Before anything is read or recorded: once a pass, as the keys it
+        // scans with all come from the same provider.
+        self.verify_seed_binds(crypto).await?;
         let identity_indexes: BTreeMap<Identifier, u32> = identities
             .iter()
             .map(|identity| (identity.identity_id, identity.identity_index))
@@ -1631,8 +1651,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// request the sender's tracked request to that recipient records or
     /// supersedes is discharged and left alone, as
     /// [`Self::restore_pending_private_contact_requests`] leaves it; a
-    /// sender that is not one of the wallet's identities is skipped. Returns
-    /// the (sender, recipient) pairs restored.
+    /// sender that is not one of the wallet's identities is skipped. So is a
+    /// payment the shielded coordinator settled as never executing in this
+    /// session, though its record was read before that
+    /// (`WalletPersister::private_entry_rejected`, checked under the wallet
+    /// lock). Returns the (sender, recipient) pairs restored.
     #[cfg(feature = "shielded")]
     pub(crate) async fn restore_private_payments(
         &self,
@@ -1647,6 +1670,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .get_wallet_info_mut(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
         for &(sender, recipient, account_reference, commitment) in payments {
+            // Settled as never executing, though its record was read before.
+            if self.persister.private_entry_rejected(&commitment) {
+                continue;
+            }
             let Some(managed) = info.identity_manager.managed_identity_mut(&sender) else {
                 continue;
             };
@@ -1693,7 +1720,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Open `entries` as one page of the store and reserve the recipient of
     /// each the wallet's identities sent whose request is neither recorded
     /// nor superseded yet; the pair `paying` is retargeted to its restored
-    /// entry instead.
+    /// entry instead. An entry whose payment the shielded coordinator settled
+    /// as never executing in this session is left alone, though the
+    /// settlement came while the entries were opened
+    /// (`WalletPersister::private_entry_rejected`, checked under the wallet
+    /// lock).
     async fn restore_private_reservations<C>(
         &self,
         entries: &[BinaryData],
@@ -1720,6 +1751,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 ))
             })?;
         let page = PrivateDocumentEntries {
+            chunk_power: None,
             entries: entries
                 .iter()
                 .zip(0u64..)
@@ -1788,6 +1820,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 continue;
             }
             let commitment = *sent.entry.commitment();
+            // Settled as never executing while its entry was opened.
+            if self.persister.private_entry_rejected(&commitment) {
+                continue;
+            }
             if paying == Some((sender, recipient)) {
                 managed.retarget_private_reply(recipient, commitment);
             } else {
@@ -1808,15 +1844,27 @@ mod tests {
         ClientStartState, IdentityManagerStartState, PersistenceCapabilities, PersistenceError,
         PlatformWalletChangeSet, PlatformWalletPersistence,
     };
+    #[cfg(feature = "shielded")]
+    use crate::changeset::{ClientWalletStartState, ShieldedSyncStartState};
     use crate::events::{EventHandler, PlatformEventHandler};
     use crate::wallet::identity::network::identity_auth_derivation_path_for_type;
     use crate::wallet::identity::network::SeedCryptoProvider;
     use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
+    #[cfg(feature = "shielded")]
+    use crate::wallet::shielded::operations::{
+        arm_redrive_before_broadcast, note_rejected_private_documents,
+    };
+    #[cfg(feature = "shielded")]
+    use crate::wallet::shielded::{
+        FileBackedShieldedStore, NetworkShieldedCoordinator, OrchardKeySet, PrivateContactPayment,
+        SubwalletId,
+    };
     use crate::PlatformWalletManager;
     use dash_sdk::error::ContextProviderError;
     use dash_sdk::platform::private_document_entries::{
         PrivateDocumentEntriesQuery, PrivateDocumentEntry,
     };
+    use dash_sdk::platform::private_document_scan::PrivateDocumentScan;
     use dash_sdk::platform::ContextProvider;
     use dpp::address_funds::AddressWitness;
     use dpp::data_contract::{DataContract, TokenConfiguration};
@@ -1832,7 +1880,7 @@ mod tests {
     use platform_encryption::{
         account_reference_version, decrypt_account_label, decrypt_extended_public_key,
     };
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Mutex;
     use std::time::Duration;
 
@@ -2088,6 +2136,40 @@ mod tests {
         platform_version: &'static PlatformVersion,
         verified_network: Option<u32>,
     ) -> (PlatformWalletManager<P>, Arc<PlatformWallet>) {
+        let sdk = dashpay_sdk(known, entries, platform_version, verified_network).await;
+        let manager =
+            PlatformWalletManager::new(Arc::new(sdk), persistence, Arc::new(NoopEventHandler));
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed(phrase),
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("wallet");
+        {
+            let iw = wallet.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&wallet.wallet_id())
+                .expect("wallet info");
+            info.identity_manager
+                .add_identity(own.clone(), 0, wallet.wallet_id(), &iw.persister)
+                .expect("own identity");
+        }
+        (manager, wallet)
+    }
+
+    /// The mock SDK of [`wallet_at`]: pinned to `platform_version`, holding
+    /// DashPay as that version bundles it, answering fetches of `known` and
+    /// of the private store's first page, holding `entries`.
+    async fn dashpay_sdk(
+        known: &[&Identity],
+        entries: Vec<Vec<u8>>,
+        platform_version: &'static PlatformVersion,
+        verified_network: Option<u32>,
+    ) -> dash_sdk::Sdk {
         let contract = Arc::new(
             dpp::system_data_contracts::load_system_data_contract(
                 dpp::data_contracts::SystemDataContract::Dashpay,
@@ -2117,6 +2199,7 @@ mod tests {
         }
         let total_count = entries.len() as u64;
         let page = PrivateDocumentEntries {
+            chunk_power: None,
             entries: entries
                 .into_iter()
                 .zip(0u64..)
@@ -2142,35 +2225,106 @@ mod tests {
             )
             .await
             .expect("page expectation");
+        sdk
+    }
 
-        let manager =
-            PlatformWalletManager::new(Arc::new(sdk), persistence, Arc::new(NoopEventHandler));
-        let wallet = manager
-            .create_wallet_from_seed_bytes(
-                Network::Testnet,
-                &seed(phrase),
-                WalletAccountCreationOptions::Default,
-                Some(0),
-            )
-            .await
-            .expect("wallet");
-        {
-            let iw = wallet.identity();
-            let mut wm = iw.wallet_manager.write().await;
-            let info = wm
-                .get_wallet_info_mut(&wallet.wallet_id())
-                .expect("wallet info");
-            info.identity_manager
-                .add_identity(own.clone(), 0, wallet.wallet_id(), &iw.persister)
-                .expect("own identity");
+    /// A backend handing back, on every load, a wallet as [`snapshot`] took
+    /// it, with the viewing key its shielded account 0 bound with: the
+    /// relaunch of a wallet that bound a shielded account in an earlier
+    /// process.
+    #[cfg(feature = "shielded")]
+    struct SnapshotPersistence {
+        wallet: key_wallet::Wallet,
+        core: key_wallet::wallet::ManagedWalletInfo,
+        identities: BTreeMap<u32, ManagedIdentity>,
+        viewing_key: [u8; 96],
+    }
+
+    #[cfg(feature = "shielded")]
+    impl PlatformWalletPersistence for SnapshotPersistence {
+        fn persistence_capabilities(&self) -> PersistenceCapabilities {
+            PersistenceCapabilities::SHIELDED_FVK_RESTART
         }
-        (manager, wallet)
+
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            let wallet_id = self.wallet.compute_wallet_id();
+            let mut wallet_identities = BTreeMap::new();
+            wallet_identities.insert(wallet_id, self.identities.clone());
+            let mut wallets = BTreeMap::new();
+            wallets.insert(
+                wallet_id,
+                ClientWalletStartState {
+                    wallet: self.wallet.clone(),
+                    wallet_info: self.core.clone(),
+                    identity_manager: IdentityManagerStartState {
+                        wallet_identities,
+                        ..Default::default()
+                    },
+                    unused_asset_locks: BTreeMap::new(),
+                    unconfirmed_outgoing_txs: Vec::new(),
+                    dashpay_backfill: Default::default(),
+                },
+            );
+            let mut shielded = ShieldedSyncStartState::default();
+            shielded
+                .viewing_keys
+                .insert(SubwalletId::new(wallet_id, 0), self.viewing_key.to_vec());
+            Ok(ClientStartState {
+                wallets,
+                shielded,
+                ..Default::default()
+            })
+        }
+    }
+
+    /// `wallet`, from `phrase`, with its identity `owner`, as a backend keeps
+    /// it once its shielded account 0 is bound.
+    #[cfg(feature = "shielded")]
+    async fn snapshot(
+        wallet: &PlatformWallet,
+        owner: &Identifier,
+        phrase: &str,
+    ) -> SnapshotPersistence {
+        let iw = wallet.identity();
+        let wm = iw.wallet_manager.read().await;
+        let wallet_id = wallet.wallet_id();
+        let info = wm.get_wallet_info(&wallet_id).expect("wallet info");
+        let mut identities = BTreeMap::new();
+        identities.insert(
+            0,
+            info.identity_manager
+                .managed_identity(owner)
+                .expect("the owner")
+                .clone(),
+        );
+        SnapshotPersistence {
+            wallet: wm.get_wallet(&wallet_id).expect("the wallet").clone(),
+            core: info.core_wallet.clone(),
+            identities,
+            viewing_key: OrchardKeySet::from_seed(&seed(phrase), Network::Testnet, 0)
+                .expect("shielded keys")
+                .viewing_keys()
+                .to_fvk_bytes(),
+        }
     }
 
     /// The page of DashPay's private store from `start`, holding `entries`.
     fn store_page(start: u64, entries: Vec<Vec<u8>>) -> PrivateDocumentEntries {
         let total_count = start + entries.len() as u64;
         PrivateDocumentEntries {
+            chunk_power: None,
             entries: entries
                 .into_iter()
                 .zip(start..)
@@ -3902,11 +4056,13 @@ mod tests {
 
     /// A provider deriving from a test seed that runs hooks first: before
     /// deriving a receiving xpub, as a slow or interactive signer pauses a
-    /// send's preparation, and before scanning pages.
+    /// send's preparation, before scanning pages, and before scanning a
+    /// single page, as a restoration does.
     struct HookedCrypto {
         inner: SeedCryptoProvider,
         before_receiving_xpub: Option<Hook>,
         before_scan: Option<Hook>,
+        before_page_scan: Option<Hook>,
     }
 
     impl HookedCrypto {
@@ -3915,6 +4071,7 @@ mod tests {
                 inner: SeedCryptoProvider::from_seed(seed(phrase), Network::Testnet),
                 before_receiving_xpub: None,
                 before_scan: None,
+                before_page_scan: None,
             }
         }
     }
@@ -4007,16 +4164,35 @@ mod tests {
                 .await
         }
 
+        async fn scan_private_document_page(
+            &self,
+            keys: &PrivateDocumentKeyPaths,
+            data_contract_id: Identifier,
+            document_type_name: &str,
+            start_position: u64,
+            page: &PrivateDocumentEntries,
+        ) -> Result<PrivateDocumentScan, PlatformWalletError> {
+            if let Some(hook) = &self.before_page_scan {
+                hook().await;
+            }
+            self.inner
+                .scan_private_document_page(
+                    keys,
+                    data_contract_id,
+                    document_type_name,
+                    start_position,
+                    page,
+                )
+                .await
+        }
+
         async fn scan_private_document_pages(
             &self,
             keys: &PrivateDocumentKeyPaths,
             data_contract_id: Identifier,
             document_type_name: &str,
             pages: &[(u64, &PrivateDocumentEntries)],
-        ) -> Result<
-            Vec<dash_sdk::platform::private_document_scan::PrivateDocumentScan>,
-            PlatformWalletError,
-        > {
+        ) -> Result<Vec<PrivateDocumentScan>, PlatformWalletError> {
             if let Some(hook) = &self.before_scan {
                 hook().await;
             }
@@ -4058,18 +4234,22 @@ mod tests {
         }
     }
 
-    /// A hook that, the first time it runs, says so on `reached` and waits
-    /// for `release`.
-    fn pause_once(reached: Arc<tokio::sync::Notify>, release: Arc<tokio::sync::Notify>) -> Hook {
-        let first = Arc::new(AtomicBool::new(true));
+    /// A hook that, the `call`th time it runs (from 1), says so on `reached`
+    /// and waits for `release`.
+    fn pause_on_call(
+        call: usize,
+        reached: Arc<tokio::sync::Notify>,
+        release: Arc<tokio::sync::Notify>,
+    ) -> Hook {
+        let runs = Arc::new(AtomicUsize::new(0));
         Arc::new(move || {
-            let (reached, release, first) = (
+            let (reached, release, runs) = (
                 Arc::clone(&reached),
                 Arc::clone(&release),
-                Arc::clone(&first),
+                Arc::clone(&runs),
             );
             Box::pin(async move {
-                if first.swap(false, Ordering::SeqCst) {
+                if runs.fetch_add(1, Ordering::SeqCst) + 1 == call {
                     reached.notify_one();
                     release.notified().await;
                 }
@@ -4091,9 +4271,11 @@ mod tests {
         let view = alice_wallet.identity().dashpay();
         let reached = Arc::new(tokio::sync::Notify::new());
         let release = Arc::new(tokio::sync::Notify::new());
+        // The second derivation: the first checks the provider's seed before
+        // the store is read.
         let mut pausing = HookedCrypto::new(ALICE_PHRASE);
         pausing.before_receiving_xpub =
-            Some(pause_once(Arc::clone(&reached), Arc::clone(&release)));
+            Some(pause_on_call(2, Arc::clone(&reached), Arc::clone(&release)));
         let paid = Arc::new(Mutex::new(Vec::new()));
 
         let (alice_id, bob_id) = (alice.id(), bob.id());
@@ -4248,6 +4430,46 @@ mod tests {
         .await;
     }
 
+    /// A pass whose provider resolves another wallet's seed, valid but
+    /// deriving unrelated keys that open nothing, is refused with nothing
+    /// read or recorded; the pass with the wallet's own seed then reads the
+    /// request the refused one would have passed over.
+    #[tokio::test]
+    async fn should_refuse_a_pass_with_another_seed_and_leave_its_position_unmoved() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let (entry, _) = alice_to_bob([0x55; 43]).await;
+        let (_manager, bob_wallet) = wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![entry]).await;
+        let view = bob_wallet.identity().dashpay();
+
+        let another_seed = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let refused = view.sync_private_contact_requests(&another_seed, 4).await;
+        assert!(
+            matches!(refused, Err(PlatformWalletError::SeedMismatch { .. })),
+            "{refused:?}"
+        );
+        managed(&bob_wallet, BOB, |managed| {
+            assert_eq!(
+                managed.dashpay().private_contact_requests_position(),
+                0,
+                "nothing recorded as read"
+            );
+            assert!(!managed.dashpay().private_contact_requests_read());
+            assert!(managed.dashpay().incoming_request(&alice.id()).is_none());
+        })
+        .await;
+
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        view.sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("the pass with Bob's seed");
+        managed(&bob_wallet, BOB, |managed| {
+            assert!(managed.dashpay().incoming_request(&alice.id()).is_some());
+            assert_eq!(managed.dashpay().private_contact_requests_position(), 1);
+        })
+        .await;
+    }
+
     /// A pass that started with older keys commits no progress once a key
     /// update lands under it, even when the rewind that update brings is
     /// taken while the pass runs: the next pass reads with the new keys from
@@ -4388,8 +4610,6 @@ mod tests {
     #[cfg(feature = "shielded")]
     #[tokio::test]
     async fn should_free_a_pair_once_its_unconfirmed_payment_is_rejected_for_good() {
-        use crate::wallet::shielded::operations::note_rejected_private_documents;
-
         let alice = identity(ALICE_PHRASE, ALICE);
         let bob = identity(BOB_PHRASE, BOB);
         let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
@@ -4476,6 +4696,133 @@ mod tests {
         assert_eq!(retry.lock().expect("retry").len(), 1, "the retry pays");
     }
 
+    /// A restoration that opened an unconfirmed request's entry before the
+    /// shielded coordinator settled its payment as never executing, and that
+    /// resumes only after a send's reconciliation took the rejection, reserves
+    /// nothing: the rejection outlives that take for the session. Restoring
+    /// from the payment's record afterwards reserves nothing either, and a
+    /// retry pays.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_not_restore_a_request_rejected_for_good_while_its_restore_scanned() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (_manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let kept = Arc::new(Mutex::new(Vec::new()));
+        let unconfirmed = {
+            let kept = Arc::clone(&kept);
+            move |entry: BinaryData, started: PaymentStarted| {
+                started.mark();
+                kept.lock().expect("kept").push(entry);
+                std::future::ready(Err::<ResponseMetadata, _>(
+                    PlatformWalletError::ShieldedSpendUnconfirmed {
+                        operation: "private document create",
+                        reason: "the proof fetch timed out".to_string(),
+                    },
+                ))
+            }
+        };
+        let sent = alice_wallet
+            .identity()
+            .dashpay()
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                unconfirmed,
+            )
+            .await;
+        assert!(
+            matches!(
+                sent,
+                Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+            ),
+            "{sent:?}"
+        );
+        let entry = kept.lock().expect("kept").remove(0);
+        let commitment: [u8; 32] = entry.as_slice()[..32]
+            .try_into()
+            .expect("an entry starts with its commitment");
+
+        // Restarted: nothing reserved until a restoration runs.
+        let (_restarted_manager, restarted) =
+            wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        assert!(!pending_to(&restarted, ALICE, &bob).await);
+        let view = restarted.identity().dashpay();
+        let persister = &restarted.identity().persister;
+
+        let scanning = Arc::new(tokio::sync::Notify::new());
+        let resume = Arc::new(tokio::sync::Notify::new());
+        let mut pausing = HookedCrypto::new(ALICE_PHRASE);
+        pausing.before_page_scan = Some({
+            let (scanning, resume) = (Arc::clone(&scanning), Arc::clone(&resume));
+            Arc::new(move || {
+                let (scanning, resume) = (Arc::clone(&scanning), Arc::clone(&resume));
+                Box::pin(async move {
+                    scanning.notify_one();
+                    resume.notified().await;
+                })
+            })
+        });
+        let restore =
+            view.restore_pending_private_contact_requests(std::slice::from_ref(&entry), &pausing);
+        let reject = async {
+            scanning.notified().await;
+            // The redrive pass's definitive rejection of the saved transition,
+            // then a send's reconciliation, with nothing restored to release.
+            note_rejected_private_documents(
+                &private_contact_request_payment(entry.clone()),
+                Some(persister),
+            );
+            view.release_rejected_private_requests()
+                .await
+                .expect("the release");
+            assert!(
+                !persister.has_rejected_private_entries(),
+                "the rejection was taken"
+            );
+            resume.notify_one();
+        };
+        let (restored, ()) = tokio::join!(restore, reject);
+        assert_eq!(restored.expect("the restoration"), vec![]);
+        assert!(!pending_to(&restarted, ALICE, &bob).await);
+
+        let from_record = view
+            .restore_private_payments(&[(alice.id(), bob.id(), 0, commitment)])
+            .await
+            .expect("the restoration from the record");
+        assert_eq!(from_record, vec![]);
+        assert!(!pending_to(&restarted, ALICE, &bob).await);
+
+        let retry = Arc::new(Mutex::new(Vec::new()));
+        let retried = view
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                keep_entry(&retry),
+            )
+            .await;
+        assert!(
+            matches!(
+                retried,
+                Err(PlatformWalletError::PrivateContactRequestPending(_))
+            ),
+            "paid, not read back: {retried:?}"
+        );
+        assert_eq!(retry.lock().expect("retry").len(), 1, "the retry pays");
+    }
+
     /// The type 29 transition paying for `entry`, with placeholder actions:
     /// as the shielded store keeps a payment's signed transition.
     #[cfg(feature = "shielded")]
@@ -4516,11 +4863,6 @@ mod tests {
     #[cfg(feature = "shielded")]
     #[tokio::test]
     async fn should_restore_a_request_whose_process_exited_during_its_result_wait() {
-        use crate::wallet::shielded::operations::arm_redrive_before_broadcast;
-        use crate::wallet::shielded::{
-            FileBackedShieldedStore, NetworkShieldedCoordinator, SubwalletId,
-        };
-
         let alice = identity(ALICE_PHRASE, ALICE);
         let bob = identity(BOB_PHRASE, BOB);
         let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
@@ -4969,15 +5311,13 @@ mod tests {
     /// the process ends is saved with the request it pays for: binding the
     /// restarted wallet to its shielded coordinator reserves the pair again,
     /// with no host call and no keys. Before any sync, neither the accept a
-    /// host calls nor a public send then goes to the contact.
+    /// host calls nor a public send then goes to the contact. Before the
+    /// bind, the relaunched wallet, which bound its shielded account before,
+    /// refuses both too, with nothing sent: the reservation is not restored
+    /// yet.
     #[cfg(feature = "shielded")]
     #[tokio::test]
     async fn should_not_reply_publicly_after_a_restart_with_a_private_reply_unconfirmed() {
-        use crate::wallet::shielded::operations::arm_redrive_before_broadcast;
-        use crate::wallet::shielded::{
-            FileBackedShieldedStore, NetworkShieldedCoordinator, PrivateContactPayment, SubwalletId,
-        };
-
         let alice = identity(ALICE_PHRASE, ALICE);
         let bob = identity(BOB_PHRASE, BOB);
         let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
@@ -4998,6 +5338,8 @@ mod tests {
         let before_coordinator = coordinator_at(db_path.clone());
         let (_before_manager, before) = wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![]).await;
         add_incoming(&before, BOB, &incoming).await;
+        // What the backend keeps of the wallet, before the reply is paid.
+        let kept = Arc::new(snapshot(&before, &bob.id(), BOB_PHRASE).await);
         let subwallet = SubwalletId::new(before.wallet_id(), 0);
         let pay = {
             let store = Arc::clone(before_coordinator.store());
@@ -5048,16 +5390,60 @@ mod tests {
         // The restart: the reply is not in the store and the host restores
         // nothing; only the bind can.
         let after = coordinator_at(db_path);
-        let (_restarted_manager, restarted) = wallet_on(
-            RecordingPersistence::attesting(PersistenceCapabilities::SHIELDED_FVK_RESTART),
-            BOB_PHRASE,
-            &bob,
-            &[&alice, &bob],
-            vec![],
-        )
-        .await;
-        add_incoming(&restarted, BOB, &incoming).await;
+        let restarted_manager = PlatformWalletManager::new(
+            Arc::new(dashpay_sdk(&[&alice, &bob], vec![], PlatformVersion::latest(), None).await),
+            kept,
+            Arc::new(NoopEventHandler),
+        );
+        restarted_manager
+            .load_from_persistor()
+            .await
+            .expect("the relaunch loads");
+        let restarted = restarted_manager
+            .get_wallet(&before.wallet_id())
+            .await
+            .expect("the relaunched wallet");
         assert!(!pending_to(&restarted, BOB, &alice).await);
+
+        // Before the bind: refused, with nothing read or sent.
+        let accepted = restarted
+            .identity()
+            .dashpay()
+            .accept_contact_request_replying_in_kind(
+                &incoming,
+                None,
+                &bob_signer,
+                &bob_crypto,
+                no_payment,
+            )
+            .await;
+        assert!(
+            matches!(
+                accepted,
+                Err(PlatformWalletError::PrivateContactPaymentsNotRestored)
+            ),
+            "{accepted:?}"
+        );
+        let public = restarted
+            .identity()
+            .dashpay()
+            .send_contact_request_with_external_signer(
+                &bob.id(),
+                &alice.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &bob_signer,
+                &bob_crypto,
+            )
+            .await;
+        assert!(
+            matches!(
+                public,
+                Err(PlatformWalletError::PrivateContactPaymentsNotRestored)
+            ),
+            "{public:?}"
+        );
+
         restarted
             .bind_shielded(&seed(BOB_PHRASE), &[0], &after)
             .await

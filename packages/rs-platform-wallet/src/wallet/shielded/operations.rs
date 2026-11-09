@@ -1489,12 +1489,11 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
         .await
     }
     .await;
-    // The outcome below owns the notes from here: it finalizes, keeps or
-    // cancels their reservation.
-    reservation.hand_over();
 
     match result {
         Ok((proof, metadata)) => {
+            // It executed: the outcome owns the notes, which it marks spent.
+            reservation.hand_over();
             record_activity_status(
                 store,
                 persister,
@@ -1549,8 +1548,15 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
             };
             Ok((proven_balance, metadata))
         }
-        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => Err(e),
+        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => {
+            // It may have executed: the reservation stays, released by sync.
+            reservation.hand_over();
+            Err(e)
+        }
         Err(e) => {
+            // It did not execute: the guard owns the notes until they are
+            // released, so a drop on the way still releases them.
+            reservation.reclaim();
             record_activity_status(
                 store,
                 persister,
@@ -1561,7 +1567,7 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
                 None,
             )
             .await;
-            cancel_pending(store, id, &selected_notes).await;
+            reservation.cancel().await;
             Err(e)
         }
     }
@@ -1705,12 +1711,11 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
         .await
     }
     .await;
-    // The outcome below owns the notes from here: it finalizes, keeps or
-    // cancels their reservation.
-    reservation.hand_over();
 
     match result {
         Ok((_proof, metadata)) => {
+            // It executed: the outcome owns the notes, which it marks spent.
+            reservation.hand_over();
             record_activity_status(
                 store,
                 persister,
@@ -1737,8 +1742,15 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
             );
             Ok(metadata)
         }
-        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => Err(e),
+        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => {
+            // It may have executed: the reservation stays, released by sync.
+            reservation.hand_over();
+            Err(e)
+        }
         Err(e) => {
+            // It did not execute: the guard owns the notes until they are
+            // released, so a drop on the way still releases them.
+            reservation.reclaim();
             record_activity_status(
                 store,
                 persister,
@@ -1749,7 +1761,7 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
                 None,
             )
             .await;
-            cancel_pending(store, id, &selected_notes).await;
+            reservation.cancel().await;
             Err(e)
         }
     }
@@ -1882,12 +1894,11 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
         .await
     }
     .await;
-    // The outcome below owns the notes from here: it finalizes, keeps or
-    // cancels their reservation.
-    reservation.hand_over();
 
     match result {
         Ok(_) => {
+            // It executed: the outcome owns the notes, which it marks spent.
+            reservation.hand_over();
             record_activity_status(
                 store,
                 persister,
@@ -1938,8 +1949,15 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
         // the outcome is genuinely unknown here — a later scan that finds
         // the spend will flip the row to Confirmed (its id matches), and
         // until then surfacing it as Pending is honest.
-        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => Err(e),
+        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => {
+            // It may have executed: the reservation stays, released by sync.
+            reservation.hand_over();
+            Err(e)
+        }
         Err(e) => {
+            // It did not execute: the guard owns the notes until they are
+            // released, so a drop on the way still releases them.
+            reservation.reclaim();
             // Definitive failure: the spend never executed. Mark the
             // activity row Failed (upsert by id) before releasing notes.
             record_activity_status(
@@ -1952,7 +1970,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
                 None,
             )
             .await;
-            cancel_pending(store, id, &selected_notes).await;
+            reservation.cancel().await;
             Err(e)
         }
     }
@@ -2067,12 +2085,11 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
         .await
     }
     .await;
-    // The outcome below owns the notes from here: it finalizes, keeps or
-    // cancels their reservation.
-    reservation.hand_over();
 
     match result {
         Ok(_) => {
+            // It executed: the outcome owns the notes, which it marks spent.
+            reservation.hand_over();
             record_activity_status(
                 store,
                 persister,
@@ -2103,8 +2120,15 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
         // Ambiguous post-broadcast confirmation failure: leave the
         // reservation (and the Pending activity row) in place — a later
         // scan flips it to Confirmed (see `unshield`'s outer match).
-        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => Err(e),
+        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => {
+            // It may have executed: the reservation stays, released by sync.
+            reservation.hand_over();
+            Err(e)
+        }
         Err(e) => {
+            // It did not execute: the guard owns the notes until they are
+            // released, so a drop on the way still releases them.
+            reservation.reclaim();
             record_activity_status(
                 store,
                 persister,
@@ -2115,7 +2139,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
                 None,
             )
             .await;
-            cancel_pending(store, id, &selected_notes).await;
+            reservation.cancel().await;
             Err(e)
         }
     }
@@ -2242,12 +2266,11 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
         .await
     }
     .await;
-    // The outcome below owns the notes from here: it finalizes, keeps or
-    // cancels their reservation.
-    reservation.hand_over();
 
     match result {
         Ok(_) => {
+            // It executed: the outcome owns the notes, which it marks spent.
+            reservation.hand_over();
             record_activity_status(
                 store,
                 persister,
@@ -2278,8 +2301,15 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
         // Ambiguous post-broadcast confirmation failure: leave the
         // reservation (and the Pending activity row) in place — a later
         // scan flips it to Confirmed (see `unshield`'s outer match).
-        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => Err(e),
+        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => {
+            // It may have executed: the reservation stays, released by sync.
+            reservation.hand_over();
+            Err(e)
+        }
         Err(e) => {
+            // It did not execute: the guard owns the notes until they are
+            // released, so a drop on the way still releases them.
+            reservation.reclaim();
             record_activity_status(
                 store,
                 persister,
@@ -2290,7 +2320,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
                 None,
             )
             .await;
-            cancel_pending(store, id, &selected_notes).await;
+            reservation.cancel().await;
             Err(e)
         }
     }
@@ -2610,12 +2640,11 @@ where
         Ok::<(Identifier, Identity), PlatformWalletError>((identity.id(), identity))
     }
     .await;
-    // The outcome below owns the notes from here: it finalizes, keeps or
-    // cancels their reservation.
-    reservation.hand_over();
 
     match result {
         Ok((identity_id, identity)) => {
+            // It executed: the outcome owns the notes, which it marks spent.
+            reservation.hand_over();
             record_activity_status(
                 store,
                 persister,
@@ -2648,7 +2677,7 @@ where
             Ok((identity_id, identity))
         }
         // The broadcast was accepted but its result couldn't be confirmed and the identity wasn't
-        // found by a direct fetch. Do NOT `cancel_pending` here: `pending_nullifiers` is in-memory
+        // found by a direct fetch. Do NOT release the notes here: `pending_nullifiers` is in-memory
         // only (see `SubwalletState`, "never persisted; the next sync after a crash reconciles"),
         // and `mark_spent` during nullifier sync clears matching reservations. So if the transition
         // actually executed, the next sync promotes these notes to spent; if it truly never landed,
@@ -2656,9 +2685,16 @@ where
         // invite double-spend attempts against notes that may already be consumed on chain — the
         // very hazard this variant exists to prevent. The activity row likewise stays `Pending`
         // (a later scan that finds the identity's change note flips it to Confirmed).
-        Err(e @ PlatformWalletError::ShieldedBroadcastUnconfirmed { .. }) => Err(e),
+        Err(e @ PlatformWalletError::ShieldedBroadcastUnconfirmed { .. }) => {
+            // It may have executed: the reservation stays, released by sync.
+            reservation.hand_over();
+            Err(e)
+        }
         Err(e) => {
             if error_releases_note_reservation(&e) {
+                // It did not execute: the guard owns the notes until they are
+                // released, so a drop on the way still releases them.
+                reservation.reclaim();
                 // Definitive failure: the identity was never created. Mark
                 // the activity row Failed (upsert by id) before releasing.
                 record_activity_status(
@@ -2671,7 +2707,10 @@ where
                     None,
                 )
                 .await;
-                cancel_pending(store, id, &selected_notes).await;
+                reservation.cancel().await;
+            } else {
+                // It may have executed: the reservation stays, released by sync.
+                reservation.hand_over();
             }
             Err(e)
         }
@@ -3010,7 +3049,7 @@ async fn mark_notes_spent<S: ShieldedStore>(
 /// The reservation is in-memory only — see
 /// [`ShieldedStore::mark_pending`] for the crash-recovery note.
 /// Callers must pair this with [`finalize_pending`] (on
-/// broadcast success) or [`cancel_pending`] (on failure) so the
+/// broadcast success) or [`NoteReservation::cancel`] (on failure) so the
 /// reservation is always released; until they hand it over
 /// ([`NoteReservation::hand_over`]), the returned guard releases it when
 /// the spend is dropped.
@@ -3031,7 +3070,7 @@ async fn reserve_unspent_notes<S: ShieldedStore>(
 /// `amount` plus the fee of `fee_kind`, which [`reserve_unspent_notes`] does
 /// for a positive amount. A spend paying only its fee (an
 /// `PrivateDocumentCreateFromShieldedPool`) reserves with an `amount` of 0.
-/// Callers must pair this with [`finalize_pending`] / [`cancel_pending`], and
+/// Callers must pair this with [`finalize_pending`] / [`NoteReservation::cancel`], and
 /// hand the guard over once they own the reservation.
 async fn reserve_notes_covering<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
@@ -3081,7 +3120,7 @@ fn mark_notes_pending<S: ShieldedStore>(
 /// future dropped before its notes have an owner that frees them (an anchor
 /// on each reservation, which a pruned anchor releases, or the outcome
 /// handling that finalizes or cancels them) leaves them spendable again, as
-/// [`cancel_pending`] would, rather than excluded for the rest of the
+/// [`NoteReservation::cancel`] would, rather than excluded for the rest of the
 /// session. The release takes the store lock when it is free, and otherwise
 /// runs on a spawned task once it frees; outside a runtime the notes stay
 /// reserved until restart.
@@ -3096,6 +3135,22 @@ impl<S: ShieldedStore> NoteReservation<S> {
     /// The spend owns the reservation from now on.
     pub(super) fn hand_over(&mut self) {
         self.handed_over = true;
+    }
+
+    /// Own the reservation again, for a spend now known not to have executed: dropped from
+    /// here on, the guard releases the notes, whatever owned them before.
+    pub(super) fn reclaim(&mut self) {
+        self.handed_over = false;
+    }
+
+    /// Release the notes now, for a spend that did not execute.
+    /// The guard owns them until the release is done: a spend dropped while it waits for the
+    /// store lock still releases them on drop.
+    pub(super) async fn cancel(mut self) {
+        self.handed_over = false;
+        let mut store = self.store.write().await;
+        release_reserved_notes(&mut *store, self.id, &self.nullifiers);
+        self.nullifiers.clear();
     }
 }
 
@@ -3124,7 +3179,7 @@ impl<S: ShieldedStore> Drop for NoteReservation<S> {
     }
 }
 
-/// Clear the reservations of `nullifiers`, as [`cancel_pending`] does.
+/// Clear the reservations of `nullifiers`.
 fn release_reserved_notes<S: ShieldedStore>(
     store: &mut S,
     id: SubwalletId,
@@ -3145,7 +3200,7 @@ fn release_reserved_notes<S: ShieldedStore>(
 /// (the fee is metered FROM the denomination, not added to the target) in one write-locked
 /// critical section, gating on `denomination > predicted_fee` via
 /// [`select_notes_for_denomination`]. Returns the selected notes, total input value, and the
-/// predicted fee. Callers must pair this with [`finalize_pending`] / [`cancel_pending`], and
+/// predicted fee. Callers must pair this with [`finalize_pending`] / [`NoteReservation::cancel`], and
 /// hand the guard over once they own the reservation.
 async fn reserve_unspent_notes_for_denomination<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
@@ -3188,25 +3243,6 @@ async fn finalize_pending<S: ShieldedStore>(
     mark_notes_spent(store, persister, wallet_id, id, notes).await
 }
 
-/// Roll back a reservation when the broadcast / wait fails.
-/// Best-effort and doesn't surface its own errors — the caller
-/// is already returning the broadcast error.
-async fn cancel_pending<S: ShieldedStore>(
-    store: &Arc<RwLock<S>>,
-    id: SubwalletId,
-    notes: &[ShieldedNote],
-) {
-    let mut store = store.write().await;
-    for note in notes {
-        if let Err(e) = store.clear_pending(id, &note.nullifier) {
-            tracing::warn!(
-                error = %e,
-                "cancel_pending: clear_pending failed; the next note scan will reconcile"
-            );
-        }
-    }
-}
-
 /// Record the recorded `anchor` the spend was built against and the
 /// linked activity entry on every selected note's reservation, so a
 /// spend that ends broadcast-accepted-but-unconfirmed can be released
@@ -3219,7 +3255,7 @@ async fn cancel_pending<S: ShieldedStore>(
 /// reservation won't self-release on a pruned anchor (it still frees
 /// on the next restart), so it must never abort a spend about to
 /// broadcast. A success (`finalize_pending`) or a definite failure
-/// (`cancel_pending`) removes the entry, so only an ambiguous
+/// (`NoteReservation::cancel`) removes the entry, so only an ambiguous
 /// unconfirmed outcome leaves it carrying the anchor.
 ///
 /// Returns whether every reservation now carries the anchor, so a pruned
@@ -3795,7 +3831,7 @@ pub(crate) fn note_rejected_private_documents(
 ///   (Platform ran the transition and rejected it on its merits — see
 ///   [`carries_consensus_rejection`]), means the spend never executed →
 ///   [`PlatformWalletError::ShieldedBroadcastFailed`], and the caller
-///   releases the note reservations via [`cancel_pending`];
+///   releases the note reservations via [`NoteReservation::cancel`];
 /// - a no-verdict `broadcast()` failure (`AlreadyExists` proves the tx IS
 ///   in the mempool after a lost-ACK retry; timeouts merely allow it)
 ///   falls through to the result wait, which either proves execution or
@@ -4052,13 +4088,25 @@ mod shield_recipient_tests {
 #[cfg(test)]
 mod redrive_tests {
     use super::*;
+    use crate::wallet::identity::network::PaymentStarted;
     use crate::wallet::shielded::store::InMemoryShieldedStore;
+    use dash_sdk::dpp::dashcore::Network;
+    use dash_sdk::dpp::prelude::CoreBlockHeight;
+    use dash_sdk::error::ContextProviderError;
     use dash_sdk::error::StateTransitionBroadcastError;
+    use dash_sdk::platform::ContextProvider;
+    use dash_sdk::sdk::AddressList;
     use dpp::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
+    use dpp::data_contract::{DataContract, TokenConfiguration};
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::shield_from_identity_transition::v0::ShieldFromIdentityTransitionV0;
+    use dpp::version::PlatformVersion;
+    use futures::{poll, FutureExt};
+    use grovedb_commitment_tree::ProvingKey;
+    use std::str::FromStr;
+    use std::task::Poll;
 
     fn identity_shield_transition(identity_id: [u8; 32], nonce: u64) -> StateTransition {
         ShieldFromIdentityTransitionV0 {
@@ -4375,6 +4423,103 @@ mod redrive_tests {
         );
     }
 
+    /// A spend that failed before anything was broadcast, here a private document payment
+    /// whose anchor fetch the mock refuses, and is dropped while its rollback waits for the
+    /// store lock another task holds, still releases its notes: the guard owns them until the
+    /// rollback has cleared them.
+    #[tokio::test]
+    async fn should_release_the_notes_of_a_spend_dropped_during_its_failure_rollback() {
+        struct UnreachableProver;
+        impl OrchardProver for UnreachableProver {
+            fn proving_key(&self) -> &ProvingKey {
+                panic!("nothing is proved")
+            }
+        }
+
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_version(PlatformVersion::latest())
+                .build()
+                .expect("a mock SDK"),
+        );
+        let wallet_id = [0x65; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let note = ShieldedNote {
+            position: 0,
+            cmx: [1; 32],
+            nullifier: [0x5E; 32],
+            block_height: 1,
+            is_spent: false,
+            value: 1_000_000_000_000,
+            note_data: vec![],
+        };
+        store.write().await.save_note(id, &note).expect("a note");
+        let keys = OrchardKeySet::from_seed(&[0x42; 64], Network::Testnet, 0).expect("keys");
+        let started = PaymentStarted::default();
+
+        // The spend waits for the store behind this task; this task's next acquisition waits
+        // behind the spend, so the lock passes to it right after the spend's reservation.
+        let held = store.write().await;
+        let mut spend = Box::pin(private_document_create_from_pool_with_metadata(
+            &sdk,
+            &store,
+            None,
+            wallet_id,
+            &keys,
+            0,
+            Identifier::from([0x44; 32]),
+            "privateContactRequest",
+            vec![BinaryData::new(vec![1; 589])],
+            None,
+            &started,
+            &UnreachableProver,
+        ));
+        assert!(poll!(&mut spend).is_pending(), "waits to reserve");
+        let mut again = Box::pin(store.write());
+        assert!(poll!(&mut again).is_pending(), "queued behind the spend");
+        drop(held);
+        // Reserved, refused by the anchor fetch, and waiting to roll back behind `again`.
+        assert!(
+            poll!(&mut spend).is_pending(),
+            "the rollback waits for the store"
+        );
+        let Poll::Ready(contended) = poll!(&mut again) else {
+            panic!("the lock passes on after the reservation");
+        };
+        assert!(
+            contended.get_unspent_notes(id).expect("notes").is_empty(),
+            "reserved while the rollback waits"
+        );
+        drop(spend);
+        drop(contended);
+        for _ in 0..100 {
+            if !store
+                .read()
+                .await
+                .get_unspent_notes(id)
+                .expect("notes")
+                .is_empty()
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(
+            store
+                .read()
+                .await
+                .get_unspent_notes(id)
+                .expect("notes")
+                .iter()
+                .map(|note| note.nullifier)
+                .collect::<Vec<_>>(),
+            vec![note.nullifier],
+            "the note is spendable again"
+        );
+        assert!(!started.is_marked());
+    }
+
     /// A reservation dropped while the store is locked is released once the
     /// lock frees, on a spawned task; one handed over stays.
     #[tokio::test]
@@ -4432,17 +4577,6 @@ mod redrive_tests {
     /// connection and never answers.
     #[tokio::test]
     async fn should_release_the_notes_of_a_spend_dropped_during_its_anchor_fetch() {
-        use crate::wallet::identity::network::PaymentStarted;
-        use dash_sdk::dpp::dashcore::Network;
-        use dash_sdk::dpp::prelude::CoreBlockHeight;
-        use dash_sdk::error::ContextProviderError;
-        use dash_sdk::platform::ContextProvider;
-        use dash_sdk::sdk::AddressList;
-        use dpp::data_contract::{DataContract, TokenConfiguration};
-        use dpp::version::PlatformVersion;
-        use grovedb_commitment_tree::ProvingKey;
-        use std::str::FromStr;
-
         struct NoKeys;
         impl ContextProvider for NoKeys {
             fn get_data_contract(
@@ -4551,9 +4685,6 @@ mod redrive_tests {
     /// lock frees, a save marks it.
     #[tokio::test]
     async fn should_mark_a_payment_started_only_once_its_record_is_saved() {
-        use crate::wallet::identity::network::PaymentStarted;
-        use futures::FutureExt;
-
         let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
         let id = SubwalletId::new([0x62; 32], 0);
         let transition = identity_shield_transition([0xBB; 32], 4);

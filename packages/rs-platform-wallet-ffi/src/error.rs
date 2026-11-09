@@ -660,6 +660,14 @@ pub enum PlatformWalletFFIResultCode {
     /// private contact request sync
     /// (`platform_wallet_sync_private_contact_requests`) or a retry settles
     /// it.
+    ///
+    /// Also maps `PlatformWalletError::PrivateContactPaymentsNotRestored`: a
+    /// wallet loaded after binding a shielded account in an earlier process
+    /// sends and accepts no public contact request, nothing signed or
+    /// broadcast, until its unconfirmed private payments are restored from the
+    /// shielded store. Configuring the shielded store after the load restores
+    /// them with no keys; so does binding the wallet's shielded account. Retry
+    /// after either.
     ErrorPrivateContactRequestPending = 71,
 
     /// The named thing does not exist.
@@ -1109,6 +1117,11 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // yet read back: pending, not failed, so the host must not submit
             // it again.
             PlatformWalletError::PrivateContactRequestPending(..) => {
+                PlatformWalletFFIResultCode::ErrorPrivateContactRequestPending
+            }
+            // A loaded wallet's private payments are not restored yet: the
+            // pair may be held, so the host retries as for a pending one.
+            PlatformWalletError::PrivateContactPaymentsNotRestored => {
                 PlatformWalletFFIResultCode::ErrorPrivateContactRequestPending
             }
             // A signer failure can also reach this blanket impl wrapped as
@@ -2819,6 +2832,19 @@ mod private_contact_request_error_tests {
         #[cfg(feature = "shielded")]
         assert_eq!(
             map_spend_result(Err(pending()), "private contact request").code,
+            PlatformWalletFFIResultCode::ErrorPrivateContactRequestPending
+        );
+    }
+
+    /// A public contact request a loaded wallet refuses until its private
+    /// payments are restored reaches the host as pending, to retry once the
+    /// shielded store is configured.
+    #[test]
+    fn should_report_unrestored_private_payments_as_pending() {
+        let result =
+            PlatformWalletFFIResult::from(PlatformWalletError::PrivateContactPaymentsNotRestored);
+        assert_eq!(
+            result.code,
             PlatformWalletFFIResultCode::ErrorPrivateContactRequestPending
         );
     }

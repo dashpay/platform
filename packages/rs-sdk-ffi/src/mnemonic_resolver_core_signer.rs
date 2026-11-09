@@ -1682,6 +1682,7 @@ mod tests {
 
         fn page(entries: Vec<BinaryData>) -> PrivateDocumentEntries {
             PrivateDocumentEntries {
+                chunk_power: None,
                 total_count: entries.len() as u64,
                 entries: entries
                     .into_iter()

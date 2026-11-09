@@ -627,7 +627,9 @@ fn bounds_problem(
 /// `AUTHENTICATION` key at one of `levels`, of a signing key type, bound to no other contract or
 /// document type, enabled then and not expired then (the expiry instant itself is expired, as
 /// dpp's `is_expired_at` says). The reader checks it at the entry's block time, which decides;
-/// the seal and the key list check it now, so a key about to be refused is not offered.
+/// the seal and the key list check it now, so a key about to be refused is not offered. The
+/// expiry is `key`'s as given: its identity's current limit, which an extension since the entry
+/// may have moved past it ([`private_contact_requests_from_scan`]).
 fn signing_key_problem(
     key: &IdentityPublicKey,
     levels: &[SecurityLevel],
@@ -984,6 +986,12 @@ pub fn private_contact_request_identities(scan: &PrivateDocumentScan) -> BTreeMa
 /// when a key was disabled, not when it was added. Adding a key takes the identity's master key,
 /// so a key added later still speaks for the identity's owner.
 ///
+/// Likewise, a key's expiry is the limit the identity given carries now, compared with the
+/// entry's block time, not the limit the key had when the entry was appended. An identity may
+/// extend a key's expiry, which revives an expired key: an entry its key signed after the key's
+/// first expiry is refused against an identity read before the extension, and read against one
+/// read after it, once the new expiry is past the entry's block time.
+///
 /// The first request from a sender to a recipient for an account reference is kept. A wallet
 /// keeps the requests it already holds from earlier scans, and drops a later one from the same
 /// sender for the same account reference as this does.
@@ -1105,7 +1113,7 @@ pub fn private_contact_requests_from_scan(
             reason,
         };
         match reader.read_received(&received) {
-            Ok(request) => {
+            Ok((request, recipient_key_id)) => {
                 let sender_id = Identifier::from(*received.entry.sender_identity_id());
                 if !seen.insert((
                     received.recipient_identity_id,
@@ -1120,7 +1128,7 @@ pub fn private_contact_requests_from_scan(
                     block_height: received.block_height,
                     block_time_ms: received.block_time_ms,
                     recipient_id: received.recipient_identity_id,
-                    recipient_key_id: received.recipient_key_id,
+                    recipient_key_id,
                     sender_id,
                     sender_key_id: received.entry.sender_key_id(),
                     commitment: *received.entry.commitment(),
@@ -1188,37 +1196,50 @@ impl EntryReader<'_> {
             .and_then(|proved| proved.identity.as_ref())
     }
 
-    /// The request a received entry holds, once its sender and recipient key are checked.
+    /// The request a received entry holds, once its sender and recipient key are checked,
+    /// with the id of the recipient key it is read under: the first of the ids the entry's
+    /// point is held under (`ReceivedPrivateDocumentEntry::recipient_key_ids`) that sealing
+    /// would have encrypted to at the entry's time.
     fn read_received(
         &self,
         received: &ReceivedPrivateDocumentEntry,
-    ) -> Result<PrivateContactRequest, PrivateContactRequestRejection> {
+    ) -> Result<(PrivateContactRequest, KeyID), PrivateContactRequestRejection> {
         self.check_sender(&received.entry, received.block_time_ms)?;
-        // The key the entry opened with, checked as sealing checks it, at the entry's time.
-        let recipient_key_problem = match self.identity(&received.recipient_identity_id) {
-            None => Some("the recipient identity does not exist".to_string()),
-            Some(recipient) => match recipient_key(
+        let recipient = self
+            .identity(&received.recipient_identity_id)
+            .ok_or_else(|| {
+                PrivateContactRequestRejection::RecipientKeyNotUsable(
+                    "the recipient identity does not exist".to_string(),
+                )
+            })?;
+        let candidates: &[KeyID] = if received.recipient_key_ids.is_empty() {
+            std::slice::from_ref(&received.recipient_key_id)
+        } else {
+            &received.recipient_key_ids
+        };
+        // Each id the point is held under, checked as sealing checks it, at the entry's time.
+        let mut first_problem = None;
+        for &key_id in candidates {
+            let problem = match recipient_key(
                 recipient,
-                received.recipient_key_id,
+                key_id,
                 self.dashpay_id,
                 Some(received.block_time_ms),
             ) {
-                Err(problem) => Some(problem),
+                Err(problem) => problem,
                 Ok(public_key) if public_key != *received.entry.recipient_public_key() => {
-                    Some(format!(
-                        "the recipient key {} is not the key the entry is encrypted to",
-                        received.recipient_key_id
-                    ))
+                    format!("the recipient key {key_id} is not the key the entry is encrypted to")
                 }
-                Ok(_) => None,
-            },
-        };
-        if let Some(problem) = recipient_key_problem {
-            return Err(PrivateContactRequestRejection::RecipientKeyNotUsable(
-                problem,
-            ));
+                Ok(_) => {
+                    let request = (self.decode)(received.entry.payload())?;
+                    return Ok((request, key_id));
+                }
+            };
+            first_problem.get_or_insert(problem);
         }
-        (self.decode)(received.entry.payload())
+        Err(PrivateContactRequestRejection::RecipientKeyNotUsable(
+            first_problem.unwrap_or_else(|| "no recipient key is named".to_string()),
+        ))
     }
 
     /// The request a sent entry holds, once it is checked to be the identity's own: someone
@@ -1695,6 +1716,7 @@ mod tests {
 
     fn page(entries: Vec<Vec<u8>>) -> PrivateDocumentEntries {
         PrivateDocumentEntries {
+            chunk_power: None,
             total_count: entries.len() as u64,
             entries: entries
                 .into_iter()
@@ -2301,6 +2323,97 @@ mod tests {
             read_with(hash160).as_slice(),
             [PrivateContactRequestRejection::RecipientKeyNotUsable(_)]
         ));
+    }
+
+    /// One point held under two ids, a disabled compressed key 1 and an enabled uncompressed
+    /// encoding of it as key 2, opens under either: the request sealed to key 2 is read once,
+    /// under key 2, rather than refused for key 1. So it is when the identity's keys were given
+    /// in two registrations, and when key 1 comes first.
+    #[test]
+    fn should_read_a_request_under_an_eligible_alias_of_the_key_it_opened_with() {
+        let contract = dashpay();
+        let sender = sender_identity(None);
+        let request = smallest_request(1);
+        let uncompressed = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 2,
+            purpose: Purpose::DECRYPTION,
+            security_level: SecurityLevel::MEDIUM,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(
+                PublicKey::from_secret_key(&secret_key(2))
+                    .serialize_uncompressed()
+                    .to_vec(),
+            ),
+            disabled_at: None,
+        });
+        let recipient = with_key(
+            with_key(recipient_identity(), uncompressed),
+            key(
+                1,
+                Purpose::DECRYPTION,
+                KeyType::ECDSA_SECP256K1,
+                &secret_key(2),
+                Some(1),
+            ),
+        );
+        let signature = sign_private_document_signing_data(
+            &private_contact_request_signing_data(
+                &contract,
+                &sender,
+                1,
+                &recipient,
+                2,
+                &request,
+                PlatformVersion::latest(),
+            )
+            .expect("the keys check"),
+            &secret_key(9),
+        );
+        let entry = seal_private_contact_request(
+            &contract,
+            &PrivateContactRequestSender {
+                identity: &sender,
+                encryption_key_id: 1,
+                encryption_secret_key: &secret_key(1),
+                signing_key_id: 0,
+                signature: &signature,
+            },
+            &recipient,
+            2,
+            &request,
+            &[3; 32],
+            PlatformVersion::latest(),
+        )
+        .expect("the request seals to the enabled alias")
+        .to_vec();
+
+        let recipient_id = Identifier::from(RECIPIENT_ID);
+        for (case, keys) in [
+            (
+                "one registration",
+                PrivateDocumentScanKeys::new()
+                    .with_recipient(recipient_id, &[(1, secret_key(2)), (2, secret_key(2))]),
+            ),
+            (
+                "two registrations",
+                PrivateDocumentScanKeys::new()
+                    .with_recipient(recipient_id, &[(1, secret_key(2))])
+                    .with_recipient(recipient_id, &[(2, secret_key(2))]),
+            ),
+        ] {
+            let scan = read(
+                &contract,
+                vec![entry.clone()],
+                &keys,
+                &[sender.clone(), recipient.clone()],
+            );
+            assert_eq!(scan.rejected, vec![], "{case}");
+            assert_eq!(scan.received.len(), 1, "{case}: read once");
+            assert_eq!(scan.received[0].recipient_key_id, 2, "{case}");
+            assert_eq!(scan.received[0].request, request, "{case}");
+        }
     }
 
     /// An entry the sender's outgoing viewing key recovers is the sender's only when it names
@@ -3096,35 +3209,37 @@ mod tests {
         );
     }
 
+    /// The sender, its signing key expiring at `expires_at`.
+    fn sender_signing_until(expires_at: u64) -> Identity {
+        with_key(
+            sender_identity(None),
+            IdentityPublicKey::V1(
+                dpp::identity::identity_public_key::v1::IdentityPublicKeyV1 {
+                    id: 0,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::HIGH,
+                    contract_bounds: None,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    read_only: false,
+                    data: BinaryData::new(
+                        PublicKey::from_secret_key(&secret_key(9))
+                            .serialize()
+                            .to_vec(),
+                    ),
+                    disabled_at: None,
+                    total_budget: None,
+                    expires_at: Some(expires_at),
+                },
+            ),
+        )
+    }
+
     /// A signing key with an expiry signs entries appended before it, not at or after it, and
     /// is not offered once expired.
     #[test]
     fn should_refuse_a_signing_key_expired_when_the_entry_was_appended() {
         let contract = dashpay();
         let entry = seal(&contract, &sender_identity(None), &smallest_request(1), 1);
-        let expiring = |expires_at| {
-            with_key(
-                sender_identity(None),
-                IdentityPublicKey::V1(
-                    dpp::identity::identity_public_key::v1::IdentityPublicKeyV1 {
-                        id: 0,
-                        purpose: Purpose::AUTHENTICATION,
-                        security_level: SecurityLevel::HIGH,
-                        contract_bounds: None,
-                        key_type: KeyType::ECDSA_SECP256K1,
-                        read_only: false,
-                        data: BinaryData::new(
-                            PublicKey::from_secret_key(&secret_key(9))
-                                .serialize()
-                                .to_vec(),
-                        ),
-                        disabled_at: None,
-                        total_budget: None,
-                        expires_at: Some(expires_at),
-                    },
-                ),
-            )
-        };
         for (case, expires_at, accepted) in [
             ("after the entry", BLOCK_TIME_MS + 1, true),
             ("at the entry", BLOCK_TIME_MS, false),
@@ -3134,7 +3249,7 @@ mod tests {
                 &contract,
                 vec![entry.clone()],
                 &recipient_keys(),
-                &[expiring(expires_at), recipient_identity()],
+                &[sender_signing_until(expires_at), recipient_identity()],
             ));
             if accepted {
                 assert_eq!(reasons, vec![], "{case}");
@@ -3149,11 +3264,49 @@ mod tests {
             }
         }
         assert!(
-            private_contact_request_signing_keys(&contract, &expiring(1))
+            private_contact_request_signing_keys(&contract, &sender_signing_until(1))
                 .expect("DashPay v3")
                 .is_empty(),
             "an expired key is not offered"
         );
+    }
+
+    /// The expiry checked is the sender's key's limit as the identity given carries it, not the
+    /// one it had when the entry was appended: an entry the key signed after it expired is
+    /// refused against the identity as it was then, and read once the identity has extended
+    /// the key's expiry past the entry and is read again.
+    #[test]
+    fn should_read_an_entry_signed_after_an_expiry_once_the_expiry_is_extended_past_it() {
+        let contract = dashpay();
+        let entry = seal(&contract, &sender_identity(None), &smallest_request(1), 1);
+
+        let expired = reasons(read(
+            &contract,
+            vec![entry.clone()],
+            &recipient_keys(),
+            &[
+                sender_signing_until(BLOCK_TIME_MS - 1),
+                recipient_identity(),
+            ],
+        ));
+        assert!(
+            matches!(
+                expired.as_slice(),
+                [PrivateContactRequestRejection::SenderKeyNotUsable(_)]
+            ),
+            "{expired:?}"
+        );
+
+        let extended = reasons(read(
+            &contract,
+            vec![entry],
+            &recipient_keys(),
+            &[
+                sender_signing_until(BLOCK_TIME_MS + 1),
+                recipient_identity(),
+            ],
+        ));
+        assert_eq!(extended, vec![], "read with the extended expiry");
     }
 
     /// The recipient key an entry names must be the one it is encrypted to, whether it is a
@@ -3515,6 +3668,7 @@ mod tests {
                     0,
                 ),
                 Some(PrivateDocumentEntries {
+                    chunk_power: None,
                     entries: vec![],
                     total_count: 0,
                 }),
@@ -3574,6 +3728,7 @@ mod tests {
                     0,
                 ),
                 Some(PrivateDocumentEntries {
+                    chunk_power: None,
                     entries: vec![],
                     total_count: 0,
                 }),

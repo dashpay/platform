@@ -1809,6 +1809,16 @@ impl PlatformWallet {
     /// [`Self::restore_pending_private_contact_requests`] or the payment's
     /// own check. An identity added to the wallet after the bind is not
     /// covered until the next bind or that call.
+    ///
+    /// Run also by [`PlatformWalletManager::configure_shielded`] for every
+    /// wallet the manager holds, and by its load for the wallets it loads once
+    /// the store is configured: no keys are needed. Once it succeeds, the
+    /// wallet's public contact requests, which a load holds for a wallet that
+    /// bound a shielded account before
+    /// ([`PlatformWalletError::PrivateContactPaymentsNotRestored`]), go
+    /// ahead.
+    ///
+    /// [`PlatformWalletManager::configure_shielded`]: crate::PlatformWalletManager::configure_shielded
     #[cfg(feature = "shielded")]
     pub async fn restore_private_contact_payments(
         &self,
@@ -1837,10 +1847,15 @@ impl PlatformWallet {
                     })
             })
             .collect();
-        self.identity
+        let restored = self
+            .identity
             .dashpay()
             .restore_private_payments(&payments)
-            .await
+            .await?;
+        // After the restored reservations are in place: a public send that
+        // sees the hold gone sees them.
+        self.persister.private_payments_restored();
+        Ok(restored)
     }
 
     /// The entries of the private contact requests whose payment from this
