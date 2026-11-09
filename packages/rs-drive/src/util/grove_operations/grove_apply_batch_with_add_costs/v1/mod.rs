@@ -17,13 +17,13 @@ impl Drive {
     /// as generation 0 does.
     pub(super) fn grove_apply_batch_with_add_costs_v1(
         &self,
-        ops: GroveDbOpBatch,
+        mut ops: GroveDbOpBatch,
         validate: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        let owner_handover = ops.owner_handover.clone();
+        let owner_handover = ops.owner_handover.take();
         self.grove_apply_batch_with_flags_update(
             ops,
             validate,
@@ -96,24 +96,40 @@ mod tests {
         StorageFlags::new_single_epoch(epoch, Some(owner)).to_element_flags()
     }
 
-    fn update(old_owner: [u8; 32], new_owner: [u8; 32]) -> (ElementFlagsUpdate, StorageFlags) {
+    fn ownerless_flags(epoch: u16) -> ElementFlags {
+        StorageFlags::new_single_epoch(epoch, None).to_element_flags()
+    }
+
+    /// A same size update of an element stored with `old_flags`, written with `new_flags`.
+    fn update_flags(
+        old_flags: Option<ElementFlags>,
+        mut new_flags: ElementFlags,
+        full_handover_owners: &BTreeSet<[u8; 32]>,
+    ) -> (ElementFlagsUpdate, StorageFlags) {
         let same_size = StorageCost {
             added_bytes: 0,
             replaced_bytes: 10,
             removed_bytes: NoStorageRemoval,
         };
-        let mut new_flags = flags(2, new_owner);
         let answer = update_element_flags_for_owner_change(
             &same_size,
-            Some(flags(1, old_owner)),
+            old_flags,
             &mut new_flags,
-            &BTreeSet::from([SPONSOR]),
+            full_handover_owners,
         )
         .expect("expected the flags to update");
         let written = StorageFlags::from_element_flags_ref(&new_flags)
             .expect("expected flags that decode")
             .expect("expected flags");
         (answer, written)
+    }
+
+    fn update(old_owner: [u8; 32], new_owner: [u8; 32]) -> (ElementFlagsUpdate, StorageFlags) {
+        update_flags(
+            Some(flags(1, old_owner)),
+            flags(2, new_owner),
+            &BTreeSet::from([SPONSOR]),
+        )
     }
 
     #[test]
@@ -152,6 +168,58 @@ mod tests {
 
         assert_ne!(answer, ElementFlagsUpdate::AccountAsReplacement);
         assert_eq!(written.owner_id(), Some(&SPONSOR));
+        assert_eq!(written.base_epoch(), &1);
+    }
+
+    #[test]
+    fn should_use_a_sponsors_flags_as_written_when_no_flags_are_stored() {
+        let (answer, written) = update_flags(None, flags(2, SPONSOR), &BTreeSet::from([SPONSOR]));
+
+        assert_eq!(answer, ElementFlagsUpdate::Unchanged);
+        assert_eq!(written.owner_id(), Some(&SPONSOR));
+        assert_eq!(written.base_epoch(), &2);
+    }
+
+    #[test]
+    fn should_give_a_sponsor_the_stored_bytes_nobody_owned() {
+        let (answer, written) = update_flags(
+            Some(ownerless_flags(1)),
+            flags(2, SPONSOR),
+            &BTreeSet::from([SPONSOR]),
+        );
+
+        assert_eq!(
+            answer,
+            ElementFlagsUpdate::Changed,
+            "nobody is refunded, so nothing is replaced"
+        );
+        assert_eq!(written.owner_id(), Some(&SPONSOR));
+        assert_eq!(written.base_epoch(), &1);
+    }
+
+    #[test]
+    fn should_leave_a_sponsors_element_alone_when_the_new_flags_name_nobody() {
+        let (answer, written) = update_flags(
+            Some(flags(1, SPONSOR)),
+            ownerless_flags(2),
+            &BTreeSet::from([SPONSOR]),
+        );
+
+        assert_ne!(answer, ElementFlagsUpdate::AccountAsReplacement);
+        assert_eq!(written.owner_id(), Some(&SPONSOR));
+        assert_eq!(written.base_epoch(), &1);
+    }
+
+    #[test]
+    fn should_keep_the_stored_bytes_of_every_owner_change_when_no_owner_gets_a_full_handover() {
+        let (answer, written) = update_flags(
+            Some(flags(1, SPONSOR)),
+            flags(2, NEW_OWNER),
+            &BTreeSet::new(),
+        );
+
+        assert_eq!(answer, ElementFlagsUpdate::Changed);
+        assert_eq!(written.owner_id(), Some(&NEW_OWNER));
         assert_eq!(written.base_epoch(), &1);
     }
 }

@@ -132,7 +132,8 @@ impl Drive {
         let forfeits_storage_refunds = operations
             .iter()
             .any(DriveOperation::forfeits_storage_refunds);
-        let owner_handover = DriveOperation::owner_handover(&operations)?;
+        let owner_handover =
+            DriveOperation::owner_handover(&operations, self, transaction, platform_version)?;
         // The document operations of a moderator's deletion go in a batch of their own only
         // when something else in the batch may free bytes someone is owed.
         let separates_forfeited_operations = forfeits_storage_refunds

@@ -5,6 +5,7 @@ use derive_more::From;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV1Getters};
 use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::DataContract;
 use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use crate::drive::contract_groups::types::ContractGroupMembershipsForContract;
 use dpp::fee::fee_result::FeeResult;
@@ -192,6 +193,7 @@ pub fn record_gas_sponsor_as_storage_owner(
     operations: &mut [DriveOperation],
     gas_sponsor_id: Identifier,
 ) {
+    let gas_sponsor = gas_sponsor_id.to_buffer();
     for operation in operations {
         let DriveOperation::DocumentOperation(document_operation) = operation else {
             continue;
@@ -218,7 +220,7 @@ pub fn record_gas_sponsor_as_storage_owner(
                 ..
             } => owned_document_info
                 .document_info
-                .set_storage_flags_owner(gas_sponsor_id.to_buffer()),
+                .set_storage_flags_owner(gas_sponsor),
             DocumentOperationType::DeleteDocument { .. }
             | DocumentOperationType::ForceDeleteDocument { .. }
             | DocumentOperationType::ForceDeleteReadDocument { .. }
@@ -247,6 +249,16 @@ pub(crate) fn document_type_offers_gas_sponsorship(document_type: DocumentTypeRe
     .into_iter()
     .flatten()
     .any(|token_cost| token_cost.gas_fees_paid_by != GasFeesPaidBy::DocumentOwner)
+}
+
+/// The identity that may hold the storage of a document of the type which someone else owns:
+/// the contract's owner, when the type offers gas sponsorship. A change of owner involving it
+/// is a full handover (see `GroveDbOpBatch::owner_handover`).
+pub(crate) fn storage_sponsor_of_document_type(
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+) -> Option<[u8; 32]> {
+    document_type_offers_gas_sponsorship(document_type).then(|| contract.owner_id().to_buffer())
 }
 
 /// Who pays the gas of a whole batch, as `GasFeesPaidBy::resolve` names it for each of its

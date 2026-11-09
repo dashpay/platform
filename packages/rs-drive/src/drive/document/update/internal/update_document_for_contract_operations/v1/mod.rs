@@ -407,6 +407,11 @@ impl Drive {
         // An update naming a new owner moves the references of the indexes it leaves unchanged
         // too. An untrusted refresh writes the stored flags back, so those are refreshed as
         // trusted: what they point at is unchanged.
+        //
+        // The document's stored owner decides, not each reference's. Earlier generations could
+        // leave a reference with whoever paid for it while the document went to a new owner;
+        // such a reference stays with its payer until an update names another owner. No gas
+        // sponsor holds one: flags name a sponsor only from the generation that follows owners.
         let references_take_new_owner = references_follow_the_owner
             && old_document_info
                 .get_storage_flags_ref()

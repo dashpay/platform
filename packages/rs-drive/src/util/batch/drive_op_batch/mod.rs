@@ -287,19 +287,22 @@ impl DriveOperation<'_> {
     /// documents it updates, for whom an owner change is a full handover.
     pub(crate) fn owner_handover(
         operations: &[DriveOperation],
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<BTreeSet<[u8; 32]>>, Error> {
-        let mut owners = None;
+        let mut owner_handover = None;
         for operation in operations {
-            if let DriveOperation::DocumentOperation(
-                document_operation @ DocumentOperationType::UpdateDocument { .. },
-            ) = operation
-            {
-                owners
-                    .get_or_insert_with(BTreeSet::new)
-                    .extend(document_operation.storage_sponsor_of_updated_document()?);
+            if let DriveOperation::DocumentOperation(document_operation) = operation {
+                document_operation.add_to_owner_handover(
+                    &mut owner_handover,
+                    drive,
+                    transaction,
+                    platform_version,
+                )?;
             }
         }
-        Ok(owners)
+        Ok(owner_handover)
     }
 
     /// Whether the batch this operation is in refunds nobody for the storage its document

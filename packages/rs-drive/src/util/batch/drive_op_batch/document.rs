@@ -2,7 +2,7 @@ use crate::util::estimated_layers::EstimatedLayers;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::state_transition_action::batch::document_type_offers_gas_sponsorship;
+use crate::state_transition_action::batch::storage_sponsor_of_document_type;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::ConsumedDocument;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use crate::util::object_size_info::DocumentInfo::{DocumentRefAndSerialization, DocumentRefInfo};
@@ -27,7 +27,7 @@ use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::Co
 use dpp::ProtocolError;
 use grovedb::TransactionArg;
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A wrapper for a document operation
 #[derive(Clone, Debug)]
@@ -271,27 +271,74 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
 }
 
 impl DocumentOperationType<'_> {
-    /// The owner of this update's contract, when its document type offers gas sponsorship:
-    /// the identity that may hold the storage of a document someone else owns. Batches always
-    /// carry the resolved contract, so an update that names only its id has no sponsor here.
-    pub(crate) fn storage_sponsor_of_updated_document(&self) -> Result<Option<[u8; 32]>, Error> {
-        let Self::UpdateDocument {
-            contract_info,
-            document_type_info,
-            ..
-        } = self
-        else {
-            return Ok(None);
+    /// Adds this operation's part to the owner handover of the batch it is in (see
+    /// `GroveDbOpBatch::owner_handover`): nothing unless it updates a document, and then the
+    /// owner of the update's contract when the document type offers gas sponsorship, the
+    /// identity that may hold the storage of a document someone else owns.
+    ///
+    /// An update naming only its contract's id reads the contract here, at no charge: lowering
+    /// the operation fetches it again and bills that. A contract that is not stored has no
+    /// sponsor, and the lowering answers for it.
+    pub(crate) fn add_to_owner_handover(
+        &self,
+        owner_handover: &mut Option<BTreeSet<[u8; 32]>>,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let storage_sponsor = match self {
+            Self::UpdateDocument {
+                contract_info,
+                document_type_info,
+                ..
+            } => {
+                let fetched_contract;
+                let contract = match contract_info {
+                    DataContractInfo::DataContractFetchInfo(fetch_info) => {
+                        Some(&fetch_info.contract)
+                    }
+                    DataContractInfo::BorrowedDataContract(contract) => Some(*contract),
+                    DataContractInfo::OwnedDataContract(contract) => Some(contract),
+                    DataContractInfo::DataContractId(contract_id) => {
+                        // Not cached here, so the lowering's fetch finds the cache as it
+                        // would have
+                        fetched_contract = drive.get_contract_with_fetch_info(
+                            contract_id.to_buffer(),
+                            false,
+                            transaction,
+                            platform_version,
+                        )?;
+                        fetched_contract
+                            .as_ref()
+                            .map(|fetch_info| &fetch_info.contract)
+                    }
+                };
+                match contract {
+                    Some(contract) => storage_sponsor_of_document_type(
+                        contract,
+                        document_type_info.clone().resolve(contract)?,
+                    ),
+                    None => None,
+                }
+            }
+            Self::MultipleDocumentOperationsForSameContractDocumentType {
+                document_operations,
+            } if document_operations
+                .operations
+                .iter()
+                .any(|operation| matches!(operation, DocumentOperation::UpdateOperation(_))) =>
+            {
+                storage_sponsor_of_document_type(
+                    document_operations.contract,
+                    document_operations.document_type,
+                )
+            }
+            _ => return Ok(()),
         };
-        let contract = match contract_info {
-            DataContractInfo::DataContractFetchInfo(fetch_info) => &fetch_info.contract,
-            DataContractInfo::BorrowedDataContract(contract) => *contract,
-            DataContractInfo::OwnedDataContract(contract) => contract,
-            DataContractInfo::DataContractId(_) => return Ok(None),
-        };
-        let document_type = document_type_info.clone().resolve(contract)?;
-        Ok(document_type_offers_gas_sponsorship(document_type)
-            .then(|| contract.owner_id().to_buffer()))
+        owner_handover
+            .get_or_insert_with(BTreeSet::new)
+            .extend(storage_sponsor);
+        Ok(())
     }
 
     /// Run all direct TTL cleanup before any operation in this batch is built.
