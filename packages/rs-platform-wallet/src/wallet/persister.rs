@@ -242,7 +242,7 @@ impl WalletPersister {
     /// ([`PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE`]).
     pub(crate) fn persists_private_contact_scan_state(&self) -> bool {
         self.persistence_capabilities()
-            .contains(PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE)
+            .contains(PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART)
     }
 
     pub(crate) fn load(&self) -> Result<ClientStartState, PersistenceError> {
