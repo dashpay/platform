@@ -653,8 +653,10 @@ pub enum PlatformWalletFFIResultCode {
     /// at a protocol version below the one that serves it (for example
     /// DashPay's private contact request store before protocol version 15),
     /// or the SDK is pinned below it. Expected on such a network; it lifts
-    /// when the network upgrades. A refusal that may lift sooner, because the
-    /// network's version could not be confirmed, keeps the catch-all code.
+    /// when the network upgrades. A refusal whose query for the network's
+    /// version failed keeps the catch-all code, whether that may pass or comes
+    /// from the SDK's own setup (a context provider that cannot give quorum
+    /// keys at all), as neither shows the network runs an earlier version.
     ErrorProtocolVersionNotActive = 70,
 
     /// Maps `PlatformWalletError::PrivateContactRequestPending`: a private
@@ -1265,12 +1267,17 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // `MessageSigningFailed` reason exists, any marker in it sits
             // mid-string and is deliberately not matched.
             // The network does not serve the request yet, as its proven
-            // protocol version shows. A refusal that may lift soon (the query
-            // for the version failed for a reason that can pass) stays on the
-            // catch-all: that is the network failing, which a host surfaces.
-            PlatformWalletError::Sdk(
-                sdk_error @ dash_sdk::Error::ProtocolVersionNotActive { .. },
-            ) if !sdk_error.is_transient_protocol_version_refusal() => {
+            // protocol version shows, or the SDK is pinned below it. A
+            // refusal whose query for the version failed stays on the
+            // catch-all, whether that may pass (the network failing) or not
+            // (a context provider configured so it cannot give quorum keys:
+            // this SDK's own setup), as neither says the network runs an
+            // earlier version.
+            PlatformWalletError::Sdk(dash_sdk::Error::ProtocolVersionNotActive {
+                cause,
+                pinned,
+                ..
+            }) if *pinned || cause.is_none() => {
                 PlatformWalletFFIResultCode::ErrorProtocolVersionNotActive
             }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
@@ -2833,6 +2840,16 @@ mod private_contact_request_error_tests {
             "no node answered".to_string(),
         ))));
         assert_eq!(transient.code, PlatformWalletFFIResultCode::ErrorUnknown);
+
+        // A provider that cannot give quorum keys at all is this SDK's setup,
+        // not the network's version: the catch-all too.
+        let misconfigured = refused(Some(Box::new(dash_sdk::Error::ContextProviderError(
+            dash_sdk::error::ContextProviderError::Config("no quorum source".to_string()),
+        ))));
+        assert_eq!(
+            misconfigured.code,
+            PlatformWalletFFIResultCode::ErrorUnknown
+        );
     }
 
     #[test]

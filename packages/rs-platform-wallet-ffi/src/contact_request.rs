@@ -301,6 +301,51 @@ pub unsafe extern "C" fn platform_wallet_get_private_contact_readiness(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Each readiness flag reaches its own FFI field, alone: a conversion
+    /// that swapped or cleared one would show here.
+    #[test]
+    fn should_convert_each_readiness_flag_to_its_own_field() {
+        let restored = PrivateContactReadinessFFI::from(PrivateContactReadiness {
+            private_payments_restored: true,
+            private_store_read: false,
+            unresolved_private_payment: false,
+        });
+        assert_eq!(
+            restored,
+            PrivateContactReadinessFFI {
+                private_payments_restored: true,
+                private_store_read: false,
+                unresolved_private_payment: false,
+            }
+        );
+        let read = PrivateContactReadinessFFI::from(PrivateContactReadiness {
+            private_payments_restored: false,
+            private_store_read: true,
+            unresolved_private_payment: false,
+        });
+        assert_eq!(
+            read,
+            PrivateContactReadinessFFI {
+                private_payments_restored: false,
+                private_store_read: true,
+                unresolved_private_payment: false,
+            }
+        );
+        let unresolved = PrivateContactReadinessFFI::from(PrivateContactReadiness {
+            private_payments_restored: false,
+            private_store_read: false,
+            unresolved_private_payment: true,
+        });
+        assert_eq!(
+            unresolved,
+            PrivateContactReadinessFFI {
+                private_payments_restored: false,
+                private_store_read: false,
+                unresolved_private_payment: true,
+            }
+        );
+    }
     use dpp::prelude::Identifier;
 
     /// The readiness of a fresh wallet's identity: nothing held, the store not
