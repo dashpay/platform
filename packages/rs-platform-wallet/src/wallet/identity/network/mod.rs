@@ -76,7 +76,9 @@ pub(crate) use payments::{record_incoming_dashpay_payments, sent_payment_status_
 mod prepared_payment;
 pub use prepared_payment::PreparedDashPayPayment;
 mod private_contact_requests;
-pub use private_contact_requests::{PrivateContactSyncReport, PrivateDocumentKeyPaths};
+pub use private_contact_requests::{
+    PaymentStarted, PrivateContactSyncReport, PrivateDocumentKeyPaths,
+};
 mod profile;
 mod public_keys;
 pub use public_keys::{fetch_identity_public_keys, FetchedIdentityPublicKeys};

@@ -1028,9 +1028,17 @@ impl ContextProvider for TrustedHttpContextProvider {
         }
     }
 
+    /// Keeps a held contract of a higher version: a registration that waited
+    /// on a fetch must not replace one another operation promoted meanwhile.
     fn register_data_contract(&self, contract: Arc<DataContract>) {
         let id = contract.id();
         let mut known = self.known_contracts.lock().unwrap();
+        if known
+            .get(&id)
+            .is_some_and(|held| held.version() > contract.version())
+        {
+            return;
+        }
         known.insert(id, contract);
     }
 
@@ -1060,7 +1068,7 @@ impl ContextProvider for TrustedHttpContextProvider {
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::quorum_refresh::MIN_GAP;
     use data_contracts::SystemDataContract;
@@ -2250,6 +2258,59 @@ mod tests {
                 reserved
             );
         }
+    }
+
+    /// A one-type contract `id` at `version`.
+    pub(crate) fn contract_at_version(id: [u8; 32], version: u32) -> DataContract {
+        use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+        use dpp::platform_value::platform_value;
+        use dpp::platform_value::string_encoding::Encoding;
+        use dpp::version::PlatformVersion;
+
+        DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Identifier::from(id).to_string(Encoding::Base58),
+                "ownerId": Identifier::from([8; 32]).to_string(Encoding::Base58),
+                "version": version,
+                "documentSchemas": {
+                    "note": {
+                        "type": "object",
+                        "properties": {
+                            "text": { "type": "string", "maxLength": 10, "position": 0 }
+                        },
+                        "additionalProperties": false
+                    }
+                }
+            }),
+            false,
+            PlatformVersion::latest(),
+        )
+        .expect("the contract parses")
+    }
+
+    /// A registered contract replaces a held one of a lower version, and
+    /// leaves one of a higher version, which another operation promoted while
+    /// the registration waited on its fetch.
+    #[test]
+    fn should_keep_a_newer_contract_over_a_registered_older_one() {
+        let provider = TrustedHttpContextProvider::new_with_url(
+            Network::Testnet,
+            "https://127.0.0.1".to_string(),
+            NonZeroUsize::new(100).unwrap(),
+        )
+        .unwrap();
+        let version = |version: u32| Arc::new(contract_at_version([0x71; 32], version));
+        let held = |provider: &TrustedHttpContextProvider| {
+            provider
+                .get_known_contract(&Identifier::from([0x71; 32]))
+                .map(|contract| contract.version())
+        };
+        provider.register_data_contract(version(2));
+        provider.register_data_contract(version(3));
+        assert_eq!(held(&provider), Some(3), "a newer one replaces");
+        provider.register_data_contract(version(2));
+        assert_eq!(held(&provider), Some(3), "an older one does not");
     }
 
     #[test]

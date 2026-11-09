@@ -825,7 +825,9 @@ unsafe fn accept_contact_request_replying_in_kind_inner(
                     shielded_address,
                     signer,
                     &crypto,
-                    |_entry| async move {
+                    // Refused before any payment could reach the network,
+                    // so the payment is never marked as started.
+                    |_entry, _started| async move {
                         Err::<ResponseMetadata, _>(record_payment_failure(
                             &failure_slot,
                             (

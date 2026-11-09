@@ -8,19 +8,30 @@
 use super::dashpay::PendingPrivateReply;
 use super::ManagedIdentity;
 use crate::changeset::{
-    ContactChangeSet, ContactRequestEntry, ReceivedContactRequestKey, SentContactRequestKey,
+    ContactChangeSet, ContactRequestEntry, PrivateContactRequestsPosition,
+    ReceivedContactRequestKey, SentContactRequestKey,
 };
 use crate::wallet::identity::crypto::contact_info::ContactInfoPrivateData;
 use crate::wallet::persister::WalletPersister;
 use crate::{ContactRequest, EstablishedContact};
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::{KeyType, Purpose};
 use dpp::prelude::Identifier;
 use platform_encryption::account_reference_version;
+use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// The attempt id the next private request reservation takes. Process-wide,
-/// so a handle that outlived its wallet's removal and re-creation under the
-/// same id cannot release a reservation the new wallet made.
-static NEXT_PRIVATE_REPLY_ATTEMPT: AtomicU64 = AtomicU64::new(0);
+/// The attempt id the next private request reservation or public request
+/// claim takes. Process-wide, so a handle that outlived its wallet's removal
+/// and re-creation under the same id cannot release a reservation or a claim
+/// the new wallet made.
+static NEXT_CONTACT_REQUEST_ATTEMPT: AtomicU64 = AtomicU64::new(0);
+
+/// A new attempt id ([`NEXT_CONTACT_REQUEST_ATTEMPT`]).
+fn next_contact_request_attempt() -> u64 {
+    NEXT_CONTACT_REQUEST_ATTEMPT.fetch_add(1, Ordering::Relaxed)
+}
 
 impl ManagedIdentity {
     /// The masked `accountReference` of the most recent request WE sent
@@ -384,6 +395,11 @@ impl ManagedIdentity {
         // now-un-ignored sender's on-chain requests.
         self.dashpay.high_water_received_ms = None;
         self.dashpay.private_contact_requests_position = 0;
+        // A pass that read the store to its end passed over the sender's
+        // private requests: the store is not read for this identity until a
+        // pass reads it again from the rewound position, so a send reads it
+        // first.
+        self.dashpay.private_contact_requests_read = false;
 
         let mut cs = ContactChangeSet::default();
         cs.unignored.insert((owner_id, *sender_id));
@@ -820,6 +836,110 @@ impl ManagedIdentity {
         }
     }
 
+    /// Restore the position of DashPay's private contact request store this
+    /// identity reads from next, as a backend persisted it
+    /// (`ContactChangeSet::private_contact_requests_positions`): the loader's
+    /// replay, for a backend attesting
+    /// [`PRIVATE_CONTACT_REQUEST_SCAN_STATE`](crate::changeset::PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE).
+    pub fn apply_private_contact_requests_position(
+        &mut self,
+        position: PrivateContactRequestsPosition,
+    ) {
+        self.dashpay.private_contact_requests_position = position.position;
+        self.dashpay.private_scan_keys = Some(position.key_fingerprint);
+    }
+
+    /// The fingerprint of the keys a private sync scans DashPay's private
+    /// contact request store with for this identity: SHA-256 over its HD
+    /// index and each `ECDSA_SECP256K1` `ENCRYPTION` or `DECRYPTION` key, by
+    /// id, purpose and data, in key id order. Disabled keys count, as an
+    /// entry sealed before a key was disabled still opens with it.
+    pub fn private_scan_key_fingerprint(&self) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        match self.identity_index {
+            Some(index) => {
+                hasher.update([1]);
+                hasher.update(index.to_le_bytes());
+            }
+            None => hasher.update([0]),
+        }
+        for (key_id, key) in self.identity.public_keys() {
+            if key.key_type() != KeyType::ECDSA_SECP256K1
+                || !matches!(key.purpose(), Purpose::ENCRYPTION | Purpose::DECRYPTION)
+            {
+                continue;
+            }
+            let data = key.data().as_slice();
+            hasher.update(key_id.to_le_bytes());
+            hasher.update([key.purpose() as u8]);
+            hasher.update((data.len() as u64).to_le_bytes());
+            hasher.update(data);
+        }
+        hasher.finalize().into()
+    }
+
+    /// Tie the private read position and the read-to-the-end flag to the
+    /// identity's scanning keys: when the keys no longer match the ones they
+    /// hold for, entries to or from a key added since were never opened, so
+    /// both are rewound to read the store again from 0. Returns the position
+    /// record to store when it changed.
+    pub(crate) fn reconcile_private_scan_keys(&mut self) -> Option<PrivateContactRequestsPosition> {
+        let key_fingerprint = self.private_scan_key_fingerprint();
+        if self.dashpay.private_scan_keys == Some(key_fingerprint) {
+            return None;
+        }
+        if self.dashpay.private_scan_keys.is_some()
+            || self.dashpay.private_contact_requests_position > 0
+        {
+            self.dashpay.private_contact_requests_position = 0;
+            self.dashpay.private_contact_requests_read = false;
+        }
+        self.dashpay.private_scan_keys = Some(key_fingerprint);
+        Some(PrivateContactRequestsPosition {
+            position: self.dashpay.private_contact_requests_position,
+            key_fingerprint,
+        })
+    }
+
+    /// The private read position as a backend stores it: with the
+    /// fingerprint of the keys it holds for.
+    pub(crate) fn private_contact_requests_position_record(
+        &self,
+    ) -> PrivateContactRequestsPosition {
+        PrivateContactRequestsPosition {
+            position: self.dashpay.private_contact_requests_position,
+            key_fingerprint: self
+                .dashpay
+                .private_scan_keys
+                .unwrap_or_else(|| self.private_scan_key_fingerprint()),
+        }
+    }
+
+    /// Restore the shielded address `contact`'s tracked private request to
+    /// this identity carries, as a backend persisted it
+    /// (`ContactChangeSet::private_shielded_addresses`): the loader's replay.
+    pub fn apply_private_shielded_address(&mut self, contact: Identifier, address: [u8; 43]) {
+        self.dashpay
+            .private_shielded_addresses
+            .insert(contact, address);
+    }
+
+    /// Replay a persisted removal of `contact`'s shielded address
+    /// (`ContactChangeSet::removed_private_shielded_addresses`).
+    pub fn apply_removed_private_shielded_address(&mut self, contact: &Identifier) {
+        self.dashpay.private_shielded_addresses.remove(contact);
+    }
+
+    /// Drop the private contact request scan state a load restored, for a
+    /// backend that does not attest it persists it: the store is read from
+    /// its start, and the addresses come back with the requests that carry
+    /// them.
+    pub(crate) fn forget_private_contact_scan_state(&mut self) {
+        self.dashpay.private_contact_requests_position = 0;
+        self.dashpay.private_scan_keys = None;
+        self.dashpay.private_shielded_addresses.clear();
+    }
+
     /// Record the shielded address `request`, a private request from
     /// `request.sender_id`, carries, when it is the request tracked from that
     /// contact: an older request ingest passed over does not replace the
@@ -858,19 +978,53 @@ impl ManagedIdentity {
     /// returning the attempt that holds it; `None` when one already is. See
     /// [`DashPayState::private_reply_pending`](super::DashPayState::private_reply_pending).
     pub(crate) fn reserve_private_reply(&mut self, recipient: Identifier) -> Option<u64> {
+        // A public request being sent to the recipient holds the pair too.
         if self
             .dashpay
             .pending_private_replies
             .contains_key(&recipient)
+            || self
+                .dashpay
+                .public_contact_request_claims
+                .contains_key(&recipient)
         {
             return None;
         }
         Some(self.insert_private_reply(recipient, None))
     }
 
+    /// Claim the pair with `recipient` for a public request about to be
+    /// sent, under a new attempt it returns: until that attempt releases it
+    /// ([`Self::release_public_contact_request`]), no private request to the
+    /// recipient is reserved. Concurrent public sends each hold their own.
+    pub(crate) fn claim_public_contact_request(&mut self, recipient: Identifier) -> u64 {
+        let attempt = next_contact_request_attempt();
+        self.dashpay
+            .public_contact_request_claims
+            .entry(recipient)
+            .or_default()
+            .insert(attempt);
+        attempt
+    }
+
+    /// Release the claim `attempt` took ([`Self::claim_public_contact_request`]);
+    /// another attempt's claim on the pair stays.
+    pub(crate) fn release_public_contact_request(&mut self, recipient: &Identifier, attempt: u64) {
+        if let Some(claims) = self
+            .dashpay
+            .public_contact_request_claims
+            .get_mut(recipient)
+        {
+            claims.remove(&attempt);
+            if claims.is_empty() {
+                self.dashpay.public_contact_request_claims.remove(recipient);
+            }
+        }
+    }
+
     /// Reserve `recipient` under a new attempt, `commitment` its entry's.
     fn insert_private_reply(&mut self, recipient: Identifier, commitment: Option<[u8; 32]>) -> u64 {
-        let attempt = NEXT_PRIVATE_REPLY_ATTEMPT.fetch_add(1, Ordering::Relaxed);
+        let attempt = next_contact_request_attempt();
         self.dashpay.pending_private_replies.insert(
             recipient,
             PendingPrivateReply {
@@ -912,6 +1066,19 @@ impl ManagedIdentity {
         {
             self.dashpay.pending_private_replies.remove(recipient);
         }
+    }
+
+    /// Release every pending request sealed as one of `commitments`, whose
+    /// payments were settled as never executing, whichever attempt holds it.
+    pub(crate) fn release_rejected_private_replies(
+        &mut self,
+        commitments: &std::collections::BTreeSet<[u8; 32]>,
+    ) {
+        self.dashpay.pending_private_replies.retain(|_, pending| {
+            pending
+                .commitment
+                .is_none_or(|commitment| !commitments.contains(&commitment))
+        });
     }
 
     /// Settle the pending request to `recipient` sealed as `commitment`: the

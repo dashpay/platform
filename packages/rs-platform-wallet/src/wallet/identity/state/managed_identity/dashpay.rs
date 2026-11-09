@@ -106,10 +106,12 @@ pub struct DashPayState {
 
     /// The position of DashPay's private contact request store (protocol
     /// version 15) to scan from next for this identity: every entry before it
-    /// was read and what it held for this identity ingested. In memory only,
-    /// like the high-water marks: a cold start scans the store again from 0,
-    /// and ingest is a fixpoint. [`ManagedIdentity::unignore_sender`] rewinds
-    /// it, as it does the received cursor.
+    /// was read and what it held for this identity ingested. Persisted, after
+    /// what the entries before it held, for a backend attesting
+    /// `PRIVATE_CONTACT_REQUEST_SCAN_STATE`, so a relaunch reads on from it;
+    /// otherwise a cold start scans the store again from 0, and ingest is a
+    /// fixpoint. [`ManagedIdentity::unignore_sender`] rewinds it, as it does
+    /// the received cursor.
     ///
     /// [`ManagedIdentity::unignore_sender`]: super::ManagedIdentity::unignore_sender
     pub(super) private_contact_requests_position: u64,
@@ -122,10 +124,19 @@ pub struct DashPayState {
     /// In memory only; a cursor rewind leaves it set.
     pub(super) private_contact_requests_read: bool,
 
+    /// The fingerprint of the scanning keys `private_contact_requests_position`
+    /// and `private_contact_requests_read` hold for
+    /// (`ManagedIdentity::private_scan_key_fingerprint`): entries to or from
+    /// a key added since were not opened. When the identity's keys no
+    /// longer match it, both are rewound (`reconcile_private_scan_keys`).
+    /// `None` before the first reconcile.
+    pub(super) private_scan_keys: Option<[u8; 32]>,
+
     /// The shielded address each contact's tracked private request to this
-    /// identity carries. In memory only, rebuilt by the scan a cold start
-    /// runs. Whether a request came privately is the request's own
-    /// ([`ContactRequest::came_privately`]), so it holds across restarts.
+    /// identity carries. Persisted for a backend attesting
+    /// `PRIVATE_CONTACT_REQUEST_SCAN_STATE`; otherwise rebuilt by the scan a
+    /// cold start runs. Whether a request came privately is the request's
+    /// own ([`ContactRequest::came_privately`]), so it holds across restarts.
     pub(super) private_shielded_addresses: BTreeMap<Identifier, [u8; 43]>,
 
     /// The private requests to each recipient that are being paid for, or
@@ -137,6 +148,15 @@ pub struct DashPayState {
     /// memory only: after a restart, those whose payment is unconfirmed are
     /// restored from the shielded store's unconfirmed spends.
     pub(super) pending_private_replies: BTreeMap<Identifier, PendingPrivateReply>,
+
+    /// The public requests to each recipient being sent, by attempt: each
+    /// claims the pair from before its channel is decided until it is
+    /// submitted and recorded, and while one does no private request to the
+    /// recipient is reserved, as a reserved one refuses a public send. A
+    /// claim is released only by its own attempt, whose id is process-wide,
+    /// so a send that outlived its wallet's removal and re-creation under the
+    /// same id cannot release a claim of the new wallet. In memory only.
+    pub(super) public_contact_request_claims: BTreeMap<Identifier, BTreeSet<u64>>,
 
     /// Lowest Platform-assigned `$createdAtCoreBlockHeight` among OUR sent
     /// `contactRequest` docs to each recipient seen by a sweep this process.
@@ -311,6 +331,19 @@ impl DashPayState {
     /// for and is not yet read back from the store; see the field doc.
     pub fn private_reply_pending(&self, contact: &Identifier) -> bool {
         self.pending_private_replies.contains_key(contact)
+    }
+
+    /// The shielded address kept for `contact`, whichever way the tracked
+    /// requests went; [`Self::private_contact`] gives it only while the
+    /// contact's request to us came privately.
+    pub(crate) fn private_shielded_address(&self, contact: &Identifier) -> Option<[u8; 43]> {
+        self.private_shielded_addresses.get(contact).copied()
+    }
+
+    /// Whether a public request to `contact` is being sent; see the field
+    /// doc.
+    pub fn public_contact_request_claimed(&self, contact: &Identifier) -> bool {
+        self.public_contact_request_claims.contains_key(contact)
     }
 
     /// Whether a private sync read DashPay's private contact request store
