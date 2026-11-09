@@ -171,13 +171,19 @@ element, `PendingRedrive` struct literals require `anchor_height`, and stores
 must implement `note_anchor_recorded`, which gives that height to the
 reservations and records of an anchor that carry none, durably for a record.
 A store keeps a record's height with it, so a restart restores it. A note
-spend's record, or a journal record, that an earlier process saved without a
-height (one saved before heights were kept) is loaded with height 0: its
-anchor was necessarily read before any anchor set this process fetches, so it
-is released, or discharged, on the first set lacking its anchor once the scan
-covers that set (and, for a journal record, the store read through its end
-lacks its entry at that set's height). One created in this process without a
-height is never released on an anchor's absence alone.
+spend's record, or a journal record, saved without a height (one saved before
+heights were kept) keeps its height unknown. Its anchor is a root of a tree no
+larger than the largest the store has held, so a store can implement
+`legacy_anchor_tree_bound` to return that size; the default `None` keeps such
+records held until a set is seen holding their anchor. `FileBackedShieldedStore`
+keeps the size durably, raised at every open and before every
+`reset_commitment_tree`, and reports the size held when it was opened. With a
+bound, the sync fetches the pool's proved leaf count before the anchor set,
+and such a record is released, or discharged, on a set lacking its anchor only
+when that count, proved at or below the set's height, reaches the bound and
+one past the position of every note spent on that anchor that the store
+holds, the scan covers the set, and, for a journal record, the store read
+through its end lacks its entry at that set's height. Otherwise it stays held.
 
 The local shielded balance API introduces three Rust source compatibility changes:
 
