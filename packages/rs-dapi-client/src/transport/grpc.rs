@@ -767,6 +767,33 @@ impl_transport_request_grpc!(
     get_private_document_entries
 );
 
+// rpc getOwnerTransactionsInBlock(GetOwnerTransactionsInBlockRequest) returns (GetOwnerTransactionsInBlockResponse);
+impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
+    platform_proto::GetOwnerTransactionsInBlockRequest,
+    platform_proto::GetOwnerTransactionsInBlockResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_owner_transactions_in_block
+);
+
+// rpc getBlocks(GetBlocksRequest) returns (GetBlocksResponse);
+impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
+    platform_proto::GetBlocksRequest,
+    platform_proto::GetBlocksResponse,
+    PlatformGrpcClient,
+    RequestSettings {
+        // The gateway limits this method far below every other one. A ban lasts until the
+        // limit resets and would take the node away from the client's other requests too.
+        ban_failed_address: Some(false),
+        ..RequestSettings::default()
+    },
+    get_blocks
+);
+
 // rpc GetEvonodesProposedEpochBlocksByIdsRequest(GetEvonodesProposedEpochBlocksByIdsRequest) returns (GetEvonodesProposedEpochBlocksResponse);
 impl_transport_request_grpc!(
     names_nothing: |request| match &request.version {

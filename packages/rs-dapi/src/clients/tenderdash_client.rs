@@ -3,7 +3,8 @@ use crate::clients::tenderdash_websocket::BlockEvent;
 use crate::clients::{CONNECT_TIMEOUT, REQUEST_TIMEOUT};
 use crate::error::{DAPIResult, DapiError};
 use crate::utils::{
-    deserialize_string_number_or_null, deserialize_string_or_number, generate_jsonrpc_id,
+    deserialize_null_as_default, deserialize_string_number_or_null, deserialize_string_or_number,
+    generate_jsonrpc_id,
 };
 use reqwest::Client;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
@@ -97,6 +98,11 @@ struct UnconfirmedTxParams<'a> {
 struct TxParams<'a> {
     hash: &'a str,
     prove: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct BlockHeightParams {
+    height: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -330,6 +336,67 @@ impl ExecTxResult {
 
 pub type TxResult = ExecTxResult;
 
+/// The part of Tenderdash's `block` result that DAPI reads.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ResultBlock {
+    #[serde(default)]
+    pub block_id: BlockId,
+    /// `None` when the node has no block at the height.
+    #[serde(default)]
+    pub block: Option<Block>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct BlockId {
+    /// The block hash, hex encoded.
+    #[serde(default)]
+    pub hash: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct Block {
+    #[serde(default)]
+    pub header: BlockHeader,
+    #[serde(default)]
+    pub data: BlockData,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct BlockHeader {
+    /// The block time, as an RFC 3339 timestamp.
+    #[serde(default)]
+    pub time: String,
+    #[serde(default)]
+    pub core_chain_locked_height: u32,
+    /// Hex encoded.
+    #[serde(default)]
+    pub app_hash: String,
+    /// Hex encoded.
+    #[serde(default)]
+    pub proposer_pro_tx_hash: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct BlockData {
+    /// The block's transactions, base64 encoded.
+    #[serde(default, deserialize_with = "deserialize_null_as_default")]
+    pub txs: Vec<String>,
+}
+
+/// The part of Tenderdash's `block_results` result that DAPI reads.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ResultBlockResults {
+    /// One result for each transaction of the block, in block order.
+    #[serde(default, deserialize_with = "deserialize_null_as_default")]
+    pub txs_results: Vec<BlockTxResult>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct BlockTxResult {
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub code: u32,
+}
+
 impl TenderdashClient {
     /// Generic POST method for Tenderdash RPC calls
     /// Serializes the request, performs the call, and maps protocol errors to `DapiError`.
@@ -522,6 +589,21 @@ impl TenderdashClient {
 
         self.post(&request).await
     }
+
+    /// Get the block at a height
+    pub async fn block(&self, height: u64) -> DAPIResult<ResultBlock> {
+        let request = JsonRpcRequest::new("block", BlockHeightParams { height });
+
+        self.post(&request).await
+    }
+
+    /// Get the execution results of the block at a height
+    pub async fn block_results(&self, height: u64) -> DAPIResult<ResultBlockResults> {
+        let request = JsonRpcRequest::new("block_results", BlockHeightParams { height });
+
+        self.post(&request).await
+    }
+
     /// Subscribe to streaming Tenderdash transaction events if WebSocket is available.
     pub fn subscribe_to_transactions(&self) -> broadcast::Receiver<TransactionEvent> {
         self.websocket_client.subscribe()

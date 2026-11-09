@@ -3,6 +3,8 @@
 
 mod broadcast_state_transition;
 mod error_mapping;
+mod get_blocks;
+mod get_owner_transactions_in_block;
 mod get_status;
 mod shielded_proof_failure_budget;
 mod wait_for_state_transition_result;
@@ -13,8 +15,9 @@ mod protobuf_request_errors;
 use dapi_grpc::platform::v0::get_path_elements_request;
 use dapi_grpc::platform::v0::platform_server::Platform;
 use dapi_grpc::platform::v0::{
-    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetPathElementsRequest,
-    GetPathElementsResponse, GetStatusRequest, GetStatusResponse,
+    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetBlocksRequest,
+    GetBlocksResponse, GetOwnerTransactionsInBlockRequest, GetOwnerTransactionsInBlockResponse,
+    GetPathElementsRequest, GetPathElementsResponse, GetStatusRequest, GetStatusResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
@@ -248,6 +251,50 @@ impl Platform for PlatformServiceImpl {
         let method = type_name_of_val(request.get_ref());
         trace!(method, "Received get_status request");
         let result = self.get_status_impl(request).await;
+
+        match &result {
+            Ok(_) => info!(method, "request succeeded"),
+            Err(status) => warn!(method, error = %status, "request failed"),
+        }
+
+        result
+    }
+
+    /// Get up to ten consecutive Tenderdash blocks
+    ///
+    /// See [`PlatformServiceImpl::get_blocks_impl`] for implementation details.
+    async fn get_blocks(
+        &self,
+        request: Request<GetBlocksRequest>,
+    ) -> Result<Response<GetBlocksResponse>, Status> {
+        let method = type_name_of_val(request.get_ref());
+        trace!(method, "Received get_blocks request");
+        let result = self
+            .get_blocks_impl(request)
+            .await
+            .map_err(|error| error.to_status());
+
+        match &result {
+            Ok(_) => info!(method, "request succeeded"),
+            Err(status) => warn!(method, error = %status, "request failed"),
+        }
+
+        result
+    }
+
+    /// Get the state transitions one owner has in the Tenderdash block at a height
+    ///
+    /// See [`PlatformServiceImpl::get_owner_transactions_in_block_impl`] for implementation details.
+    async fn get_owner_transactions_in_block(
+        &self,
+        request: Request<GetOwnerTransactionsInBlockRequest>,
+    ) -> Result<Response<GetOwnerTransactionsInBlockResponse>, Status> {
+        let method = type_name_of_val(request.get_ref());
+        trace!(method, "Received get_owner_transactions_in_block request");
+        let result = self
+            .get_owner_transactions_in_block_impl(request)
+            .await
+            .map_err(|error| error.to_status());
 
         match &result {
             Ok(_) => info!(method, "request succeeded"),
