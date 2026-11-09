@@ -24,6 +24,9 @@ pub(crate) mod gas_sponsorship_tests {
     use dpp::consensus::codes::ErrorWithCode;
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::accessors::v1::DataContractV1Setters;
+    use dpp::data_contract::config::moderation::{
+        ContractModerationConfig, ContractModerationReason, ContractModerators,
+    };
     use dpp::data_contract::document_type::accessors::{
         DocumentTypeV0MutGetters, DocumentTypeV1Getters, DocumentTypeV1Setters,
     };
@@ -41,6 +44,10 @@ pub(crate) mod gas_sponsorship_tests {
     use dpp::prelude::{Identifier, IdentityNonce, Revision, UserFeeIncrease};
     use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
     use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
+    use dpp::state_transition::contract_user_moderation_transition::methods::ContractUserModerationTransitionMethodsV0;
+    use dpp::state_transition::contract_user_moderation_transition::{
+        ContractUserModerationAction, ContractUserModerationTransition,
+    };
     use dpp::state_transition::StateTransition;
     use dpp::tokens::calculate_token_id;
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
@@ -55,6 +62,7 @@ pub(crate) mod gas_sponsorship_tests {
     use drive::util::storage_flags::StorageFlags;
     use drive::util::test_helpers::setup_contract;
     use simple_signer::signer::SimpleSigner;
+    use std::collections::BTreeMap;
 
     const GAS_FEES_PAID_BY_NOT_ALLOWED: u32 = 40129;
     pub(crate) const GAS_SPONSOR_INSUFFICIENT_BALANCE: u32 = 40222;
@@ -1932,6 +1940,204 @@ pub(crate) mod gas_sponsorship_tests {
             setup.stored_attack_index_reference_owner(),
             Some(recipient.id()),
             "the index entries the transfer leaves unchanged move too"
+        );
+    }
+
+    /// The card game with a `grade` on its cards that only moderators write, and the moderator
+    /// its contract appoints: an identity that is neither the contract owner nor the user
+    fn moderated_card_game() -> (Sponsorship, Identity, SimpleSigner) {
+        let (moderator, moderator_signer, _) =
+            setup_identity_without_adding_it(771, dash_to_credits!(0.1));
+        let moderator_id = moderator.id();
+        let setup = Sponsorship::build_customized(
+            PlatformVersion::latest(),
+            GasFeesPaidBy::ContractOwner,
+            false,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            15,
+            None,
+            |contract| {
+                contract.set_config(contract.config().clone().with_moderation(Some(
+                    ContractModerationConfig {
+                        banlist: false,
+                        suspensions: false,
+                        warnings: false,
+                        moderators: ContractModerators::AppointedModerators(
+                            [moderator_id].into_iter().collect(),
+                        ),
+                    },
+                )));
+                let mut schema = contract
+                    .document_type_for_name("card")
+                    .expect("expected the card document type")
+                    .schema()
+                    .clone();
+                schema
+                    .set_value(
+                        "moderatorAbilities",
+                        platform_value!({ "changeFields": ["grade"] }),
+                    )
+                    .expect("expected to let moderators change the grade");
+                schema
+                    .get_mut("properties")
+                    .expect("expected to get the properties")
+                    .expect("expected the card type to have properties")
+                    .set_value(
+                        "grade",
+                        platform_value!({
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 10,
+                            "position": 7,
+                        }),
+                    )
+                    .expect("expected to add the grade");
+                contract
+                    .set_document_schema(
+                        "card",
+                        schema,
+                        false,
+                        &mut vec![],
+                        PlatformVersion::latest(),
+                    )
+                    .expect("expected the card type to take a grade");
+            },
+        );
+        setup
+            .platform
+            .drive
+            .add_new_identity(
+                moderator.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                setup.platform_version,
+            )
+            .expect("expected to add the moderator");
+        (setup, moderator, moderator_signer)
+    }
+
+    /// Processes the moderator's grading of the user's card and commits it. Returns what it
+    /// refunded the user and the contract owner, after checking that the moderator paid the
+    /// fee and that nobody else was charged.
+    async fn grade_the_card(
+        setup: &Sponsorship,
+        moderator: &Identity,
+        moderator_signer: &SimpleSigner,
+    ) -> (Option<Credits>, Option<Credits>) {
+        let (card, _) = setup.card_of(&setup.user);
+        let grading = ContractUserModerationTransition::try_from_identity_with_signer(
+            moderator,
+            &1,
+            setup.contract.id(),
+            ContractUserModerationAction::ChangeDocumentFields {
+                document_type_name: "card".to_string(),
+                document_id: card.id(),
+                fields: BTreeMap::from([("grade".to_string(), Value::U64(9))]),
+                reason: ContractModerationReason::from_text("graded"),
+            },
+            1,
+            0,
+            moderator_signer,
+            setup.platform_version,
+            None,
+        )
+        .await
+        .expect("expected to build the moderation transition");
+
+        let credits = setup.committed_credits();
+        let moderator_credits = {
+            let tx = setup.platform.drive.grove.start_transaction();
+            setup.credits(moderator, &tx)
+        };
+        let result = setup.process_and_commit(&grading);
+        let SuccessfulExecution { fee_result, .. } = &result else {
+            panic!("expected the moderator's change to execute, got {result:?}");
+        };
+        let refunded_to_user = fee_result
+            .fee_refunds
+            .calculate_refunds_amount_for_identity(setup.user.id());
+        let refunded_to_contract_owner = fee_result
+            .fee_refunds
+            .calculate_refunds_amount_for_identity(setup.contract_owner.id());
+        assert_eq!(
+            setup.committed_credits(),
+            (
+                credits.0 + refunded_to_user.unwrap_or_default(),
+                credits.1 + refunded_to_contract_owner.unwrap_or_default(),
+            ),
+            "neither the user nor the contract owner is charged for a moderator's change"
+        );
+        let tx = setup.platform.drive.grove.start_transaction();
+        assert_eq!(
+            setup.credits(moderator, &tx),
+            moderator_credits - fee_result.total_base_fee(),
+            "the moderator pays for their change"
+        );
+        (refunded_to_user, refunded_to_contract_owner)
+    }
+
+    #[tokio::test]
+    async fn should_leave_a_sponsored_card_with_the_contract_owner_when_a_moderator_changes_it() {
+        // A moderator pays for what their change adds and owns nothing: the card stays with the
+        // contract owner who paid for it. Naming the card's owner instead would refund the
+        // contract owner, bill the moderator the whole card, and leave it for the user to
+        // delete and collect.
+        let (setup, moderator, moderator_signer) = moderated_card_game();
+        setup.give_the_user_game_tokens(5);
+        let block = BlockInfo::default();
+        let creation = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+        settle(&setup, &creation, &block, true);
+        assert_eq!(
+            setup.stored_card_storage_owner(),
+            Some(setup.contract_owner.id())
+        );
+
+        let (refunded_to_user, refunded_to_contract_owner) =
+            grade_the_card(&setup, &moderator, &moderator_signer).await;
+        assert_eq!(refunded_to_user, None);
+        assert_eq!(
+            refunded_to_contract_owner, None,
+            "the contract owner keeps the card, so nothing of it is refunded"
+        );
+        assert_eq!(
+            setup.stored_card_storage_owner(),
+            Some(setup.contract_owner.id())
+        );
+        assert_eq!(
+            setup.stored_attack_index_reference_owner(),
+            Some(setup.contract_owner.id())
+        );
+
+        let deletion = setup.card_deletion(3).await;
+        let (refunded_to_user, refunded_to_contract_owner) =
+            settle(&setup, &deletion, &block, false);
+        assert_eq!(refunded_to_user, None, "the user is refunded nothing");
+        assert!(
+            refunded_to_contract_owner.is_some_and(|refund| refund > 0),
+            "the contract owner is refunded the card they paid for"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_leave_a_card_its_user_paid_for_with_the_user_when_a_moderator_changes_it() {
+        let (setup, moderator, moderator_signer) = moderated_card_game();
+        setup.give_the_user_game_tokens(5);
+        let block = BlockInfo::default();
+        let creation = setup.card_creation(GasFeesPaidBy::DocumentOwner).await;
+        settle(&setup, &creation, &block, false);
+        assert_eq!(setup.stored_card_storage_owner(), Some(setup.user.id()));
+
+        let (refunded_to_user, refunded_to_contract_owner) =
+            grade_the_card(&setup, &moderator, &moderator_signer).await;
+        assert_eq!(refunded_to_user, None);
+        assert_eq!(refunded_to_contract_owner, None);
+        assert_eq!(setup.stored_card_storage_owner(), Some(setup.user.id()));
+        assert_eq!(
+            setup.stored_attack_index_reference_owner(),
+            Some(setup.user.id())
         );
     }
 
