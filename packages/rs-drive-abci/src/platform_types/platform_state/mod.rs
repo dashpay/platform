@@ -195,18 +195,14 @@ impl PlatformState {
     ) -> Result<PlatformState, Error> {
         let platform_version = PlatformVersion::get(current_protocol_version_in_consensus)?;
 
-        // Record the genesis fee generation. The epoch-change hook only records a
-        // generation on the first non-genesis epoch change, so without this entry
-        // bytes stored in epoch 0 of a network whose genesis schedule is not
-        // generation 1 would be refunded at generation 1 rates forever (the lookup
-        // falls back to the first registered generation below the earliest entry).
-        // Unobservable on every existing network: their genesis generation is 1,
-        // which is exactly the fallback, and the map lives in the saved state, not
-        // in the app hash. Saved states created before this entry was recorded
-        // keep working through the same fallback. The value is the registry entry
-        // rather than the schedule reference so the in-memory map equals the map
-        // after a saved-state round trip, which resolves numbers through the
-        // registry.
+        // Record the genesis fee generation, so the saved fee history starts at
+        // epoch 0: the epoch-change hook only records a generation on the first
+        // non-genesis epoch change. Block execution does not read this history
+        // (a refund is priced at the storing epoch's recorded protocol version),
+        // and the map lives in the saved state, not in the app hash, so the entry
+        // changes no consensus result. The value is the registry entry rather
+        // than the schedule reference so the in-memory map equals the map after a
+        // saved-state round trip, which resolves numbers through the registry.
         let genesis_fee_version = FeeVersion::get(platform_version.fee_version.fee_version_number)?;
 
         let state = PlatformState {

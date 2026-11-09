@@ -495,7 +495,11 @@ mod tests {
 
     fn assert_runs_agree(continuous: &SplitRun, reopened: &SplitRun) {
         assert!(
-            !continuous.snapshot.submitted_per_block.is_empty(),
+            continuous
+                .snapshot
+                .submitted_per_block
+                .values()
+                .any(|transitions| !transitions.is_empty()),
             "the runs must record their submitted transitions"
         );
         assert_eq!(
