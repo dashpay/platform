@@ -45,6 +45,7 @@ use zeroize::Zeroizing;
 use crate::broadcaster::{SpvBroadcaster, TransactionBroadcaster};
 use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::manager::AssetLockManager;
+use crate::wallet::core::WalletGeneration;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
 /// Default gap limit for identity discovery scanning.
@@ -508,6 +509,11 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     /// adapter and the DashPay rescan reconcile. See
     /// [`DurableCursors`](crate::changeset::DurableCursors).
     pub(crate) durable_cursors: crate::changeset::DurableCursors,
+    /// The wallet generation this handle belongs to: a public contact
+    /// request is sent only while it is the live one, under its lifecycle
+    /// gate, so a send started on a wallet since removed and re-created under
+    /// the same id never publishes or records on the replacement.
+    pub(crate) generation: Arc<WalletGeneration>,
     /// Broadcaster for DashPay payment transactions. Distinct from the
     /// asset-lock broadcaster — the asset-lock manager is always
     /// `SpvBroadcaster`-pinned, while this one picks the broadcaster
@@ -551,6 +557,7 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
             persister: self.persister.clone(),
             sync_fault: Arc::clone(&self.sync_fault),
             durable_cursors: Arc::clone(&self.durable_cursors),
+            generation: Arc::clone(&self.generation),
             broadcaster: Arc::clone(&self.broadcaster),
             sdk_writer: Arc::clone(&self.sdk_writer),
             dpns_operation_gate: Arc::clone(&self.dpns_operation_gate),

@@ -773,6 +773,7 @@ impl PlatformWallet {
             persister: wallet_persister.clone(),
             sync_fault,
             durable_cursors,
+            generation: Arc::clone(&generation),
             broadcaster: dashpay_broadcaster,
             // DashPay write helper: forwards to the live SDK, erasing its
             // generic write signatures behind concrete by-value methods.

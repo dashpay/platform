@@ -762,6 +762,23 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
     {
+        // Bound to this handle's wallet generation, under its lifecycle gate
+        // from before the channel is decided through the submission and its
+        // bookkeeping: a removal cannot complete in between, and a send
+        // started on a wallet since removed and re-created under the same id
+        // publishes nothing and records nothing on the replacement.
+        let _lifecycle = self.generation.payment_guard().await;
+        let live = self
+            .wallet_manager
+            .read()
+            .await
+            .get_wallet_info(&self.wallet_id)
+            .is_some_and(|info| Arc::ptr_eq(&info.generation, &self.generation));
+        if !live {
+            return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
+                self.wallet_id,
+            )));
+        }
         self.read_private_store_before_deciding(sender_identity_id, recipient_identity_id, crypto)
             .await?;
         self.release_discharged_private_requests().await?;

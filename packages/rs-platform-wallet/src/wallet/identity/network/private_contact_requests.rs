@@ -4432,6 +4432,101 @@ mod tests {
         .await
     }
 
+    /// A public request is bound to its wallet's generation: while one is on
+    /// its way, paused here at its signature after claiming the pair, the
+    /// wallet cannot be removed; once the wallet is removed and re-created
+    /// under the same id, a send through the old handle is refused before it
+    /// decides anything, publishing nothing and changing nothing on the
+    /// replacement.
+    #[tokio::test]
+    async fn should_not_let_a_public_request_outlive_its_wallet() {
+        use std::future::Future;
+        use std::task::{Context, Waker};
+
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (manager, old) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let wallet_id = old.wallet_id();
+        let (alice_id, bob_id) = (alice.id(), bob.id());
+        {
+            // Paused right after it takes the wallet's lifecycle gate, at its
+            // check that the wallet is still live.
+            let held = old.wallet_manager().write().await;
+            let view = old.identity().dashpay();
+            let mut send = Box::pin(view.send_contact_request_with_external_signer(
+                &alice_id,
+                &bob_id,
+                None,
+                AutoAcceptProofSource::None,
+                &alice_signer,
+                &alice_crypto,
+            ));
+            let mut cx = Context::from_waker(Waker::noop());
+            assert!(send.as_mut().poll(&mut cx).is_pending());
+            // In flight, it holds the wallet's lifecycle gate, which a removal
+            // takes exclusively before anything else: no removal can complete.
+            assert!(
+                tokio::time::timeout(
+                    Duration::from_millis(100),
+                    old.generation().teardown_guard()
+                )
+                .await
+                .is_err(),
+                "a removal waits for the public request"
+            );
+            // Dropped, the send gives the wallet up.
+            drop(send);
+            drop(held);
+        }
+
+        manager.remove_wallet(&wallet_id).await.expect("removed");
+        let replacement = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed(ALICE_PHRASE),
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("re-created");
+        assert_eq!(replacement.wallet_id(), wallet_id);
+        {
+            let iw = replacement.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet_id)
+                .expect("the replacement's info")
+                .identity_manager
+                .add_identity(alice.clone(), 0, wallet_id, &iw.persister)
+                .expect("alice");
+        }
+        let resumed = old
+            .identity()
+            .dashpay()
+            .send_contact_request_with_external_signer(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &signer(ALICE_PHRASE, &alice),
+                &alice_crypto,
+            )
+            .await;
+        assert!(
+            matches!(
+                resumed,
+                Err(PlatformWalletError::WalletRemovedBeforeSend(_))
+            ),
+            "{resumed:?}"
+        );
+        managed(&replacement, ALICE, |managed| {
+            assert!(managed.dashpay().outgoing_request(&bob.id()).is_none());
+            assert!(!managed.dashpay().private_reply_pending(&bob.id()));
+        })
+        .await;
+    }
+
     /// A send dropped before it pays, here while its signer never answers,
     /// leaves no reservation behind: nothing was paid, and no sync could
     /// settle one. The recipient is free for the next send.
