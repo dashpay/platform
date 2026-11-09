@@ -821,6 +821,14 @@ impl ManagedIdentity {
         self.dashpay.private_contact_requests_read = true;
     }
 
+    /// Note that a private sync read a page of DashPay's private contact
+    /// request store, proved at `height`, for this identity
+    /// (`DashPayState::private_store_read_height`).
+    pub(crate) fn note_private_store_page_read(&mut self, height: u64) {
+        let read = &mut self.dashpay.private_store_read_height;
+        *read = Some(read.map_or(height, |read| read.max(height)));
+    }
+
     /// [`Self::note_private_contact_requests_read`], for tests outside this
     /// crate that read an identity's state after a private sync.
     #[cfg(any(test, feature = "test-utils"))]

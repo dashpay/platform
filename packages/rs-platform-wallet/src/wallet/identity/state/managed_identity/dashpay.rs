@@ -124,6 +124,16 @@ pub struct DashPayState {
     /// In memory only; a cursor rewind leaves it set.
     pub(super) private_contact_requests_read: bool,
 
+    /// The highest height a page of DashPay's private contact request store
+    /// was proved at among those a private sync read for this identity since
+    /// load: what `private_contact_requests_read` rests on. A request sealed
+    /// to one of its keys is in such a page only if the key was added at or
+    /// below it, so the store read covers the identity's keys as proved at or
+    /// above it, and a public request is decided only with those
+    /// (`DashPayView::read_private_store_before_deciding`). `None` before any
+    /// page was read. In memory only; never lowered.
+    pub(super) private_store_read_height: Option<u64>,
+
     /// The fingerprint of the scanning keys `private_contact_requests_position`
     /// and `private_contact_requests_read` hold for
     /// (`ManagedIdentity::private_scan_key_fingerprint`): entries to or from
@@ -394,6 +404,12 @@ impl DashPayState {
     /// to its end for this identity since load; see the field doc.
     pub fn private_contact_requests_read(&self) -> bool {
         self.private_contact_requests_read
+    }
+
+    /// The highest proved height of a store page a private sync read for this
+    /// identity since load, if one did ([`Self::private_contact_requests_read`]).
+    pub(crate) fn private_store_read_height(&self) -> Option<u64> {
+        self.private_store_read_height
     }
 
     /// How this identity and `contact` exchanged private requests, from the

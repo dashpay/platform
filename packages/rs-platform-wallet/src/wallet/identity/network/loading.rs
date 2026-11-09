@@ -350,6 +350,7 @@ impl IdentityWallet {
     ) -> Result<Identity, PlatformWalletError> {
         self.fetch_and_fold_identity(identity_id)
             .await
+            .map(|(identity, _)| identity)
             .map_err(|error| match error {
                 PlatformWalletError::Sdk(e) => PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to fetch identity {} from Platform: {}",
@@ -494,11 +495,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// broadcaster, with a fetch that fails coming back as the SDK reported it
     /// ([`PlatformWalletError::Sdk`]): the fetch is proved, a stale node
     /// included (`dash_sdk::Error::StaleNode`). Applied only while the wallet
-    /// is still this handle's generation (`current_wallet_info_mut`).
+    /// is still this handle's generation (`current_wallet_info_mut`). Returns
+    /// the identity the cache holds afterwards, and the height the fetch was
+    /// proved at.
     pub(crate) async fn fetch_and_fold_identity(
         &self,
         identity_id: &Identifier,
-    ) -> Result<Identity, PlatformWalletError> {
+    ) -> Result<(Identity, u64), PlatformWalletError> {
         // Verify identity exists in the manager.
         {
             let wm = self.wallet_manager.read().await;
@@ -521,6 +524,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 identity_id
             ))
         })?;
+        let proved_at = metadata.height;
         let block_time = BlockTime::from(metadata);
 
         // Update the managed identity.
@@ -539,7 +543,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             }
         }
 
-        Ok(identity)
+        Ok((identity, proved_at))
     }
 }
 

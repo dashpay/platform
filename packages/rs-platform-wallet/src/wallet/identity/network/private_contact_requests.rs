@@ -32,6 +32,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
+use dash_sdk::error::StaleNodeError;
 use dash_sdk::platform::dashpay::{
     private_contact_request_identities, private_contact_request_signature,
     private_contact_request_signing_data, private_contact_request_signing_keys,
@@ -176,6 +177,29 @@ const PRIVATE_SCAN_BATCH_PAGES: usize = MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FET
 /// [`PlatformWalletError::PrivateContactRequestPending`]: a later send goes on
 /// from where they stopped.
 const PRIVATE_STORE_READ_PASSES: usize = 4;
+
+/// How many rounds of a store read and a proved fetch of the sender identity
+/// a public request or acceptance runs to show the read covers the identity's
+/// keys before it refuses
+/// ([`DashPayView::read_private_store_before_deciding`]): one when the fetch
+/// is proved at or above the pages read and the keys did not change.
+const PRIVATE_KEY_COVERAGE_ATTEMPTS: usize = 3;
+
+/// Whether the private store read an identity's decisions rest on covers its
+/// keys as a proved fetch shows them.
+enum PrivateStoreCoverage {
+    /// Read to its end with the keys the fetch shows, every page proved at or
+    /// below the fetch; or an identity the private sync does not read for.
+    Covered,
+    /// Not read to its end with those keys: they changed, or no read finished.
+    Unread,
+    /// Read with them, but the fetch was proved below a page the read rests
+    /// on: a key added in between could have a request sealed to it there.
+    IdentityBelow {
+        identity_height: u64,
+        store_height: u64,
+    },
+}
 
 /// One of the wallet's identities, as a pass reads the store for it.
 struct ScannedIdentity {
@@ -747,6 +771,19 @@ pub(super) fn private_request_record(
     record
 }
 
+/// Whether `key` is one a private contact request entry can be sealed to,
+/// which a private sync scans the store with.
+fn scanning_key(key: &IdentityPublicKey) -> bool {
+    key.key_type() == KeyType::ECDSA_SECP256K1 && recipient_key_purpose_is_valid(key.purpose())
+}
+
+/// Whether a private sync reads DashPay's private contact request store for
+/// `managed`: it has an HD index the wallet derives its keys at, and a key an
+/// entry can be sealed to (`DashPayView::private_scan_identities`).
+fn scans_private_store(managed: &ManagedIdentity) -> bool {
+    managed.identity_index.is_some() && managed.identity.public_keys().values().any(scanning_key)
+}
+
 /// The public key of `identity`'s key `key_id`.
 fn identity_public_key(
     identity: &Identity,
@@ -1070,16 +1107,25 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// position record marking a private payment that may be unresolved
     /// (`PrivateContactRequestsPosition::private_payments_unresolved`).
     ///
-    /// Then `identity_id` is fetched from Platform, proved, and its keys
-    /// folded into the cached identity (`IdentityWallet::refresh_identity`'s
-    /// fold): a DashPay encryption or decryption key another device added,
-    /// to which a request in the store may be sealed, changes the identity's
-    /// scanning keys, which rewinds its read
-    /// (`Self::reconcile_private_scan_keys`), so the store is read again
-    /// with it before anything is decided. A fetch that fails refuses the
-    /// request as the SDK reported it, with nothing read or sent: the keys a
-    /// read would scan with are not shown current. One proved identity fetch
-    /// per public request or acceptance.
+    /// Then the store read is shown to cover the identity's keys: after it,
+    /// `identity_id` is fetched from Platform, proved, and its keys folded
+    /// into the cached identity (`IdentityWallet::refresh_identity`'s fold).
+    /// A DashPay encryption or decryption key another device added, to which
+    /// a request in the store may be sealed, changes the identity's scanning
+    /// keys, which rewinds its read (`Self::reconcile_private_scan_keys`), and
+    /// the store is read again with it. A key added at a height is in no
+    /// request in a page proved below it, so the read covers the keys once
+    /// the fetch is proved at or above every page it read
+    /// (`DashPayState::private_store_read_height`); a fetch proved below them,
+    /// from a node behind, is made again. Up to
+    /// [`PRIVATE_KEY_COVERAGE_ATTEMPTS`] rounds, then refused: with the SDK's
+    /// stale node error (`StaleNodeError::Height`) when the fetch stayed
+    /// below the pages, and with
+    /// [`PlatformWalletError::PrivateContactRequestPending`] when the keys
+    /// kept changing so the read never finished with them. A fetch that fails
+    /// refuses the request as the SDK reported it. Nothing is sent before.
+    /// One proved identity fetch per public request or acceptance when the
+    /// first round covers it.
     pub(super) async fn read_private_store_before_deciding<C>(
         &self,
         identity_id: &Identifier,
@@ -1094,27 +1140,88 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         {
             return Err(PlatformWalletError::PrivateContactPaymentsNotRestored);
         }
-        self.fetch_and_fold_identity(identity_id).await?;
-        match self
-            .read_private_store_before_sending(identity_id, recipient, crypto)
-            .await
-        {
-            Err(PlatformWalletError::Sdk(
-                refusal @ dash_sdk::Error::ProtocolVersionNotActive { required, .. },
-            )) => match self.sdk.network_proven_below(required).await {
-                Ok(true) => Ok(()),
-                Ok(false) => Err(PlatformWalletError::Sdk(refusal)),
-                Err(error) => {
-                    tracing::warn!(
-                        %error,
-                        "the network's protocol version could not be verified; the private \
-                         store is not taken as empty"
-                    );
-                    Err(PlatformWalletError::Sdk(refusal))
+        let mut uncovered = PrivateStoreCoverage::Unread;
+        for _ in 0..PRIVATE_KEY_COVERAGE_ATTEMPTS {
+            match self
+                .read_private_store_before_sending(identity_id, recipient, crypto)
+                .await
+            {
+                Ok(()) => {}
+                Err(PlatformWalletError::Sdk(
+                    refusal @ dash_sdk::Error::ProtocolVersionNotActive { required, .. },
+                )) => {
+                    return match self.sdk.network_proven_below(required).await {
+                        Ok(true) => Ok(()),
+                        Ok(false) => Err(PlatformWalletError::Sdk(refusal)),
+                        Err(error) => {
+                            tracing::warn!(
+                                %error,
+                                "the network's protocol version could not be verified; the \
+                                 private store is not taken as empty"
+                            );
+                            Err(PlatformWalletError::Sdk(refusal))
+                        }
+                    };
                 }
-            },
-            read => read,
+                Err(error) => return Err(error),
+            }
+            let (_, identity_height) = self.fetch_and_fold_identity(identity_id).await?;
+            self.reconcile_private_scan_keys().await?;
+            match self
+                .private_store_coverage(identity_id, identity_height)
+                .await?
+            {
+                PrivateStoreCoverage::Covered => return Ok(()),
+                coverage => uncovered = coverage,
+            }
         }
+        Err(match uncovered {
+            PrivateStoreCoverage::IdentityBelow {
+                identity_height,
+                store_height,
+            } => PlatformWalletError::Sdk(dash_sdk::Error::StaleNode(StaleNodeError::Height {
+                expected_height: store_height,
+                received_height: identity_height,
+                tolerance_blocks: 0,
+            })),
+            PrivateStoreCoverage::Covered | PrivateStoreCoverage::Unread => {
+                PlatformWalletError::PrivateContactRequestPending(*recipient)
+            }
+        })
+    }
+
+    /// Whether the private store read `identity_id`'s decisions rest on
+    /// covers its keys as the fetch proved at `identity_height` shows them
+    /// ([`Self::read_private_store_before_deciding`]).
+    async fn private_store_coverage(
+        &self,
+        identity_id: &Identifier,
+        identity_height: u64,
+    ) -> Result<PrivateStoreCoverage, PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
+        let managed = wm
+            .get_wallet_info(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?
+            .identity_manager
+            .managed_identity(identity_id)
+            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+        // No key a request can be sealed to that the wallet derives: the
+        // private sync does not read for it, and nothing holds it.
+        if !scans_private_store(managed) {
+            return Ok(PrivateStoreCoverage::Covered);
+        }
+        let dashpay = managed.dashpay();
+        if !dashpay.private_contact_requests_read() {
+            return Ok(PrivateStoreCoverage::Unread);
+        }
+        Ok(match dashpay.private_store_read_height() {
+            Some(store_height) if store_height <= identity_height => PrivateStoreCoverage::Covered,
+            Some(store_height) => PrivateStoreCoverage::IdentityBelow {
+                identity_height,
+                store_height,
+            },
+            None => PrivateStoreCoverage::Unread,
+        })
     }
 
     /// Rewind the private read position and the read flag of each of the
@@ -1632,9 +1739,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             };
             let mut recipient_paths = Vec::new();
             for (key_id, key) in managed.identity.public_keys() {
-                if key.key_type() != KeyType::ECDSA_SECP256K1
-                    || !recipient_key_purpose_is_valid(key.purpose())
-                {
+                if !scanning_key(key) {
                     continue;
                 }
                 recipient_paths.push((*key_id, path(*key_id)?));
@@ -1729,7 +1834,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // and scanned in batches of those ready, one key derivation a batch.
         let mut batches = std::pin::pin!(self
             .sdk
-            .private_document_pages(
+            .private_document_pages_with_heights(
                 contract.id(),
                 PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
                 start,
@@ -1756,7 +1861,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             } else {
                 let pages: Vec<(u64, &PrivateDocumentEntries)> = fetched
                     .iter()
-                    .map(|page| (page.start_position, &page.entries))
+                    .map(|(page, _)| (page.start_position, &page.entries))
                     .collect();
                 crypto
                     .scan_private_document_pages(
@@ -1775,7 +1880,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 )));
             }
             let mut reached_end = false;
-            for scan in scans {
+            // The height each page was proved at, in the scans' order.
+            let page_heights: Vec<u64> = fetched.iter().map(|(_, height)| *height).collect();
+            for (scan, page_height) in scans.into_iter().zip(page_heights) {
                 report.pages_read += 1;
                 let stale: BTreeMap<Identifier, u64> = private_contact_request_identities(&scan)
                     .into_iter()
@@ -1953,6 +2060,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         else {
                             continue;
                         };
+                        // Read for it, whatever its ingest does: the height
+                        // its read rests on only rises.
+                        managed.note_private_store_page_read(page_height);
                         if held.contains(&identity_id) && !identity.failed {
                             identity.failed = true;
                             report.unpersisted_identities.push(identity_id);
@@ -6515,6 +6625,101 @@ mod tests {
                     .contains_key(&DECRYPTION_KEY_ID),
                 "the key is folded in"
             );
+            assert!(
+                managed.dashpay().incoming_request(&alice.id()).is_some(),
+                "her private request is recorded"
+            );
+        })
+        .await;
+    }
+
+    /// A public request is decided only once the sender identity is proved
+    /// at or above every store page the read rests on. Bob's store page,
+    /// proved at H, holds Alice's private request sealed to the decryption
+    /// key another device added at H; his cached identity lacks it.
+    ///
+    /// While every fetch of his identity is proved at H - 1, from a node a
+    /// block behind, without the key, each round's fetch stays below the page
+    /// and the request is refused with the SDK's stale node error, retryable,
+    /// with nothing sent. Once the fetch is proved at H, it brings the key, the
+    /// read is rewound, the next round reads the store again with it, finds
+    /// her request and refuses: a public one would publish the pair she kept
+    /// private.
+    #[tokio::test]
+    async fn should_decide_a_public_request_only_with_keys_proved_at_or_above_the_store_read() {
+        const H: u64 = 20;
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let bob_signer = signer(BOB_PHRASE, &bob);
+        let (entry, _) = alice_to_bob([0x55; 43]).await;
+        let stale = without_key(&bob, DECRYPTION_KEY_ID);
+        let (_manager, bob_wallet) =
+            wallet(BOB_PHRASE, &stale, &[&alice, &stale], vec![entry]).await;
+        let mut sdk = (*bob_wallet.identity().sdk).clone();
+        sdk.mock()
+            .set_response_height(H)
+            .set_response_height_of::<Identity>(H - 1);
+        let view = bob_wallet.identity().dashpay();
+        let (bob_id, alice_id) = (bob.id(), alice.id());
+        let send = || {
+            view.send_contact_request_with_external_signer(
+                &bob_id,
+                &alice_id,
+                None,
+                AutoAcceptProofSource::None,
+                &bob_signer,
+                &bob_crypto,
+            )
+        };
+
+        let behind = send().await;
+        assert!(
+            matches!(
+                &behind,
+                Err(PlatformWalletError::Sdk(dash_sdk::Error::StaleNode(
+                    StaleNodeError::Height {
+                        expected_height: H,
+                        received_height,
+                        ..
+                    }
+                ))) if *received_height == H - 1
+            ),
+            "{behind:?}"
+        );
+        managed(&bob_wallet, BOB, |managed| {
+            assert!(
+                managed.dashpay().private_contact_requests_read(),
+                "read at H"
+            );
+            assert!(
+                managed.dashpay().incoming_request(&alice.id()).is_none(),
+                "her request opens with no key he holds"
+            );
+            assert!(
+                managed.dashpay().outgoing_request(&alice.id()).is_none(),
+                "nothing sent"
+            );
+        })
+        .await;
+
+        // The identity is proved at H, with the key.
+        set_identity_known(&bob_wallet, &bob, true).await;
+        sdk.mock().set_response_height_of::<Identity>(H);
+        let caught_up = send().await;
+        assert!(
+            matches!(
+                caught_up,
+                Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(sender))
+                    if sender == alice.id()
+            ),
+            "{caught_up:?}"
+        );
+        managed(&bob_wallet, BOB, |managed| {
+            assert!(managed
+                .identity
+                .public_keys()
+                .contains_key(&DECRYPTION_KEY_ID));
             assert!(
                 managed.dashpay().incoming_request(&alice.id()).is_some(),
                 "her private request is recorded"
