@@ -136,7 +136,7 @@ fn seed_wallet() -> key_wallet::wallet::Wallet {
         .expect("mnemonic")
         .to_seed("");
     key_wallet::wallet::Wallet::from_seed_bytes(
-        seed,
+        *seed,
         Network::Testnet,
         WalletAccountCreationOptions::None,
     )
@@ -259,7 +259,22 @@ async fn establish_contact(
             },
         )
         .expect("store the established contact");
+    complete_sent_sweep(wallet, owner).await;
     established
+}
+
+/// Mark `owner`'s sent-request sweep completed in this process, as the
+/// DashPay sync does each launch. Until then `reconcile_dashpay_rescan`
+/// defers every contact, which would make a pass after relaunch return `None`
+/// whether or not the persisted record covers it.
+async fn complete_sent_sweep(wallet: &PlatformWallet, owner: Identifier) {
+    wallet
+        .state_mut()
+        .await
+        .identity_manager
+        .managed_identity_mut(&owner)
+        .expect("owner managed")
+        .mark_sent_sweep_completed_for_test();
 }
 
 async fn synced_height(wallet: &PlatformWallet) -> u32 {
@@ -372,6 +387,7 @@ async fn should_resume_the_backfill_from_the_persisted_cursor_after_a_sqlite_rel
             }),
         "the receival account the record covers must be restored"
     );
+    complete_sent_sweep(&wallet, owner).await;
     assert_eq!(
         wallet
             .identity()
@@ -420,6 +436,7 @@ async fn should_resume_the_backfill_from_the_persisted_cursor_after_a_sqlite_rel
         .await
         .expect("restored wallet");
     assert_eq!(synced_height(&wallet).await, MID_CLIMB);
+    complete_sent_sweep(&wallet, owner).await;
     assert_eq!(
         wallet
             .identity()
