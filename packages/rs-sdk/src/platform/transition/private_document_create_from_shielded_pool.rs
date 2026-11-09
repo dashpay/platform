@@ -3,6 +3,7 @@
 use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
+use crate::platform::ProtocolRequirement;
 use crate::{Error, Sdk};
 use dpp::platform_value::{BinaryData, Identifier};
 use dpp::shielded::OrchardBundleParams;
@@ -21,6 +22,9 @@ use dpp::version::feature_initial_protocol_versions::PRIVATE_DOCUMENT_CREATE_FRO
 /// `dpp::shielded::builder::build_private_document_create_from_shielded_pool_transition`, which
 /// builds the whole transition from notes). Every entry must be exactly the type's
 /// `entrySize`, as `platform_encryption::seal_private_document_entry` builds them.
+/// The gRPC method a state transition is sent with.
+pub(crate) const BROADCAST_STATE_TRANSITION_METHOD: &str = "broadcast_state_transition";
+
 #[async_trait::async_trait]
 pub trait PrivateDocumentCreateFromShieldedPool {
     /// Build and structure-check the transition without broadcasting it, at the SDK's protocol
@@ -37,7 +41,10 @@ pub trait PrivateDocumentCreateFromShieldedPool {
         bundle: OrchardBundleParams,
     ) -> Result<StateTransition, Error>;
 
-    /// Build, broadcast, and wait for the proof of the affected state. Returns the
+    /// Build, broadcast, and wait for the proof of the affected state, once a verified answer
+    /// shows the network runs protocol version 15: an SDK seeded or pinned there may face a
+    /// network that does not, which would reject the transition, so the send is refused with
+    /// [`Error::ProtocolVersionNotActive`] instead, before it is built. Returns the
     /// `VerifiedShieldedNullifiers` proof result: it proves the bundle's nullifiers spent, which
     /// is when a wallet marks its notes spent. It does not prove that this transition was the
     /// spend, nor that its entries were appended: another transition spending the same notes
@@ -114,6 +121,19 @@ impl PrivateDocumentCreateFromShieldedPool for Sdk {
         self.require_protocol_version(
             PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
             "private documents",
+        )
+        .await?;
+        // The SDK's own version does not show the network's: one seeded or pinned at 15 passes
+        // the check above on a network still at 14. The transition is sent only once a verified
+        // answer shows the network serves it, as a read of the store is.
+        self.ensure_network_serves(
+            Some(ProtocolRequirement {
+                protocol_version:
+                    PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+                method: BROADCAST_STATE_TRANSITION_METHOD,
+                feature: Some("private document create from shielded pool transitions"),
+            }),
+            settings.map(|settings| settings.request_settings),
         )
         .await?;
         let state_transition = self.private_document_create_from_shielded_pool_transition(
