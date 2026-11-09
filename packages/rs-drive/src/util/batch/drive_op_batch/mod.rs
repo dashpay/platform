@@ -897,7 +897,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert contract and document");
 
@@ -1017,7 +1016,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -1128,7 +1126,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -1263,7 +1260,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -1374,7 +1370,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -1434,7 +1429,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to update documents");
 
@@ -1591,7 +1585,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -1645,7 +1638,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to update documents");
 
@@ -2104,7 +2096,6 @@ mod tests {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("add token balance");
         }
@@ -2158,7 +2149,6 @@ mod tests {
             &BlockInfo::default(),
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2199,7 +2189,6 @@ mod tests {
             &BlockInfo::default(),
             None,
             platform_version,
-            None,
         );
 
         assert!(

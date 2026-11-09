@@ -15,7 +15,6 @@ use dpp::address_funds::PlatformAddress;
 use dpp::balances::credits::CreditOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::{BalanceChange, FeeResult};
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
@@ -66,7 +65,6 @@ where
         address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
         block_credit_mints: &mut Credits,
         platform_version: &PlatformVersion,
-        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
         // The sponsor pays for a valid batch only; fee validation below must judge the same
         // event execution charges, so the sponsor leaves the event before either sees it.
@@ -103,17 +101,11 @@ where
                 address_balances_in_update,
                 block_credit_mints,
                 platform_version,
-                previous_fee_versions,
             );
         }
 
-        let mut fee_validation_result = self.settle_fees_of_event_v1(
-            &event,
-            block_info,
-            Some(transaction),
-            platform_version,
-            previous_fee_versions,
-        )?;
+        let mut fee_validation_result =
+            self.settle_fees_of_event_v1(&event, block_info, Some(transaction), platform_version)?;
 
         let ExecutionEvent::Paid {
             identity,
@@ -173,7 +165,6 @@ where
                     block_info,
                     Some(transaction),
                     platform_version,
-                    Some(previous_fee_versions),
                 )
                 .map_err(Error::Drive)?;
 

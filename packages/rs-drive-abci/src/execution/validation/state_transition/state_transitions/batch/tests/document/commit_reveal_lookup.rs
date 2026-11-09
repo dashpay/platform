@@ -374,7 +374,6 @@ mod commit_reveal_lookup_tests {
                         true,
                         None,
                         platform_version,
-                        None,
                     )
                     .expect("expected to lower the balance");
             } else if credits > balance {

@@ -76,7 +76,6 @@ where
                 None,   // address_balances_in_update not needed for check_tx
                 &mut 0, // check_tx's transaction is discarded, its mints are never recorded
                 platform_ref.state.current_platform_version()?,
-                platform_ref.state.previous_fee_versions(),
             )
         } else {
             Ok(UnpaidConsensusExecutionError(
@@ -187,7 +186,6 @@ where
                 platform_ref.state.last_block_info(),
                 None,
                 platform_version,
-                platform_ref.state.previous_fee_versions(),
             )?;
 
             let (estimated_fee_result, mut errors) = validation_result.into_data_and_errors()?;
@@ -657,7 +655,7 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 25_000_000_000, // 0.25 Dash
+            balance: 27_000_000_000, // 0.27 Dash
             revision: 0,
         }
         .into();
@@ -737,8 +735,9 @@ mod tests {
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
             // charged per compiled byte
             // and a document type's schema size is billed at least the values the
-            // repeated-key walk read; the DashPay v3 schema adds its declarations
-            24004855740
+            // repeated-key walk read; the DashPay v3 schema adds its declarations and the
+            // privateContactRequest type (one more document type registration fee)
+            26005728080
         );
 
         let check_result = platform
@@ -967,7 +966,7 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 27_000_000_000,
+            balance: 29_000_000_000,
             revision: 0,
         }
         .into();
@@ -1329,7 +1328,7 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 25_000_000_000, // 0.25 Dash
+            balance: 27_000_000_000, // 0.27 Dash
             revision: 0,
         }
         .into();
@@ -1412,8 +1411,9 @@ mod tests {
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
             // charged per compiled byte
             // and a document type's schema size is billed at least the values the
-            // repeated-key walk read; the DashPay v3 schema adds its declarations
-            24009711480
+            // repeated-key walk read; the DashPay v3 schema adds its declarations and the
+            // privateContactRequest type (one more document type registration fee)
+            26011456160
         );
 
         let check_result = platform
@@ -1497,8 +1497,9 @@ mod tests {
             public_keys: BTreeMap::from([(1, key.clone())]),
             // we have enough balance only for 1 insertion (this is where this test is different);
             // from protocol version 15 one insertion stores the contract compiled, about 1.8
-            // times its bytes, and DashPay v3 adds its declarations, so it needs more
-            balance: 24_400_000_000,
+            // times its bytes, and DashPay v3 adds its declarations and a document type, so it
+            // needs more
+            balance: 26_400_000_000,
             revision: 0,
         }
         .into();
@@ -1898,8 +1899,9 @@ mod tests {
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
             // charged per compiled byte
             // and a document type's schema size is billed at least the values the
-            // repeated-key walk read; the DashPay v3 schema adds its declarations
-            24004855740
+            // repeated-key walk read; the DashPay v3 schema adds its declarations and the
+            // privateContactRequest type (one more document type registration fee)
+            26005728080
         );
 
         platform
@@ -1997,8 +1999,9 @@ mod tests {
             // about 1.8 times its bytes, which are byte-billed, and checking its compiled size
             // is charged per compiled byte
             // and a document type's schema size is billed at least the values the
-            // repeated-key walk read; the DashPay v3 schema adds its declarations
-            29005647760
+            // repeated-key walk read; the DashPay v3 schema adds its declarations and the
+            // privateContactRequest type (one more document type registration fee)
+            31006514040
         );
 
         let check_result = platform
@@ -2593,8 +2596,9 @@ mod tests {
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
             // charged per compiled byte
             // and a document type's schema size is billed at least the values the
-            // repeated-key walk read; the DashPay v3 schema adds its declarations
-            24004855740
+            // repeated-key walk read; the DashPay v3 schema adds its declarations and the
+            // privateContactRequest type (one more document type registration fee)
+            26005728080
         );
 
         platform
@@ -4395,7 +4399,7 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 25_000_000_000, // 0.25 Dash
+            balance: 27_000_000_000, // 0.27 Dash
             revision: 0,
         }
         .into();
@@ -4663,7 +4667,7 @@ mod tests {
         let identity: Identity = IdentityV0 {
             id: Identifier::new([7; 32]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 25_000_000_000, // 0.25 Dash
+            balance: 27_000_000_000, // 0.27 Dash
             revision: 0,
         }
         .into();
@@ -4791,7 +4795,7 @@ mod tests {
                     BasicError::SerializedObjectParsingError(_)
                 ))
             );
-            assert_eq!(balance, 25_000_000_000, "nothing is charged");
+            assert_eq!(balance, 27_000_000_000, "nothing is charged");
         }
     }
 
@@ -4813,7 +4817,7 @@ mod tests {
                 execution_result,
                 StateTransitionExecutionResult::SuccessfulExecution { .. }
             );
-            assert!(balance < 25_000_000_000, "the create is paid");
+            assert!(balance < 27_000_000_000, "the create is paid");
         }
     }
 }

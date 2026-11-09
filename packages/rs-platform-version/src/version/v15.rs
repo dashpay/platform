@@ -283,7 +283,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     system field; no elected moderation), and registration holds `entrySize` to
 ///     `max_private_document_entry_size`, 4096 bytes in `SYSTEM_LIMITS_V5`. The compiled
 ///     stored form of note 8 records the declaration. A contract update cannot add, remove or
-///     change it (`DocumentTypeUpdateError`). No reference may name a private type: a
+///     change it (`DocumentTypeUpdateError`), and may only add properties after a private type's
+///     existing ones, at the end of the type and of each object, since its immutable entries are
+///     read with the type as it is now (`DocumentTypeUpdateError` too). No reference may name a private type: a
 ///     `findBy`, an `inList` list, a `countOf` or a `sumOf` naming one of the same contract is
 ///     refused by the contract parse (`InvalidContractStructure`), and every other reference,
 ///     to a type of the same contract or another, by contract registration
@@ -299,7 +301,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     of the primary-key tree (`insert_empty_private_document_store_operation` 0,
 ///     `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`, `None` before); each stored entry is the client's behind a 16-byte header.
 ///     The store's chunk power is the largest keeping a compacted chunk near
-///     `private_document_store_target_chunk_bytes` (512 KiB), bounded by
+///     `private_document_store_target_chunk_bytes` (1 MiB), bounded by
 ///     `private_document_store_min_chunk_power` and `private_document_store_max_chunk_power`
 ///     (4 and 11), all in `SYSTEM_LIMITS_V5`; it is committed into the store. Document
 ///     queries refuse a private type; `getPrivateDocumentEntries` reads and proves a page of
@@ -485,7 +487,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     is refused unpaid either way. Protocol v14 and earlier keep `basic_structure` 0 and
 ///     `advanced_structure` 0 or 1.
 ///
-/// 24. **DashPay v3 states what its data triggers checked, and its ciphertexts' shape**:
+/// 24. **DashPay v3 states what its data triggers checked and its ciphertexts' shape, and adds
+///     private contact requests**:
 ///     `SYSTEM_DATA_CONTRACT_VERSIONS_V4` selects DashPay contract v3, loaded at
 ///     genesis and re-stored by `transition_to_version_15` (`apply_contract`, as the
 ///     upgrade to v2 did). A `contactRequest`'s `toUserId` refers to an identity
@@ -507,6 +510,14 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     profile create and replace triggers, which made the identity, writer and type byte
 ///     checks and refused with `DataTriggerConditionError` (40500). Protocol v14 keeps
 ///     DashPay v2 and bindings 2, and earlier versions the contract and bindings they had.
+///     DashPay v3 also declares `privateContactRequest`, a private type (note 13) of 589-byte
+///     entries whose properties describe a contact request only its recipient can read:
+///     `accountReference`, the DIP-15 compact `extendedPublicKey` (69 bytes), and the optional
+///     `accountLabel` (at most 63 bytes), `autoAcceptProof` (38 to 102) and `shieldedAddress`
+///     (43). At their largest they encode to 290 bytes, which with the private document
+///     envelope's 299 fill an entry. Genesis creates its store as a contract insert does, and
+///     `transition_to_version_15` as a contract update adding a private type does (note 13);
+///     only note 25's transition appends to it.
 ///
 /// 25. **Private document entries**: a new state transition,
 ///     `PrivateDocumentCreateFromShieldedPool` (type 29), appends entries to the store of a
@@ -550,7 +561,16 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     first two reach no earlier state; a batch repeating a keyless append arises nowhere in
 ///     Platform (notes are unique, and note 25 refuses identical entries).
 ///
-/// 27. **Token listings**: three token transitions of a batch, `TokenPlaceAsk` (lists an amount
+/// 27. **Refunds at the storing epoch's rate**: `calculate_fee` 1 (`DRIVE_VERSION_V10`) prices
+///     the bytes a storage refund returns at the storage rate of the fee schedule of the
+///     protocol version that ran the epoch that stored them, read from that epoch's tree,
+///     where the epoch's first block records its protocol version. Bytes stored in the block's
+///     own epoch are priced at the block's rate. Generation 0 priced every refund at the
+///     block's rate. Every schedule so far has the same storage rate, so no refund changes. A
+///     removal from an earlier epoch pays once per such epoch for reading its record, the only
+///     fee this changes; generation 0 reads nothing.
+///
+/// 28. **Token listings**: three token transitions of a batch, `TokenPlaceAsk` (lists an amount
 ///     of a tradeable token at a price in credits per whole token and moves it into escrow),
 ///     `TokenFillAsk` (buys part or all of a listing, paying the seller the change in the
 ///     listing's rounded-up running total) and `TokenCancelOrder` (returns what an order holds
@@ -575,7 +595,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     version reaches.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17); fetch_core_fork_activation_height and store_core_fork_activation_height Some(0) keep the Core fork activations (note 18); document method versions v5: append_private_document_entries_operations Some(0) appends a private document create's entries (note 25); grove_version GROVE_V5 (note 26)
+    drive: DRIVE_VERSION_V10, // changed: calculate_fee 1 prices a refund at the storing epoch's rate (note 27); apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17); fetch_core_fork_activation_height and store_core_fork_activation_height Some(0) keep the Core fork activations (note 18); document method versions v5: append_private_document_entries_operations Some(0) appends a private document create's entries (note 25); grove_version GROVE_V5 (note 26)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; consensus_params_update 2 installs the full evidence policy (note 16); update_core_info 1 records the chain locked height at which Core's V24 is first seen active (note 18); build_untied_withdrawal_transactions_from_documents 1 emits asset unlock payload version 2 once V24 is recorded as active (note 20); update_voter_identity 1 re-enables the voter key of the address a masternode returns to (note 22)

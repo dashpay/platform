@@ -49,13 +49,11 @@ pub type FeeVersionNumber = u32;
 /// number up by that position, which is correct exactly while this holds, so a new entry is
 /// appended with the next number and never skips or reuses one.
 ///
-/// A new number is needed only when a value the fee history serves changes (the storage,
-/// processing, hashing or signature costs), because saved state keeps only the number and
-/// reloads the entry registered here. Schedules that change other groups keep the previous
-/// number, which is why `FEE_VERSION2` to `FEE_VERSION4` all carry 1 and are not listed.
-/// Registering different storage rates also requires refunds priced at the rate active when the
-/// bytes were stored; `calculate_fee` generation 0 prices them at the removal epoch's rate
-/// (dashpay/platform#4703 has a version of that rule).
+/// Saved state keeps only the number and reloads the entry registered here, and block execution
+/// does not read what it reloads: from protocol version 15 a refund is priced at the storage rate
+/// of the protocol version that ran the epoch that stored the bytes, which the epoch's tree
+/// records. Schedules keep the previous number, which is why `FEE_VERSION2` to `FEE_VERSION4`
+/// all carry 1 and are not listed.
 pub const FEE_VERSIONS: &[FeeVersion] = &[FEE_VERSION1];
 
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]

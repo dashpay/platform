@@ -359,15 +359,13 @@ pub(crate) fn derive_order_id(
             "an order id's preimage is a few dozen bytes",
         ))
     })?;
-    let hash_fee = Drive::calculate_fee(
+    let hash_fee = drive.calculate_fee(
         None,
         Some(vec![LowLevelDriveOperation::FunctionOperation(
             FunctionOp::new_with_byte_count(HashFunction::Sha256_2, preimage_size),
         )]),
         &block_info.epoch,
-        drive.config.epochs_per_era,
         platform_version,
-        None,
     )?;
     Ok((side.order_id(token_id, maker_id, nonce), hash_fee))
 }

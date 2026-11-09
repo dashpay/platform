@@ -996,7 +996,6 @@ mod tests {
             };
             use dpp::block::block_info::BlockInfo;
             use dpp::block::epoch::Epoch;
-            use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
             use dpp::identity::KeyType;
             use dpp::shielded::compute_minimum_shielded_fee;
             use dpp::state_transition::StateTransitionEstimatedFeeValidation;
@@ -1080,13 +1079,7 @@ mod tests {
 
                 let result = platform
                     .platform
-                    .validate_fees_of_event(
-                        &event,
-                        &BlockInfo::default(),
-                        None,
-                        platform_version,
-                        &CachedEpochIndexFeeVersions::new(),
-                    )
+                    .validate_fees_of_event(&event, &BlockInfo::default(), None, platform_version)
                     .expect("fee validation runs");
                 assert!(
                     result.is_valid(),

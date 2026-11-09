@@ -21,7 +21,6 @@ use dpp::data_contract::associated_token::token_configuration::accessors::v0::To
 use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Getters;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use grovedb::{Element, TransactionArg};
@@ -58,7 +57,6 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         if !apply {
             return self.insert_contract(
@@ -136,13 +134,11 @@ impl Drive {
             .data_contracts
             .insert_rewritten(updated_contract_fetch_info, transaction.is_some());
 
-        Drive::calculate_fee(
+        self.calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
-            self.config.epochs_per_era,
             platform_version,
-            previous_fee_versions,
         )
     }
 
@@ -545,7 +541,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("update adding the token should succeed");
 
@@ -644,7 +639,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("update adding the token should succeed");
 
@@ -692,7 +686,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("a later update should leave the claims subtree alone");
     }
@@ -809,7 +802,6 @@ mod tests {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("update keeping existing tokens should succeed");
         }
@@ -874,7 +866,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("update adding the token should succeed");
 
@@ -1033,7 +1024,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("update adding two tokens should succeed");
 
@@ -1070,7 +1060,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("update after the upgrade should succeed");
 
@@ -1163,7 +1152,6 @@ mod tests {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("update keeping existing tokens should succeed");
         }
@@ -1225,7 +1213,6 @@ mod tests {
                             false,
                             None,
                             platform_version,
-                            None,
                         )
                         .expect("estimate adding a pooled token through contract update")
                 } else {
@@ -1249,7 +1236,6 @@ mod tests {
                             true,
                             None,
                             platform_version,
-                            None,
                         )
                         .expect("add token through contract update");
                 } else {
@@ -1297,7 +1283,6 @@ mod tests {
                         false,
                         None,
                         platform_version,
-                        None,
                     )
                     .expect("estimate updating a contract whose token owns a pool");
                 assert!(estimate_with_pool.processing_fee > 0);
@@ -1316,7 +1301,6 @@ mod tests {
                         true,
                         None,
                         platform_version,
-                        None,
                     )
                     .expect("update existing token without recreating storage");
                 assert_eq!(
