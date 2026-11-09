@@ -44,6 +44,11 @@ impl PlatformServiceImpl {
         }
         let generation = self.platform_cache.generation();
 
+        // Held until the blocks are read and converted
+        let _permit = self.get_blocks_permits.try_acquire().map_err(|_| {
+            DapiError::ResourceExhausted("too many getBlocks requests in progress".to_string())
+        })?;
+
         let blocks = self.fetch_blocks(heights, prove).await?;
 
         let response = GetBlocksResponse {
@@ -254,6 +259,7 @@ fn parse_time_ms(time: &str) -> DAPIResult<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::platform_service::MAX_CONCURRENT_GET_BLOCKS;
     use crate::services::platform_service::block_proof::tenderdash_commit;
     use dapi_grpc::platform::v0::TenderdashBlockProof;
     use dapi_grpc::platform::v0::get_blocks_request::GetBlocksRequestV0;
@@ -291,6 +297,46 @@ mod tests {
 
     fn heights(blocks: &[Block]) -> Vec<u64> {
         blocks.iter().map(|block| block.height).collect()
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_request_at_the_concurrency_limit() {
+        let service = PlatformServiceImpl::without_backends();
+        let _held = service
+            .get_blocks_permits
+            .try_acquire_many(MAX_CONCURRENT_GET_BLOCKS as u32)
+            .unwrap();
+
+        let error = service
+            .get_blocks_impl(Request::new(request(1, 1)))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, DapiError::ResourceExhausted(_)));
+    }
+
+    #[tokio::test]
+    async fn should_serve_a_cached_response_at_the_concurrency_limit() {
+        let service = PlatformServiceImpl::without_backends();
+        let _held = service
+            .get_blocks_permits
+            .try_acquire_many(MAX_CONCURRENT_GET_BLOCKS as u32)
+            .unwrap();
+        let cached = GetBlocksResponse {
+            version: Some(get_blocks_response::Version::V0(GetBlocksResponseV0 {
+                blocks: vec![block_of_size(1, 10)],
+            })),
+        };
+        service
+            .platform_cache
+            .put(make_cache_key("get_blocks", &request(1, 1)), &cached);
+
+        let response = service
+            .get_blocks_impl(Request::new(request(1, 1)))
+            .await
+            .unwrap();
+
+        assert_eq!(response.into_inner(), cached);
     }
 
     #[test]

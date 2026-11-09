@@ -41,6 +41,16 @@ impl PlatformServiceImpl {
         }
         let generation = self.platform_cache.generation();
 
+        // Held until the block is read and decoded
+        let _permit = self
+            .get_owner_transactions_permits
+            .try_acquire()
+            .map_err(|_| {
+                DapiError::ResourceExhausted(
+                    "too many getOwnerTransactionsInBlock requests in progress".to_string(),
+                )
+            })?;
+
         let result = self.tenderdash_client.block(height).await?;
         let block_id = result.block_id;
         let block = result
@@ -230,6 +240,7 @@ fn attach_results(
 mod tests {
     use super::*;
     use crate::clients::tenderdash_client::{ResultBlock, ResultBlockResults};
+    use crate::services::platform_service::MAX_CONCURRENT_GET_OWNER_TRANSACTIONS;
     use base64::Engine;
     use base64::engine::general_purpose::STANDARD;
     use dapi_grpc::platform::v0::get_owner_transactions_in_block_request::GetOwnerTransactionsInBlockRequestV0;
@@ -296,6 +307,53 @@ mod tests {
                 },
             )),
         }
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_request_at_the_concurrency_limit() {
+        let service = PlatformServiceImpl::without_backends();
+        let _held = service
+            .get_owner_transactions_permits
+            .try_acquire_many(MAX_CONCURRENT_GET_OWNER_TRANSACTIONS as u32)
+            .unwrap();
+
+        let error = service
+            .get_owner_transactions_in_block_impl(Request::new(request(1, ALICE.to_vec())))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, DapiError::ResourceExhausted(_)));
+    }
+
+    #[tokio::test]
+    async fn should_serve_a_cached_response_at_the_concurrency_limit() {
+        let service = PlatformServiceImpl::without_backends();
+        let _held = service
+            .get_owner_transactions_permits
+            .try_acquire_many(MAX_CONCURRENT_GET_OWNER_TRANSACTIONS as u32)
+            .unwrap();
+        let cached = GetOwnerTransactionsInBlockResponse {
+            version: Some(get_owner_transactions_in_block_response::Version::V0(
+                GetOwnerTransactionsInBlockResponseV0 {
+                    transactions: Vec::new(),
+                    proof: None,
+                },
+            )),
+        };
+        service.platform_cache.put(
+            make_cache_key(
+                "get_owner_transactions_in_block",
+                &request(1, ALICE.to_vec()),
+            ),
+            &cached,
+        );
+
+        let response = service
+            .get_owner_transactions_in_block_impl(Request::new(request(1, ALICE.to_vec())))
+            .await
+            .unwrap();
+
+        assert_eq!(response.into_inner(), cached);
     }
 
     #[test]

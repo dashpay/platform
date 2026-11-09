@@ -38,6 +38,15 @@ pub use shielded_proof_failure_budget::ShieldedProofFailureBudget;
 
 const MAX_PENDING_STATE_TRANSITION_WAITS: usize = 1_024;
 
+/// `getBlocks` requests reading from Tenderdash at once. Ten full blocks hold about 60 MiB
+/// while in flight, so this keeps the memory of the query bounded on a small node.
+const MAX_CONCURRENT_GET_BLOCKS: usize = 4;
+
+/// `getOwnerTransactionsInBlock` requests reading and decoding blocks at once. Cheaper than
+/// `getBlocks`, since each reads one block, but no response cache can absorb them: the
+/// answer differs per owner.
+const MAX_CONCURRENT_GET_OWNER_TRANSACTIONS: usize = 16;
+
 const MAX_PATH_COMPONENTS: usize = 256;
 const MAX_GROVEDB_KEY_BYTES: usize = 255;
 const MAX_PATH_QUERY_BYTES: usize = 64 * 1024;
@@ -167,6 +176,8 @@ pub struct PlatformServiceImpl {
     pub platform_cache: crate::cache::LruResponseCache,
     pub subscriber_manager: Arc<crate::services::streaming_service::SubscriberManager>,
     pub state_transition_wait_permits: Arc<Semaphore>,
+    pub get_blocks_permits: Arc<Semaphore>,
+    pub get_owner_transactions_permits: Arc<Semaphore>,
     pub shielded_proof_failure_budget: Arc<ShieldedProofFailureBudget>,
     #[allow(dead_code)]
     // workers - dropping will cancel all spawned tasks
@@ -229,6 +240,10 @@ impl PlatformServiceImpl {
             subscriber_manager,
             state_transition_wait_permits: Arc::new(Semaphore::new(
                 MAX_PENDING_STATE_TRANSITION_WAITS,
+            )),
+            get_blocks_permits: Arc::new(Semaphore::new(MAX_CONCURRENT_GET_BLOCKS)),
+            get_owner_transactions_permits: Arc::new(Semaphore::new(
+                MAX_CONCURRENT_GET_OWNER_TRANSACTIONS,
             )),
             shielded_proof_failure_budget: Arc::new(ShieldedProofFailureBudget::default()),
             workers,

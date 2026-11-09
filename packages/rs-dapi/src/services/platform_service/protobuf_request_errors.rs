@@ -1,6 +1,9 @@
 //! Test the public request decoder and real Drive forwarding without background connections.
 
-use super::{MAX_PENDING_STATE_TRANSITION_WAITS, PlatformServiceImpl, ShieldedProofFailureBudget};
+use super::{
+    MAX_CONCURRENT_GET_BLOCKS, MAX_CONCURRENT_GET_OWNER_TRANSACTIONS,
+    MAX_PENDING_STATE_TRANSITION_WAITS, PlatformServiceImpl, ShieldedProofFailureBudget,
+};
 use crate::cache::LruResponseCache;
 use crate::clients::TenderdashClient;
 use crate::clients::drive_client::{DriveChannel, DriveClient};
@@ -61,6 +64,42 @@ impl Drop for Harness {
     fn drop(&mut self) {
         self.server.abort();
         self.drive.abort();
+    }
+}
+
+impl PlatformServiceImpl {
+    /// A service around the given Drive client, with no Tenderdash behind it.
+    fn with_test_drive(drive_client: DriveClient) -> Self {
+        let config = Arc::new(Config::default());
+        let tenderdash_client = Arc::new(TenderdashClient::without_test_connection());
+        Self {
+            drive_client,
+            websocket_client: tenderdash_client.websocket_client(),
+            tenderdash_client,
+            config: Arc::clone(&config),
+            platform_cache: LruResponseCache::with_capacity(
+                "protobuf-request-test",
+                config.dapi.platform_cache_bytes,
+            ),
+            subscriber_manager: Arc::new(SubscriberManager::new()),
+            state_transition_wait_permits: Arc::new(Semaphore::new(
+                MAX_PENDING_STATE_TRANSITION_WAITS,
+            )),
+            get_blocks_permits: Arc::new(Semaphore::new(MAX_CONCURRENT_GET_BLOCKS)),
+            get_owner_transactions_permits: Arc::new(Semaphore::new(
+                MAX_CONCURRENT_GET_OWNER_TRANSACTIONS,
+            )),
+            shielded_proof_failure_budget: Arc::new(ShieldedProofFailureBudget::default()),
+            workers: Workers::new(),
+        }
+    }
+
+    /// A service with no backend at all, for requests answered before reaching one.
+    pub(super) fn without_backends() -> Self {
+        let channel: DriveChannel = ServiceBuilder::new()
+            .layer(TraceLayer::new_for_http())
+            .service(Endpoint::from_static("http://drive.invalid").connect_lazy());
+        Self::with_test_drive(DriveClient::from_test_channel(channel))
     }
 }
 
@@ -153,24 +192,7 @@ impl Harness {
         let traced: DriveChannel = ServiceBuilder::new()
             .layer(TraceLayer::new_for_http())
             .service(channel(drive_io, "http://drive.in-memory"));
-        let config = Arc::new(Config::default());
-        let tenderdash_client = Arc::new(TenderdashClient::without_test_connection());
-        let service = PlatformServiceImpl {
-            drive_client: DriveClient::from_test_channel(traced),
-            websocket_client: tenderdash_client.websocket_client(),
-            tenderdash_client,
-            config: Arc::clone(&config),
-            platform_cache: LruResponseCache::with_capacity(
-                "protobuf-request-test",
-                config.dapi.platform_cache_bytes,
-            ),
-            subscriber_manager: Arc::new(SubscriberManager::new()),
-            state_transition_wait_permits: Arc::new(Semaphore::new(
-                MAX_PENDING_STATE_TRANSITION_WAITS,
-            )),
-            shielded_proof_failure_budget: Arc::new(ShieldedProofFailureBudget::default()),
-            workers: Workers::new(),
-        };
+        let service = PlatformServiceImpl::with_test_drive(DriveClient::from_test_channel(traced));
         let (client_io, server_io) = tokio::io::duplex(64 * 1024);
         let server = tokio::spawn(async move {
             let incoming = tokio_stream::iter([Ok::<_, std::io::Error>(server_io)])
