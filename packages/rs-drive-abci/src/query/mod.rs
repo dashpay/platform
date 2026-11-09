@@ -152,14 +152,7 @@ pub(crate) mod tests {
 
         platform
             .drive
-            .apply_drive_operations(
-                vec![operation],
-                true,
-                &block_info,
-                None,
-                platform_version,
-                None,
-            )
+            .apply_drive_operations(vec![operation], true, &block_info, None, platform_version)
             .expect("expected to apply drive operations");
     }
 
@@ -263,7 +256,6 @@ pub(crate) mod tests {
                 &BlockInfo::genesis(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to remove the post");
     }
@@ -291,14 +283,7 @@ pub(crate) mod tests {
 
         platform
             .drive
-            .apply_drive_operations(
-                vec![operation],
-                true,
-                &block_info,
-                None,
-                platform_version,
-                None,
-            )
+            .apply_drive_operations(vec![operation], true, &block_info, None, platform_version)
             .expect("expected to apply drive operations");
     }
 

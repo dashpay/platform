@@ -326,7 +326,6 @@ pub(super) mod tests {
                 true,
                 Some(transaction),
                 PlatformVersion::latest(),
-                None,
             )
             .expect("expected the card to insert");
         RandomDocumentRequest {
@@ -515,7 +514,6 @@ pub(super) mod tests {
                 &BlockInfo::default(),
                 Some(transaction),
                 platform_version,
-                None,
             )
             .expect("expected the reservation to apply");
         request

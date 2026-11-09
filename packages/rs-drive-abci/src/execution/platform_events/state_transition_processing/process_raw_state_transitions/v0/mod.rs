@@ -1,7 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::{Platform, PlatformRef};
-use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
+use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::codes::ErrorWithCode;
@@ -273,7 +273,6 @@ where
                                 transaction,
                                 &mut block_credit_mints,
                                 platform_version,
-                                platform_ref.state.previous_fee_versions(),
                             )
                             .unwrap_or_else(error_to_internal_error_execution_result)
                         })

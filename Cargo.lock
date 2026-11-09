@@ -5383,6 +5383,7 @@ version = "5.0.3"
 dependencies = [
  "aes 0.8.4",
  "cbc",
+ "chacha20poly1305",
  "hmac",
  "secp256k1 0.33.1",
  "sha2 0.10.9",

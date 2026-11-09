@@ -534,7 +534,6 @@ mod tests {
                 &BlockInfo::default(),
                 None,
                 PlatformVersion::latest(),
-                None,
             )
             .expect("expected the reservation to apply");
     }
@@ -656,7 +655,6 @@ mod tests {
                 &BlockInfo::default(),
                 None,
                 PlatformVersion::latest(),
-                None,
             )
             .expect("expected the history write to apply")
     }
@@ -923,7 +921,6 @@ mod tests {
             &BlockInfo::default(),
             None,
             PlatformVersion::latest(),
-            None,
         );
         assert!(
             matches!(
