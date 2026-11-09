@@ -90,8 +90,19 @@ impl WalletPersister {
             .extend(commitments);
     }
 
-    /// Take the commitments [`Self::note_rejected_private_entries`] noted
+    /// Whether [`Self::note_rejected_private_entries`] noted any commitment
     /// since the last take.
+    pub(crate) fn has_rejected_private_entries(&self) -> bool {
+        !self
+            .rejected_private_entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_empty()
+    }
+
+    /// Take the commitments [`Self::note_rejected_private_entries`] noted
+    /// since the last take. Take them only where they are applied with
+    /// nothing awaited in between, as nothing keeps a set taken and dropped.
     pub(crate) fn take_rejected_private_entries(&self) -> BTreeSet<[u8; 32]> {
         std::mem::take(
             &mut *self

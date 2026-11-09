@@ -772,14 +772,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     pub(crate) async fn release_rejected_private_requests(
         &self,
     ) -> Result<(), PlatformWalletError> {
-        let rejected = self.persister.take_rejected_private_entries();
-        if rejected.is_empty() {
+        if !self.persister.has_rejected_private_entries() {
             return Ok(());
         }
+        // Taken only once the wallet is locked and found, and applied with
+        // nothing awaited in between: a call dropped while it waits for the
+        // lock leaves the notices for the next one.
         let mut wm = self.wallet_manager.write().await;
         let info = wm
             .get_wallet_info_mut(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let rejected = self.persister.take_rejected_private_entries();
         let identity_ids: Vec<Identifier> = info
             .identity_manager
             .all_identities()
@@ -4360,7 +4363,8 @@ mod tests {
     /// A private request whose payment was unconfirmed, and which the
     /// shielded coordinator then settled as never executing (a definitive
     /// consensus rejection of its saved transition), frees its pair without
-    /// a restart: the retry pays.
+    /// a restart: the retry pays, even after a release was dropped while it
+    /// waited for the wallet lock.
     #[cfg(feature = "shielded")]
     #[tokio::test]
     async fn should_free_a_pair_once_its_unconfirmed_payment_is_rejected_for_good() {
@@ -4413,6 +4417,21 @@ mod tests {
             &private_contact_request_payment(entry),
             Some(&alice_wallet.identity().persister),
         );
+
+        // A release dropped while it waits for the wallet lock keeps the
+        // notice for the next call.
+        {
+            let wm = alice_wallet.identity().wallet_manager.write().await;
+            let release = view.release_rejected_private_requests();
+            assert!(
+                tokio::time::timeout(Duration::from_millis(50), release)
+                    .await
+                    .is_err(),
+                "the release waits for the wallet lock"
+            );
+            drop(wm);
+        }
+        assert!(pending_to(&alice_wallet, ALICE, &bob).await);
 
         let retry = Arc::new(Mutex::new(Vec::new()));
         let retried = view
