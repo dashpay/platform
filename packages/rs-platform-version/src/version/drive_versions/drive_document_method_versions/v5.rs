@@ -14,6 +14,9 @@ use crate::version::drive_versions::drive_document_method_versions::{
 ///   `prove_private_document_entries` are `Some(0)` too (`None` before): a page of a store's
 ///   entries can be read and proved, and `append_private_document_entries_operations` is
 ///   `Some(0)` (`None` before): a `PrivateDocumentCreateFromShieldedPool` appends entries to one.
+/// * `insert.add_reference_for_index_level_for_contract_operations` is 1: summable index
+///   entries use `AllReferencesWithSumItem` for every type, as delete v2 does, so estimates
+///   also change for summable types without history.
 /// * `delete.remove_reference_for_index_level_for_contract_operations` is 2: a delete's estimate
 ///   describes an index's entries for a value (its `[0]` layer) as the references they are, as
 ///   the insert's does, including the primary-pointer and summable reference shapes.

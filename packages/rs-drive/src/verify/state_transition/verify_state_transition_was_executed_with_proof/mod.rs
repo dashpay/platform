@@ -79,10 +79,10 @@ impl Drive {
     ///
     /// The caller's `platform_version` selects the generation of this method and every
     /// rule inside it, so a producer's version cannot lower them. `query_platform_version`
-    /// selects only the layout the producer proved: whether the proof of an owned,
-    /// fee-paying transition carries the owner's credit balance and the document history layout. The producer's
-    /// `prove_state_transition` generation decides. The caller must authenticate the
-    /// producer version together with the resulting root.
+    /// selects only the layout the producer proved. Its `prove_state_transition` generation
+    /// decides whether an owned, fee-paying transition carries the owner's credit balance;
+    /// `document_history_storage_layout` selects the document history layout. The caller
+    /// must authenticate the producer version together with the resulting root.
     ///
     /// # Parameters
     ///
@@ -97,8 +97,8 @@ impl Drive {
     /// The root hash of the proof and the verified outcome, as for
     /// [`Self::verify_state_transition_was_executed_with_proof`]. A generation this build
     /// does not know, of this method in the caller's version or of
-    /// `prove_state_transition` in the producer's, is reported as
-    /// [`DriveError::UnknownVersionMismatch`] naming that method.
+    /// `prove_state_transition` or `document_history_storage_layout` in the producer's,
+    /// is reported as [`DriveError::UnknownVersionMismatch`] naming that method.
     pub fn verify_state_transition_was_executed_with_proof_for_query_version(
         state_transition: &StateTransition,
         block_info: &BlockInfo,
@@ -114,8 +114,8 @@ impl Drive {
             .state_transition
             .verify_state_transition_was_executed_with_proof
         {
-            // Generations 0 and 1 run the same checks. The layout comes from the
-            // producer's `prove_state_transition` generation, so either one verifies a
+            // Generations 0 and 1 run the same checks. The owner-balance layout comes from
+            // the producer's `prove_state_transition` generation, so either one verifies a
             // proof from any producer whose prover generation this build knows; an
             // unknown prover generation is refused. Protocol versions 1 to 13 select
             // verifier and prover generation 0, and protocol versions from 14 select 1
@@ -138,9 +138,7 @@ impl Drive {
         }
     }
 
-    /// Whether a producer at `query_platform_version` proves an owned, fee-paying
-    /// transition together with its owner's credit balance: generation 1 of
-    /// `prove_state_transition` does, generation 0 does not.
+    /// The producer's document history storage layout, restricted to supported layouts.
     fn proof_document_history_layout(
         query_platform_version: &PlatformVersion,
     ) -> Result<u16, Error> {
@@ -159,6 +157,9 @@ impl Drive {
         }
     }
 
+    /// Whether a producer at `query_platform_version` proves an owned, fee-paying
+    /// transition together with its owner's credit balance: generation 1 of
+    /// `prove_state_transition` does, generation 0 does not.
     fn proof_carries_owner_balance(
         query_platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {

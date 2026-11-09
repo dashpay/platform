@@ -112,6 +112,9 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 ///   above. `verify_chain_lock_locally` 1 leaves to Core chain locks that 0 rejected, so it is
 ///   only safe together with this check.
 /// - `engine.consensus_params_update` 2 installs the full evidence policy when it changes.
+/// - `protocol_upgrade.perform_events_on_first_block_of_protocol_change` is `Some(3)`:
+///   the first block crossing into protocol v15 migrates retained history after the other
+///   activation work, in the same transaction.
 ///
 /// The asset unlocks: `withdrawals.build_untied_withdrawal_transactions_from_documents` is 1
 /// rather than 0: a withdrawal pooled once `update_core_info` 1 has recorded Dash Core's V24 as

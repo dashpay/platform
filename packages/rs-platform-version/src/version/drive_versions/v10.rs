@@ -19,10 +19,10 @@ use crate::version::drive_versions::{
 };
 use grovedb_version::version::v5::GROVE_V5;
 
-/// Retained history uses per-type revision trees and one proof for its page, count and lifecycle.
-///
 /// Drive version 10, introduced in protocol v15:
 ///
+/// * **Retained history**: per-type revision trees and one proof authenticate its page,
+///   count and lifecycle.
 /// * **Compiled contracts**: with `DRIVE_CONTRACT_METHOD_VERSIONS_V5`, applying a contract writes
 ///   nothing when its format version 1 bytes match the stored contract's, whatever format the
 ///   stored one is in, as contracts are stored compiled from this version

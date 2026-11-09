@@ -251,7 +251,7 @@ mod tests {
                 assert_eq!(
                     entries.estimated_layer_sizes,
                     AllReference(32, document_reference_size(document_type), None),
-                    "non-history PV15 keeps upstream's reference description"
+                    "non-history PV15 describes entries as 42-byte document references"
                 );
             }
             assert_eq!(
