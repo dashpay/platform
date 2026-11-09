@@ -175,7 +175,6 @@ pub(super) fn insert_like(
         apply,
         None,
         pv,
-        None,
     )
 }
 
@@ -197,7 +196,6 @@ pub(super) fn delete_like(
         apply,
         None,
         pv,
-        None,
     )
 }
 
@@ -1909,17 +1907,12 @@ fn should_refuse_cursor_queries() {
 #[test]
 fn deletion_refunds_flow_from_terminal_item_flags() {
     use dpp::block::epoch::Epoch;
-    use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-    use dpp::version::fee::FeeVersion;
     use std::borrow::Cow;
-    use std::collections::BTreeMap;
 
     let (drive, contract) = setup_likes();
     let document_type = contract
         .document_type_for_name(DOCTYPE)
         .expect("like doctype exists");
-    let previous_fee_versions: CachedEpochIndexFeeVersions =
-        BTreeMap::from([(0, FeeVersion::first())]);
 
     let like = build_like(&contract, "dash", POST_A, OWNER_1, 1);
 
@@ -1944,7 +1937,6 @@ fn deletion_refunds_flow_from_terminal_item_flags() {
             true,
             None,
             pv,
-            None,
         )
         .expect("insert like with owned flags");
 
@@ -1963,7 +1955,6 @@ fn deletion_refunds_flow_from_terminal_item_flags() {
             true,
             None,
             pv,
-            Some(&previous_fee_versions),
         )
         .expect("delete like in a later epoch");
 
@@ -2024,7 +2015,6 @@ fn should_refuse_a_delete_spliced_across_two_rows() {
                 true,
                 None,
                 platform_version(),
-                None,
             )
             .expect("insert mark");
     };
@@ -2046,7 +2036,6 @@ fn should_refuse_a_delete_spliced_across_two_rows() {
             true,
             None,
             platform_version(),
-            None,
         )
         .expect_err("a spliced tuple must be refused");
     assert!(
@@ -2069,7 +2058,6 @@ fn should_refuse_a_delete_spliced_across_two_rows() {
             true,
             None,
             platform_version(),
-            None,
         )
         .expect("the real row must still delete");
     drive
@@ -2081,7 +2069,6 @@ fn should_refuse_a_delete_spliced_across_two_rows() {
             true,
             None,
             platform_version(),
-            None,
         )
         .expect("the other real row must still delete");
 
@@ -2157,7 +2144,6 @@ pub(super) fn insert_tip(
         apply,
         None,
         pv,
-        None,
     )
 }
 
@@ -2179,7 +2165,6 @@ pub(super) fn delete_tip(
         apply,
         None,
         pv,
-        None,
     )
 }
 
@@ -2683,7 +2668,6 @@ fn insert_beat(
         apply,
         None,
         pv,
-        None,
     )
 }
 
@@ -2705,7 +2689,6 @@ fn delete_beat(
         apply,
         None,
         pv,
-        None,
     )
 }
 
@@ -3216,7 +3199,6 @@ fn insert_mark(
         apply,
         None,
         platform_version(),
-        None,
     )
 }
 
@@ -3234,7 +3216,6 @@ fn delete_mark(
         apply,
         None,
         platform_version(),
-        None,
     )
 }
 
@@ -3533,7 +3514,6 @@ fn insert_pin(
         apply,
         None,
         platform_version(),
-        None,
     )
 }
 
@@ -3551,7 +3531,6 @@ fn delete_pin(
         apply,
         None,
         platform_version(),
-        None,
     )
 }
 

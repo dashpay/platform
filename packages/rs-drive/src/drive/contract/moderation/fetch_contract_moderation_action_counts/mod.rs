@@ -118,14 +118,8 @@ impl Drive {
                     &mut drive_operations,
                     platform_version,
                 )?;
-                let fee = Drive::calculate_fee(
-                    None,
-                    Some(drive_operations),
-                    epoch,
-                    self.config.epochs_per_era,
-                    platform_version,
-                    None,
-                )?;
+                let fee =
+                    self.calculate_fee(None, Some(drive_operations), epoch, platform_version)?;
                 Ok((fee, counts))
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
@@ -179,14 +173,8 @@ impl Drive {
                     &mut drive_operations,
                     platform_version,
                 )?;
-                let fee = Drive::calculate_fee(
-                    None,
-                    Some(drive_operations),
-                    epoch,
-                    self.config.epochs_per_era,
-                    platform_version,
-                    None,
-                )?;
+                let fee =
+                    self.calculate_fee(None, Some(drive_operations), epoch, platform_version)?;
                 Ok((fee, count))
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
