@@ -13,8 +13,8 @@ use dapi_grpc::platform::v0::{
 };
 use dapi_grpc::tonic::{Request, Response};
 use dpp::platform_value::Identifier;
-use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::StateTransition;
+use dpp::version::PlatformVersion;
 use sha2::{Digest, Sha256};
 
 use super::block_proof::{build_block_proof, transaction_proofs};
@@ -46,9 +46,10 @@ impl PlatformServiceImpl {
         let block = result
             .block
             .ok_or_else(|| DapiError::NotFound(format!("no block at height {height}")))?;
+        let platform_version = block_platform_version(block.header.version.app, height)?;
         let block_txs = block.data.txs;
 
-        let owned = select_owned_transactions(&block_txs, owner_id)?;
+        let owned = select_owned_transactions(&block_txs, owner_id, platform_version)?;
         let indexes = owned.iter().map(|tx| tx.index).collect::<Vec<_>>();
         // Most blocks hold nothing of a given owner, so the results are read only when needed
         let results = if owned.is_empty() {
@@ -97,6 +98,18 @@ impl PlatformServiceImpl {
     }
 }
 
+/// The protocol version a block executed under, which decides what decodes in that block.
+fn block_platform_version(app_version: u64, height: u64) -> DAPIResult<&'static PlatformVersion> {
+    u32::try_from(app_version)
+        .ok()
+        .and_then(|version| PlatformVersion::get(version).ok())
+        .ok_or_else(|| {
+            DapiError::Internal(format!(
+                "block {height} has protocol version {app_version}, which this DAPI does not know"
+            ))
+        })
+}
+
 /// Refuse a proved answer no default gRPC client could decode.
 ///
 /// Each transaction adds two Merkle paths, so a block full of one owner's small transitions
@@ -139,7 +152,8 @@ struct OwnedTransaction {
     state_transition: Vec<u8>,
 }
 
-/// Pick the transactions of `owner_id` out of a block's base64 encoded transactions.
+/// Pick the transactions of `owner_id` out of a block's base64 encoded transactions,
+/// decoding them as Drive did under the block's own protocol version.
 ///
 /// Drive executes only transitions it can decode, so one that does not decode here means
 /// this DAPI is out of step with the network. That fails the query: the response claims
@@ -147,18 +161,22 @@ struct OwnedTransaction {
 fn select_owned_transactions(
     block_txs: &[String],
     owner_id: Identifier,
+    platform_version: &PlatformVersion,
 ) -> DAPIResult<Vec<OwnedTransaction>> {
     let mut owned = Vec::new();
     for (index, tx) in block_txs.iter().enumerate() {
         let state_transition = base64_decode(tx).ok_or_else(|| {
             DapiError::Internal(format!("transaction {index} of the block is not base64"))
         })?;
-        let decoded = StateTransition::deserialize_from_bytes_untrusted(&state_transition)
-            .map_err(|error| {
-                DapiError::Internal(format!(
-                    "transaction {index} of the block does not decode: {error}"
-                ))
-            })?;
+        let decoded = StateTransition::deserialize_from_bytes_untrusted_in_version(
+            &state_transition,
+            platform_version,
+        )
+        .map_err(|error| {
+            DapiError::Internal(format!(
+                "transaction {index} of the block does not decode: {error}"
+            ))
+        })?;
         if decoded.owner_id() == Some(owner_id) {
             owned.push(OwnedTransaction {
                 index,
@@ -215,12 +233,21 @@ mod tests {
     use base64::Engine;
     use base64::engine::general_purpose::STANDARD;
     use dapi_grpc::platform::v0::get_owner_transactions_in_block_request::GetOwnerTransactionsInBlockRequestV0;
+    use dpp::platform_value::Value;
     use dpp::serialization::PlatformSerializable;
     use dpp::shielded::SerializedAction;
+    use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
+    use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+    use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+    use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransition;
+    use dpp::state_transition::batch_transition::document_create_transition::v0::DocumentCreateTransitionV0;
+    use dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV1};
     use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
     use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
     use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
     use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
+    use std::collections::BTreeMap;
 
     const ALICE: Identifier = Identifier::new([1; 32]);
     const BOB: Identifier = Identifier::new([2; 32]);
@@ -279,7 +306,7 @@ mod tests {
             transfer(ALICE, BOB, 3),
         ];
 
-        let owned = select_owned_transactions(&txs, ALICE).unwrap();
+        let owned = select_owned_transactions(&txs, ALICE, PlatformVersion::latest()).unwrap();
 
         assert_eq!(owned.iter().map(|tx| tx.index).collect::<Vec<_>>(), [0, 2]);
         assert_eq!(owned[0].state_transition, STANDARD.decode(&txs[0]).unwrap());
@@ -290,14 +317,18 @@ mod tests {
     fn should_not_select_a_transaction_for_its_recipient() {
         let txs = [transfer(ALICE, BOB, 1)];
 
-        assert!(select_owned_transactions(&txs, BOB).unwrap().is_empty());
+        assert!(
+            select_owned_transactions(&txs, BOB, PlatformVersion::latest())
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
     fn should_skip_transactions_without_an_owner() {
         let txs = [shielded_transfer(), transfer(ALICE, BOB, 1)];
 
-        let owned = select_owned_transactions(&txs, ALICE).unwrap();
+        let owned = select_owned_transactions(&txs, ALICE, PlatformVersion::latest()).unwrap();
 
         assert_eq!(owned.iter().map(|tx| tx.index).collect::<Vec<_>>(), [1]);
     }
@@ -306,13 +337,13 @@ mod tests {
     fn should_fail_rather_than_omit_a_transaction_that_does_not_decode() {
         let txs = [transfer(ALICE, BOB, 1), STANDARD.encode([0xff, 0x00])];
         assert!(matches!(
-            select_owned_transactions(&txs, ALICE),
+            select_owned_transactions(&txs, ALICE, PlatformVersion::latest()),
             Err(DapiError::Internal(_))
         ));
 
         let txs = ["not base64!".to_string()];
         assert!(matches!(
-            select_owned_transactions(&txs, ALICE),
+            select_owned_transactions(&txs, ALICE, PlatformVersion::latest()),
             Err(DapiError::Internal(_))
         ));
     }
@@ -320,7 +351,7 @@ mod tests {
     #[test]
     fn should_give_each_transaction_its_own_result_and_hash() {
         let txs = [transfer(BOB, ALICE, 1), transfer(ALICE, BOB, 2)];
-        let owned = select_owned_transactions(&txs, ALICE).unwrap();
+        let owned = select_owned_transactions(&txs, ALICE, PlatformVersion::latest()).unwrap();
         let results = [
             BlockTxResult::default(),
             BlockTxResult {
@@ -345,7 +376,7 @@ mod tests {
     #[test]
     fn should_fail_when_results_do_not_line_up_with_the_block() {
         let txs = [transfer(ALICE, BOB, 1), transfer(ALICE, BOB, 2)];
-        let owned = select_owned_transactions(&txs, ALICE).unwrap();
+        let owned = select_owned_transactions(&txs, ALICE, PlatformVersion::latest()).unwrap();
 
         assert!(matches!(
             attach_results(owned, &[BlockTxResult::default()], txs.len()),
@@ -360,6 +391,67 @@ mod tests {
         assert_eq!(height, 7);
         assert_eq!(owner_id, ALICE);
         assert!(!prove);
+    }
+
+    /// A document batch owned by `ALICE` whose data nests past 256 levels.
+    fn deeply_nested_batch() -> String {
+        let nested = (0..300).fold(Value::Null, |value, _| Value::Array(vec![value]));
+        let transition = StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+            owner_id: ALICE,
+            transitions: vec![BatchedTransition::Document(DocumentTransition::Create(
+                DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+                    base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                        id: Identifier::default(),
+                        identity_contract_nonce: 1,
+                        document_type_name: "test".to_string(),
+                        data_contract_id: Identifier::default(),
+                    }),
+                    entropy: [0; 32],
+                    data: BTreeMap::from([("nested".to_string(), nested)]),
+                    prefunded_voting_balance: None,
+                }),
+            ))],
+            ..Default::default()
+        }));
+        STANDARD.encode(transition.serialize_to_bytes().unwrap())
+    }
+
+    #[test]
+    fn should_decode_a_block_under_its_own_protocol_version() {
+        // Deeply nested values need more stack than libtest's default test thread has
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(|| {
+                let txs = [deeply_nested_batch()];
+
+                let owned =
+                    select_owned_transactions(&txs, ALICE, PlatformVersion::get(12).unwrap())
+                        .unwrap();
+                assert_eq!(owned.iter().map(|tx| tx.index).collect::<Vec<_>>(), [0]);
+
+                assert!(matches!(
+                    select_owned_transactions(&txs, ALICE, PlatformVersion::get(13).unwrap()),
+                    Err(DapiError::Internal(_))
+                ));
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn should_find_the_platform_version_of_a_block() {
+        assert_eq!(block_platform_version(12, 7).unwrap().protocol_version, 12);
+    }
+
+    #[test]
+    fn should_fail_on_a_block_of_an_unknown_protocol_version() {
+        for version in [0, u64::from(u32::MAX), u64::MAX] {
+            assert!(matches!(
+                block_platform_version(version, 7),
+                Err(DapiError::Internal(_))
+            ));
+        }
     }
 
     #[test]

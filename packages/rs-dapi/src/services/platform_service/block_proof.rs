@@ -90,6 +90,18 @@ impl MerkleTree {
     }
 }
 
+/// The root of the same tree, for callers that need no paths.
+fn merkle_root<T: AsRef<[u8]>>(leaves: &[T]) -> Vec<u8> {
+    match leaves {
+        [] => Sha256::digest([]).to_vec(),
+        [leaf] => leaf_hash(leaf.as_ref()),
+        _ => {
+            let (left, right) = leaves.split_at(split_point(leaves.len()));
+            inner_hash(&merkle_root(left), &merkle_root(right))
+        }
+    }
+}
+
 /// The largest power of two below `length`, which must be at least 2.
 fn split_point(length: usize) -> usize {
     1 << (usize::BITS - 1 - (length - 1).leading_zeros())
@@ -119,22 +131,13 @@ fn encode_results(results: &[BlockTxResult]) -> DAPIResult<Vec<Vec<u8>>> {
         .collect()
 }
 
-fn checked_tree(name: &str, tree: MerkleTree, header_root: &[u8]) -> DAPIResult<MerkleTree> {
-    if tree.root != header_root {
+fn check_root(name: &str, root: &[u8], header_root: &[u8]) -> DAPIResult<()> {
+    if root != header_root {
         return Err(DapiError::Internal(format!(
             "the block's {name} do not hash to the root in its header"
         )));
     }
-    Ok(tree)
-}
-
-fn transactions_tree(header: &Header, hashes: &[Vec<u8>]) -> DAPIResult<MerkleTree> {
-    checked_tree("transactions", MerkleTree::new(hashes), &header.data_hash)
-}
-
-fn results_tree(header: &Header, results: &[BlockTxResult]) -> DAPIResult<MerkleTree> {
-    let encoded = encode_results(results)?;
-    checked_tree("results", MerkleTree::new(&encoded), &header.results_hash)
+    Ok(())
 }
 
 /// Check that a block's contents are the ones its header commits to. `results` is empty
@@ -145,9 +148,17 @@ pub(super) fn check_block_contents(
     results: &[BlockTxResult],
 ) -> DAPIResult<()> {
     let header = proof_header(proof)?;
-    transactions_tree(header, transaction_hashes)?;
+    check_root(
+        "transactions",
+        &merkle_root(transaction_hashes),
+        &header.data_hash,
+    )?;
     if !results.is_empty() {
-        results_tree(header, results)?;
+        check_root(
+            "results",
+            &merkle_root(&encode_results(results)?),
+            &header.results_hash,
+        )?;
     }
     Ok(())
 }
@@ -172,11 +183,14 @@ pub(super) fn transaction_proofs(
                 })
         })
         .collect::<DAPIResult<Vec<_>>>()?;
-    let transactions = transactions_tree(header, &hashes)?;
     if indexes.is_empty() {
+        check_root("transactions", &merkle_root(&hashes), &header.data_hash)?;
         return Ok(Vec::new());
     }
-    let results = results_tree(header, results)?;
+    let transactions = MerkleTree::new(&hashes);
+    check_root("transactions", &transactions.root, &header.data_hash)?;
+    let results = MerkleTree::new(&encode_results(results)?);
+    check_root("results", &results.root, &header.results_hash)?;
     let total = u32::try_from(block_txs.len())
         .map_err(|_| DapiError::Internal("the block holds too many transactions".to_string()))?;
 
@@ -458,6 +472,17 @@ mod tests {
             hex_of(&inner_hash(b"N123", b"N456")),
             "aa217fe888e47007fa15edab33c2b492a722cb106c64667fc2b044444de66bbb"
         );
+    }
+
+    #[test]
+    fn should_compute_the_same_root_without_building_paths() {
+        for total in 0..=33usize {
+            let leaves = (0..total)
+                .map(|index| index.to_be_bytes().to_vec())
+                .collect::<Vec<_>>();
+
+            assert_eq!(merkle_root(&leaves), MerkleTree::new(&leaves).root);
+        }
     }
 
     #[test]
