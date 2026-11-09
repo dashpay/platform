@@ -82,6 +82,13 @@ pub struct WalletPersister {
     /// is up, public contact requests are neither sent nor accepted. Shared by
     /// the clones the wallet and its views hold. In memory only.
     private_payments_unrestored: Arc<AtomicBool>,
+    /// The marker each identity's position record was last stored with in
+    /// this session (`PrivateContactRequestsPosition::private_payments_unresolved`):
+    /// a record whose marker, its identity's and the journal's together,
+    /// differs from it is stored again. Absent when none was stored, or the
+    /// last store or its flush failed. Shared by the clones the wallet and
+    /// the coordinator hold. In memory only.
+    stored_private_markers: Arc<std::sync::Mutex<BTreeMap<Identifier, bool>>>,
 }
 
 /// The commitments [`WalletPersister::note_discharged_private_entries`] noted,
@@ -118,7 +125,33 @@ impl WalletPersister {
             read_back_private_entries: Arc::default(),
             discharged_private_entries: Arc::default(),
             private_payments_unrestored: Arc::default(),
+            stored_private_markers: Arc::default(),
         }
+    }
+
+    /// Note that `owner`'s position record was stored with the marker
+    /// `marker`, or, with `None`, that whether it was is not known: its last
+    /// store or flush failed ([`Self::private_marker_stored`]).
+    pub(crate) fn note_private_marker_stored(&self, owner: Identifier, marker: Option<bool>) {
+        let mut stored = self
+            .stored_private_markers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match marker {
+            Some(marker) => stored.insert(owner, marker),
+            None => stored.remove(&owner),
+        };
+    }
+
+    /// The marker `owner`'s position record was last stored with in this
+    /// session, if one was and its store did not fail since
+    /// ([`Self::note_private_marker_stored`]).
+    pub(crate) fn private_marker_stored(&self, owner: &Identifier) -> Option<bool> {
+        self.stored_private_markers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(owner)
+            .copied()
     }
 
     /// Note the commitments of private contact request entries a private sync

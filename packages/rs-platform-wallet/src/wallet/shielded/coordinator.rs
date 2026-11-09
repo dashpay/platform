@@ -1314,7 +1314,7 @@ impl NetworkShieldedCoordinator {
     /// Discharge the private payment journal records of the private contact
     /// requests each registered wallet's private sync read back and recorded
     /// durably (`WalletPersister::note_read_back_private_entries`).
-    async fn discharge_read_back_private_payments(&self) {
+    pub(crate) async fn discharge_read_back_private_payments(&self) {
         let noted: Vec<(WalletId, WalletPersister)> = self
             .persisters
             .read()

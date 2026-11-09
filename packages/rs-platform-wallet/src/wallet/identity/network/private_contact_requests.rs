@@ -604,6 +604,8 @@ fn store_private_payment_marker(
         );
         if !persister.store_commits_inline() {
             if let Err(error) = persister.flush() {
+                // Not known to be stored: the next comparison stores it again.
+                persister.note_private_marker_stored(*owner, None);
                 tracing::warn!(
                     owner = %owner,
                     %error,
@@ -667,12 +669,41 @@ fn store_private_position(
     changeset
         .private_contact_requests_positions
         .insert(owner, position);
-    if let Err(error) = persister.store(changeset.into()) {
-        tracing::warn!(
-            owner = %owner, position = position.position, %error,
-            "private read position not stored; the next launch reads from the last one stored"
-        );
+    match persister.store(changeset.into()) {
+        Ok(()) => {
+            persister.note_private_marker_stored(owner, Some(position.private_payments_unresolved))
+        }
+        Err(error) => {
+            persister.note_private_marker_stored(owner, None);
+            tracing::warn!(
+                owner = %owner, position = position.position, %error,
+                "private read position not stored; the next launch reads from the last one stored"
+            );
+        }
     }
+}
+
+/// Whether `managed`'s position record, stored now, would carry another
+/// marker than the one `owner`'s record was last stored with in this session
+/// (`WalletPersister::private_marker_stored`), for a backend that keeps it:
+/// its identity's part and the journal's (`with_journaled_marker`) together,
+/// so a journal record discharged after the identity's own reservation
+/// settled clears it too. None stored this session counts as another.
+fn private_marker_stale(
+    persister: &WalletPersister,
+    owner: Identifier,
+    managed: &ManagedIdentity,
+) -> bool {
+    persister.persists_private_contact_scan_state()
+        && persister.private_marker_stored(&owner)
+            != Some(
+                with_journaled_marker(
+                    persister,
+                    owner,
+                    managed.private_contact_requests_position_record(),
+                )
+                .private_payments_unresolved,
+            )
 }
 
 /// The local record of a private request: a [`ContactRequest`] carrying the
@@ -1131,10 +1162,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                  is not paid for: {error}"
             ))
         };
+        // Not known to be stored until both succeed.
+        self.persister.note_private_marker_stored(*owner, None);
         self.persister.store(changeset.into()).map_err(not_kept)?;
         if !self.persister.store_commits_inline() {
             self.persister.flush().map_err(not_kept)?;
         }
+        self.persister
+            .note_private_marker_stored(*owner, Some(marker.private_payments_unresolved));
         Ok(())
     }
 
@@ -1198,7 +1233,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// one proven expired, its anchor pruned with an input still unspent, can
     /// never be read back. Run before a private request is reserved, before a
     /// public one claims its pair, and by the private sync, so a retry needs
-    /// no restart. An identity's marker is stored again when it changed.
+    /// no restart. Each identity's marker, its own part and the journal's, is
+    /// stored again when it differs from the one last stored
+    /// (`private_marker_stale`): a discharge clears the journal's part also
+    /// for an identity whose own reservation a read-back already settled, so
+    /// a reload does not hold it on a marker no payment backs.
     pub(crate) async fn release_discharged_private_requests(
         &self,
     ) -> Result<(), PlatformWalletError> {
@@ -1219,9 +1258,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let mut changed = Vec::new();
         for identity_id in identity_ids {
             if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
-                let unresolved = managed.dashpay().private_payments_unresolved();
                 managed.release_discharged_private_replies(&discharged);
-                if managed.dashpay().private_payments_unresolved() != unresolved {
+                if private_marker_stale(&self.persister, identity_id, managed) {
                     changed.push(identity_id);
                 }
             }
@@ -1992,12 +2030,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             let before = managed.dashpay().private_contact_requests_position();
                             identity.advance(managed, read.next_position);
                             let after = managed.dashpay().private_contact_requests_position();
-                            // Stored once it moved, or once the last private
-                            // payment it held settled.
+                            // Stored once it moved, once the last private
+                            // payment it held settled, or once its marker
+                            // differs from the one last stored.
                             if persists_scan_state
                                 && (after != before
                                     || managed.dashpay().private_payments_unresolved()
-                                        != unresolved)
+                                        != unresolved
+                                    || private_marker_stale(&self.persister, identity_id, managed))
                             {
                                 store_private_position(
                                     &self.persister,
@@ -2547,6 +2587,9 @@ mod tests {
     struct RecordingPersistence {
         capabilities: PersistenceCapabilities,
         stored: Mutex<Vec<PlatformWalletChangeSet>>,
+        /// While set, a store carrying a private read position record fails
+        /// and keeps nothing.
+        positions_fail: AtomicBool,
     }
 
     impl RecordingPersistence {
@@ -2554,6 +2597,7 @@ mod tests {
             Arc::new(Self {
                 capabilities,
                 stored: Mutex::new(Vec::new()),
+                positions_fail: AtomicBool::new(false),
             })
         }
 
@@ -2574,6 +2618,14 @@ mod tests {
             _wallet_id: WalletId,
             changeset: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
+            if self.positions_fail.load(Ordering::SeqCst)
+                && changeset
+                    .contacts
+                    .as_ref()
+                    .is_some_and(|contacts| !contacts.private_contact_requests_positions.is_empty())
+            {
+                return Err(PersistenceError::backend("the disk is full"));
+            }
             self.stored.lock().expect("stored").push(changeset);
             Ok(())
         }
@@ -3063,6 +3115,121 @@ mod tests {
                 "no shielded store restores it here, journal open before: {journal_open_before}"
             );
         }
+    }
+
+    /// A private sync stores an identity's position record whenever its
+    /// marker differs from the one last stored in this session, though
+    /// nothing moved: one whose store failed is stored by the next sync, and
+    /// not again while it is unchanged.
+    #[tokio::test]
+    async fn should_store_a_marker_that_differs_from_the_one_last_stored() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let persistence = RecordingPersistence::attesting(
+            PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+        );
+        let (_manager, alice_wallet) = wallet_on(
+            Arc::clone(&persistence),
+            ALICE_PHRASE,
+            &alice,
+            &[&alice, &bob],
+            vec![],
+        )
+        .await;
+        let records = || {
+            persistence
+                .stored
+                .lock()
+                .expect("stored")
+                .iter()
+                .filter_map(|changeset| changeset.contacts.as_ref())
+                .filter(|contacts| {
+                    contacts
+                        .private_contact_requests_positions
+                        .contains_key(&alice.id())
+                })
+                .count()
+        };
+        let view = alice_wallet.identity().dashpay();
+        let before = records();
+        persistence.positions_fail.store(true, Ordering::SeqCst);
+        view.sync_private_contact_requests(&alice_crypto, 4)
+            .await
+            .expect("a private sync whose position stores fail");
+        assert_eq!(records(), before, "nothing kept");
+        persistence.positions_fail.store(false, Ordering::SeqCst);
+
+        view.sync_private_contact_requests(&alice_crypto, 4)
+            .await
+            .expect("the next private sync");
+        assert_eq!(records(), before + 1, "stored, though nothing moved");
+        assert_eq!(
+            last_marker(&persistence.stored.lock().expect("stored"), &alice.id()),
+            Some(false)
+        );
+        view.sync_private_contact_requests(&alice_crypto, 4)
+            .await
+            .expect("another private sync");
+        assert_eq!(records(), before + 1, "unchanged: not stored again");
+    }
+
+    /// An identity reloaded from a position record stored with its marker
+    /// cleared, as a discharge leaves it, is not held, in any build: its
+    /// public request goes on to be built, with no restoration needed.
+    #[tokio::test]
+    async fn should_not_hold_an_identity_reloaded_with_its_marker_cleared() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (_before_manager, before) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let kept = Arc::new(scan_state_snapshot(&before, &alice.id(), false).await);
+        let manager = PlatformWalletManager::new(
+            Arc::new(dashpay_sdk(&[&alice, &bob], vec![], PlatformVersion::latest(), None).await),
+            Arc::clone(&kept),
+            Arc::new(NoopEventHandler),
+        );
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the relaunch loads");
+        let restarted = manager
+            .get_wallet(&before.wallet_id())
+            .await
+            .expect("the relaunched wallet");
+        assert!(!restarted.private_payments_held().await);
+        assert!(
+            restarted
+                .identity()
+                .dashpay()
+                .private_contact_readiness(&alice.id())
+                .await
+                .expect("the readiness")
+                .private_payments_restored
+        );
+        // Past the hold, the store read and the claim, the request is built
+        // (the mock answers no nonce, which ends it there).
+        let public = restarted
+            .identity()
+            .dashpay()
+            .send_contact_request_with_external_signer(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &alice_signer,
+                &alice_crypto,
+            )
+            .await;
+        assert!(
+            !matches!(
+                public,
+                Err(PlatformWalletError::PrivateContactPaymentsNotRestored
+                    | PlatformWalletError::PrivateContactRequestPending(_))
+            ),
+            "{public:?}"
+        );
     }
 
     /// A private payment is marked unresolved in its identity's position
@@ -8027,6 +8194,134 @@ mod tests {
             "no store read for it again"
         );
         assert_eq!(fixture.journaled().await, 1);
+    }
+
+    /// A private payment read back, its journal record then discharged by the
+    /// coordinator as every sync pass does: the read-back settles the
+    /// identity's own reservation and stores its marker set, as the journal
+    /// still keeps the payment, and the next public request, releasing what
+    /// the discharge freed, stores it cleared although the identity's own part
+    /// was already clear. Reloaded from that record, as any build loads it,
+    /// the identity holds no public request back.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_store_the_marker_cleared_once_a_read_back_payment_is_discharged() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let fixture = ExpiryFixture::new().await;
+        let marker = || {
+            last_marker(
+                &fixture.persistence.stored.lock().expect("stored"),
+                &alice.id(),
+            )
+        };
+        let entry = fixture
+            .pay_unconfirmed(ExpiryFixture::ANCHOR, ExpiryFixture::ANCHOR_SET_HEIGHT)
+            .await;
+        assert_eq!(marker(), Some(true), "marked before paying");
+        // The wallet holds the pair from the journal too, as a payment's
+        // submission or a restoration notes it.
+        fixture
+            .wallet
+            .restore_private_contact_payments(&fixture.coordinator)
+            .await
+            .expect("restored");
+        let persister = fixture.wallet.persister();
+        assert!(persister.private_pair_journaled(&alice.id(), &bob.id()));
+
+        // Read back: the identity's own reservation settles, and the journal
+        // still keeps the payment, so the marker stays set.
+        publish(&fixture.wallet, 0, vec![entry.to_vec()]).await;
+        let view = fixture.wallet.identity().dashpay();
+        view.sync_private_contact_requests(&alice_crypto, 4)
+            .await
+            .expect("the entry is read back");
+        assert!(!pending_to(&fixture.wallet, ALICE, &bob).await, "settled");
+        assert!(persister.private_pair_journaled(&alice.id(), &bob.id()));
+        assert_eq!(marker(), Some(true), "the journal still keeps it");
+
+        // The coordinator's ordinary discharge of the records read back.
+        fixture
+            .coordinator
+            .discharge_read_back_private_payments()
+            .await;
+        assert_eq!(fixture.journaled().await, 0, "discharged");
+        assert!(!persister.private_pair_journaled(&alice.id(), &bob.id()));
+
+        // The next public request releases what the discharge freed and
+        // stores the marker cleared, before it is decided on the pair.
+        let public = view
+            .send_contact_request_with_external_signer(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &alice_signer,
+                &alice_crypto,
+            )
+            .await;
+        assert!(
+            matches!(
+                public,
+                Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(
+                    _
+                ))
+            ),
+            "{public:?}"
+        );
+        assert_eq!(marker(), Some(false), "stored cleared");
+
+        // Reloaded from the record last stored, the identity is not held.
+        let kept = Arc::new(
+            scan_state_snapshot(&fixture.wallet, &alice.id(), marker().expect("stored")).await,
+        );
+        let manager = PlatformWalletManager::new(
+            Arc::new(dashpay_sdk(&[&alice, &bob], vec![], PlatformVersion::latest(), None).await),
+            Arc::clone(&kept),
+            Arc::new(NoopEventHandler),
+        );
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the relaunch loads");
+        let restarted = manager
+            .get_wallet(&fixture.wallet.wallet_id())
+            .await
+            .expect("the relaunched wallet");
+        assert!(!restarted.private_payments_held().await);
+        assert!(
+            restarted
+                .identity()
+                .dashpay()
+                .private_contact_readiness(&alice.id())
+                .await
+                .expect("the readiness")
+                .private_payments_restored
+        );
+        // Past the hold, the send is decided on the pair itself: its channel
+        // is private, as the request read back shows.
+        let public = restarted
+            .identity()
+            .dashpay()
+            .send_contact_request_with_external_signer(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &alice_signer,
+                &alice_crypto,
+            )
+            .await;
+        assert!(
+            matches!(
+                public,
+                Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(recipient))
+                    if recipient == bob.id()
+            ),
+            "{public:?}"
+        );
     }
 
     /// A private payment that never executes is proven expired once its
