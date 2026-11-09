@@ -77,6 +77,20 @@ struct StorageExplorerView: View {
                 DashpayIgnoredSenderStorageListView(network: network)
             }
             modelRow(
+                "Private Request Positions",
+                icon: "bookmark",
+                type: PersistentPrivateContactRequestsPosition.self
+            ) {
+                PrivateContactRequestsPositionStorageListView(network: network)
+            }
+            modelRow(
+                "Private Shielded Addresses",
+                icon: "lock.rectangle",
+                type: PersistentPrivateShieldedAddress.self
+            ) {
+                PrivateShieldedAddressStorageListView(network: network)
+            }
+            modelRow(
                 "Sent Invitations",
                 icon: "paperplane",
                 type: PersistentInvitation.self
@@ -291,6 +305,8 @@ struct StorageExplorerView: View {
         directCount(PersistentDashpayContactProfile.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDashpayPayment.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDashpayIgnoredSender.self, predicate: #Predicate { $0.networkRaw == raw })
+        directCount(PersistentPrivateContactRequestsPosition.self, predicate: #Predicate { $0.networkRaw == raw })
+        directCount(PersistentPrivateShieldedAddress.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDocument.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDataContract.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentTokenBalance.self, predicate: #Predicate { $0.networkRaw == raw })
